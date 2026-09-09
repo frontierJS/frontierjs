@@ -72,26 +72,81 @@ const list = (opts = {}) => columnList(fields, {
   ...opts,
 })
 
+/** The same schema with the tenancy line taken out — the pair for every
+ *  assertion about the stamp, since one line is the only difference. */
+const unscoped = () => {
+  const d = generateJsonSchema(parse(SOURCE.replace(/^tenancy .*$/m, '')).schema, { mode: 'full' }).$defs
+  const f = buildFieldRules(d.Server, (ref) => d[String(ref).split('/').pop()])
+  return (opts = {}) =>
+    columnList(f, { identify: d.Server['x-identify'], label: d.Server['x-label-field'], ...opts })
+}
+
 const names = (r) => r.columns.map(c => c.name)
 const tier  = (r, name) => r.columns.find(c => c.name === name)?.tier
 
 describe('the ranking', () => {
-  test('the tenant column is not the first column, and the name is', () => {
+  test('the tenant column is not ON the table, and the name leads it', () => {
     // The whole reason this function exists. `workspaceId` is declared first on
     // every scoped model, so the slice this replaces led with it — a column
     // holding one value for every row on screen.
+    //
+    // Ranking it low is not the answer and asserting it is not first is not the
+    // test: `rest` still puts a constant column on a six-column table whenever
+    // the model declares few enough columns, which is most of them.
     const r = list()
     expect(names(r)[0]).toBe('name')
-    expect(names(r).indexOf('workspaceId')).toBeGreaterThan(0)
+    expect(names(r)).not.toContain('workspaceId')
+    expect(r.omitted).toContainEqual({
+      name: 'workspaceId',
+      reason: 'a tenancy stamp — the same value in every row a scoped read returns',
+    })
+  })
+
+  test('the same column is an ordinary one where the schema does not scope by it', () => {
+    // PAIRED, one line of schema apart. `workspaceId` is a string with a
+    // relation, which is what an ordinary foreign key is — so a fix reading
+    // `references`, `readOnly` or *is it a string ending in Id* refuses this
+    // one too and every assertion above still passes.
+    const plain = unscoped()
+    expect(plain({ limit: 99 }).columns.map(c => c.name)).toContain('workspaceId')
+    expect(plain({ limit: 99 }).omitted.some(o => /tenancy stamp/.test(o.reason))).toBe(false)
+
+    // And the slot, asked of both at one limit: the tenancy line is the only
+    // difference between the two schemas, so it is the only thing that can
+    // decide who holds the seventh column.
+    expect(names(list({ limit: 7 })).at(-1)).toBe('notes')
+    expect(plain({ limit: 7 }).columns.at(-1).name).toBe('workspaceId')
+  })
+
+  test('only still names it, because a cross-tenant screen is what it is for', () => {
+    // A hub screen reads through `asSystem()`, where the stamp is the one
+    // column telling its rows apart. Naming the columns bypasses the ranking,
+    // and this is the case the ranking cannot know about.
+    const r = list({ only: ['workspaceId', 'name'] })
+    expect(names(r)).toEqual(['workspaceId', 'name'])
   })
 
   test('each tier is claimed by the column that has a reason to lead', () => {
-    const r = list()
+    const r = list({ limit: 99 })
     expect(tier(r, 'name')).toBe('label')       // conventional label column
     expect(tier(r, 'hostname')).toBe('identify')  // the tuple minus its tenant column
     expect(tier(r, 'status')).toBe('state')     // a bound enum
     expect(tier(r, 'cost')).toBe('quantity')    // @money
-    expect(tier(r, 'workspaceId')).toBe('rest')
+  })
+
+  test('an ordinary DateTime is a quantity, which is what the tier is named for', () => {
+    // `x-time` is the `@time` ATTRIBUTE, so a plain `DateTime` carries
+    // `format: 'date-time'` and none of it — and a tier reading the raw key is
+    // a second answer to a question `defaultDisplayFor` already answers. Every
+    // date column fell to `rest` under a tier called *money and time*.
+    const r = list({ limit: 99 })
+    expect(tier(r, 'seenAt')).toBe('quantity')
+
+    // The control, or *everything is a quantity* passes the row above: a plain
+    // string column is still `rest`, and an ordering across the two tiers is
+    // what the ranking is FOR.
+    expect(tier(r, 'notes')).toBe('rest')
+    expect(names(r).indexOf('seenAt')).toBeLessThan(names(r).indexOf('notes'))
   })
 
   test('a read-only column is a table column, where a form refuses it', () => {

@@ -1,0 +1,71 @@
+<script>
+  // cell.mesa — the read renderer, one cell per claim.
+  //
+  // `Cell` is the component `FJS-D242` exists for. The five lines it replaced
+  // stringified a value by its JS TYPE, and the ruling's own sentence is the
+  // headline here: a `@money` column came out as `1299` — wrong in the way that
+  // looks right, which is the only way a number goes wrong quietly.
+  //
+  // Every money row is a PAIR with a plain `number` column holding the SAME
+  // integer. One value, two declarations, two answers — which is the whole
+  // claim, and it is unfalsifiable from either cell alone.
+  //
+  // The currency rows are three because `x-money` has three shapes: a stated
+  // currency, one held per ROW in a sibling column, and neither. JPY is here
+  // because it has no minor unit at all, so an implementation that divided by
+  // 100 always is right about dollars and wrong about yen.
+  import Cell from '../../../components/display/Cell.mesa'
+  import { registerDisplayComponent } from '../../../controls.js'
+  import Badge from '../../../components/display/Badge.mesa'
+
+  // An app claiming a display name, which must beat the built-in table.
+  registerDisplayComponent('relation', Badge, {
+    props: ({ record }) => ({ children: undefined, tone: 'info' }),
+  })
+
+  const money    = { name: 'total', display: 'money', currency: 'USD' }
+  const yen      = { name: 'total', display: 'money', currency: 'JPY' }
+  const perRow   = { name: 'total', display: 'money', currencyField: 'ccy' }
+  const noCcy    = { name: 'total', display: 'money' }
+  const count    = { name: 'total', display: 'number' }
+  const status   = { name: 'status', display: 'enum', options: [
+    { value: 'awaiting_payment', label: 'Awaiting payment' },
+    { value: 'paid' },
+  ] }
+  const flag     = { name: 'active',  display: 'boolean' }
+  const name     = { name: 'name',    display: 'text' }
+  const instant  = { name: 'at',      display: 'time', time: { kind: 'instant' } }
+  const wall     = { name: 'on',      display: 'time', time: { kind: 'date' } }
+  const unplaced = { name: 'blob',    display: null, reason: 'a Json document matches as text' }
+  const rel      = { name: 'ownerId', display: 'relation' }
+</script>
+
+<!-- money, and the pair that decides it -->
+<div id="money"><Cell value={1299} column={money} /></div>
+<div id="count"><Cell value={1299} column={count} /></div>
+<div id="yen"><Cell value={1299} column={yen} /></div>
+<div id="perrow"><Cell value={1299} column={perRow} record={{ ccy: 'JPY' }} /></div>
+<div id="noccy"><Cell value={1299} column={noCcy} /></div>
+<div id="badccy"><Cell value={1299} column={perRow} record={{ ccy: 'NOPE' }} /></div>
+<div id="nanmoney"><Cell value={'oops'} column={money} /></div>
+
+<!-- nothing, and the thing that is not nothing -->
+<div id="null"><Cell value={null} column={name} /></div>
+<div id="blank"><Cell value={''} column={name} /></div>
+<div id="zero"><Cell value={0} column={count} /></div>
+
+<!-- the declaration answering where a JS type cannot -->
+<div id="enum"><Cell value={'awaiting_payment'} column={status} /></div>
+<div id="enumbare"><Cell value={'paid'} column={status} /></div>
+<div id="bool"><Cell value={false} column={flag} /></div>
+<div id="instant"><Cell value={'2026-01-02T03:04:05Z'} column={instant} /></div>
+<div id="wall"><Cell value={'2026-01-02'} column={wall} /></div>
+
+<!-- a column the table could not place, and the reason riding with it -->
+<div id="unplaced"><Cell value={{ a: 1 }} column={unplaced} /></div>
+
+<!-- a registration beating the built-in branch -->
+<div id="registered"><Cell value={'u_7'} column={rel} /></div>
+
+<!-- the attribute contract: the caller's class reaches the one wrapper -->
+<div id="attrs"><Cell value={1299} column={money} class="right" data-probe="yes" /></div>

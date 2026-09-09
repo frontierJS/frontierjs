@@ -227,7 +227,13 @@
     <div data-route="invoices" hidden>
       <section class="pane" aria-labelledby="h-invoices">
         <div class="section-header">
-          <h2 id="h-invoices" class="h4">Invoices</h2>
+          <div>
+            <!-- A Kicker: the short label ABOVE a title. Not a Badge (that is
+                 a status, inline) and not a Divider label (that is a break
+                 BETWEEN groups). -->
+            <div class="kicker">Billing</div>
+            <h2 id="h-invoices" class="h4">Invoices</h2>
+          </div>
           <div class="cluster">
             <button class="btn outlined" id="filters-btn">Filters</button>
             <button class="btn primary">
@@ -253,10 +259,10 @@
         </div>
 
         <div class="bar bordered">
-          <div class="cluster">
+          <div class="group">
             <span class="text-sm text-muted">Press <kbd class="kbd">/</kbd> to search</span>
           </div>
-          <div class="cluster">
+          <div class="group">
             <span class="text-sm text-muted">Density</span>
             <select class="field" id="density-select" aria-label="Row density" style="--field-inline-size: auto">
               <option value="">Comfortable</option>
@@ -665,7 +671,7 @@
 
               <hr>
 
-              <div class="bar start">
+              <div class="group">
                 <button class="btn primary" type="submit">Save changes</button>
                 <button class="btn ghost" type="reset">Discard</button>
               </div>

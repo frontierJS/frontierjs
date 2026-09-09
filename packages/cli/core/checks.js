@@ -98,6 +98,8 @@ export const RULES = [
     title: 'a service resolves to the model whose @@gate grades it' },
   { id: 'resource-model-miss',  scope: 'app',  severity: 'error', invariant: 2,
     title: 'a resource name resolves to the model it means' },
+  { id: 'money-rendered-raw',   scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'a @money column is not printed as the integer it stores' },
   { id: 'detail-read-dead',     scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a row a screen KEEPS is watched, not fetched once' },
   { id: 'service-module-db',    scope: 'app',  severity: 'error', invariant: null,
@@ -1397,6 +1399,96 @@ const CHECKS = {
   // then owns it — and a rule that cannot tell those apart must not be the
   // thing that fails a build. No `--fix` either: the change is a subscribe, a
   // release and a lifetime, and a half-applied one is a green check over a leak.
+  // A `@money` column holds MINOR units, so printing it is a price a hundred
+  // times too big — and there is no error, no warning and no wrong-looking
+  // output, which is what `FJS-D242` was ruled about. The authority is the
+  // SCHEMA: the app declared the column, so *this number is cents* is a fact in
+  // the tree rather than a claim a paragraph makes.
+  //
+  // It has been written wrong at every tier. Five copies of `£${n.toFixed(2)}`
+  // across this repo's own example app; the kit's own `<Cell>` handed the stored
+  // integer to `formatMoney`, which takes MAJOR units (`FJS-1051`); and the
+  // generated list page before it printed the raw integer.
+  'money-rendered-raw': ({ root }) => {
+    // ── which column names ARE money, and which are ambiguous ───────────────
+    //
+    // A `.mesa` says `{order.total}` and nothing in it says what `order` holds,
+    // so this is name-based and has to be narrowed by the schema rather than by
+    // a guess: a name declared `@money` on one model and as a plain column on
+    // another cannot be judged from the interpolation, and is DROPPED. Being
+    // silent about an ambiguous name is the cost; reporting one is advice that
+    // is wrong, which is worse than none.
+    const money  = new Set()
+    const plain  = new Set()
+    let declared = 0
+
+    // The app's whole seed — `schema.lite` and the siblings an `import` in it
+    // reaches, which is the layout `fli auth:install` writes.
+    for (const file of sources(root, ['.lite'], 'db')) {
+      // A `view` column carries no attributes at all — a projection is a SELECT
+      // and there is nowhere on it to write `@money` — so its plainness is not
+      // evidence of anything, and counting it drops the name for every model
+      // that DID declare it. `revenueByStatus.total` is that exact case here:
+      // it sums a `@money` column and is therefore cents, declared `Int`
+      // because a view has no other spelling.
+      let inView = false
+      let depth  = 0
+      for (const raw of readCode(file).split('\n')) {
+        const line = raw.replace(/\/\/.*$/, '')
+        if (/^\s*view\s+[A-Za-z_$][\w$]*/.test(line)) { inView = true; depth = 0 }
+        depth += (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length
+        const col = line.match(/^\s*([A-Za-z_$][\w$]*)\s+[A-Za-z]/)?.[1]
+        if (col) {
+          if (/@money\b/.test(line)) { money.add(col); declared++ }
+          else if (!inView) plain.add(col)
+        }
+        if (inView && depth <= 0 && /\}/.test(line)) inView = false
+      }
+    }
+    if (!declared) return { skipped: 'no @money column in this seed' }
+
+    for (const name of plain) money.delete(name)
+    if (!money.size) return { skipped: 'every @money column shares its name with a plain one' }
+
+    const files = sources(root, ['.mesa'], 'web', 'widgets', 'site', 'extension')
+    if (!files.length) return { skipped: 'no client surface' }
+
+    const findings = []
+    const cols = [...money].join('|')
+    // A WHOLE interpolation that is just `thing.col` — so `{money(o.total)}` and
+    // `{fromMinor(o.total, c)}` do not match, which is the point: what is being
+    // reported is the absence of anything between the column and the screen.
+    const bare = new RegExp(`\\{\\s*([A-Za-z_$][\\w$]*)\\.(${cols})\\s*\\}`, 'g')
+
+    for (const path of files) {
+      const lines = readCode(path).split('\n')
+      for (let i = 0; i < lines.length; i++) {
+        for (const m of lines[i].matchAll(bare)) {
+          // TEXT position only. An ATTRIBUTE — `value={row.total}` — is handing
+          // the raw column to something whose job is to render it, which is
+          // exactly what `<Cell value={row.total} column={c} />` is, and
+          // flagging that would report the fix as the bug.
+          if (lines[i][m.index - 1] === '=') continue
+          findings.push({
+            file: path, line: i + 1,
+            message: `\`${m[1]}.${m[2]}\` is a \`@money\` column and this prints it. The column stores ` +
+                     `MINOR units, so the screen shows a number a hundred times too big — or a yen amount ` +
+                     `a hundred times too small, since the scale is the CURRENCY's and not a constant. ` +
+                     `Nothing refuses it and nothing looks wrong, which is the only way a number goes ` +
+                     `wrong quietly (\`FJS-D242\`). ` +
+                     `Render it with \`<Cell value={${m[1]}.${m[2]}} column={c} />\` where the column entry ` +
+                     `comes from \`resource.columns()\`, which reads the declaration; or, outside a table, ` +
+                     `with \`formatMoney(fromMinor(v, code), code)\` from \`@frontierjs/toolbelt/units\` — ` +
+                     `never a hand-rolled division, which is right for the dollar and wrong for the yen. ` +
+                     `An integer somebody genuinely wants raw is a fair exception; baseline it with a reason.`,
+          })
+        }
+      }
+    }
+
+    return { findings }
+  },
+
   'detail-read-dead': ({ root }) => {
     const files = sources(root, ['.mesa', ...SCRIPT_EXT], 'web', 'widgets', 'site', 'extension')
     if (!files.length) return { skipped: 'no client surface' }

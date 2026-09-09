@@ -1,0 +1,37 @@
+<script>
+  // StatusPill.mesa — a `status` column as THIS app renders one.
+  //
+  // The kit's `Cell` renders an enum as a `Badge` carrying the member's
+  // `@label`, which is right and is all a schema can say: nothing in
+  // `db/schema.lite` knows that `void` is bad news and `paid` is not.
+  //
+  // So this is the second half of the same seam `MoneyCell` uses, and the half
+  // that needs BOTH registrations (`FJS-D17`): `displayFor` has no name for
+  // *this is a status* — it answers `enum` for every bound column in the app —
+  // so `registerDisplay` supplies the name off `{ field, model }`, and
+  // `registerDisplayComponent` supplies what it draws.
+  import Pill from '@frontierjs/ui/components/display/Pill.mesa'
+  import { toneFor } from './status-tone.js'
+
+  export let value  = undefined
+  // The column entry. `options` is the enum's members with their `@label`
+  // where one is declared, normalized by `buildFieldRules` — so the pill says
+  // *Awaiting payment* where the schema asked it to.
+  export let column = undefined
+
+  const label = (() => {
+    const opts = column?.options
+    if (!Array.isArray(opts)) return String(value ?? '')
+    return opts.find(o => (o?.value ?? o) === value)?.label ?? String(value ?? '')
+  })()
+</script>
+
+{#if value === null || value === undefined}
+  <span class="muted">—</span>
+{:else}
+  <Pill tone={toneFor(value)}>{label}</Pill>
+{/if}
+
+<style>
+  .muted { color: var(--ink-mute); }
+</style>

@@ -1,0 +1,41 @@
+<script>
+  // MoneyCell.mesa — a `@money` column as THIS shop renders one.
+  //
+  // The kit's `Cell` already renders money correctly: `@money` holds minor
+  // units, `fromMinor` scales by the CURRENCY, and the code comes off the
+  // declaration. What it cannot know is that this app has a reader-chosen
+  // display currency, because that is not in `db/schema.lite` and never will
+  // be — the shop keeps its books in one currency and a person reads it in
+  // another (`web/src/money.js`).
+  //
+  // So the app claims the rendering and nothing else. `displayFor` already
+  // NAMES this column `money` from `x-money` alone, which is the half a
+  // registration would otherwise have to restate — `money-control.js` needs
+  // both halves because no built-in table answers `money` for a form.
+  //
+  // `$: prefs.currency` is load-bearing and is the whole reason this is a
+  // component rather than a formatter passed to `Cell`: Mesa reads an
+  // expression's dependencies from its own text, so a cell calling `money(v)`
+  // renders once and never moves when the preference changes.
+  import { money } from './money.js'
+  import { prefs } from './prefs.js'
+
+  export let value = undefined
+
+  $: prefs.currency
+
+  // `Cell` renders a registered display INSTEAD of its own empty branch, so the
+  // dash is this component's to draw. An empty cell and a cell holding an empty
+  // string look identical and mean different things.
+  const shown = value === null || value === undefined ? '' : money(value)
+</script>
+
+{#if shown === ''}
+  <span class="muted">—</span>
+{:else}
+  {shown}
+{/if}
+
+<style>
+  .muted { color: var(--ink-mute); }
+</style>

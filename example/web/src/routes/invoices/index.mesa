@@ -2,38 +2,89 @@
 title: Invoices
 ---
 <script>
-  // The documents.
+  // The documents — and the one list in this app whose columns, headers,
+  // filters and cells all come out of `db/schema.lite`.
   //
   // Nothing on this screen edits anything, and that is the model rather than a
   // decision here: `Invoice` is `@@gate("1.8.8.8")` and every money column on
   // it is `@system @immutable`, so the writable set is empty and there is no
   // form to generate (`FJS-D162`). What a person may do to an invoice is
-  // settle it or void it, and both are named moves on its own screen.
+  // settle it or void it, and both are named moves on its own screen. A table
+  // over a model nobody can write is the shape `columns()` is FOR: a form
+  // shows what is writable and there is none, a table shows what is readable
+  // and identifying and that is the whole model.
+  //
+  // ─── What is derived, and what is still this app's ──────────────────────
+  //
+  // Derived: which columns, their headers, which of them a header may sort by,
+  // what each filter ASKS, and how every value renders. No list of fields
+  // exists in this file — `only:` below names six of them and that is an
+  // ORDER, not a set of labels or types.
+  //
+  // This app's, and unable to be anything else:
+  //
+  //   overdue   `dueAt` against the clock. Not a status and must not be — it
+  //             is true from one moment onward with nothing writing a row, so
+  //             a column for it would be a value that goes stale while nobody
+  //             is looking.
+  //   the tone  whether `void` is bad news. No attribute decides that
+  //             (`web/src/status-tone.js`).
+  //   the money the reader's chosen currency, which the schema is right not to
+  //             carry (`web/src/displays.js`).
+  //
+  // The last two reach the cells as REGISTRATIONS rather than as branches
+  // here, which is what keeps this table the same table the generator writes.
   import { invoices } from '@/resources/Invoice.mesa'
   import { session } from '@/session.js'
   import { prefs } from '@/prefs.js'
   import { useStore } from '@frontierjs/sierra/junction'
-  import { page } from '@frontierjs/sierra/router'
-  import { money } from '../../money.js'
+  import { page, goto } from '@frontierjs/sierra/router'
+  import { encodeQueryString } from '@frontierjs/toolbelt/query'
+  import { directiveParams } from '@frontierjs/toolbelt/directives'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
-  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
+  import Cell          from '@frontierjs/ui/components/display/Cell.mesa'
+  import FilterBar     from '@frontierjs/ui/components/display/FilterBar.mesa'
   import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
   import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
 
+  // ── Which columns ────────────────────────────────────────────────────────
+  //
+  // `only:` bypasses the ranking, and naming the columns is also naming the
+  // order. The ranked default is a good answer to *show me this model* and a
+  // worse one to *show me an invoice ledger*: `Invoice` declares three money
+  // columns and five timestamps, so the tiers fill with `subtotal` and `tax`
+  // ahead of the day the thing was due. That is the ranking working — within a
+  // tier the file's order is the only ordering anybody stated — and it is why
+  // the escape hatch exists.
+  //
+  // `omitted` is what keeps it from being a silent choice: every column this
+  // table does NOT show is named below with the reason, so a column added to
+  // the schema that does not appear here is answerable without reading this
+  // file. Basecamp's deployments table takes the ranking unaided; between the
+  // two, both halves of `columns()` have a caller.
+  const { columns: cols, omitted } = invoices.columns({
+    only: ['number', 'status', 'customerId', 'total', 'issuedAt', 'dueAt'],
+  })
+
+  // A header offers a sort only where the SCHEMA takes one: `x-sortable` is
+  // emitted as an exception, so absent means yes and a string says why not.
+  // Offering one the Data boundary refuses is a click that throws.
   const columns = [
-    { key: 'number',     label: 'Number' },
-    { key: 'status',     label: 'Status' },
-    { key: 'customerId', label: 'Customer' },
-    { key: 'total',      label: 'Total', align: 'right' },
-    { key: 'issuedAt',   label: 'Issued' },
-    { key: 'dueAt',      label: 'Due' },
-    { key: 'actions',    label: '' },
+    ...cols.map(c => ({ key: c.name, label: c.label, sortable: c.sortable })),
+    { key: '_open', label: '' },
   ]
 
-  const TONE = { issued: 'warning', paid: 'success', void: 'muted' }
+  // Which columns a bar may offer and with which question, plus whether the
+  // model answers a search at all. `Invoice` declares no `@@fts`, so `search`
+  // comes back refused WITH the reason and no box is drawn — a search box that
+  // 400s on every word is worse than none. `Product` is the model in this app
+  // that does declare one.
+  const { filters, search } = invoices.filters({
+    only: ['number', 'status', 'customerId', 'total', 'issuedAt', 'dueAt'],
+  })
 
   const { get: rows, unsubscribe } = useStore(invoices.store)
   $.onDestroy(unsubscribe)
@@ -42,6 +93,28 @@ title: Invoices
 
   let error = null
 
+  // ── The URL is the state ─────────────────────────────────────────────────
+  //
+  // splitParams takes every $-prefixed key OUT of page.query and into
+  // page.directives under an unprefixed name (Invariant 10), so page.query
+  // alone is the filters. A bar handed that has no sort and no page size to
+  // show — and worse, hands back a query missing them, so typing in a filter
+  // box silently drops the sort a header just set. `directiveParams` is
+  // `parseDirectives`' inverse off the same table, so this cannot go stale
+  // when a directive is added.
+  const urlQuery = { ...page.query, ...directiveParams(page.directives) }
+
+  function apply(query) {
+    goto(page.path + encodeQueryString(query))
+  }
+
+  function sortBy(key, dir) {
+    apply({ ...urlQuery, $orderBy: { [key]: dir } })
+  }
+
+  // Newest first until the URL says otherwise. `page.directives` is spread
+  // AFTER the default, so `?$orderBy=number` wins and a filtered, sorted list
+  // is a LINK rather than a state somebody has to recreate.
   function load() {
     invoices.load(page.query, { orderBy: '-issuedAt', ...page.directives })
       .catch(e => { error = e.message })
@@ -49,12 +122,19 @@ title: Invoices
   load()
   $: page.query, page.directives, () => load()
 
-  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
-    { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
+  // The header arrow reads the same directive the load does, or a sorted list
+  // arrives with no column marked and clicking the one it is already sorted by
+  // does nothing visible.
+  const ordering = page.directives?.orderBy ?? { issuedAt: 'desc' }
+  const sortKey  = typeof ordering === 'string'
+    ? ordering.replace(/^-/, '')
+    : Object.keys(ordering)[0] ?? ''
+  const sortDir  = typeof ordering === 'string'
+    ? (ordering.startsWith('-') ? 'desc' : 'asc')
+    : Object.values(ordering)[0] ?? 'asc'
 
-  // Overdue is not a status and must not be: it is `dueAt` against the clock,
-  // so it is true from one moment onward with nothing writing a row. A column
-  // for it would be a value that goes stale while nobody is looking.
+  // Overdue is not a status. It is `dueAt` against the clock, so it is true
+  // from one moment onward with nothing writing a row.
   const overdue = (inv) => inv.status === 'issued' && new Date(inv.dueAt) < new Date()
 </script>
 
@@ -69,22 +149,51 @@ title: Invoices
 
 {#if error}<Alert tone="danger" id="i-error">{error}</Alert>{/if}
 
-<Table {columns} rows={rows()} striped hover compact={prefs.dense}>
+<FilterBar id="i-filters" {filters} {search} value={urlQuery} onchange={apply} />
+
+<Table {columns} rows={rows()} {sortKey} {sortDir} onsort={sortBy}
+       striped hover compact={prefs.dense} emptyText="No invoice matches that.">
   {#snippet row(inv)}
     <tr data-invoice={inv.id} data-number={inv.number}>
-      <td><a href={'/invoices/' + inv.id + '/'} data-open><Mono size="xs">{inv.number}</Mono></a></td>
-      <td>
-        <Pill tone={TONE[inv.status] ?? 'muted'} data-status={inv.status}>{inv.status}</Pill>
-        {#if overdue(inv)}<Pill tone="danger" data-overdue="true">overdue</Pill>{/if}
-      </td>
-      <td class="text-muted">#{inv.customerId}</td>
-      <td class="text-right" data-total={inv.total}>{money(inv.total)}</td>
-      <td class="text-muted">{when(inv.issuedAt)}</td>
-      <td class="text-muted">{when(inv.dueAt)}</td>
-      <td><Button variant="ghost" href={'/invoices/' + inv.id + '/'}>Open</Button></td>
+      {#each cols as c}
+        <td data-col={c.name} data-value={inv[c.name]}>
+          <Cell value={inv[c.name]} column={c} record={inv} />
+          <!-- The one thing beside a derived cell, and the reason it is beside
+               rather than inside: no schema can answer it. -->
+          {#if c.name === 'status' && overdue(inv)}
+            <Pill tone="danger" data-overdue="true">overdue</Pill>
+          {/if}
+        </td>
+      {/each}
+      <td><Button variant="ghost" href={'/invoices/' + inv.id + '/'} data-open>Open</Button></td>
     </tr>
   {/snippet}
 </Table>
+
+<Alert tone="info" id="i-derived">
+  Every header, every filter and every cell above came out of
+  <code>db/schema.lite</code>. <code>status</code> is an enum, so it filters by
+  membership; <code>total</code> is <code>@money</code>, so it filters by range
+  and renders as money rather than as the integer number of cents it is stored
+  as; <code>customerId</code> is a foreign key, so it filters by the rows it
+  points at. No list of fields or types exists in the page.
+</Alert>
+
+<Alert tone="muted" id="i-nosearch">
+  <strong>There is no search box</strong>, and that is an answer rather than an
+  omission: <code>Invoice</code> declares no <code>@@fts</code>, so the Data
+  boundary refuses <code>$search</code> by name and the bar says
+  <em>{search.reason}</em>. <code>Product</code> is the model here that does
+  declare one.
+</Alert>
+
+{#if omitted.length}
+  <p class="text-sm text-muted" id="i-omitted">
+    Not shown: {omitted.map(o => o.name).join(', ')} — each with a reason, so a
+    column added to the schema that does not appear here is answerable without
+    reading the page.
+  </p>
+{/if}
 
 <Alert tone="muted">
   <strong>overdue</strong> is not a status. It is <code>dueAt</code> against the

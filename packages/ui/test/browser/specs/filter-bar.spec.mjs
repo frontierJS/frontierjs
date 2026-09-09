@@ -101,4 +101,31 @@ export async function run(t) {
   await t.clickAt(`${BAR} button.btn`)
   await t.eventually(held(`[q.$search ?? '-', q.title ?? '-', q.$orderBy ?? '-', q.$limit ?? '-'].join('|')`),
     '-|-|title|20', 'Clear drops the search and the filters, and keeps the reading')
+
+  /* ── Every control has a NAME ─────────────────────────────────────────── */
+  //
+  // A placeholder is a hint and not an accessible name — it is not announced as
+  // a label by every reader and it disappears as soon as somebody types. A bar
+  // named by placeholder alone is a row of controls a screen reader calls
+  // *edit text*, which is what an app's a11y sweep found the first time this
+  // component reached a screen that runs one.
+  //
+  // Counted rather than spot-checked, and asserted as a PAIR: the number of
+  // named controls against the number of controls. A probe that asked only
+  // *does the first one have a label* passes with every other branch unnamed,
+  // and there are five branches here.
+  const named = await t.evaluate(`
+    const all = [...document.querySelectorAll('${BAR} input, ${BAR} select')];
+    const withName = all.filter(el =>
+      el.getAttribute('aria-label')
+      || el.getAttribute('aria-labelledby')
+      || (el.id && document.querySelector('label[for="' + el.id + '"]'))
+      || el.closest('label'));
+    return all.length + '/' + withName.length;
+  `)
+  // The backreference is the assertion: the two counts must be EQUAL and the
+  // first must be non-zero, so a bar that rendered nothing fails here rather
+  // than passing vacuously.
+  t.match(named, /^([1-9]\d*)\/\1$/,
+    'every control the bar renders carries an accessible name')
 }

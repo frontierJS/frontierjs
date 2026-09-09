@@ -2,23 +2,65 @@
 title: Deployments
 ---
 <script>
+  // Every release in this workspace — and the one table in this console whose
+  // columns nobody chose.
+  //
+  // `resource.columns()` ranks the READ schema: the column that names the row,
+  // then the business key, then a bound enum, then money and time, then
+  // declaration order. Nothing here names a field, a header or a type, and
+  // `omitted` below reports every column it left out with the reason — so a
+  // column added to `db/schema.lite` that does not appear is answerable
+  // without reading this file.
+  //
+  // Taking the ranking UNAIDED is the point. `example`'s invoice ledger names
+  // its six columns with `only:`, which is the escape hatch and wins over the
+  // ranking; between the two, both halves have a caller.
+  //
+  // ── What this table can say that the other one cannot ──────────────────
+  //
+  // This app is `@@tenant` row-scoped, so every model carries `workspaceId`.
+  // The Data boundary scopes the read by it, which means every row that comes
+  // back holds the SAME value — a column of one repeated answer. It is omitted
+  // by `columns()` for that reason, and `example` cannot ask the question at
+  // all: it runs `tenancy { strategy database }` and has no such column on any
+  // model.
   import { session } from '../../session.js'
   import { deployments } from '../../resources/Deployment.mesa'
-  import Button from '@frontierjs/ui/components/forms/Button.mesa'
-  import Table  from '@frontierjs/ui/components/display/Table.mesa'
+  import Button    from '@frontierjs/ui/components/forms/Button.mesa'
+  import Cell      from '@frontierjs/ui/components/display/Cell.mesa'
+  import FilterBar from '@frontierjs/ui/components/display/FilterBar.mesa'
+  import Table     from '@frontierjs/ui/components/display/Table.mesa'
 
   $: session.workspaceId
+
+  const { columns: cols, omitted } = deployments.columns()
+
+  // A header offers a sort only where the SCHEMA takes one: `x-sortable` is
+  // emitted as an exception, so absent means yes and a string says why not.
+  // Offering one the Data boundary refuses is a click that throws.
+  const columns = [
+    ...cols.map(c => ({ key: c.name, label: c.label, sortable: c.sortable })),
+    { key: '_open', label: 'Actions', hideLabel: true },
+  ]
+
+  // Which columns a bar may offer and with which question. `Deployment`
+  // declares no `@@fts`, so `search` comes back refused with the reason and no
+  // box is drawn — a box the Data boundary answers 400 to is worse than none.
+  const { filters, search } = deployments.filters()
 
   let rows    = []
   let error   = null
   let loading = true
+  let query   = {}
 
   async function load() {
     error = null; loading = true
     try {
-      // The service includes app → environment, so a row can name what it
-      // deployed without a second request per row.
-      rows = (await deployments.service.find({}, { limit: 50 })).data
+      // The service includes app → environment and the deployment's own
+      // environment, so a row names what it deployed and where without a
+      // second request per row. `RelationCell` is what reads them back
+      // (`web/src/displays.js`).
+      rows = (await deployments.service.find(query, { limit: 50 })).data
     } catch (e) {
       error = e.message
     } finally {
@@ -28,6 +70,15 @@ title: Deployments
 
   load()
   $: session.workspaceId, () => load()
+
+  // The bar hands back the whole next query and the page decides what to do
+  // with it. This one holds it in memory rather than in the URL: a deployments
+  // list is read while a release is running and a navigation would drop the
+  // live subscription below.
+  function apply(next) {
+    query = next
+    load()
+  }
 
   // Live: the job pushes `deployments patched` to workspace:<id> on every
   // step transition. Merging the payload beats re-fetching the list — the push
@@ -40,25 +91,6 @@ title: Deployments
     if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...row }, ...rows.slice(i + 1)]
   })
   $.onDestroy(off)
-
-  // A tone per state, decided once. 'building' has no tone on purpose — it is
-  // in progress, which is neither good nor bad news.
-  const TONE = {
-    success:     'success',
-    failed:      'danger',
-    cancelled:   'muted',
-    rolled_back: 'warning',
-  }
-
-  const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
-  const DEPLOYMENT_COLUMNS = [
-    { key: 'app',         label: 'App' },
-    { key: 'environment', label: 'Environment' },
-    { key: 'status',      label: 'Status' },
-    { key: 'commit',      label: 'Commit' },
-    { key: 'queued',      label: 'Queued' },
-    { key: 'actions',     label: 'Actions', hideLabel: true },
-  ]
 </script>
 
 <div class="section-header">
@@ -72,25 +104,33 @@ title: Deployments
   </article>
 {/if}
 
+<FilterBar id="deployment-filters" {filters} {search} value={query} onchange={apply} />
+
 {#if loading}
   <p class="text-sm text-muted">Loading…</p>
 {:else if !rows.length}
   <article class="alert info">
     <div class="alert-content">
-      No deployments in this workspace yet. Open an environment and deploy an app, or seed the example fleet with <code>bun run db:seed</code>.
+      No deployments match. Open an environment and deploy an app, or seed the example fleet with <code>bun run db:seed</code>.
     </div>
   </article>
 {:else}
-  <Table id="deployment-rows" columns={DEPLOYMENT_COLUMNS} rows={rows} striped>
+  <Table id="deployment-rows" {columns} rows={rows} striped>
     {#snippet row(deployment)}
       <tr>
-        <td>{deployment.app?.name ?? '—'}</td>
-        <td>{deployment.app?.environment?.name ?? '—'}</td>
-        <td><span class="pill {TONE[deployment.status] ?? ''}">{deployment.status}</span></td>
-        <td><code>{deployment.commitSha?.slice(0, 7) ?? '—'}</code></td>
-        <td class="text-sm text-muted">{when(deployment.queuedAt)}</td>
+        {#each cols as c}
+          <td data-col={c.name}><Cell value={deployment[c.name]} column={c} record={deployment} /></td>
+        {/each}
         <td><Button variant="ghost" href={`/deployments/${deployment.id}/`}>Open</Button></td>
       </tr>
     {/snippet}
   </Table>
+{/if}
+
+{#if omitted.length}
+  <p class="text-sm text-muted" id="deployment-omitted">
+    Not shown: {omitted.map(o => o.name).join(', ')} — each with a reason.
+    <code>workspaceId</code> is among them because the read is already scoped by
+    it, so it holds the same value in every row above.
+  </p>
 {/if}

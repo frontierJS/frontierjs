@@ -47,6 +47,10 @@ enum LeadStatus { new qualified closed }
 model Account {
   id          Int    @id
   name        String
+  // A \`@money\` column, so \`money-rendered-raw\` RUNS on the clean tree rather
+  // than skipping, and finds nothing — which is the shape an app is meant to be
+  // in: the column declared, and no screen printing the integer it stores.
+  balance     Int    @money(USD)
   workspaceId Int
   @@gate("2")
   @@capabilities
@@ -305,7 +309,7 @@ describe('the clean app', () => {
   })
 })
 
-describe('a co-located part that names a folder (FJS-D249)', () => {
+describe('a co-located part that names a folder (FJS-D250)', () => {
   // The rule grades a CLAIM, not a convention: sierra rules the roles of a
   // route file and says nothing about what a component is called, and neither
   // does this. Only a dotted lowercase prefix claims a folder, so every other
@@ -1428,6 +1432,73 @@ describe('service-model', () => {
 // usable: a `const` local is a genuinely one-shot read, and a comparison is not
 // an assignment at all. A rule that flagged either would be answered by turning
 // it off.
+
+describe('money-rendered-raw', () => {
+  // `@money` holds MINOR units, so printing one is a price a hundred times too
+  // big with nothing refusing it and nothing looking wrong — `FJS-D242`'s whole
+  // reason, and a defect the kit's own `<Cell>` then shipped (`FJS-1051`).
+  const seed = (models) => ({ ...CLEAN, 'db/schema.lite': models })
+  const screen = (schema, body) => ({ ...seed(schema), 'web/src/pages/x.mesa': body })
+
+  const ORDER = 'model Order {\n  id Int @id\n  total Int @money(USD)\n  ref String\n}\n'
+
+  test('a bare interpolation of a @money column is reported by name', () => {
+    const root = tree('mrr-bare', screen(ORDER, '<td>{order.total}</td>\n'))
+    const { findings } = only(root, 'money-rendered-raw')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/`order\.total` is a `@money` column/)
+  })
+
+  test('anything BETWEEN the column and the screen is the fix, and is not reported', () => {
+    // The pair. A rule that fired on both would report the fix as the bug, and
+    // one that fired on neither is what a silent skip looks like.
+    const root = tree('mrr-formatted', screen(ORDER, '<td>{money(order.total)}</td>\n'))
+    expect(only(root, 'mrr' && 'money-rendered-raw').findings).toEqual([])
+  })
+
+  test('an ATTRIBUTE is handing the column to something whose job is rendering it', () => {
+    // `<Cell value={row.total} column={c} />` is the answer this rule tells
+    // people to write, so flagging it would make the advice self-defeating.
+    const root = tree('mrr-cell', screen(ORDER,
+      '<td><Cell value={order.total} column={c} /></td>\n'))
+    expect(only(root, 'money-rendered-raw').findings).toEqual([])
+  })
+
+  test('a column that is not money is left alone, which is most of them', () => {
+    const root = tree('mrr-plain', screen(ORDER, '<td>{order.ref}</td>\n'))
+    expect(only(root, 'money-rendered-raw').findings).toEqual([])
+  })
+
+  test('a name declared @money on one model and plain on another is DROPPED', () => {
+    // The narrowing. A `.mesa` says `{x.total}` and nothing in it says what `x`
+    // holds, so an ambiguous name cannot be judged from the interpolation.
+    // Silence costs a real finding; reporting it is advice that is wrong.
+    const root = tree('mrr-ambiguous', screen(
+      ORDER + 'model Basket {\n  id Int @id\n  total Int\n}\n',
+      '<td>{order.total}</td>\n'))
+    expect(only(root, 'money-rendered-raw').findings).toEqual([])
+  })
+
+  test('a VIEW column is not evidence, because a view cannot carry @money', () => {
+    // The same shape as the row above and the opposite answer, which is why the
+    // narrowing counts MODELS only. A projection is a SELECT and there is
+    // nowhere on it to write the attribute, so `revenueByStatus.total` summing
+    // a money column is declared `Int` and is cents all the same. Counting it
+    // as plain drops the name for every model that DID declare it — which is
+    // what happened on this repo's own example app, silently.
+    const root = tree('mrr-view', screen(
+      ORDER + 'view revenueByStatus {\n  status String\n  total Int\n' +
+      '  @@sql("SELECT status, SUM(total) AS total FROM [order] GROUP BY status")\n}\n',
+      '<td>{order.total}</td>\n'))
+    expect(only(root, 'money-rendered-raw').findings).toHaveLength(1)
+  })
+
+  test('a seed with no @money column skips rather than passing vacuously', () => {
+    const root = tree('mrr-none', screen('model Order {\n  id Int @id\n  total Int\n}\n',
+      '<td>{order.total}</td>\n'))
+    expect(only(root, 'money-rendered-raw').skipped).toBeTruthy()
+  })
+})
 
 describe('detail-read-dead', () => {
   const screen = (body) => ({ ...CLEAN, 'web/src/pages/x.mesa': body })

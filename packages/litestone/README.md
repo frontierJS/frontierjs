@@ -76,6 +76,15 @@ The comparison is organized around what you can **declare** in the schema and wh
 | **Authorized transitions** (`@gate(5)` per move, and it reaches the client) | ✓ | ✗ | ✗ | ✗ |
 | **Full-text search** (FTS5 declared with `@@fts`) | ✓ | ✗ | ✗ | ✗ |
 | **`@@external`** (declare a table you don't own) | ✓ | ✗ | partial ⁴ | ✗ |
+| **Composite primary keys** (`@@id([a, b])`, key order preserved) | ✓ | ✓ | ✓ | ✓ |
+| **Partial indexes and partial uniques** (`where:` on `@@index` / `@@unique`) | ✓ | ✓ | ✗ | ✗ |
+| **Cross-column constraints** (`@@check`, enforced by the table) | ✓ | ✓ | ✗ | partial ⁸ |
+| **Wide integers** (`Int @big` — exact past 2⁵³, end to end) | ✓ | ✓ | ✓ | ✓ |
+| **Declared value sets** (`valueset` / `@values`, with a stated order) | ✓ | ✗ | ✗ | ✗ |
+| **Polymorphic parent** (`@@arc` — one child, several possible parents) | ✓ | ✗ | ✗ | partial ⁹ |
+| **Tenant-declared columns** (`@@extensible` — keys a customer adds at runtime) | ✓ | ✗ | ✗ | ✗ |
+| **Views declared in the schema** (`view` + `@@sql`, with access attributes) | ✓ | partial ¹⁰ | partial ¹⁰ | partial ¹⁰ |
+| **Materialized views with a declared refresh trigger** (`@@refreshOn`) | ✓ | ✗ ¹¹ | ✗ | ✗ |
 | **STRICT mode by default** | ✓ | ✗ | ✗ | ✗ |
 
 ### Access — who can do what to which rows and fields
@@ -99,6 +108,8 @@ The comparison is organized around what you can **declare** in the schema and wh
 | **Soft delete built-in** | ✓ | ✗ | ✗ | ✓ ² |
 | **Cascading soft delete** | ✓ | ✗ | ✗ | ✗ |
 | **`@hardDelete` overrides for cascade** | ✓ | ✗ | ✗ | ✗ |
+| **`@keep` — children that outlive a soft-deleted parent** | ✓ | ✗ | ✗ | ✗ |
+| **Document sealing** (`@seals` / `@sealed` / `@immutable`, over the closure) | ✓ | ✗ | ✗ | ✗ |
 | **Auto attribution** (`@default(auth().id)`, `@updatedBy`) | ✓ | ✗ | ✗ | partial ⁶ |
 | **Per-scope sequences** (`@sequence(scope: tenantId)`) | ✓ | ✗ | ✗ | ✗ |
 | **File storage lifecycle** (S3/R2 upload + cleanup paired with row writes) | ✓ | ✗ | ✗ | ✗ |
@@ -120,6 +131,7 @@ The comparison is organized around what you can **declare** in the schema and wh
 | **Multi-model batch `db.query(spec)`** (one transaction, named results) | ✓ | ✗ | ✗ | ✗ |
 | **Reusable scopes** (named query fragments, chainable, auth-aware) | ✓ | ✗ | ✗ | ✗ |
 | **JSON path filter pushdown** (`where: { addr: { city: 'X' } }`) | ✓ | ✗ | ✗ | ✗ |
+| **Governed bulk extract** (`@@export` — a paginated scoped read, not a dump) | ✓ | ✗ | ✗ | ✗ |
 
 ### Operations — running this in production
 
@@ -148,6 +160,9 @@ The comparison is organized around what you can **declare** in the schema and wh
 | **Test factories** (auto from schema) | ✓ | ✗ | ✗ | ✗ |
 | **Test fixtures** (`generateGateMatrix`, `generateValidationCases`) | ✓ | ✗ | ✗ | ✗ |
 | **Reverse introspection** (DB → `.lite`) | ✓ | ✓ | ✓ | ✓ |
+| **Adoption from a foreign schema** (Prisma, Rails, Frappe, raw SQL) | ✓ | ✗ | ✗ | ✗ |
+| **A graded gap report on adoption** (`changed` / `lost` / `noted`, per line) | ✓ | ✗ | ✗ | ✗ |
+| **Schema mutation testing** (`litestone mutate` — a survivor is a hole) | ✓ | ✗ | ✗ | ✗ |
 | **Auto-generated API / tRPC hooks** | ✗ | ✗ | ✗ | ✓ |
 | **Zero npm dependencies** | ✓ | ✓ | ✗ | ✗ |
 
@@ -171,6 +186,14 @@ The comparison is organized around what you can **declare** in the schema and wh
 ⁶ ZenStack v3 introduced `type X / model M with X` for column splicing — equivalent to Litestone's `trait` / `@@trait(T)`. Field validators, attribution defaults, and system-mode bypass exist via Zod plugins or auth helpers — supported but not first-class to the schema language.
 
 ⁷ Drizzle's `$type<T>()` and Prisma's typed-JSON plugins provide TypeScript types only — the type is asserted at compile time but not enforced at runtime, and filter operations on JSON sub-keys require dropping into raw SQL. Litestone validates the shape on every write and lets you filter inside typed JSON columns using the same query shape you'd use on real columns (`where: { address: { city: 'NYC' } }` compiles to `json_extract(...)`).
+
+⁸ ZenStack's `@@validate` refuses a bad row at the application layer. `@@check` is a table constraint in the emitted DDL, so a write that never goes through the client is refused too.
+
+⁹ ZenStack models polymorphism as delegated inheritance — one child type per parent. `@@arc` is the other direction: one child row whose parent may be any of several models, resolved by a discriminator column.
+
+¹⁰ Drizzle and Prisma can both declare a view, and ZenStack inherits Prisma's. What none of them carries is access on the projection: a Litestone `view` takes `@@gate` and `@@allow` of its own, so a projection can be gated ABOVE the rows it aggregates.
+
+¹¹ Drizzle exposes Postgres materialized views; the refresh is a command you issue. `@@refreshOn` declares which writes rebuild it.
 
 **When to choose the others instead:**
 

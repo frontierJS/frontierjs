@@ -8171,6 +8171,92 @@ hash is the only thing keeping one component's rules off another's markup.
 
 ## Design system (`@frontierjs/css`)
 
+### <a id="fjs-d252"></a>2026-09-08 · `FJS-D252` — Bar is the strip and Group is what goes inside it. Group was already a term with no CSS, and giving it CSS answers both halves of the question.
+
+`FJS-D24` asked two things: is there a term for a horizontal group that does not
+wrap, and does Bar mean *a strip* or *a section*. It guessed they might be one
+question — *the missing concept may be a Bar-shaped thing at a smaller scale, and
+if that is the answer it subsumes the first half* — and they are.
+
+**`Group` was in the vocabulary and shipped no CSS.** Region tier, `<div>`, *"a
+visual cluster with no semantic identity"*. Every other layout term has rules —
+`section`, `prose`, `bar`, `toolbar`, `cluster`, `stack`, `split` — and `group`
+had none, so a named term could not be written: a bare `<div>` conveys nothing.
+
+**The spec could not see it, and the exemption is why.** `vocabClass` returns
+`row[3]` when the row has one, and the both-directions test skips a term whose
+class is `null` as *carried by an element, nothing to find*. That is right for
+`Section`, which has `<section>`. For `Group` it exempted the one term that had
+neither an element nor a class.
+
+So Group gets the rules it was always described as having: a horizontal group,
+`flex-wrap: nowrap`, `min-width: 0` — the last because a flex item's default
+`min-width: auto` refuses to shrink below its content, which is the failure that
+sends people back to wrapping.
+
+**Bar stays a strip, and the guide's `bar start` twice inside a Topbar was the
+symptom.** Two of them inside one Topbar says there are three strips where there
+is one. A Bar is Region-tier and there is one per area; what sits inside it is a
+Group. The demo carried the same misuse in a form's button pair and now writes
+Group.
+
+**Cluster keeps wrapping, and no modifier is added.** Wrapping is Cluster's
+definition rather than a default it happens to carry, so a `.cluster.nowrap`
+would be a term arguing with itself. It would also collide: `wrap` is already a
+Tooltip-scoped modifier for TEXT wrapping, and a `nowrap` beside it reads as its
+opposite while meaning something else — the drift `NOT_A_TERM`'s scoped-modifier
+group exists to warn about.
+
+The nine, answered before the edit: no new origin — the term existed and the
+authority is the vocabulary; the concept budget does not grow, since Group was
+already counted and a modifier is refused; predictability improves because
+*strip* and *group inside a strip* stop sharing one word; one owner; the boundary
+is one class in `layout.css` beside the Cluster it is defined against. *Can it be
+wrong without anything saying so* was the failure here and stays partly open: the
+`null` exemption still hides any future term that has neither element nor class,
+which is filed rather than fixed in this ruling.
+
+### <a id="fjs-d253"></a>2026-09-08 · `FJS-D253` — Kicker ships and is a promotion of what nav already had. Lead does not ship: it is a size inside a Prose, and the token comment that argued for it named the wrong rung.
+
+`FJS-D25` asked whether to ship `Lead` and `Kicker`. They separate.
+
+**Kicker ships, and the implementation was already written.** `.navlist-label`
+is `--text-2xs` plus the three `--label-*` tokens plus `--ink-mute` — a
+complete, tokenized Kicker, scoped to nav for no reason other than where it was
+first needed. The guide's `.sg-eyebrow` is the same idea disagreeing on every
+axis: `--text-xs` not `2xs`, weight 500 not 600, tracking 0.1em not 0.04em,
+accent not mute. **Two implementations of one idea with no name is the condition
+that produces exactly that**, so the term is the fix and nav's declarations are
+the term. What stays in `nav.css` is the only part that is nav's — where the
+label sits between groups.
+
+It carries no color. The guide's accent copy was drift rather than a variant, and
+a Kicker that wants one takes a tone the way everything else does.
+
+**Lead does not ship.** `.sg-lead` is `18px + --ink-soft + max-width 60ch +
+margin 0`, and `.prose` already owns the ink and the measure. What is left is a
+SIZE, which makes Lead a two-utility composition — `.text-xl` inside a Prose —
+and not a term. The row suspected this and the measurement settles it.
+
+**And the argument for it was reading a wrong comment.** `--text-lg` is 16px and
+was commented *"lead paragraph"*; the only lead in this repo is 18px, which is
+`--text-xl`. A term shipped off that comment would have baked the error into the
+vocabulary. The comment is corrected instead, which is the whole change Lead
+earns.
+
+One correction to the row's evidence: `.sg-wiz-eyebrow` no longer exists, so the
+drift is two copies rather than three. The argument does not need the third.
+
+The nine, answered before the edit: Kicker REMOVES an origin rather than adding
+one — two spellings of one shape become one — and Lead is refused precisely
+because it would add a term that composes entirely from terms; predictability
+improves in both directions; one owner each, `bars.css` for the Kicker and Prose
+for what Lead was reaching for; the boundary is graded by the vocabulary spec in
+both directions, so a class shipped without a term and a term shipped without a
+class each fail. *Can it be wrong without anything saying so* is answered by the
+guide's own drift being the evidence: the copies disagreed for as long as the
+idea had no name, and naming it is what makes the next divergence a test failure.
+
 ### <a id="fjs-d94"></a>2026-08-16 · `FJS-D94` — A theme ships no selector, so anything a look needs is a token — and a token has to reach a descendant to count.
 
 The contract was already this, and `themes/press.css` exists to probe it: if a

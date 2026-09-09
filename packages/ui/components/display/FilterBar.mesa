@@ -35,6 +35,20 @@
   // branch adapts, exactly as `FormField.mesa`'s table does one surface along.
   // Forwarding `onvalue` straight through is silent — the prop lands as an
   // attribute, every control renders, and none of them writes anything.
+  //
+  // ── Every control carries its own NAME ───────────────────────────────────
+  //
+  // A placeholder is not an accessible name: it is a hint, it is not announced
+  // as a label by every reader, and it disappears the moment somebody types.
+  // A bar of eight boxes named by placeholder alone is eight controls a screen
+  // reader announces as *edit text* — which is what basecamp's a11y sweep
+  // found the first time this component reached a screen it audits.
+  //
+  // `aria-label` rather than a visible `<label>`, because the label text is
+  // already on screen in the placeholder and stacking a caption over every
+  // control turns a toolbar into a form. It reaches the CONTROL: the kit puts
+  // a caller's attributes on the input rather than on the field wrapper, for
+  // exactly this reason.
 
   import { filterComponent, defaultFilterProps } from '../../controls.js'
   import Input       from '../forms/Input.mesa'
@@ -145,6 +159,7 @@
       type="search"
       value={searching}
       placeholder={'Search ' + searchable.labels.join(', ')}
+      aria-label={'Search ' + searchable.labels.join(', ')}
       oninput={(e) => writeSearch(e.target.value)}
     />
   {/if}
@@ -161,6 +176,7 @@
         value={current(f) ?? []}
         options={optionsFor(f)}
         placeholder={f.label}
+        aria-label={f.label}
         onchange={(next) => write(f, next)}
       />
     {:else if f.kind === 'exact'}
@@ -168,6 +184,7 @@
         value={current(f) ?? ''}
         options={[{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }]}
         placeholder={f.label}
+        aria-label={f.label}
         oninput={(e) => write(f, e.target.value === '' ? undefined : e.target.value === 'true')}
       />
     {:else if f.kind === 'range'}
@@ -176,12 +193,14 @@
           type={f.display === 'time' ? 'date' : 'number'}
           value={current(f)?.gte ?? ''}
           placeholder={f.label + ' from'}
+          aria-label={f.label + ' from'}
           oninput={(e) => write(f, { ...current(f), gte: e.target.value })}
         />
         <Input
           type={f.display === 'time' ? 'date' : 'number'}
           value={current(f)?.lte ?? ''}
           placeholder={f.label + ' to'}
+          aria-label={f.label + ' to'}
           oninput={(e) => write(f, { ...current(f), lte: e.target.value })}
         />
       </span>
@@ -189,6 +208,7 @@
       <Input
         value={current(f) ?? ''}
         placeholder={f.label}
+        aria-label={f.label}
         oninput={(e) => write(f, e.target.value)}
       />
     {/if}

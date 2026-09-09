@@ -1,5 +1,71 @@
 # Changes
 
+## 2026-09-09 — `Cell`'s dash had no colour
+
+`FJS-1059`. `.muted { color: var(--text-muted) }` names a token nothing
+defines, so the declaration was dropped whole and the *nothing here* dash took
+the surrounding text colour. It is `--ink-mute`; `.text-muted` is the utility
+class built on it, and the class name read as a token name.
+
+`fli check`'s `css-token-undefined` already covers this and grades an APP, so
+this file — the component that decides what a muted cell looks like — was
+outside it. The two app-side copies of the same three lines were caught the day
+they were written.
+
+## 2026-09-08 — every FilterBar control has a name
+
+`FJS-1058`. Five branches, all named by `placeholder` alone — which is a hint
+rather than an accessible name: it is not announced as a label by every reader,
+and it disappears the moment somebody types. A bar of eight boxes was eight
+controls a screen reader calls *edit text*.
+
+Each branch passes `aria-label` now. It reaches the CONTROL rather than the
+field wrapper, which is the kit's own rule for where a caller's attributes land
+and the reason a `<label for>` works at all. Not a visible `<label>`: the text is
+already on screen in the placeholder, and a caption over every control turns a
+toolbar into a form.
+
+**Found by an app that audits.** This drive opens every component in a browser
+and had never asked the question; basecamp's a11y sweep runs on every screen and
+answered 22 unnamed controls the first time a FilterBar was on one. The spec now
+COUNTS — named controls against controls, with a regex backreference so the two
+must be equal and the first non-zero, because a probe asking only *does the first
+one have a label* passes with the other four branches bare.
+
+## 2026-09-08 — `<Cell>`, `<FilterBar>`, and the two defects they shipped with
+
+**`display/Cell.mesa`** renders one value of one row for READING, and
+**`display/FilterBar.mesa`** renders the controls over a list's query. Both are
+bound by name through `registerDisplayComponent` and `registerFilterComponent` in
+`controls.js` — `FJS-D17`'s split unchanged, and `FJS-D242` / `FJS-D246` for why
+each is its own table rather than a mode on the control registry.
+
+Both shipped with a defect and both defects have the same cause: **these were the
+only two components the kit's browser drive had never opened.** It opens 72 of 72
+now.
+
+**`FilterBar` rendered and wrote nothing** (`FJS-1046`). Every built-in branch
+passed `onvalue` to a control that has no such prop — `onvalue` is
+`FormField.mesa`'s own vocabulary, and that file translates it per control, since
+`Input` and `Select` fire `oninput` with the EVENT while `MultiSelect` fires
+`onchange` with the VALUE. Mesa lands an unknown prop as an attribute, so nothing
+threw: the controls drew, the placeholders read correctly, and typing did
+nothing. Each branch adapts now.
+
+**`Cell` rendered a `@money` column a hundred times over** (`FJS-1051`). It
+handed the STORED integer to `formatMoney`, which takes MAJOR units, so 1299
+cents came out as `$1,299.00` — `FJS-D242`'s own headline defect, reintroduced by
+the component minted to end it, and now wearing a currency symbol, which reads as
+correct where the raw integer at least read as raw. `formatMoney(fromMinor(v,
+currency), currency)`, so the scale comes from the CURRENCY: a yen has no minor
+unit and a dinar has three. Two failures the conversion introduces are handled
+with it — a per-row currency is data, so a code that is not ISO 4217 makes
+`fromMinor` throw and one bad row would take the whole table down; and a
+non-numeric amount answers NaN, which formats as `''`, the one thing this
+component's own rule forbids. Both answer the em dash.
+
+A search box is drawn only where the model declares `@@fts`, off `x-search`.
+
 ## 2026-09-07 — a picker's head is captioned
 
 `resource.options()` marks the values a caller reached for last with `recent`

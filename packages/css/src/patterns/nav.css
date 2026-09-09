@@ -191,11 +191,11 @@
   margin-inline-start: auto;
 }
 
+/*
+ * A Kicker, placed in a navlist. bars.css owns what it LOOKS like — one owner
+ * for a shape that had drifted across three copies (`FJS-D253`) — and what
+ * stays here is the only part that is nav's: where it sits between groups.
+ */
 .navlist-label {
-  padding:        var(--space-lg) var(--space-md) var(--space-2xs);
-  font-size:      var(--text-2xs);
-  font-weight:    var(--label-font-weight);
-  text-transform: var(--label-text-transform);
-  letter-spacing: var(--label-letter-spacing);
-  color:          var(--ink-mute);
+  padding: var(--space-lg) var(--space-md) var(--space-2xs);
 }

@@ -30,7 +30,7 @@
   // An empty cell and a cell holding an empty string look identical and mean
   // different things, so nothing here returns '' — the em dash is the answer.
 
-  import { formatMoney } from '@frontierjs/toolbelt/units'
+  import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
   import { cx } from '../../utils.js'
   import { displayComponent, defaultDisplayProps } from '../../controls.js'
   import Json from './Json.mesa'
@@ -58,14 +58,33 @@
     return hit?.label ?? String(v)
   }
 
-  // Money is the reason this component exists. `formatMoney` derives the scale
-  // from the CURRENCY rather than assuming two places, which is what makes a
-  // dinar right and a yen right.
+  // Money is the reason this component exists, and the conversion is the whole
+  // of it. A `@money` column holds MINOR UNITS — the form control writes
+  // through `toMinor` and reads back through `fromMinor` — so handing the
+  // stored integer to `formatMoney`, which takes MAJOR units, renders 1299
+  // cents as $1,299.00. That is the same defect the five-line renderer this
+  // component replaced had, one order of magnitude further along and wearing a
+  // currency symbol, which makes it read as correct rather than as raw.
+  //
+  // The scale comes from the CURRENCY and not from a constant, which is what
+  // makes a yen right (no minor unit) and a dinar right (three places).
   function money(v) {
     const currency = column?.currency
       ?? (record && column?.currencyField ? record[column.currencyField] : null)
       ?? 'USD'
-    return formatMoney(v, currency)
+    // A per-ROW currency is a value out of the data, so it can be anything a
+    // row holds; `fromMinor` refuses a code that is not ISO 4217 by throwing,
+    // and an exception in one cell takes the whole table down. A cell renders
+    // what it has or says it has nothing.
+    try {
+      const shown = formatMoney(fromMinor(v, currency), currency)
+      // `fromMinor` answers NaN for an amount that is not a number and
+      // `formatMoney` turns that into '' — an empty cell, which is the one
+      // thing this component's own rule says never to render.
+      return shown === '' ? EMPTY : shown
+    } catch {
+      return EMPTY
+    }
   }
 
   function scaled(v) {
@@ -149,6 +168,6 @@
 </span>
 
 <style>
-  .muted   { color: var(--text-muted); }
+  .muted   { color: var(--ink-mute); }
   .tabular { font-variant-numeric: tabular-nums; }
 </style>

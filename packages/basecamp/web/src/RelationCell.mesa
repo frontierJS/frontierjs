@@ -1,0 +1,51 @@
+<script>
+  // RelationCell.mesa — a foreign key as the row it points AT.
+  //
+  // The kit's `Cell` renders a `relation` column as the id, and says why: the
+  // id is what the row HOLDS, a name needs the related row, and a component
+  // handed one record cannot fetch another. That is the honest default and it
+  // is the wrong answer HERE, because this app's reads already carry the row —
+  // `deployments.find` declares `include: { app: … }`, so the name is sitting
+  // on the record the cell was handed.
+  //
+  // So this is the app supplying the half the kit is missing rather than the
+  // kit guessing: a registered display (`FJS-D242`), claimed by name.
+  //
+  // ── Which column of the related row is the NAME ─────────────────────────
+  //
+  // Not guessed here. `column.model` is the related model, and sierra resolves
+  // its label column the same way a picker does — `@@label` first, then the
+  // conventional names, then the id — so a model that declares one is honored
+  // and a model that declares nothing degrades the same way everywhere in the
+  // app rather than differently on this screen.
+  import { schemaFor, buildFieldRules, labelFieldFor } from '@frontierjs/sierra/junction'
+
+  export let value  = undefined
+  export let column = undefined
+  export let record = undefined
+
+  // The included row, or nothing. `column.relation` is the relation FIELD —
+  // `app` for `appId` — which is the key an include lands under.
+  const related = column?.relation ? record?.[column.relation] : null
+
+  const label = (() => {
+    if (!related || typeof related !== 'object') return null
+    const schema = column?.model ? schemaFor(column.model) : null
+    if (!schema) return related.name ?? null
+    const field = labelFieldFor(buildFieldRules(schema), column.valueField ?? 'id',
+                                schema['x-label-field'])
+    const shown = related[field]
+    return shown === undefined || shown === null || shown === '' ? null : String(shown)
+  })()
+</script>
+
+{#if label !== null}
+  {label}
+{:else if value === null || value === undefined}
+  <span class="text-muted">—</span>
+{:else}
+  <!-- The read did not include this relation, so the id is all there is. It is
+       shown rather than blanked: an operator can paste it somewhere that
+       resolves it, and a blank cell would say the column is empty. -->
+  <code class="text-sm">{value}</code>
+{/if}

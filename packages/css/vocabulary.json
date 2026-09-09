@@ -2,7 +2,7 @@
   "$comment": "Generated from vocabulary.js by build-vocabulary.js — do not edit. vocabulary.js is the source and is a classic script by necessity; see that file.",
   "version": "0.16.2",
   "counts": {
-    "terms": 55,
+    "terms": 56,
     "tiers": 8,
     "anatomy": 26
   },
@@ -100,8 +100,8 @@
       "tier": "Region",
       "tierBlurb": "Grouping and wayfinding inside a Screen.",
       "element": "<div>",
-      "meaning": "A visual cluster with no semantic identity",
-      "class": null
+      "meaning": "A horizontal group with no semantic identity, on ONE line. What goes INSIDE a strip — the strip is a Bar and there is one per area. Cluster is the utility that wraps; a Group inside a fixed-height container is the case wrapping gets wrong",
+      "class": "group"
     },
     {
       "term": "Prose",
@@ -134,6 +134,14 @@
       "element": "<hr>",
       "meaning": "A labeled or plain break between groups",
       "class": "divider"
+    },
+    {
+      "term": "Kicker",
+      "tier": "Region",
+      "tierBlurb": "Grouping and wayfinding inside a Screen.",
+      "element": "<div>",
+      "meaning": "The short uppercase label ABOVE a title — publishing's word for it. Not a Badge (a status, inline) and not a Divider label (a break between things, not a label on one). It is muted and carries no color of its own — the guide's accent-colored copy was drift, not a variant",
+      "class": "kicker"
     },
     {
       "term": "Nav",

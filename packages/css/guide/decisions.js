@@ -231,6 +231,7 @@ var QUESTIONS = {
     note: 'Principle 3: heading level is outline structure, not size. Pick the level the document needs and change the size with a class if you must.',
     options: [
       { label: 'A heading', hint: 'it names the section below it', on: 'Heading' },
+      { label: 'A short label ABOVE a title', hint: 'Structure, Learn — publishing calls it a kicker', on: 'Kicker' },
       { label: 'Prose', on: 'Text' },
     ],
   },
@@ -829,6 +830,20 @@ var OUTCOMES = {
     states: [],
     instead: [
       { term: 'Bar', when: 'you are not implementing arrow-key movement. The role is a promise, and an unkept one leaves the strip harder to use than a plain div' },
+    ],
+  },
+
+  Kicker: {
+    page: 'kicker',
+    lead: 'The short uppercase label above a title.',
+    markup: function (c) { return '<div class="' + c + '">Structure</div>' },
+    tones: false,
+    treatments: [],
+    states: [],
+    instead: [
+      { term: 'Badge', when: 'it is a status on a thing rather than a label over one — a Badge sits inline' },
+      { term: 'Divider', when: 'it labels the break BETWEEN two groups rather than the thing below it' },
+      { term: 'Heading', when: 'it names the section and a reader should be able to jump to it. A Kicker is not outline structure' },
     ],
   },
 

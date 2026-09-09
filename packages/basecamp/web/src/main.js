@@ -8,6 +8,9 @@ import 'virtual:sierra'
 // radius or a spacing scale of its own (repo invariant 13).
 import '@frontierjs/css'
 
+// How this console renders a column, where it differs from the kit's default.
+import './displays.js'
+
 import { mount } from '@frontierjs/mesa/runtime'
 import App from './App.mesa'
 

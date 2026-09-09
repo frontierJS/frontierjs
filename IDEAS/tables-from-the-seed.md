@@ -765,6 +765,34 @@ Both take one sequence now, so this cannot recur by omission.
 
 ---
 
+## Built — the first two APP callers, and the four defects they found
+
+Everything above shipped with its callers being the GENERATOR and the kit's own
+fixtures. That is the arrangement this repo keeps paying for, and it paid again:
+pointing two real screens at the surfaces found four defects in a day.
+
+**`example/web/src/routes/invoices/index.mesa`** names its six columns with
+`only:` — the escape hatch, because `Invoice` declares three money columns and
+five timestamps and the tiers fill with `subtotal` and `tax` ahead of the day a
+document was due. **`packages/basecamp/web/src/routes/deployments/index.mesa`**
+takes the ranking unaided. Between them both halves have a caller, and that is
+an instrument rather than a coincidence: *paved road vs. the workaround* says
+the same escape used in the same place over and over is a measurement of the
+road, so one use is a choice and two would have been a finding.
+
+The four are `FJS-1054` (a tenancy stamp ranked like an ordinary column),
+`FJS-1055` (the `quantity` tier read `x-time` and so caught almost no time),
+`FJS-1056` (a relation's header was the one lowercase one) and `FJS-1057` (the
+display registry's naming half was never exported, which is why it had zero app
+callers) — plus `FJS-1058` in the kit, where no control the bar renders had an
+accessible name.
+
+**Which app found which is the part worth keeping.** Three of the five are
+visible in either; two are not. A tenancy stamp only exists under
+`strategy row`, so `example` cannot see `FJS-1054` at all. An unnamed control
+only fails where something audits, and only basecamp does. The surfaces were
+correct against every question their own package knew how to ask.
+
 ## Landed since this file was written
 
 Two inputs the browser needed and did not get. Both were one emit each and

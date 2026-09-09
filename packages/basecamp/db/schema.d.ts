@@ -3814,7 +3814,12 @@ export interface LitestoneClient {
   // Query tap (temporary capture)
   $tapQuery(fn: (event: QueryEvent) => void): () => void
 
-  // Write-event tap — onEvent's post-construction half
+  // Write-event tap — onEvent's post-construction half. Many subscribers;
+  // each is an OBSERVER: dispatched after the write's transaction commits,
+  // deferred, and a throw is swallowed rather than failing the write.
+  // At-most-once — a crash between the commit and the dispatch loses the
+  // event with nothing recorded that it was owed, so work that may not be
+  // lost belongs in a durable mechanism and not here (FJS-D247).
   $tapEvents(fn: (event: WriteEvent) => void): () => void
 
   // Utilities

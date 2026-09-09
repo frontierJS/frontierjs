@@ -20,6 +20,7 @@ title: Orders
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
   import Tag           from '@frontierjs/ui/components/display/Tag.mesa'
   import { money }     from '../../money.js'
+  import { toneFor as tone } from '@/status-tone.js'
 
   // The columns a Table draws are a UI decision, so they are written here —
   // but every VALUE below still comes from the schema. Nothing in this list
@@ -121,15 +122,10 @@ title: Orders
         && (placedTo   === undefined || at <= placedTo + DAY - 1)
   })
 
-  // Which tone a status gets is a mapping the design system owns; the STATES
-  // come from the enum in the schema, not from a list written here.
-  const tone = (s) => ({
-    pending:   'warning',
-    paid:      'info',
-    shipped:   'success',
-    refunded:  'muted',
-    cancelled: 'danger',
-  })[s] ?? 'muted'
+  // Which tone a status gets is not something the schema can answer, and the
+  // STATES come from the enum in it rather than from a list written here. The
+  // map is `web/src/status-tone.js` because there were two of them, keyed the
+  // same and disagreeing about the one member they shared.
 
   async function remove(id) {
     error = null

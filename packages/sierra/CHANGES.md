@@ -1,5 +1,77 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-08 — the derived table meets two real apps
+
+The table, the cells and the bar had no caller outside the generator and their
+own fixtures. Pointing `example`'s invoice ledger and basecamp's deployments
+list at them found four defects in a day, and three of them are the same shape:
+a fact the schema already carried that this package re-derived and got wrong.
+
+**A tenancy stamp is not a column** (`FJS-1054`). The Data boundary scopes a
+read by it, so every row that comes back holds the same value — and it ranked
+`rest`, which puts it on any table whose model declares few enough columns.
+Litestone emits `x-litestone-kind: 'tenancy'` and `buildFieldRules` was dropping
+it before anything could read it. It is carried now and `columnList` OMITS the
+column with a reason; `only:` still names it, for a cross-workspace screen
+reading through `asSystem()`. Only a row-tenanted app can see this: `example`
+runs `strategy database` and has no such column anywhere.
+
+**The `quantity` tier is *money and time* and was catching almost no time**
+(`FJS-1055`). `x-time` is the `@time` ATTRIBUTE, so an ordinary `DateTime`
+carries `format: 'date-time'` and none of it. `tierOf` now asks
+`defaultDisplayFor` — the owner of *what kind is this column* — instead of
+re-deriving it. The BUILT-IN table, not `displayFor`: a contributed display
+changes how a column renders and must not change which columns a table picks.
+
+**A relation's header is humanized like every other** (`FJS-1056`). The relation
+branch skipped the humanizer, so a foreign key was the one lowercase header on
+the table. `@label` is still taken verbatim — it is already a reader's words.
+
+**The display registry is reachable** (`FJS-1057`). `FJS-D242` ruled it into
+existence and `src/junction/index.js` forwarded only the control half, so an app
+could name a column's control and had no way to name its renderer. Measured
+before the fix: `registerFormControl` had one caller in this repo and
+`registerDisplayComponent` had none. `displayFor`, `defaultDisplayFor`,
+`columnList`, `filterOpFor` and the three registry functions now cross beside
+their control-side mirrors.
+
+## 2026-09-08 — the other three surfaces: a table, a detail view, a filter bar
+
+`IDEAS/tables-from-the-seed.md` is shipped. Four rulings and the pieces behind
+them.
+
+**`displayFor(rule, ctx)` is a second registry** (`FJS-D242`), not a mode on
+`controlFor`: the two disagree at their first branch, since a control is a thing
+that WRITES and refuses by name every column a table most wants — `@computed`,
+`@generated`, `@from`, `@system`, the `@version`. `registerDisplay(name, resolve)`
+contributes to it and the kit binds the name.
+
+**`columnList(fields, opts)` ranks a table's columns from the schema**
+(`FJS-D243`) — five tiers, declaration order as the tie-break, `only` to pin.
+`resource.columns()`, `summary()` and `children()` are the detail view
+(`FJS-D244`): what a form cannot show, defined AGAINST `formFields()` so the two
+cannot drift, and children one level deep as links.
+
+**`filterOpFor(display)` is a table, not a third resolver** (`FJS-D246`). Every
+display name a table renders is a column a `where` can name, so a filter resolver
+would maintain the same list twice. `resource.filters()` asks `x-filterable`
+whether the boundary takes a `where` at all before asking the table what to ask
+with, and returns a refused column WITH its reason rather than dropping it. It
+answers `search` beside the column filters, off `x-search`.
+
+**Read mode reached the browser with it.** The build ships create, an update
+delta and now a read delta, so a `@computed` column exists on a screen at all —
+without it a table and a detail view could rank and render only what may be
+WRITTEN.
+
+Two defects closed under it. `x-sortable` and `x-filterable` were not in
+`_CARRIED`, so neither reached a field rule and `!rule['x-sortable']` answered
+TRUE for every column including the ones the boundary throws on (`FJS-1043`) —
+the exception-only emit is what made it invisible, since absent reads as
+permitted. And `displayFor` carried only one of `x-money`'s three shapes, so a
+currency held per ROW arrived as `currency: undefined` with nothing naming the
+column that has the answer (`FJS-1052`).
+
 ## 2026-09-08 — `back(fallback)`
 
 `back()` was `window.history.back()` and nothing else, so on the entry a user

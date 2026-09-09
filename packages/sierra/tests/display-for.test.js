@@ -56,6 +56,8 @@ model Order {
   reference String
   status    Status   @default(pending)
   total     Int      @money(USD)
+  refund    Int      @money(field: ccy)
+  ccy       String   @default("USD")
   rate      Int      @scale(2)
   count     Int
   paid      Boolean  @default(false)
@@ -80,6 +82,21 @@ describe('the declaration decides, not the JS type', () => {
     // renderer this replaces printed 1299 for a price and looked correct.
     expect(show('total')).toEqual({ display: 'money', currency: 'USD' })
     expect(show('count')).toEqual({ display: 'number' })
+  })
+
+  test('a currency held per ROW names the column that holds it', () => {
+    // `x-money` has THREE shapes — a stated currency, one per row, and neither
+    // — and only the first was carried. `field:` reached a cell as
+    // `currency: undefined` with nothing naming the column that has the answer,
+    // so a renderer reading `column.currencyField` read a key nothing set and
+    // every row of a multi-currency table rendered in the app default: a
+    // hundred times wrong wherever the row was not in the default's scale.
+    //
+    // Asserted as a PAIR with the stated-currency column beside it, because a
+    // resolver that emitted BOTH keys on every column would satisfy this row
+    // alone and put a dead `currencyField` back on `total`.
+    expect(show('refund')).toEqual({ display: 'money', currency: undefined, currencyField: 'ccy' })
+    expect(show('total')).toEqual({ display: 'money', currency: 'USD', currencyField: undefined })
   })
 
   test('a scaled integer is neither of those', () => {

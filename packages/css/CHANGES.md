@@ -1,5 +1,28 @@
 # Changes — @frontierjs/css
 
+## 2026-09-08 — Group ships, Kicker ships, Lead does not
+
+**Group had been a vocabulary term with no CSS** — Region tier, `<div>`, *a
+visual cluster with no semantic identity* — while every other layout term had
+rules. It could not be written: a bare `<div>` conveys nothing. It is now the
+horizontal group that stays on ONE line, beside the Cluster it is defined
+against ([`FJS-D252`](../../DECISIONS.md#fjs-d252)).
+
+That settles what a Bar is. A Bar is the strip and there is one per area; what
+goes inside it is a Group. `.cluster` keeps wrapping — that is its definition,
+not a default — and no `nowrap` modifier is added: `wrap` is already Tooltip's
+word for TEXT wrapping.
+
+**Kicker ships as a promotion.** `.navlist-label` was already a complete
+tokenized Kicker scoped to nav, and the guide's eyebrow was the same idea
+disagreeing on size, weight, tracking and color. `bars.css` owns the look now;
+nav keeps only its spacing ([`FJS-D253`](../../DECISIONS.md#fjs-d253)).
+
+**Lead does not ship.** Prose already owns the ink and the measure, so what was
+left of it is a size — `.text-xl` inside a Prose, a composition rather than a
+term. The `--text-lg` comment that argued for it named the wrong rung (16px, for
+a lead that is 18px) and is corrected.
+
 ## 2026-09-05 — the tokens are on `:root, :host`
 
 `FJS-816`. 470 passing.

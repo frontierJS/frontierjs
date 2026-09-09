@@ -1,5 +1,32 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-08 — `money-rendered-raw`, and the generated list rebuilds its URL
+
+**A new `fli check` rule.** A `@money` column holds MINOR units, so printing it
+is a price a hundred times too big — with no error, no warning and nothing
+looking wrong, which is what `FJS-D242` was ruled about. The authority is the
+SCHEMA: the app declared the column, so *this number is cents* is a fact in the
+tree rather than a claim a paragraph makes.
+
+Two narrowings decide what it can say. A name declared `@money` on one model and
+plain on another is DROPPED — a `.mesa` says `{order.total}` and nothing in it
+says what `order` holds, so reporting an ambiguous name is advice that is wrong.
+But a `view` column is not evidence, because a projection is a SELECT and there
+is nowhere on it to write the attribute: counting it as plain dropped `total` for
+every model that DID declare it, which is exactly what happened on this repo's
+own example app. And only TEXT position is reported — `value={row.total}` is
+handing the column to something whose job is rendering it, which is what
+`<Cell value={row.total} column={c} />` is, so flagging it would report the fix
+as the bug.
+
+**A generated list page rebuilds the whole URL query** (`FJS-1047`).
+`splitParams` takes every `$` key out of `page.query` and into `page.directives`
+under an unprefixed name, so the bar was handed the filters alone: no sort, no
+page size and no search to show, and a query missing them on the way back.
+Sorting a column and then typing in a filter dropped the sort, in silence. The
+page recombines with `directiveParams`, `parseDirectives`' inverse off the same
+table, so it cannot go stale when a directive is added.
+
 ## 2026-09-08 — `route-part-prefix`
 
 A new `fli check` rule, error. A co-located route part is named whatever the app

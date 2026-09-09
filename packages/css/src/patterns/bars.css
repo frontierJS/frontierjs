@@ -134,3 +134,27 @@ hr, .divider {
   height:  1px;
   background: var(--rule);
 }
+
+/* ── Kicker — the short uppercase label above a title ──────────────
+ *
+ * Publishing's word for it: "Structure", "Learn", sitting over the heading it
+ * introduces. Not a Badge, which is an inline status, and not a Divider label,
+ * which is a break BETWEEN things rather than a label ON one.
+ *
+ * It ships because the shape existed twice with no owner and the two had
+ * drifted apart on every axis — nav's group label at 2xs/600/0.04em/mute
+ * against the guide's eyebrow at xs/500/0.1em/accent (`FJS-D253`). The
+ * declarations are the ones nav had already tokenized, which is what makes
+ * this a promotion rather than a design.
+ *
+ * No color of its own beyond the muted default: a Kicker that wants the accent
+ * takes a tone, orthogonally, the way everything else here does.
+ */
+.kicker,
+.navlist-label {
+  font-size:      var(--text-2xs);
+  font-weight:    var(--label-font-weight);
+  text-transform: var(--label-text-transform);
+  letter-spacing: var(--label-letter-spacing);
+  color:          var(--ink-mute);
+}

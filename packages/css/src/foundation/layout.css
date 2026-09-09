@@ -34,6 +34,33 @@
   gap:         var(--space-sm);
 }
 
+/*
+ * Group — a horizontal group that stays on ONE line.
+ *
+ * Beside Cluster because it is defined against it: wrapping is Cluster's
+ * definition, not a default it happens to carry, and inside anything with a
+ * fixed height that definition is wrong. A Topbar has `--topbar-height`, so a
+ * wrapped second line is drawn OUTSIDE the strip rather than growing it —
+ * measured at 640px, the guide's version badge landed at y=46 in a 56px bar
+ * starting at y=8, on top of the page below (`FJS-D252`).
+ *
+ * A Group is what goes INSIDE a strip; the strip is a Bar, and there is one of
+ * those per area. Writing `bar` twice inside a Topbar says there are three
+ * strips where there is one.
+ *
+ * `min-width: 0` because a flex item's default `min-width: auto` refuses to
+ * shrink below its content, so a long label pushes a Group past its container
+ * instead of letting the child truncate — the failure that sends people back
+ * to wrapping.
+ */
+.group {
+  display:     flex;
+  flex-wrap:   nowrap;
+  align-items: center;
+  gap:         var(--space-sm);
+  min-width:   0;
+}
+
 .center {
   display:      grid;
   place-items:  center;

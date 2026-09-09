@@ -1,5 +1,28 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-08 — `/directives` writes as well as reads, and ships a `.d.ts`
+
+`directiveParams(directives)` is `parseDirectives`' inverse, off the same rows.
+
+A URL is round-tripped rather than only consumed: Junction's client sends one and
+Sierra's router hands one back to a page that has to write the next. Junction's
+browser client held its own field-by-field copy of the write half and named
+itself the one table in its own comment — and a generated list page then handed
+its filter bar `page.query`, which by construction holds no directive, so sorting
+a column and typing in a filter dropped the sort (`FJS-1047`). A directive is one
+row and it is wired both ways or neither, which is `FJS-306`'s whole point.
+
+Values keep their own types, because `encodeQueryString` and the transport's
+parser are inverses by construction (`FJS-D125`). The two rows that do NOT travel
+as themselves — `$select` and `$populate`, comma-joined because the reader takes
+them as-is — say so in the table rather than in the writer.
+
+**The kit ships a `.d.ts`**, for `/query`'s reason: it is reached from
+`@frontierjs/junction/client`, whose public type surface an app compiles under
+its own options, so a kit with no declaration is a TS7016 in somebody else's
+build. Junction's `client-types.test.ts` said so the moment the client reached
+for this table instead of keeping a copy.
+
 ## 2026-09-07 — `/cron` reads a crontab line the way a crontab does
 
 Three findings, all silent, all invisible to the specs that were there — 358

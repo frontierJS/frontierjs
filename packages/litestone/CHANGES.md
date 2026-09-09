@@ -1,5 +1,40 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-08 — `x-search`, and `search()` takes an order
+
+Two things the browser could not ask about full-text search.
+
+**`x-search` on a model names the columns `@@fts` indexes** (`FJS-1040`). A table
+serves `search()` only under that attribute and refuses by name below it, so a
+generated filter bar offering a box either offered one on every model — `example`
+declares `@@fts` on one of about fifty — or on none. The value is the COLUMNS
+rather than a flag: it is `buildFtsMap`'s own answer, so the emit restates a
+shape rather than coining one, and a box can say what it searches.
+
+The naming turned on something that had never been written down and is now
+`FJS-D249`: **the `x-` keys come in two polarities.** `x-sortable` and
+`x-filterable` are REFUSALS, where absent means permitted and a string says why
+not; `x-label-field`, `x-identify`, `x-gate` and this are FACTS, where absent
+means there is none. Reading one family by the other's rule is silent in both
+directions and wrong about every ordinary column, which is the corpus any test
+would use. That is why the key is not `x-searchable` — the `-able` suffix is what
+both refusal keys wear.
+
+**`search()` honors `orderBy`** (`FJS-1044`). Junction built the option and
+handed it over; the destructure did not name it, so the key fell on the floor and
+rows came back by BM25 rank under a URL that said otherwise. Paging stays on the
+FTS index by relevance and MOVES to the base table under a caller's order,
+through the same `buildOrderBy` and `columnMap` every other read uses — ordering
+in step 1 would need a join in which an unqualified column is ambiguous, since
+the fts table carries columns of the same NAMES as the indexed ones.
+
+Underneath it, **one guard sequence for every read**. `search` is the only read
+whose options are not the first argument, so it cannot go through the generic
+wrapper and its guards were a hand copy — `checkOrderBy` had never been added to
+it, and `select` had been forgotten there once already (`FJS-601`). Both go
+through `guardArgs` now, so a guard added above reaches this verb without anyone
+remembering to.
+
 ## 2026-09-09 — `studio --host` is refused without `--token`
 
 Studio serves a JS REPL holding `db` and `sys`, raw SQL, and schema and

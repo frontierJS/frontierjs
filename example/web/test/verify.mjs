@@ -854,18 +854,31 @@ try {
     return { present: !!row, active: row?.querySelector('[data-active]')?.dataset.active ?? null };
   `))
 
-  // The `@money` crossing at rest: what the ROW holds is a whole number of
-  // minor units and what the CELL says is a formatted amount. Both are read off
-  // one element, so a screen that had silently started rendering cents would
-  // fail here rather than merely looking wrong. Structural rather than a fixed
-  // number, because the section below moves this price every run.
+  // The `@money` crossing at rest: what the ROW holds is a whole number of minor
+  // units and what the CELL says is an amount in dollars — and the two are
+  // compared ARITHMETICALLY, off one element, which is the half this assertion
+  // was missing.
+  //
+  // `formatted && differ` is satisfied by a cell rendering $1,299.00 for 1299
+  // cents: it is formatted, the datum is an integer, and they differ. That is
+  // the ×100 defect exactly, and the kit's own `<Cell>` shipped it — a stored
+  // integer handed to `formatMoney`, which takes MAJOR units (`FJS-1051`). A
+  // shape check cannot see a scale error, because both scales have the shape.
+  //
+  // So the claim is `shown × 100 === stored`. Still no fixed number, because
+  // the section below moves this price every run.
   t('plans.moneyCell', await evaluate(`
-    const cell = document.querySelector('tbody tr[data-code="PRO"] [data-price]');
+    const cell  = document.querySelector('tbody tr[data-code="PRO"] [data-price]');
     const shown = cell.textContent.trim();
+    const cents = Number(cell.dataset.price);
+    // The digits a person reads, with the symbol and the thousands separator
+    // taken off — so $1,299.00 parses as 1299 and is caught by the comparison
+    // rather than by the shape.
+    const read  = Number(shown.replace(/[^0-9.]/g, ''));
     return {
       integerCents: /^\\d+$/.test(cell.dataset.price),
-      formatted:    /^\\$\\d+\\.\\d\\d$/.test(shown),
-      differ:       shown !== cell.dataset.price,
+      formatted:    /^\\$[\\d,]+\\.\\d\\d$/.test(shown),
+      agree:        Math.round(read * 100) === cents,
     };
   `))
 
@@ -1058,6 +1071,91 @@ try {
       identity:    n('subtotal') + n('tax') === n('total'),
     };
   `))
+
+  // ── The derived table ───────────────────────────────────────────────────
+  //
+  // `/invoices/` is the one list in this app whose columns, headers, filters
+  // and cells all come out of `db/schema.lite` — `resource.columns()` ranks
+  // them, `filters()` says what each one ASKS, and `<Cell>` renders each value
+  // by the kind the schema declared. Nothing in the page names a field's type.
+  //
+  // It had no drive at all until it had one, which is the pattern this repo
+  // keeps paying for: `Cell` and `FilterBar` shipped a money bug and four dead
+  // handlers apiece, both in the two components nothing opened.
+  await goto('/invoices/')
+
+  // The money identity, asked ARITHMETICALLY. A `@money` column holds cents and
+  // `formatMoney` takes major units, so handing it the stored integer renders
+  // 1511 as $1,511.00 — wrong in the way that looks right, which is the only
+  // way a number goes wrong quietly (`FJS-1051`). A shape check cannot see
+  // that: both scales have the shape. So the stored value and the rendered one
+  // are compared.
+  t('invoicesList.derived', await evaluate(`
+    await waitFor(() => document.querySelectorAll('tbody tr[data-invoice]').length);
+    const tr    = document.querySelector('tbody tr[data-invoice]');
+    const cell  = (n) => tr.querySelector('td[data-col=' + n + ']');
+    const cents = Number(cell('total').dataset.value);
+    const shown = cell('total').textContent.trim();
+    const read  = Number(shown.replace(/[^0-9.]/g, ''));
+    return {
+      // Humanized from the column names and the relation, or taken from
+      // @label. No list of headers exists in the page.
+      heads:      [...document.querySelectorAll('thead th')].map(th => th.textContent.trim()),
+      integer:    Number.isInteger(cents) && cents > 0,
+      formatted:  /^\\$[\\d,]+\\.\\d\\d$/.test(shown),
+      agree:      Math.round(read * 100) === cents,
+      // A registered display wins over the kit's own table -- FJS-D242 -- which
+      // is what puts a tone on a status the schema cannot have an opinion about.
+      statusPill: !!cell('status').querySelector('.pill'),
+    };
+  `))
+
+  // No search box, and that is an ANSWER rather than an omission: `Invoice`
+  // declares no `@@fts`, so the Data boundary refuses `$search` by name and a
+  // box that 400s on every word is worse than none.
+  //
+  // Paired with the bar being FULL of other controls, or *the model refused a
+  // search* cannot be told from *the bar rendered nothing* — which is what a
+  // dead FilterBar looked like for its whole life (`FJS-1046`).
+  t('invoicesList.searchRefused', await evaluate(`
+    return {
+      box:      !!document.querySelector('#i-filters input[type=search]'),
+      controls: document.querySelectorAll('#i-filters input, #i-filters select').length > 0,
+      said:     /declares no/.test(document.querySelector('#i-nosearch').textContent),
+      omitted:  /Not shown:/.test(document.querySelector('#i-omitted')?.textContent ?? ''),
+    };
+  `))
+
+  // The reader's chosen currency, which is the whole reason this app registers
+  // a display for `money` at all: `@money(USD)` says what the column STORES and
+  // a shop that stores dollars can still be read in euros, which no schema can
+  // say. Asserted as a PAIR against the stored value — the string moves, the
+  // cents do not — because a cell that simply re-rendered would satisfy half of
+  // it and a cell that changed nothing would satisfy the other.
+  const wasUSD = await evaluate(`
+    const td = document.querySelector('tbody tr[data-invoice] td[data-col=total]');
+    return { cents: td.dataset.value, shown: td.textContent.trim() };
+  `)
+  await evaluate(`
+    const p = JSON.parse(localStorage.getItem('shop_prefs') ?? '{}');
+    localStorage.setItem('shop_prefs', JSON.stringify({ ...p, currency: 'GBP' }));
+    return true;
+  `)
+  await goto('/invoices/')
+  t('invoicesList.currency', await evaluate(`
+    await waitFor(() => document.querySelectorAll('tbody tr[data-invoice]').length);
+    const td = document.querySelector('tbody tr[data-invoice] td[data-col=total]');
+    return {
+      sameCents: td.dataset.value === ${JSON.stringify(wasUSD.cents)},
+      moved:     td.textContent.trim() !== ${JSON.stringify(wasUSD.shown)},
+      inPounds:  td.textContent.trim().startsWith('£'),
+    };
+  `))
+  await evaluate(`
+    const p = JSON.parse(localStorage.getItem('shop_prefs') ?? '{}');
+    localStorage.setItem('shop_prefs', JSON.stringify({ ...p, currency: 'USD' }));
+    return true;
+  `)
 
   // Sign back in one level down: `refund` carries @gate(5) and every other move
   // carries none, so this is the assertion that the gate is PER MOVE and not the
@@ -1257,9 +1355,10 @@ const expected = {
   // subscription names one.
   'plans.rows':    5,
   'plans.retired': { present: true, active: 'false' },
-  // What the row holds against what the cell says. Structural because the run
-  // below moves this number.
-  'plans.moneyCell': { integerCents: true, formatted: true, differ: true },
+  // What the row holds against what the cell says, compared as NUMBERS. The
+  // `differ` this replaces was true of a cell rendering the stored cents as
+  // dollars — a hundred times over, formatted, and different from the datum.
+  'plans.moneyCell': { integerCents: true, formatted: true, agree: true },
 
   'planDetail.openWindows': 1,
   // Typed in dollars, stored in cents. The two assertions are the same fact
@@ -1277,6 +1376,14 @@ const expected = {
   // Exactly one document, and it is an invoice: an upgrade owes money.
   'subDetail.changePlan': 1,
   'invoice.composed': { hasLines: true, linesSum: true, identity: true },
+  // Every one of these headers is derived: humanized from the column name, or
+  // from the RELATION for a foreign key, or taken verbatim from an @label.
+  'invoicesList.derived': {
+    heads: ['Number', 'Status', 'Customer', 'Total', 'Issued At', 'Due At', ''],
+    integer: true, formatted: true, agree: true, statusPill: true,
+  },
+  'invoicesList.searchRefused': { box: false, controls: true, said: true, omitted: true },
+  'invoicesList.currency':      { sameCents: true, moved: true, inPounds: true },
 
   'signOut.ledgerGoes':      true,
   'consoleErrors':           [],

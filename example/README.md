@@ -37,6 +37,9 @@ request is answered by the ghost.
 
 | | |
 | --- | --- |
+| **A `@money` column rendered by the kit's own cell was a hundred times too large, in the component written to end exactly that.** | `@money` holds MINOR units and `formatMoney` takes MAJOR ones, so the stored integer went in unconverted and `1299` came out `$1,299.00` — wrong in the way that looks RIGHT, which is worse than the raw integer it replaced: an integer reads as unformatted and a currency symbol reads as correct. The drive's existing predicate agreed with the bug — *formatted, an integer, and they differ* is true of both scales — so the assertion is arithmetic now: the rendered string times a hundred against the stored cents (`FJS-1051`) |
+| **The column ranking's tier called *money and time* caught the money and almost none of the time.** | `tierOf` tested `x-time`, which is the `@time` ATTRIBUTE — an ordinary `DateTime` carries `format: 'date-time'` and none of it — so every date column fell to the bottom tier and this app's invoice ledger ranked the tax it was charged above the day it was due. A second reader of a question `defaultDisplayFor` already owned, disagreeing with it in silence, and only visible on a model with several of both (`FJS-1055`) |
+| **The registry an app uses to say how a column RENDERS was never exported, so nothing could reach it.** | `FJS-D242` ruled a display into being the mirror of a control, and `src/junction/index.js` forwarded the control half and stopped. The shape of the evidence is the finding: across this app and basecamp, `registerFormControl` had one caller and `registerDisplayComponent` had zero — which reads as *nobody needed it* and was actually *nobody could*. This app now claims two, and both are things no schema can state: which currency a reader wants to see, and whether `void` is bad news (`FJS-1057`) |
 | `fli dev` | both realms, after the port and database preflights |
 | `bun run dev` | both realms, no preflight |
 | `bun run stop` | stop whichever of them is running |
@@ -587,7 +590,7 @@ photograph and then opened the storefront in dev, three more the day
 somebody looked at the storefront and said it was ugly, and three the day it
 turned out you could not buy anything on it, three the day its
 checkout link grew a credential of its own, three the day its money
-stopped being a Float, seven the day it learned to bill somebody every month — on a schedule, at a price with a lifetime, on three surfaces — two the day it learned to STOP billing them, two the day it learned to charge somebody who is not there, two the day a bank asked to speak to them, six the day somebody asked whether it had user management, and three the day a shop tried to declare one of its own columns through the API instead of through the client:
+stopped being a Float, seven the day it learned to bill somebody every month — on a schedule, at a price with a lifetime, on three surfaces — two the day it learned to STOP billing them, two the day it learned to charge somebody who is not there, two the day a bank asked to speak to them, six the day somebody asked whether it had user management, and three the day a shop tried to declare one of its own columns through the API instead of the client, and three the day its invoice ledger stopped naming its own columns:
 
 | | |
 | --- | --- |

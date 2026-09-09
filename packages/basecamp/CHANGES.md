@@ -1,5 +1,33 @@
 # Changes — Basecamp
 
+## 2026-09-08 — the deployments list is derived from the schema
+
+`web/src/routes/deployments/index.mesa` takes `resource.columns()` UNAIDED —
+the ranking, not `only:` — so between this app and `example`'s invoice ledger
+both halves of that function have a caller. Nothing in the page names a field,
+a header or a type, and `omitted` reports every column it left out with the
+reason.
+
+**This app asks two questions `example` structurally cannot.** It is `@@tenant`
+row-scoped, so every model carries `workspaceId` and the ranking was putting a
+column of one repeated answer on the table (`FJS-1054`); `example` runs
+`strategy database` and has no such column anywhere. And it audits
+accessibility on every screen, which is what found that no control a
+`FilterBar` renders had a name (`FJS-1058`).
+
+**`web/src/displays.js`** claims `relation`. The kit renders a foreign key as
+its id and is right to — it is handed one record and cannot fetch another — but
+every list here declares an `include`, so the related row is already on the
+record. `RelationCell.mesa` resolves WHICH column of it is the name the same way
+a picker does (`@@label`, then the conventional names, then the id) rather than
+guessing, and falls back to the id when the read did not include the relation.
+
+`deployments.service.ts` now includes the deployment's own `environment`
+alongside the app's: an app has a current environment and a deployment records
+the one it went to, and those differ the moment either is changed.
+
+`db/schema.d.ts` regenerated — it was stale against the committed `typegen.js`.
+
 ## 2026-09-09 — `capability-ladder`'s two findings are answered, and the answer is now enforced
 
 `packages/basecamp/CLAUDE.md` already said these two were *answered, not

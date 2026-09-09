@@ -373,8 +373,8 @@
   --text-xs:  0.75rem;    /* 12px — badge, pill, tooltip, field hint */
   --text-sm:  0.8125rem;  /* 13px — caption, meta, table cell, help */
   --text-md:  0.875rem;   /* 14px — BODY. nav, tab, button, label */
-  --text-lg:  1rem;       /* 16px — lead paragraph, h5, alert icon */
-  --text-xl:  1.125rem;   /* 18px — subhead, h4, empty-state title */
+  --text-lg:  1rem;       /* 16px — h5, alert icon */
+  --text-xl:  1.125rem;   /* 18px — subhead, h4, empty-state title, the lead paragraph under a page title */
   --text-2xl: 1.375rem;   /* 22px — h3, dialog title */
   --text-3xl: 1.75rem;    /* 28px — h2, tile figure */
   --text-4xl: 2.25rem;    /* 36px — h1 */

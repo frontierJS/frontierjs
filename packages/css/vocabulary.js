@@ -75,11 +75,12 @@ const VOCAB = [
     "Grouping and wayfinding inside a Screen.",
     [
       ["Section", "<section> / <article>", "<article> when nested inside a Section (Principle 2)", null],
-      ["Group", "<div>", "A visual cluster with no semantic identity", null],
+      ["Group", "<div>", "A horizontal group with no semantic identity, on ONE line. What goes INSIDE a strip — the strip is a Bar and there is one per area. Cluster is the utility that wraps; a Group inside a fixed-height container is the case wrapping gets wrong"],
       ["Prose", "<div>", "A region of authored long-form copy, styled by element — the one place the package touches a bare <p>. Sets measure, ink and list indentation only; a Heading or Code inside keeps its own term. Spacing is the parent's: compose with Stack"],
       ["Bar", "<div>", "A horizontal strip. Layout only — no role, no keyboard contract, contents are whatever you put there"],
       ["Toolbar", '<div role="toolbar">', "A strip whose contents are controls, presented as ONE tab stop. The role promises arrow-key movement and the app owes it (Principle 6) — if you are not providing the keys, use Bar"],
       ["Divider", "<hr>", "A labeled or plain break between groups"],
+      ["Kicker", "<div>", "The short uppercase label ABOVE a title — publishing's word for it. Not a Badge (a status, inline) and not a Divider label (a break between things, not a label on one). It is muted and carries no color of its own — the guide's accent-colored copy was drift, not a variant"],
       ["Nav", "<ul> + <li> + <a>", "A list of navigation links. The link is .navlink; a heading above it is .navlist-label", "navlist"],
       ["Breadcrumb", '<nav aria-label="Breadcrumb"> + <ol>', "The trail back up. The current page carries aria-current"],
       ["Pagination", '<nav aria-label="Pagination">', "Page-by-page movement through a list. Each control is .pagination-link"],

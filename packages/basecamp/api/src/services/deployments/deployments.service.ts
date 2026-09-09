@@ -19,7 +19,11 @@ import type { BasecampApp }    from '../../basecamp.types.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
 import { announce } from '../../channels.ts'
 
-const WITH_APP = { app: { include: { environment: true } } }
+// `environment` is the DEPLOYMENT's own, which is not the app's: an app has a
+// current environment and a deployment records the one it went to, and those
+// differ the moment either is changed. Both are included because a list shows
+// where this release went, not where the app points now.
+const WITH_APP = { app: { include: { environment: true } }, environment: true }
 
 /** The step list a deployment starts with, by app type. */
 function buildInitialSteps(appType: string): string[] {

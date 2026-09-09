@@ -63,6 +63,13 @@ const _CARRIED = [
   // stored), but a person who has already chosen a 4MB file and waited for it
   // to upload is being told something the dialog could have told them.
   'x-litestone-accept',
+  // Which MACHINERY wrote this column, where a column has any. `tenancy` is
+  // the one a table has to know about: the value is the same in every row a
+  // scoped read can return, so it is a column of one repeated answer taking a
+  // slot from a column that says something. Nothing else on the rule separates
+  // it from an ordinary foreign key — it is a string with a `references`, which
+  // is what an ordinary one is.
+  'x-litestone-kind',
   // `writeOnly` is `@transient`: a field the caller sends and no read ever
   // answers. It gets a control like any other writable field — that is the
   // point of declaring it — and this is what lets a form say so, and what stops
@@ -777,7 +784,17 @@ function _builtinDisplay(rule) {
   if (rule['x-litestone-file']) return { display: 'file' }
 
   // The declaration decides, never the JS type. Both of these are integers.
-  if (rule['x-money']) return { display: 'money', currency: rule['x-money'].currency }
+  // `x-money` has THREE shapes and a renderer has to tell them apart: a stated
+  // currency, one held per ROW in a sibling column, and neither. Only the first
+  // was carried, so `field:` reached a cell as `currency: undefined` and the
+  // column that holds the answer was never named — a prop the cell reads and
+  // nothing sets, which renders as the app default on every row of a
+  // multi-currency table.
+  if (rule['x-money']) return {
+    display: 'money',
+    currency:      rule['x-money'].currency,
+    currencyField: rule['x-money'].field,
+  }
   if (rule['x-scale'] != null) return { display: 'scale', scale: rule['x-scale'] }
 
   // An instant and a wall clock are different values that arrive as the same
@@ -828,7 +845,13 @@ function _builtinDisplay(rule) {
  * word a person reads.
  */
 export function columnLabel(name, rule) {
-  return rule?.title ?? rule?.references?.relation ?? humanize(name)
+  // The relation name is humanized like any other, and only `@label` is taken
+  // verbatim: `customerId` reading as *customer* put the one lowercase header
+  // in a table whose every other column was Title Case, because the relation
+  // name is an IDENTIFIER — `customer`, `productVariant` — and the reader axis
+  // is what a header wants. An author-supplied `@label` is already a reader's
+  // words and is the one thing that must not be re-cased.
+  return rule?.title ?? humanize(rule?.references?.relation ?? name)
 }
 
 /**
@@ -969,17 +992,46 @@ export function columnList(fields, { only, except, limit = 6, identify, label } 
     return info.source === 'declared' || info.source === 'conventional' ? info.field : null
   })()
 
+  // `state` and `quantity` are questions about the column's KIND, and the kind
+  // has one owner — the built-in display table. Re-deriving them from raw keys
+  // is a second reader, and the two disagreed: `x-time` is the `@time`
+  // ATTRIBUTE, so an ordinary `DateTime` carries `format: 'date-time'` and none
+  // of it, and every date column fell to `rest` under a tier whose own name is
+  // *money and time*. An invoice list then led with the tax it was charged
+  // rather than the day it was due.
+  //
+  // `defaultDisplayFor` and not `displayFor`: the ranking reads the built-in
+  // table alone, so a contributed display changes how a column RENDERS and
+  // never which columns a table picks.
   const tierOf = (name, rule) => {
     if (name === named)                       return 'label'
     if (identifying.has(name))                return 'identify'
-    if (rule.values || rule.enum)             return 'state'
-    if (rule['x-money'] || rule['x-time'])    return 'quantity'
+    const { display } = defaultDisplayFor(rule)
+    if (display === 'enum')                   return 'state'
+    if (display === 'money' || display === 'time') return 'quantity'
     return 'rest'
   }
 
   const RANK = { label: 0, identify: 1, state: 2, quantity: 3, rest: 4 }
+
+  // A tenancy stamp is what the boundary SCOPED the read by, so every row that
+  // came back carries the same value: a column of one repeated answer, holding
+  // a slot in a six-column table. It ranks as `rest` on its own merits and that
+  // is not low enough — a model declaring few columns puts the workspace id on
+  // screen ahead of the commit that was deployed.
+  //
+  // Omitted rather than deranked, because there is no position at which a
+  // constant column is worth a slot. `only` still names it: a cross-workspace
+  // screen reads through `asSystem()`, where the stamp is the one column
+  // telling its rows apart, and naming the columns is the escape hatch for
+  // exactly the case the ranking cannot know about.
   const ranked = known
     .filter(name => !removed.has(name))
+    .filter((name) => {
+      if (rules[name]?.['x-litestone-kind'] !== 'tenancy') return true
+      omitted.push({ name, reason: 'a tenancy stamp — the same value in every row a scoped read returns' })
+      return false
+    })
     .map((name, order) => ({ name, rule: rules[name], tier: tierOf(name, rules[name]), order }))
     // Declaration order breaks a tie, so a schema stays readable as a table:
     // within one tier the file's order is the only ordering anybody stated.

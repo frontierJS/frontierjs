@@ -45,6 +45,17 @@ export {
   // which is the kit's to bind (`@frontierjs/ui/controls`).
   controlFor, defaultControlFor, formFieldList, labelFieldFor, labelFieldInfo,
   registerControl, unregisterControl, registeredControls,
+  // The mirror of the three above, for READING (`FJS-D242`). It is the same
+  // shape and the same reason, and it is here because a registry an app cannot
+  // reach is not a registry: the control half was exported and the display half
+  // was not, so an app could say which control a column gets and had no way to
+  // say how it renders — and the only way to find that out was to want it.
+  //
+  // `columnList` and `filterOpFor` come with them because they are what a
+  // hand-written table asks: a page that ranks its own columns without them is
+  // a page that ranks them differently from the generated one.
+  displayFor, defaultDisplayFor, columnList, filterOpFor,
+  registerDisplay, unregisterDisplay, registeredDisplays,
 } from './resource.js'
 // The live stores' half of a token change — see _tokenChanged below.
 import { resetResourcesForIdentityChange } from './resource.js'
