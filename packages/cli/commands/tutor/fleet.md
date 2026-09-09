@@ -53,7 +53,7 @@ context.vars.outpostPort = context.config.outpostPort
 
 ## Lesson 12 — one control plane, one machine
 
-Lesson 7 deployed from your laptop with `fli deploy`: you hold the ssh key, you
+Lesson 9 deployed from your laptop with `fli deploy`: you hold the ssh key, you
 type the command, and the machine is a target. That is one release story and it
 is the right one for one app on one box.
 

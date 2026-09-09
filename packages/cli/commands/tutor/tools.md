@@ -78,10 +78,10 @@ context.vars.studioPort   = context.config.studioPort
 context.vars.devtoolsPort = context.config.devtoolsPort
 ```
 
-## Lesson 2 — the workbench
+## Lesson 3 — the workbench
 
-Lesson 1 built an app and proved it worked by asking the running world. That is
-what a lesson can do. What YOU need, every day, is a way to ask the running
+Lessons 1 and 2 built an app, put a screen on it, and proved both by asking the
+running world. That is what a lesson can do. What YOU need, every day, is a way to ask the running
 world yourself — because the failures that cost time are the quiet ones. A
 screen with no rows on it looks the same whether the query is wrong, the policy
 filtered them out, or the table is genuinely empty. A button that does nothing

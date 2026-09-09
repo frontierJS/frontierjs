@@ -21,7 +21,7 @@ if (context.config.abort) {
 
 context.config.journal.settle('succeeded')
 
-log.success('Lesson 2 done — four tools, and a question each one answers')
+log.success('Lesson 3 done — four tools, and a question each one answers')
 log.info('')
 log.info('  When to open which:')
 log.info('')
@@ -42,7 +42,7 @@ if (context.config.__devtoolsAdded) {
 
 log.info('  surface.snapshot.md       what this app answers — commit it; CI grades it')
 log.info('')
-log.info('  fli tutor:ui              next — the form nobody wrote, in a real browser')
+log.info('  fli tutor:access          next — the gate and the row policy, watched refusing somebody')
 log.info('')
 
 if (ws.kind === 'temp' && !context.flag.keep) {

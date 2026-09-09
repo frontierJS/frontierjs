@@ -16,7 +16,7 @@ two sockets against the same publish**.
 
 The signed-in one still hears it. The anonymous one hears nothing — and no line
 of application code was written to make that happen. The rule is the one you
-read in lesson 2, and it is enforced twice from one declaration: once as a
+read in lesson 4, and it is enforced twice from one declaration: once as a
 `WHERE` on a query, and once here, per recipient, on the way out.
 
 The mechanism has a name worth knowing. Before a frame goes out, each recipient

@@ -22,7 +22,7 @@ if (context.config.stop) return
 
 context.config.journal.settle('succeeded')
 
-log.success('Lesson 3 done — a form nobody wrote, refusing on a rule nobody wired')
+log.success('Lesson 2 done — a form nobody wrote, refusing on a rule nobody wired')
 log.info('')
 log.info('  What was never written down twice:')
 log.info('')
@@ -39,7 +39,7 @@ log.info('')
 log.info('  Children win: <Form> generates only when you pass none, so a page that')
 log.info('  wants a different form writes one and keeps everything else.')
 log.info('')
-log.info('  fli tutor:access          next — the gate and the row policy, watched refusing somebody')
+log.info('  fli tutor:tools           next — the four tools, and when to open which')
 log.info('')
 
 if (ws.kind === 'temp' && !context.flag.keep) {

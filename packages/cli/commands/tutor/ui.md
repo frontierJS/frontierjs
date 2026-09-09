@@ -58,7 +58,7 @@ context.vars.apiPort = context.config.apiPort
 context.vars.webPort = context.config.webPort
 ```
 
-## Lesson 3 — a screen you did not write
+## Lesson 2 — a screen you did not write
 
 Lesson 1 scaffolded a `Note` model and, with it, three routes and a resource
 file. Nothing has looked at them. This lesson does, in a real browser, because

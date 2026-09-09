@@ -18,7 +18,7 @@ transaction rather than four calls.
 The membership is the part worth looking at. Basecamp's standing is **per
 workspace**, not per person: `WorkspaceMember.role` is what grades a caller, so
 the same account is an owner in one workspace and a viewer in another. That is
-the same `@@gate` ladder from lesson 2, resolved one row further out.
+the same `@@gate` ladder from lesson 4, resolved one row further out.
 
 ```js
 if (!await narrate(context)) return

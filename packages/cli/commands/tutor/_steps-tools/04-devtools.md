@@ -78,7 +78,7 @@ if (!await must(context, await probe.httpStatus({
 
 // The pair. A SIGNED-IN read and an ANONYMOUS write, rather than the same
 // caller twice: which levels the Note model grades at is the app's to change —
-// lesson 3 raises its read gate — and a pair built on a particular gate stops
+// lesson 4 raises its read gate — and a pair built on a particular gate stops
 // being a pair the moment somebody edits the schema this lesson is looking at.
 // A caller who holds USER may read, and nobody anonymous may create, in every
 // state this tutorial leaves the app in.

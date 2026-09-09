@@ -58,7 +58,7 @@ worth a lesson is the second question, which most frameworks never ask:
 **who is on the other end?**
 
 A channel is a named set of connections. If joining one is a grant, every
-subscriber gets every row — and the gate you spent lesson 2 declaring is
+subscriber gets every row — and the gate you spent lesson 4 declaring is
 enforced on the request and not on the wire. So the same publish is graded per
 recipient, against the same `@@gate` and the same `@@allow`, and this lesson
 makes you watch it happen: two sockets, one publish, one of them refused.

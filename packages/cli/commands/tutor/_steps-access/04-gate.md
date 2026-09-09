@@ -34,7 +34,7 @@ if (!await must(context, await ensureApi(context), {
   likely: 'nothing is answering on the API port — run this lesson from the start',
 })) return
 
-const note = JSON.stringify({ title: 'a note', body: 'from lesson 2', done: false })
+const note = JSON.stringify({ title: 'a note', body: 'from lesson 4', done: false })
 
 // read at 0 — a stranger, with no token at all
 if (!await must(context, probe.httpStatus({

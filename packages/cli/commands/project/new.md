@@ -1999,6 +1999,13 @@ if (fjsSource === 'local') {
   echo('  install: do an npm run before publishing either way.')
   echo('')
 }
+// A scaffolded tree is where somebody who has never seen FrontierJS lands, and
+// it answers none of what the seed is FOR. The lessons build their own app, so
+// this points somewhere rather than back at the directory it just wrote.
+echo('  New to FrontierJS? `fli tutor` — thirteen lessons that run the real')
+echo('  commands and then ask the running world whether they worked. They build')
+echo('  their own app and leave this one alone.')
+echo('')
 echo('  Then:')
 echo('    bun run check          fli check, then lint, then typecheck — the same gate CI runs')
 echo('    fli scaffold <Model>    add a new model + service + resource + routes')

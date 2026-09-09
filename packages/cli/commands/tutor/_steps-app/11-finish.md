@@ -38,7 +38,7 @@ log.info('')
 log.info('  fli db:tinker      a console on the app, booted at a standing — read the row back')
 log.info('  fli db:studio      the same database in a browser')
 log.info('')
-log.info('  fli tutor:tools    next — the four tools, and when to open which')
+log.info('  fli tutor:ui       next — the form nobody wrote, in a real browser')
 log.info('')
 
 // A named workspace is the person's and is never swept. A temporary one is

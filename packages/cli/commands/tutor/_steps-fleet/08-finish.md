@@ -45,7 +45,7 @@ log.info('  every command is signed, and the machine verifies before it runs any
 log.info('')
 log.info('  This is the other release story. `fli deploy` is you, holding the key,')
 log.info('  deploying one app to one machine. This is a control plane doing it for')
-log.info('  a fleet, and the two share no code — the journal in lesson 7 lives on')
+log.info('  a fleet, and the two share no code — the journal in lesson 9 lives on')
 log.info('  the target, and a Deployment here is a row.')
 log.info('')
 log.info('  fli tutor:adopt           next — the other door: a database that predates all of this')
