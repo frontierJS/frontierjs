@@ -1475,6 +1475,34 @@ function esc(value) {
 // nine themes reach this file too.
 
 const STYLE = `
+/* ── the backdrop ─────────────────────────────────────────────────────────
+   A file beside the written page, never inlined: the image is ~800KB and a
+   data URI would land in every generated atlas and in the committed
+   snapshot's diff. Absent — which is every app but this workspace — the
+   layer paints nothing and no request is made twice. Behind everything and
+   pointer-transparent, so a card that is not opaque reads over it rather
+   than through it. */
+body{position:relative;background-attachment:fixed}
+body::before{
+  content:'';position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:url("fjs-backdrop-portrait.png") center/cover no-repeat;
+  opacity:var(--atlas-backdrop,1);
+}
+
+/* See-through blocks, in the package's own tokens and with no new one: a
+   toned card's fill is --bg-mix mixed INTO --surface, so an alpha given to
+   --surface reaches the tint path and the untoned path at once — measured,
+   a plain card at .82 and a danger card at .838. The alias exists because a
+   declaration may not read the name it sets; the solid value is carried
+   under a second name and mixed from there. Only --app-bg and --surface are
+   touched, so the outlined and ghost variants, which own --surface-bg, are
+   untouched. */
+body.app{--app-bg:transparent;--surface-solid:var(--surface)}
+.card,.tile,.surface,.topbar,.dialog,.popover{
+  --surface:color-mix(in oklab, var(--surface-solid) var(--atlas-surface,82%), transparent);
+  backdrop-filter:blur(2px);
+}
+
 /* ── the realm accents, for the field theme ────────────────────────────────
    The nine realms are the ATLAS's vocabulary, not the design system's — a
    category is an app's fact — so the theme itself carries none of them and
