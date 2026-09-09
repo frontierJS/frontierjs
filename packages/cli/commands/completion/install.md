@@ -1,7 +1,6 @@
 ---
 title: completion:install
 description: Add fli tab completion to your shell — one-time setup
-alias: ci
 examples:
   - fli completion:install
   - fli completion:install --shell zsh

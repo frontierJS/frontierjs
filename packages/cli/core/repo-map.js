@@ -157,10 +157,16 @@ function snapshots(root) {
 
 // ─── ci phases ────────────────────────────────────────────────────────────────
 //
-// Read out of `main()` in call order, with the guard each call sits under, so a
-// phase that is added, reordered or moved between tiers moves here too. The
-// prose is the phase's own section comment — restating it in this file would be
-// a second copy that drifts, which is the thing the whole map is against.
+// Read out of the `PHASES` table and the `FULL_ONLY` set, which is what
+// `main()` itself iterates, so a phase that is added, reordered or moved
+// between tiers moves here too. The prose is the phase's own section comment —
+// restating it in this file would be a second copy that drifts, which is the
+// thing the whole map is against.
+//
+// It read `main()`'s call sequence until that sequence became a loop over the
+// table. Parsing the calls was parsing a restatement: the table and the calls
+// were two lists of one thing, and this file could only ever agree with the
+// second one.
 //
 // A parse that finds nothing returns null: the section then does not render,
 // which is correct for any workspace that is not this one.
@@ -169,33 +175,38 @@ function ciPhases(root) {
   const file = join(root, 'scripts', 'ci.mjs')
   if (!existsSync(file)) return null
 
-  const src  = read(file)
-  const body = src?.match(/function main\s*\(\)\s*\{\n([\s\S]*?)\n\}/)?.[1]
-  if (!body) return null
+  const src   = read(file)
+  const table = src?.match(/const PHASES\s*=\s*\{\n([\s\S]*?)\n\}/)?.[1]
+  if (!table) return null
 
-  const phases = []
-  const guards = []
+  const names = table
+    .replace(/\/\/[^\n]*/g, '')
+    .split(/[,\n]/)
+    .map(t => t.trim())
+    .filter(t => /^\w+$/.test(t))
+  if (!names.length) return null
 
-  for (const line of body.split('\n')) {
-    const opened = line.match(/if\s*\(\s*!\s*(\w+)\s*\)\s*\{/)
-    if (opened) { guards.push(opened[1]); continue }
-    if (/^\s*\}/.test(line)) { guards.pop(); continue }
+  const fullOnly = new Set(
+    (src.match(/const FULL_ONLY\s*=\s*new Set\(\[([\s\S]*?)\]\)/)?.[1] ?? '')
+      .split(',')
+      .map(t => t.trim().replace(/^['"]|['"]$/g, ''))
+      .filter(Boolean)
+  )
 
-    const call = line.match(/^\s*(\w+)\(\)\s*$/)
-    if (!call || call[1] === 'report') continue
+  const phases = names.map(fn => ({
+    fn,
+    label: phaseLabel(src, fn) ?? fn,
+    // The tier is named by the flag that switches the phase OFF, which is what
+    // someone reaching for one wants to know.
+    tier:  fullOnly.has(fn) ? 'full run' : 'fast',
+    skips: [
+      ...(fn === 'tests' ? [] : ['--tests-only']),
+      ...(fullOnly.has(fn) ? ['--fast'] : []),
+    ],
+    note:  phaseNote(src, fn),
+  }))
 
-    phases.push({
-      fn:    call[1],
-      label: phaseLabel(src, call[1]) ?? call[1],
-      // `!fast` means "not on the fast tier" — the guard names the flag that
-      // switches the phase off, which is what someone running it wants to know.
-      tier:  guards.includes('fast') ? 'full run' : 'fast',
-      skips: guards.map(g => `--${kebab(g)}`),
-      note:  phaseNote(src, call[1]),
-    })
-  }
-
-  return phases.length ? { file: relative(root, file), phases } : null
+  return { file: relative(root, file), phases }
 }
 
 /** The string the phase announces itself with — `phase('structure')`. */

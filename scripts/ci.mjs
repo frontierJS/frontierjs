@@ -79,6 +79,74 @@ const only      = readFlag(args, '--only')
 const wantedPhases = args.reduce((out, a, i) =>
   a === '--phase' && args[i + 1] ? [...out, args[i + 1]] : out, [])
 
+// ─── the argv contract ──────────────────────────────────────
+// Every flag this file reads, and the only list of them. A flag takes a value
+// or it does not, which is the half `readFlag` cannot state: without it the
+// refusal below reads `origin/main` as an unknown flag.
+const FLAGS = {
+  '--fast':       false,
+  '--tests-only': false,
+  '--update':     false,
+  '--verbose':    false,
+  '--help':       false,
+  '-h':           false,
+  '--base-ref':   true,
+  '--only':       true,
+  '--phase':      true,
+}
+
+// An unrecognized flag used to be ignored, and `--help` was one of them: asking
+// this file what it does started a fifteen-minute run that touches Docker. A
+// typo in `--phase` is the same shape one step further on, where the run is
+// green and graded nothing.
+for (let i = 0; i < args.length; i++) {
+  const a = args[i]
+  if (!a.startsWith('-')) continue
+  if (!(a in FLAGS)) {
+    console.error(`[ci] ${a} — no such flag. One of: ${Object.keys(FLAGS).join(' ')}`)
+    process.exit(2)
+  }
+  if (FLAGS[a]) i++   // its value, which is not a flag
+}
+
+
+// The phase list is read off the table rather than written out, so a phase
+// added to the run is a phase this prints. What each one FAILS ON is the root
+// `CLAUDE.md` § Running things, and is not restated here.
+function usage() {
+  const tier = n => FULL_ONLY.has(n) ? 'full' : 'fast'
+  const width = Math.max(...Object.keys(PHASES).map(n => n.length))
+  console.log(`
+The whole of CI, and not a GitHub feature — .github/workflows/ci.yml calls this
+file and nothing else, so it runs identically on a laptop.
+
+  bun run ci                      every phase
+  bun run ci:fast                 the fast tier — the pre-push gate
+  bun run ci -- --only litestone  narrow typecheck and tests to one package
+  bun run ci -- --phase snapshots one phase, named
+
+  fli ci ...                      the same thing, from anywhere in the workspace
+
+Flags
+  --fast              skip the full tier
+  --tests-only        the suites alone
+  --phase <name>      one phase, repeatable; run in the table's order, never
+                      the order typed — scaffold packs what deploy installs
+  --only <pkg>        narrow typecheck and tests; hygiene and coverage are
+                      repo-wide questions and ignore it
+  --base-ref <ref>    what access and snapshots compare against (origin/main)
+  --update            write ratchet improvements back to ci-allowances.json
+  --verbose           full child output
+  --help, -h          this
+
+Phases, in the order a full run does them
+${Object.keys(PHASES).map(n => `  ${n.padEnd(width)}  ${tier(n)}`).join('\n')}
+
+What fails each one: CLAUDE.md § Running things.
+Every allowance is a named entry with a reason in scripts/ci-allowances.json.
+`.trim())
+}
+
 // A suite that hangs is the one failure mode that costs more than the bug.
 // css drives a real Chrome and litestone applies migrations, so the ceiling is
 // generous; it exists to end a hang, not to police a slow suite.
@@ -112,7 +180,15 @@ const PHASES = {
   registry, advisories, scaffold, typecheck, deploy, tutor, tests,
 }
 
+// Which tier a phase belongs to, and the ONLY statement of it. The order above
+// and the tier here are what `main()` and `--help` both read, so a phase cannot
+// be added to the run and left out of the printed list, or described in help as
+// something the tier it is in does not do.
+const FULL_ONLY = new Set(['deploy', 'tutor', 'tests'])
+
 async function main() {
+  if (args.includes('--help') || args.includes('-h')) { usage(); return }
+
   if (wantedPhases.length) {
     // Refused by name rather than silently running nothing — a typo that
     // reports a green build is worse than no flag at all.
@@ -129,22 +205,10 @@ async function main() {
     return
   }
 
-  if (!testsOnly) {
-    hygiene()
-    structure()
-    registers()
-    snapshots()
-    access()
-    coverage()
-    await registry()
-    advisories()
-    scaffold()
-    typecheck()
-  }
-  if (!fast) {
-    deploy()
-    tutor()
-    tests()
+  for (const name of Object.keys(PHASES)) {
+    if (testsOnly && name !== 'tests') continue
+    if (fast && FULL_ONLY.has(name)) continue
+    await PHASES[name]()
   }
   report()
 }

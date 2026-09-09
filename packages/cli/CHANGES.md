@@ -1,5 +1,34 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-09 — `fli ci`, and the atlas had been publishing twelve of thirteen phases
+
+**`fli ci` runs the workspace CI from anywhere in it** (`FJS-D255`). An alias and
+nothing more: everything after the command name is handed to `node
+scripts/ci.mjs` untouched, so there is one flag set, one phase list and one exit
+code, and a flag this command has never heard of is refused by the runner rather
+than dropped here. `bun run ci` is a root script and answers only from the root,
+while a phase is most often wanted from inside the package that just went red.
+
+An app has no `scripts/ci.mjs` and gets told so, naming `bun run check`. The walk
+up for the runner is by hand rather than `context.wsRoot()`, which prompts when
+it finds nothing — a prompt hangs a job that reached the wrong repo by mistake.
+The `ci` alias came off `completion:install`, which nothing referenced.
+
+**`node scripts/ci.mjs --help` used to run the whole build.** Unrecognized flags
+were ignored, so asking the file what it does started a fifteen-minute run that
+touches Docker. Flags are a table now — with a takes-a-value column, without
+which `--base-ref origin/main` reads its own value as an unknown flag — and an
+unknown one exits 2 naming itself. `--help` prints every flag and every phase
+with its tier, generated from `PHASES` and `FULL_ONLY` rather than written out.
+
+**Which cost `main()` its call sequence, and that found a defect.** The phase
+order was stated twice, as the `PHASES` table and as the calls; `main()` now
+iterates the table. `core/repo-map.js` was parsing those calls with
+`^\s*(\w+)\(\)$`, which does not match `await registry()` — so
+`repo-atlas.snapshot.html` and `repo-report.snapshot.html` have been publishing
+**twelve** CI phases for a workspace that runs thirteen, with `registry` absent
+and nothing saying so. It reads the table and the tier set now.
+
 ## 2026-09-08 — `money-rendered-raw`, and the generated list rebuilds its URL
 
 **A new `fli check` rule.** A `@money` column holds MINOR units, so printing it

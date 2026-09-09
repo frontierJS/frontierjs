@@ -8716,6 +8716,53 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d255"></a>2026-09-09 · `FJS-D255` — `fli ci` ships as an alias over `scripts/ci.mjs`, overriding *does it introduce another origin of truth*. It forwards argv and grades nothing, and the help it reaches is derived from the phase table.
+
+**The nine questions refused this, and it lands anyway.** Recorded rather than
+argued away: a second spelling of one entry point is a second origin, and
+`bun run ci` already worked. The override is bought by what the alias may not do
+and by what asking for it exposed.
+
+**What it may not do.** It parses no flag of its own and holds no phase list.
+`process.argv` after the command name is handed to `node scripts/ci.mjs`
+untouched, so a flag this file has never heard of is refused by the runner, by
+name — the alias cannot drift from the thing it aliases because it knows nothing
+to drift with. It does not re-grade the run either: the runner's exit code is
+passed through, since a wrapper with a verdict of its own is two answers to one
+question. `--dry` is fli's and is stripped; a leading `--` separator has done its
+job and is stripped with it.
+
+**What it buys.** `bun run ci` is a root script and answers only from the root,
+while a phase is most often wanted from inside the package that just went red.
+Reach is the whole of the addition.
+
+**In an app it refuses and names the equivalent.** A scaffolded app has no
+`scripts/ci.mjs`; its gate is `bun run check`. The refusal walks up for the
+runner rather than calling `context.wsRoot()`, which prompts — a prompt is the
+wrong answer to standing in the wrong repo, and it hangs a job that got there by
+mistake. *Familiarity vs. precision* is the row: fail the muscle memory loudly
+and name the equivalent.
+
+**The alias `ci` was already taken, by `completion:install`, and is taken back.**
+Nothing referenced it, nobody depends on it, and `ci` means continuous
+integration everywhere else — *preservation vs. evolution*, where a spelling
+existing is not a reason to keep it.
+
+**What asking the question actually found.** `node scripts/ci.mjs --help` ran the
+full build: unrecognized flags were ignored, so the cheapest possible question
+cost a fifteen-minute run that touches Docker. Flags are now a table with a
+takes-a-value column and an unknown one exits 2 naming itself, and `--help` is
+generated from `PHASES` and `FULL_ONLY` — which required `main()` to stop
+restating the phase order as a call sequence and iterate the table instead. That
+restatement had a reader: `core/repo-map.js` parsed `main()`'s calls, its pattern
+did not match `await registry()`, and the committed atlas had been publishing
+twelve phases for a workspace that runs thirteen — an origin-of-truth defect
+found by the proposal that fails on origins of truth.
+
+*Tier: Register, and the Map half is `CLAUDE.md` § Running things.*
+
+— `packages/cli/commands/fli/ci.md` · `scripts/ci.mjs` · `packages/cli/core/repo-map.js`.
+
 ### <a id="fjs-d240"></a>2026-09-08 · `FJS-D240` — `fli app:atlas` and `fli project:map` are TWO commands. [`FJS-D223`](#fjs-d223) does not reach them, and what looked like its shape was five copies of one file reader.
 
 Both were built on 2026-09-07, both take `--as`, and both boot the same app

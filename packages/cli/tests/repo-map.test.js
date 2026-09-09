@@ -339,40 +339,79 @@ describe('ci phases', () => {
 
 function hygiene() { const from = phase('hygiene') }
 
-// ─── phase 2 · tests ────────────────────────────────
+// ─── phase 2 · registry ─────────────────────────────
+// Asks the half the register cannot see.
+
+async function registry() { phase('registry') }
+
+// ─── phase 3 · tests ────────────────────────────────
 // Each package's own script, with its own runner.
 
 function tests() { phase('tests') }
 
-function main() {
-  if (!testsOnly) {
-    hygiene()
-  }
-  if (!fast) {
-    tests()
+const PHASES = {
+  hygiene, registry, tests,
+}
+
+const FULL_ONLY = new Set(['tests'])
+
+async function main() {
+  for (const name of Object.keys(PHASES)) {
+    if (testsOnly && name !== 'tests') continue
+    if (fast && FULL_ONLY.has(name)) continue
+    await PHASES[name]()
   }
   report()
 }
 `
 
-  test('reads the phases out of main() in call order, with their tier', () => {
+  test('reads the phases out of the PHASES table in run order, with their tier', () => {
     const dir = tree('ci', { 'package.json': pkg({ name: 'ws' }), 'scripts/ci.mjs': CI })
     const { ci } = collect({ root: dir })
 
-    expect(ci.phases.map(p => p.label)).toEqual(['hygiene', 'tests'])
-    expect(ci.phases.map(p => p.tier)).toEqual(['fast', 'full run'])
+    expect(ci.phases.map(p => p.label)).toEqual(['hygiene', 'registry', 'tests'])
+    expect(ci.phases.map(p => p.tier)).toEqual(['fast', 'fast', 'full run'])
   })
 
-  test('the description is the phase’s own section comment, dividers dropped', () => {
+  // The table is read rather than `main()`'s calls because the calls were a
+  // restatement of it, and this is the phase that proves the difference: the
+  // pattern that read them wanted a bare `name()` and `registry` is awaited, so
+  // the committed atlas published twelve phases for a workspace running
+  // thirteen with nothing saying so.
+  test('an awaited phase is in the list', () => {
+    const dir = tree('ci-await', { 'package.json': pkg({ name: 'ws' }), 'scripts/ci.mjs': CI })
+    expect(collect({ root: dir }).ci.phases.map(p => p.label)).toContain('registry')
+  })
+
+  test('the flag that switches a phase off is named, per tier', () => {
+    const dir = tree('ci-skips', { 'package.json': pkg({ name: 'ws' }), 'scripts/ci.mjs': CI })
+    const by = Object.fromEntries(collect({ root: dir }).ci.phases.map(p => [p.label, p.skips]))
+
+    expect(by.hygiene).toEqual(['--tests-only'])
+    expect(by.tests).toEqual(['--fast'])
+  })
+
+  test('the description is the phase\u2019s own section comment, dividers dropped', () => {
     const dir = tree('ci-note', { 'package.json': pkg({ name: 'ws' }), 'scripts/ci.mjs': CI })
     const { ci } = collect({ root: dir })
 
     expect(ci.phases[0].note).toBe('Everything here is about the difference between this working copy and a fresh clone.')
-    expect(ci.phases[0].note).not.toContain('─')
+    expect(ci.phases[0].note).not.toContain('\u2500')
   })
 
   test('no ci script is null, not an empty section', () => {
     const dir = tree('no-ci', { 'package.json': pkg({ name: 'ws' }) })
+    expect(collect({ root: dir }).ci).toBeNull()
+  })
+
+  // A file with no table is a CI runner this reader does not understand, and
+  // rendering nothing is the only honest answer. Returning a half-parse would
+  // publish a phase list shorter than the run.
+  test('a ci script with no PHASES table is null', () => {
+    const dir = tree('ci-untabled', {
+      'package.json':   pkg({ name: 'ws' }),
+      'scripts/ci.mjs': 'function main() { hygiene() }\n',
+    })
     expect(collect({ root: dir }).ci).toBeNull()
   })
 })
