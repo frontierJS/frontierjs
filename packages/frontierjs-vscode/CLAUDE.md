@@ -131,6 +131,14 @@ out/                  build output, not source
   reported as a boolean attribute. Both block rules take an attribute list now.
   A `.tmLanguage.json` is only graded by `test/grammar.test.js`, which tokenizes
   it; nothing else in this package reads one.
+- **`configurationDefaults` for an OBJECT setting is defeated by any user who
+  has that key at all.** The manifest contributes
+  `emmet.includeLanguages: { "mesa": "html" }`, which is what gives `.mesa`
+  Emmet — `table` + Tab. VS Code does not deep-merge an object setting across
+  scopes: a `settings.json` carrying its own `emmet.includeLanguages` REPLACES
+  the default whole, so a user with `svelte` and `twig` in there silently has no
+  mesa mapping and no diagnostic anywhere says so. Nothing this package ships
+  can fix that from its side; the answer is the key in their settings.
 - **A locally installed copy contributes the same `mesa` language id, and one of
   the two wins.** Two older `mesa-language-support` builds sat in
   `~/.vscode/extensions` for months, so what an editor showed was not necessarily

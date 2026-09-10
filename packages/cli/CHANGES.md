@@ -25,6 +25,17 @@ A declined publish is a SKIP rather than a failure, because by then the version
 and tag are already written — the run reports which packages are versioned and
 unpublished, and the `bun publish` that finishes one.
 
+**The release commit now regenerates the snapshots the bump invalidated.** A
+version is a fact about the workspace and both atlas pages state it, so a commit
+that bumped and did not regenerate was stale the moment it was written — and the
+`snapshots` phase runs in the `pre-push` hook, so the push was refused AFTER the
+packages reached the registry. That is the one ordering this pipeline cannot
+recover from by re-running: the version is spent, the tag is local, and the
+remedy was a command nobody was told. `checkSnapshots({ write: true })` runs
+between the bump and the commit, which is the only place with no person standing
+in it. A snapshot already edited in the working tree is named and left alone,
+since step 01's rule is that an unrelated edit is not part of this release.
+
 ## 2026-09-09 — `fli ci`, and the atlas had been publishing twelve of thirteen phases
 
 **`fli ci` runs the workspace CI from anywhere in it** (`FJS-D255`). An alias and
