@@ -1,5 +1,49 @@
 # Changes — frontierjs-vscode
 
+## 2026-09-09 — `<script module>` had no highlighting, and no grammar had a test
+
+`0.1.2`. `npm test` 107 pass, `verify:package` green.
+
+**Mesa's `script-block` began `(<)(script)(>)`, so it matched the bare tag and
+nothing else.** A `<script module>` block fell through to the HTML element rule:
+`module` was reported as a boolean attribute and the body was plain text, with
+`import`, `export` and every string in it uncolored. That is the DATA half of a
+Resource file — Invariant 18 — so every resource in a Sierra app rendered
+unhighlighted, 117 files in this workspace. `<style global>` and
+`<script lang="js">` were the same shape. The open tag now takes attributes, and
+`module` (and `context="module"`) is scoped as the keyword it is, because when a
+block runs is the one thing about a Resource file's data half a reader needs to
+see.
+
+**A grammar is the one artefact here that fails in complete silence.** There is
+no compiler and no runtime: a rule that matches nothing colors nothing, which
+looks exactly like a file with nothing to color. Neither `npm test` nor
+`verify:package` had ever loaded a `.tmLanguage.json`, which is why the defect
+survived every release and was found by a person looking at a screenshot.
+
+**`test/grammar.test.js` tokenizes with `vscode-textmate` and asserts scopes.**
+Every case is PAIRED with the shape one character away — `module` beside
+`defer`, which must NOT be marked; `<script>` beside `<scripture>`, which must
+not open a block — because a rule that swallowed everything satisfies any
+assertion that only asks about `<script module>`. The corpus row is the half the
+hand-written cases cannot make: every `<script…>` open tag in every `.mesa` file
+in the workspace, graded per BLOCK rather than per file, since most of these
+files carry a module block and a plain one and a per-file check is answered by
+whichever one still works. Reverting the fix reds 6 of 19; reverting it against
+a per-file corpus check reds 5, and the corpus row — the one that would catch
+the next such defect — stays green.
+
+**`source.js` and `source.css` are registered as empty stubs.** VS Code supplies
+them; unresolved, a block whose `patterns` is nothing BUT an unresolvable
+include is dropped whole, so `<style>` reported as broken for a reason that
+existed only in the harness. What the suite reads is the block's own
+`contentName` and the mesa rules beside the include, never JavaScript's scopes.
+
+`verify:package` runs the same suite against the UNPACKED `.vsix` through
+`FJS_SYNTAXES`, and asserts every grammar `contributes.grammars` names is inside
+it — a grammar `.vscodeignore` left out is a file the editor never loads and the
+working tree cannot see.
+
 ## 2026-08-27 — real icons, and `.mesa` gets one at all
 
 `0.1.1`. `npm test` 88 pass, `verify:package` green.

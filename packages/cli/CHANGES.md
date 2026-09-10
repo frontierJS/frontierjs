@@ -1,5 +1,30 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-09 — `ws:pub --interactive`
+
+**A release is now walkable one package at a time** (`-i`). npm's 2FA opens a
+browser and is asked once per publish, which the batch loop could not pace: it
+handed the OTP prompt to whichever package came next while the person was
+reading a different one, and a failure partway through left versions on the
+registry, tags in the tree and nothing pushed — the state step 02's own warning
+describes.
+
+Interactive is a FLAG on `ws:pub` rather than a command of its own. A second
+command would be a second implementation of what a release is, and `release:` is
+already a noun here — a Release is what `fli deploy` mints, not what npm holds.
+
+**It does not bump per package, and cannot.** `bun publish` rewrites a
+`workspace:*` dependency from the lockfile, so all versions are written, the
+lockfile is refreshed once and the commit is made before anything publishes;
+bumping one at a time would pin every sibling to a version the run has not
+published yet. So the pauses are where a person can actually answer: choosing
+the candidates and their bump levels, approving the preflight before a version
+is spent, each publish, and the push.
+
+A declined publish is a SKIP rather than a failure, because by then the version
+and tag are already written — the run reports which packages are versioned and
+unpublished, and the `bun publish` that finishes one.
+
 ## 2026-09-09 — `fli ci`, and the atlas had been publishing twelve of thirteen phases
 
 **`fli ci` runs the workspace CI from anywhere in it** (`FJS-D255`). An alias and

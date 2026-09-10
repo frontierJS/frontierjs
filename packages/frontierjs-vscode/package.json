@@ -2,7 +2,7 @@
   "name": "vscode-frontierjs",
   "displayName": "FrontierJS VSCode Plugin",
   "description": "Language support for Litestone (.lite) and (.mesa)",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "frontierJS",
   "license": "MIT",
   "private": true,
@@ -238,8 +238,8 @@
     "dev": "npm run watch",
     "package": "vsce package --no-dependencies",
     "publish": "vsce publish --no-dependencies",
-    "test": "npm run build && node test/lsp.test.js && node test/mesa.test.js && node test/snippets.test.js",
-    "test:nobuild": "node test/lsp.test.js && node test/mesa.test.js && node test/snippets.test.js",
+    "test": "npm run build && node test/lsp.test.js && node test/mesa.test.js && node test/snippets.test.js && node test/grammar.test.js",
+    "test:nobuild": "node test/lsp.test.js && node test/mesa.test.js && node test/snippets.test.js && node test/grammar.test.js",
     "verify:package": "node scripts/verify-package.js",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
@@ -252,8 +252,10 @@
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^2.24.0",
-    "typescript": "^5.3.0",
+    "concurrently": "^8.2.0",
     "esbuild": "^0.20.0",
-    "concurrently": "^8.2.0"
+    "typescript": "^5.3.0",
+    "vscode-oniguruma": "^2.0.1",
+    "vscode-textmate": "^9.3.2"
   }
 }

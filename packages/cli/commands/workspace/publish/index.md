@@ -9,6 +9,7 @@ examples:
   - fli ws-pub patch --affected
   - fli ws-pub patch --dry
   - fli ws-pub patch --no-push
+  - fli ws-pub --interactive
 args:
   -
     name: bump
@@ -66,6 +67,11 @@ flags:
     type: boolean
     description: Only publish packages changed since their own release tag
     defaultValue: false
+  interactive:
+    char: i
+    type: boolean
+    description: Walk the release one package at a time, confirming each step — the pacing a browser 2FA prompt needs
+    defaultValue: false
 ---
 
 Bump versions, publish to npm, then push.
@@ -91,6 +97,21 @@ Worth reaching for when this repo's `pre-push` hook is a CI tier — a release
 commit carries version bumps and nothing else, so re-running the checks that
 already passed on its parent costs about a minute and proves nothing new. The
 push command is printed for you to run when you mean to.
+
+`--interactive` walks the release rather than running it. Each candidate is
+offered on its own with what has moved since its tag, the preflight refusals are
+read before a version is spent, and the publish loop stops before every package
+— which is the whole reason the flag exists: npm's browser 2FA is per-publish
+and human-paced, and a loop that does not stop hands the OTP prompt to a package
+nobody is looking at.
+
+What it does NOT do is bump one package at a time, and that is worth knowing
+before reaching for it. `bun publish` rewrites a `workspace:*` dependency from
+the LOCKFILE, so every version is written, the lockfile is refreshed once and
+the commit is made BEFORE anything is published — bumping per package would pin
+every sibling to a version this run has not published yet. So the choosing is
+interactive, the versioning is one shot, and the publishing is interactive
+again.
 
 ```js
 const { wsRoot, packages: all } = await context.wsPackages()
@@ -156,8 +177,45 @@ if (!packages.length) {
 
 // Target versions are resolved here rather than in the version step, so the
 // preview below states the numbers a user is approving.
-const planned = packages.map(p => ({ ...p, newVersion: bumpVersion(p.pkg.version, arg.bump) }))
-const repo    = context.wsRepo(all)
+let planned = packages.map(p => ({ ...p, newVersion: bumpVersion(p.pkg.version, arg.bump) }))
+const repo  = context.wsRepo(all)
+
+// ─── interactive selection ────────────────────────────────────────────────────
+// The prompts are constructed ONCE and travel to the steps on `context.config`.
+// A step importing its own would put a second readline interface on one TTY,
+// and the two then race for every keystroke.
+let prompts = null
+if (flag.interactive) {
+  const { createPrompts } = await import(new URL('file://' + global.fliRoot + '/core/prompt.js'))
+  prompts = createPrompts()
+
+  const chosen = []
+  echo('')
+  log.info(`${planned.length} candidate(s) — choose a bump for each, or skip it`)
+  echo('')
+  for (const p of planned) {
+    // What has moved since this package's OWN tag is the fact the decision
+    // turns on: a package with no commits since its tag is one whose version
+    // would be spent on nothing, so that is what the default answers.
+    const state = context.git.pkgState(p.pkg.name, p.dir)
+    const since = state.affected
+      ? `${state.commits.length} commit(s) since ${state.lastTag || 'ever'}`
+      : `nothing since ${state.lastTag || 'ever — never released'}`
+    echo(`  ${p.pkg.name}  ${p.pkg.version}  — ${since}${state.dirty ? `, ${state.files.length} uncommitted` : ''}`)
+    if (state.affected) echo(`    last: ${state.commits[0].subject}`)
+    const pick = await prompts.choose('bump', ['patch', 'minor', 'major', 'prerelease', 'skip'],
+                                      { default: state.affected ? 0 : 4 })
+    if (pick !== 'skip') chosen.push({ ...p, newVersion: bumpVersion(p.pkg.version, pick) })
+    echo('')
+  }
+
+  if (!chosen.length) {
+    log.info('Nothing chosen — nothing to publish')
+    prompts.close()
+    return
+  }
+  planned = chosen
+}
 
 log.info(`Publishing ${planned.length} package(s)`)
 log.info(`Bump:   ${arg.bump}`)
@@ -183,4 +241,9 @@ context.config.startTime  = Date.now()
 // Steps are compiled without the namespace module, so the helpers travel here.
 context.config.releaseTag     = releaseTag
 context.config.releaseSubject = releaseSubject
+
+// The pacing the later steps read. `prompts` is null unless --interactive, so a
+// step reaching for it on an ordinary run finds nothing and never opens stdin.
+context.config.interactive = flag.interactive
+context.config.prompts     = prompts
 ```

@@ -9,8 +9,18 @@ import { execSync } from 'child_process'
 </script>
 
 ```js
-const { released, repo, startTime } = context.config
+const { released, repo, startTime, interactive, prompts } = context.config
 if (!released?.length) return
+
+if (interactive && !flag['no-push']) {
+  echo('')
+  if (!await prompts.confirm('  Push the release commit and tags?', { default: true })) {
+    prompts.close()
+    log.info('  Not pushed. The release commit and tags are local:')
+    log.info(`    git -C ${repo ?? released[0].dir} push origin HEAD --tags`)
+    return
+  }
+}
 
 // --no-push is handled HERE rather than as a `skip:` predicate so the run still
 // reports what it did, and says what is left to do. A skipped step prints one
@@ -20,6 +30,7 @@ if (flag['no-push']) {
   log.success(`Published ${released.length} package(s) in ${elapsed}s`)
   log.info('  --no-push: the release commit and tags are local. Push with:')
   log.info(`    git -C ${repo ?? released[0].dir} push origin HEAD --tags`)
+  prompts?.close()
   return
 }
 
@@ -43,6 +54,8 @@ for (const { label, dir } of targets) {
     log.warn(`  ✗ ${label} push failed: ${err.message}`)
   }
 }
+
+prompts?.close()
 
 const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
 log.success(`Published ${released.length} package(s) in ${elapsed}s`)

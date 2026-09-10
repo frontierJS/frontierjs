@@ -51,7 +51,8 @@ here renders as an empty heading.
 - **ws:run** `<script>` — an npm script across all members
 - **ws:exec** `"<cmd>"` — a shell command in every package dir
 - **ws:version** `<bump>` — bump versions, commit and tag, no publish
-- **ws:pub** `<bump>` — bump, publish to npm, push
+- **ws:pub** `<bump>` — bump, publish to npm, push; `-i` walks it one package
+  at a time, which is the pacing npm's browser 2FA needs
 - **ws:clean** — delete build artifacts
 
 ## Where the workspace is

@@ -8,13 +8,30 @@ import { execSync } from 'child_process'
 </script>
 
 ```js
-const { released, tag, otp, tolerate } = context.config
+const { released, tag, otp, tolerate, interactive, prompts } = context.config
 if (!released?.length) { log.info('Nothing to publish'); return }
 
 const published = []
 const failures  = []
+const skipped   = []
 
 for (const { name, dir, newVersion } of released) {
+  // The pause the flag exists for. npm's browser 2FA is per-publish, so a loop
+  // that does not stop here opens an OTP prompt for a package nobody is looking
+  // at — and the version is already committed by now, so *not this one, not
+  // today* has to be answerable without abandoning the run.
+  if (interactive && !flag.dry) {
+    echo('')
+    log.info(`  Ready: ${name}@${newVersion}  →  npm (tag ${tag})`)
+    if (!await prompts.confirm('  Publish it?', { default: true })) {
+      // A skip is NOT a failure: the version and tag are already written, so
+      // the recovery is `bun publish` in that directory whenever you mean to.
+      skipped.push(`${name}@${newVersion}`)
+      log.warn(`  · skipped ${name}@${newVersion}`)
+      continue
+    }
+  }
+
   // bun, not npm: npm ships a `workspace:*` dependency spec verbatim, and no
   // registry can resolve one — the package installs nowhere. bun's packer
   // rewrites it to the sibling's version and drops devDependencies entirely.
@@ -44,6 +61,12 @@ for (const { name, dir, newVersion } of released) {
 }
 
 context.config.published = published
+
+if (skipped.length) {
+  log.warn(`  ${skipped.length} skipped: ${skipped.join(', ')}`)
+  log.warn('  Each is versioned and tagged locally. Publish one with:')
+  log.warn('    bun publish   (from that package directory)')
+}
 
 if (failures.length) {
   // The commit and tags from step 01 are still local — nothing is pushed, so

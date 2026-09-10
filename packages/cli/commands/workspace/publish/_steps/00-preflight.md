@@ -31,12 +31,31 @@ if (refusals.some(r => !r.note)) {
   // runs any teardown, and nothing has been versioned yet — so the recovery is
   // to fix what is named and run the same command again.
   context.config.abort = true
+  context.config.prompts?.close()
   return
 }
 
 // The order is the product of this step even when nothing refused. A dependency
 // published second resolves for nobody in the window between the two.
 context.config.planned = sorted.order
+
+// The last stop before a version is spent. Asked HERE rather than at the end of
+// the command file because the refusals above are the thing being approved, and
+// the note-only ones — a peer range that could not be decided — are exactly the
+// kind a person reads and then chooses to accept.
+const { interactive, prompts } = context.config
+if (interactive && !flag.dry) {
+  const names = sorted.order.map(p => p.pkg.name.replace('@frontierjs/', '')).join(' → ')
+  echo('')
+  log.info(`  Next: write ${sorted.order.length} version(s), refresh the lockfile, commit and tag.`)
+  log.info(`  Publish order: ${names}`)
+  if (!await prompts.confirm('  Version and commit now?', { default: true })) {
+    log.info('  Stopped — nothing versioned, nothing published')
+    prompts.close()
+    context.config.abort = true
+    return
+  }
+}
 
 if (!refusals.length) {
   const names = sorted.order.map(p => p.pkg.name.replace('@frontierjs/', '')).join(' → ')

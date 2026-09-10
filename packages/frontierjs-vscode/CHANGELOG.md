@@ -3,6 +3,15 @@
 The user-facing history of the FrontierJS VS Code extension. Engineering detail
 — why a defect existed and what it cost — is in `CHANGES.md` in the repository.
 
+## 0.1.2 — unreleased
+
+### Mesa (`.mesa`)
+
+- **`<script module>` is highlighted.** The grammar matched only a bare
+  `<script>` tag, so a module block — the data half of every Resource file —
+  rendered as plain text. `<style global>` and `<script lang="js">` are fixed
+  with it, and `module` is now colored as the keyword it is.
+
 ## 0.1.0 — unreleased
 
 First release. Litestone gets a language server; Mesa gets editor support.

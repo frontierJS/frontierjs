@@ -22,7 +22,7 @@ src/
     completions.js · hover.js · symbols.js
 test/
   lsp-client.js       an LSP client over stdio — the Litestone suite's driver
-  lsp.test.js · mesa.test.js · snippets.test.js
+  lsp.test.js · mesa.test.js · snippets.test.js · grammar.test.js
   vscode-stub.js      a stand-in editor, so the Mesa providers run under node
 scripts/
   build-parser.js     litestone's parser → out/litestone/parser-bundle.js
@@ -123,6 +123,14 @@ out/                  build output, not source
   text, so every literal one is `\\$`. The editor's only complaint is one line in
   the extension host log at startup naming neither snippet nor file; the test is
   `test/snippets.test.js`. A `prefix` is exempt — it is typed, not expanded.
+- **A grammar fails in complete silence — no compiler, no runtime.** A rule that
+  matches nothing colors nothing, which is the same picture as a file with
+  nothing to color. `script-block` began `(<)(script)(>)` and so matched the
+  bare tag alone: every `<script module>` — the data half of every Resource file
+  in a Sierra app, 117 of them here — rendered as plain text with `module`
+  reported as a boolean attribute. Both block rules take an attribute list now.
+  A `.tmLanguage.json` is only graded by `test/grammar.test.js`, which tokenizes
+  it; nothing else in this package reads one.
 - **A locally installed copy contributes the same `mesa` language id, and one of
   the two wins.** Two older `mesa-language-support` builds sat in
   `~/.vscode/extensions` for months, so what an editor showed was not necessarily
@@ -215,6 +223,24 @@ reproduces the original `Cannot read properties of null (reading 'models')`).
   none-found case, diagnostics from analysis errors and from a `compile()` that
   throws, the debounce, and each of the three providers.
 
+### Grammars — tokenized with `vscode-textmate`
+
+`test/grammar.test.js` loads the real `.tmLanguage.json` and asserts SCOPES.
+Every case is paired with the shape one character away — `module` beside
+`defer`, `<script>` beside `<scripture>` — because a rule that swallowed
+everything satisfies any assertion that only asks about the case that broke.
+The corpus row is the half the hand-written cases cannot make: every
+`<script…>` open tag in every `.mesa` file in the workspace, graded per BLOCK,
+since most files carry a module block AND a plain one and a per-file check is
+answered by whichever one still works.
+
+`source.js` and `source.css` are empty stubs — VS Code supplies them. They
+cannot be left unresolved: a block whose `patterns` is nothing BUT an
+unresolvable include is dropped whole, so `<style>` reported as broken for a
+reason that existed only in the harness.
+
+Mutation-checked: reverting `script-block`'s begin to `(<)(script)(>)` reds 6.
+
 ### Snippets — no build needed
 
 `test/snippets.test.js` walks every body of both snippet files: a `$` must be
@@ -225,15 +251,15 @@ Mutation-checked too: dropping `allowJs` reproduces
 `Cannot find module './hover'` at activation, and turning the opaque dynamic
 import back into `await import(p)` turns every resolution case red.
 
-`npm run test:nobuild` skips the build while iterating. For anything neither
-suite can show you, load the extension in a VS Code dev host (F5) — and
+`npm run test:nobuild` skips the build while iterating. For anything none of the
+suites can show you, load the extension in a VS Code dev host (F5) — and
 uninstall the older `mesa-language-support` copies first.
 
 **`npm run verify:package`** proves the ARTEFACT rather than the tree: it packs,
 unpacks the `.vsix` somewhere with no `node_modules` above it, checks every icon
-`package.json` names is inside, that neither bundle bare-requires something
-unshipped, and that the Mesa providers and the opaque dynamic import survived
-bundling — then runs both suites against the UNPACKED copies (`FJS_LSP_SERVER`
-and `FJS_MESA_CLIENT` point them at any copy). Run it after touching
-`package.json`, the bundle or the icons — a `.vsix` that builds is not an
+and grammar `package.json` names is inside, that neither bundle bare-requires
+something unshipped, and that the Mesa providers and the opaque dynamic import
+survived bundling — then runs three suites against the UNPACKED copies
+(`FJS_LSP_SERVER`, `FJS_MESA_CLIENT` and `FJS_SYNTAXES` point them at any copy).
+Run it after touching `package.json`, the bundle, the icons or a grammar — a `.vsix` that builds is not an
 extension that runs, and the marketplace is where that difference shows up.

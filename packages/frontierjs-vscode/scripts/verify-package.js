@@ -53,6 +53,7 @@ for (const lang of PKG.contributes.languages) {
   ok(`${lang.id} file icon: dark`,  has(lang.icon.dark))
 }
 ok('parser bundle beside the server', has('out/litestone/parser-bundle.js'))
+for (const g of PKG.contributes.grammars) ok(`${g.language} grammar shipped`, has(g.path))
 for (const s of PKG.contributes.snippets) ok(`${s.language} snippets shipped`, has(s.path))
 ok('no node_modules shipped', !has('node_modules'))
 
@@ -98,6 +99,16 @@ const mesa = spawnSync('node', [path.join(ROOT, 'test', 'mesa.test.js')], {
 const mesaTail = (mesa.stdout || '').trim().split('\n').slice(-3).join('\n')
 ok('mesa suite passes against the unpacked client', mesa.status === 0,
   mesaTail + (mesa.stderr ? `\n${mesa.stderr.trim().split('\n').slice(-3).join('\n')}` : ''))
+
+console.log('\nthe unpacked grammars tokenize')
+const grammar = spawnSync('node', [path.join(ROOT, 'test', 'grammar.test.js')], {
+  cwd: tmp,
+  env: { ...process.env, FJS_SYNTAXES: path.join(ext, 'syntaxes') },
+  encoding: 'utf8',
+})
+const grammarTail = (grammar.stdout || '').trim().split('\n').slice(-3).join('\n')
+ok('grammar suite passes against the unpacked syntaxes', grammar.status === 0,
+  grammarTail + (grammar.stderr ? `\n${grammar.stderr.trim().split('\n').slice(-3).join('\n')}` : ''))
 
 fs.rmSync(tmp, { recursive: true, force: true })
 console.log(fail ? `\n${fail} failed\n` : '\nall good\n')

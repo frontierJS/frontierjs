@@ -16,13 +16,15 @@
   "repository": {
 
     "script-block": {
+      "comment": "The open tag takes attributes: <script module>, <script lang=\"js\">. A grammar matching only <script> leaves every resource file in a Sierra app unhighlighted, since the data half of one is <script module>.",
       "name": "meta.script.mesa",
-      "begin": "(<)(script)(>)",
+      "begin": "(<)(script)((?:\\s[^>]*)?)(>)",
       "end": "(</)(script)(>)",
       "beginCaptures": {
         "1": { "name": "punctuation.definition.tag.begin.html" },
         "2": { "name": "entity.name.tag.html" },
-        "3": { "name": "punctuation.definition.tag.end.html" }
+        "3": { "patterns": [{ "include": "#script-tag-attributes" }] },
+        "4": { "name": "punctuation.definition.tag.end.html" }
       },
       "endCaptures": {
         "1": { "name": "punctuation.definition.tag.begin.html" },
@@ -38,12 +40,13 @@
 
     "style-block": {
       "name": "meta.style.mesa",
-      "begin": "(<)(style)(>)",
+      "begin": "(<)(style)((?:\\s[^>]*)?)(>)",
       "end": "(</)(style)(>)",
       "beginCaptures": {
         "1": { "name": "punctuation.definition.tag.begin.html" },
         "2": { "name": "entity.name.tag.html" },
-        "3": { "name": "punctuation.definition.tag.end.html" }
+        "3": { "patterns": [{ "include": "#html-attribute" }] },
+        "4": { "name": "punctuation.definition.tag.end.html" }
       },
       "endCaptures": {
         "1": { "name": "punctuation.definition.tag.begin.html" },
@@ -52,6 +55,25 @@
       },
       "contentName": "source.css.embedded.mesa",
       "patterns": [{ "include": "source.css" }]
+    },
+
+    "script-tag-attributes": {
+      "comment": "Inside the captured open tag there is no trailing '>' for html-attribute's boolean-attribute lookahead to find, so the two module spellings are matched by name.",
+      "patterns": [
+        {
+          "match": "\\b(module)\\b",
+          "name": "keyword.control.script-module.mesa"
+        },
+        {
+          "match": "\\b(context)(=)(\"module\"|'module')",
+          "captures": {
+            "1": { "name": "keyword.control.script-module.mesa" },
+            "2": { "name": "punctuation.separator.key-value.html" },
+            "3": { "name": "keyword.control.script-module.mesa" }
+          }
+        },
+        { "include": "#html-attribute" }
+      ]
     },
 
     "mesa-script-annotations": {
