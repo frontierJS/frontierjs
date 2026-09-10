@@ -1,5 +1,19 @@
 # Changes — @frontierjs/css
 
+## 2026-09-09 — `vocabulary.json` no longer carries the package version
+
+**Every release left this file one version behind and the working tree dirty.**
+`prepublishOnly` runs `build:vocabulary` during `bun publish`, which is after
+the release commit has been written, so the regenerated `version` landed in the
+tree with nowhere to go — and the next release committed the previous one's
+number. The tarball was always correct; only the committed copy drifted.
+
+The field is gone rather than the ordering fixed. Nothing in the workspace read
+it, and the suite's freshness check already had to exclude it by hand so that a
+bump alone did not read as vocabulary drift — a field carrying no signal to
+either reader, coupling a file generated from `vocabulary.js` to a number that
+moves for unrelated reasons.
+
 ## 2026-09-08 — Group ships, Kicker ships, Lead does not
 
 **Group had been a vocabulary term with no CSS** — Region tier, `<div>`, *a

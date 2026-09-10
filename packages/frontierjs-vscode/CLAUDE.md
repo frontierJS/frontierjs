@@ -139,6 +139,34 @@ out/                  build output, not source
   the default whole, so a user with `svelte` and `twig` in there silently has no
   mesa mapping and no diagnostic anywhere says so. Nothing this package ships
   can fix that from its side; the answer is the key in their settings.
+- **The mapping alone gives no Emmet SUGGESTIONS.** Emmet's completion
+  provider returns early for any MAPPED language unless
+  `showExpandedAbbreviation` is `always` — `(mapped || jsx) && value !==
+  'always'` in its own source — so with the common
+  `inMarkupAndStylesheetFilesOnly`, an abbreviation never reaches the suggest
+  widget. The setting is `language-overridable`, so the manifest defaults
+  `"[mesa]": { "emmet.showExpandedAbbreviation": "always" }` rather than
+  changing it everywhere. A user with their own global value still needs the
+  `[mesa]` block in their OWN settings — a language default does not outrank
+  a user setting.
+- **Neither of those is why Tab does nothing — the KEYBINDING loses on weight.**
+  Emmet's Tab binding is registered at weight 100
+  (`editor.emmet.action.expandAbbreviation`, `kbExpr` only
+  `editorTextFocus && tabDoesNotMoveFocus && config.emmet.triggerExpansionOnTab`)
+  and `insertBestCompletion` — the binding `editor.tabCompletion: "on"` turns on
+  — at 190, so Tab triggers suggest and accepts the best word instead. The best
+  word is the abbreviation the author just typed, so it re-inserts the same text
+  and reads as nothing happening, which is why this is diagnosed as an Emmet
+  configuration problem and never is. A USER keybinding outranks both:
+
+      { "key": "tab", "command": "editor.emmet.action.expandAbbreviation",
+        "when": "editorTextFocus && !editorReadonly && !editorTabMovesFocus &&
+                 editorLangId == mesa && !suggestWidgetVisible && !inSnippetMode" }
+
+  Safe, because Emmet runs a plain `tab` when it finds no abbreviation. This
+  package ships no such binding — taking Tab for a language is the author's
+  call, not an editor extension's. VSCodeVim is not involved: its own Tab
+  binding is `vim.mode != 'Insert'`.
 - **A locally installed copy contributes the same `mesa` language id, and one of
   the two wins.** Two older `mesa-language-support` builds sat in
   `~/.vscode/extensions` for months, so what an editor showed was not necessarily

@@ -384,11 +384,7 @@ ${features.join('\n')}
 # 1. Install deps
 bun install
 
-# 2. Set up env
-cp .env.example .env
-# Generate ENCRYPTION_KEY: openssl rand -hex 32
-
-# 3. Start
+# 2. Start
 bun run dev
 \`\`\`
 
@@ -401,6 +397,25 @@ ${[
 ports are derived, not chosen: \`env*1000 + category*100 + project*10 + service\`.
 
 Schema DDL runs automatically on first start — no migration step.
+
+\`.env\` is already written and \`ENCRYPTION_KEY\` already has a value${useAuth ? '' : " — if it is\nblank, `fli keygen aes --format hex --name ENCRYPTION_KEY --env` fills it"}. Copying
+\`.env.example\` over it blanks the key, and Litestone refuses to open with one.
+
+${useAuth ? `
+### The first account
+
+Nobody exists yet, and the login page cannot sign in an empty \`user\` table.
+Two doors:
+
+\`\`\`bash
+fli auth:create-user you@example.com --role admin
+\`\`\`
+
+or \`/register/\` in the browser, which signs the new account straight in.
+Registration gives everybody role \`user\`; \`--role admin\` is the only way to
+mint an ADMINISTRATOR, and \`db/schema.lite\` marks \`role\` \`@allow('write',
+auth().isAdmin)\` so nobody promotes themselves on the way in.
+` : ''}
 
 ## Checking it
 
@@ -1132,7 +1147,12 @@ siteName: ${appName}
   // Naming a property in a $: line is what SUBSCRIBES this component to it.
   // Without it status.connected renders once, at its initial false, and never
   // updates — the socket connects and the page still says otherwise.
-  $: (page.siteName, status.connected, session.user)
+  //
+  // session.checked is here for the same reason and answers a different
+  // question: the boot restore is asynchronous, so on a cold load session.user
+  // is null for a caller who IS signed in. Rendering the signed-out nav until
+  // it settles is the redirect flash one layer up.
+  $: (page.siteName, status.connected, session.user, session.checked)
 
   // Awaited: signOut ends the session at the SERVER and then locally, and
   // navigating first would send the guard past a session that is still there.
@@ -1148,12 +1168,24 @@ ${sc}
 
     <div class="links">
       <a href="/" class:active={isActive('/')}>Home</a>
-      <a href="/users/" class:active={isActive('/users/')}>Users</a>
+      <!-- User reads at gate level 4 in db/schema.lite, so this link cannot
+           work for a stranger. A nav that offers one that always answers
+           "Authentication required" is a working app reporting itself broken. -->
+      {#if session.user}
+        <a href="/users/" class:active={isActive('/users/')}>Users</a>
+      {/if}
     </div>
 
     <div class="status">
       <span class="dot" class:connected={status.connected}></span>
-      <button on:click={out}>Sign out</button>
+      {#if !session.checked}
+        <span class="who">…</span>
+      {:else if session.user}
+        <span class="who">{session.user.email}</span>
+        <button on:click={out}>Sign out</button>
+      {:else}
+        <a class="cta" href="/login/">Sign in</a>
+      {/if}
     </div>
   </nav>
 
@@ -1169,6 +1201,9 @@ ${sc}
   .links { display: flex; gap: 16px }
   .links a { text-decoration: none; color: #6b7280 }
   .links a.active { color: #111 }
+  .status { display: flex; align-items: center; gap: 10px }
+  .who { color: #6b7280; font-size: 14px }
+  .cta { text-decoration: none; color: #111; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 12px }
   main { padding: 24px; flex: 1 }
   .dot { width: 8px; height: 8px; border-radius: 50%; background: #e5e7eb; display: inline-block }
   .dot.connected { background: #22c55e }
@@ -1365,8 +1400,8 @@ function makeRouteLogin() {
 title: Sign in
 ---
 <script>
-  import { goto }      from '@frontierjs/sierra/router'
-  import { signIn } from '@frontierjs/sierra/junction'
+  import { goto }         from '@frontierjs/sierra/router'
+  import { signIn }       from '@frontierjs/sierra/junction'
 
   let email    = ''
   let password = ''
@@ -1403,6 +1438,19 @@ ${sc}
   <button on:click={handleSubmit} disabled={loading}>
     {loading ? 'Signing in…' : 'Sign in'}
   </button>
+
+  <p class="alt">No account? <a href="/register/">Create one</a></p>
+
+  <!-- A fresh app has no rows in \`user\`, so the first person to open this
+       page cannot sign in and there is nothing on screen saying why. The other
+       door is the CLI, which is also the only way to mint an ADMIN — register
+       gives everybody role "user", and db/schema.lite gates delete at 5. -->
+  {#if import.meta.env.DEV}
+    <p class="hint">
+      First run? No user exists yet. Either register above, or from the app root:
+      <code>fli auth:create-user you@example.com --role admin</code>
+    </p>
+  {/if}
 </div>
 
 <style>
@@ -1411,6 +1459,75 @@ ${sc}
   button { padding: 8px 12px; background: #111; color: #fff; border: none; border-radius: 6px; cursor: pointer }
   button:disabled { opacity: .5 }
   .error { color: #ef4444; font-size: 14px }
+  .alt { font-size: 14px; color: #6b7280; margin: 0 }
+  .hint { font-size: 13px; color: #6b7280; line-height: 1.5; margin: 0 }
+  code { background: #f3f4f6; padding: 1px 4px; border-radius: 4px; font-size: .95em }
+</style>
+`
+}
+
+function makeRouteRegister() {
+  return `---
+title: Create an account
+---
+<script>
+  import { goto }   from '@frontierjs/sierra/router'
+  import { signUp } from '@frontierjs/sierra/junction'
+
+  let email    = ''
+  let password = ''
+  let name     = ''
+  let error    = ''
+  let loading  = false
+
+  // The API mounts {apiPrefix}/auth/register whether or not a page like this
+  // exists, so this screen adds no surface — it is the one that was missing.
+  // Delete the file and the route is still open; close it in api/src/app.ts.
+  //
+  // Everyone who arrives this way gets role "user", which db/schema.lite grades
+  // as USER(4). ADMINISTRATOR(5) comes from \`fli auth:create-user --role admin\`
+  // or from an admin editing the row: role carries @allow('write', auth().isAdmin),
+  // so a caller cannot promote themselves on the way in.
+  async function handleSubmit() {
+    loading = true
+    error   = ''
+    try {
+      // signUp signs the new account IN — the server answers with a token and
+      // the client stores it — so there is no second trip through /login/.
+      await signUp({ email, password, name })
+      goto('/')
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+${sc}
+
+<div class="register">
+  <h1>Create an account</h1>
+
+  {#if error}
+    <p class="error">{error}</p>
+  {/if}
+
+  <input bind:value={name}     type="text"     placeholder="Name" />
+  <input bind:value={email}    type="email"    placeholder="Email" />
+  <input bind:value={password} type="password" placeholder="Password" />
+  <button on:click={handleSubmit} disabled={loading}>
+    {loading ? 'Creating…' : 'Create account'}
+  </button>
+
+  <p class="alt">Already have one? <a href="/login/">Sign in</a></p>
+</div>
+
+<style>
+  .register { max-width: 320px; margin: 80px auto; display: flex; flex-direction: column; gap: 12px }
+  input { padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 14px }
+  button { padding: 8px 12px; background: #111; color: #fff; border: none; border-radius: 6px; cursor: pointer }
+  button:disabled { opacity: .5 }
+  .error { color: #ef4444; font-size: 14px }
+  .alt { font-size: 14px; color: #6b7280; margin: 0 }
 </style>
 `
 }
@@ -1691,7 +1808,7 @@ if (useDeploy && useApi) dirs.push('deploy')
 if (flag.ci !== false) dirs.push('.github/workflows')
 if (useWeb) {
   dirs.push('web', 'web/config', 'web/src', 'web/src/routes', 'web/src/resources', 'web/src/components')
-  if (useAuth) dirs.push('web/src/routes/login')
+  if (useAuth) dirs.push('web/src/routes/login', 'web/src/routes/register')
 }
 
 for (const d of dirs) {
@@ -1739,7 +1856,10 @@ if (useWeb) {
     ['web/src/routes/index.mesa',           makeRouteIndex(appName)],
   )
   if (useAuth) {
-    filesToWrite.push(['web/src/routes/login/index.mesa', makeRouteLogin()])
+    filesToWrite.push(
+      ['web/src/routes/login/index.mesa',    makeRouteLogin()],
+      ['web/src/routes/register/index.mesa', makeRouteRegister()],
+    )
   }
 }
 
@@ -2006,6 +2126,17 @@ echo('  New to FrontierJS? `fli tutor` — thirteen lessons that run the real')
 echo('  commands and then ask the running world whether they worked. They build')
 echo('  their own app and leave this one alone.')
 echo('')
+// A scaffold with --auth has an empty `user` table, so the login page it just
+// wrote can sign nobody in and every screen behind a gate answers
+// "Authentication required" — which reads as a broken app rather than an empty
+// one. auth:install prints this too, hundreds of lines up the scroll.
+if (useAuth) {
+  echo('  Nobody exists yet — the first account is either door:')
+  echo('    fli auth:create-user you@example.com --role admin   the only way to mint an ADMIN')
+  echo('    /register/ in the browser                           role "user", and it signs you in')
+  echo('  Then /login/. The nav says which of the two you are.')
+  echo('')
+}
 echo('  Then:')
 echo('    bun run check          fli check, then lint, then typecheck — the same gate CI runs')
 echo('    fli scaffold <Model>    add a new model + service + resource + routes')

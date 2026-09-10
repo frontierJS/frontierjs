@@ -131,6 +131,21 @@ describe('choose', () => {
     p.close()
   })
 
+  // A default that is only held is a default nobody can see: the first option
+  // reads as the recommendation whatever Enter does. Both halves are asserted —
+  // the marker on the line and the name in the prompt — because either alone
+  // still leaves a person guessing at the other end of the screen.
+  test('the default is marked in the list and named in the prompt', async () => {
+    const out = sink()
+    const p   = createPrompts({ input: piped(['']), output: out })
+
+    await within(500, p.choose('bump', ['patch', 'minor', 'skip'], { default: 2 }))
+    expect(out.text()).toContain('› 3) skip')
+    expect(out.text()).toContain('  1) patch')
+    expect(out.text()).toContain('bump [skip] ›')
+    p.close()
+  })
+
   test('the options are listed', async () => {
     const out = sink()
     const p   = createPrompts({ input: piped(['1']), output: out })

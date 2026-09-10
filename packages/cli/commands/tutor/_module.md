@@ -348,8 +348,12 @@ const fill = (selector, value) =>
             el.dispatchEvent(new Event('input', { bubbles: true }))
             return el.value })()`
 
-const clickText = (text) =>
-  `(() => { const b = [...document.querySelectorAll('button, a')]
+// Scoped, because the scaffolded layout renders a `Sign in` LINK in the nav
+// when nobody is signed in — and it is above the login form in document order,
+// so a whole-page search by text clicks the link, navigates to the page it is
+// already on, and reports a sign-in that never happened.
+const clickText = (text, within = '') =>
+  `(() => { const b = [...document.querySelectorAll(${JSON.stringify(within + ' button, ' + within + ' a')})]
               .find(e => e.textContent.trim() === ${JSON.stringify(text)})
             if (!b) return false
             b.click(); return true })()`
@@ -378,14 +382,45 @@ const ensureCaller = async (context, page) => {
 const signInPage = async (context, page, email, password) => {
   await page.goto(`http://127.0.0.1:${context.config.webPort}/login/`)
   await probe.pageEval({ page, ask: `!!document.querySelector('input[type=email]')`, name: 'the sign-in form is up' })
+
+  // Standing on the login page is the one moment a lesson knows for certain
+  // that nobody is signed in, so it is the only place the signed-out shell can
+  // be graded. A nav offering `Sign out` here is the scaffold telling a
+  // stranger they hold a session, and every screen behind a gate then answers
+  // `Authentication required` to somebody the app said was welcome.
+  const shell = await probe.pageEval({
+    page,
+    ask:      `(document.querySelector('.nav') || {}).innerText || ''`,
+    // Length first: `.nav` missing answers '' and would pass the negation on
+    // its own, so a page that rendered nothing would grade as a correct
+    // signed-out shell.
+    expect:   (t) => t.length > 0 && !/Sign out/i.test(t),
+    describe: 'a shell that renders and does not offer Sign out',
+    name:     'the nav says nobody is signed in',
+  })
+  if (!shell.ok) return shell
+
   await page.eval(fill('input[type=email]', email))
   await page.eval(fill('input[type=password]', password))
-  await page.eval(clickText('Sign in'))
-  return probe.pageEval({
+  await page.eval(clickText('Sign in', '.login'))
+  const io = await probe.pageEval({
     page,
     ask:      `Object.keys(localStorage).some(k => k.endsWith('_token'))`,
     describe: 'a session token in this origin’s storage',
     name:     `sign in as ${email}`,
+  })
+  if (!io.ok) return io
+
+  // The other half, and it is a different claim: a token in storage says the
+  // POST worked, not that anything on screen found out. Asked as the ACCOUNT
+  // rather than as the absence of `Sign in`, because a shell that rendered
+  // nothing at all would pass that.
+  return probe.pageEval({
+    page,
+    ask:      `(document.querySelector('.nav') || {}).innerText || ''`,
+    expect:   (t) => t.includes(email),
+    describe: `a shell that names ${email}`,
+    name:     'the nav says who is signed in',
   })
 }
 

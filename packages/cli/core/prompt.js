@@ -79,8 +79,13 @@ export function createPrompts({ yes = false, input = process.stdin, output = pro
     return src.lines[src.cursor++] ?? ''
   }
 
-  const listOptions = (options) => {
-    for (const [i, o] of options.entries()) write(`  ${i + 1}) ${o}\n`)
+  // The default is MARKED and named, never only held. A list whose first entry
+  // is the obvious-looking answer reads as the recommendation regardless of
+  // what Enter actually does, so a person answering `1` to a question that was
+  // already recommending `5` is following the screen rather than misreading it.
+  const listOptions = (options, fallback) => {
+    for (const [i, o] of options.entries())
+      write(`  ${i === fallback ? '›' : ' '} ${i + 1}) ${o}\n`)
   }
 
   return {
@@ -100,8 +105,8 @@ export function createPrompts({ yes = false, input = process.stdin, output = pro
 
     async choose(prompt, options, { default: fallback = 0 } = {}) {
       if (yes) return options[fallback]
-      listOptions(options)
-      const answer = await next(`  ${prompt} › `)
+      listOptions(options, fallback)
+      const answer = await next(`  ${prompt} [${options[fallback]}] › `)
       if (answer === '') return options[fallback]
       // A number outside the list is not a choice. Falling back to the default
       // is what both copies did and it is right here: the list is on screen, so

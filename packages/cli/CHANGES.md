@@ -1,5 +1,45 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-09 — a scaffolded app claimed to be signed in, and had nobody to sign in as
+
+**`fli new --auth` wrote a nav with an unconditional `Sign out` button.** A
+stranger opening the app saw a shell that says it holds a session, clicked
+`Users`, and was answered *Authentication required* by the Data boundary — a
+working app reporting itself broken on its own front page, and the second time
+that sentence has been paid for (`index.mesa` said `connecting…` forever for the
+same reason). The layout now reads `session.user`, offers `Sign in` when there
+is nobody, names the account when there is, and hides `/users/` from a caller
+`model User`'s gate of `4` will refuse. `session.checked` gates all of it, or a
+cold load of a signed-in caller renders the signed-out shell while the restore
+is still in flight.
+
+**And there was no way in.** The scaffold wrote `/login/` over an empty `user`
+table: nothing to sign in as, no register page, and no link to one. The API has
+mounted `{apiPrefix}/auth/register` since the first `--auth` scaffold, so the
+missing piece was a screen — `/register/` is now written beside `/login/`, the
+two link to each other, and the login page names the other door
+(`fli auth:create-user … --role admin`, the only one that mints an ADMINISTRATOR)
+behind `import.meta.env.DEV`. `fli new`'s closing block says both, because
+`auth:install` already said one of them several hundred lines up the scroll,
+which is where advice goes to not be read.
+
+**The tutor's sign-in helper is now scoped to the login form, and grades the
+shell it is standing on.** `clickText` searched the whole page for the text
+`Sign in`, and the nav's new link is above the form in document order — so the
+lesson would have clicked the link, navigated to the page it was already on, and
+reported a sign-in that never happened. Standing on `/login/` is also the one
+moment a lesson knows for certain that nobody is signed in, so it is where the
+signed-out shell is asserted; the signed-in half is asked as the ACCOUNT rather
+than as the absence of `Sign in`, because a page that rendered nothing passes
+that. Measured: with the old layout restored, `tutor:ui` reds on *the nav says
+nobody is signed in*.
+
+**A note about running it.** `tutor:ui` defaults to the dev slot for project 0
+(8000 / 8100) and ADOPTS whatever already answers there, so with an app of your
+own running it grades that app and reports the lesson broken —
+[FJS-1061](../../ISSUES.md#fjs-1061). Pass `--api-port 7100 --web-port 7000`,
+which is what CI does.
+
 ## 2026-09-09 — `ws:pub --interactive`
 
 **A release is now walkable one package at a time** (`-i`). npm's 2FA opens a

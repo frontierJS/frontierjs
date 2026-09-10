@@ -93,11 +93,17 @@ for (const [tier, blurb, rows] of VOCAB) {
   }
 }
 
+/*
+ * No version field. It carried no signal — nothing in the workspace reads it —
+ * and it coupled a file generated from vocabulary.js to a number that moves for
+ * unrelated reasons. `prepublishOnly` regenerates this during `bun publish`,
+ * which is after the release commit has been written, so every release left the
+ * committed copy one version behind and the working tree dirty.
+ */
 const payload = {
   $comment:
     'Generated from vocabulary.js by build-vocabulary.js — do not edit. ' +
     'vocabulary.js is the source and is a classic script by necessity; see that file.',
-  version: JSON.parse(readFileSync(join(here, 'package.json'), 'utf8')).version,
   counts: {
     terms: terms.length,
     tiers: VOCAB.length,

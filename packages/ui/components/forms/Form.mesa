@@ -677,7 +677,6 @@
   {/each}
 
   <slot />
-
   {#if actions}
     <div class="cluster">
       {@render actions?.()}

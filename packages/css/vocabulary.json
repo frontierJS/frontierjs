@@ -1,6 +1,5 @@
 {
   "$comment": "Generated from vocabulary.js by build-vocabulary.js — do not edit. vocabulary.js is the source and is a classic script by necessity; see that file.",
-  "version": "0.16.2",
   "counts": {
     "terms": 56,
     "tiers": 8,

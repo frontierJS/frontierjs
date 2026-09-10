@@ -168,9 +168,11 @@ const vocabularyJsonState = (() => {
     return {
       present: true,
       /*
-       * Compare the counts the generator derives, not the whole file: the
-       * payload carries the package version, so a version bump alone would
-       * otherwise read as vocabulary drift.
+       * Compare the counts the generator derives rather than the whole file, so
+       * a failure names WHICH way the two drifted. Nothing in the payload moves
+       * for a reason other than vocabulary.js any more — the package version
+       * was in here and was removed, because `prepublishOnly` rewrites this
+       * file after the release commit and every release left it behind.
        */
       fresh:
         parsed.counts?.terms === terms &&
