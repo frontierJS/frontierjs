@@ -121,13 +121,49 @@ title: Customers
   let draft    = null
   let conflict = null      // { model, field, expected, actual }
 
+  // ── Saving without a button ──────────────────────────────────────────────
+  //
+  // The drawer keeps its Save button. Autosave is not a replacement for it:
+  // the button is what a person presses when they are FINISHED, and it is the
+  // only thing that closes the drawer. Autosave is for the edit that is half
+  // made when the laptop lid comes down.
+  //
+  // Everything below it is untouched — a stale write is still the 409 this
+  // screen was written for, and it now arrives while somebody is typing rather
+  // than when they press Save. Same panel, same two ways out.
+  //
+  // What this page states is a number and a status. It does not state which
+  // record changes are EDITS, which is the whole reason the timer lives in
+  // <Form>: `dirty` is set by a control and never by the three places below
+  // that replace `draft` themselves.
+  let autoState = 'idle'
+
+  const AUTOSAVE_WORDS = {
+    pending: 'Saving…',
+    saving:  'Saving…',
+    saved:   'Saved',
+    error:   'Not saved',
+  }
+
+  let form = null                    // <Form>'s imperative api, for the flush
+
   function open(c) {
     conflict = null
     editing  = c
     draft    = { ...c }
   }
 
-  function close() { editing = null; draft = null; conflict = null }
+  // Cancel, Escape, the backdrop. Any of them may be leaving an edit sitting
+  // in the quiet window, and dropping it silently is the one failure a form
+  // with no button cannot afford — so this path FLUSHES.
+  //
+  // `ondone` does not come through here, and does not have to: autosave never
+  // fires `ondone`, so a save that landed by itself leaves the drawer open and
+  // the only thing that closes it is the button.
+  function close() {
+    form?.flushAutosave?.()
+    editing = null; draft = null; conflict = null
+  }
 
   // A 409 carrying two revisions is not a field error and `<Form>` correctly
   // renders it as a sentence. The numbers are the half a sentence cannot hold,
@@ -291,15 +327,36 @@ title: Customers
       panel says the same thing with the two numbers and the two ways out, and
       two alerts about one refusal reads as two refusals.
     -->
+    <!--
+      `autosave` is a number of ms and rides $attributes; `bind:autosaveState`
+      cannot — a `bind:` needs a real prop on the component it is written on,
+      so the resource file declares that one and forwards it. `onready` rides
+      the spread like any other value, and it is how this page reaches the
+      flush when the drawer is dismissed.
+    -->
     <Customer
       bind:record={draft}
+      bind:autosaveState={autoState}
+      autosave={1000}
       method="patch"
       submitId="c-save"
       oncancel={close}
       showError={!conflict}
+      onready={(api) => form = api}
       {onerror}
       ondone={() => { close(); reload() }}
     />
+
+    <!--
+      The status line, under the buttons rather than over the form, and the
+      WORDS are this app's. It says nothing about why a save failed: the form
+      is already saying that beside the field, or the conflict panel above is
+      saying it with both revisions, and one refusal reported twice reads as
+      two refusals.
+    -->
+    <p class="text-sm text-muted" data-autosave={autoState} aria-live="polite">
+      {AUTOSAVE_WORDS[autoState] ?? ''}
+    </p>
   {/if}
 </Drawer>
 

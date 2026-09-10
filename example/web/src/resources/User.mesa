@@ -1,3 +1,9 @@
+---
+thi: djkdf
+thisNumber: 3
+anArrat: [12,2,4, "thisString"]
+---
+
 <script module>
   // web/src/resources/User.mesa — the Resource layer.
   //

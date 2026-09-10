@@ -66,7 +66,7 @@ async function makeRegistry() {
     loadGrammar: async (scope) => {
       const file = GRAMMARS[scope]
       if (file) return vsctm.parseRawGrammar(fs.readFileSync(file, 'utf8'), file)
-      if (scope === 'source.js' || scope === 'source.css') {
+      if (scope === 'source.js' || scope === 'source.css' || scope === 'source.yaml') {
         return { scopeName: scope, patterns: [] }
       }
       return null
@@ -141,6 +141,45 @@ async function main() {
     ok('<scripture> is not a script block',
       !scopesOf(tk, 'const').includes('source.js.embedded.mesa'),
       scopesOf(tk, 'const').join(' '))
+  }
+
+  // ── Frontmatter ───────────────────────────────────────────────────────────
+  //
+  // A `---` block at the top of a component is route metadata and Sierra reads
+  // it as real YAML (js-yaml), so it is an embedded language and not a slab of
+  // punctuation. Both parsers anchor at the START of the file, so the negative
+  // controls are the rule: a `---` further down is markup, not a second block.
+
+  section('mesa: frontmatter is embedded YAML')
+  {
+    const src = '---\ntitle: Users\nrender: static\n---\n<script module>\nconst x = 1\n</script>\n'
+    const tk  = tokenize(mesa, src)
+    ok('the body is embedded frontmatter',
+      scopesOf(tk, 'title').includes('meta.embedded.block.frontmatter'),
+      scopesOf(tk, 'title').join(' ') || '(no scopes)')
+    ok('the fence is punctuation',
+      scopesOf(tk, '---').includes('punctuation.definition.frontmatter.begin.mesa'),
+      scopesOf(tk, '---').join(' '))
+    // The block must CLOSE. A rule whose end never matches swallows the rest of
+    // the file, which is the same picture as no highlighting at all.
+    ok('the script block after it still opens',
+      scopesOf(tk, 'const').includes('source.js.embedded.mesa'),
+      scopesOf(tk, 'const').join(' '))
+  }
+  {
+    // `\A` is the document's first line in vscode-textmate, and both the Mesa
+    // compiler and Sierra's scanner anchor at position 0 too.
+    const tk = tokenize(mesa, '<h1>hi</h1>\n---\ntitle: nope\n---\n')
+    ok('a --- further down is not frontmatter',
+      !scopesOf(tk, 'title').includes('meta.embedded.block.frontmatter'),
+      scopesOf(tk, 'title').join(' '))
+  }
+  {
+    // Neither parser accepts four dashes, so neither may the grammar.
+    const tk = tokenize(mesa, '----\ntitle: nope\n----\n')
+    ok('four dashes do not open a block',
+      !scopesOf(tk, 'title').includes('meta.embedded.block.frontmatter'),
+      scopesOf(tk, 'title').join(' '))
   }
 
   section('mesa: a style block takes attributes')

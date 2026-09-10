@@ -681,20 +681,21 @@ const problems = leads.validate(draft)
 //  { field: 'plan',  message: 'plan is required'  }]
 ```
 
-`validate: true` on the resource *also* runs that check automatically before every
-`create` and `patch`, throwing `ResourceValidationError` instead of making the request:
+The resource *also* runs that check automatically before every `create` and `patch`,
+throwing `ResourceValidationError` instead of making the request:
 
 ```js
-export const leads = createResource('leads', { validate: true })
+export const leads = createResource('leads')
 
 await leads.service.create({ name: 'Ada' })
 // throws ResourceValidationError; err.errors is the same array as validate()
 ```
 
-**Default off.** The server validates either way — Junction derives its rules from the
-same `.lite` file — so this is about failing in the browser before a round trip, not
-about being the thing that says no. Turning it on changes *where* an invalid payload
-surfaces, which is why existing resources are not opted in for you.
+**On by default**, and `validate: false` turns it off. The server validates either way —
+Junction derives its rules from the same `.lite` file — so this is about failing in the
+browser before a round trip, not about being the thing that says no. What it changes is
+*where* an invalid payload surfaces, so the case for turning it off is a form that
+cannot see a column the schema requires.
 
 Enforcement runs **after** the `before` hooks, so a hook that completes the record
 (stamping a tenant id, coercing a field) is reflected in what gets checked. The throw
@@ -774,7 +775,7 @@ because it has no idea what the field is. So a form bound to `make()` sends `"42
 Only the schema knows what they were meant to be:
 
 ```js
-export const leads = createResource('leads', { coerce: true })
+export const leads = createResource('leads')
 
 await leads.service.create({ value: '42', accountId: '1' })
 // sent as { value: 42, accountId: 1 }
@@ -789,8 +790,8 @@ Conservative on purpose:
   than NaN reaching the server. `'7.5'` in an `integer` field stays `'7.5'`.
 - Only strings are touched; anything already of the right type is left alone.
 
-**Default off**, like the others — but a form bound to DOM inputs almost certainly wants
-it, and `validate: true` without it will reject every numeric field.
+**On by default**, like the others, and `coerce: false` turns it off — but a form bound
+to DOM inputs wants it, and validation without it rejects every numeric field.
 `resource.coerce(data)` does the same on demand.
 
 The three compose in this order: **coerce → blankToNull → validate**, so validation
@@ -811,11 +812,11 @@ two ''      : ok | REJECTED: UNIQUE constraint failed
 works once and then fails, from a default nobody wrote. And `WHERE col IS NULL` never
 matches `''`, so "records with no X" silently excludes everything the app created.
 
-`blankToNull: true` replaces `''` with `null` on nullable fields before every create and
-patch:
+The resource replaces `''` with `null` on nullable fields before every create and
+patch — on by default, off with `blankToNull: false`:
 
 ```js
-export const leads = createResource('leads', { blankToNull: true })
+export const leads = createResource('leads')
 
 await leads.service.create({ name: 'Ada', slug: '', notes: '' })
 // sent as { name: 'Ada', slug: null, notes: null }
@@ -830,8 +831,8 @@ and nulling it would turn a valid record invalid), only fields **present** in th
 (a patch is never widened), and only the exact value `''` — whitespace is content, and
 trimming is a separate decision this does not make.
 
-**Default off**, because it changes what is stored. It composes with `validate`:
-normalization runs first, so validation judges what will actually be sent.
+It composes with `validate`: normalization runs first, so validation judges what will
+actually be sent.
 
 ### Auth
 

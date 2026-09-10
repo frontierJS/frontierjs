@@ -257,8 +257,14 @@ export var region  = 'US'      // stable for the component's lifetime
 
 The table above is the *child* side. The parent side has a matching requirement:
 the variable being bound must be a writable top-level `let`, since the child's
-changes are written into it. Binding to a `const`, a `var` or an import is a
-compile error naming the variable.
+changes are written into it. Binding to a `const`, a `var`, an import or a
+function is a compile error naming the variable — see RULE 13a (§6) for what the
+`var` one says instead of `let`. **Enforced** — until
+[`FJS-1068`](../../../ISSUES.md#fjs-1068) only the `export const` half above was,
+and a bare `const` threw `TypeError: Assignment to constant variable` on the
+first keystroke instead. A derived `const` is answered with `$: name = expr`
+(§4.5), which is what that form is for; only a bare identifier is graded, so
+`bind:value={draft[key]}` still compiles.
 
 ```mesa
 let name = ''
@@ -825,6 +831,23 @@ be `let` or `const`. `var` is for script-side bookkeeping only.
 
 > **RULE 13** — `var` is a non-reactive sampler — reads without subscribing, writes
 > without notifying. Using `var` in a template is a compiler warning.
+
+> **RULE 13a** — `bind:` on a `var` is a compile error, and the error names
+> `on:input` rather than `let`. Write-without-re-render is a real thing to want —
+> §2.3's own `stagedInput` is it — and a handler writing a `var` is how it is
+> spelled. What `bind:value={someVar}` gave instead was a half-binding: the DOM
+> written once at mount and never again, so `bind:` meant one thing on a `let`
+> and another one line away on a `var`, selected by a keyword the template cannot
+> see. The capability survives, the ambiguous spelling does not
+> ([`FJS-1068`](../../../ISSUES.md#fjs-1068)).
+
+```mesa
+<script>
+  var staged = ''
+</script>
+<!-- captures every keystroke, re-renders nothing -->
+<input on:input={e => { staged = e.target.value }} />
+```
 
 ---
 
@@ -2421,6 +2444,7 @@ components hydrate to their initial render and serialize cleanly.
 | 11 | Static paths → targeted accessors; dynamic paths → runtime effects |
 | 12 | Template path references always safe — compiler wraps with `?.` and `?? ''` |
 | 13 | `var` is a non-reactive sampler — reads without subscribing, writes without notifying |
+| 13a | `bind:` on a `var` is a compile error naming `on:input` — the capability keeps its road, the half-binding does not |
 | 14 | `let` initializers are snapshots — use `$: name = expr` for ongoing re-derivation |
 | 14a | Writable derived overrides are temporary — dep change always wins back; use `let` + watch+handler for permanent detachment |
 | 14b | `$: (a, b)` is a multi-path watch (sequence). `$: { ... }` is an auto-tracked block effect. Wrapping a sequence inside a block produces a block effect, not multi-path watches. |

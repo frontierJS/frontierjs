@@ -43,7 +43,7 @@ title: New lead
   async function save() {
     failed = null
     // The same rules the server will apply, checked here first. Nothing stops
-    // you submitting anyway — validate: true on the resource does that.
+    // you submitting anyway — the resource's own save() does that.
     // Validate what will actually be SENT, not what the DOM holds: the inputs
     // give back strings, and coerce() casts them using the schema's types.
     // Checking the raw draft would report "value must be a number" for a

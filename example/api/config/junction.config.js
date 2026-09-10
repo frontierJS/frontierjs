@@ -18,6 +18,25 @@ import { fileURLToPath } from 'node:url'
 const here = (p) => fileURLToPath(new URL(p, import.meta.url))
 
 export default {
+  // ── Junction's own plugins ────────────────────────────────────────────
+  // Declared rather than constructed, which is what the section is FOR: both
+  // of these are pure data, so nothing about them is written in app.ts and
+  // start() installs them (`FJS-D256`). Declaring one here AND configuring it
+  // by hand is refused by name — devtools stays in app.ts for exactly that
+  // reason, since its port is read off an environment variable.
+  //
+  // health serves /api/health and /api/metrics; the deploy's health check
+  // reads the same path and rolls back when it does not answer.
+  //
+  // manifest is NOT here, and the reason is the rule rather than an oversight:
+  // it embeds a schema off a Litestone client, and this app runs
+  // `tenancy { strategy database }`, so there is no single `app.db` to derive
+  // one from — WHICH client it reads is a choice, and a choice is code. It is
+  // configured in app.ts and left out of this file, because both is two owners.
+  plugins: {
+    health: true,
+  },
+
   // ── Caravan — the durable job queue ───────────────────────────────────
   // A SQLite queue in its own file: nothing about it touches db/shop.db, so a
   // wiped queue loses no shop data and a wiped shop loses no jobs.

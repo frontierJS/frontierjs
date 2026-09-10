@@ -11,7 +11,7 @@
 // the dev server is already on.
 
 import {
-  createApp, channels, healthPlugin, manifestPlugin, metricsPlugin, devtools, exportPlugin,
+  createApp, channels, manifestPlugin, metricsPlugin, devtools, exportPlugin,
   type App,
 } from '@frontierjs/junction'
 
@@ -279,8 +279,6 @@ const app = createApp({
   },
 })
 
-app.configure(healthPlugin())
-
 // What `/metrics` says, KEPT. Every source above answers on request and the
 // merged value used to live for exactly one HTTP response — so no threshold in
 // this app was evaluable, because a rule reading "above 80% for five minutes"
@@ -324,13 +322,6 @@ app.configure(exportPlugin())
 // whoever finds the port. The startup banner says which it did.
 if (process.env.DEVTOOLS === '1')
   app.configure(devtools({ port: Number(process.env.DEVTOOLS_PORT ?? 8503) }))
-
-// GET /api/manifest — what this app IS, read off live runtime state: services,
-// their methods and hooks, channels, plugins, and every route the router will
-// answer. `fli api:routes` reads the last of those, which is the only way to
-// ask a Junction app what it serves: the surface is emergent, so it cannot be
-// read off the source. devOnly by default, so a production build 404s here.
-app.configure(manifestPlugin({ db }))
 
 // Mounts POST /api/auth/register, /api/auth/login, /api/auth/logout and the
 // password-reset + email-verify routes — deliberately NOT services, because
@@ -523,6 +514,18 @@ app.configure(notificationsPlugin({
   notifications: new URL('./notifications', import.meta.url).pathname,
   transports:    { email: { mailer: 'default' } },
 }))
+
+// GET /api/manifest — what this app IS, read off live runtime state: services,
+// their methods and hooks, channels, plugins, and every route the router will
+// answer. `fli api:routes` reads the last of those, which is the only way to
+// ask a Junction app what it serves: the surface is emergent, so it cannot be
+// read off the source.
+//
+// Configured here rather than declared in junction.config.js because of the
+// `db`: under `strategy database` there is no single client for the config
+// path to derive, so which one the schema comes off is a decision this file
+// makes. health is declared, because it has nothing to decide.
+app.configure(manifestPlugin({ db }))
 
 // Which channels a connection joins is `core/channels.ts`. It is a decision
 // and not a list: a channel nobody joined broadcasts into nothing, and a

@@ -2,7 +2,7 @@
   "name": "vscode-frontierjs",
   "displayName": "FrontierJS VSCode Plugin",
   "description": "Language support for Litestone (.lite) and (.mesa)",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "frontierJS",
   "license": "MIT",
   "private": true,
@@ -90,7 +90,8 @@
         "path": "./syntaxes/mesa.tmLanguage.json",
         "embeddedLanguages": {
           "source.js.embedded.mesa": "javascript",
-          "source.css.embedded.mesa": "css"
+          "source.css.embedded.mesa": "css",
+          "meta.embedded.block.frontmatter": "yaml"
         }
       }
     ],

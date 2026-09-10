@@ -85,6 +85,16 @@ export interface AppConfig {
     // shape did not declare, so the typed form of the documented opt-out was
     // the one spelling that did not compile.
     helmet?:      boolean
+    // The rest of the middleware an app declares rather than constructs.
+    // `junction.config.js`'s `middleware:` section normalizes onto these, so
+    // there is one shape the runtime reads and one place a phase looks. A key
+    // declared in one file and read from another is typed, documented and
+    // inert, and nothing reports it (`FJS-D256`).
+    requestLogger?:  boolean | import('../transport/middleware.ts').RequestLoggerOptions
+    correlationId?:  boolean | import('../transport/middleware.ts').CorrelationIdOptions
+    csrf?:           import('../transport/middleware.ts').CsrfOptions
+    rateLimit?:      import('../transport/middleware.ts').RateLimitOptions
+    bodyLimit?:      { maxSize?: number }
     // Grace period (ms) between stop() and process.exit — lets in-flight
     // requests complete. Default 5000ms.
     drainTimeout?: number
@@ -207,6 +217,16 @@ export interface AppConfig {
    */
   attachments?: import('../core/attachments.ts').Attachments
 
+  /**
+   * Junction's own plugins, declared rather than constructed (`FJS-D256`).
+   *
+   * `junction.config.js`'s `plugins:` section normalizes onto this. A plugin
+   * needing CODE — health's `checks`, manifest's `db` — is configured by hand
+   * instead and declared here NOT AT ALL: both is two owners for one route,
+   * and `start()` refuses it by name.
+   */
+  plugins?: JunctionPluginsConfig
+
   // Extensions — app can add anything here
   [key: string]: unknown
 }
@@ -260,23 +280,44 @@ export const defaultConfig: AppConfig = {
 // The config file uses friendly section names that map onto AppConfig.
 // loadConfig() flattens these into a plain AppConfig for the app to use.
 
+/**
+ * The middleware an app DECLARES. Junction installs each one at `start()`.
+ *
+ * Everything here is data, which is what decides the section: a middleware
+ * taking a function — `csrf`'s `onRejected`, a `rateLimit` keyed by a callback
+ * — is constructed in `app.ts` and left out of this file entirely (`FJS-D256`).
+ */
 export interface JunctionMiddlewareConfig {
   // `credentials` is read by `applyConfiguredCors` and was undeclared, so a
   // config that works had a type saying it did not.
-  cors?:          { origins?: string[]; methods?: string[]; headers?: string[]; credentials?: boolean }
+  cors?:          { origins?: string[]; methods?: string[]; headers?: string[]; credentials?: boolean; maxAge?: number }
   helmet?:        boolean
-  requestLogger?: boolean
-  correlationId?: boolean
-  rateLimit?:     { windowMs?: number; max?: number }
+  requestLogger?: boolean | { level?: 'info' | 'debug'; format?: 'common' | 'json' }
+  correlationId?: boolean | { header?: string }
+  rateLimit?:     { max: number; window: string | number; message?: string }
   bodyLimit?:     { maxSize?: number }
-  csrf?:          boolean
+  /**
+   * `true` derives its origin list from `middleware.cors.origins`, which is
+   * what `csrf()`'s own note already tells an app to do by hand — and with no
+   * cors list to borrow, `start()` refuses rather than guessing, because the
+   * guess a CSRF guard makes when it has no list is *allow*.
+   */
+  csrf?:          boolean | { origins?: string[]; methods?: string[]; allowMissingOrigin?: boolean }
 }
 
+/**
+ * Junction's own plugins, declared rather than constructed.
+ *
+ * Same line as the middleware above: a plugin needing CODE is configured by
+ * hand and does not appear here. `health.checks`, `health.authFn` and
+ * `manifest.db` are the three that exist — and `manifest.db` is not a gap,
+ * because a config-installed manifest is handed `app.db` already.
+ */
 export interface JunctionPluginsConfig {
-  health?:   boolean | { path?: string; token?: string }
+  health?:   boolean | { path?: string; token?: string; checkTimeout?: number }
   manifest?: boolean | { path?: string; devOnly?: boolean }
-  openapi?:  boolean | { title?: string; version?: string; ui?: string | false }
-  devtools?: boolean | { port?: number }
+  openapi?:  boolean | { title?: string; version?: string; description?: string; path?: string; ui?: boolean | string }
+  devtools?: boolean | { port?: number; hostname?: string; maxEntries?: number }
 }
 
 export interface JunctionServicesConfig {
@@ -419,8 +460,32 @@ export async function loadConfig(configDir = './config'): Promise<AppConfig & { 
   const junctionCfg = await tryImport(join(absConfigDir, 'junction.config.js')) as JunctionConfig | null
   if (junctionCfg) {
     if (junctionCfg.app)        config = deepMerge(config, junctionCfg.app) as typeof config
-    if (junctionCfg.middleware?.cors)   config.http = deepMerge(config.http ?? {}, { cors: junctionCfg.middleware.cors } as Partial<typeof config.http>) as typeof config.http
-    if (junctionCfg.middleware?.rateLimit) config.http = deepMerge(config.http ?? {}, { ddos: { enabled: true, ...junctionCfg.middleware.rateLimit } } as Partial<typeof config.http>) as typeof config.http
+    // Every `middleware:` key normalizes onto `config.http`, which is the one
+    // shape the start phases read. A key missing from this list is declarable
+    // and inert — `helmet` sits one letter from the `http.helmet` that is read,
+    // so the miss looks like a working opt-out (`FJS-D256`).
+    //
+    // Mapped one at a time rather than spread wholesale: `rateLimit` lands
+    // under a different name, and a section that merged itself in would carry
+    // a typo through as an extension key.
+    const mw = junctionCfg.middleware
+    if (mw) {
+      const http: Record<string, unknown> = {}
+      if (mw.cors          !== undefined) http.cors          = mw.cors
+      // `rateLimit` is the MIDDLEWARE and not the transport's `ddos` guard.
+      // Two different layers on purpose — `ddos` is per-IP ahead of the router,
+      // this is per-route behind it — and the transport is constructed before
+      // `load-config` runs, so a value routed there from this file arrives
+      // after the only reader has taken its copy (`FJS-1066`).
+      if (mw.rateLimit     !== undefined) http.rateLimit     = mw.rateLimit
+      if (mw.helmet        !== undefined) http.helmet        = mw.helmet
+      if (mw.requestLogger !== undefined) http.requestLogger = mw.requestLogger
+      if (mw.correlationId !== undefined) http.correlationId = mw.correlationId
+      if (mw.csrf          !== undefined) http.csrf          = mw.csrf
+      if (mw.bodyLimit     !== undefined) http.bodyLimit     = mw.bodyLimit
+      config.http = deepMerge(config.http ?? {}, http as Partial<typeof config.http>) as typeof config.http
+    }
+    if (junctionCfg.plugins) config.plugins = deepMerge(config.plugins ?? {}, junctionCfg.plugins) as JunctionPluginsConfig
     // Straight through, because it maps 1:1 onto AppConfig. Everything not
     // named here is stashed under `_junction` and read by whichever subsystem
     // owns it — a section a reader forgets to look up is a config block that

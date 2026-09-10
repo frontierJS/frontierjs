@@ -39,7 +39,6 @@ title: Invoices
   import { prefs } from '@/prefs.js'
   import { useStore } from '@frontierjs/sierra/junction'
   import { page, goto } from '@frontierjs/sierra/router'
-  import { encodeQueryString } from '@frontierjs/toolbelt/query'
   import { directiveParams } from '@frontierjs/toolbelt/directives'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -102,10 +101,19 @@ title: Invoices
   // box silently drops the sort a header just set. `directiveParams` is
   // `parseDirectives`' inverse off the same table, so this cannot go stale
   // when a directive is added.
+  // The bare $: is what marks `page` watched, which is what makes the const
+  // below a derivation. Without it the bar renders the query this page arrived
+  // with, forever (FJS-1065).
+  $: (page.query, page.directives)
+
   const urlQuery = { ...page.query, ...directiveParams(page.directives) }
 
+  // Two-arg, over a path stripped of its own query: page.path carries the
+  // search, so concatenating builds /invoices/?a=1?b=2 on the second filter and
+  // the router drops the query of the first (FJS-1064). As an argument it
+  // REPLACES, which is what Clear needs.
   function apply(query) {
-    goto(page.path + encodeQueryString(query))
+    goto(page.path.split('?')[0], query)
   }
 
   function sortBy(key, dir) {

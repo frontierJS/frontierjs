@@ -104,4 +104,39 @@ describe('what the generators write', () => {
       expect(hit?.[0] ?? null, `${what} still writes ${hit?.[0]}`).toBeNull()
     }
   })
+
+  // A sort a page can SET and cannot SHOW is the shape that passes every test
+  // asking what the table renders. <Table> derives the next direction from the
+  // sortKey it was handed, so a page that reports a sort without stating the
+  // current one has a header that never reverses and an aria-sort stuck at
+  // none — and the rows are correct the whole time, because the boundary got
+  // the directive. The two props are one feature, so the pair is the assertion.
+  test('a generated table that offers a sort states the current one', () => {
+    let offered = 0
+    for (const [what, source] of Object.entries(GENERATED)) {
+      if (!source.includes('onsort=')) continue
+      offered++
+      expect(source, `${what} takes a sort and never marks it`).toContain('{sortKey}')
+      expect(source, `${what} takes a sort and never marks it`).toContain('{sortDir}')
+      // Read off page.directives and never held locally: the URL is the state,
+      // so a pair kept in the page disagrees with the load on the first Back.
+      expect(source, `${what} does not read the sort off the URL`).toContain('page.directives?.orderBy')
+    }
+    expect(offered, 'no generated page offers a sort at all').toBeGreaterThan(0)
+  })
+
+  // `columns()` answers in two halves and the second one is a promise the
+  // generated comment makes in words: every column the table left out, named
+  // with its reason, so a column added to the schema that does not appear is
+  // answerable without reading the page. A page that destructures it and never
+  // renders it makes that promise and does not keep it.
+  test('a generated page renders every list it asks columns() for', () => {
+    let asked = 0
+    for (const [what, source] of Object.entries(GENERATED)) {
+      if (!/columns:\s*cols,\s*omitted/.test(source)) continue
+      asked++
+      expect(source, `${what} asks for omitted and never renders it`).toContain('omitted.length')
+    }
+    expect(asked, 'no generated page asks for the omitted half').toBeGreaterThan(0)
+  })
 })

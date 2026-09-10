@@ -238,19 +238,45 @@ export function normalizePath(pathname, trailingSlash = 'always') {
 export function buildUrl(path, params = {}, trailingSlash = 'always') {
   const normalized = normalizePath(path, trailingSlash)
   const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
+  const hash = _hashOf(path)
 
-  if (entries.length === 0) return normalized
+  // `params` REPLACES the query — it does not merge with one the path carries.
+  // A caller handing over a whole query means that query and no other, so
+  // merging would resurrect a filter somebody had just cleared.
+  if (entries.length) return normalized + encodeQueryString(Object.fromEntries(entries)) + hash
 
-  // The same encoder `parseQueryParams` is the inverse of, so a URL this builds
-  // reads back as what was put in — `{ code: '5' }` is `?code="5"` and comes
-  // back a string, where `String(value)` made it the number 5 on the way home.
-  //
-  // The empty filter above is dropped before it gets here and stays a
-  // navigation decision rather than an encoding one: a filter box nobody typed
-  // in should not add a parameter, which is not the same question as whether
-  // `null` can be sent (it can — see `encodePairs`).
-  return normalized + encodeQueryString(Object.fromEntries(entries))
+  // With nothing to say, a query already ON the path is kept rather than
+  // dropped. `normalizePath` strips it — it has to, because the same function
+  // answers what a route MATCHES — so building the URL back out of the
+  // normalized half alone discarded it in silence, and `goto('/x/?a=1')`
+  // navigated to `/x/`: usually the URL it was already on, so nothing moved and
+  // nothing was said. `goto('/path?q=1')` is the shape every
+  // router in the ecosystem takes, and § IV's answer where muscle memory meets
+  // a deliberate difference is to fail it loudly or take it — never to swallow
+  // it.
+  return normalized + _searchOf(path) + hash
 }
+
+/** The `?…` of a path, or ''. The hash is not part of it. */
+function _searchOf(path) {
+  const qi = path.indexOf('?')
+  if (qi === -1) return ''
+  const hi = path.indexOf('#', qi)
+  return hi === -1 ? path.slice(qi) : path.slice(qi, hi)
+}
+
+/**
+ * The `#…` of a path, or ''.
+ *
+ * Kept for the same reason as the query and it is not a second case: the widget
+ * handoff arrives in a fragment, so a builder that drops one is the same silent
+ * loss one character over.
+ */
+function _hashOf(path) {
+  const hi = path.indexOf('#')
+  return hi === -1 ? '' : path.slice(hi)
+}
+
 
 /**
  * Parse and type-coerce query params from a URL search string.

@@ -1,5 +1,13 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-10 — the README stops calling the payload pipeline default-off
+
+`coerce`, `blankToNull` and `validate` read as `!== false` and have been on
+since; the README documented all three as **Default off** and showed each being
+switched on, which is documentation that argues against the code. Each section
+now says on-by-default and names its `false`, and the example resource is
+`createResource('leads')` with nothing else in it.
+
 ## 2026-09-08 — the derived table meets two real apps
 
 The table, the cells and the bar had no caller outside the generator and their

@@ -350,6 +350,66 @@ ok('…and overwriting takes the current revision and wins', await evaluate(`
   return row.notes;
 `), 'mine after all')
 
+// ── saving with no button ──────────────────────────────────────────────────
+//
+// The drawer autosaves once the typing stops — `<Form autosave>` ([FJS-D257]).
+// It is
+// asserted HERE, after the conflict, because a timer firing mid-scenario is
+// exactly what would make the section above flaky — and the ORDER is the
+// assertion: nothing above ever gives the form 800ms of quiet, so the manual
+// Save is still what those rows measure.
+//
+// The pair is the whole test. A mechanism that saved on every render would
+// satisfy the first row and fail the second, and one that never fired at all
+// would satisfy the second and fail the first.
+
+const beforeIdle = await get(`/customers/${CID}`)
+
+ok('opening the drawer and changing nothing writes nothing', await evaluate(`
+  ${WAIT}
+  const tr = document.querySelector('[data-customer="${CID}"]');
+  tr.querySelector('[data-edit]').click();
+  await waitFor(() => document.querySelector('#c-save'));
+  // Well past the debounce, so this is a quiet form and not a fast one.
+  await new Promise(r => setTimeout(r, 1400));
+  return document.querySelector('[data-autosave]').dataset.autosave;
+`), 'idle')
+
+ok('…and the row is untouched', (await get(`/customers/${CID}`)).version, beforeIdle.version)
+
+ok('an edit saves itself once the typing stops, with no button pressed', await evaluate(`
+  ${WAIT}
+  const box = document.querySelector('dialog form textarea[name="notes"], dialog form input[name="notes"]');
+  // Three changes inside the quiet window, because one input event cannot tell
+  // a debounce from a save-on-every-keystroke — and it is the second that the
+  // version count below is really about.
+  for (const v of ['t', 'typed', 'typed and left alone']) {
+    box.value = v;
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 120));
+  }
+  await waitFor(() => document.querySelector('[data-autosave="saved"]'));
+  return { stillOpen: !!document.querySelector('dialog[open]') };
+`), { stillOpen: true })
+
+// Read from the API rather than off the screen: a status line saying "Saved"
+// over a write that never left the browser is the one failure this feature
+// can have that looks exactly like it working.
+ok('…and the boundary has it', (await get(`/customers/${CID}`)).notes, 'typed and left alone')
+
+ok('three keystrokes are ONE write — the version moved by exactly one',
+   (await get(`/customers/${CID}`)).version, beforeIdle.version + 1)
+
+// Cancel and not Save: there is nothing left to submit, which is the whole
+// point of the four rows above.
+await evaluate(`
+  ${WAIT}
+  [...document.querySelectorAll('dialog form button')]
+    .find(b => b.textContent.trim() === 'Cancel').click();
+  await waitFor(() => !document.querySelector('dialog[open]'));
+  return true;
+`)
+
 // ── removing and restoring, from the screen ────────────────────────────────
 
 ok('Remove takes the row off the list', await evaluate(`

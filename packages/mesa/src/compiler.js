@@ -2819,6 +2819,7 @@ export function analyzeScript(raw, ast) {
           localName = prop.value.name
           syntheticInit = memberExpr
         }
+        if (refuseRedeclaration(localName)) continue
 
         vars[localName] = {
           name: localName,
@@ -2872,6 +2873,7 @@ export function analyzeScript(raw, ast) {
           localName = el.name
           syntheticInit = memberExpr
         }
+        if (refuseRedeclaration(localName)) return
 
         vars[localName] = {
           name: localName,
@@ -2931,6 +2933,21 @@ export function analyzeScript(raw, ast) {
         `what you meant.`
       )
     }
+  }
+
+  // A `$:` assignment IS a declaration, and it is the only one JavaScript does
+  // not know about — acorn refuses every other redeclaration at parse time, so
+  // `let x` twice never reaches here. This pass walks `ast.body` in source
+  // order, so the guard on the `$:` side only fires when the declaration comes
+  // FIRST; the other way round the plain declaration overwrote the entry and
+  // the writable derived vanished with nothing said.
+  const refuseRedeclaration = (name) => {
+    if (!vars[name]?.isWritableDerived) return false
+    errors.push(
+      `'${name}' is already declared by '$: ${name} = ...'. ` +
+      `A '$:' assignment is the declaration — remove the let/const/var, or drop the '$:' line.`
+    )
+    return true
   }
 
   for (const node of ast.body) {
@@ -3010,6 +3027,7 @@ export function analyzeScript(raw, ast) {
       for (const d of decl.declarations) {
         const name = d.id?.name
         if (!name) continue
+        if (refuseRedeclaration(name)) continue
         vars[name] = {
           name,
           kind: decl.kind,
@@ -3040,6 +3058,7 @@ export function analyzeScript(raw, ast) {
           }
           continue
         }
+        if (refuseRedeclaration(name)) continue
 
         // $context.key consume — let/const/var name = $context.key
         const init = d.init
@@ -6298,6 +6317,49 @@ export function bindProp(prop, node, element) {
         `bind:${attr}={${varName}} — cannot two-way bind \`export ${keyword} ${varName}\` (${reason}). Use \`export let\` for two-way binding.`
       )
       return null
+    }
+
+    // The same refusal for a LOCAL immutable binding. The setter below is
+    // emitted as `name = $$v` whatever the target is, so a bare `const` or an
+    // import compiled clean and threw `TypeError: Assignment to constant
+    // variable` on the first keystroke — the one shape acorn cannot catch,
+    // since assignment to a const is a runtime error and not a parse error
+    // (Invariant 15's blind spot). Only a BARE IDENTIFIER is graded:
+    // `bind:value={draft[key]}` is a legitimate write through the else branch.
+    if (/^[A-Za-z_$][\w$]*$/.test(varName)) {
+      const importedLocals = new Set(
+        (ctx.analysis?.imports ?? []).flatMap((d) => (d.specifiers ?? []).map((sp) => sp.local?.name))
+      )
+      const immutable = varEntry?.kind === 'var'
+        // `var` is Mesa's opt-out from reactivity (RULE 13), so this one throws
+        // nothing: the write lands and no reader re-runs. What is missing is
+        // the OTHER direction — the DOM is written once at mount and never
+        // again — so `bind:` here means half of what it means one line away,
+        // selected by a keyword the template cannot see. The refusal names the
+        // road rather than only the rule: telling someone to declare it `let`
+        // answers a question they did not ask, since re-rendering is the thing
+        // the `var` was chosen to avoid.
+        ? `\`var ${varName}\` is outside the reactive graph (RULE 13), so the DOM would be written once at mount and never again. For two-way, declare it \`let\`. To capture input WITHOUT re-rendering, keep the \`var\` and write it from a handler: \`on:input={e => { ${varName} = e.target.value }}\`.`
+        : varEntry?.kind === 'const'
+        ? (varEntry.isDerived
+            // A derived const is the documented case for the writable derived
+            // form: derive a default, let a control override it (VISION §4.5).
+            ? `\`const ${varName}\` is derived and authoritative. Use the writable derived form so a control can override it: \`$: ${varName} = ...\``
+            : `\`const ${varName}\` cannot be reassigned. Declare it \`let\`.`)
+        : importedLocals.has(varName)
+          ? `\`${varName}\` is an imported binding and cannot be reassigned. Copy it into a \`let\` first.`
+          // A function declaration IS assignable, so this one does not throw —
+          // it writes a binding no signal is behind and the control goes dead
+          // in silence, which is the worse of the two.
+          : ctx.script?.rootFunctions?.[varName]
+            ? `\`${varName}\` is a function, not reactive state. Declare a \`let\` to bind to.`
+            : null
+      if (immutable) {
+        ctx.analysis.errors.push(
+          `bind:${attr}={${varName}} — cannot two-way bind: ${immutable}`
+        )
+        return null
+      }
     }
 
     let getter, setter

@@ -127,6 +127,40 @@
   //   'submit' — only when the form is submitted
   export let validateOn = 'blur'
 
+  // ── Saving with no button ────────────────────────────────────────────
+  //
+  // `autosave` — true for the kit's own quiet window, or a number of ms.
+  // Off by default and it has to be: a save nobody pressed is a decision
+  // about the DOCUMENT, and only the screen knows whether this one is a
+  // draft somebody is working on or a deliberate act like a raise.
+  //
+  // It is here rather than in an app because everything it needs is already
+  // in this component. The trigger is `dirty`, which is set by a control and
+  // never by a parent re-pushing `record` — so a form that autosaved from
+  // outside would have to be TOLD which record changes were edits, and that
+  // is the shape every version of it got wrong. Nothing needs telling here.
+  //
+  // Three ways it is not a submit:
+  //   • it reveals nothing. Submitting speaks for every field the person
+  //     never visited; a timer has no business doing that, and a patch only
+  //     carries what moved, so the untouched columns are the stored ones.
+  //   • it never fires `ondone`. A drawer that closes on `ondone` would shut
+  //     itself under somebody who is still typing — `onautosaved` is the
+  //     other event and they are two events, not one with a flag.
+  //   • it never retries. A refusal leaves the record as it was, so the next
+  //     KEYSTROKE is the retry: that is the person deciding, and it is also
+  //     what leaves a `@version` conflict on screen instead of tearing the
+  //     panel down and rebuilding it every second.
+  //
+  // A CREATE is refused by name. A timer that creates rows makes one per
+  // pause, and there is no id to patch until something is submitted.
+  export let autosave = false          // boolean | number of ms
+
+  /** 'idle' | 'pending' | 'saving' | 'saved' | 'error'. Bindable. */
+  export let autosaveState = 'idle'
+
+  export let onautosaved = undefined   // (result, record) => void
+
   // ── State — exported so a caller can bind: any of it ────────────────
   export let errors    = {}           // { [field]: message } — replaced, never mutated
   export let formError = ''           // the failure no field can render
@@ -279,6 +313,7 @@
   function writeField(name, value) {
     record = { ...record, [name]: value }
     dirty  = true
+    _autoBump()
   }
 
   // ── Live validation ──────────────────────────────────────────────────
@@ -440,6 +475,15 @@
     // The row is already written. See `committed`.
     if (submitting || disabled || committed) return undefined
 
+    // The button just did what the timer was about to do. Leaving it armed
+    // sends the same record a second time — after a REFUSAL that is the write
+    // going out again behind the panel the person is reading, and after a
+    // reload of somebody else's revision it is that revision written straight
+    // back over them.
+    clearTimeout(_autoTimer)
+    _autoTimer = null
+    if (autosave) _setAutoState('idle')
+
     submitted = true
     formError = ''
     errors    = {}
@@ -470,14 +514,31 @@
     if (Object.keys(_control).length) return undefined
     if (rendered.some(f => errors[f.name])) return undefined
 
+    const out = await _perform()
+    if (!out.ok) return undefined
+
+    if (resetOnDone) reset()
+    ondone?.(out.result, record)
+    return out.result
+  }
+
+  /**
+   * The write itself, shared by the button and the timer.
+   *
+   * Everything that is true of BOTH lives here — the in-flight flag, the error
+   * mapping, `committed`, the revision write-back — and everything that
+   * separates them stays with the caller. Splitting it the other way, with a
+   * flag threaded through one function, is how the two would drift into
+   * behaving differently on the paths neither test covers.
+   */
+  async function _perform() {
     submitting = true
 
     try {
       const result = onsubmit ? await onsubmit(record) : await _send(_writable(record))
       dirty = false
-      if (resetOnDone) reset()
-      ondone?.(result, record)
-      return result
+      _adoptVersion(result)
+      return { ok: true, result }
     } catch (err) {
       const mapped = _map(err)
       // Before the field messages, because a committed failure has none and the
@@ -487,7 +548,7 @@
       formError = mapped.message ?? ''
       _recompute()
       onerror?.(err)
-      return undefined
+      return { ok: false }
     } finally {
       // finally, not the catch arm: an ondone that throws must still leave the
       // form usable rather than stuck spinning forever.
@@ -495,9 +556,113 @@
     }
   }
 
+  /**
+   * Take the revision the write just minted.
+   *
+   * A form that is submitted once never needed this, which is why it was
+   * missing: the record holds the revision it READ, the write moves the row
+   * past it, and a SECOND write from the same open form is a 409 against a
+   * number this screen itself has already passed. Autosave makes that certain
+   * rather than occasional, but it was always the bug.
+   *
+   * Only the version column, never the whole answer. Merging the result would
+   * overwrite whatever was typed while the request was out — and a save that
+   * silently reverts a keystroke is worse than one that shows a stale computed
+   * value.
+   */
+  function _adoptVersion(result) {
+    const vf = resource?.versionField
+    if (!vf || !result || typeof result !== 'object') return
+    if (result[vf] === undefined || record?.[vf] === result[vf]) return
+    record = { ...record, [vf]: result[vf] }
+  }
+
+  // ── Autosave ─────────────────────────────────────────────────────────
+
+  /** The kit's quiet window, for `autosave` stated as a bare boolean. */
+  const AUTOSAVE_MS = 800
+
+  let _autoTimer  = null
+  let _autoWarned = false
+
+  const _autoDelay = () => (typeof autosave === 'number' ? autosave : AUTOSAVE_MS)
+
+  function _setAutoState(next) { autosaveState = next }
+
+  /**
+   * A control changed the record. Restart the quiet window.
+   *
+   * Called from the two places that already set `dirty`, rather than watched:
+   * `dirty` goes true on the first keystroke and stays true, so a watcher sees
+   * one edit and a burst of twenty look the same as one.
+   */
+  function _autoBump() {
+    if (!autosave || disabled || committed) return
+
+    if (_mode() === 'create') {
+      if (!_autoWarned) {
+        _autoWarned = true
+        console.warn(
+          `[Form] autosave is off for a create: ${resource?.context?.model ?? 'this resource'} has no ` +
+          `${idField} yet, so each pause would make a row rather than update one. Submit once, ` +
+          'then the same form autosaves.',
+        )
+      }
+      return
+    }
+
+    clearTimeout(_autoTimer)
+    _setAutoState('pending')
+    _autoTimer = setTimeout(_autosaveNow, _autoDelay())
+  }
+
+  async function _autosaveNow() {
+    _autoTimer = null
+
+    // The button is already writing this record. Wait for it rather than
+    // sending a second copy: <Form> refuses a re-entrant submit, and that
+    // refusal would be reported as a failed autosave over a write that
+    // succeeded.
+    if (submitting) { _autoBump(); return }
+
+    // Refused over what is ALREADY speaking, and nothing is revealed to find
+    // more. A control that cannot convert its own text is on screen by
+    // construction, so it counts on a hand-written form too.
+    if (Object.keys(_control).length)        { _setAutoState('error'); return }
+    if (rendered.some(f => errors[f.name]))  { _setAutoState('error'); return }
+
+    _setAutoState('saving')
+    // A message from the last attempt is about a payload this one replaces.
+    formError = ''
+    _server   = {}
+    _recompute()
+
+    const out = await _perform()
+    if (!out.ok) { _setAutoState('error'); return }
+
+    _setAutoState('saved')
+    onautosaved?.(out.result, record)
+  }
+
+  /**
+   * Send what is waiting in the quiet window, now.
+   *
+   * What a screen calls when the person walks away — a drawer dismissed, a
+   * route left. Dropping an edit that is sitting in a timer is the one failure
+   * a form with no button cannot afford.
+   */
+  export async function flushAutosave() {
+    if (!_autoTimer) return undefined
+    clearTimeout(_autoTimer)
+    return _autosaveNow()
+  }
+
   /** Back to the pristine record, with every error and flag cleared. */
   export function reset(next) {
     if (next !== undefined) pristine = { ...next }
+    clearTimeout(_autoTimer)
+    _autoTimer = null
+    _setAutoState('idle')
     record    = { ...pristine }
     dirty     = false
     submitted = false
@@ -535,6 +700,7 @@
   // no per-field wiring.
   function handleChange(e) {
     dirty = true
+    _autoBump()
 
     const key = e?.target?.name
     if (!key) return
@@ -572,7 +738,12 @@
   // no-op server-side, so a prerendered form simply never offers it — which is
   // correct: there is nothing to submit.
   $.onMount(() => {
-    onready?.({ submit, reset, clearErrors })
+    onready?.({ submit, reset, clearErrors, flushAutosave })
+
+    // The one thing a quiet window owes the person: a tab closing over an edit
+    // that has not been sent yet. It cannot be awaited from here — an unload
+    // handler has no await — so it asks rather than promises.
+    if (autosave) window.addEventListener('beforeunload', _unloadGuard)
 
     // ── a form with nothing to fill in ───────────────────────────────────
     //
@@ -628,6 +799,17 @@
         pickerErrors = { ...pickerErrors, [f.name]: Array.isArray(r) ? null : (r?.error ?? null) }
       })
     }
+  })
+
+  function _unloadGuard(e) {
+    if (autosaveState !== 'pending' && autosaveState !== 'saving') return
+    e.preventDefault()
+    e.returnValue = ''
+  }
+
+  $.onDestroy(() => {
+    clearTimeout(_autoTimer)
+    if (typeof window !== 'undefined') window.removeEventListener('beforeunload', _unloadGuard)
   })
 
   function handleLeave(e) {

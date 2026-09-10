@@ -343,12 +343,28 @@ src/
   request in every app that never deployed. `stale` fires once.
 
 - **A top-level key in `junction.config.js` reaches the app only if `loadConfig`
-  MAPS it.** `app` and two `middleware` keys map onto `AppConfig`; everything
-  else is stashed under `config._junction` for whichever subsystem owns it. So a
-  block nobody looks up is read by nothing, silently — an app writes it, the app
-  boots, and the feature is simply off (`FJS-431`). `attachments` is mapped
-  straight through; anything new needs the same line, and reading a fallback in
-  the consumer instead is a second answer to where the block lives.
+  MAPS it.** `app`, every `middleware` key and `plugins` map onto `AppConfig`;
+  everything else is stashed under `config._junction` for whichever subsystem
+  owns it. So a block nobody looks up is read by nothing, silently — an app
+  writes it, the app boots, and the feature is simply off (`FJS-431`).
+  `attachments` is mapped straight through; anything new needs the same line, and
+  reading a fallback in the consumer instead is a second answer to where the
+  block lives. **Eleven keys were in that state at once** (`FJS-1066`), which is
+  why `tests/config-surface.test.ts` now reads both interfaces off their source
+  and fails a key added without a behavioral row.
+
+- **`junction.config.js` DECLARES, `app.configure()` CONSTRUCTS, and what the
+  option TAKES decides which** (`FJS-D256`). Data is declared — `middleware:`
+  normalizes onto `config.http` and installs in the `config-middleware` phase,
+  `plugins:` onto `config.plugins` in `config-plugins`. Code is constructed:
+  `channels(cb)`, `authPlugin`, `backfills(defs)`, and any plugin whose options
+  hold a function — `health.checks`, `health.authFn`, `manifest.db` are the three
+  that exist. **A plugin declared in config AND configured by hand is refused by
+  name at `start()`**, so an app needing one of those three declares it nowhere.
+  `manifest.db` is not a gap where there is one client, since a config-installed
+  manifest is handed `app.db`; under `tenancy { strategy database }` there is no
+  single client and manifest goes back to being code, which is what `example`
+  does.
 
 - **An attached service that is BOUND HALFWAY refuses, `optional` included.**
   `optional: true` says the app can run without the service, never that it can

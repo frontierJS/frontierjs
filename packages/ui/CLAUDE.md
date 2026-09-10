@@ -45,6 +45,18 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
 
 ## What bites here
 
+- **`<Form autosave>` is a timer over `dirty`, and that is why it is here**
+  (`FJS-D257`). It never `submit()`s — so it reveals nothing and speaks for no
+  field the person did not visit — never fires `ondone` (`onautosaved` is the
+  other event, and a drawer that closes on `ondone` must not shut under a
+  timer), never retries a refusal, and is DISARMED by the button, or an armed
+  timer re-sends the same record behind the panel somebody is reading. A create
+  is refused by name: a timer that creates rows makes one per pause. The trigger
+  is `dirty`, which a control sets and a parent re-pushing `record` does not —
+  an autosave driven from outside cannot tell those apart and every version of
+  it got that wrong. **`_adoptVersion` is not about autosave**: `<Form>` never
+  wrote the result back, so under `@version` a second write from one open form
+  carried a revision the row had passed.
 - **`$context.form` is the seam.** `forms/Form.mesa` provides
   `{ errors, submitting, disabled, fields, submitted, optionsFor, reportInvalid }`;
   **every control reads it**

@@ -1,5 +1,39 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-09 — `junction.config.js` declares, `app.configure()` constructs
+
+Eleven of the thirteen keys the file offered for middleware and plugins were read
+by nothing. `middleware:` had seven and `plugins:` four; `cors` and `rateLimit`
+were mapped, the other nine were mapped nowhere. `helmet: true` sat one letter
+from the `http.helmet` that IS read, `plugins.health: false` served `/health`
+anyway, and `csrf: true` was a security key that lied — all of them typed,
+exported, documented, and named in `JUNCTION_SECTIONS`, so `FJS-D199`'s
+unknown-key refusal stayed quiet over every one.
+
+`FJS-D256` rules the boundary and it is not *is it Junction's own*: that does not
+partition, since `channels(cb)` and `authPlugin` are equally Junction's own and
+cannot be written in a config file. **What the option TAKES decides.** Data is
+declared, code is constructed. `middleware:` now normalizes onto `config.http`
+and installs in one `config-middleware` phase; `plugins:` onto `config.plugins`
+in `config-plugins`; a plugin declared in config AND configured by hand is
+refused by name, because two registrations mount two routes on one path.
+
+**The twelfth key was found by the test written for the other nine.**
+`middleware.rateLimit` mapped `max`/`windowMs` onto a transport reading
+`limit`/`window`, so `rec.count > this._opts.ddos.limit` compared against
+`undefined` and refused nobody, forever — and the transport is built before
+`load-config` runs, so the value never arrived under any spelling. It routes to
+the `rateLimit` middleware now, which is the layer its section name claims.
+
+`tests/config-surface.test.ts` is the artefact the ruling turns on: it reads both
+interfaces off their own source and holds them against a table of behavioral rows
+in both directions, so a key added without a row fails on the next run. Every row
+goes through a real listening server, since a middleware patches the ROUTER and
+*installed* has no other honest observation — the first draft asserted headers on
+a 404 and read null against a correctly installed middleware. Measured against
+stubs: restoring the old two-key middleware install reds 6 of 18, removing the
+plugin installer reds 5.
+
 ## 2026-09-08 — a move made inside another service's call, pinned
 
 `announceDataWrites` suppresses a transition on `announcingService() === name`,

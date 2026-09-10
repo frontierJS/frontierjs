@@ -15,25 +15,11 @@
 
 import { createResource } from '@frontierjs/sierra/junction'
 
-// coerce      — every DOM control hands back a string, `<input type="number">`
-//               and `<select>` included. The schema is the only thing that
-//               knows the column is an Int, so it does the casting. Without it
-//               a form sends "42" for a Float and is told it is not a number.
-// blankToNull — an empty text box submits '', which SQLite does not agree is
-//               NULL: `slug String? @unique` takes any number of NULLs and
-//               rejects the second ''.
-// validate    — apply the schema's own rules before the request so the first
-//               "no" is local. The server validates regardless; this only moves
-//               the answer closer to the user.
-//
 // The first argument is the SERVICE name and `model` is the MODEL. Only the
 // regular English plurals were guessed — an irregular (Person -> people) comes
 // out wrong. Fix the string if one did; nothing else changes, because the model
 // is stated rather than inferred.
 export const discounts = createResource('discounts', {
   model: 'Discount',
-  coerce: true,
-  blankToNull: true,
-  validate: true,
 })
 </script>

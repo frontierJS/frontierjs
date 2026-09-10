@@ -186,3 +186,161 @@ describe('an instance <script> may not export a default', () => {
     expect(await threw('<script module>export const subject = "hi"</script><b>x</b>')).toBe('')
   })
 })
+
+// ─── bind: on an immutable local ─────────────────────────────────────────────
+
+// The setter is emitted as `name = $$v` whatever the target is, so a bare
+// `const` or an import compiled clean and threw `TypeError: Assignment to
+// constant variable` on the first keystroke. Invariant 15's blind spot: an
+// assignment to a const is a RUNTIME error, so the output parses and every
+// compiler test that only asserts parseability passes.
+describe('bind: on a local binding that cannot hold a write', () => {
+  // Every refusal is paired with the legitimate shape one character away, or a
+  // guard that refused every bind: would satisfy the whole describe.
+  it('refuses a derived const and names the writable derived form', async () => {
+    const { errors } = await cx(
+      "<script>\nlet name = ''\nconst greeting = name ? 'Hi ' + name : 'Hi'\n</script><input bind:value={greeting} />"
+    )
+    expect(errors.join('\n')).toMatch(/cannot two-way bind: `const greeting` is derived/)
+    expect(errors.join('\n')).toMatch(/\$: greeting = \.\.\./)
+  })
+
+  it('refuses a static const and names let', async () => {
+    const { errors } = await cx("<script>\nconst g = 'hi'\n</script><input bind:value={g} />")
+    expect(errors.join('\n')).toMatch(/`const g` cannot be reassigned\. Declare it `let`/)
+  })
+
+  // `var` is Mesa's opt-out from reactivity (RULE 13), so this one does not
+  // throw either: the write lands and no reader re-runs. What is missing is the
+  // model->DOM half, so `bind:` here means half of what it means one line away,
+  // selected by a keyword the template cannot see.
+  it('refuses a top-level var', async () => {
+    const { errors } = await cx("<script>\nvar g = 'hi'\n</script><input bind:value={g} />")
+    expect(errors.join('\n')).toMatch(/`var g` is outside the reactive graph/)
+  })
+
+  // Write-without-re-render is a real thing to want, and `let` is not the
+  // answer to it — so the refusal names the road instead of only the rule.
+  it('names the write-only road rather than only `let`', async () => {
+    const { errors } = await cx("<script>\nvar g = 'hi'\n</script><input bind:value={g} />")
+    expect(errors.join('\n')).toMatch(/on:input=\{e => \{ g = e\.target\.value \}\}/)
+  })
+
+  // Advice that fails when taken is worse than none: the shape the message
+  // hands the author is compiled here, not merely quoted.
+  it('and that road compiles, with the var still untracked', async () => {
+    const { ctx, errors, warnings } = await cx(
+      "<script>\nvar g = 'hi'\n</script><input on:input={e => { g = e.target.value }} />"
+    )
+    expect(errors).toEqual([])
+    expect(warnings).toEqual([])
+    // untrack() is what keeps the write from re-rendering — the whole point of
+    // reaching for `var`, so a `let` slipped in here would pass the two above.
+    expect(String(ctx.result)).toMatch(/untrack/)
+  })
+
+  it('refuses an imported binding', async () => {
+    const { errors } = await cx("<script>\nimport { g } from './x.js'\n</script><input bind:value={g} />")
+    expect(errors.join('\n')).toMatch(/`g` is an imported binding/)
+  })
+
+  // This one does not throw — a function declaration is assignable — so the
+  // control goes dead in silence, which is the worse of the two failures.
+  it('refuses a function declaration', async () => {
+    const { errors } = await cx('<script>\nfunction g() {}\n</script><input bind:value={g} />')
+    expect(errors.join('\n')).toMatch(/`g` is a function, not reactive state/)
+  })
+
+  it('refuses bind:checked and bind:value alike', async () => {
+    const { errors } = await cx(
+      "<script>\nconst g = true\n</script><input type=\"checkbox\" bind:checked={g} />"
+    )
+    expect(errors.join('\n')).toMatch(/bind:checked=\{g\} — cannot two-way bind/)
+  })
+
+  it('still binds a let', async () => {
+    const { errors } = await cx("<script>\nlet g = 'hi'\n</script><input bind:value={g} />")
+    expect(errors).toEqual([])
+  })
+
+  // The `$:` assignment form exists precisely so a control can override a
+  // derived default (VISION §4.5) — refusing it would delete the feature.
+  it('still binds a $: writable derived', async () => {
+    const { errors } = await cx('<script>\nlet n = 1\n$: g = n * 2\n</script><input bind:value={g} />')
+    expect(errors).toEqual([])
+  })
+
+  // Only a bare identifier is graded: a write THROUGH a const object is how
+  // every form bound to a draft record works.
+  it('still binds a member of a const object', async () => {
+    const { errors } = await cx(
+      "<script>\nconst draft = { a: '' }\n</script><input bind:value={draft.a} />"
+    )
+    expect(errors).toEqual([])
+  })
+
+  it('still binds a computed index on a const object', async () => {
+    const { errors } = await cx(
+      "<script>\nconst draft = { a: '' }\nlet key = 'a'\n</script><input bind:value={draft[key]} />"
+    )
+    expect(errors).toEqual([])
+  })
+})
+
+// ─── a `$:` assignment redeclared ────────────────────────────────────────────
+
+// `$: name = expr` IS a declaration, and it is the only one JavaScript does not
+// know about — acorn refuses `let x` twice at parse time, so this is the single
+// duplicate binding that can reach the analyzer. Pass 1 walks `ast.body` in
+// source order and only the `$:` side was guarded, so with the label FIRST the
+// plain declaration overwrote the entry and the writable derived vanished with
+// nothing said: a `bind:value` on it silently stopped being overridable.
+describe('a name declared twice, once by $:', () => {
+  it('refuses the declaration after the label', async () => {
+    const { errors } = await cx(
+      "<script>\nlet n = ''\n$: g = 'H' + n\nconst g = 'H' + n\n</script><p>{g}</p>"
+    )
+    expect(errors.join('\n')).toMatch(/'g' is already declared by '\$: g = \.\.\.'/)
+  })
+
+  it('refuses the label after the declaration', async () => {
+    const { errors } = await cx(
+      "<script>\nlet n = ''\nconst g = 'H' + n\n$: g = 'H' + n\n</script><p>{g}</p>"
+    )
+    expect(errors.join('\n')).toMatch(/'\$: g = \.\.\.' — 'g' is already declared/)
+  })
+
+  // `var` twice is legal JavaScript, so acorn lets it through — the label is
+  // still a redeclaration.
+  for (const kw of ['let', 'var', 'export let']) {
+    it(`refuses \`${kw}\` after the label`, async () => {
+      const { errors } = await cx(
+        `<script>\nlet n = ''\n$: g = 'H' + n\n${kw} g = 'x'\n</script><p>{g}</p>`
+      )
+      expect(errors.join('\n')).toMatch(/'g' is already declared by/)
+    })
+  }
+
+  // Destructuring reaches `vars` through a different writer, so the guard has
+  // to sit on all four.
+  it('refuses a destructured name that collides with the label', async () => {
+    const { errors } = await cx(
+      "<script>\nlet n = ''\n$: g = 'H' + n\nconst { g, h } = { g: 1, h: 2 }\n</script><p>{g}{h}</p>"
+    )
+    expect(errors.join('\n')).toMatch(/'g' is already declared by/)
+  })
+
+  it('refuses an array-destructured name that collides with the label', async () => {
+    const { errors } = await cx(
+      "<script>\nlet n = ''\n$: g = 'H' + n\nconst [g, h] = [1, 2]\n</script><p>{g}{h}</p>"
+    )
+    expect(errors.join('\n')).toMatch(/'g' is already declared by/)
+  })
+
+  it('leaves a label with no collision alone', async () => {
+    const { errors } = await cx(
+      "<script>\nlet n = ''\n$: g = 'H' + n\nconst { a, b } = { a: 1, b: 2 }\n</script><p>{g}{a}{b}</p>"
+    )
+    expect(errors).toEqual([])
+  })
+})

@@ -562,43 +562,26 @@ function makeApiAppTs(useAuth, useWeb) {
 // \`app.start()\` call lives in api/index.ts so that test code can import this
 // file without binding a port.
 
-import { createApp, requestLogger, correlationId, healthPlugin, manifestPlugin, channels } from '@frontierjs/junction'
+import { createApp, channels } from '@frontierjs/junction'
 import { auth, authPlugin, authCleanup } from './core/auth.ts'
 import { joinChannels }     from './core/channels.ts'
-import { withDb }           from './core/hooks.ts'
+import { db }               from './core/db.ts'
 import { env }              from './core/env.ts'
 
+// ─── The app ──────────────────────────────────────────────────────────────
+// The db client is passed rather than wired, and it is not a convenience:
+// handing it here installs the per-request scoping AND four things that have
+// no other install site — the write announcement that reaches open tabs, the
+// request context on every audit row, the audit metrics, and the query
+// telemetry the devtools console reads. Scoping the client by hand instead
+// gets the first of those and none of the rest, silently.
 const app = createApp({
   auth,
+  db,
   config: {
     port: env.PORT,${prefixLine}
   },
 })
-
-// ─── Middleware ───────────────────────────────────────────────────────────
-// CORS is declared in config/junction.config.js and installed from there — a
-// second app.configure(cors(...)) here registers a SECOND wildcard OPTIONS
-// route and patches the router's middleware twice, which is what this file
-// used to do. Configure it by hand only when the app also uses csrf(), which
-// has to come after it.
-app.configure(correlationId())
-app.configure(requestLogger())
-
-// ─── Health ───────────────────────────────────────────────────────────────
-// Serves {apiPrefix}/health and {apiPrefix}/metrics — app.get applies the
-// prefix to every route alike, and Junction's default prefix is none, so this
-// is /health unless the config above sets one. frontier.config.js points the
-// deploy's health check at the same path and a deploy ROLLS BACK when it does
-// not answer, so the two move together.
-app.configure(healthPlugin())
-
-// ─── Introspection ────────────────────────────────────────────────────────
-// GET {apiPrefix}/manifest — services, hooks, channels, plugins, and every route the
-// router will answer, read off live runtime state. fli api:routes reads it:
-// the HTTP surface is emergent (services auto-mount, plugins register their
-// own), so running the app is the only way to ask what it serves. devOnly by
-// default — a production build 404s here.
-app.configure(manifestPlugin())
 
 // ─── Real-time ────────────────────────────────────────────────────────────
 // Registers the /ws route. Without it the browser client has nothing to
@@ -630,14 +613,6 @@ app.configure({
   async shutdown() { authCleanup.stop() },
 })
 
-// ─── Per-request db scoping ──────────────────────────────────────────────
-// withLitestoneDb attaches a request-scoped db client to ctx.locals.db.
-// A SERVICE context has no ctx.params at all — that is raw-route only.
-// Every service call sees a db with auth context applied.
-app.hooks({
-  around: { all: [withDb] },
-})
-
 // Services in api/src/services/*.service.ts are autoloaded at boot
 // (configured in api/config/junction.config.js).
 
@@ -648,39 +623,22 @@ export default app
   return `// api/src/app.ts
 // The construction site — createApp + every plugin registration lives here.
 
-import { createApp, requestLogger, correlationId, healthPlugin, manifestPlugin, channels } from '@frontierjs/junction'
+import { createApp, channels } from '@frontierjs/junction'
 import { joinChannels }                                  from './core/channels.ts'
-import { withDb }                                        from './core/hooks.ts'
+import { db }                                            from './core/db.ts'
 import { env }                                           from './core/env.ts'
 
+// ─── The app ──────────────────────────────────────────────────────────────
+// The db client is passed rather than wired: handing it here installs the
+// per-request scoping AND the write announcement, the audit request context,
+// the audit metrics and the query telemetry, none of which has another install
+// site. Scoping by hand gets the scoping alone, and says nothing.
 const app = createApp({
+  db,
   config: {
     port: env.PORT,${prefixLine}
   },
 })
-
-// ─── Middleware ───────────────────────────────────────────────────────────
-// CORS is declared in config/junction.config.js and installed from there — a
-// second app.configure(cors(...)) here registers a SECOND wildcard OPTIONS
-// route and patches the router's middleware twice, which is what this file
-// used to do. Configure it by hand only when the app also uses csrf(), which
-// has to come after it.
-app.configure(correlationId())
-app.configure(requestLogger())
-
-// ─── Health ───────────────────────────────────────────────────────────────
-// Serves {apiPrefix}/health and {apiPrefix}/metrics — Junction's default prefix
-// is none, so /health unless the config above sets one. The deploy's health
-// check reads the same path and rolls back when it does not answer.
-app.configure(healthPlugin())
-
-// ─── Introspection ────────────────────────────────────────────────────────
-// GET {apiPrefix}/manifest — services, hooks, channels, plugins, and every route the
-// router will answer, read off live runtime state. fli api:routes reads it:
-// the HTTP surface is emergent (services auto-mount, plugins register their
-// own), so running the app is the only way to ask what it serves. devOnly by
-// default — a production build 404s here.
-app.configure(manifestPlugin())
 
 // ─── Real-time ────────────────────────────────────────────────────────────
 // Registers the /ws route the browser client upgrades to. The callback is the
@@ -689,11 +647,6 @@ app.configure(manifestPlugin())
 app.configure(channels((a) => {
   a.channels!.on('connection', (session, conn) => joinChannels(a, session, conn))
 }))
-
-// ─── Per-request db scoping ──────────────────────────────────────────────
-app.hooks({
-  around: { all: [withDb] },
-})
 
 // Services in api/src/services/*.service.ts are autoloaded at boot
 // (configured in api/config/junction.config.js).
@@ -797,22 +750,6 @@ export const db = await createClient({
   encryptionKey: env.ENCRYPTION_KEY,
   plugins:       [gate],
 })
-`
-}
-
-function makeApiCoreHooksTs() {
-  return `// api/src/core/hooks.ts
-// Global hooks attached at the App level — run on every service call.
-// withLitestoneDb scopes the db client to the current request's user
-// (ctx.locals.db = db.$setAuth(ctx.auth.user)) so policies + plugins see
-// who's calling. createService reads ctx.locals.db automatically.
-// A SERVICE context has no ctx.params — that is raw-route only, and reaching
-// for it here reads undefined rather than failing.
-
-import { withLitestoneDb } from '@frontierjs/junction/litestone'
-import { db } from './db.ts'
-
-export const withDb = withLitestoneDb(db)
 `
 }
 
@@ -964,6 +901,21 @@ export default {
     correlationId: true,
   },
 
+  // Junction's own plugins, and the middleware above: DECLARED here, installed
+  // by Junction at start(). Nothing about either is written in api/src/app.ts.
+  //
+  // What decides the section is what the option takes — data is declared, code
+  // is constructed. A plugin needing a function (health's own readiness checks,
+  // a custom auth guard) is configured by hand in app.ts instead and is then
+  // left OUT of this file, because declaring it in both places is two owners
+  // for one route and start() refuses it by name.
+  //
+  // health serves /health and /metrics; frontier.config.js points the deploy's
+  // health check at the same path and a deploy ROLLS BACK when it does not
+  // answer, so the two move together. manifest serves /manifest, which
+  // fli api:routes reads: the HTTP surface is emergent, so running the app is
+  // the only way to ask what it serves. It is devOnly, so a production build
+  // 404s there.
   plugins: {
     health:   true,
     manifest: true,
@@ -1835,7 +1787,6 @@ if (useApi) {
     ['api/src/app.ts',              makeApiAppTs(useAuth, useWeb)],
     ['api/src/core/env.ts',         makeApiEnvTs()],
     ['api/src/core/db.ts',          makeApiCoreDbTs()],
-    ['api/src/core/hooks.ts',       makeApiCoreHooksTs()],
     ['api/src/core/channels.ts',    makeApiCoreChannelsTs(useAuth)],
     ['api/config/junction.config.js', makeJunctionConfig(appName, useWeb)],
   )

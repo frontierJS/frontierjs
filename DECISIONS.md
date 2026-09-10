@@ -4520,6 +4520,54 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d256"></a>2026-09-09 · `FJS-D256` — `junction.config.js` DECLARES; `app.configure()` CONSTRUCTS. What the option takes decides which, and every declarable key is graded by a test.
+
+`junction.config.js` had a `middleware:` section of seven keys and a `plugins:`
+section of four. Two of the eleven were read. `helmet: true` sat one letter from
+the `http.helmet` that IS read and did nothing; `plugins.health: false` served
+`/health` anyway; `csrf: true` was a security key that lied. All eleven were
+typed, exported and documented, and `JUNCTION_SECTIONS` names both sections, so
+`FJS-D199`'s unknown-key refusal stayed silent over every one of them.
+
+**The line is not *is it Junction's own*.** That was the first proposal and it
+does not partition: `channels(cb)`, `authPlugin`, `backfills(defs)` and
+`webhooks(handlers)` are equally Junction's own and equally always-available, and
+none can be written in a config file. **The line is what the option TAKES.** Data
+is declared; code is constructed. It is decidable from the option's type, and it
+is the line Junction already draws below the surface — config is merged per
+environment and read per tenant through `app.configFor()`, and a function can
+vary per neither.
+
+So `middleware:` normalizes onto `config.http`, which the start phases already
+read, and `plugins:` onto `config.plugins`. One shape, one reader, one phase
+each. **A plugin needing code is configured by hand and declared NOWHERE** —
+`health.checks`, `health.authFn` and `manifest.db` are the three that exist —
+and declaring it in both places is refused by name at `start()`, because two
+registrations mount two routes on one path and which answers is the order they
+were added in.
+
+**§ IV, paved road vs. the workaround, is the row in tension and it reads the
+same either way**: a config key that records nothing is precisely what that
+adjudication warns about, and eleven of them is a measurement of the road rather
+than eleven preferences. § IV's preservation row settles the disposal — nobody
+depends on the dead spellings, so they are fixed rather than aliased.
+
+**The ninth question is the one this ruling is FOR, and a rule alone does not
+answer it.** Every key here was wrong with nothing saying so, and a rule stating
+where keys go would have been wrong the same way by the next key added. The
+artefact is `packages/junction/tests/config-surface.test.ts`: it reads both
+interfaces off their source and holds them against a table of behavioral rows in
+both directions, so a key added to either without a row fails on the next run.
+The rows go through a real listening server, because a middleware patches the
+ROUTER and *installed* has no other honest observation. Measured against stubs:
+restoring the old two-key middleware install reds 6 of 18, removing the plugin
+installer reds 5.
+
+*Lives in:* `packages/junction/src/config/index.ts` ·
+`packages/junction/src/core/app.ts` § `applyConfiguredMiddleware` /
+`applyConfiguredPlugins` · `packages/junction/tests/config-surface.test.ts` ·
+`FJS-D199` · [`FJS-1066`](ISSUES.md#fjs-1066)
+
 ### <a id="fjs-d247"></a>2026-09-08 · `FJS-D247` — Litestone's write tap takes many subscribers and has one owner. Orion attaches to it; the data layer's ingest may not, because a post-commit Observer cannot be durable.
 
 `FJS-D231` asked who owns the subscriber when two products want the same tap —
@@ -7014,6 +7062,62 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 `core/errors.ts`.
 
 ## UI substrate (Mesa)
+
+### <a id="fjs-d257"></a>2026-09-09 · `FJS-D257` — Autosave is a `<Form>` prop, not an app-side controller, because the trigger it needs is `dirty` and only the form has it.
+
+Built app-side first, in `example/web`, and the app-side version worked. It is
+the measurement rather than the alternative: three defects in one afternoon,
+and two of them existed **only** because the timer was outside the component.
+
+**What a controller outside `<Form>` has to restate.** *Did a control change
+this record* is `dirty`, which the form already sets from `writeField` and from
+the bubbled `input`/`change` listener — and which a parent re-pushing `record`
+does not set. A controller outside can see only that the reference moved, so it
+cannot tell a keystroke from the three places a screen swaps the draft itself:
+opening a drawer on another row, reloading somebody else's revision after a
+409, closing. Each of those had to hand the controller a new baseline, in the
+right ORDER relative to the reactive flush, and getting it backwards autosaves
+the row that was just opened — over the person whose revision was just
+reloaded. Inside, none of that exists.
+
+**Concept count decided it, in the direction nobody expects.** The prop version
+adds `autosave`, a bindable `autosaveState` and `onautosaved` — and the first
+two are the shape `errors`, `submitting`, `dirty` and `committed` already have,
+so the only new word is the third. The controller version needed six:
+a controller noun, `touch`, `baseline`, `adopt`, `onstate` and `driving`. **The
+kit version is the smaller one.**
+
+**Three things only the inside version can do.** It does not `submit()`, so it
+reveals nothing — a timer speaking for every field a person never visited is
+not a thing anybody asked for, and a patch carries only what moved so the
+untouched columns are the stored ones. It knows a write it started from one the
+button started, so `ondone` stays the button's event and a drawer that closes on
+`ondone` cannot shut itself under somebody still typing. And **the button
+disarms the timer**, which is invisible from outside: an armed timer left behind
+a refusal sends the same write again behind the panel the person is reading.
+
+**It also closed a bug that was never about autosave.** `<Form>` never wrote
+the save result back into `record`, so under `@version` a second write from one
+open form carries a revision the row has already passed. A form submitted once
+never noticed; autosave makes it certain. Only the version column is taken
+back — merging the whole answer would overwrite what was typed while the
+request was out.
+
+**A create is refused by name.** A timer that creates rows makes one per pause,
+and there is no id to patch until something is submitted, so it warns and does
+nothing rather than doing something surprising.
+
+Graded under *paved road vs. the workaround* with the count stated honestly:
+one app is not yet a measurement of the road, and what carried it was the two
+STRUCTURAL defects rather than the instance count. Under *batteries vs.
+smallness* it is severable — one prop, one timer, one bindable. Under
+*preservation vs. evolution*, `example/web/src/autosave.js` was deleted in the
+same commit: no second name for one thing.
+
+Lives in `packages/ui/components/forms/Form.mesa`, proven by
+`test/browser/specs/form-autosave.spec.mjs` — every row paired, measured at 12
+of 22 red with the trigger stubbed, 8 with the coalescing removed, 2 with the
+revision write-back removed, 1 with the submit disarm removed.
 
 ### <a id="fjs-d251"></a>2026-09-08 · `FJS-D251` — Where *back* goes is DERIVED, not declared. `back(fallback)` uses real history where this app owns the previous entry, and an app-authored path where it does not.
 

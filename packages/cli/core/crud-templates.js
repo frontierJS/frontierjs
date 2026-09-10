@@ -151,7 +151,6 @@ title: ${o.title}
 ${o.imports.map(l => '  ' + l).join('\n')}
   import { useStore } from '@frontierjs/sierra/junction'
   import { page, goto } from '@frontierjs/sierra/router'
-  import { encodeQueryString } from '@frontierjs/toolbelt/query'
   import { directiveParams } from '@frontierjs/toolbelt/directives'
 ${session}
   ${KIT.alert}
@@ -199,18 +198,51 @@ ${idFieldLine(o.res)}
   // them, so typing in a filter box silently drops the sort a header just set.
   // directiveParams is parseDirectives' inverse off the same table, so this
   // cannot go stale when a directive is added.
+  // Naming them in a bare $: is what marks page a WATCHED import, and it is what
+  // the const below needs to be a derivation rather than a value read once at
+  // setup. The handler form further down does not do it: it re-runs load() and
+  // leaves urlQuery frozen, so the bar keeps rendering the query this page
+  // arrived with — no Clear button, and a box that never shows what the URL
+  // says until a full reload (FJS-1065).
+  $: (page.query, page.directives)
+
   const urlQuery = { ...page.query, ...directiveParams(page.directives) }
 
   // Sort and filter both live in the URL (Invariant 10), so this page writes
   // the query and lets the router bring it back — which is what makes a
   // filtered, sorted list a LINK rather than a state somebody has to recreate.
+  // Two-arg goto, and the path is stripped of its own query first. Both halves
+  // are load-bearing. Concatenating instead — goto(page.path + encoded) — hands
+  // the router one string, and page.path ALREADY carries the search, so the
+  // second filter builds /notes/?a=1?b=2 and the first one navigated to a URL
+  // whose query the builder dropped on the floor (FJS-1064). Passing the query
+  // as the argument makes it REPLACE rather than merge, which is what Clear
+  // needs: an empty query over a bare path is a bare path.
   function apply(query) {
-    goto(page.path + encodeQueryString(query))
+    goto(page.path.split('?')[0], query)
   }
 
   function sortBy(key, dir) {
     apply({ ...urlQuery, $orderBy: { [key]: dir } })
   }
+
+  // The header reads back the SAME directive the load does. Without the pair
+  // below, the table is sorted and nothing on it says so: no arrow, and
+  // aria-sort answers none on every header. Worse, the toggle stops inverting
+  // -- <Table> derives the NEXT direction from the sortKey it was handed, so a
+  // column already descending in the URL is re-sent ascending on the next
+  // click and the header never reverses.
+  //
+  // A string, an object and an array of objects are all legal orderBys and the
+  // directive table deliberately does not fix one, so all three are read here.
+  const ordering   = page.directives?.orderBy
+  const firstOrder = Array.isArray(ordering) ? ordering[0] : ordering
+  const sortKey    = typeof firstOrder === 'string'
+    ? firstOrder.replace(/^-/, '')
+    : Object.keys(firstOrder ?? {})[0] ?? ''
+  const sortDir    = typeof firstOrder === 'string'
+    ? (firstOrder.startsWith('-') ? 'desc' : 'asc')
+    : Object.values(firstOrder ?? {})[0] ?? 'asc'
 
   let error = null
 
@@ -219,7 +251,20 @@ ${idFieldLine(o.res)}
   // the bridge reads a request with. So a filtered list is a LINK — copied,
   // bookmarked, and survived by the back button — and a detail screen can point
   // at its own child rows without this page knowing anything about them.
-  ${o.res}.load(page.query, page.directives).catch(e => { error = e.message })
+  function load() {
+    ${o.res}.load(page.query, page.directives).catch(e => { error = e.message })
+  }
+
+  load()
+
+  // The $: line is what makes the filter bar and the sort headers DO anything.
+  // apply() navigates to the same route with a different query, and the router
+  // does not remount for that — it moves page.query and page.directives and
+  // expects the page to be watching them. Without this line the load above runs
+  // once at setup and never again: the URL changes, the bar redraws from it,
+  // and no request is ever made, so every filter and every sort is a no-op that
+  // looks like a working control.
+  $: page.query, page.directives, () => load()
 ${gateState}${removeFn}${SC}
 
 <SectionHeader title="${o.heading}" level={1}>
@@ -232,7 +277,8 @@ ${gateState}${removeFn}${SC}
 
 <FilterBar {filters} {search} value={urlQuery} onchange={apply} />
 
-<Table {columns} rows={rows()} striped hover emptyText="Nothing here yet." onsort={sortBy}>
+<Table {columns} rows={rows()} {sortKey} {sortDir} striped hover
+       emptyText="Nothing here yet." onsort={sortBy}>
   {#snippet row(record)}
     <tr>
       {#each cols as c}<td><Cell value={record[c.name]} column={c} {record} /></td>{/each}
@@ -242,6 +288,14 @@ ${gateState}${removeFn}${SC}
     </tr>
   {/snippet}
 </Table>
+
+{#if omitted.length}
+  <p class="text-sm text-muted">
+    Not shown: {omitted.map(o => o.name).join(', ')} — each with a reason, so a
+    column added to the schema that does not appear here is answerable without
+    reading this page.
+  </p>
+{/if}
 ${gateFootnote}`
 }
 
@@ -370,6 +424,12 @@ ${idFieldLine(o.res)}${watch}
   let failed   = null
   let deleting = false
 
+  // The read FINISHED, whatever it found. Without it the spinner is drawn from
+  // record == null, which cannot tell "still loading" from "the read came back
+  // with nothing" — so a row that does not exist, and one this caller may not
+  // read, both spin forever with nothing said.
+  let loaded   = false
+
   // WATCHED, not fetched once. service.get() is the raw proxy and answers a
   // plain object, so a write from another tab, a job or a webhook reaches the
   // store and never this screen — which looks correct the whole time, because a
@@ -379,9 +439,23 @@ ${idFieldLine(o.res)}${watch}
   // Where this service's get() answers MORE than the row — an include, a count
   // assembled per call — declare it: record(id, { composed: true }), or the
   // first announcement drops the children.
+  // The handle is a let ASSIGNED rather than a const initialized, and that is
+  // the whole difference between this screen working and a spinner forever: a
+  // const whose initializer CALLS a local binding is a lazy derivation
+  // (FJS-D212), nothing reads unwatch until $.onDestroy, so the subscribe
+  // never ran and record stayed null with nothing reporting a problem.
+  // Every hand-written detail screen in this repo writes it this way.
+  let unwatch   = null
   const row     = ${o.res}.record(id)
-  const unwatch = row.subscribe(v => { record = v })
-  row.ready.catch(e => { failed = e.message })
+  unwatch = row.subscribe(v => { record = v })
+
+  // ready RESOLVES with null for a refusal and for a row that is not there —
+  // record() swallows the response so a .catch alone never fires. The reason is
+  // gone by the time it gets here, which is why one sentence covers both.
+  row.ready
+    .then(v => { if (v == null && !failed) failed = 'Could not load ' + id + ' — it may not exist, or you may not have access to it.' })
+    .catch(e => { failed = e.message })
+    .finally(() => { loaded = true })
 
   $.onDestroy(() => { unwatch?.(); row.release?.() })
 
@@ -446,7 +520,7 @@ ${kids.markup}{#if record}
       >${o.deleteLabel}</Button>
     {/snippet}
   </${o.form}>
-{:else if !failed}
+{:else if !loaded}
   <Spinner label="Loading" />
 {/if}
 `

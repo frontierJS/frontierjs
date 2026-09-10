@@ -37,6 +37,12 @@
   export let cancelHref  = null        // Cancel navigates…
   export let oncancel    = null        // …or calls back, for a drawer
   export let submitId    = undefined   // a drive needs to find the button
+
+  /// Bindable, and declared rather than left to ride $attributes: `bind:` needs
+  /// a real prop on the component it is written on, so a screen that wants the
+  /// autosave status has to be handed it through this file. `autosave` itself
+  /// is not declared — it is an ordinary value and rides the spread.
+  export let autosaveState = 'idle'
   export let actions     = null        // snippet — replaces the whole button row
 
   /// This shop's own `CustomField` rows, when the screen has them.
@@ -55,7 +61,7 @@
   // customers screen turns `showError` off while its conflict panel is up.
 </script>
 
-<Form resource={_resource} bind:record={record} {method} {actions} {...$attributes}>
+<Form resource={_resource} bind:record={record} bind:autosaveState={autosaveState} {method} {actions} {...$attributes}>
   <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
   <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
 </Form>

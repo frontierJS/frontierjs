@@ -3,6 +3,15 @@
 The user-facing history of the FrontierJS VS Code extension. Engineering detail
 — why a defect existed and what it cost — is in `CHANGES.md` in the repository.
 
+## 0.1.3 — unreleased
+
+### Mesa (`.mesa`)
+
+- **Frontmatter is highlighted as YAML.** A `---` block at the top of a
+  component is route metadata and Sierra reads it as real YAML, so it now
+  renders as YAML rather than plain text. Only at the very start of the file,
+  and only three dashes — the same shape both parsers accept.
+
 ## 0.1.2 — unreleased
 
 ### Mesa (`.mesa`)

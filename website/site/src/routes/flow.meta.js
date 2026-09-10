@@ -69,11 +69,11 @@ async function queueWelcome(ctx) {
 // one mutation, announced twice, from the same place:
 app.events.on('leads:created', …)   // in-process Event bus
 // 'leads created'                   → over the Channel, to the UI`,
-  S5: `const leads = createResource('leads', {
-  coerce:      true,   // "42" → 42, by the Model's declared type
-  blankToNull: true,   // '' → null, on nullable fields only
-  validate:    true,   // check here before spending a round trip
-})
+  S5: `const leads = createResource('leads')
+
+// "42" → 42 by the Model's declared type, '' → null on a nullable field, and
+// the Model's own rules checked here before a round trip is spent — all three
+// are on, and each takes an explicit false.
 
 leads.fields.•email•   // { type, required, maxLength, format: 'email', … }
 leads.can('delete')  // the Gate's answer, for hiding a control
@@ -92,7 +92,7 @@ leads.gate           // the four levels, as declared on the Model`,
   S7: `<script>
   import { Input, Select, Button } from '@frontierjs/ui'
 
-  const leads = createResource('leads', { coerce: true, validate: true })
+  const leads = createResource('leads')
   let draft = leads.make()          // shaped by the Model
 
   // validate() returns [{ field, message }] — the components want a map

@@ -1,5 +1,26 @@
 # Changes
 
+## 2026-09-09 — `<Form autosave>`, and the revision it takes back
+
+`FJS-D257`. A form can now save itself once the typing stops: `autosave` (true
+for the kit's 800ms, or a number of ms), a bindable `autosaveState`,
+`onautosaved`, and `flushAutosave()` on the imperative api for the screen that
+is being dismissed.
+
+Built app-side first and moved here, because the trigger is `dirty` — set by a
+control, never by a parent re-pushing `record`. Nothing outside the component
+can tell those apart, so every outside version had to be TOLD which record
+changes were edits and each one got it wrong in a different place.
+
+It is not a submit: it reveals no field, does not fire `ondone`, does not retry
+a refusal, refuses a create by name, and is disarmed by the button.
+
+**`_adoptVersion` came with it and is a fix in its own right.** `<Form>` never
+wrote the save result back into `record`, so under `@version` a second write
+from one open form carried a revision the row had already passed. Only the
+version column is taken — merging the whole answer would overwrite what was
+typed while the request was out.
+
 ## 2026-09-09 — `Cell`'s dash had no colour
 
 `FJS-1059`. `.muted { color: var(--text-muted) }` names a token nothing

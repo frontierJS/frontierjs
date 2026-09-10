@@ -127,18 +127,6 @@ export const ${plural} = createResource('${plural}', {
   // Stated rather than inferred, so an irregular plural cannot quietly resolve
   // to nothing.
   model: '${model}',
-
-  // Every DOM control hands back a string; the schema is what knows the column
-  // is an Int, so it does the casting.
-  coerce: true,
-
-  // '' is not NULL to SQLite — a \`String? @unique\` column takes any number of
-  // NULLs and rejects the second ''.
-  blankToNull: true,
-
-  // Apply the schema's own rules before the request. The server validates
-  // regardless; this only moves the first "no" closer to the user.
-  validate: true,
 })
 </script>
 `

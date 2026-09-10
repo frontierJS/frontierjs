@@ -1,5 +1,30 @@
 # Changes — frontierjs-vscode
 
+## 2026-09-09 — frontmatter is YAML, and the grammar says so
+
+`0.1.3`. `npm test` 112 pass, `verify:package` green.
+
+**A `---` block at the top of a `.mesa` file rendered as plain text.** It is
+route metadata, and Sierra's scanner parses it with js-yaml — anchors, arrays,
+nested maps, all real (`parse-frontmatter.js`) — so it is an embedded language,
+not a slab of punctuation. `#frontmatter` is now first in the root patterns,
+`contentName` is `meta.embedded.block.frontmatter` and the manifest maps that
+scope to `yaml`, which is what gives the block YAML's own comment and bracket
+behavior as well as its colors.
+
+**The rule matches what the PARSERS accept, not what markdown allows.** VS
+Code's markdown grammar takes three-or-more dashes and a `...` terminator;
+Mesa's `stripFrontmatter` and Sierra's `FRONTMATTER_RE` both take exactly
+`---` on its own line, anchored at position 0. A grammar that highlighted the
+superset would colour a block the build then ignores. `\A` is the document's
+first line in vscode-textmate — not the line's start — which is what makes the
+anchor expressible at all.
+
+Three new rows, two of them negative controls: a `---` further down the file,
+and four dashes. The third is that the script block AFTER the frontmatter still
+opens, because an `end` that never matches swallows the rest of the file and
+looks exactly like no highlighting at all. Removing the rule reds 2 of 24.
+
 ## 2026-09-09 — `<script module>` had no highlighting, and no grammar had a test
 
 `0.1.2`. `npm test` 107 pass, `verify:package` green.

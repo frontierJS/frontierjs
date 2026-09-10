@@ -244,6 +244,35 @@ describe('buildUrl', () => {
     expect(result).toBe('/leads/')
   })
 
+  // A query the caller put ON the path. `normalizePath` strips it — it has to,
+  // since the same function answers what a route MATCHES — so rebuilding from
+  // the normalized half alone discarded it in silence, and every filter bar in
+  // every generated app navigated to the URL it was already on.
+  test('keeps a query the path already carries', () => {
+    expect(buildUrl('/leads/?status=open', {}, 'always')).toBe('/leads/?status=open')
+  })
+
+  test('keeps a hash the path already carries', () => {
+    // Not a second case: the widget handoff arrives in a fragment, so dropping
+    // one is the same silent loss a character over.
+    expect(buildUrl('/leads/#row-3', {}, 'always')).toBe('/leads/#row-3')
+    expect(buildUrl('/leads/?a=1#row-3', {}, 'always')).toBe('/leads/?a=1#row-3')
+  })
+
+  // The negative control for the two above, and the rule the filter bar needs:
+  // params REPLACE the path's query rather than merging with it. Merging would
+  // resurrect a filter somebody had just cleared, since a bar hands over the
+  // whole query it means and says nothing about the one it is replacing.
+  test('params replace a query on the path rather than merging', () => {
+    expect(buildUrl('/leads/?status=open', { q: 'ada' }, 'always')).toBe('/leads/?q=ada')
+  })
+
+  test('an empty params object over a bare path is a bare path', () => {
+    // What Clear does. With the path stripped of its own query first, there is
+    // nothing to keep and nothing to resurrect.
+    expect(buildUrl('/leads/', {}, 'always')).toBe('/leads/')
+  })
+
   test('serializes arrays with [] notation, and it reads back', () => {
     // Brackets are left readable rather than percent-encoded — what every
     // bracket-notation parser emits, and what `parseQueryParams` is the exact

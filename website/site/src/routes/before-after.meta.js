@@ -72,11 +72,11 @@ const payload = {
 SELECT * FROM leads WHERE nickname IS NULL;
 -- 0 rows. They are all ''.
 -- and String? @unique accepted exactly one ''`,
-  S13: `const leads = createResource('leads', {
-  coerce:     true,   // "42" → 42, by the schema's type
-  blankToNull: true,  // '' → null, nullable fields only
-  validate:   true,   // check before it leaves the browser
-})`,
+  S13: `const leads = createResource('leads')
+
+// "42" → 42 by the schema's type, '' → null on a nullable column, and the
+// schema's rules checked before it leaves the browser. Nothing is turned on:
+// naming the model is the whole of it.`,
   S14: `router.get('/leads', async (req, res) => {
   const page  = Number(req.query.page ?? 1)
   const limit = Math.min(Number(req.query.limit ?? 20), 100)

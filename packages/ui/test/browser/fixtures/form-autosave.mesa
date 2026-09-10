@@ -1,0 +1,114 @@
+<script>
+  // form-autosave.mesa — a <Form> that saves itself.
+  //
+  // Everything here is about what must NOT happen. A quiet form writing
+  // nothing, a burst of keystrokes being ONE write, a create making no rows, a
+  // refusal not retrying — each of those looks identical to a broken autosave
+  // from the outside unless it is asked beside its opposite, so every claim in
+  // the spec is a pair.
+  //
+  // The service records and answers, and it BUMPS the version on every write:
+  // that is the only way to see that the form takes back the revision it was
+  // given, which is the second write of one open form and is a 409 without it.
+  import Form from '../../../components/forms/Form.mesa'
+  import {
+    formFieldList, validateAgainstFields, coerceToSchema, toFieldErrors,
+  } from '@frontierjs/sierra/field-rules'
+
+  const FIELDS = {
+    id:        { type: 'string',  readOnly: true, title: 'Id' },
+    version:   { type: 'number',  readOnly: true, title: 'Version' },
+    reference: { type: 'string',  required: true, minLength: 3, title: 'Reference' },
+    total:     { type: 'number',  required: true, minimum: 1, title: 'Total' },
+  }
+
+  let calls   = []
+  let version = 4
+  let failNext = false
+  window.kitFailNextSave = () => { failNext = true }
+
+  function write(kind, data) {
+    calls = [...calls, kind]
+    if (failNext) {
+      failNext = false
+      const err = new Error('Request failed')
+      err.data = { data: [{ field: 'reference', message: 'That reference is taken' }] }
+      return Promise.reject(err)
+    }
+    // What a real patch answers: the row, at the revision this write minted.
+    version += 1
+    return Promise.resolve({ id: 'o-7', version, reference: data?.reference })
+  }
+
+  const RESOURCE = {
+    context: { model: 'Order', service: 'orders', idField: 'id' },
+    fields:  FIELDS,
+    versionField: 'version',
+    formFields: (opts) => formFieldList(FIELDS, opts),
+    options: () => Promise.resolve([]),
+    make: () => ({ reference: '', total: 1 }),
+    coerce:      (data) => coerceToSchema(FIELDS, data),
+    validate:    (data, mode) => validateAgainstFields(FIELDS, data, mode),
+    fieldErrors: (err) => toFieldErrors(err),
+    // The version the write CARRIED, recorded beside the call, because the
+    // whole claim about write-back is about what the second request sends.
+    save: (data, opts) => write('save:' + (opts?.mode ?? '-') + ':v' + data?.version + ':' + (data?.reference ?? ''), data),
+  }
+
+  const EXISTING = { id: 'o-7', version: 4, reference: 'ORD-7', total: 12 }
+
+  // Short, so the spec waits on a real timer rather than on a stubbed clock —
+  // the debounce is the thing under test and a fake one proves nothing.
+  const QUIET = 60
+
+  let recordA = { ...EXISTING }
+  let stateA  = 'idle'
+  let savedA  = 0
+  let doneA   = 0
+  let apiA    = null
+
+  let recordB = { ...EXISTING }
+  let stateB  = 'idle'
+
+  // The parent swapping the record UNDER the form — reloading somebody else's
+  // revision after a conflict. It is not an edit and must schedule nothing.
+  function pushFromParent() { recordB = { ...EXISTING, reference: 'THEIRS' } }
+</script>
+
+<div id="auto">
+  <Form
+    resource={RESOURCE}
+    bind:record={recordA}
+    bind:autosaveState={stateA}
+    autosave={QUIET}
+    onautosaved={() => savedA++}
+    ondone={() => doneA++}
+    onready={(a) => apiA = a}
+  />
+</div>
+
+<div id="pushed">
+  <Form resource={RESOURCE} bind:record={recordB} bind:autosaveState={stateB} autosave={QUIET} />
+</div>
+
+<!-- No record, so `auto` resolves to create: a timer must never make rows. -->
+<div id="creating">
+  <Form resource={RESOURCE} autosave={QUIET} />
+</div>
+
+<!-- Autosave off is the control for every row above. -->
+<div id="manual">
+  <Form resource={RESOURCE} record={{ ...EXISTING }} />
+</div>
+
+<button type="button" id="push" on:click={pushFromParent}>push</button>
+<button type="button" id="submit" on:click={() => apiA?.submit()}>submit</button>
+<button type="button" id="flush" on:click={() => apiA?.flushAutosave()}>flush</button>
+
+<output id="calls">{calls.join('|')}</output>
+<output id="count">{calls.length}</output>
+<output id="state">{stateA}</output>
+<output id="state-b">{stateB}</output>
+<output id="held-version">{recordA?.version}</output>
+<output id="autosaved">{savedA}</output>
+<output id="done">{doneA}</output>

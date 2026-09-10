@@ -29,7 +29,7 @@ interesting. The row is created.
 
 **After**, the browser refuses. The field is marked invalid, the page does not
 navigate, and — the assertion that matters — **the row count over HTTP does not
-move**, because the request was never made. `validate: true` on the resource is
+move**, because the request was never made. The resource's own validation is
 what moves the first *no* to the person's screen instead of a round trip.
 
 ```js
@@ -150,7 +150,7 @@ if (!await must(context, refused.invalid.includes('title')
       asked: 'title marked aria-invalid', got: refused.invalid.join(', ') || 'nothing' }
   : { ok: false, name: 'the browser refuses, and says which field',
       asked: 'title marked aria-invalid', got: refused.invalid.join(', ') || 'nothing marked' }, {
-  likely: 'validate: true on the resource is what checks before the request — it is in web/src/resources/Note.mesa',
+  likely: 'the resource validates before the request unless validate: false says not to — it is in web/src/resources/Note.mesa',
 })) return
 
 // The assertion the beat rests on: not that an error appeared, but that

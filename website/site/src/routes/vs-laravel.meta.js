@@ -86,9 +86,7 @@ export function createLeadsService() {
   return createBaseService({})
 }`,
   S8: `<script>
-  const leads = createResource('leads', {
-    coerce: true, blankToNull: true, validate: true,
-  })
+  const leads = createResource('leads')
   await leads.find({ $limit: 20 })
 </script>
 

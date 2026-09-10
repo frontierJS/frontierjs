@@ -1,5 +1,49 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-09 — two ways to write a binding that cannot hold a write
+
+**[`FJS-1068`](../../ISSUES.md#fjs-1068).** The bind setter is emitted as `name = $$v` whatever the
+target is, and the only guard on it was Rule 22's, which grades `export const` and nothing else. A
+local `const` reached the emitter untouched — including the derived one const-promotion produces,
+which is what every value computed from a `let` IS — and so did an imported binding, a top-level
+`var` and a function declaration. The module parsed, rendered, and threw `TypeError: Assignment to
+constant variable` on the first keystroke.
+
+That is Invariant 15's blind spot rather than an exception to it: assignment to a `const` is a
+runtime error, not a parse error, so output that carries one satisfies every test asserting the
+compiler emitted valid JS. Two of the five throw nothing at all and are the worse half — a function
+binding and a `var` are both assignable, so the write lands on a name no signal is behind and the
+control is simply dead. VISION RULE 22 had claimed the whole of this in prose since before any of
+it was true.
+
+The guard now sits beside Rule 22's and grades a BARE IDENTIFIER only: `bind:value={draft[key]}` is
+how every form bound to a draft record works and still compiles. A derived `const` is answered with
+the form that exists for exactly this — `$: name = expr`, the writable derived (VISION §4.5), which
+re-derives and can still be overridden by the control.
+
+**[`FJS-1067`](../../ISSUES.md#fjs-1067).** `$: name = expr` is a declaration JavaScript does not
+know about, which makes it the one duplicate binding that can reach the analyzer — acorn refuses
+every other redeclaration at parse time. Pass 1 walks `ast.body` in source order and only the `$:`
+side was guarded, so the refusal fired one way round and not the other: with the label first, the
+plain declaration overwrote the entry and the writable derived vanished, taking its overridability
+with it, on neither the error nor the warning channel. One guard now sits at all four `vars[name]`
+writers, so the answer no longer depends on which line came first.
+
+The `var` case had a hearing of its own, because write-without-re-render is a real thing to want
+and §2.3's `stagedInput` is it. What was there worked in one direction and the refusal as first
+written answered it with "declare it `let`" — advice that defeats the reason somebody reached for a
+`var`. The capability keeps its road and the ambiguous spelling loses: a handler writing a `var`
+(`on:input={e => { staged = e.target.value }}`) captures every keystroke and re-renders nothing,
+which is what RULE 13 already called script-side bookkeeping. `bind:` there meant one thing on a
+`let` and half of it one line away on a `var`, selected by a keyword the template cannot see. The
+error now names the handler, and the shape it hands the author is COMPILED in the suite rather than
+quoted — advice that fails when taken is worse than none. New RULE 13a in VISION §6.
+
+Both are pinned in `test/compile-errors.test.js` — twenty rows, every refusal paired with the
+legitimate shape one character away, because a guard that refused every `bind:` or every second
+declaration satisfies any test that only asks about the refusal. All 419 tracked `.mesa` files in
+the workspace sweep clean.
+
 ## 2026-09-07 — the scope id has no second answer
 
 **[`FJS-D86`](../../DECISIONS.md#fjs-d86) / Invariant 12, closed by deletion.** The ruling says a

@@ -1,5 +1,122 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-10 — a generated resource stops turning on what is already on
+
+`createResource` reads its payload pipeline as `!== false`, so `coerce`,
+`blankToNull` and `validate` have been on by default for some time. Every
+generator here went on writing all three out as `true` with a paragraph of
+comment each, which is a scaffold teaching a new reader that a resource is a
+place you switch things on — and the sierra README still called them
+*default off* three times, which is the half that is not merely noise.
+
+All three writers drop them: `core/resource-template.js` (behind
+`fli make:resource`, `fli web:resource` and `fli make:scaffold`),
+`fli make:model --resource`, and `fli admin:generate`. A generated resource is
+now a service name and a model, and what is left of the comment is the one
+thing that still changes a decision — that each half takes an explicit `false`,
+which is what `validate: false` on a form that cannot see a required column is
+for.
+
+## 2026-09-10 — a scaffolded app hands Junction its db client instead of wiring it
+
+`fli new` wrote `createApp({ auth, config })` with no `db`, then scoped the
+client by hand out of a generated `core/hooks.ts`. Junction installs that
+scoping from `createApp({ db })` and, in the same branch, four things with no
+other install site: the write announcement that reaches open tabs
+(`FJS-010`'s complaint), the request context on every audit row, the audit
+metrics, and the query telemetry the devtools console reads. With no `db` the
+branch is falsy, so a hand-scoped app got the scoping alone — and each of the
+four is silent when it is missing.
+
+Both templates pass `db` now and `core/hooks.ts` is gone, its only export
+having been the hand-wired hook. Measured in a real scaffolded app:
+`GET /api/metrics` answers an `audit` key with `db` passed and does not
+without it (`FJS-1069`).
+
+## 2026-09-09 — a scaffolded app declares its middleware and plugins, and writes neither
+
+`fli new` wrote both halves of every one: `junction.config.js` declared
+`middleware.helmet`, `requestLogger`, `correlationId` and `plugins.health`,
+`manifest`, and `api/src/app.ts` then configured four of them by hand. The
+config half was inert (`FJS-1066`), so the file every new app starts from taught
+the wrong surface and shipped six keys that did nothing.
+
+Under `FJS-D256` the declaration is now the whole of it: the scaffold's app.ts
+carries no middleware and no plugin registration, and the explanation of what
+belongs where lives in the config file that holds them. Proven by the `tutor`
+phase — `tutor:app` is the only thing that boots a scaffolded app and probes
+`/api/health`, which is a route the config file now asks for.
+
+## 2026-09-09 — a generated list page's filter bar was a control that did nothing
+
+Three defects in a row, each of which alone leaves every filter and every sort
+dead, and none of which reports anything.
+
+**The router dropped the query.** `apply()` navigated with
+`goto(page.path + encodeQueryString(query))` — one string — and `buildUrl` runs
+`normalizePath` first, which STRIPS the query because the same function answers
+what a route matches. With `params` empty there was nothing to put back, so
+`goto('/notes/?title[contains]=alpha')` navigated to `/notes/`: the URL it was
+already on. Nothing moved, nothing threw. `buildUrl` now keeps a query — and a
+hash — the path already carries, and `params`, when it has anything to say,
+REPLACES rather than merges, because a caller handing over a whole query means
+that query and merging would resurrect a filter somebody had just cleared.
+
+**The call site was wrong in a second way that only shows on the second
+filter.** `page.path` already carries the search, so concatenating built
+`/notes/?a=1?b=2`. It is `goto(page.path.split('?')[0], query)` now — the
+documented two-arg form, over a path stripped of its own query, which is also
+what makes Clear clear.
+
+**And the page never watched the URL.** `resource.load(page.query, …)` ran once
+at setup; the router does not remount for a query change on the same route — it
+moves `page.query` and expects the page to be watching. Every hand-written list
+in `example` and `basecamp` has `$: page.query, page.directives, () => load()`
+and the generated one had nothing.
+
+**A fourth thing is filed rather than fixed** ([FJS-1065](../../ISSUES.md#fjs-1065)):
+that handler-form `$:` does not mark `page` a watched import, so `urlQuery`
+compiled to a plain const and the BAR stayed frozen even once the rows moved —
+no Clear button, no box reflecting the URL. A bare `$: (page.query,
+page.directives)` promotes it, and the template now carries both lines.
+
+**`tutor:ui` types into the bar now.** The lesson stood on the list page and only
+ever asked whether a row was drawn, so every control above the table was
+untested — which is why this shipped. Three assertions, because three things can
+fail apart: the bar writes the URL, the URL has exactly one `?` in it, and every
+row left is a match. Not asserted over HTTP: a signed-in app holds a socket, so
+the read rides a WS frame and the network panel shows nothing, which is what made
+this look like *no request was made* from the outside.
+
+## 2026-09-09 — a scaffolded detail page never left its spinner
+
+**The generated `[id].mesa` subscribed to nothing.** It wrote
+`const unwatch = row.subscribe(v => record = v)` over a `row` the same script
+declares — and a `const` whose initializer CALLS a local binding is a lazy
+derivation ([FJS-D212](../../DECISIONS.md#fjs-d212)), so the memo computed only
+when something read `unwatch`, and the only reader is `$.onDestroy`. The
+subscribe never ran, `record` stayed `null`, and the page drew `Loading`
+forever: 200 on the wire, nothing in the console, nothing thrown, valid
+JavaScript. The handle is a `let` and an assignment now, which is what every
+hand-written detail screen in `example/` and `basecamp/` already wrote — the
+asymmetry is why no drive here ever saw it and only a scaffolded app was broken.
+
+**The spinner was also drawn from the wrong question.** `{:else if !failed}`
+over `record == null` cannot tell *still loading* from *the read came back with
+nothing*, so a row that does not exist and a row the caller may not read both
+spun with nothing said — and `record().ready` RESOLVES `null` for both, so the
+`.catch` beside it could never fire ([FJS-1063](../../ISSUES.md#fjs-1063)).
+There is an explicit `loaded` flag now, set in a `.finally`, and a sentence for
+the null.
+
+**`tutor:ui` now asks what the detail page drew, which is why this shipped.**
+The lesson already asserted the save NAVIGATED to `/notes/<id>/` and then went
+to the list, so the one screen in a scaffolded app nothing ever rendered was the
+one the scaffold got wrong. Asked as the input VALUES rather than the visible
+text — `innerText` does not carry them, so a form drawn over a null record
+passes any assertion about what the page says. Measured: with the old template
+restored, `tutor:ui` reds on *the detail page drew the record*.
+
 ## 2026-09-09 — a scaffolded app claimed to be signed in, and had nobody to sign in as
 
 **`fli new --auth` wrote a nav with an unconditional `Sign out` button.** A

@@ -33,8 +33,8 @@ export function resourceFile(model, service) {
 //
 // Read this next to db/schema.lite. Nothing here restates anything there: no
 // field list, no types, no enum values, no required list, no relations. A
-// resource names a service and turns three flags on; everything a form needs is
-// read back off it at runtime as \`fields\`, \`relations\` and \`gate\`.
+// resource names a service and a model; everything a form needs is read back
+// off it at runtime as \`fields\`, \`relations\` and \`gate\`.
 
 import { createResource } from '@frontierjs/sierra/junction'
 
@@ -43,22 +43,10 @@ export const ${service} = createResource('${service}', {
   // to nothing.
   model: '${model}',
 
-  // Every DOM control hands back a string — \`<input type="number">\` and
-  // \`<select>\` included. The schema is the only thing that knows the column is
-  // an Int, so it does the casting. Without this a form bound to make() sends
-  // "42" for a Float and is told it is not a number.
-  coerce: true,
-
-  // An empty text box submits '', which SQLite does not agree is NULL: a
-  // \`String? @unique\` column takes any number of NULLs and rejects the second
-  // ''. Rewrite blanks on nullable fields on the way out.
-  blankToNull: true,
-
-  // Check the record against the schema before the request rather than
-  // round-tripping to be told the same thing. The server validates regardless —
-  // this only moves the first "no" closer to the user.
-  validate: true,
-
+  // The payload pipeline — coerce, blankToNull, validate — is on. Each is off
+  // with an explicit \`false\`, which is worth stating on the resource where it
+  // is wrong: \`validate: false\` where a column the form cannot see is required.
+  //
   // The reads this model answers for its own callers, declared once here rather
   // than at every call site. Both take { query, directives }.
   //

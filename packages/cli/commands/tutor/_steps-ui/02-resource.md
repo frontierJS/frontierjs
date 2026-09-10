@@ -13,7 +13,7 @@ imports. It is one call:
 
 ```text
 export const notes = createResource('notes', {
-  model: 'Note', coerce: true, blankToNull: true, validate: true,
+  model: 'Note',
 })
 ```
 
@@ -26,7 +26,8 @@ types. No required list. No enum values. No relations. No validation rules. All
 of that is read back off the schema at runtime, which is what the next step
 watches happen.
 
-The three flags are each one sentence:
+It does not turn anything on either. The payload pipeline is already running,
+and each half is off with an explicit `false`:
 
 | | |
 | --- | --- |

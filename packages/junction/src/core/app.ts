@@ -21,7 +21,7 @@ import { checkAttachments, formatAttachmentRefusal, formatAttachmentSkips } from
 import { resolveBuildId } from './build-id.ts'
 import { mergeHookMaps, type HookMap } from './hooks.ts'
 import { toFrameworkError, NotFound }   from './errors.ts'
-import { helmet, cors }                 from '../transport/middleware.ts'
+import { helmet, cors, csrf, bodyLimit, correlationId, requestLogger, rateLimit } from '../transport/middleware.ts'
 import { defaultConfig, deepMerge, loadConfig, unknownSections } from '../config/index.ts'
 import type { DeepPartial }                     from '../config/index.ts'
 import { createLogger, noopLogger }             from './logger.ts'
@@ -1679,19 +1679,16 @@ export function createApp(opts: AppOptions = {}): App {
       // Final priority: defaultConfig < junction.config.js < opts.config.
       { name: 'load-config', needsHost: true, run: () => app.applyConfigFile() },
 
-      // Security headers — opt out via config.http.helmet = false.
-      { name: 'security-headers', run: () => {
-        if (config.http?.helmet !== false) helmet()(app)
-      }},
+      // Every middleware an app DECLARED, in the one order that works: cors
+      // before csrf, so a preflight short-circuits ahead of the origin check.
+      // One phase and one reader (`FJS-D256`) — a key installed from its own
+      // site instead is a key the next reader does not know to look for.
+      { name: 'config-middleware', run: () => applyConfiguredMiddleware(app, config) },
 
-      // CORS declared in config. Must run after load-config, which is where
-      // middleware.cors is merged in, and before service routes are registered.
-      //
-      // Ordering note: cors() must precede csrf() so preflights short-circuit
-      // before the origin check. An app calling app.configure(csrf(...)) itself
-      // registers it during configure(), so an app using BOTH should keep
-      // configuring cors() by hand, ahead of csrf(), rather than via config.
-      { name: 'cors', run: () => applyConfiguredCors(app, config) },
+      // The plugins an app declared. Refuses a plugin declared here AND
+      // configured by hand: that is two owners for one route, and which of them
+      // wins is hook order.
+      { name: 'config-plugins', run: () => applyConfiguredPlugins(app, config, plugins) },
 
       // register() already ran synchronously in configure(); async rejections
       // were captured there. Refuse to boot on one rather than run half-configured.
@@ -2032,6 +2029,129 @@ function applyConfiguredCors(app: App, config: AppConfig): void {
     ...(c.credentials ? { credentials: c.credentials } : {}),
     ...(c.maxAge      ? { maxAge:      c.maxAge }      : {}),
   }))
+}
+
+// ─── Declared middleware ──────────────────────────────────────────────────
+/**
+ * Install every middleware `config.http` declares, in the one order that works.
+ *
+ * `junction.config.js`'s `middleware:` section normalizes onto `config.http`
+ * (see `loadConfig`), so this is the one place that reads any of them
+ * (`FJS-D256`). A key added to that section and not installed here is typed,
+ * documented and inert, and nothing says so — `csrf` is the shape that makes
+ * the cost concrete, since a declared guard that was never installed reads as
+ * a guard from every screen an operator has.
+ *
+ * Defaults are asymmetric on purpose. Helmet is on unless declared false —
+ * headers nobody asked for cost nothing and their absence is a finding. The
+ * other four are off unless declared: a logger nobody asked for writes a line
+ * per request, and a CSRF guard nobody asked for refuses live traffic.
+ */
+function applyConfiguredMiddleware(app: App, config: AppConfig): void {
+  const http = (config.http ?? {}) as Record<string, unknown>
+
+  if (http.helmet !== false) helmet()(app)
+
+  applyConfiguredCors(app, config)
+
+  // After cors, because a preflight carries no session and must be answered
+  // before an origin check refuses it.
+  const csrfCfg = http.csrf
+  if (csrfCfg) {
+    const declared = typeof csrfCfg === 'object' ? csrfCfg as Record<string, unknown> : {}
+    const corsOrigins = ((http.cors as Record<string, unknown> | undefined)?.origins) as string[] | undefined
+    const origins = (declared.origins as string[] | undefined) ?? corsOrigins
+
+    // A CSRF guard with no origin list has one possible behavior, and it is
+    // *allow*. Refused by name rather than installed permissive, because an
+    // app that declared csrf believes it has one.
+    if (!origins || origins.length === 0 || origins.includes('*')) {
+      throw new Error(
+        `[Junction] middleware.csrf is declared with no origin list to use. ` +
+        `\`csrf: true\` borrows middleware.cors.origins, which is ` +
+        `${origins ? `\`${JSON.stringify(origins)}\`` : 'not set'} — and a CSRF guard ` +
+        `that cannot name its origins allows every one of them. Give ` +
+        `middleware.csrf an \`origins\` list, or set middleware.cors.origins.`
+      )
+    }
+    app.configure(csrf({ origins, ...(declared.methods ? { methods: declared.methods as string[] } : {}),
+      ...(declared.allowMissingOrigin !== undefined ? { allowMissingOrigin: declared.allowMissingOrigin as boolean } : {}) }))
+  }
+
+  // Behind cors and csrf, so a refused request is not counted against the
+  // budget of the caller who never got to make it.
+  const limiter = http.rateLimit as Parameters<typeof rateLimit>[0] | undefined
+  if (limiter) app.configure(rateLimit(limiter))
+
+  const limit = http.bodyLimit as { maxSize?: number } | undefined
+  if (limit?.maxSize) app.configure(bodyLimit(limit.maxSize))
+
+  const cid = http.correlationId
+  if (cid) app.configure(correlationId(typeof cid === 'object' ? cid as Record<string, never> : {}))
+
+  const rl = http.requestLogger
+  if (rl) app.configure(requestLogger(typeof rl === 'object' ? rl as Record<string, never> : {}))
+}
+
+// ─── Declared plugins ─────────────────────────────────────────────────────
+/**
+ * Install the plugins `config.plugins` declares.
+ *
+ * The line between this and `app.configure()` is what the option TAKES: data is
+ * declared, code is constructed (`FJS-D256`). `health.checks`, `health.authFn`
+ * and `manifest.db` are the three options here that are not data — an app
+ * needing one configures the plugin by hand and declares nothing, and
+ * `manifest.db` is not even a gap, since a manifest installed from here is
+ * handed `app.db` already.
+ *
+ * Declaring a plugin here AND configuring it by hand is refused by name: two
+ * registrations mount two routes on one path, and which answers is the order
+ * they were added in.
+ */
+async function applyConfiguredPlugins(app: App, config: AppConfig, configured: Plugin[]): Promise<void> {
+  const declared = (config.plugins ?? {}) as Record<string, unknown>
+  const byHand   = new Set(configured.map(p => p.name))
+
+  const clash = Object.keys(declared).filter(k => declared[k] && byHand.has(k))
+  if (clash.length) {
+    throw new Error(
+      `[Junction] ${clash.map(c => `'${c}'`).join(', ')} ` +
+      `${clash.length === 1 ? 'is' : 'are'} declared in config AND configured by hand. ` +
+      `One owner: declare it in junction.config.js's \`plugins:\`, or call ` +
+      `app.configure() and leave it out of the file. Configure by hand where the ` +
+      `plugin needs CODE — health's \`checks\`/\`authFn\` cannot be written in config.`
+    )
+  }
+
+  const opts = (k: string): Record<string, unknown> =>
+    typeof declared[k] === 'object' ? declared[k] as Record<string, unknown> : {}
+
+  // Imported on demand rather than at the top of this file: core would
+  // otherwise depend on every plugin under it, and an app declaring none would
+  // still load openapi's reference page and devtools' second server.
+  if (declared.health) {
+    const { healthPlugin } = await import('../transport/health.ts')
+    app.configure(healthPlugin(opts('health')))
+  }
+  // `db` is derived rather than declared: the manifest wants the client the app
+  // was built with, and there is exactly one.
+  if (declared.manifest) {
+    const { manifestPlugin } = await import('../plugins/manifest/index.ts')
+    app.configure(manifestPlugin({ ...opts('manifest'), ...(app.db ? { db: app.db } : {}) }))
+  }
+  if (declared.openapi) {
+    const { openapi } = await import('../plugins/openapi/index.ts')
+    const o = opts('openapi')
+    app.configure(openapi({
+      title:   (o.title   as string) ?? (config.name as string | undefined) ?? 'API',
+      version: (o.version as string) ?? '1.0.0',
+      ...o,
+    } as Parameters<typeof openapi>[0]))
+  }
+  if (declared.devtools) {
+    const { devtools } = await import('../plugins/devtools/index.ts')
+    app.configure(devtools(opts('devtools')))
+  }
 }
 
 /**

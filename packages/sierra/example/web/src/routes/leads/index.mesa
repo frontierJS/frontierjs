@@ -86,7 +86,7 @@ title: Leads
 
 <p class="text-sm text-muted">
   The <code>Slug</code> column shows <code>null</code>, not an empty string —
-  <code>blankToNull: true</code> on the resource. That is what keeps
+  the resource's <code>blankToNull</code>. That is what keeps
   <code>slug String? @unique</code> from rejecting the second lead saved with an
   empty slug.
 </p>

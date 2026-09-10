@@ -4,6 +4,7 @@
   "scopeName": "source.mesa",
   "fileTypes": ["mesa"],
   "patterns": [
+    { "include": "#frontmatter" },
     { "include": "#script-block" },
     { "include": "#style-block" },
     { "include": "#html-comment" },
@@ -14,6 +15,20 @@
     { "include": "#html-tag" }
   ],
   "repository": {
+
+    "frontmatter": {
+      "comment": "A `---` block at the top of a component is route metadata, read as YAML by Sierra's scanner (js-yaml, so anchors and arrays are real). Exactly three dashes on a line of their own, at the very start of the file: `\\A` is the whole document's first line in vscode-textmate, and both parsers anchor there too, so a `---` further down is not a block.",
+      "begin": "\\A(-{3})[ \\t]*$",
+      "end": "^(-{3})[ \\t]*$",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.frontmatter.begin.mesa" }
+      },
+      "endCaptures": {
+        "1": { "name": "punctuation.definition.frontmatter.end.mesa" }
+      },
+      "contentName": "meta.embedded.block.frontmatter",
+      "patterns": [{ "include": "source.yaml" }]
+    },
 
     "script-block": {
       "comment": "The open tag takes attributes: <script module>, <script lang=\"js\">. A grammar matching only <script> leaves every resource file in a Sierra app unhighlighted, since the data half of one is <script module>.",
