@@ -124,3 +124,53 @@ export function gradeStanding(user) {
   if (!user.role) return LEVELS.CREATOR
   return LEVELS.USER
 }
+
+// ─── the affordance ───────────────────────────────────────────────────────────
+//
+// A gate is declared per OPERATION and asked per METHOD, and the two vocabularies
+// are not the same one. `@@gate` has four positions; a caller names `find`,
+// `patch`, `remove`, `restore`. The map is here rather than at each asker because
+// every consumer of the ladder that renders or offers something has to make the
+// same translation, and the sentinels are only half the ways to get this wrong:
+// `restore` reads as its own verb and is an UPDATE, so a table that omits it
+// falls through to the gate's own key and answers permissive for a write.
+
+const GATE_OP = {
+  read:   'read',   find:    'read',   get:    'read',  aggregate: 'read',
+  create: 'create',
+  update: 'update', patch:   'update', upsert: 'update', restore:  'update',
+  delete: 'delete', remove:  'delete',
+}
+
+/**
+ * Would a caller at `level` clear this gate for this operation?
+ *
+ * AN AFFORDANCE, NOT A BOUNDARY. Litestone enforces the gate at the Data
+ * boundary and Junction turns the refusal into a status code; this only lets a
+ * caller avoid offering something that is going to 403 (Invariant 6). Never
+ * guard on it anything the server does not also guard.
+ *
+ * **Unknown answers are permissive** — no gate declared, no level supplied, an
+ * operation the gate does not mention. Withholding something the caller could
+ * have used is the quieter failure and the server is the thing actually saying
+ * no. Two consumers with different stakes reach the same answer here: a screen
+ * hiding a button it should have drawn is a feature that looks missing, and an
+ * agent surface hiding a tool it may call is an agent that cannot do the work.
+ *
+ * The comparison is `levelPasses` and may not be a `>=` written at a call site:
+ * 8 and 9 are sentinels, so `>=` offers a LOCKED operation to the system context
+ * and withholds a SYSTEM one from it (`FJS-520`, ruled `FJS-D197`).
+ *
+ * @param {{read?:number, create?:number, update?:number, delete?:number}|null} gate
+ * @param {string} operation  a gate position or a service method name
+ * @param {number} level      the caller's standing
+ */
+export function canAtLevel(gate, operation, level) {
+  if (!gate) return true
+
+  const need = gate[GATE_OP[operation] ?? operation]
+  if (typeof need !== 'number') return true
+  if (typeof level !== 'number') return true
+
+  return levelPasses(need, level)
+}

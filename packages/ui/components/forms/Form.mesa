@@ -190,17 +190,44 @@
   if (record === undefined) record = seed
 
   // The row as it was HANDED IN, kept because `record` is replaced on every
-  // keystroke. Only the seal reads it, and only for the reason above.
-  const _opened = record
+  // keystroke. Only the seal reads it, and only for the reason below.
+  //
+  // `var` is load-bearing and `const` is the bug: a `const` reading a reactive
+  // value SUBSCRIBES to it (Rule 13 against Rule 25a), so as a `const` this is
+  // a live view of `record` and the seal below re-grades on every keystroke.
+  // `var` on either this or `_sealed` cuts the chain; it is on both because a
+  // name saying *as handed in* that is really live is the next version of the
+  // same defect, and neither one writes, so nothing on screen says so.
+  var _opened = record
 
   // Which columns are frozen FOR THIS ROW. `@immutable` on a model that seals
   // freezes at the seal rather than at create, so the answer is in the record
   // and no schema keyword can carry it — which is why these fields arrive with
   // no `readOnly` and were offered as editable boxes until now. Resolved once,
   // off the row the form was OPENED on: the boundary grades the STORED state,
-  // so reading it back off the draft would unfreeze the column the moment
-  // somebody edited the state field beside it.
-  const _sealed = resource?.sealedFields?.(_opened) ?? []
+  // so reading it back off the draft freezes a column the moment somebody picks
+  // the sealing state beside it — a keystroke before the write, while the
+  // stored row is still a draft and the boundary would accept the column. The
+  // cost is not a frozen box: `_writable()` drops every sealed key, so a
+  // correction made in that same submit is deleted on the way out.
+  var _sealed = resource?.sealedFields?.(_opened) ?? []
+
+  // Which columns the server KEPT BACK from this read. A field `@allow('read',
+  // …)` is enforced by stripping the key, so the form holds no value for it and
+  // an ordinary empty box would write that emptiness over what is stored — a
+  // write the boundary ACCEPTS, because a read policy is not a write policy.
+  // The same `var` as the seal and for the same reason: it is a fact about the
+  // response, settled when the row arrived.
+  var _withheld = resource?.withheld?.(_opened) ?? []
+
+  // …and its opposite number, which is `$:` where the seal is `var` — and the
+  // difference is the whole feature. A seal is graded against the row that was
+  // OPENED, because the boundary grades the stored state. A
+  // `@required(where: …)` is graded against the record being ASSEMBLED, because
+  // that is what the CHECK will see and because the person may have just picked
+  // the status that makes the column required. So this one re-derives on every
+  // keystroke and the one above must not.
+  $: _required = resource?.requiredFields?.(record) ?? []
 
   // A parent that re-pushes its props sends `record: undefined` a second time —
   // which is *not stated*, not *cleared* (the same distinction Invariant 9 makes
@@ -242,6 +269,8 @@
     disabled,
     fields: resource?.fields ?? {},
     sealed: _sealed,
+    withheld: _withheld,
+    required: _required,
     submitted,
     // `record` goes with it: a dependent set is narrowed by a sibling field's
     // value, and the form is the only thing here holding the draft. A control
@@ -430,9 +459,15 @@
    *
    * A create sends everything — `sealed` is empty with no record, which is what
    * makes a draft a draft.
+   *
+   * WITHHELD columns go out the same way and for a different reason. A sealed
+   * key is one the boundary would refuse; a withheld key is one this form never
+   * received, so sending it writes an absence over a value nobody here has
+   * seen. Dropping it is what Invariant 9 already says about a patch — absent
+   * is *not stated*, and an unknown value is exactly that.
    */
   function _writable(data) {
-    const frozen = _sealed
+    const frozen = [..._sealed, ..._withheld]
     if (!frozen.length || !data || _mode() === 'create') return data
     const out = { ...data }
     for (const name of frozen) delete out[name]
@@ -535,9 +570,28 @@
     submitting = true
 
     try {
-      const result = onsubmit ? await onsubmit(record) : await _send(_writable(record))
+      const sent   = _writable(record)
+      const result = onsubmit ? await onsubmit(record) : await _send(sent)
       dirty = false
       _adoptVersion(result)
+
+      // The write succeeded and the boundary may still have kept a column.
+      // A field `@allow('write', …)` DROPS rather than refuses, because the
+      // same payload is legitimate for another caller — so there is no error
+      // to map, no throw to catch, and the only thing that separates *saved*
+      // from *saved except that one* is the answer beside what was sent
+      // (`FJS-1071`). Rendered in the server slot because it is the same
+      // sentence a refusal would have been, arriving one moment later.
+      //
+      // Not on the `onsubmit` path: that handler owns its own write and this
+      // form has no idea what it sent or what came back.
+      if (!onsubmit) {
+        const kept = resource?.declined?.(sent, result) ?? {}
+        if (Object.keys(kept).length) {
+          _server = kept
+          _recompute()
+        }
+      }
       return { ok: true, result }
     } catch (err) {
       const mapped = _map(err)

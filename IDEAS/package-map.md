@@ -94,7 +94,7 @@ ladder beside it is written out four separate times across `core/` and two servi
 | Name | Realm | What it is | Source |
 | --- | --- | --- | --- |
 | **`compass`** | Data + UI | The offline/sync engine — client-side SQLite (OPFS / wa-sqlite), mutation queue, local gate evaluation, `@@sync` conflict policy. Its own package because "one engine on both sides" is the strongest structural advantage FJS holds over Prisma and Drizzle. | `offline-first-and-release.md` |
-| **`herald`** | API | The agent surface — an MCP server derived from the seed, with the gate as the permission model and tool visibility computed per session level. | `agent-surface.md` |
+| **`@frontierjs/mcp`** | API | The agent surface — an MCP server derived from the seed, with the gate as the permission model and tool visibility computed per session level. **Named plainly, ruled 2026-09-10 (`FJS-D258`)**: a metaphor names an organ that owns a realm, and this owns none — it is the API realm spoken to an agent. `herald` is withdrawn. | `agent-surface.md` · `DECISIONS.md` |
 | **`marshal`** | Data | Compliance from the seed — `@pii` / `@retain`, the data map, DSAR, erasure cascade, and a permission diff on every pull request. | `compliance-from-the-seed.md` |
 | **`lexicon`** | UI | i18n. **V2 — ruled 2026-08-15 (`FJS-D12`).** Its design question is answered without the package existing: `@label` stays a default English string and the key is DERIVED (`Model.field.label`), so the schema never becomes a catalog. It was never a gate on `foundry` either — a generator authors no string. Alpha owes it six constraints, not a build; when it is built, three things are reserved for it — a seed-derived `strings.snapshot.md`, `db.$setLocale()` as a client flavor, and per-locale prerender. **The interface tier is open as `FJS-D254`** — the ruling reaches strings the schema derives and not the ones authored in a `.mesa` file. | `lexicon.md` · `ecosystem-gaps.md` tier-1 item 4 · `DECISIONS.md` |
 | **`atlas`** | Meta | The app model as a product. `project:map --json` already *is* one and nothing reads it. Generated architecture diagrams (retiring the hand-drawn `website/site/src/routes/journey.mesa`), the permission matrix, drift detection, the outbound-surface report. Shared substrate for `marshal` and `depot`. | `operational-edge.md` |
@@ -120,7 +120,7 @@ ladder beside it is written out four separate times across `core/` and two servi
    once someone has watched a form build itself from a schema.
 2. **`create-frontier` + `quarry`** — a demo nobody can run is a demo nobody sees.
 3. **`depot`** — the Release hole, found independently by three separate analyzes.
-4. **`herald` and `marshal`** — the two that make FJS *unlike* anything else, and
+4. **`@frontierjs/mcp` and `marshal`** — the two that make FJS *unlike* anything else, and
    both cheap, because the decisions that make them possible are already made.
 
 `warden` interleaves: it is not urgent until an app hits the ladder's ceiling, and
@@ -167,7 +167,7 @@ interleave than the `L` beside it suggests.
   rows here.** Sized against oclif, `fli`'s authoring model is ahead and its
   *distribution* model is the gap: a package cannot ship a command, so the CLI's tree
   hand-copies what belongs to `auth`. Item 1 is the command-shaped half of `slices.md`
-  and item 2 is the CLI half of `herald` — neither wants a name of its own
+  and item 2 is the CLI half of `@frontierjs/mcp` — neither wants a name of its own
 - `IDEAS/app-manifest.md` — `frontier.config.js` + `frontier.lock`; also `fli` rather
   than a package, and the lock may simply *be* `project:map --json`, committed
 - `IDEAS/time-travel.md` — named checkpoints over the audit trail; `fli` commands over

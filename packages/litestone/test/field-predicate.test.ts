@@ -199,3 +199,85 @@ describe("@allow('write', …) on a field — the predicate reads the STORED row
     expect(row.notes).toBe('sys')
   })
 })
+
+// ─── …and the client has to be told there is one ─────────────────────────────
+//
+// The boundary above is correct and the silence is deliberate: a write
+// predicate DROPS rather than refuses, because the same payload is legitimate
+// for another caller. What was missing is that the column reached the browser
+// indistinguishable from an unpoliced one, so a generated form offered a box, a
+// person typed in it, and the save button went green over a write that never
+// happened (`FJS-1071`).
+//
+// Every assertion here is PAIRED with the plain column beside it. A generator
+// that stamped the flag on everything would satisfy any test that only asks
+// whether the policed field carries it.
+
+import { generateJsonSchema } from '../src/jsonschema.js'
+import { parse } from '../src/core/parser.js'
+
+const CROSSING = `
+model Thing {
+  id       Int     @id
+  owner    String
+  both     String  @allow('all',   owner == 'x')
+  bothOpt  String? @allow('all',   owner == 'x')
+  writeOnl String  @allow('write', owner == 'x')
+  readOnl  String  @allow('read',  owner == 'x')
+  plain    String
+}
+`
+
+function props(mode: string, audience = 'client') {
+  const parsed: any = parse(CROSSING)
+  const js: any = generateJsonSchema(parsed.schema ?? parsed, { audience, mode })
+  return js.$defs.Thing.properties
+}
+
+const wrote = (p: any, k: string) => !!p[k]?.['x-litestone-write-policy']
+const read  = (p: any, k: string) => !!p[k]?.['x-litestone-read-policy']
+
+describe('a field write predicate crosses to the client', () => {
+
+  for (const mode of ['create', 'update']) {
+    it(`${mode} mode marks the policed column and leaves the plain one alone`, () => {
+      const p = props(mode)
+      expect(wrote(p, 'writeOnl')).toBe(true)
+      expect(wrote(p, 'plain')).toBe(false)
+      // The read half is a different question about the same column and must
+      // not be answered by the write flag.
+      expect(wrote(p, 'readOnl')).toBe(false)
+      expect(read(p, 'readOnl')).toBe(true)
+    })
+  }
+
+  // `@allow('all', …)` on a NON-optional column is the one that takes the read
+  // half's `anyOf` branch, and a flag left inside `anyOf[0]` is one a consumer
+  // reads only if it unwraps the union first. `bothOpt` is the control: same
+  // declaration, optional, so it never enters that branch.
+  it('hoists the flag past the nullable wrapper the read half builds', () => {
+    const p = props('update')
+    expect(p.both.anyOf).toBeDefined()
+    expect(wrote(p, 'both')).toBe(true)
+    expect(read(p, 'both')).toBe(true)
+
+    expect(p.bothOpt.anyOf).toBeUndefined()
+    expect(wrote(p, 'bothOpt')).toBe(true)
+  })
+
+  // A system audience is not a caller and has no affordance to be given; the
+  // read flag has always been client-only and this is the same rule.
+  it('says nothing to a system audience', () => {
+    const p = props('update', 'system')
+    for (const k of ['both', 'bothOpt', 'writeOnl', 'readOnl', 'plain'])
+      expect(wrote(p, k)).toBe(false)
+  })
+
+  // The flag and never the expression. Carrying the predicate would put a
+  // second reader on the policy language, which is a decision of its own.
+  it('carries no expression', () => {
+    const p = props('update')
+    expect(p.writeOnl['x-litestone-write-policy']).toBe(true)
+    expect(JSON.stringify(p.writeOnl)).not.toContain('owner')
+  })
+})

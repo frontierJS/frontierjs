@@ -1,5 +1,40 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-10 — which imported roots are reactive, derived once instead of twice
+
+**[`FJS-1065`](../../ISSUES.md#fjs-1065).** A `$:` has three shapes that name a path — a bare watch,
+a handler's dep list, an ordered group's entries — and the emitter has merged all three into its
+proxy roots since [`FJS-599`](../../ISSUES.md#fjs-599). The analyzer's `reactiveSet` seed went on
+reading `watchPaths` alone, so one file computed *which imported roots are reactive* twice from
+different subsets of the same three lists, and the two drifted.
+
+What that cost is a component that is half live. `$: page.query, page.directives, () => load()`
+subscribes correctly and re-runs `load()` on every navigation, and the `const urlQuery = { ...page.query,
+… }` beside it compiled to a plain value read once at setup — so a filtered list re-asked the server
+on every keystroke while the filter bar above it went on rendering the query the page had arrived
+with. No Clear button, and a box that never showed what the URL said until a full reload. Every
+assertion about the rows passed the whole time.
+
+The two now read one derivation, `dottedWatchDeps`. That is one owner restored rather than a new
+promotion rule: [`FJS-D212`](../../DECISIONS.md#fjs-d212) is untouched, and every path-naming form
+already emitted `watchProxy` and `watchPath`, so nothing about the runtime subscription moved —
+only compile-time membership, which is the half that decides whether a `const` is a derivation.
+
+**The braced form behaves as the handler form does**, which was measured rather than assumed:
+`$: { page.query, () => load() }` lands in `watchGroups`, emits `orderedGroup`, and now promotes.
+`$: { load() }` deliberately does not — a bare call in a block is a plain auto-tracked `createEffect`
+with no proxy emitted at all, it names no dep, and there is nothing to seed from.
+
+`test/watch-form-parity.test.js` asserts it as a PROPERTY over the whole matrix — a `const` reading
+an import is a derivation exactly when the module declares that import's proxy — so a form added to
+the language fails here if it wires one half. Measured both directions: seeded from `watchPaths`
+alone, 4 of 9 rows red (the three broken forms and the property); seeded from every import, the 3
+controls red instead. **Blast radius was taken on full emitted output rather than on promoted names**,
+because the wider seed also filters `reactiveDeps` on handlers and groups and a diff over
+`trackDerived` cannot see that: 393 of 394 in-repo `.mesa` files compile BYTE-IDENTICALLY, and the
+one that moves is `example`'s invoices page, whose workaround was removed in the same change. So
+nothing gained a lazy initializer and [`FJS-1062`](../../ISSUES.md#fjs-1062)'s hazard is where it was.
+
 ## 2026-09-09 — two ways to write a binding that cannot hold a write
 
 **[`FJS-1068`](../../ISSUES.md#fjs-1068).** The bind setter is emitted as `name = $$v` whatever the

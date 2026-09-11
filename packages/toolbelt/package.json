@@ -1,7 +1,7 @@
 {
   "name": "@frontierjs/toolbelt",
   "version": "0.1.3",
-  "description": "FrontierJS pure-function kits — zero dependencies, no I/O, importable from any package",
+  "description": "FrontierJS pure-function kits \u2014 zero dependencies, no I/O, importable from any package",
   "type": "module",
   "scripts": {
     "test": "bun test/run.js",
@@ -27,6 +27,7 @@
     "./json": "./src/json/json.js",
     "./jsonschema": "./src/jsonschema/jsonschema.js",
     "./match": "./src/match/match.js",
+    "./predicate": "./src/predicate/predicate.js",
     "./query": {
       "types": "./src/query/query.d.ts",
       "default": "./src/query/query.js"

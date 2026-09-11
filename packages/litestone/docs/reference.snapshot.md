@@ -860,19 +860,23 @@ model Example {
 - **Deeper** — [jsonschema.md](jsonschema.md)
 - **See also** — [`enum`](#enum-declaration) · [`@@label`](#label-model)
 
-#### `@required` `[(message: "…")]` <a id="required-field"></a>
+#### `@required` `[([where: <expr>][, message: "…"])]` <a id="required-field"></a>
 
-Required beyond what optionality says — chiefly to attach a message. A message reaches the browser as x-messages and renders in &lt;Form&gt;.
+Which rows need a value in this column, and what to say when one does not. Bare it only carries the MESSAGE — the absence of `?` is the rule — and it is refused on an optional field, where that message could never fire. `where:` is the other half and wants the opposite type: it MAKES the column required, in the rows the predicate admits, so it needs the `?` the bare form forbids. The predicate reads this row's own columns and nothing else, because it becomes a CHECK on the table — which is the reach a boundary rule cannot have, holding against a migration, a seed, asSystem() and a raw statement. auth(), now(), check() and a relation hop are each refused by name: a CHECK sees no caller, no clock it can be trusted with, and no other table. The boundary refuses FIRST and names the FIELD, which is the half a table constraint cannot do — SQLite reports a violation by the constraint's source text and has no field to blame. Adding one to a populated table whose rows do not satisfy it fails the migration with nothing applied. Either way the message reaches the browser as x-messages and renders in &lt;Form&gt;, beside the control it is about.
 
 ```lite
+enum OrderStatus { draft shipped cancelled }
+
 model Example {
   id Int @id
-  name String @required("Tell us your name")
+  status OrderStatus @default(draft)
+  trackingCode String? @required(where: status == 'shipped', "A shipped order needs a tracking code")
 }
 ```
 
 - **Also typed** — `not null` · `notnull` · `mandatory`
 - **Deeper** — [schema.md](schema.md)
+- **See also** — [`@check`](#check-field) · [`@label`](#label-field)
 
 #### `@email` `[(message)]` <a id="email-field"></a>
 

@@ -1,5 +1,19 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-10 — a generated list page states its URL watch once
+
+The list page carried two `$:` lines naming the same two properties: the handler that reloads on a
+navigation, and a bare `$: (page.query, page.directives)` above the const, which existed only to
+mark `page` a watched import so the filter bar's query was a derivation. That was a workaround for
+[`FJS-1065`](../../ISSUES.md#fjs-1065), now fixed in the compiler — the handler form marks it — so
+the bare line and its paragraph are gone from `core/crud-templates.js` and from `example`'s invoices
+page, which carried the identical shape.
+
+`tests/generated-mesa.test.js` gained the assertion that keeps it honest, and it belongs there
+rather than in mesa: the claim is about EMITTED code, and a generated page is a string inside a
+`.js` file until somebody scaffolds an app, so this suite is the only place the generator and the
+compiler meet. It reds against the pre-fix compiler.
+
 ## 2026-09-10 — a generated resource stops turning on what is already on
 
 `createResource` reads its payload pipeline as `!== false`, so `coerce`,

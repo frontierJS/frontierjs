@@ -704,6 +704,36 @@ export interface AppOptions {
 // for the public surface. ServiceParams is GONE — there is no params bag.
 export type { CallOptions } from './context.ts'
 
+/**
+ * Where `CallOptions` sits in each `ServiceCaller` method's argument list.
+ *
+ * A fact about the interface below, and it lives beside it because every reader
+ * of it is outside this package. A caller that has a principal and a method NAME
+ * — `@frontierjs/testing`'s `as(user).service(x)`, an agent surface dispatching a
+ * tool — cannot bind one without this, and the shape of the mistake is silent:
+ * an option object landing one argument early is read as `data` or as a query,
+ * and the call runs as STRANGER. The gate then refuses, the row policy filters
+ * to nothing, and an empty list reads as a correct answer (`FJS-097`).
+ *
+ * A method missing from this table is a method nobody outside can call on
+ * somebody's behalf, so `call-options-at.test.ts` grades it against a REAL
+ * caller in both directions. That tripwire used to live in the consumer, where
+ * it could only fire after the interface had already shipped.
+ */
+export const CALL_OPTIONS_AT: Readonly<Record<string, number>> = Object.freeze({
+  find: 1, get: 1, create: 1, remove: 1, restore: 1,
+  // `aggregate(spec, opts)` — the spec is data, so the options sit where find's
+  // do (`FJS-D226`).
+  aggregate: 1,
+  patch: 2, update: 2,
+  // `call(name, id, data, opts)` — the method name is the first argument, so
+  // everything shifts by one.
+  call: 3,
+  // Hook-bypass twins — same signatures, minus the pipeline.
+  _find: 1, _get: 1, _create: 1, _remove: 1, _restore: 1,
+  _patch: 2,
+})
+
 export interface ServiceCaller {
   /**
    * Returns the LIST ENVELOPE — `{ kind:'list', object, data, errors, total?, limit?, offset? }`

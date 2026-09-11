@@ -121,7 +121,8 @@ CREATE TABLE IF NOT EXISTS "product" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
   "version" INTEGER NOT NULL DEFAULT 1,
-  CHECK ("brand" IN ('frontierjs', 'junction', 'litestone'))
+  CHECK ("brand" IN ('frontierjs', 'junction', 'litestone')),
+  CHECK (NOT ("active") OR "description" IS NOT NULL)
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_product_deletedAt" ON "product" ("deletedAt") WHERE "deletedAt" IS NULL;
 CREATE VIRTUAL TABLE IF NOT EXISTS "product_fts" USING fts5(

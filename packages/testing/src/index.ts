@@ -39,6 +39,7 @@ import { createTestEnv as createDataEnv } from '@frontierjs/litestone/testing'
 import { request }                        from '@frontierjs/junction/testing'
 import { verifyTransportParity }          from './parity.ts'
 import type { ParityOptions, ParityMismatch } from './parity.ts'
+import { CALL_OPTIONS_AT }                from '@frontierjs/junction'
 import type { App }                       from '@frontierjs/junction'
 import type { SessionContext }            from '@frontierjs/junction/auth'
 
@@ -104,27 +105,17 @@ export interface ApiTestEnvOptions extends Record<string, unknown> {
 
 // ─── binding the principal ────────────────────────────────────────────────────
 //
-// Where `CallOptions` sits in each `ServiceCaller` method — the one place the
-// principal can be attached. Stated rather than inferred: the position varies
-// (`find(query, opts)` vs `patch(id, data, opts)`), an overload with a defaulted
-// argument makes `fn.length` lie, and "the last argument if it looks like
-// options" mistakes `create({ auth: … })` for a call option.
+// Where `CallOptions` sits in each `ServiceCaller` method is Junction's own fact
+// about its own interface, and it is imported rather than restated. It was a
+// hand copy here until `FJS-D258`, with a comment naming Junction as the source
+// — which is the shape of a copy that drifts, since the source can change
+// without this file being opened. Junction's `call-options-at.test.ts` grades
+// the table against a real caller in both directions.
 //
-// A method missing from this table is REFUSED, not guessed. Junction's
-// ServiceCaller is the source; adding a method there and not here is a loud
-// error in one test rather than a silent anonymous call in every test.
-
-const OPTS_AT: Record<string, number> = {
-  find: 1, get: 1, create: 1, remove: 1, restore: 1,
-  // `aggregate(spec, opts)` — the spec is data, so the options sit where
-  // find's do (`FJS-D226`).
-  aggregate: 1,
-  patch: 2, update: 2,
-  call: 3,
-  // Hook-bypass twins — same signatures, minus the pipeline.
-  _find: 1, _get: 1, _create: 1, _remove: 1, _restore: 1,
-  _patch: 2,
-}
+// The refusal below stays, because it answers a different question: not *is the
+// table right* but *does THIS installed Junction offer a method this table has
+// never heard of*. A version skew between two packages is what a test inside
+// either one cannot see.
 
 // ─── createTestEnv ────────────────────────────────────────────────────────────
 
@@ -186,11 +177,12 @@ export async function createTestEnv(opts: ApiTestEnvOptions): Promise<Record<str
       // wrong runs the call as STRANGER, which reads as an empty list rather
       // than an error.
       const unknown = Object.keys(caller)
-        .filter(k => typeof caller[k] === 'function' && OPTS_AT[k] === undefined)
+        .filter(k => typeof caller[k] === 'function' && CALL_OPTIONS_AT[k] === undefined)
       if (unknown.length) throw new Error(
         `@frontierjs/testing: Junction's ServiceCaller has ${unknown.length} method(s) this ` +
-        `does not know how to bind a principal to — ${unknown.join(', ')}. Add each to OPTS_AT ` +
-        `in @frontierjs/testing/src/index.ts with the argument index its CallOptions sits at. ` +
+        `does not know how to bind a principal to — ${unknown.join(', ')}. Add each to ` +
+        `CALL_OPTIONS_AT in @frontierjs/junction (src/core/app.ts), beside the ServiceCaller ` +
+        `interface, with the argument index its CallOptions sits at. ` +
         `Refused rather than guessed: a call bound at the wrong argument runs anonymous, and ` +
         `an empty result reads as a correct answer.`
       )
@@ -204,7 +196,7 @@ export async function createTestEnv(opts: ApiTestEnvOptions): Promise<Record<str
           if (typeof method !== 'string') return undefined
           const fn = caller[method]
           if (typeof fn !== 'function') return fn
-          const at = OPTS_AT[method] as number
+          const at = CALL_OPTIONS_AT[method] as number
 
           return (...args: unknown[]) => {
             const bound = args.slice()

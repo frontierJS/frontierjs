@@ -1496,7 +1496,19 @@ class Parser {
       // @@validate(expr, msg) here; this follows Remult's field-level
       // Validators.required(msg) instead, so the wording sits beside the rule
       // it belongs to like every other message in this file.
-      case 'required':   return { kind: 'required', ...this.parseOptMessage() }
+      // @required                          — wording only; the absence of `?` is the rule
+      // @required("msg")                   — …with the sentence to say
+      // @required(where: expr)             — required in the rows the predicate admits
+      // @required(where: expr, "msg")      — …with the sentence to say
+      //
+      // One attribute rather than two, which is `@@unique([a], where: …)`'s
+      // shape: a rule that is unconditional bare and conditional with a
+      // predicate in a named argument. Splitting it would put the WORDING on
+      // one attribute and the RULE on another, and `@required("msg")` on an
+      // optional field is a parse error — so the pair could not even be
+      // written without relaxing that, leaving two attributes carrying the
+      // message for one rule.
+      case 'required':   return { kind: 'required', ...this.parseRequiredArgs() }
 
       // ── String validators ──────────────────────────────────────────────────
       case 'email':      return { kind: 'email',      ...this.parseOptMessage() }
@@ -2742,6 +2754,27 @@ class Parser {
     const message = this.check(TK.STRING) ? this.eat(TK.STRING).value : null
     this.eat(TK.RPAREN)
     return message ? { message } : {}
+  }
+
+  // `where:` first when both are present, so the message stays where every
+  // other validator puts it — last. Named argument for the predicate and
+  // positional for the message, which is what @@check(expr, "msg") and
+  // @@unique([a], where: …) already do between them.
+  parseRequiredArgs() {
+    if (!this.check(TK.LPAREN)) return {}
+    this.eat(TK.LPAREN)
+
+    let where = null
+    if (this.check(TK.IDENT) && this.peek().value === 'where') {
+      this.eat(TK.IDENT)
+      this.eat(TK.COLON)
+      where = this.parsePolicyExpr()
+      this.maybeEat(TK.COMMA)
+    }
+
+    const message = this.check(TK.STRING) ? this.eat(TK.STRING).value : null
+    this.eat(TK.RPAREN)
+    return { ...(where ? { where } : {}), ...(message ? { message } : {}) }
   }
 
   // Parse @regex(pattern) or @regex(pattern, msg)
@@ -5366,17 +5399,102 @@ function validate(schema) {
       if (!req) continue
       const t = field.type
       const isOptional = (typeof t === 'object' && t.optional) || field.optional || false
-      if (isOptional)
+      const at = `Model '${model.name}', field '${field.name}'`
+
+      // The two halves of `@required` and they want OPPOSITE types. Bare, it
+      // only carries the message and the absence of `?` is the rule, so on an
+      // optional field the message could never fire. With `where:` it IS the
+      // rule — required in the rows the predicate admits — so on a
+      // non-optional field it is a second answer to a question the type has
+      // already answered, and the two can disagree about a row.
+      if (isOptional && !req.where) {
         errors.push(
-          `Model '${model.name}', field '${field.name}': @required on an optional field. ` +
-          `@required only carries the message — drop the '?' to make the field required, ` +
-          `or remove @required.`
+          `${at}: @required on an optional field. @required only carries the message — drop the '?' to make ` +
+          `the field required, state 'where:' to make it required only in some rows, or remove @required.`
         )
-      if (req.message == null)
+        continue
+      }
+      if (!isOptional && req.where) {
+        errors.push(
+          `${at}: @required(where: …) on a field that is already required — the absence of '?' says every row ` +
+          `needs a value and the predicate says only some do. Add the '?', or drop the 'where:'.`
+        )
+        continue
+      }
+      if (!req.where && req.message == null) {
         warnings.push(
-          `Model '${model.name}', field '${field.name}': @required with no message has no effect — ` +
+          `${at}: @required with no message has no effect — ` +
           `the field is already required by the absence of '?'.`
         )
+      }
+      if (!req.where) continue
+
+      // ── the predicate ────────────────────────────────────────────────────
+      //
+      // It becomes a CHECK on the table, which is what gives the rule the reach
+      // a boundary rule cannot have — a migration, a seed, `asSystem()` and a
+      // raw statement are all held to it — and what decides everything it may
+      // not contain. A CHECK is evaluated against one row with no caller and no
+      // other table in scope, and SQLite takes no bound parameter there.
+      const label = `${at}: @required(where: …)`
+      const names = predicateNames(req.where, model)
+
+      if (names.auth) {
+        errors.push(
+          `${label} names auth(), which is a different answer for every caller — this is one answer for the ROW, ` +
+          `shared by all of them, and a CHECK cannot see a principal. Whether a caller may WRITE a column is a ` +
+          `field @allow('write', …); which rows they may see at all is @@scope or a row policy.`)
+        continue
+      }
+      if (names.now) {
+        errors.push(
+          `${label} names now(), so a row that was correct when it was written stops being correct with nothing ` +
+          `having touched it — and every later write to that row is then refused for a column nobody changed. ` +
+          `SQLite ACCEPTS a clock in a CHECK, so nothing below this will refuse it. Compare against a stored ` +
+          `column instead.`)
+        continue
+      }
+      if (names.crossesModel) {
+        errors.push(
+          `${label} reads another model, which a CHECK cannot do — it is evaluated against one row with no other ` +
+          `table in scope. Denormalize the column onto this model, or make the rule a row policy.`)
+        continue
+      }
+      if (names.unknown.length) {
+        errors.push(
+          `${label} names ${names.unknown.map(u => `'${u}'`).join(', ')}, which ` +
+          `${names.unknown.length > 1 ? 'are not columns' : 'is not a column'} of this model. ` +
+          `The predicate reads the row the column is on and nothing else.`)
+        continue
+      }
+
+      let compiled
+      try {
+        compiled = compileStatic(req.where, model.name, schema)
+      } catch (e) {
+        errors.push(`${label} could not be compiled — ${e.message}`)
+        continue
+      }
+      if (/\bSELECT\b/i.test(compiled.sql)) {
+        errors.push(
+          `${label} compiles to a subquery, which a CHECK cannot contain — it reads the row the column is on ` +
+          `and nothing else.`)
+        continue
+      }
+      // SQLite takes no bound parameter in a CHECK, and this compiler binds
+      // every value. The literals are inlined instead — safe because they are
+      // the SCHEMA's own and never a caller's: nothing reaches here that a
+      // person did not write into the .lite file. The same rule a partial
+      // unique's predicate lives under, for the same reason.
+      const bad = compiled.params.find(v =>
+        v !== null && !['string', 'number', 'boolean'].includes(typeof v))
+      if (bad !== undefined) {
+        errors.push(
+          `${label} compares against a value this cannot write into a CHECK (${JSON.stringify(bad)}). SQLite ` +
+          `prohibits a bound parameter there, so the value has to be a literal string, number, boolean or null.`)
+        continue
+      }
+      req.whereSql = inlineParams(compiled.sql, compiled.params)
     }
 
     // @secret validation — check for conflicting explicit attributes
@@ -5871,6 +5989,48 @@ function validate(schema) {
     }
   }
 
+  // ── What a predicate NAMES ─────────────────────────────────────────────────
+  //
+  // Three declarations compile a predicate into a place SQLite evaluates
+  // against one row with no caller, no principal and no other table in scope:
+  // `@@index(where:)`, `@@unique([a], where:)` and `@required(where:)`. What
+  // they must refuse is therefore the same set, and this is the walk that finds
+  // it — shared because the drift is in the WALK: a node the language gains is
+  // one three copies would each have to learn about, and the copy that did not
+  // would go on compiling it into a structure that cannot hold it.
+  //
+  // The SENTENCES are each caller's own and deliberately not shared. The same
+  // fact has a different consequence per structure — SQLite REFUSES a clock in
+  // an index predicate and ACCEPTS one in a CHECK, where the damage is instead
+  // that a row correct when written stops being correct with nothing having
+  // touched it — and a refusal that cannot say what this declaration did wrong
+  // is the shape `FJS-351` is about.
+  //
+  // Returns `{ auth, now, crossesModel, unknown }`. `crossesModel` is `check()`
+  // and a relation path together: both read another model, and both arrive at
+  // the compiler as a subquery.
+  function predicateNames(expr, model) {
+    const named = []
+    ;(function walk(n) {
+      if (!n || typeof n !== 'object') return
+      if (n.type === 'field') named.push(n.name)
+      if (n.type === 'auth')  named.push('\0auth')
+      if (n.type === 'now')   named.push('\0now')
+      if (n.type === 'path')  named.push('\0cross')
+      if (n.type === 'check') named.push('\0cross')
+      for (const k of ['left', 'right', 'expr', 'cond', 'then', 'else']) walk(n[k])
+      if (Array.isArray(n.items)) n.items.forEach(walk)
+      if (Array.isArray(n.args))  n.args.forEach(walk)
+    })(expr)
+
+    return {
+      auth:         named.includes('\0auth'),
+      now:          named.includes('\0now'),
+      crossesModel: named.includes('\0cross'),
+      unknown:      named.filter(n => n[0] !== '\0' && !model.fields.some(f => f.name === n)),
+    }
+  }
+
   // ── @@index(where:) — a partial index ───────────────────────────────────────
   //
   // What a predicate may CONTAIN is not a grammar question, and writing one here
@@ -5919,25 +6079,16 @@ function validate(schema) {
 
       if (!attr.where) continue
 
-      const named = []
-      ;(function walk(n) {
-        if (!n || typeof n !== 'object') return
-        if (n.type === 'field' && n.name) named.push(n.name)
-        if (n.type === 'auth')  named.push('\0auth')
-        if (n.type === 'now')   named.push('\0now')
-        for (const k of ['left', 'right', 'expr', 'cond', 'then', 'else'])
-          if (n[k]) walk(n[k])
-        if (Array.isArray(n.args)) n.args.forEach(walk)
-      })(attr.where)
+      const names = predicateNames(attr.where, model)
 
       const where = `${word}([${attr.fields.join(', ')}], where: …)`
-      if (named.includes('\0auth')) {
+      if (names.auth) {
         errors.push(
           `Model '${model.name}': ${where} names auth(), which is a different answer for every caller — ` +
           `an index is one physical structure shared by all of them. A per-caller narrowing is @@scope or a row policy`)
         continue
       }
-      if (named.includes('\0now')) {
+      if (names.now) {
         errors.push(partialUnique
           ? `Model '${model.name}': ${where} names now(), so which rows the constraint covers changes under a row that ` +
             `never moved — the index silently stops covering rows it once covered, and on a UNIQUE index that is a ` +
@@ -5947,7 +6098,7 @@ function validate(schema) {
             `the index would be correct only at the instant it was built. Compare against a stored column instead`)
         continue
       }
-      const unknown = named.filter(n => n[0] !== '\0' && !model.fields.some(f => f.name === n))
+      const unknown = names.unknown
       if (unknown.length) {
         errors.push(
           `Model '${model.name}': ${where} names ${unknown.map(u => `'${u}'`).join(', ')}, which ` +

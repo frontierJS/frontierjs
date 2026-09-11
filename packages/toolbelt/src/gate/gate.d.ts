@@ -55,3 +55,15 @@ export interface GradableUser {
 
 /** A caller's standing. Explicit standing first, then lifecycle, then `role`. */
 export function gradeStanding(user?: GradableUser | null): number
+
+/**
+ * Would a caller at `level` clear this gate for this operation? An affordance,
+ * not a boundary — unknown answers are permissive and the server enforces
+ * regardless (Invariant 6). `operation` takes a gate position or a service
+ * method name (`find`, `patch`, `remove`, `restore`, …).
+ */
+export function canAtLevel(
+  gate:      { read?: number; create?: number; update?: number; delete?: number } | null,
+  operation: string,
+  level:     number,
+): boolean

@@ -390,6 +390,31 @@ function tableConstraints(model, schema, pluralize = false) {
     if (attr.kind === 'check') lines.push(`  CHECK (${mapExprCols(attr.expr, cmap)})`)
   }
 
+  // @required(where: …) — required in the rows the predicate admits.
+  //
+  // A CHECK because that is the reach a boundary rule cannot have: a migration,
+  // a seed, `asSystem()` and a raw statement are all held to it, which is the
+  // same argument `example` reaches for `@@check` with. The boundary refuses
+  // FIRST and names the field, which is the half a table constraint cannot do —
+  // SQLite reports a violation by the constraint's source text and has no field
+  // to blame.
+  //
+  // `NOT (pred) OR col IS NOT NULL` and not an equivalent with the operands the
+  // other way round: this is the shape whose text the migrator compares, and
+  // both sides of that comparison are this emitter's output.
+  //
+  // **An UNKNOWN predicate passes**, which is SQL's own answer and is stated
+  // rather than discovered: if the predicate's own column is NULL the test is
+  // NULL, `NOT NULL` is NULL, and a CHECK admits a row it cannot judge. The
+  // rule is *required in the rows the predicate ADMITS*, and a row it cannot
+  // decide about is not one of them.
+  for (const field of model.fields) {
+    const req = field.attributes.find(a => a.kind === 'required')
+    if (!req?.whereSql) continue
+    const col = fieldToColumnName(field)
+    lines.push(`  CHECK (NOT (${mapExprCols(req.whereSql, cmap)}) OR "${col}" IS NOT NULL)`)
+  }
+
   // @@arc — exclusive foreign keys, counted.
   //
   // SQLite spells a boolean as 0 or 1, so summing the IS NOT NULL tests counts

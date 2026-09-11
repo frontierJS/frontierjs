@@ -69,7 +69,7 @@ argued against a working instance of the same idea.
   whether its answers are the right ones or not, it has the failure modes and
   this project does not.
 - **AshAi is 4.2.** Resources exposed as model-facing tools with **the policy
-  layer as the permission model** — which is `herald`'s whole claim.
+  layer as the permission model** — which is `@frontierjs/mcp`'s whole claim.
   `agent-surface.md` calls scoping *the industry's actual unsolved problem*; a
   version of it has been solved on foundations of the same shape. The half worth
   reading closely is whatever they do about the approval gate, since 4.2's own

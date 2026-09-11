@@ -31,7 +31,7 @@ the design is picked up again:
    mode is a FALSE guarantee. That risk, not the view derivation, is what makes
    the design expensive.
 
-**Revisit with `herald`** (`IDEAS/agent-surface.md`) — the consumer that makes
+**Revisit with `@frontierjs/mcp`** (`IDEAS/agent-surface.md`) — the consumer that makes
 scoped raw SQL a capability worth its cost rather than a speculative one. The
 sections below are the design as argued; do not cite them as behavior, and read
 the two corrections above first. See `VERIFYING.md`.
@@ -159,7 +159,7 @@ depth, no qualified schema references. Rejecting is correct; the caller has
 
 ## What it unlocks
 
-- **`herald` can offer SQL at all** (`IDEAS/agent-surface.md`). Today an agent surface
+- **`@frontierjs/mcp` can offer SQL at all** (`IDEAS/agent-surface.md`). Today an agent surface
   would have to refuse raw queries outright, because the only raw path bypasses every
   declaration in the schema. With this it becomes the *safest* thing the agent can be
   given: an arbitrary read that cannot return a row or a column the user could not

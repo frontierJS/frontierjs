@@ -188,7 +188,9 @@ before you build on one** — several are emitted and nothing yet reads them.
 | `x-litestone-from` | field | `{target, op}` from `@from(Model, count: true)` | nothing yet |
 | `x-litestone-accept` | field | the `@accept("image/png,image/jpeg")` **string**, verbatim — not an array | tests only |
 | `x-litestone-policies` | model | `true` when the model has any `@@allow`/`@@deny` | nothing yet |
-| `x-litestone-read-policy` | field | `true` when a field-level `@allow('read', …)` may hide it | nothing yet |
+| `x-litestone-read-policy` | field | `true` when a field-level `@allow('read', …)` may hide it | sierra (`buildFieldRules` → `withheldFields`), `<Form>`, `<Field>` |
+| `x-litestone-write-policy` | field | `true` when a field-level `@allow('write', …)` may DROP the value written to it | sierra (`buildFieldRules` → `declinedFields`), `<Form>` |
+| `x-litestone-required-where` | field | the AST of `@required(where: …)` — the predicate deciding whether this column needs a value | sierra (`buildFieldRules` → `requiredFor`), `<Form>` |
 | `x-litestone-secret` | field | `true` — `audience: 'system'` only | nothing yet |
 | `x-litestone-guarded` | field | `true` — `audience: 'system'` only | nothing yet |
 
@@ -252,6 +254,45 @@ model's `required[]`, not on the field.
 - `@guarded` (select-level) — gone from `create` and `update`, present in `full`.
 - A field-level `@allow('read', …)` field is made nullable and annotated
   `x-litestone-read-policy: true`, because whether it arrives depends on who asked.
+
+**The enforcement is that the KEY is absent, not that the value is null**, and
+that is what the flag is for. Measured through a real client: an admin reading a
+row with a note gets the text, an admin reading a row without one gets `null`,
+and a caller the policy refuses gets no key at all — both times. So *there is
+nothing here* and *this is not yours to see* are one answer to any reader that
+looks at the value, and `null` is a real answer belonging to somebody who may
+read. `withheldFields()` therefore tests key PRESENCE, which also fixes its
+limit: a row narrowed by `$select` is missing keys for another reason, so the
+answer is sound only over a full row — which is what a form is handed.
+
+**`x-litestone-write-policy` is the same fact on the other side of the write, and
+the two are read at opposite moments.** The read flag says the value may be
+absent from an answer; the write flag says a value SENT may not be stored — and
+the boundary answers that by keeping the old one rather than refusing, because
+the same payload is legitimate for another caller (`FJS-D129`). So neither may
+be turned into `readOnly`: a column switched off by the write flag is switched
+off for every caller the predicate ADMITS, which is most of them. It is a FLAG
+and never the predicate, which means the only question it can answer truthfully
+is asked AFTER the write — sierra's `declinedFields(fields, sent, saved)`
+compares what went out against what came back for flagged columns only, and
+`<Form>` renders the result in the slot a server error would have used
+(`FJS-1071`). Answering *may I write this* BEFORE the write needs the expression
+and a row, which is a second reader on the policy language and a decision of its
+own (`IDEAS/declared-field-state.md`).
+
+**`x-litestone-required-where` is the one that carries the EXPRESSION, and the
+contrast with the flag above is the whole rule for deciding which to emit.** A
+write predicate reads the CALLER, so no client can answer it and a flag is all
+that is honest. A `@required(where: …)` predicate reads this row's own columns
+and nothing else — `FJS-D259` refuses `auth()`, `now()`, `check()` and a
+relation hop by name — so the record on screen is the whole of what answering it
+takes, and it MUST be answered against that record rather than the stored one,
+because the person may have just picked the status that makes the column
+required. The evaluator is `@frontierjs/toolbelt/predicate`, which is
+litestone's own `evalJs` with a different environment passed in, so the
+affordance and the boundary cannot read the rule differently. Sierra's
+`requiredFor(rule, record)` is the reader; UNKNOWN is not required and no record
+is not required, both matching what the CHECK does.
 
 `audience: 'system'` keeps them all and annotates instead:
 

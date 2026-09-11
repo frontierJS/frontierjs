@@ -15,12 +15,29 @@
  * The second half is the one the affordance alone does not cover: `@immutable`
  * refuses the KEY and not the value, so a form that greys the box and still
  * round-trips the column is the same 409 with a nicer screen.
+ *
+ * The third half is WHICH ROW is graded. The boundary grades the STORED state,
+ * so picking the sealing move in the picker must not freeze the columns beside
+ * it: the row is still a draft until the write lands, and the write that lands
+ * is the one carrying the correction. Every assertion above reads a form whose
+ * state column nobody touches, which is the one arrangement where a seal read
+ * off the draft and a seal read off the opened row agree.
  */
 export const name = 'Form — a sealed document'
 export const covers = ['forms/Form']
 
 const isDisabled = (sel) =>
   `!!document.querySelector(${JSON.stringify(sel)})?.disabled`
+
+async function pick(t, sel, value) {
+  await t.evaluate(`
+    const el = document.querySelector(${JSON.stringify(sel)});
+    el.value = ${JSON.stringify(value)};
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new Event('input',  { bubbles: true }));
+    return true;
+  `)
+}
 
 async function typeInto(t, sel, value) {
   await t.evaluate(`
@@ -84,4 +101,34 @@ export async function run(t) {
     'and a draft still sends the column')
   t.ok(await t.evaluate(`return window.kitSent()[1].data.number === 'A-2-revised';`),
     'with the edit in it')
+
+  /* ── which row is graded ──────────────────────────────────────────────── */
+  //
+  // Picking the sealing state is an unsaved edit. The stored row is a draft, so
+  // the boundary would accept every column — and a form grading the seal off
+  // the draft freezes them a keystroke early, which is not a frozen box but a
+  // SILENT DROP: `_writable()` deletes every sealed key on the way out, so the
+  // correction typed in the same submit never reaches the server.
+
+  await pick(t, '#draft [name=state]', 'issued')
+
+  t.ok(!await t.evaluate(`return ${isDisabled('#draft [name=number]')};`),
+    'choosing the sealing state does not freeze the column beside it')
+
+  // The control. A form that simply stopped sealing passes the line above and
+  // fails here, and it is the same field on the same screen.
+  t.ok(await t.evaluate(`return ${isDisabled('#issued [name=number]')};`),
+    'while the document that IS issued stays frozen')
+
+  // The cost, and the reason this is not cosmetic.
+  await typeInto(t, '#draft [name=number]', 'A-2-corrected')
+  await t.evaluate(submit('#draft'))
+  await t.eventually(`window.kitSent().length`, 3, 'the draft form saves again')
+
+  t.ok(await t.evaluate(`return window.kitSent()[2].keys.includes('number');`),
+    'and issuing and correcting in one submit still sends the correction')
+  t.is(await t.evaluate(`return window.kitSent()[2].data.number;`), 'A-2-corrected',
+    'with what was typed in it')
+  t.is(await t.evaluate(`return window.kitSent()[2].data.state;`), 'issued',
+    'alongside the move that seals it')
 }

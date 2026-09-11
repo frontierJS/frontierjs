@@ -709,9 +709,14 @@ const FIELD = [
     'required',
     'field',
     'validate',
-    '[(message: "…")]',
-    'Required beyond what optionality says — chiefly to attach a message. A message reaches the browser as x-messages and renders in <Form>.',
-    'name String @required("Tell us your name")'
+    '[([where: <expr>][, message: "…"])]',
+    'Which rows need a value in this column, and what to say when one does not. Bare it only carries the MESSAGE — the absence of `?` is the rule — and it is refused on an optional field, where that message could never fire. `where:` is the other half and wants the opposite type: it MAKES the column required, in the rows the predicate admits, so it needs the `?` the bare form forbids. The predicate reads this row\'s own columns and nothing else, because it becomes a CHECK on the table — which is the reach a boundary rule cannot have, holding against a migration, a seed, asSystem() and a raw statement. auth(), now(), check() and a relation hop are each refused by name: a CHECK sees no caller, no clock it can be trusted with, and no other table. The boundary refuses FIRST and names the FIELD, which is the half a table constraint cannot do — SQLite reports a violation by the constraint\'s source text and has no field to blame. Adding one to a populated table whose rows do not satisfy it fails the migration with nothing applied. Either way the message reaches the browser as x-messages and renders in <Form>, beside the control it is about.',
+    'trackingCode String? @required(where: status == \'shipped\', "A shipped order needs a tracking code")',
+    {
+      context:     'enum OrderStatus { draft shipped cancelled }',
+      extraFields: 'status OrderStatus @default(draft)',
+      seeAlso:     ['check', 'label'],
+    }
   ),
   t(
     'email',

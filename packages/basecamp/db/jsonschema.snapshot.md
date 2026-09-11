@@ -282,16 +282,16 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `email` | `string` | yes | — | `format: "email"` | — |
 | `name` | `string`? | — | — | — | — |
-| `emailVerified` | `boolean` = `false` | — | — | — | — |
-| `role` | `string` = `"user"` | — | — | — | — |
+| `emailVerified` | `boolean` = `false` | — | — | `x-litestone-write-policy` | — |
+| `role` | `string` = `"user"` | — | — | `x-litestone-write-policy` | — |
 | `accountId` | `string`? | — | — | — | — |
-| `kind` | `UserKind` = `"human"` | — | — | — | — |
-| `status` | `UserStatus` = `"pending_verification"` | — | — | — | — |
+| `kind` | `UserKind` = `"human"` | — | — | `x-litestone-write-policy` | — |
+| `status` | `UserStatus` = `"pending_verification"` | — | — | `x-litestone-write-policy` | — |
 | `username` | `string`? | — | — | — | — |
 | `displayName` | `string`? | — | — | — | — |
 | `avatarUrl` | `string`? | — | — | — | — |
 | `scopes` | `json` = `[]` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
-| `isSystemAdmin` | `boolean` = `false` | — | — | — | — |
+| `isSystemAdmin` | `boolean` = `false` | — | — | `x-litestone-write-policy` | — |
 
 **On create**: required — `email` · not accepted — `id`
 

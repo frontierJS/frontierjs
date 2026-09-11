@@ -11,7 +11,7 @@ needs a Junction app, which Litestone may not import (Invariant 1).
 ## Layout
 
 ```
-src/index.ts          createTestEnv, session, OPTS_AT, the `listen` port
+src/index.ts          createTestEnv, session, the principal binding, the `listen` port
 src/parity.ts         verifyTransportParity — HTTP vs WS, over a real socket
 test/testing.test.ts  the vertical, against a real client and a real app
 test/parity.test.ts   the runner, and the ways it can be worthless
@@ -47,10 +47,16 @@ It deliberately owns **no HTTP helper**. `env.http` IS `request(app)` from
   calls it on the first request; an internal `env.as(u).service('x')` call would
   otherwise meet a pipeline that had not compiled and plugins that had not
   registered — so a plugin's guard refuses nothing and the test passes.
-- **`OPTS_AT` is a hand copy of Junction's `ServiceCaller` signatures.** Change
-  one, change both. The check runs when a caller is built and names any method it
-  does not know; there is no guessing fallback, because a call bound at the wrong
-  argument runs anonymous and an empty result reads as a correct answer.
+- **Where `CallOptions` sits per method is Junction's, and is imported.**
+  `CALL_OPTIONS_AT`, beside the `ServiceCaller` interface it describes, graded
+  there against a real caller in both directions (`FJS-D258`). It was a hand copy
+  here, with a comment naming Junction as the source — which is the shape of a
+  copy that drifts, since the source can change without this file being opened.
+  The runtime check stays and asks the other question: whether the INSTALLED
+  Junction offers a method this table has never heard of, which is a version skew
+  no test inside either package can see. There is no guessing fallback, because a
+  call bound at the wrong argument runs anonymous and an empty result reads as a
+  correct answer.
 - **The announcement filter drops `app:*` and `junction.*`** — lifecycle and
   telemetry, not announcements. A new prefix on the bus lands in `announced()`
   until it is named here.

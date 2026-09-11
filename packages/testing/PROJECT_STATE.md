@@ -63,8 +63,10 @@ a live socket) are only exercised against a real app.
    still empty, the narrowing can go; if not, that is a real finding about the
    two transports.
 3. Get one `example/` service onto `env.as(user).service(…)`. It is the second
-   consumer this package has never had, and a second consumer is what turns
-   `OPTS_AT` from a hand copy into a checked one.
+   consumer this package has never had. **The copy half of this closed
+   separately** (`FJS-D258`): the table is Junction's `CALL_OPTIONS_AT` now and
+   is graded there against a real caller, so what a second consumer would still
+   buy is coverage of the BINDING, not of the table.
 
 Anything touching the principal binding also needs `basecamp`: `bun run verify` —
 the largest gate ladder in the repo, and the only place a standing resolves per

@@ -270,7 +270,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `integer` | — | — | — | — |
 | `name` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
 | `slug` | `string` | yes | — | `minLength: 1` `maxLength: 80` | — |
-| `description` | `string`? | — | — | `minLength: 0` `maxLength: 2000` | — |
+| `description` | `string`? | — | — | `minLength: 0` `maxLength: 2000` `x-litestone-required-where` | `required` |
 | `brand` | `Brand` | yes | — | — | — |
 | `fields` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `active` | `boolean` = `true` | — | — | — | — |
@@ -919,10 +919,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `email` | `string` | yes | — | `format: "email"` | — |
 | `name` | `string`? | — | — | — | — |
-| `emailVerified` | `boolean` = `false` | — | — | — | — |
-| `role` | `string` = `"user"` | — | — | — | — |
+| `emailVerified` | `boolean` = `false` | — | — | `x-litestone-write-policy` | — |
+| `role` | `string` = `"user"` | — | — | `x-litestone-write-policy` | — |
 | `accountId` | `string`? | — | — | — | — |
-| `isStaff` | `boolean` = `false` | — | — | — | — |
+| `isStaff` | `boolean` = `false` | — | — | `x-litestone-write-policy` | — |
 
 **On create**: required — `email` · not accepted — `id`
 

@@ -1,0 +1,83 @@
+<script>
+  // form-required-where.mesa — a column that becomes required as you type.
+  //
+  // `@required(where: status == 'shipped')` is required in the rows the
+  // predicate admits, so the answer is in the RECORD and no schema keyword can
+  // carry it: the field is not in the schema's `required` list and carries the
+  // predicate instead.
+  //
+  // Everything crossing the seam is real. `MODEL` is the shape litestone emits,
+  // nullable unions included, and it goes through `buildFieldRules` — the same
+  // call `createResource` makes — rather than being hand-written as rules. That
+  // is not tidiness: a rule map written by hand is one the control table has
+  // never seen, and the first draft of this fixture rendered NO control for
+  // `type: ['string','null']` while every assertion about it passed against a
+  // null element.
+  //
+  // The evaluator is `@frontierjs/toolbelt/predicate`, which IS litestone's own
+  // `evalJs` with a different environment passed in. What is stubbed is the
+  // network alone.
+  import Form from '../../../components/forms/Form.mesa'
+  import { buildFieldRules, formFieldList, coerceToSchema, requiredFor } from '@frontierjs/sierra/field-rules'
+
+  // The shape litestone emits for
+  //   trackingCode String? @required(where: status == 'shipped', "…")
+  // Note what is NOT in `required`: trackingCode. That is the whole reason the
+  // predicate travels.
+  const WHERE = {
+    type: 'compare', op: '==',
+    left:  { type: 'field',   name: 'status' },
+    right: { type: 'literal', value: 'shipped' },
+  }
+  const MODEL = {
+    type: 'object',
+    required: ['status'],
+    properties: {
+      id:     { type: 'string', readOnly: true, title: 'Id' },
+      status: { type: 'string', title: 'Status', enum: ['draft', 'shipped', 'cancelled'] },
+      trackingCode: {
+        type: ['string', 'null'], title: 'Tracking code',
+        'x-litestone-required-where': WHERE,
+        'x-messages': { required: 'A shipped order needs a tracking code' },
+      },
+      note: { type: ['string', 'null'], title: 'Note' },
+    },
+  }
+
+  const FIELDS = buildFieldRules(MODEL)
+
+  let sent = []
+  window.kitSent = () => sent
+
+  const RESOURCE = {
+    context: { model: 'Order', service: 'orders', idField: 'id' },
+    fields:  FIELDS,
+    formFields: (opts) => formFieldList(FIELDS, opts),
+    options: () => Promise.resolve([]),
+    make: () => ({ status: 'draft', trackingCode: '', note: '' }),
+    coerce: (data) => coerceToSchema(FIELDS, data),
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    sealedFields: () => [],
+    declined: () => ({}),
+    // The same walk `createResource` does, over the same rule module.
+    requiredFields: (record) =>
+      Object.entries(FIELDS)
+        .filter(([, r]) => r['x-litestone-required-where'] && requiredFor(r, record))
+        .map(([n]) => n),
+    save: (data) => {
+      sent = [...sent, { keys: Object.keys(data), data }]
+      return Promise.resolve({ ...ROW, ...data })
+    },
+    service: {},
+  }
+
+  const ROW = { id: 'o-1', status: 'draft', trackingCode: null, note: 'hello' }
+</script>
+
+<div id="edit">
+  <Form resource={RESOURCE} record={{ ...ROW }} />
+</div>
+
+<div id="create">
+  <Form resource={RESOURCE} />
+</div>

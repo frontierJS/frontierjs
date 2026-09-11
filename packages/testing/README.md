@@ -153,8 +153,9 @@ VISITOR(1).
 
 ## Binding the principal
 
-`OPTS_AT` states which argument of each `ServiceCaller` method carries
-`CallOptions`. It is a table rather than an inference because the position varies
+Junction's `CALL_OPTIONS_AT` states which argument of each `ServiceCaller` method
+carries `CallOptions`, and this package imports it. It is a table rather than an
+inference because the position varies
 (`find(query, opts)` vs `patch(id, data, opts)`), an overload with a defaulted
 argument makes `fn.length` lie, and *the last argument if it looks like options*
 mistakes `create({ auth: … })` for a call option.

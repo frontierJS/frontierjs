@@ -198,14 +198,6 @@ ${idFieldLine(o.res)}
   // them, so typing in a filter box silently drops the sort a header just set.
   // directiveParams is parseDirectives' inverse off the same table, so this
   // cannot go stale when a directive is added.
-  // Naming them in a bare $: is what marks page a WATCHED import, and it is what
-  // the const below needs to be a derivation rather than a value read once at
-  // setup. The handler form further down does not do it: it re-runs load() and
-  // leaves urlQuery frozen, so the bar keeps rendering the query this page
-  // arrived with — no Clear button, and a box that never shows what the URL
-  // says until a full reload (FJS-1065).
-  $: (page.query, page.directives)
-
   const urlQuery = { ...page.query, ...directiveParams(page.directives) }
 
   // Sort and filter both live in the URL (Invariant 10), so this page writes
@@ -263,7 +255,10 @@ ${idFieldLine(o.res)}
   // expects the page to be watching them. Without this line the load above runs
   // once at setup and never again: the URL changes, the bar redraws from it,
   // and no request is ever made, so every filter and every sort is a no-op that
-  // looks like a working control.
+  // looks like a working control. It is also what marks page a watched import,
+  // which is what makes urlQuery above a derivation rather than a value read
+  // once -- move load() into a plain effect and the bar goes back to rendering
+  // the query this page arrived with.
   $: page.query, page.directives, () => load()
 ${gateState}${removeFn}${SC}
 

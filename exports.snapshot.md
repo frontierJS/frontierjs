@@ -315,6 +315,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./json` | `src/json/json.js` | yes |
 | exports | `./jsonschema` | `src/jsonschema/jsonschema.js` | yes |
 | exports | `./match` | `src/match/match.js` | yes |
+| exports | `./predicate` | `src/predicate/predicate.js` | yes |
 | exports | `./query (types)` | `src/query/query.d.ts` | yes |
 | exports | `./query (default)` | `src/query/query.js` | yes |
 | exports | `./redact (types)` | `src/redact/redact.d.ts` | yes |

@@ -139,4 +139,23 @@ describe('what the generators write', () => {
     }
     expect(asked, 'no generated page asks for the omitted half').toBeGreaterThan(0)
   })
+
+  // A filter bar is handed a query the page derives from the URL, and the router
+  // does not remount for a query-only navigation — so a const that compiles to a
+  // plain value leaves the bar rendering the query the page ARRIVED with, forever,
+  // while the rows below it are correct on every filter (`FJS-1065`). The claim is
+  // about EMITTED code rather than source, which is why it lives here: the page is
+  // a string until somebody scaffolds an app, so this is the only place the
+  // generator and the compiler meet.
+  test('a generated page that hands a query to a filter bar derives it', async () => {
+    let handed = 0
+    for (const [what, source] of Object.entries(GENERATED)) {
+      if (!source.includes('const urlQuery')) continue
+      handed++
+      const ctx = await compileSource(source, { filename: 'Generated.mesa', css: false, debug: false })
+      expect(ctx.result, `${what} reads the URL once and never again`)
+        .toContain('const urlQuery = $$runtime.trackDerived')
+    }
+    expect(handed, 'no generated page derives a query from the URL').toBeGreaterThan(0)
+  })
 })

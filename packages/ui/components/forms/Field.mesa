@@ -43,7 +43,7 @@
   // how a form and its .lite file drift apart. An explicit prop always wins.
 
   import Label from './Label.mesa'
-  import { humanize, resolveError, resolveRule, stated } from '../../utils.js'
+  import { humanize, resolveError, resolveRule, stated, withheldBy } from '../../utils.js'
 
   export let id       = ''
   export let name     = ''
@@ -72,6 +72,21 @@
   const resolvedLabel    = stated(label, rule?.title, humanize(name))
   const resolvedRequired = stated(required, rule?.required)
 
+  // A field `@allow('read', …)` the server refused arrives as a MISSING key, so
+  // the control renders an empty box and a person reads *there is nothing here*.
+  // Said once here rather than in each control, for `resolveRule`'s reason:
+  // every control wraps itself in a `<Field>`, so this reaches all of them and
+  // the next one for free.
+  const withheld = withheldBy(form, name)
+
+  // The badge is the visible half and the hint is the sentence. A caller's own
+  // badge still wins — `stated()` is not used because `badge` is the override
+  // the Label already documents.
+  const resolvedBadge = badge ?? (withheld ? 'Hidden' : undefined)
+  const resolvedHint  = withheld && !hint
+    ? 'You do not have permission to view this. Saving will not change it.'
+    : hint
+
   function handleRemove() {
     onremovekey?.()
   }
@@ -82,7 +97,7 @@
   <!-- Label row: label + optional remove-key × button -->
   {#if type !== 'hidden' && resolvedLabel}
     <div class="split">
-      <Label label={resolvedLabel} {id} required={resolvedRequired} {badge} {help} type={type} />
+      <Label label={resolvedLabel} {id} required={resolvedRequired} badge={resolvedBadge} {help} type={type} />
 
       {#if removable}
         <button type="button" class="btn ghost square" aria-label="Remove field" on:click={handleRemove}>
@@ -98,8 +113,8 @@
   <slot />
 
   <!-- Hint — shown only when there is no error -->
-  {#if hint && !displayError}
-    <p class="field-hint">{hint}</p>
+  {#if resolvedHint && !displayError}
+    <p class="field-hint">{resolvedHint}</p>
   {/if}
 
   <!--

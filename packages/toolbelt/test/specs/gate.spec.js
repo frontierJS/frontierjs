@@ -12,7 +12,7 @@
  * could have caught either one.
  */
 
-import { LEVELS, levelName, levelPasses, gradeStanding }
+import { LEVELS, levelName, levelPasses, gradeStanding, canAtLevel }
   from '../../src/gate/gate.js'
 
 // ─── the scale ────────────────────────────────────────────────────────────────
@@ -154,4 +154,81 @@ test('gate: the grid the three copies disagreed over', function () {
   // Nothing in the grid reaches a sentinel: 8 and 9 are not standings a session
   // can hold, they are how the application and the wall are spelled.
   for (const u of rows) assert.ok(gradeStanding(u) <= LEVELS.SYSADMIN)
+})
+
+// ─── the affordance ───────────────────────────────────────────────────────────
+//
+// canAtLevel arrived here from Sierra, where it was reachable only through a
+// browser client. Its two halves fail in opposite directions and neither is
+// visible from a screen: a wrong method→position map answers about the wrong
+// gate, and a `>=` in place of levelPasses answers about the wrong ladder.
+
+test('gate: every method name reaches the position it modifies', function () {
+  // One distinct number per position, so a mapping that lands on the wrong one
+  // is a different answer rather than the same answer by luck.
+  const gate = { read: 2, create: 3, update: 4, delete: 5 }
+
+  const expected = {
+    read: 2, find: 2, get: 2, aggregate: 2,
+    create: 3,
+    update: 4, patch: 4, upsert: 4, restore: 4,
+    delete: 5, remove: 5,
+  }
+
+  for (const [method, need] of Object.entries(expected)) {
+    assert.equal(canAtLevel(gate, method, need),     true,  `${method} at ${need}`)
+    assert.equal(canAtLevel(gate, method, need - 1), false, `${method} at ${need - 1}`)
+  }
+
+  // `restore` and `aggregate` are the two that read as verbs of their own and
+  // are not: a table omitting either falls through to the gate's own key, finds
+  // nothing, and answers permissive — for a WRITE, in restore's case.
+  assert.equal(canAtLevel(gate, 'restore',   3), false)
+  assert.equal(canAtLevel(gate, 'aggregate', 1), false)
+})
+
+test('gate: the sentinels are asked through canAtLevel', function () {
+  const locked = { read: 5, create: 8, update: 9, delete: 9 }
+
+  assert.equal(canAtLevel(locked, 'patch',  LEVELS.SYSTEM),   false, 'LOCKED refuses 8')
+  assert.equal(canAtLevel(locked, 'remove', LEVELS.SYSTEM),   false, 'LOCKED refuses 8')
+  assert.equal(canAtLevel(locked, 'create', LEVELS.SYSADMIN), false, 'SYSTEM is not 7')
+  assert.equal(canAtLevel(locked, 'create', LEVELS.SYSTEM),   true,  'SYSTEM is 8')
+
+  // Where `>=` and levelPasses actually part, stated exactly rather than
+  // gestured at: over required 0-9 × level 0-8 they agree everywhere. The only
+  // divergence is a caller AT 9, which no resolver mints — so this guards
+  // against a resolver that has gone wrong rather than against a schema that
+  // has. Written as an enumeration because the wrong version of this test
+  // asserts a divergence at level 8 and fails, which is how the overstatement
+  // gets found.
+  const naive = (need, l) => l >= need
+  const disagree = []
+  for (let need = 0; need <= 9; need++)
+    for (let l = 0; l <= 9; l++)
+      if (levelPasses(need, l) !== naive(need, l)) disagree.push(`${need}/${l}`)
+
+  assert.deepEqual(disagree, ['8/9', '9/9'])
+})
+
+test('gate: unknowns are permissive, each paired with the shape that refuses', function () {
+  const gate = { read: 5, create: 5, update: 5, delete: 5 }
+
+  // No gate declared at all — the model says nothing, so nothing is withheld.
+  assert.equal(canAtLevel(null,      'delete', 0), true)
+  assert.equal(canAtLevel(undefined, 'delete', 0), true)
+  assert.equal(canAtLevel(gate,      'delete', 0), false)
+
+  // A position the gate does not mention. `read` alone is a real declaration.
+  assert.equal(canAtLevel({ read: 5 }, 'delete', 0), true)
+  assert.equal(canAtLevel({ read: 5 }, 'find',   0), false)
+
+  // An operation nothing maps and nothing declares.
+  assert.equal(canAtLevel(gate, 'somethingElse', 0), true)
+
+  // No level known. A session that has not resolved yet is not a stranger —
+  // grading it as one hides every control until the client catches up.
+  assert.equal(canAtLevel(gate, 'delete', undefined), true)
+  assert.equal(canAtLevel(gate, 'delete', null),      true)
+  assert.equal(canAtLevel(gate, 'delete', 0),         false)
 })

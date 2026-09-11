@@ -1,5 +1,100 @@
 # Changes
 
+## 2026-09-10 — a withheld column says so
+
+`<Form>` asks `resource.withheld(record)` and passes the names, beside `sealed`
+and `required`. `lockedBy` gains its fourth reason — the comment above it always
+said a control must not have to be told about the next one — and `<Field>`
+resolves the badge and the sentence once, so every control that wraps itself in
+a Field gets them.
+
+Three parts, and the third is the one that matters. The box is locked, because
+the form holds no value for it. The field is badged **Hidden** and says why,
+because a locked empty box and an empty one are the same screen otherwise. And
+`_writable()` drops the key, because sending an absence writes it over a value
+nobody here has seen — a write the boundary ACCEPTS, since a read policy is not
+a write policy.
+
+A stated `disabled={false}` still wins the lock, which is the seal's documented
+contract; what it cannot do is put the key back in the payload. That is also the
+only arrangement in which the strip is reachable, so the fixture has a form that
+re-enables the control on purpose — without it every payload assertion passes
+against a form that strips nothing, because a key the read never carried is
+absent either way.
+
+Measured: the reader answering nothing reds 3, `lockedBy` ignoring it 1, the
+strip removed 1, the badge and hint removed 2, and key-presence swapped for a
+value test 2 — the last being the control, since that is the mutation that tells
+an admin looking at an empty note they lack a permission they have.
+
+## 2026-09-10 — the seal is graded against the row that was opened
+
+`FJS-1072`. `const _opened = record` was a derivation, not a snapshot — a `const`
+reading a reactive value subscribes to it — so `_sealed` re-ran on every
+keystroke and a form graded the seal against the draft. Picking the sealing
+state in the picker froze the columns beside it a keystroke before the write,
+while the stored row was still a draft and the boundary would have accepted
+them. The cost is not a frozen box: `_writable()` drops every sealed key, so a
+correction made in that same submit was deleted on the way out.
+
+Both locals are `var` now, VISION §2.3's non-reactive sampler and the idiom
+`pristine` already takes twelve lines down. Measured: the chain is `record →
+_opened → _sealed` and a `var` at either link cuts it, so neither is load-bearing
+alone — it is on both because a local named *as handed in* that is really live is
+the next version of this defect.
+
+`form-sealed.spec.mjs` could not see any of it. Every assertion in it read a form
+whose state column nobody touches, which is the one arrangement where a seal read
+off the draft and one read off the opened row agree. The three new rows are a
+pair on one screen — choosing `issued` in a draft leaves the column beside it
+editable while the document that IS issued stays frozen — plus the cost itself,
+issuing and correcting in one submit. Both back to `const` reds 3.
+
+`$context.form.required` recomputed `resource.requiredFields(record)` beside the
+`$:` that already held it; it reads the derivation now.
+
+## 2026-09-10 — a control that becomes required as you type
+
+`FJS-D259`. `<Form>` resolves `resource.requiredFields(record)` and passes the
+names, the way it already passes `sealed` for the frozen ones. `resolveRule`
+folds the answer into the rule, so all twelve controls that read
+`rule?.required` get it with no edit of their own — one line rather than twelve
+and a rule for the next control to remember.
+
+`$:` where the seal is `var`, and that difference is the feature: a seal is
+graded against the row that was OPENED because the boundary grades the stored
+state, and this is graded against the record being ASSEMBLED because that is
+what the CHECK will see and because the person may have just picked the status
+that makes the column required.
+
+The browser spec is the only place the claim can be made — the failure it exists
+for is a form that resolves the rule at mount and never again, which every unit
+test on either side passes. It goes back to draft as well as forward, since a
+latching implementation passes the forward half.
+
+**Building it found `FJS-1072`**: `const _opened = record` is a Mesa derivation
+and not a snapshot, so the SEAL re-grades on every keystroke — picking the
+sealing state freezes the sibling columns before the write and `_writable()`
+drops what was typed in them. The comment above that line describes the opposite
+and gives the reason.
+## 2026-09-10 — a save that kept a column says which one
+
+`FJS-1071`. `<Form>`'s success path now asks `resource.declined(sent, result)`
+and renders the answer in the slot a server error would have used. A field
+`@allow('write', …)` DROPS rather than refuses, so there is no throw to catch and
+no error to map — the write succeeded, and the only thing separating *saved* from
+*saved except that one* is the answer beside what was sent.
+
+Not on the `onsubmit` path: that handler owns its own write and this component
+has no idea what it sent or what came back.
+
+`form-declined.spec.mjs` is the proof and it had to be a browser one: the whole
+failure was a form that looked correct. It saves the SAME payload as two
+callers, so *a message that never appears* and *a message that always appears*
+are told apart by the admin half rather than by reading the code — and it
+asserts the box is NOT disabled on either half, which is the ruling in the fix
+rather than an omission.
+
 ## 2026-09-09 — `<Form autosave>`, and the revision it takes back
 
 `FJS-D257`. A form can now save itself once the typing stops: `autosave` (true

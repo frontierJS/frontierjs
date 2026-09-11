@@ -74,7 +74,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@slug` | Clean a value on write | [(<field>…)] |  |  |  |
 | `@values` | Refuse a bad value | (<ValueSetName>[, required\|open\|suggested][, dependsOn: <column>[ on <sourceColumn>]]) | on a model's field · on a trait's field | strength: required · open · suggested |  |
 | `@label` | Refuse a bad value | ("Human name") | on a model's field · on a type's field · on a trait's field · on an enum member |  |  |
-| `@required` | Refuse a bad value | [(message: "…")] |  |  |  |
+| `@required` | Refuse a bad value | [([where: <expr>][, message: "…"])] |  |  |  |
 | `@email` | Refuse a bad value | [(message)] |  |  |  |
 | `@url` | Refuse a bad value | [(message)] |  |  |  |
 | `@phone` | Refuse a bad value | [(message)] |  |  |  |

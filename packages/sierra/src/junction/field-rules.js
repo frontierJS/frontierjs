@@ -16,10 +16,13 @@
 
 import { resolveRef, modelNameFor } from './schema-registry.js'
 import { DIRECTIVE_PARAMS }          from '@frontierjs/toolbelt/directives'
-import { levelPasses }               from '@frontierjs/toolbelt/gate'
+import { levelPasses, canAtLevel }   from '@frontierjs/toolbelt/gate'
 import { hookChainMessage }          from '@frontierjs/toolbelt/hooks'
 import { derefFieldSchema, fieldShape } from '@frontierjs/toolbelt/jsonschema'
 import { humanize }                    from '@frontierjs/toolbelt/inflect'
+// The evaluator litestone's own `evalJs` is, so an affordance and the boundary
+// cannot disagree about a row (`FJS-D259`).
+import { evaluate as evaluatePredicate, truth } from '@frontierjs/toolbelt/predicate'
 
 // `derefFieldSchema` is `@frontierjs/toolbelt/jsonschema`'s — the same walk
 // jetty's resource needs, and one of the pure halves that moved to the
@@ -90,6 +93,43 @@ const _CARRIED = [
   // lets that decision be made off the declaration rather than off a column
   // name ending in `Cents`.
   'x-money', 'x-scale',
+  // `x-litestone-required-where` is `@required(where: …)`: the AST of a
+  // predicate over THIS ROW's own columns, deciding whether the column needs a
+  // value. Carried as the EXPRESSION where the write policy one line down is
+  // carried as a flag, and the difference is what a client can DO with it — a
+  // write predicate reads the caller and cannot be answered here, this one
+  // reads the record on screen and must be, because the person may have just
+  // picked the status that makes the column required.
+  //
+  // `requiredFor(rule, record)` below is the reader. Nothing resolves it off
+  // the rule alone: `required` on this table stays what the schema said, which
+  // is *not unconditionally required*, so a form that never asked would behave
+  // exactly as it did before.
+  'x-litestone-required-where',
+  // `x-litestone-write-policy` is a field `@allow('write', …)`: whether this
+  // caller may write this column depends on the CALLER and the ROW, so no
+  // keyword on the schema can answer it and the boundary answers it by DROPPING
+  // the value rather than refusing — silently and correctly, because the same
+  // payload is legitimate for somebody else. Carried because without it the
+  // column is indistinguishable from an unpoliced one all the way to the
+  // control, which is a box a person types into behind a save button that goes
+  // green over a write that never happened (`FJS-1071`).
+  //
+  // It is a FLAG and not the predicate, so it may not disable anything: a
+  // control switched off by it is switched off for every caller the predicate
+  // ADMITS, which is the majority of them. `declinedFields` below is what it is
+  // for — the answer after the write, which is the only moment the flag alone
+  // can be turned into a true sentence.
+  'x-litestone-write-policy',
+  // `x-litestone-read-policy` is a field `@allow('read', …)`: whether this
+  // column ARRIVES depends on the caller and the row, and when the policy
+  // refuses the key is not null — it is ABSENT (measured: an admin reading a
+  // note gets the text and an admin reading a row with none gets `null`, while
+  // everyone else gets no key at all, both times). So *there is nothing here*
+  // and *this is not yours to see* are one answer without the flag, and a form
+  // renders an empty box for a column it cannot read. `withheldFields()` below
+  // is the reader.
+  'x-litestone-read-policy',
   // `x-big` is `@big`: a 64-bit integer column whose value crosses as a STRING
   // of digits, because past 2^53 a JS number cannot carry it (`FJS-643`). It is
   // carried for `x-time`'s reason and it is the sharpest case of all — the
@@ -1107,20 +1147,6 @@ export function labelFieldFor(fields, fallback = 'id', declared = null) {
 // ── Gate ──────────────────────────────────────────────────────────────────────
 
 /**
- * Service-method → gate operation. Litestone states four; the client speaks in
- * method names, so both spellings are accepted.
- *
- * `restore` maps to update: it modifies an existing row rather than creating or
- * destroying one.
- */
-const _GATE_OP = {
-  read: 'read', find: 'read', get: 'read',
-  create: 'create',
-  update: 'update', patch: 'update', restore: 'update',
-  delete: 'delete', remove: 'delete',
-}
-
-/**
  * The model's `@@gate` levels, or null when it declares none.
  * @returns {{read:number, create:number, update:number, delete:number}|null}
  */
@@ -1133,39 +1159,15 @@ export function buildGate(schema) {
 /**
  * Would `level` clear the gate for this operation?
  *
- * ⚠ A UI AFFORDANCE, NOT A SECURITY BOUNDARY. The gate is enforced at the data
- * layer by Litestone and turned into a status code by Junction; this only lets
- * the UI avoid offering a button that is going to 403. Never guard anything on
- * it that the server does not also guard.
+ * `@frontierjs/toolbelt/gate` owns it, together with the method→position map
+ * and the permissive-unknown rule. Re-exported here because this module is
+ * Sierra's surface for the derived-schema helpers, and which of two files holds
+ * the answer is not something a caller should have to know.
  *
- * Unknown answers are permissive — no gate declared, no level supplied, an
- * operation the gate does not mention. Hiding a control the user could have
- * used is a worse and much quieter failure than showing one that errors, and
- * the server is the thing actually saying no.
- *
- * Levels are the 0–9 scale of `@frontierjs/toolbelt/gate` (STRANGER 0 … USER 4
- * … OWNER 6, SYSTEM 8), and the comparison is that kit's `levelPasses` rather
- * than a `>=` written here. The two are not the same function: 8 and 9 are
- * SENTINELS, so `>=` renders a button for a LOCKED operation and hides one from
- * the system context. Unreachable while every resolver clamps a caller to 0–7,
- * which is what made it look like a style choice (`FJS-520`, ruled `FJS-D197`).
- * A number is expected — mapping names to numbers is the kit's too.
- *
- * @param {object|null} gate       from buildGate()
- * @param {string} operation       'read'|'create'|'update'|'delete', or a
- *                                 service method name ('find', 'patch', …)
- * @param {number} level           the current user's gate level
+ * A UI AFFORDANCE, NOT A SECURITY BOUNDARY — the server enforces regardless
+ * (Invariant 6).
  */
-export function canAtLevel(gate, operation, level) {
-  if (!gate) return true
-
-  const op = _GATE_OP[operation] ?? operation
-  const need = gate[op]
-  if (typeof need !== 'number') return true
-  if (typeof level !== 'number') return true
-
-  return levelPasses(need, level)
-}
+export { canAtLevel }
 
 // ── Transitions ───────────────────────────────────────────────────────────────
 
@@ -1765,6 +1767,151 @@ export function sealedFor(rule, record) {
   if (!seal || !record) return false
   return seal.states.includes(record[seal.field])
 }
+
+/**
+ * Does this column need a value FOR THIS ROW?
+ *
+ * `@required(where: …)` is required in the rows a predicate admits, so the
+ * answer is in the record and not in the schema — which is why the field is not
+ * in the schema's `required` list and carries the predicate instead. The exact
+ * shape `x-litestone-seal` has one attribute over, and `sealedFor` is the
+ * sibling: one owner, because a form, a control and a write pipeline would
+ * each otherwise decide it and the three would disagree about a row two edits
+ * from the state that matters.
+ *
+ * **The evaluator is `@frontierjs/toolbelt/predicate`, which IS litestone's own
+ * `evalJs`** — the same function with a different environment passed in
+ * (`FJS-D259`). So this is not a second reading of the rule that could drift
+ * from the boundary's; it is the boundary's reading, run against the record on
+ * screen instead of against the stored row.
+ *
+ * The predicate reads this row's own columns and nothing else — `auth()`,
+ * `now()`, `check()` and a relation hop are each refused at parse — so there is
+ * nothing here the browser cannot answer, and no default that has to guess.
+ *
+ * **UNKNOWN is not required.** A predicate whose own column has no value yet is
+ * UNKNOWN, and the rule is *required in the rows the predicate ADMITS*. It is
+ * also what the CHECK does: SQLite admits a row it cannot judge, so answering
+ * `true` here would mark a control required that the boundary would accept
+ * empty — an affordance stricter than the rule, which is the one direction a
+ * form must not be wrong in.
+ *
+ * **No record answers false**, which is a create form: the row is being made
+ * and its columns are being typed, so a create that read the predicate off an
+ * absent row would demand a value for a state nobody has chosen yet. `<Form>`
+ * re-asks as the record changes, which is what makes the affordance track the
+ * status the person just picked.
+ *
+ * @param {object} rule     a field rule from buildFieldRules
+ * @param {object} [record] the record as it stands now
+ */
+export function requiredFor(rule, record) {
+  if (rule?.required) return true
+  const where = rule?.['x-litestone-required-where']
+  if (!where || !record) return false
+  try {
+    // `truth()` and not `=== true`: `evaluate` is an EXPRESSION evaluator, so a
+    // bare column predicate — `where: active` — answers the column's stored
+    // value, and SQLite stores a boolean as 1. The SQL half treats 1 as true,
+    // so without this the CHECK fires while the form says the column is
+    // optional, which is the two halves disagreeing rather than a missing
+    // affordance. Litestone's own policy layer wraps every predicate the same
+    // way (`allowHolds`/`denyFires`).
+    return truth(evaluatePredicate(where, { record })) === true
+  } catch {
+    // An expression this evaluator does not know is a schema newer than this
+    // client. Permissive, which is every other `x-*` affordance's answer and is
+    // what Invariant 6 requires: the server enforces regardless.
+    return false
+  }
+}
+
+/**
+ * Which of the columns this write SENT did the boundary decline to write.
+ *
+ * A field `@allow('write', …)` is a predicate over the caller and the row, and
+ * the Data boundary answers it by keeping the stored value: the write succeeds,
+ * every other column lands, and the one the predicate refused comes back as it
+ * was. That is deliberate and stays — the same payload is legitimate for
+ * another caller, so a refusal BY NAME would be wrong (`FJS-D129`).
+ *
+ * **Silent at the boundary is one thing; silent on the screen is another.** The
+ * column reached the browser indistinguishable from an unpoliced one, so a
+ * generated form offered a box, a person typed in it, and the save button went
+ * green over nothing (`FJS-1071`).
+ *
+ * This is the only question the FLAG alone can answer truthfully, and it can
+ * only be asked AFTER the write: before it, *may I write this* needs the
+ * predicate and a row, which is a second reader on the policy language and a
+ * decision of its own. So nothing here disables a control — a control switched
+ * off by the flag is switched off for every caller the predicate admits.
+ *
+ * **Only flagged columns are compared**, which is what keeps this from
+ * reporting every server-side transform as a refusal: `@lower`, `@trim` and
+ * `@slug` all legitimately hand back a different value, and a column carrying
+ * both a transform and a write predicate is the one case this can still get
+ * wrong — reported, because a false *the server kept its value* is a sentence
+ * somebody can check, where the silence it replaces is not.
+ *
+ * **Primitives only.** An object or an array comes back re-serialized and
+ * compares unequal by reference for reasons that have nothing to do with a
+ * policy, and a `Json` column would report on every save.
+ *
+ * A column ABSENT from the answer is not a decline: that is `@allow('read', …)`
+ * on the same column, or a narrow `select`, and neither says anything about the
+ * write.
+ *
+ * @param {Record<string, object>} fields  from buildFieldRules()
+ * @param {object} sent   the payload this write put on the wire
+ * @param {object} saved  the row the write answered with
+ * @returns {Record<string,string>} keyed for direct use as `<Field errors={…}>`
+ */
+export function declinedFields(fields, sent, saved) {
+  const out = {}
+  if (!fields || !sent || !saved || typeof sent !== 'object' || typeof saved !== 'object')
+    return out
+  if (Array.isArray(sent) || Array.isArray(saved)) return out
+
+  for (const name of Object.keys(sent)) {
+    if (!fields[name]?.['x-litestone-write-policy']) continue
+    if (!(name in saved)) continue
+
+    const was = sent[name]
+    const now = saved[name]
+    if (!_comparable(was) || !_comparable(now)) continue
+    if (was === now) continue
+
+    const label = fields[name].title || name
+    out[name] = `${label} was not changed — you do not have permission to write it.`
+  }
+  return out
+}
+
+/**
+ * Which columns this caller was not allowed to READ.
+ *
+ * A field `@allow('read', …)` is enforced by STRIPPING the key, so a refused
+ * read and an empty column are the same answer to every reader that tests the
+ * value — and a generated form then offers an ordinary empty box for a note it
+ * is not allowed to see. Typing in that box overwrites what is there, unseen:
+ * a read policy is not a write policy, and a caller refused the read is not
+ * refused the write unless the schema says so separately (measured against
+ * `example`'s `Customer.notes`, which declares only the read half).
+ *
+ * The signal is KEY PRESENCE and it cannot be anything else, which also fixes
+ * the limit: a row narrowed by `$select` is missing keys for a different
+ * reason, so this is sound only over a full row — which is what a form is
+ * handed. A create has no record and withholds nothing, because a row being
+ * made has no stored value to hide.
+ */
+export function withheldFields(fields, record) {
+  if (!fields || !record || typeof record !== 'object' || Array.isArray(record)) return []
+  return Object.keys(fields).filter(
+    (name) => fields[name]?.['x-litestone-read-policy'] && !(name in record))
+}
+
+const _comparable = (v) =>
+  v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
 
 /**
  * Drop the fields a caller may not write from a create or patch payload.

@@ -45,18 +45,44 @@ export function resolveError(form, name, error, errors) {
  */
 export function resolveRule(form, name) {
   if (!name) return null
-  return form?.fields?.[name] ?? null
+  const rule = form?.fields?.[name] ?? null
+  if (!rule) return null
+
+  // `@required(where: …)` is required in the rows a predicate admits, so
+  // `rule.required` is *not unconditionally required* and the answer for THIS
+  // row is in the record. `<Form>` resolves it — the evaluator is
+  // `@frontierjs/toolbelt/predicate`, which is litestone's own, so the
+  // affordance and the boundary read the rule the same way — and passes the
+  // names, the way it already passes `sealed` for the frozen ones.
+  //
+  // Folded in HERE rather than given a `requiredBy()` of its own, which is what
+  // `lockedBy` is: twelve controls read `rule?.required` and a thirteenth will,
+  // so the choice is one line here or twelve edits and a rule for the next
+  // control to remember. A rule resolved for the row IS the rule this control
+  // is under.
+  //
+  // The copy is only made for a field the form actually named, so a form with
+  // no conditional column allocates nothing.
+  if (rule.required || !Array.isArray(form.required)) return rule
+  return form.required.includes(name) ? { ...rule, required: true } : rule
 }
 
 /**
  * Is this control locked by the form above it?
  *
- * Three reasons and one answer, because a control that spelled them out
+ * Four reasons and one answer, because a control that spelled them out
  * separately would have to be told about the next one. The caller disabled the
- * form, a save is in flight, or the column is FROZEN for the row being edited —
+ * form, a save is in flight, the column is FROZEN for the row being edited —
  * an `@immutable` field on a model that seals, once the row has reached a
- * sealed state. That last one is in the row rather than the schema, so no
- * `readOnly` keyword can carry it and the form resolves it and passes the list.
+ * sealed state — or the column was WITHHELD from the read. The last two are in
+ * the row rather than the schema, so no `readOnly` keyword can carry either and
+ * the form resolves them and passes the lists.
+ *
+ * Withheld is the one that is not about permission to WRITE. A field
+ * `@allow('read', …)` strips the key, so the form holds no value for it, and an
+ * editable empty box would save that emptiness over whatever is stored — which
+ * the boundary accepts, because a read policy is not a write policy. Locking it
+ * is not an affordance stricter than the rule: there is no value here to send.
  *
  * A stated `disabled` still wins over all three: the seal is an affordance
  * here, and the Data boundary refuses the write whatever this renders
@@ -66,7 +92,20 @@ export function resolveRule(form, name) {
 export function lockedBy(form, name) {
   if (!form) return false
   if (form.disabled || form.submitting) return true
-  return Array.isArray(form.sealed) && form.sealed.includes(name)
+  if (Array.isArray(form.sealed) && form.sealed.includes(name)) return true
+  return withheldBy(form, name)
+}
+
+/**
+ * Was this column kept back by the server rather than empty?
+ *
+ * Its own predicate and not folded into `lockedBy` alone, because the two
+ * answers are read by different things: a control asks whether it is locked, and
+ * the field around it asks whether to SAY why. An empty disabled box and a
+ * withheld one look identical, which is the whole defect.
+ */
+export function withheldBy(form, name) {
+  return Array.isArray(form?.withheld) && form.withheld.includes(name)
 }
 
 /**

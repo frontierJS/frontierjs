@@ -271,6 +271,10 @@ try {
 
   const prod = await sys.product.create({ data: {
     name: `CF Widget ${RUN}`, slug: `cf-widget-${RUN}`, brand: 'frontierjs', active: true,
+    // Active, so `Product.description`'s `@required(where: active)` applies —
+    // this is a CHECK in the DDL and `asSystem()` is held to it like anything
+    // else.
+    description: 'A fixture this drive makes and removes.',
     fields: { [care.key]: 'hand wash only' },
   } })
   made.products.push(prod.id)

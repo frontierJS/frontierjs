@@ -27,6 +27,94 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d258"></a>2026-09-10 · `FJS-D258` — the agent surface is `@frontierjs/mcp` and `herald` is withdrawn. A metaphor names an organ that owns a realm; a battery over one takes the plain word.
+
+`IDEAS/agent-surface.md` and `IDEAS/package-map.md` both carried **`herald`** for
+the MCP server derived from the seed. The package is right and the name is not.
+
+**The house already runs two naming systems and had never said so.** A metaphor
+goes on a thing that owns a realm and adds a noun to the mental model —
+litestone, junction, sierra, mesa, caravan, conduit, jetty, outpost, basecamp.
+A plain word goes on a battery over a realm somebody else owns — `testing`,
+`notifications`, `email-kit`, `config`, `toolbelt`, `css`, `ui`. Nine and seven,
+with no exception in either direction. The split was legible in the list and
+written in no document, which is *coherence vs. convention* exactly: a rule that
+lives in the author's head is already broken for everyone else.
+
+**An MCP server is the second kind and every question about it is answered
+without the word.** It owns no realm; it is the API realm spoken to an agent. It
+mints no noun an app author has to learn — a tool is a service method, the
+permission is the gate that was already there, the input schema is the one the
+browser already gets. `herald` therefore costs a reader one word of vocabulary
+and buys nothing back, which § V's concept budget refuses on its own terms.
+
+**And `mcp` is the ecosystem's word used exactly, which is the half of
+*familiarity vs. precision* that gets skipped.** That adjudication says steal
+proven shapes and reject their words *when the words half-fit*. MCP does not
+half-fit — it is the protocol's own name for the protocol this package speaks,
+and a developer who knows what MCP is knows what `@frontierjs/mcp` is with
+nothing else read. Rejecting it would be the adjudication run backwards, which
+is the failure mode `decision-rules` names: reaching for a neighboring row
+because the citation feels like rigor.
+
+**The package stays outside Junction**, which was the half of the proposal that
+survived unchanged: MCP is a dependency Junction should not acquire, and a
+battery must be severable — one owner, one seam, removable without surgery on
+the core (§ IV).
+
+**What the ruling costs elsewhere, ruled here because probing found it before
+any code was written.** The surface assembles from four seams and three were
+named wrong in the proposal; the corrections are consequences of this ruling
+landing, not separate questions:
+
+- `canAtLevel()` and `buildGate()` live in **Sierra** and an API-realm package
+  may not import it (Invariant 1). Both are thin over
+  `@frontierjs/toolbelt/gate`'s `levelPasses`. They move to that kit and Sierra
+  imports them — a fifth hand copy of the ladder is what `FJS-D197` exists to
+  refuse.
+
+  *Amended 2026-09-10, on building it.* **`canAtLevel` moved; `buildGate` did
+  not, and the pair was wrong to state as one.** `canAtLevel` is ladder
+  arithmetic plus the method→position map, and both belong to the scale.
+  `buildGate` reads `schema['x-gate']` — the `x-`prefixed convention Litestone's
+  JSON Schema generator emits — which is a Schema→API/UI bridge fact and not a
+  fact about the ladder. Moving it would make the kit that is *two numbers and a
+  plain object* know the shape of a generated document, and a consumer wanting
+  the gate off a definition can read that key the way this ruling's own
+  measurement did. It stays in Sierra until a second reader needs it, which is
+  the point at which it is a copy rather than a reach.
+
+  *Amended the same day.* The measurement below says the LOCKED fixture is the
+  surface's first test. It exists now, in `toolbelt`'s own `gate.spec.js`, and
+  writing it corrected the claim: `levelPasses` and a hand-spelled `>=` agree
+  over every required level against every level a resolver mints, and part in
+  exactly two cells — a caller AT 9 against a gate of 8 or 9. So the sentinel
+  rule guards against a resolver that has gone wrong rather than against a
+  schema that has, which is a narrower and truer statement than *a `>=` offers a
+  LOCKED operation to the system context*. The spec asserts the divergence set
+  by enumeration for that reason: the overstated version of it fails.
+- The argument position of `CallOptions` per `ServiceCaller` method is
+  hand-copied once already, as `OPTS_AT` in `@frontierjs/testing`, which refuses
+  an unknown method rather than guessing because a guess binds the principal at
+  the wrong argument and the call runs as STRANGER. It is a fact about
+  Junction's own interface and is exported from Junction, with the copy deleted:
+  the surface lands with one fewer copy in the tree than before it.
+- The transport dispatches through `app.service(name)` with `{ auth: { user } }`
+  and never through `bridge.toContext()`, which is HTTP-shaped — header
+  dispatch, a route id, a `$`-prefixed query string, a multipart body, none of
+  which an MCP call has. There is no second execution path to diverge from the
+  first.
+
+**Tool visibility is derived from the gate and stays permissive where the gate
+says nothing**, which is Sierra's rule and Invariant 6's: a client-side gate is
+an affordance and the server enforces regardless. Measured against `example` on
+the day of this ruling — 38 services, 76 models, 43 gated — the projection
+answers 94 tools at STRANGER, 126 at USER and 203 at STAFF, with no allowlist
+written anywhere. **The unexercised half is named rather than assumed**: no model
+in that app offers a method its policy allows and a LOCKED gate refuses, so `9`
+against `levelPasses` versus a bare `>=` is a distinction `example` cannot draw,
+and the fixture carrying that one shape is the surface's first test.
+
 ### <a id="fjs-d250"></a>2026-09-08 · `FJS-D250` — A co-located route part is named whatever the app likes, and a prefix that names a folder must name ITS folder. `fli check` grades the claim, never the convention.
 
 `FJS-D117` asked whether a co-located part carries its folder in its NAME and
@@ -2127,8 +2215,9 @@ The refusal names both ways forward: `asSystem().sql` to bypass deliberately, or
 
 **Scoped raw SQL as a capability — a per-identity view set — is NOT built.**
 `IDEAS/scoped-sql.md` designs it; it is a feature where this is a defect, and
-the consumer that made it urgent (`herald`, the AI agent surface) does not exist.
-Revisit with `herald`.
+the consumer that made it urgent (the AI agent surface) does not exist. Revisit
+with it. *Amended 2026-09-10:* that surface was called `herald` when this was
+written and is `@frontierjs/mcp` since `FJS-D258`.
 
 *Lives in:* `packages/litestone/src/core/client.js`
 (`schemaDeclaresAccessRules`, `rawSqlRefusal`, `_runRawSql`); 9 tests in
@@ -2146,6 +2235,74 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d259"></a>2026-09-10 · `FJS-D259` — a conditional required is `@required(where: …)`, one attribute, and its predicate reads THIS ROW's own columns only. That restriction is what buys the CHECK, and the CHECK is what makes the rule true against a migration.
+
+*Four sentences an application says constantly and none of them has a home* was
+the premise of `IDEAS/declared-field-state.md`, and the measurement overturned
+it: `@immutable`, `@allow('write', …)`, `@allow('read', …)` and `@@check`
+already enforce all four at the Data boundary. One thing was genuinely absent —
+**required as a condition, attributed to a field** — and two things about how to
+spell it were about to be got wrong.
+
+**It is `@required(where: …)` and not `@requiredWhen(…)`.** The repo already has
+this exact shape twice: `@@unique([a])` → `@@unique([a], where: …)`, and
+`@@index([a])` → `@@index([a], where: …)`. Neither coined a second word, and a
+predicate that narrows WHICH ROWS a rule applies to is spelled `where:` in three
+places already (`@from` is the third, which is also the proof it works on a
+field attribute). `when:` appeared nowhere in the language, and the tiebreak is
+six months out: somebody who has met `@@unique(where:)` predicts this one
+correctly, where a second keyword leaves them wondering whether
+`@@unique(when:)` works.
+
+**One attribute rather than two, and the forcing argument is the message.**
+`@required("msg")` is a parse error on an optional field, and a conditional
+required goes on exactly an optional field — so a separate `@requiredWhen` could
+not carry wording without either relaxing that rule or growing a message
+argument of its own, and either way two attributes would carry the sentence for
+one rule. Folded in, the two halves want opposite types and say so: bare, the
+absence of `?` is the rule and `@required` only names the wording; with `where:`
+it IS the rule, so it needs the `?` the bare form forbids and is refused on a
+field that is already required.
+
+**The predicate reads this row's own columns and nothing else.** `auth()`,
+`now()`, `check()` and a relation hop are each refused BY NAME. The precedent is
+`@derived`, which refuses `auth()` at client build in as many words — *auth() is
+per-request and a @derived field is one value for the row, not one per reader* —
+and the reason is the same one wearing a different hat: this compiles to a
+CHECK, and a CHECK sees no caller, no other table, and no clock it can be
+trusted with. A clock is the subtle one and it is refused rather than allowed:
+SQLite ACCEPTS `datetime('now')` in a CHECK, so nothing below the parser would
+catch it, and the damage is that a row correct when it was written stops being
+correct with nothing having touched it — after which every later write to that
+row is refused over a column nobody changed.
+
+**The CHECK is the point of the restriction rather than a consequence of it.**
+It is the reach a boundary rule cannot have: a migration, a seed, `asSystem()`
+and a raw statement are all held to it, which is the same argument `example`
+already reaches for `@@check` with. What the boundary adds on top is the half a
+table constraint cannot do — SQLite reports a violation by the constraint's
+SOURCE TEXT and has no field to blame, so `@@check` refuses with `path: []` and
+renders as a form-level sentence over a five-field form. `asCheckViolation`
+rebuilds what the emitter wrote and answers `requiredFailure(field)`, which is
+already the one owner of *why this field cannot be left without a value* — so a
+conditional required says the same sentence as an unconditional one, and
+`@required(where: …, "…")`'s wording is picked up by the same lookup that reads
+`@required("…")` and crosses as `x-messages.required` for free.
+
+**Adoption on a populated table fails the migration and applies nothing**, which
+is the cost accepted rather than discovered: the rebuild is refused, the database
+is unchanged, and the operator is told that existing rows do not satisfy a
+declared rule and that nothing is wrong with the column's type — a second
+sentence beside the type-change one, because the two have different next moves.
+
+**What this does NOT do is reach the browser**, deliberately. The condition
+cannot cross as a value — it has to be evaluated against the record on screen as
+somebody types — and emitting it with no evaluator would be another
+`x-litestone-*` extension whose reader column reads *nothing yet*. The evaluator
+is the next piece and the row-only restriction is what makes it small: the pure
+core of `evalJs` over a record, with nothing to drift against, where `evalJs`
+whole cannot move at all — `check()` and a relation hop each open a database.
 
 ### <a id="fjs-d248"></a>2026-09-08 · `FJS-D248` — Analytical data lives in SQLite. *Query with another engine* and *store in another engine* are two questions, and only the second is the commitment `FJS-D228` deferred.
 

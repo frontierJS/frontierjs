@@ -31,6 +31,13 @@ import { modelToTableName, sqlType, columnMapFor } from './ddl.js'
 import { comparisonEncoderFor } from './encryption.js'
 import { ValidationError }     from './validate.js'
 import { NOW_SQL, rawClause }  from './query.js'
+// The evaluator itself. It was here, and a condition cannot cross to a browser
+// as a value — so the pure half moved below the dependency graph (`FJS-D26`)
+// and litestone became one of its two callers. A MOVE and not a third
+// compilation: `compileSql` below and this are still the two halves an oracle
+// holds together (`verifyRowPolicies`, `test/policy-interpreters.test.ts`), and
+// the browser runs these same bytes.
+import { evaluate as evalPredicate, compare, truth, and3, or3, not3 } from '@frontierjs/toolbelt/predicate'
 
 // ─── Debug logger ─────────────────────────────────────────────────────────────
 // policyDebug: true     — logs SQL filters + denials
@@ -1423,11 +1430,7 @@ function evalPath(node, ctx, data, modelName, relationMap) {
 // `truth()` and not `Boolean()` at the edges: the language admits a predicate
 // that is not a boolean (`@@allow('read', auth())`), and SQLite coerces those
 // the same way, so only NULL is special.
-const truth = (v) => (v === null || v === undefined ? null : Boolean(v))
 
-const and3 = (l, r) => (l === false || r === false ? false : l === null || r === null ? null : true)
-const or3  = (l, r) => (l === true  || r === true  ? true  : l === null || r === null ? null : false)
-const not3 = (v)    => (v === null ? null : !v)
 
 // Does this rule fire? An ALLOW is a whitelist and only TRUE admits; a DENY
 // excludes on TRUE and on UNKNOWN alike, because `AND NOT (NULL)` keeps no row.
@@ -1435,129 +1438,23 @@ export const allowHolds = (v) => truth(v) === true
 export const denyFires  = (v) => truth(v) !== false
 
 export function evalJs(node, ctx, data, modelName, policyMap, relationMap, op = null) {
-  const ev = n => evalJs(n, ctx, data, modelName, policyMap, relationMap, op)
-
-  switch (node.type) {
-    // Both sides are evaluated: `FALSE AND NULL` is FALSE and `TRUE OR NULL` is
-    // TRUE, so a short circuit would be right, but `NULL AND FALSE` is FALSE and
-    // `NULL OR TRUE` is TRUE, so it would be wrong the other way round. The
-    // language has no side effects, which is what makes evaluating both free.
-    case 'or':      return or3(truth(ev(node.left)), truth(ev(node.right)))
-    case 'and':     return and3(truth(ev(node.left)), truth(ev(node.right)))
-    case 'not':     return not3(truth(ev(node.expr)))
-
-    case 'literal': return node.value
-
-    case 'field':   return data?.[node.name] ?? null
-
-    case 'path':    return evalPath(node, ctx, data, modelName, relationMap)
-
-    case 'auth':
-      return node.field ? (ctx.auth?.[node.field] ?? null) : ctx.auth
-
-    case 'now':     return ctx._now
-
-    case 'check':
-      return evalCheck(node, ctx, data, modelName, policyMap, relationMap, op)
-
-    // The other half of the same sentence. `create` has no WHERE to put a CASE
-    // in, so a ternary landing only in compileSql would be decided one way by
-    // the reader and another by the writer — which is FJS-195 exactly.
-    case 'ternary': return ev(node.cond) ? ev(node.then) : ev(node.else)
-
-    case 'compare': {
-      const { left, right, op } = node
-
-      // Membership, the JS half of the same sentence. `create` has no WHERE to
-      // put it in, and a form that lands in one compiler and not the other is
-      // FJS-195 repeating: a row that create allows and read then hides.
-      if (op === 'in') {
-        const listOf = (n) => {
-          if (n.type === 'list') return n.items
-          const v = n.type === 'auth'  ? (n.field ? ctx.auth?.[n.field] : ctx.auth?.id)
-                  : n.type === 'field' ? data?.[relationMap[modelName]?.[n.name]?.kind === 'belongsTo'
-                                              ? relationMap[modelName][n.name].foreignKey : n.name]
-                  : ev(n)
-          // A create may carry the array as written; a row read back has been
-          // deserialized. A column absent from the payload is not an empty
-          // list — it is a column that was not set, and nothing is in it.
-          if (Array.isArray(v)) return v
-          if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p : [] } catch { return [] } }
-          return v == null ? [] : [v]
-        }
-        const needle = left.type === 'field'
-          ? (data?.[relationMap[modelName]?.[left.name]?.kind === 'belongsTo'
-              ? relationMap[modelName][left.name].foreignKey : left.name] ?? null)
-          : ev(left)
-        // `NULL IN (…)` is NULL in SQL, never false — the value is unknown, so
-        // whether it is in the list is unknown.
-        if (needle === null || needle === undefined) return null
-        // Membership is equality repeated, so it takes the same affinity — the
-        // left operand's, applied to each element, which is what makes
-        // `qty in ['5']` over an Int column TRUE the way the WHERE says it is.
-        // A NULL in the list is UNKNOWN rather than a miss, for the same reason
-        // an absent operand is.
-        const affNeedle = affinityOf(left, ctx, modelName, relationMap)
-        let unknown = false
-        for (const item of listOf(right)) {
-          const hit = compare(needle, '==', item, affNeedle, null)
-          if (hit === true) return true
-          if (hit === null) unknown = true
-        }
-        return unknown ? null : false
-      }
-
-      // `x == null` is how this language spells `IS NULL`, and it is the one
-      // comparison that answers a BOOLEAN over an absent value rather than
-      // UNKNOWN — in SQL too, which is why SQL has a second spelling for it.
-      // Without this branch the presence test propagates its own subject and
-      // there is no way to write "the caller carries no such claim" at all.
-      // It reads a FIELD as well as a claim: `ownerId == null` compiles to
-      // `ownerId IS NULL`, and the two halves have to agree about that.
-      const nullTest = (probe, other) =>
-        other.type === 'literal' && other.value === null ? probe : null
-      const probe = nullTest(left, right) ?? nullTest(right, left)
-      if (probe) {
-        const v = probe.type === 'auth'
-          ? (probe.field ? (ctx.auth?.[probe.field] ?? null) : ctx.auth)
-          : ev(probe)
-        const absent = v === null || v === undefined
-        return op === '==' ? absent : !absent
-      }
-
-      // field == auth() — check FK in data
-      if (left.type === 'field' && right.type === 'auth' && right.field === null) {
-        const rel = relationMap[modelName]?.[left.name]
-        const fk  = rel?.kind === 'belongsTo' ? rel.foreignKey : left.name
-        const L   = data?.[fk] ?? null
-        const R   = ctx.auth?.id ?? null
-        return compare(L, op, R, affinityOf(left, ctx, modelName, relationMap), null)
-      }
-      if (right.type === 'field' && left.type === 'auth' && left.field === null) {
-        const rel = relationMap[modelName]?.[right.name]
-        const fk  = rel?.kind === 'belongsTo' ? rel.foreignKey : right.name
-        const L   = ctx.auth?.id ?? null
-        const R   = data?.[fk] ?? null
-        return compare(L, op, R, null, affinityOf(right, ctx, modelName, relationMap))
-      }
-
-      return compare(ev(left), op, ev(right),
-        affinityOf(left,  ctx, modelName, relationMap),
-        affinityOf(right, ctx, modelName, relationMap))
-    }
-
-    // The SQL compiler throws on a node it does not know; this answered `true`
-    // and called it conservative. It is the opposite: the two halves compile ONE
-    // language, and the ops they cover are disjoint — read/update/delete go to
-    // SQL, create and post-update come here — so a node added to the grammar and
-    // to the SQL half alone does not fail, it makes every CREATE policy holding
-    // it a silent no-op. That is the shape `check()` already cost once (FJS-282,
-    // a cross-tenant create permitted in silence) and the floor it was fixed on
-    // top of stayed. Refuse, so the gap arrives as the same error from either
-    // half (`FJS-635`).
-    default:
-      throw new Error(`Unknown policy AST node type: ${node.type}`)
-  }
+  return evalPredicate(node, {
+    record: data,
+    auth:   ctx.auth,
+    now:    ctx._now,
+    // A `belongsTo` field names the RELATION and the value is on the foreign
+    // key. Nothing below the graph has a relation map, so this is the one thing
+    // litestone has to say about how to read its own rows.
+    columnOf: (name) => {
+      const rel = relationMap?.[modelName]?.[name]
+      return rel?.kind === 'belongsTo' ? rel.foreignKey : name
+    },
+    affinityOf:   (n) => affinityOf(n, ctx, modelName, relationMap),
+    // The two nodes that read ANOTHER MODEL. Each opens a database, which is
+    // why neither could move and why both are injected here.
+    resolvePath:  (n) => evalPath(n, ctx, data, modelName, relationMap),
+    resolveCheck: (n) => evalCheck(n, ctx, data, modelName, policyMap, relationMap, op),
+  })
 }
 
 // ─── SQLite's comparison, in the interpreter that has JavaScript's ───────────
@@ -1575,25 +1472,7 @@ export function evalJs(node, ctx, data, modelName, policyMap, relationMap, op = 
 // Affinity is the whole of why `toDataPrincipal` coercing one claim is not the
 // fix: it closes four of those cells and leaves fifty.
 
-// A JS value as SQLite would STORE it — the binder's own conversions, since
-// that is what the SQL half is comparing against.
-const toStorage = (v) => {
-  if (typeof v === 'boolean') return v ? 1 : 0
-  if (v instanceof Date)      return v.toISOString()
-  return v
-}
 
-// NUMERIC affinity converts TEXT only when it is a well-formed number, and
-// leaves it TEXT otherwise — which is what makes `qty < 'abc'` TRUE rather than
-// unknown. `Number` is wider than SQLite here (hex, `Infinity`), so the shapes
-// SQLite refuses are excluded rather than inherited.
-const toNumeric = (v) => {
-  if (typeof v !== 'string') return v
-  if (!/^\s*[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?\s*$/.test(v)) return v
-  const n = Number(v)
-  return Number.isFinite(n) ? n : v
-}
-const toText = (v) => (typeof v === 'number' ? String(v) : v)
 
 // The affinity of one side of a comparison. A literal and a claim have none —
 // they are the parameter — so this only ever answers for a column.
@@ -1620,53 +1499,3 @@ function affinityOf(node, ctx, modelName, relationMap) {
   return t === 'INTEGER' || t === 'REAL' ? 'NUMERIC' : t === 'BLOB' ? 'BLOB' : 'TEXT'
 }
 
-function compare(L, op, R, affL = null, affR = null) {
-  // Every comparison with an absent operand is UNKNOWN, `IS NULL` included —
-  // which is why `auth().x == null` has its own branch above rather than
-  // reaching here: that one is a presence test and this one is a comparison.
-  if (L === null || L === undefined || R === null || R === undefined) return null
-
-  L = toStorage(L)
-  R = toStorage(R)
-
-  // SQLite's own rules, in its own order (§4.2 Affinity Of Comparison
-  // Operands): numeric affinity on one side pulls the other to a number, text
-  // affinity pushes an unaffinitied operand to text, and nothing else applies.
-  if      (affL === 'NUMERIC' && affR !== 'NUMERIC') R = toNumeric(R)
-  else if (affR === 'NUMERIC' && affL !== 'NUMERIC') L = toNumeric(L)
-  else if (affL === 'TEXT'    && affR === null)      R = toText(R)
-  else if (affR === 'TEXT'    && affL === null)      L = toText(L)
-
-  // Anything that is not a number or a string after that is a value this
-  // comparison has no storage class for — a Bytes column, a Json document.
-  // Those keep JavaScript's answer rather than being given a wrong one: two
-  // distinct Buffers rank equal under a class comparison, which would make
-  // `==` TRUE for them.
-  const rank = (v) => (typeof v === 'number' ? 1 : typeof v === 'string' ? 2 : 0)
-  const rl = rank(L), rr = rank(R)
-  if (!rl || !rr) {
-    switch (op) {
-      case '==': return L === R
-      case '!=': return L !== R
-      case '<':  return L < R
-      case '>':  return L > R
-      case '<=': return L <= R
-      case '>=': return L >= R
-      default:   throw new Error(`Unknown policy comparison operator: ${op}`)
-    }
-  }
-
-  // NULL < INTEGER/REAL < TEXT < BLOB, and within a class by value. Text is
-  // compared with JS `<`, which is UTF-16 code-unit order where SQLite's BINARY
-  // collation is UTF-8 byte order — the two agree below U+10000 and not above.
-  const c = rl !== rr ? (rl < rr ? -1 : 1) : L < R ? -1 : L > R ? 1 : 0
-  switch (op) {
-    case '==': return c === 0
-    case '!=': return c !== 0
-    case '<':  return c < 0
-    case '>':  return c > 0
-    case '<=': return c <= 0
-    case '>=': return c >= 0
-    default:   throw new Error(`Unknown policy comparison operator: ${op}`)
-  }
-}

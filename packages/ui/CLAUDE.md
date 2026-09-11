@@ -445,6 +445,15 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   setup. `TabList` guarded with `typeof getActiveId === 'function'`; that
   branch was dead. The shape reads as prudence and is really a second answer to
   what a context read is.
+  **The same is true of a `const` reading a PROP, and there `const` is how you
+  spell a snapshot wrong.** `var` is the non-reactive sampler (VISION §2.3) and
+  the only thing that takes one; a `const` subscribes, so a local named for the
+  row the form was OPENED on is a live view of the row being typed. `<Form>`
+  graded its seal through two of them and froze a column a keystroke before the
+  write, then dropped what was typed in it, because `_writable()` strips every
+  sealed key (`FJS-1072`). Nothing writes in either direction, so nothing on
+  screen says it happened — and a spec that never touches the field the
+  predicate reads cannot tell the two apart.
 - **What a part registers with its parent, it registers as a getter.** `Tab`
   hands `Tabs` `(id, () => disabled)`, because `disabled` is its own prop and
   can change long after the registration ran — a copied boolean is a strip that

@@ -141,7 +141,7 @@ import {
   derefFieldSchema, buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
-  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor,
+  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor, declinedFields, requiredFor, withheldFields,
   displayFor, defaultDisplayFor, registerDisplay, unregisterDisplay, registeredDisplays, filterOpFor,
   registerControl, unregisterControl, registeredControls,
 } from './field-rules.js'
@@ -155,7 +155,7 @@ export {
   buildFieldRules, buildRelations, buildGate, canAtLevel,
   buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
-  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor,
+  toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor, declinedFields, requiredFor, withheldFields,
   displayFor, defaultDisplayFor, registerDisplay, unregisterDisplay, registeredDisplays, filterOpFor,
   registerControl, unregisterControl, registeredControls,
 }
@@ -1469,6 +1469,67 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     return out
   }
 
+  /**
+   * Which columns need a value for the record as it stands NOW.
+   *
+   * `sealedFields`' opposite number: that one answers which columns this row
+   * has frozen, this one which it has made necessary. Both are questions no
+   * schema can answer, both are reached through the resource for the same
+   * reason (`@frontierjs/ui` peers only on mesa and css), and both answer a
+   * LIST rather than a predicate so a form asks once per render instead of once
+   * per field.
+   *
+   * The record being ASSEMBLED and not the one that was read — the opposite of
+   * `sealedFields`, and deliberately. A seal is graded against the STORED state
+   * because the boundary grades it there; this is graded against what is about
+   * to be written, because that is what the CHECK will see and because the
+   * person may have just picked the status that makes the column required.
+   */
+  function requiredFields(record) {
+    const out = []
+    for (const [name, rule] of Object.entries(fields))
+      if (rule?.['x-litestone-required-where'] && requiredFor(rule, record)) out.push(name)
+    return out
+  }
+
+  /**
+   * Which columns this caller was not allowed to READ on the row it opened.
+   *
+   * The third member of the family and the only one that is about what is NOT
+   * in the record. A field `@allow('read', …)` is enforced by stripping the
+   * key, so a note the caller may not see and a customer with no note are one
+   * answer — and a form then offers an ordinary empty box, which SAVES: the
+   * read policy is not a write policy, and nothing refuses the write.
+   *
+   * The row that was READ, like `sealedFields` and unlike `requiredFields` —
+   * the question is what the server withheld, which is a fact about the
+   * response and not about the draft.
+   */
+  function withheldFor(record) {
+    return withheldFields(fields, record)
+  }
+
+  /**
+   * Which columns of the write that just succeeded did the boundary decline.
+   *
+   * The counterpart of `sealedFields` on the other side of the write, and it is
+   * on the other side because it has to be: a field `@allow('write', …)` is a
+   * predicate over the caller AND the row, so *may I write this* is unanswerable
+   * from the schema, and the boundary answers it by keeping the stored value.
+   * The write succeeds. Every other column lands. Nothing raises.
+   *
+   * Reached through the resource for `sealedFields`' reason — `@frontierjs/ui`
+   * peers only on mesa and css — and answering a MAP rather than a predicate so
+   * a form merges it into the slot server errors already use.
+   *
+   * The CREATE table, because the flag is a fact about the column rather than
+   * about the mode: `@allow('write', …)` is emitted on both, and a create drops
+   * silently too (there the payload IS the row, graded in JS one layer up).
+   */
+  function declined(sent, saved) {
+    return declinedFields(fields, sent, saved)
+  }
+
   // One request per (field, query) for the life of the resource. A form with
   // three pickers over the same model still asks three times — they are three
   // different columns and may be filtered differently — but a re-render does
@@ -2106,7 +2167,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     more, hasMore: junctionResource.hasMore,
     fields, relations, gate, can, transitions, validate, normalize, coerce,
     version, versionField: versionOf, conflict,
-    formFields, columns, summary, children, filters, options, sealedFields,
+    formFields, columns, summary, children, filters, options, sealedFields, requiredFields, declined,
+    withheld: withheldFor,
     labelField: labelInfo.field, labelSource: labelInfo.source,
     fieldErrors, context, hooks: addHooks,
   }
@@ -2167,6 +2229,9 @@ function _emptyResource(name) {
     // caller written without one would have thrown on any form rendered before
     // `initJunction` — a prerendered island, an SSR pass (`FJS-823`).
     sealedFields: () => [],
+    requiredFields: () => [],
+    declined: () => ({}),
+    withheld: () => [],
     validate:  () => [],
     normalize: (data) => data,
     coerce:    (data) => data,

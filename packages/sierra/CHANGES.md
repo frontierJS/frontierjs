@@ -1,5 +1,98 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-10 — a column the caller was not allowed to read
+
+`withheldFields(fields, record)` reads `x-litestone-read-policy`, and
+`resource.withheld(record)` is how `<Form>` asks. A field `@allow('read', …)` is
+enforced by STRIPPING the key, so the flag was emitted and read by nothing, and
+a generated form offered an ordinary empty box for a note it could not see.
+
+Measured through a real litestone client against `example`'s `Customer.notes`:
+an admin reading a row with a note gets the text, an admin reading one without
+gets `null`, and everybody else gets no key — both times. So the reader tests
+key PRESENCE, and the empty-but-permitted row is the control that decides the
+mechanism: keyed off the value, it would tell an admin they lack a permission
+they have. The limit comes with it — a row narrowed by `$select` is missing keys
+for a different reason, so the answer is sound over a full row, which is what a
+form is handed.
+
+The reason it is not cosmetic is the write. A read policy is not a write policy:
+the same probe confirmed a caller who cannot read `notes` can overwrite it, so
+an empty box that saves destroys a note nobody on the screen has seen.
+
+**`requiredFor` was wrong and this found it.** It tested `evaluate(...) === true`,
+but `evaluate` is an EXPRESSION evaluator — a bare column predicate
+(`@required(where: active)`, which is what anyone writes for a boolean) answers
+the stored value, and SQLite stores a boolean as 1. The SQL half compiles to
+`"active"` and treats 1 as true, so the CHECK fired while the form called the
+column optional. `truth()` is the fix, which is what litestone's own policy layer
+has always wrapped predicates in (`allowHolds`/`denyFires`). Found by putting the
+first real `@required(where:)` into `example` rather than by a test.
+
+## 2026-09-10 — `requiredFor` — a column that needs a value for THIS row
+
+`FJS-D259`. `@required(where: …)` is required in the rows a predicate admits, so
+the field is not in the schema's `required` list and carries the predicate
+instead. `_CARRIED` carries it and `requiredFor(rule, record)` reads it —
+`sealedFor`'s opposite number, one attribute over: that one answers which
+columns a row has frozen, this one which it has made necessary.
+
+**The evaluator is not sierra's.** `@frontierjs/toolbelt/predicate` IS
+litestone's own `evalJs` with a different environment passed in, so this is not
+a second reading of the rule that could drift from the boundary's — it is the
+boundary's reading, run against the record on screen.
+
+Two answers are deliberately permissive and both match what the CHECK does:
+UNKNOWN is not required, and no record is not required. An affordance stricter
+than the boundary is a control nobody can satisfy over a write the server would
+have accepted, which is the one direction a form must not be wrong in.
+
+`resource.requiredFields(record)` is the list, and it is graded against the
+record being ASSEMBLED where `sealedFields` is graded against the row that was
+read — the opposite, and on purpose: this is what the CHECK will see.
+## 2026-09-10 — `canAtLevel` moved to `@frontierjs/toolbelt/gate`
+
+`FJS-D258`. It was a fifth hand copy of the ladder in waiting: the API realm
+needs the same answer and Invariant 1 forbids it from importing Sierra to get
+one. `field-rules.js` re-exports the kit's binding, so nothing about Sierra's own
+surface moved.
+
+`buildGate` stayed. It reads `schema['x-gate']` — a fact about the document
+Litestone's generator emits, not about the ladder — and the ruling that moved its
+neighbor is amended to say so.
+
+**Two operations are graded now that were not**: `aggregate` and `upsert` were
+absent from the local map and fell through to permissive, so `resource.can()`
+offered them at every level. They map to `read` and `update`. An affordance
+narrows; the boundary is unchanged.
+
+## 2026-09-10 — `declinedFields` — the write that succeeded and kept a column
+
+`FJS-1071`. A field `@allow('write', …)` is a predicate over the caller AND the
+row, so the Data boundary answers it by keeping the stored value: the write
+succeeds, every other column lands, nothing throws. Litestone now emits
+`x-litestone-write-policy` for such a column; `_CARRIED` carries it, because a
+keyword the generator emits and the rule builder drops is a flag nobody
+downstream can see.
+
+`declinedFields(fields, sent, saved)` is the reader and it sits beside
+`sealedFor` — the same question on the other side of the write, and it has to be
+on the other side: *may I write this* needs the predicate and a row, and the flag
+is not the predicate. So it compares what went out against what came back, **for
+flagged columns only**, which is what keeps `@lower`, `@trim`, `@slug` and a
+server-side stamp from reporting as refusals. Primitives only: an object comes
+back re-serialized and would report on every save. A column ABSENT from the
+answer is `@allow('read', …)` or a narrow select and is not a decline.
+
+`resource.declined(sent, saved)` reaches it the way `sealedFields` reaches
+`sealedFor` — through the resource, because `@frontierjs/ui` peers only on mesa
+and css.
+
+**Nothing is disabled and that is deliberate**: a control switched off by the
+flag is switched off for every caller the predicate ADMITS, which is most of
+them. `IDEAS/declared-field-state.md` carries the half that would answer it
+before the write.
+
 ## 2026-09-10 — the README stops calling the payload pipeline default-off
 
 `coerce`, `blankToNull` and `validate` read as `!== false` and have been on

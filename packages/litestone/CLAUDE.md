@@ -301,6 +301,17 @@ Type?      — optional (nullable)
 @required("msg")                 wording for the required rule (does NOT make the field
                                  required — the absence of `?` does). Parse error on an
                                  optional field, where the message could never fire.
+@required(where: expr)           …and this is the half that DOES make it required — in the rows
+@required(where: expr, "msg")    the predicate admits — so it wants the `?` the bare form forbids,
+                                 and is refused on a field that is already required. One attribute
+                                 rather than two, which is `@@unique([a], where: …)`'s shape.
+                                 It expands to a CHECK, so a migration, a seed, asSystem() and a
+                                 raw statement are all held to it; the predicate therefore reads
+                                 THIS ROW's own columns and nothing else, and auth(), now(),
+                                 check() and a relation hop are each refused by name. The boundary
+                                 refuses first and names the FIELD, which is the half a table
+                                 constraint cannot do. Adding one to a populated table whose rows
+                                 do not satisfy it FAILS the migration with nothing applied
 @trim  @lower  @upper  @slug     string transforms applied before write
 @email  @url  @date  @datetime   string format validators
 @phone                           E.164 phone format validator

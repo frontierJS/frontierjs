@@ -1,0 +1,65 @@
+<script>
+  // form-declined.mesa — the write that succeeded and kept a column.
+  //
+  // A field `@allow('write', …)` is a predicate over the caller AND the row, so
+  // the Data boundary answers it by keeping the stored value: the write
+  // succeeds, every other column lands, nothing throws. That is deliberate —
+  // the same payload is legitimate for somebody else — and it means there is no
+  // error for `fieldErrors` to map. The only thing separating *saved* from
+  // *saved except that one* is the answer beside what was sent (`FJS-1071`).
+  //
+  // Everything crossing the seam is real: `declinedFields` is Sierra's, by
+  // relative specifier, and the resource reaches it exactly as `createResource`
+  // does. What is stubbed is the network alone — and the stub is what a real
+  // boundary does, which is answer 200 with the old value in it.
+  import Form from '../../../components/forms/Form.mesa'
+  import { formFieldList, coerceToSchema, declinedFields } from '@frontierjs/sierra/field-rules'
+
+  // The shape litestone emits for `isStaff Boolean @allow('write', auth().isAdmin)`
+  // — which is `example/db/user.lite`, verbatim. Note what is NOT here:
+  // `readOnly`. The column is writable by SOME callers, so nothing on this
+  // schema can switch the box off.
+  const FIELDS = {
+    id:      { type: 'string', readOnly: true, title: 'Id' },
+    name:    { type: 'string', title: 'Name' },
+    isStaff: { type: 'boolean', title: 'Staff', 'x-litestone-write-policy': true },
+    note:    { type: 'string', title: 'Note' },
+  }
+
+  // Who the stubbed boundary thinks is asking. `admin` writes the policed
+  // column; `shopper` has it kept. One resource, so the ONLY difference between
+  // the two halves below is the answer that comes back.
+  window.kitActAs = (who) => { acting = who }
+  let acting = 'shopper'
+
+  let sent = []
+  window.kitSent = () => sent
+
+  const RESOURCE = {
+    context: { model: 'User', service: 'users', idField: 'id' },
+    fields:  FIELDS,
+    formFields: (opts) => formFieldList(FIELDS, opts),
+    options: () => Promise.resolve([]),
+    make: () => ({ name: '', isStaff: false, note: '' }),
+    coerce: (data) => coerceToSchema(FIELDS, data),
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    sealedFields: () => [],
+    // The same call `createResource` makes, over the same rule module.
+    declined: (data, saved) => declinedFields(FIELDS, data, saved),
+    // What a real boundary does: 200, with the column it declined to write
+    // carrying the value it already had. Never a throw.
+    save: (data) => {
+      sent = [...sent, { keys: Object.keys(data), data }]
+      const saved = { ...ROW, ...data }
+      if (acting !== 'admin' && 'isStaff' in data) saved.isStaff = ROW.isStaff
+      return Promise.resolve(saved)
+    },
+    service: {},
+  }
+
+  const ROW = { id: 'u-1', name: 'Ada', isStaff: false, note: 'hello' }
+</script>
+
+<div id="form">
+  <Form resource={RESOURCE} record={{ ...ROW }} />
+</div>

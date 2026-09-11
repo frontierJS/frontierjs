@@ -1,0 +1,112 @@
+<script>
+  // form-withheld.mesa — a column the server did not send.
+  //
+  // A field `@allow('read', …)` is enforced by STRIPPING the key, not by
+  // nulling it. Measured against `example`'s `Customer.notes`: an admin reading
+  // a customer with a note gets the text, an admin reading one without gets
+  // `null`, and everybody else gets NO KEY, both times. So *there is nothing
+  // here* and *this is not yours to see* are one answer to any reader that
+  // looks at the value.
+  //
+  // What makes it a defect rather than a cosmetic gap is the write. A read
+  // policy is not a write policy — the same probe confirmed a non-admin can
+  // overwrite `notes` it cannot read — so an ordinary empty box saves that
+  // emptiness over a note nobody on this screen has seen.
+  //
+  // Everything crossing the seam is real: the rules are built by Sierra's own
+  // `buildFieldRules`, and the resource resolves the list through
+  // `withheldFields` exactly as `createResource` does. The network is stubbed.
+  import Form  from '../../../components/forms/Form.mesa'
+  import Input from '../../../components/forms/Input.mesa'
+  import { formFieldList, coerceToSchema, buildFieldRules, withheldFields }
+    from '@frontierjs/sierra/field-rules'
+
+  // The shape litestone emits for
+  //   notes String? @allow('read', auth().role == 'admin')
+  const MODEL = {
+    type: 'object',
+    properties: {
+      id:    { type: 'string', readOnly: true, title: 'Id' },
+      name:  { type: 'string', title: 'Name' },
+      notes: { type: ['string', 'null'], title: 'Notes', 'x-litestone-read-policy': true },
+    },
+  }
+  const FIELDS = buildFieldRules(MODEL)
+
+  let sent = []
+  window.kitSent = () => sent
+
+  const RESOURCE = {
+    context: { model: 'Customer', service: 'customers', idField: 'id' },
+    fields:  FIELDS,
+    formFields: (opts) => formFieldList(FIELDS, opts),
+    options: () => Promise.resolve([]),
+    make: () => ({ name: '', notes: '' }),
+    coerce: (data) => coerceToSchema(FIELDS, data),
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    sealedFields: () => [],
+    requiredFields: () => [],
+    // The same walk `createResource` does, over the same module.
+    withheld: (record) => withheldFields(FIELDS, record),
+    save: (data, opts) => {
+      sent = [...sent, { mode: opts?.mode ?? '-', keys: Object.keys(data), data }]
+      return Promise.resolve({ ok: true })
+    },
+    service: {},
+  }
+
+  // What each caller's read actually returns. The admin's row HAS the key —
+  // and its value is null, which is the pair that matters: an admin looking at
+  // a customer with no note must still get an ordinary editable box.
+  const ADMIN   = { id: 'c-1', name: 'Ada',  notes: 'Prefers email.' }
+  const EMPTY   = { id: 'c-2', name: 'Bo',   notes: null }
+  const STAFF   = { id: 'c-3', name: 'Cy' }
+
+  // The forced form owns its own draft, because a hand-written child does not
+  // write the record on its own — `<Form>` tracks dirty and errors off the
+  // input event, and the VALUE binding is the caller's.
+  //
+  // `notes` starts ABSENT and appears only once somebody types, which is the
+  // read this form actually got and the only arrangement in which the strip is
+  // reachable: a key the response never carried is missing from the payload
+  // whether or not anything drops it.
+  let forcedName  = STAFF.name
+  let forcedNotes = undefined
+  $: forced = forcedNotes === undefined
+    ? { id: STAFF.id, name: forcedName }
+    : { id: STAFF.id, name: forcedName, notes: forcedNotes }
+</script>
+
+<div id="admin">
+  <Form resource={RESOURCE} record={ADMIN} />
+</div>
+
+<div id="empty">
+  <Form resource={RESOURCE} record={EMPTY} />
+</div>
+
+<div id="staff">
+  <Form resource={RESOURCE} record={STAFF} />
+</div>
+
+<div id="create">
+  <Form resource={RESOURCE} />
+</div>
+
+<!--
+  A hand-written form that re-enables the box on purpose.
+
+  `lockedBy` is an AFFORDANCE and a stated `disabled` beats it — that is the
+  documented contract the seal already has. What a `disabled={false}` cannot do
+  is put the value back in the payload: the form still has no idea what is
+  stored, so sending what somebody typed here would overwrite it just the same.
+  This is the arrangement that makes `_writable()`'s strip reachable, and
+  without it every payload assertion above passes against a form that strips
+  nothing, because a key the read never carried is absent either way.
+-->
+<div id="forced">
+  <Form resource={RESOURCE} record={forced}>
+    <Input name="name"  bind:value={forcedName} />
+    <Input name="notes" bind:value={forcedNotes} disabled={false} />
+  </Form>
+</div>

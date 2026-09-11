@@ -1037,11 +1037,21 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
           () => readAutoHash(rawDb) !== ddlHash)
       } catch (err) {
         const reason = `SQLite refused the rebuild: ${err?.message ?? err}`
+        // Two causes and the operator's next move is different for each, so the
+        // hint reads which one this was rather than naming the commoner one and
+        // leaving the other to be guessed at. A CHECK refusing the rebuild is a
+        // RULE the existing rows do not satisfy — `@required(where: …)`,
+        // `@@check`, `@@arc`, a scaled bound — and the answer is to correct the
+        // rows, not to convert a column that is already the right type.
+        const byCheck = /CHECK constraint failed/i.test(String(err?.message ?? err))
         console.warn(
           `[litestone] Migration FAILED for database "${dbName}" — nothing was applied and the ` +
           `database is unchanged.\n            ${reason}\n` +
-          `            A type change is the usual cause: the existing values have to satisfy the new ` +
-          `column, so convert them in a file migration first.`)
+          (byCheck
+            ? `            Existing rows do not satisfy a rule this schema declares. Nothing is wrong with the ` +
+              `column's type — find the rows the constraint names and correct them in a file migration first.`
+            : `            A type change is the usual cause: the existing values have to satisfy the new ` +
+              `column, so convert them in a file migration first.`))
         results[dbName] = { state: 'failed', reason, error: err }
         continue
       }

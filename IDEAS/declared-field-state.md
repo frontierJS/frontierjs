@@ -1,56 +1,275 @@
 ---
 id: declared-field-state
 status: proposed
-dated: 2026-08-22
+dated: 2026-09-10
 ---
 
-# Idea — Declared field state: required, read-only and hidden, as a condition
+# Idea — Declared field state: the condition that never reaches the browser
 
-**Status: IDEA. Nothing here is built.** Dated 2026-08-22. There is no
-`@requiredWhen`, no `@readOnlyWhen`, no `@setOnce` and no conditional field
-state of any kind in the tree. The *What exists today* section is read off
-shipped code and cited; every other section is a proposal. Do not cite this file
-as describing behavior — see `VERIFYING.md`.
+**Status: all three pieces of § The proposal are BUILT** — `FJS-1071` and
+`FJS-D259`. What remains open is § Open questions, and the read flag still has
+no reader. § *What exists today* is
+the opposite — every row of it was RUN against the tree, and the probe output is
+quoted rather than described. Do not cite the proposal as behavior; see
+`VERIFYING.md`.
+
+**This file was rewritten after that measurement, and the measurement overturned
+its own premise.** The first draft opened with *four sentences an application
+says constantly, and none of them has a home*, and proposed four keywords:
+`@requiredWhen`, `@readOnlyWhen`, `@hiddenWhen`, `@setOnce`. Three of the four
+sentences already have a home at the Data boundary. One of the keywords is a
+second name for a shipped attribute. What is actually missing is none of the
+four — it is the half ServiceNow calls a **UI Policy**, and the first draft cited
+ServiceNow while proposing the wrong half.
 
 ---
 
-## The problem it solves
+## What exists today — measured
 
-Four sentences an application says constantly, and none of them has a home:
+The four sentences, each written as a real schema and run:
 
-1. **`trackingCode` is required once `status` is `shipped`.**
-2. **`currency` may be set when the order is created and never again.**
-3. **`cancelReason` is read-only until the order is cancelled.**
-4. **`vatNumber` is only shown when `customerType` is `business`.**
+| the sentence | Data boundary | reaches the client as |
+| --- | --- | --- |
+| `trackingCode` is required once `status` is `shipped` | **`@@check("status != 'shipped' OR trackingCode IS NOT NULL", …)`** — refuses, `ValidationError` | **nothing**, and the error's `path` is `[]` |
+| `currency` may be set at create and never again | **`@immutable`** — throws, names the field, says what to do instead | `readOnly` in update mode, `x-litestone-kind: 'immutable'` |
+| `cancelReason` is read-only until the order is cancelled | **`@allow('write', status == 'cancelled')`** — the WHEN of a `CASE` in the SET, so it reads the STORED row and grades every row of a bulk write separately | `x-litestone-write-policy: true` — **the flag, since 2026-09-10 (`FJS-1071`)**; not the predicate |
+| `vatNumber` is shown only for a business customer | `@allow('read', customerType == 'business')` — strips the column from the answer, and closes the filter and sort oracles with it | `x-litestone-read-policy: true`, whose reader is nobody |
 
-Today each is written twice — a before-hook on the API side, and an `{#if}` or a
-`required={…}` in the form — and the two are free to disagree. When they do, the
-failure has the shape this repo keeps finding: the screen and the server hold
-different opinions, and only one of them is enforced. A form that does not ask
-for `trackingCode` and a server that refuses without it is a save button that
-does nothing.
+The probe:
 
-The declaration is missing, so nothing derives: not the control's `required`,
-not the 400, not the browser's affordance, not the committed surface a reviewer
-reads.
+```
+S3 draft row cancelReason      = null          ← the write was dropped
+S3 cancelled row cancelReason  = yes           ← the same call, one column different
+S2 immutable currency THREW: ValidationError — currency is @immutable …
+S1 shipped with no trackingCode = shipped      — NOT REFUSED
+S1 via @@check THREW: ValidationError
+  message: Validation failed — a shipped order needs a tracking code
+  fields : [{"path":[],"message":"a shipped order needs a tracking code"}]
+```
 
-## What exists today
+Two of those lines are the whole of what this file is now about.
 
-- **`@@transitions`** says *which value may follow which* on an enum field, with
-  an optional `@gate(N)` per move (`packages/litestone/CLAUDE.md` § Model
-  attributes). It knows the states. It says nothing about which fields those
-  states require.
-- **`@@allow` / `@@deny`** are the expression language this would reuse. Already
-  compiled twice — into SQL (`compileSql`) and into JS (`evalJs`) — with the
-  two halves held together by `verifyRowPolicies`.
-- **`@system` and `@guarded`** lock a column by WHO, never by WHEN. `@system`
-  refuses a caller's write and reaches the client as `readOnly`; there is no
-  form of either that depends on the row.
-- **`required`** is the absence of `?` and is fixed for the life of the model.
-  `@required("msg")` only supplies the wording and is a parse error on an
-  optional field, precisely because it cannot make anything required.
-- **`x-gate`** is the precedent for the client half: a declaration that reaches
-  the browser as an affordance and is never a boundary (Invariant 6).
+**`@allow('write', status == 'cancelled')` reached the client as nothing.** The
+generated JSON Schema for that column was `{"type": ["string","null"]}` in create
+mode and in update mode alike — indistinguishable from an ordinary writable
+column. So a generated `<Form>` rendered an editable box, a person typed into it,
+the save button went green, and the Data boundary kept the old value without a
+word. That was the failure the first draft described as hypothetical, and it was
+shipped behavior on a shipped attribute: `FJS-1071`, **closed 2026-09-10**, which
+is § *The proposal* piece 1 below.
+
+The silence is deliberate and stays: a field write predicate must drop rather
+than refuse, because the same payload is legitimate for another caller
+(`packages/litestone/CLAUDE.md` § the `@system`/`@guarded`/`@computed` grid says
+so in as many words). **What is not deliberate is that the client was never
+told.** `@system` gets `readOnly` for exactly this reason and the paragraph
+explaining why is three lines further down the same file.
+
+**`@@check`'s refusal names no field.** `path: []`, so `<Form>` has nowhere to
+put the sentence and it renders as a form-level error over a five-field form.
+The rule is right — a `@@check` is a table constraint and holds against a
+migration, a seed, `asSystem()` and a raw statement, which is why `example`
+reaches for it — but a table constraint has no field to blame, and *which box do
+I fix* is the only question the person reading it has.
+
+## What this reframes the problem into
+
+**FJS states ServiceNow's architecture and applies it to exactly one thing.**
+A Data Policy enforces server-side across forms, imports and integrations; a UI
+Policy guides on the client; the platform converts one into the other, and their
+stated practice is *UI policies guide, data policies enforce*. That is
+Invariant 6 arrived at independently — and FJS has the Data Policy for all four
+sentences above and the UI Policy for one of them (`@immutable`).
+
+So the gap is not vocabulary. **It is the crossing**, and the crossing is one
+thing rather than four:
+
+> A per-field condition the Data boundary already enforces does not reach the
+> browser, so the screen and the server hold different opinions and only one of
+> them is enforced.
+
+## The proposal
+
+Three pieces, smallest first. The first is a defect and the other two are
+features; they are listed together because the third is worthless without the
+first.
+
+### 1. Emit the write predicate, and read it — **BUILT, `FJS-1071`**
+
+`x-litestone-write-policy` beside the existing `x-litestone-read-policy`, hoisted
+past the `anyOf` wrapper the read half builds so `@allow('all', …)` on a
+non-optional column carries it where a consumer looks; carried in sierra's
+`_CARRIED`; and read by `declinedFields(fields, sent, saved)`, which `<Form>`
+calls on the SUCCESS path and renders in the slot a server error would have used.
+
+**Nothing is disabled, and refusing to was the decision in the fix.** A field
+carrying a write predicate is `readOnly`-*maybe*, and *maybe* is not a state a
+control has: switched off by the flag it is switched off for every caller the
+predicate ADMITS, which is most of them. So the only question the flag alone can
+answer truthfully is asked AFTER the write — *what came back is not what was
+sent* — and answering it beforehand is piece 2.
+
+The write half is done, and **the READ flag now has a reader too** —
+`withheldFields()` in sierra, `resource.withheld(record)`, and `<Form>` +
+`<Field>` above it. The surface turned out not to be the one guessed here: the
+enforcement strips the KEY, so this is not only a display saying *absent because
+not yours* rather than *null because empty* — it is a FORM problem, because a
+read policy is not a write policy and an ordinary empty box saves that emptiness
+over a value nobody on the screen has seen.
+
+`x-litestone-policies`, `x-litestone-from` and `x-litestone-secret` are still
+listed in `packages/litestone/docs/jsonschema.md` with `nothing yet` in the
+reader column. An extension with no reader is a declaration that derives
+nothing, which is the whole argument of § *Everything is a projection*.
+
+### 2. One evaluator, moved rather than added — **BUILT, `FJS-D259`**
+
+The expression has to be evaluated against the record currently on screen, which
+changes as somebody types — so either the browser gets an evaluator, or it asks
+the server on every keystroke.
+
+Litestone had the evaluator: `evalJs` in `core/policy.js`.
+
+**It could not move whole, and that measurement is what shaped the feature.**
+Two of its node types read another model — `check()` and a relation path — and
+each opens a database; `affinityOf` reaches `sqlType` in the DDL emitter. So
+what moved is the pure core, with those three INJECTED:
+`@frontierjs/toolbelt/predicate`. Their defaults are litestone's own answers
+when the hop cannot be made, and they fall opposite ways — a path yields a value
+and this language spells absent as null, so an allow fails closed; a `check()`
+is a predicate and the SQL half allows when the target has no policy.
+
+That restriction is why the row-only condition language (piece 3) matters here:
+a `@required(where: …)` predicate contains neither node, so the browser needs
+nothing injected at all.
+
+**Moving it to `@frontierjs/toolbelt` makes it one evaluator with two callers,
+not a third compilation.** That distinction is the whole safety argument and the
+first draft blurred it. `compileSql` and `evalJs` remain the two halves a row
+policy is compiled into, held together by `verifyRowPolicies`, which is a real
+oracle. The browser runs the same `evalJs` bytes the server runs — so there is
+nothing new to drift against. `FJS-195` is the right thing to fear and it is
+about a form handled in one compiler and not the other; a second CALLER of one
+compiler is not that.
+
+Same argument that put `/jsonschema`, `/hooks`, `/directives` and `/inflect`
+there (`FJS-D26`): the pure half both sides need, in the package below the
+dependency graph. Sierra cannot import litestone's internals and `@frontierjs/ui`
+cannot import sierra.
+
+**What crosses is bounded, and it turned out not to need a split.** A condition
+reading `auth()` would be a claim the browser holds and cannot verify — the same
+standing `x-gate` has — but `FJS-D259` refuses `auth()` in a
+`@required(where: …)` outright, so the question does not arise for this feature.
+Invariant 6 still governs the answer: UNKNOWN is not required, no record is not
+required, and the server enforces regardless.
+
+Shipped as `x-litestone-required-where` (the AST, client audience only),
+sierra's `requiredFor(rule, record)`, and `<Form>` resolving it on every
+keystroke — `$:` where the seal is `const`, which is the difference between
+grading the row that was opened and grading the record being assembled.
+
+### 3. `@required(where: expr)` — **BUILT, `FJS-D259`**
+
+The only one of the four that was genuinely absent — and it is spelled
+`@required(where: …)` rather than the `@requiredWhen(…)` this file first
+proposed, because `@@unique([a], where: …)` and `@@index([a], where: …)` are the
+same shape and neither coined a second word.
+
+```prisma
+model Order {
+  status       OrderStatus  @default(draft)
+  trackingCode String?      @required(where: status == 'shipped',
+                                      "A shipped order needs a tracking code")
+
+  @@transitions(status, ship: draft -> shipped)
+}
+```
+
+**The predicate reads this row's own columns and nothing else** — `auth()`,
+`now()`, `check()` and a relation hop each refused by name. That restriction is
+what buys the CHECK, and it is also what makes piece 2 small.
+
+**Does it subsume a transition guard? No, and there is nothing to subsume.** A
+move takes `@gate`, `@system` and `@seals` — no predicate exists on one — and
+the parser's own note on `@seals` rules the shape: *a seal is an event rather
+than a state, which is why it is declared on the move rather than as a predicate
+over the state column.* `@required(where:)` is about a STATE: it is true of a row
+that has been shipped for a year, not only at the moment of shipping. Different
+sentences, and the open question above is closed.
+
+**It compiles to the `@@check` plus the field attribution, so it is one
+declaration with two consequences rather than two declarations.** The table constraint is what
+holds a migration, a seed and `asSystem()`; the field attribution is what lets
+the refusal render beside the control and what lets the form ask for the value
+before the person presses save. Neither half is new — the expansion is
+`@secret`'s trick (`@encrypted + @guarded + @log(audit)`), and the relationship
+to `@@check` is the one `@length(3, 20)` already has to a CHECK constraint: the
+table's floor and the boundary's message, one origin.
+
+The expression is the `@@allow` language, not raw SQL, which is what makes it
+attributable, checkable at startup by the walk `checkFieldPolicies` already runs,
+and evaluable by piece 2.
+
+### What was cut, and why
+
+- **`@setOnce`** — it is `@immutable`, shipped, already crossing as `readOnly` in
+  update mode and writable in create mode, which is the one keyword pair that
+  says *written once*. A second name for it is the thing `PHILOSOPHY.md` § IV
+  *preservation vs. evolution* forbids in the other direction: no second name for
+  one idea.
+- **`@readOnlyWhen(expr)`** — it is `@allow('write', !expr)`, shipped, per-row,
+  graded against the stored row. The first draft's own example is the argument:
+  `@readOnlyWhen(status != 'cancelled')` is a double negative where
+  `@allow('write', status == 'cancelled')` is not. What was missing was the
+  emission, which is piece 1.
+- **`@hiddenWhen(expr)`** — two different things wore one word. *The caller may
+  not have the value* is `@allow('read', expr)`, shipped and stronger than
+  hiding. *The reader has the value and the form should not show the box* is
+  presentation, and the first draft's own § *What this is not* rules that out:
+  `formFieldList`'s `only`/`except` own what a form shows, and Salesforce's four
+  overlapping layout concepts are the argument for not adding a fifth. Parked
+  rather than refused — if it comes back it comes back as a form concern.
+
+## Open questions that survive
+
+- ~~**Which row does the condition see on an update?**~~ **Closed for `required`
+  by the CHECK**: SQLite evaluates it against the row as WRITTEN, which is the
+  merged row, and that is the answer this file guessed at. It stays open for a
+  client-side evaluation of the same predicate. The original note follows.
+
+  The stored row, the incoming patch, or the two merged. It is not decoration: `@requiredWhen(status ==
+  'shipped')` on a patch that is *setting* status to shipped must see the NEW
+  value, while a write predicate must see the OLD one, or a caller can cancel an
+  order and write the reason in one request that the rule exists to prevent.
+  Salesforce answers it explicitly with `PRIORVALUE` and `ISCHANGED`. Probably:
+  the MERGED row for `required`, the STORED row for `readOnly` — which is what
+  `compileFieldPredicate` already does — stated rather than inferred.
+- **Ordering against the stamps.** `checkCreatePolicy` runs BEFORE
+  `applyAuthDefaults`, which is already a documented trap: a tenant column is
+  legitimately absent on create because the stamp has not happened yet
+  (`packages/litestone/docs/multi-tenancy.md`). A `@requiredWhen` evaluated at the
+  same point would refuse a create that is about to be filled in.
+- **What a HAND-WRITTEN `@@check` does about attribution.** The expansion knows
+  its field and carries it, so `@required(where:)` renders beside its control.
+  A `@@check` somebody wrote still cannot, and two of them on one model produce
+  two unattributed form-level errors. A `field:` argument is the obvious answer
+  and is a separate question from this one.
+- ~~**Bulk writes.**~~ **Closed by the expansion**: a CHECK is evaluated per row
+  by SQLite, so `updateMany` over a `where` matching many rows needs no answer
+  here at all. That was a point in the expansion's favor and was not visible
+  before the measurement.
+- ~~**Does this subsume a transition guard?**~~ **Closed** — see piece 3. No
+  predicate exists on a move, and a state invariant is not a move guard.
+
+## What this is not
+
+- **Not `@@transitions`.** That is which value may follow which. This is which
+  fields a state requires. They compose and neither replaces the other.
+- **Not `@guarded` / `@system`.** Those lock by who. This locks by when.
+- **Not a page layout.** Nothing here decides order or grouping.
+- **Not validation.** A validator asks whether a value is well-formed. This asks
+  whether the field applies at all, which is a question about the row.
 
 ## Prior art
 
@@ -58,153 +277,26 @@ reads.
 Policy** runs server-side across forms, imports, web services and integrations
 and cannot be bypassed; a **UI Policy** runs client-side on forms only. They
 carry the same rule — mandatory, read-only, visible — and the platform has a
-button that converts one into the other. Their own stated practice is *UI
-policies guide, data policies enforce*, and a Data Policy takes precedence when
-a record is saved.
-
-That is Invariant 6, arrived at independently by a platform with two decades of
-production behind it, and FJS currently applies it to exactly one thing: access.
+button that converts one into the other. A Data Policy takes precedence when a
+record is saved. That is Invariant 6, and § *What this reframes the problem into*
+is what the measurement did to this citation: it stopped being a supporting
+argument and became the finding.
 
 **Frappe puts it on the field, in three properties over one expression
 language** — `depends_on`, `mandatory_depends_on`, `read_only_depends_on`. One
 grammar, three questions. It is display-first: `depends_on` hides, and hiding is
-not enforcement.
+not enforcement. The shape is right and the words half-fit, which is § IV
+*familiarity vs. precision* exactly: `@allow` and `@@check` are this house's
+words for two of the three.
 
 **Salesforce has two mechanisms and they do not compose.** A validation rule
 enforces (server-side, on every insert and update, for UI and API alike); a page
 layout decides what is shown and which fields are marked required *on that
-layout*. Nothing ties them. That is why "record types vs page layouts" is a
-genre of blog post rather than a settled question, and it is the outcome to
-avoid.
+layout*. Nothing ties them, which is why "record types vs page layouts" is a
+genre of blog post rather than a settled question. It also supplies the
+vocabulary for the hardest part: `PRIORVALUE(field)` and `ISCHANGED(field)`.
 
-Salesforce also supplies the vocabulary for the hardest part: a validation rule
-sees `PRIORVALUE(field)` and `ISCHANGED(field)`. Which row a condition is
-evaluated against is not a detail.
-
-## The shape
-
-**One question, asked of a field, about a row.** Three answers:
-
-| | enforced where |
-| --- | --- |
-| `required` | the Data boundary, and the client as an affordance |
-| `readOnly` | the Data boundary, and the client as an affordance |
-| `hidden` | **the client only** |
-
-**`hidden` is deliberately not a Data-boundary concept.** A server cannot hide
-anything; it can refuse, and refusing is what `@guarded` already means. Emitting
-`hidden` as an affordance and nothing else keeps that honest — and it makes the
-one dangerous combination sayable out loud: a field that is hidden and required
-is a form nobody can submit, which is a check the declaration can make at parse
-rather than a bug someone finds in production.
-
-## Sketch
-
-```prisma
-model Order {
-  id           Int          @id
-  status       OrderStatus  @default(draft)
-  currency     String       @setOnce
-  trackingCode String?      @requiredWhen(status == 'shipped')
-  cancelReason String?      @readOnlyWhen(status != 'cancelled')
-  vatNumber    String?      @hiddenWhen(customerType != 'business')
-
-  @@transitions(status)
-}
-```
-
-**`@setOnce` is the degenerate case and falls out for free**: read-only whenever
-the row already exists. It is worth having its own spelling because it is the
-common one — an invoice number, a currency, a tenant id — and because
-`@readOnlyWhen(true)` reads as *never writable*, which is a different sentence.
-
-What each realm derives, with no app code:
-
-- **Data** — the refusal. A write naming a `readOnly`-in-this-state column, or
-  omitting a `required`-in-this-state one, is a `ValidationError` naming the
-  field, in the same shape every other rule throws, so it renders in `<Form>`
-  beside the control.
-- **API** — the 400, and the condition on the field's schema so the browser can
-  ask the same question.
-- **UI** — `$context.form` already resolves a control's `required` and
-  `disabled` from the form's own state. This adds one input to that resolution,
-  re-evaluated as the record changes, which is what makes the affordance track a
-  status the person just picked.
-
-## The crossing, and why it is the interesting part
-
-`x-gate` crosses as four numbers. `x-transitions` crosses as a table.
-**A condition cannot cross as a value** — it has to be evaluated against the
-record currently on screen, which changes as someone types.
-
-Three ways, and the third is the one that fits this repo:
-
-1. The expression crosses and the client evaluates it. Needs an evaluator in the
-   browser.
-2. Only the server evaluates, and the client re-asks on every change. Chatty,
-   and wrong the moment the network is slow.
-3. The expression crosses and **the evaluator is the same one the server uses**.
-
-Litestone already has that evaluator: `evalJs` in `policy.js`, the JS half of
-the two compilers a row policy is compiled into. It is pure, it is small, and it
-takes a record and answers a boolean.
-
-**Moving it to `@frontierjs/toolbelt` makes it one evaluator instead of two**,
-which is the same argument that put `/jsonschema`, `/hooks`, `/directives` and
-`/inflect` there — the pure half both sides need, in the package below the
-dependency graph (`FJS-D26`). Sierra cannot import litestone's internals and
-`@frontierjs/ui` cannot import sierra; toolbelt is what both may have.
-
-That is the strongest reason to build this feature and the strongest reason to
-be careful: it puts a second reader on an expression language that currently has
-one owner and two compilers held together by a real oracle
-(`verifyRowPolicies`). A third compilation with no oracle is how `@@allow`'s two
-halves drifted before (`FJS-195`).
-
-## Open questions
-
-- **Which row does the condition see on an update?** The stored row, the
-  incoming patch, or the two merged. Salesforce answers it explicitly with
-  `PRIORVALUE` and `ISCHANGED` and that is not decoration — `@requiredWhen(status
-  == 'shipped')` on a patch that is *setting* status to shipped must see the new
-  value, and `@readOnlyWhen(status != 'cancelled')` must see the old one, or a
-  caller can cancel and write the reason in one request that the rule was
-  written to prevent. Probably: the MERGED row for `required`, the STORED row
-  for `readOnly`, stated rather than inferred.
-- **Ordering against the stamps.** `checkCreatePolicy` runs BEFORE
-  `applyAuthDefaults`, which is already a documented trap: a tenant column is
-  legitimately absent on create because the stamp has not happened yet
-  (`packages/litestone/docs/multi-tenancy.md`). A `@requiredWhen` evaluated at
-  the same point would refuse a create that is about to be filled in.
-- **Bulk writes.** `updateMany` is one statement over a `where` that matches many
-  rows and one payload. A condition may hold for some of those rows and not
-  others. Salesforce evaluates per record; SQLite does not offer that for free.
-  Either the check becomes a pre-SELECT (a cost on every bulk write), or bulk
-  writes refuse a model carrying conditions, or the condition compiles into the
-  WHERE. The third is the interesting one and is the same trick `@@allow`
-  already does.
-- **Does this subsume a transition guard, or sit beside one?** *You may move to
-  `shipped` only if `trackingCode` is set* is sayable as a `@requiredWhen` and as
-  a transition guard, and they are not the same sentence: one is about a field,
-  one is about a move. Two ways to say one thing is the failure mode this repo
-  files rulings about.
-- **How much of the expression language crosses.** `auth()` on the client is a
-  claim the browser holds and cannot verify — the same status `x-gate` has. A
-  condition reading `auth()` is an affordance only, and the split has to be
-  visible rather than assumed.
-
-## What this is not
-
-- **Not `@@transitions`.** That is which value may follow which. This is which
-  fields a state requires. They compose and neither replaces the other.
-- **Not `@guarded` / `@system`.** Those lock by who. This locks by when.
-- **Not a page layout.** Nothing here decides ORDER or grouping;
-  `formFieldList`'s `only`/`except` already own that, and Salesforce's four
-  overlapping layout concepts are the argument for not adding a fifth.
-- **Not validation.** A validator asks whether a value is well-formed. This asks
-  whether the field applies at all, which is a question about the row.
-
-## Prior art — sources
+### Sources
 
 - ServiceNow: [Data Policy vs UI Policy](https://www.servicenow.com/community/servicenow-ai-platform-articles/difference-between-data-policy-and-ui-policy/ta-p/2313599) · [Data Policy guide](https://servicenow.github.io/sdk/guides/data-policy-guide) · [Dictionary attributes](https://www.servicenow.com/docs/r/washingtondc/application-development/table-administration-and-data-management/c_DictionaryAttributes.html)
 - Frappe: [field types](https://docs.frappe.io/framework/user/en/basics/doctypes/fieldtypes) · [field dependency](https://docs.frappe.io/helpdesk/field-dependency)

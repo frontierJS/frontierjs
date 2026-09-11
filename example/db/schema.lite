@@ -207,7 +207,28 @@ model Product {
   /// readOnly, and the merchant is the one who decides it.
   slug String @length(1, 80) @unique @lower
 
-  description String? @length(0, 2000)
+  /// Optional on a draft, mandatory the moment it goes on sale.
+  ///
+  /// `site/` bakes one HTML file per ACTIVE product and takes that page's meta
+  /// description from this column, and `@@fts` searches it for words that are
+  /// on no page — so an active product with no description is a storefront
+  /// page that is unfindable and unreadable by a crawler, and nothing anywhere
+  /// fails. The two columns are individually fine and the PAIR is the rule,
+  /// which until `@required(where: …)` meant it had to be written twice: once
+  /// in whatever service handler ran first, once in the form.
+  ///
+  /// `where:` reads this row's own columns and nothing else, which is what
+  /// buys the `CHECK` in the DDL — so it holds against a seed, a migration,
+  /// `asSystem()` and a raw INSERT, not only against a request. It reaches the
+  /// browser as `x-litestone-required-where`, so ticking Active on the product
+  /// form makes this box required with nothing reloaded.
+  ///
+  /// One asymmetry worth knowing: the CHECK is `IS NOT NULL`, so an empty
+  /// string satisfies the boundary while the browser's own `required` refuses
+  /// it. The form is the stricter of the two here, in the direction that costs
+  /// a keystroke rather than a refused write.
+  description String? @length(0, 2000) @required(where: active,
+                       "A product on sale needs a description — the storefront prints it")
   brand       Brand
 
   /// What this shop records about a product that this schema does not name —

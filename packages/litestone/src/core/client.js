@@ -3035,6 +3035,30 @@ function makeTable(readDb, writeDb, shape, ctx) {
       return out
     }
 
+    // `@required(where: …)` is the same technique as the arc below — rebuild
+    // what the emitter wrote and compare — and it is the branch that makes the
+    // declaration worth having over a hand-written `@@check`. SQLite reports a
+    // violation by the constraint's SOURCE TEXT and has no field to blame, so
+    // without this the refusal is the generic form-level sentence: correct, and
+    // no use to somebody looking at five boxes wondering which one it means.
+    //
+    // The message and the path both come from `requiredFailure`, which is the
+    // one owner of *why this field cannot be left without a value* — so a
+    // conditional required says the same sentence as an unconditional one, and
+    // `@required(where: …, "…")`'s wording is picked up for free by the same
+    // lookup that reads `@required("…")`.
+    const condReq = model?.fields?.find(f => {
+      const req = f.attributes?.find(a => a.kind === 'required' && a.whereSql)
+      if (!req) return false
+      return norm(`NOT (${mapExprCols(req.whereSql, columnMap)}) OR "${col(f.name)}" IS NOT NULL`) === want
+    })
+    if (condReq) {
+      const out = new ValidationError([requiredFailure(condReq)])
+      out.model      = modelName
+      out.constraint = expr
+      return out
+    }
+
     // An @@arc compiles to a CHECK with no `expr` of its own, so it is found by
     // rebuilding the SQL the emitter wrote. Without this branch every arc
     // violation falls through to the generic sentence below, which is the

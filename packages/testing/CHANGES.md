@@ -1,5 +1,16 @@
 # Changes — @frontierjs/testing
 
+## 2026-09-10 — the principal-binding table is imported, not copied
+
+`FJS-D258`. `OPTS_AT` is gone; `CALL_OPTIONS_AT` comes from
+`@frontierjs/junction`, where it sits beside the `ServiceCaller` interface it
+describes and is graded against a real caller in both directions.
+
+**The runtime refusal stays and is not the same check.** Junction's test asks
+whether the table matches the interface in the tree; this one asks whether the
+INSTALLED Junction offers a method this table has never heard of. A version skew
+between two packages is what neither package's own suite can see.
+
 ## `createTestMailer()` — and the two doubles that are deliberately absent
 
 `batteries-13` asked for doubles for mail, storage and cache. Asked of the code

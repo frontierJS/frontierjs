@@ -706,15 +706,15 @@ once; everything else was registered by hand or by a plugin.
 
 In configure order, which is what `requires:` is checked against.
 
-1. `health`
-2. `metrics-store`
-3. `export`
-4. `manifest`
-5. `@frontierjs/auth`
-6. `caravan`
-7. `outbox`
-8. `conduit`
-9. `mailer`
-10. `notifications`
-11. `channels`
-12. `corsPlugin`
+1. `metrics-store`
+2. `export`
+3. `@frontierjs/auth`
+4. `caravan`
+5. `outbox`
+6. `conduit`
+7. `mailer`
+8. `notifications`
+9. `manifest`
+10. `channels`
+11. `corsPlugin`
+12. `health`

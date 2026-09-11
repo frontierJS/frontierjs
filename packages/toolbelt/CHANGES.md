@@ -1,5 +1,55 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-10 — `/predicate` — does this record satisfy a declared expression?
+
+`FJS-D259`. The `.lite` policy expression language, evaluated against one record
+in JavaScript, in SQLite's three-valued logic and with SQLite's comparison
+rules. It was litestone's `evalJs`; litestone is now one of its two callers.
+
+The second caller is a browser, and it is why this moved: a
+`@required(where: …)` condition has to be answered against the record on screen
+as somebody types, and neither sierra nor `@frontierjs/ui` may reach litestone's
+internals. Below the graph is what both may have — the same argument that put
+`/jsonschema`, `/hooks`, `/directives` and `/inflect` here.
+
+**A MOVE and not a copy.** Litestone's `evalJs` is this function with
+litestone's environment passed in, so there is nothing new to drift against and
+the oracle that holds the two policy compilers together still grades these
+bytes. Three things are injected because they cannot be pure: `resolvePath` and
+`resolveCheck` each open a database on the server, and `affinityOf` is the DDL
+emitter's.
+
+What the spec here asserts is the half that oracle cannot see from inside
+litestone — that the function is correct with NOTHING injected, which is the
+browser's situation. The two counter-intuitive parts carry the rows: UNKNOWN is
+not false, and `compare` applies affinity and then orders by storage class,
+where JS `===` does neither.
+## 2026-09-10 — `/gate` owns `canAtLevel`, and the method→position map with it
+
+`FJS-D258`. The kit held the ladder — the scale, `levelPasses`, `gradeStanding` —
+and not the question every renderer actually asks: *would this caller clear this
+gate for this operation*. That lived in Sierra, reachable only through a browser
+client, which is the wrong place for it the moment a second realm needs the same
+answer.
+
+**The method→position map came with it and is the half that fails quietly.** A
+gate declares four positions and a caller names `find`, `patch`, `remove`,
+`restore`. A table missing a row does not throw — it falls through to the gate's
+own key, finds nothing, and answers permissive. `restore` is the sharp one,
+because permissive there is a WRITE.
+
+**Two rows are new against Sierra's table**: `aggregate` maps to `read` and
+`upsert` to `update`. Both were previously unmapped and therefore always
+permitted as affordances, which was wrong in the direction that offers a control
+the boundary refuses. It narrows what a screen offers and changes no enforcement
+— Invariant 6.
+
+The spec asserts the sentinel divergence by enumeration rather than by example.
+Writing it corrected the claim it was written to prove: `levelPasses` and a
+hand-spelled `>=` agree over every gate against every level a resolver mints, and
+part in exactly two cells, both needing a caller AT 9. The overstated version of
+that test fails, which is how the overstatement was found.
+
 ## 2026-09-08 — `/directives` writes as well as reads, and ships a `.d.ts`
 
 `directiveParams(directives)` is `parseDirectives`' inverse, off the same rows.

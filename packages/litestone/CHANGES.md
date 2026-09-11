@@ -1,5 +1,111 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-10 — the policy evaluator moves to toolbelt, and a condition reaches the browser
+
+`FJS-D259`. `evalJs` was here and a condition cannot cross to a browser as a
+VALUE — `@required(where: status == 'shipped')` has to be answered against the
+record on screen, which changes as somebody types. The pure half is
+`@frontierjs/toolbelt/predicate` now and `evalJs` is a call into it with
+litestone's environment passed in.
+
+**A move, not a third compilation**, and the distinction is the whole safety
+argument. `compileSql` and this are still the two halves a row policy is
+compiled into, still held together by `verifyRowPolicies` and
+`test/policy-interpreters.test.ts`. `FJS-195` is a form landing in one compiler
+and not the other; a second CALLER of one compiler is not that. 4739 tests pass
+unchanged across the move, the oracle and the 3VL rows included.
+
+**Two nodes could not move and are injected**: `check()` and a relation path
+each open a database. Their defaults in the kit are the answers litestone gives
+when the hop cannot be made, and they fall opposite ways on purpose — a path
+yields a VALUE and this language spells absent as null, so an allow fails
+closed; a `check()` is a PREDICATE and the SQL half allows when the target has
+no policy. `affinityOf` is the third, because `sqlType` is the DDL emitter's.
+
+`x-litestone-required-where` carries the AST for the client audience. The
+EXPRESSION where `x-litestone-write-policy` is a flag, and the contrast is the
+rule: a write predicate reads the caller and no client can answer it, this one
+reads the row.
+## 2026-09-10 — `@required(where: …)`, and it becomes a CHECK
+
+`FJS-D259`. Required as a CONDITION, attributed to a field — the one sentence
+`IDEAS/declared-field-state.md` named that the tree genuinely could not say.
+
+```
+trackingCode String? @required(where: status == 'shipped',
+                               "A shipped order needs a tracking code")
+```
+
+**One attribute and not a second word.** `@@unique([a], where: …)` and
+`@@index([a], where: …)` are the same shape and neither coined `@@uniqueWhen`.
+Folding it in was forced by the message rather than chosen for tidiness:
+`@required("msg")` is a parse error on an optional field, and a conditional
+required goes on exactly one of those — so a separate attribute could not carry
+wording without two attributes holding the sentence for one rule. The two halves
+now want opposite types and each says so. Bare on an optional field still
+refuses, and the refusal names the third way out.
+
+**The predicate reads this row's own columns and nothing else** — `auth()`,
+`now()`, `check()` and a relation hop are each refused BY NAME, with `@derived`'s
+refusal of `auth()` as the precedent and the same reason under it. `now()` is the
+one worth knowing about: SQLite ACCEPTS a clock in a CHECK, so nothing below the
+parser would catch it, and a row correct when it was written would stop being
+correct with nothing having touched it.
+
+**It expands to a CHECK**, which is the reach a boundary rule cannot have — a
+migration, a seed, `asSystem()` and a raw statement are all held to it. What the
+boundary adds is the half a table constraint cannot do: SQLite reports a
+violation by the constraint's source text and has no field to blame, so a
+hand-written `@@check` refuses with `path: []` and renders over the whole form.
+`asCheckViolation` rebuilds what the emitter wrote — the `@@arc` branch's own
+technique — and answers `requiredFailure(field)`, which was already the one owner
+of that sentence. The message crosses as `x-messages.required` through the path
+that already existed.
+
+**Adding one to a populated table whose rows do not satisfy it FAILS the
+migration** with nothing applied and the database unchanged. The rebuild-failure
+hint reads which of its two causes fired, because a CHECK refusing a rebuild
+means the ROWS are wrong where a type change means the COLUMN is, and those have
+different next moves.
+
+`predicateNames` is shared with `@@index(where:)` and `@@unique(where:)`. The
+WALK is shared because that is where the drift is — a node the language gains is
+one three copies would each have to learn about. The SENTENCES are not: SQLite
+refuses a clock in an index predicate and accepts one in a CHECK, so the same
+fact has a different consequence per structure.
+
+## 2026-09-10 — a field write predicate says so to the client
+
+`FJS-1071`. `@allow('write', expr)` on a field reached the browser as nothing:
+the generated JSON Schema for that column was byte-identical to an unpoliced
+one, in create mode and update mode alike. So a generated form offered a box, a
+person typed in it, the save button went green, and the boundary kept the stored
+value without a word. `example` and `basecamp` carry five real ones between
+them, `isStaff` among them.
+
+**The drop is correct and is untouched.** A write predicate drops rather than
+refuses because the same payload is legitimate for another caller (`FJS-D129`),
+which is exactly why `@system` and `@guarded` refuse BY NAME and this does not.
+What was missing is that the column reached the client indistinguishable from
+one nobody had an opinion about — where `@system` gets `readOnly` and
+`@immutable` gets `readOnly` in update mode, both for this reason.
+
+`x-litestone-write-policy: true`, client audience only. **The FLAG and never the
+predicate**: carrying the expression would put a second reader on the policy
+language, which is a decision of its own.
+
+It is emitted BEFORE the read half's block and **hoisted past the `anyOf`
+wrapper** that block builds. `@allow('all', …)` on a non-optional column takes
+that branch, and a flag left inside `anyOf[0]` is one a consumer reads only if it
+unwraps the union first — which is the difference between a rule that carries it
+and one that silently does not. `bothOpt` in the test is the control: same
+declaration, optional, never enters the branch.
+
+Sierra reads it (`declinedFields`). Every assertion here is PAIRED with the plain
+column beside it, because a generator stamping the flag on everything satisfies
+any test that only asks whether the policed column carries it — measured, that
+stub reds 2 of the new rows and no emit at all reds 4.
+
 ## 2026-09-08 — `x-search`, and `search()` takes an order
 
 Two things the browser could not ask about full-text search.

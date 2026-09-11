@@ -523,6 +523,51 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
 
     applyPresentation(fieldSchema, field)
 
+    // @required(where: expr) — required in the rows the predicate admits.
+    //
+    // The AST and not a flag, which is the opposite of the decision one comment
+    // down — and the difference is what the browser can DO with it. A write
+    // predicate reads the caller, so a client cannot answer it and a flag is
+    // all that is honest. A `@required(where:)` predicate reads THIS ROW's own
+    // columns and nothing else (`FJS-D259` refuses auth(), now(), check() and a
+    // relation hop by name), so the record on screen is the whole of what
+    // answering it takes — and it has to be answered against that record
+    // rather than against the stored one, because the person may have just
+    // picked the status that makes the column required.
+    //
+    // `@frontierjs/toolbelt/predicate` is the evaluator on both ends: the same
+    // function litestone's own `evalJs` is, so the affordance and the boundary
+    // cannot disagree about a row.
+    //
+    // Client audience only. A system caller is not a form.
+    const reqWhere = field.attributes.find(a => a.kind === 'required' && a.where)
+    if (reqWhere && audience === 'client') {
+      fieldSchema['x-litestone-required-where'] = reqWhere.where
+    }
+
+    // @allow('write', expr) — whether this caller may write this column depends
+    // on the ROW, so no keyword on this schema can answer it and `readOnly`
+    // would be a lie for every caller the predicate admits. What the boundary
+    // does when it does not admit them is DROP the value, silently and
+    // deliberately: the same payload is legitimate for somebody else, so a
+    // refusal by name is the wrong answer (the `@system`/`@guarded`/`@computed`
+    // grid in CLAUDE.md rules that). Silent to the boundary is one thing;
+    // silent to the CLIENT is another, and it was both — the column arrived
+    // indistinguishable from an unpoliced one, so a generated form offered a
+    // box, a person typed in it and the save button went green over a write
+    // that never happened (`FJS-1071`).
+    //
+    // The FLAG and not the expression. Carrying the predicate would let a
+    // control answer for the row in hand, and that is a second reader on the
+    // policy language and a decision of its own.
+    //
+    // Emitted before the read block below, which `continue`s on a non-optional
+    // field — `@allow('all', …)` is both halves on one column, and ordering it
+    // the other way drops the write flag for exactly those.
+    if (audience === 'client' &&
+        field.attributes.some(a => a.kind === 'fieldAllow' && a.operations.includes('write')))
+      fieldSchema['x-litestone-write-policy'] = true
+
     // @allow('read', expr) — field is conditionally visible; mark as optional + annotate
     const readAllows = field.attributes.filter(a => a.kind === 'fieldAllow' && a.operations.includes('read'))
     if (readAllows.length && audience === 'client') {
@@ -531,7 +576,18 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       if (!field.type.optional) {
         const adjusted = Object.assign({}, fieldSchema)
         delete adjusted['x-litestone-read-policy']
-        properties[field.name] = { anyOf: [adjusted, { type: 'null' }], 'x-litestone-read-policy': true }
+        // The write flag is hoisted with it. `@allow('all', …)` on a
+        // non-optional column takes this branch, and a flag left inside
+        // `anyOf[0]` is one a consumer reads only if it unwraps the union
+        // first — which is the difference between a rule that carries it and
+        // one that silently does not.
+        const wrote = adjusted['x-litestone-write-policy']
+        delete adjusted['x-litestone-write-policy']
+        properties[field.name] = {
+          anyOf: [adjusted, { type: 'null' }],
+          'x-litestone-read-policy': true,
+          ...(wrote ? { 'x-litestone-write-policy': true } : {}),
+        }
         continue
       }
     }

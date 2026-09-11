@@ -1,7 +1,7 @@
 ---
 id: agent-surface
 status: proposed
-dated: 2026-08-04
+dated: 2026-09-10
 ---
 
 # Idea — The agent surface: an MCP server derived from the seed
@@ -20,6 +20,11 @@ repo.** `FJS-D29` (2026-08-13) gave the word to this side and renamed the fleet
 process Basecamp installs to **Outpost**, under the rule *infrastructure takes
 place nouns, AI takes personified nouns*. So a grep for `agent` outside historical
 files is a grep for this proposal.
+
+**Probed against the tree 2026-09-10, before any code was written.** Three claims
+this file made about the seams were wrong, and the central claim was measured
+rather than argued — see § *What probing changed* and § *The measurement*. Still
+not built; what changed is that the design now names owners that exist.
 
 ---
 
@@ -120,7 +125,7 @@ What it needs that does not exist: **a run that survives a restart with a human 
 the middle of it.** That is 4.19 exactly — a multi-step process, resumable,
 compensating, with a point past which it only goes forward — arriving from a third
 direction after `release-transitions.md` phase 2 and Caravan's ladder. The
-recommendation is not to build a run engine inside `herald`: it is that the agent
+recommendation is not to build a run engine inside `@frontierjs/mcp`: it is that the agent
 run is the **third** caller for the durable-workflow noun, and three callers is when
 a noun gets ruled rather than invented locally for the third time. A run is a Model,
 its steps are Services, and it inherits gates, audit and the derived suites — the
@@ -131,25 +136,88 @@ Three smaller things that come with it, all cheap once the run is a row: an agen
 this agent do* (`compliance-from-the-seed.md`), and a **dry run**, which item 4
 below already names and which is the same projection with every call held.
 
+## What probing changed
+
+Written off the source on 2026-09-10. Each of these was an owner this file named
+from memory, and the tree disagreed; § IV's *doctrine vs. discovery* says the code
+wins and the divergence is written down rather than left.
+
+**1. `bridge.toContext()` is the wrong seam.** It is HTTP-shaped — it reads an
+`X-Service-Method` header, a route id, a `$`-prefixed query string and a multipart
+body, none of which an MCP call has. The in-process path that runs the identical
+pipeline is `app.service(name)` with `{ auth: { user } }` in `CallOptions`, which
+is what `@frontierjs/testing` already binds a principal through. The transport is
+therefore not a fourth bridge; it is a caller.
+
+**2. `canAtLevel()` and `buildGate()` live in Sierra**, which an API-realm package
+may not import (Invariant 1). Both are thin over `@frontierjs/toolbelt/gate`'s
+`levelPasses`, and the ladder already has a ruling about hand copies drifting
+(`FJS-D197`). The move is to `@frontierjs/toolbelt/gate`, with Sierra importing it
+— a fifth copy is the thing that ruling exists to refuse.
+
+**3. Dispatching a tool needs the argument position of `CallOptions` per method,
+and that table was hand-copied once** — as `OPTS_AT` in `@frontierjs/testing`,
+which refuses an unknown method rather than guessing because a guess binds the
+principal at the wrong argument and the call runs as STRANGER. **Done, ahead of
+the surface** (`FJS-D258`): it is `CALL_OPTIONS_AT` in Junction now, beside the
+`ServiceCaller` interface it describes, graded there against a real caller in
+both directions, and the copy is deleted. Junction's check and the consumer's
+refusal ask different questions — *is the table right* and *does the INSTALLED
+Junction offer something this table has never heard of* — so both stay.
+
+## The measurement
+
+The claim under everything here is *the tool list is derived from the seed and
+narrows with the standing*. It was run against `example`'s real app — 38 services,
+76 models, 43 of them gated — by booting the app in process and projecting
+`describe().methods` through each model's `x-gate`:
+
+| Standing | Tools |
+| --- | --- |
+| STRANGER (0) | 94 |
+| USER (4) | 126 |
+| STAFF (5) | 203 |
+| OWNER (6) | 203 |
+
+203 tools declared, 109 of them invisible to a stranger, and no hand-written
+allowlist anywhere. The projection applies the method policy first and the gate
+second, and the two already agree where they overlap: `journalEntries` declares
+`@@gate` 9 for update and delete AND `methods: ['find','get']`, so the locked
+operations are gone before the gate is consulted.
+
+**Which is the hole in the measurement and must be named.** No model in `example`
+offers a method the policy allows and a LOCKED gate refuses, so the projection's
+handling of 9 is unexercised — `levelPasses` against a bare `>=` is exactly the
+`FJS-D197` shape, and this app cannot tell them apart. A fixture with that one
+shape in it is the first test, not the last.
+
+**The permissive-unknown rule is a decision, not a default.** 33 of 76 models
+declare no `@@gate`, and an ungated model contributes every one of its tools at
+level 0 — which is why a stranger sees 94. Sierra's rule is permissive because
+hiding a control the user could have used is the quieter failure; for an agent the
+same tradeoff holds with different stakes on both sides (a tool that always 403s
+burns turns and invites a jailbreak attempt; a hidden one makes the agent useless).
+It stays permissive and the reason is recorded here, because visibility is an
+affordance and Invariant 6 already says the server enforces regardless.
+
 ## What would have to be built
 
-1. **A tool projection.** Service registry + `generateJsonSchema` → MCP tool
-   definitions. Mechanical; both halves exist.
-2. **Per-session tool filtering** via `canAtLevel()` against the session's level.
-3. **An MCP transport.** stdio and HTTP. Junction's bridge already turns a request
-   into a `ServiceContext` and a result into a response — this is a third transport
-   beside HTTP and WS, not a new execution path. Reuse `bridge.toContext()` /
-   `toResponse()` or the boundary duplicates itself, which is the failure mode
-   `packages/junction/src/core/envelope.ts` documents at length for the envelope.
-4. **A read-only mode and a dry-run mode.** Not derivable — an explicit choice, and
-   the first thing anyone will ask for.
-5. **A hold.** A protected call becomes a proposal row, a human approves it by name,
-   and the run resumes. Depends on the durable-workflow noun (4.19) rather than
-   defining one here.
+1. **A tool projection.** `describe()` + `generateJsonSchema` → MCP tool
+   definitions. Mechanical, and now measured; both halves exist.
+2. **Per-session tool filtering** against the session's level, through the kit's
+   `levelPasses` — after the move in change 2 above, not beside it.
+3. **A transport.** stdio and HTTP, dispatching through `app.service(name)` per
+   change 1, so no second execution path exists to diverge from the first.
+4. **A read-only mode and a dry-run mode.** Not derivable — an explicit choice,
+   and the first thing anyone will ask for.
+5. **A hold.** A protected call becomes a proposal row, a human approves it by
+   name, and the run resumes. Depends on the durable-workflow noun (4.19) rather
+   than defining one here.
 
-Proposed home: **`@frontierjs/herald`** (see `IDEAS/package-map.md`). It is a
-Junction plugin plus a transport; it should not live inside junction, because MCP is
-a dependency junction should not acquire.
+**Home: `@frontierjs/mcp` — ruled 2026-09-10, `FJS-D258`.** A Junction plugin
+plus a transport, outside Junction because MCP is a dependency Junction should
+not acquire. The name argument, and the metaphor/plain-word split it rests on,
+are in the ruling rather than restated here.
 
 ## Open questions
 
@@ -177,7 +245,7 @@ a dependency junction should not acquire.
 
 ## See also
 
-- `IDEAS/package-map.md` — `herald`, and where it sits among the proposed packages
+- `IDEAS/package-map.md` — where it sits among the proposed packages
 - `IDEAS/compliance-from-the-seed.md` — the audit and disclosure half
 - `IDEAS/slices.md` — the "a Gate is harder for an agent to get wrong" argument, in
   its original context

@@ -2738,6 +2738,34 @@ function refuseDollarMisuse(ast) {
   ast.body.forEach(walk)
 }
 
+// Every DOTTED dep any `$:` form names, in one list: a bare path watch, a
+// handler's dep list, an ordered group's entries. The root of each is an object
+// something can push through, and two passes need to know that — the analyzer,
+// to decide a `const` reading it is a derivation rather than a value read once,
+// and the emitter, to declare the proxy. Deriving it twice is how the two
+// drifted: the emitter merged all three lists (`FJS-599`) and the analyzer's
+// seed went on reading `watchPaths` alone, so `$: page.query, () => load()`
+// subscribed at runtime while `const urlQuery = { ...page.query }` beside it
+// compiled to a plain const and the filter bar above the table never moved
+// (`FJS-1065`).
+//
+// A BARE dep is not here. Registering a proxy for it would change its accessor
+// from `$$runtime.get($$sig_a)` to `$$proxy_a`, which is the deep-watch opt-in
+// only the bare `$: a` form should trigger — and that form arrives as a
+// watchPath. The emitter reads a bare dep only where a root already exists.
+function dottedWatchDeps(watchPaths, watchHandlers, watchGroups) {
+  return [
+    ...watchPaths.map((p) => p.path),
+    ...watchHandlers.flatMap((wh) => wh.deps.filter((d) => d.includes('.'))),
+    ...watchGroups
+      .flatMap((g) => g.entries.flatMap((e) => e.deps))
+      .filter((d) => d.includes('.')),
+  ]
+}
+
+const watchRootsOf = (paths) =>
+  new Set(paths.map((path) => path.replace(/\?\.|\./g, '.').split('.')[0]))
+
 export function analyzeScript(raw, ast) {
   const vars = {}
   const watchPaths = []
@@ -3435,11 +3463,10 @@ export function analyzeScript(raw, ast) {
       .filter((v) => v.kind !== 'var')
       .map((v) => v.name)
   )
-  // Also include imported names that have $: path watches — they are treated as
-  // reactive proxy roots. A const that references them (e.g. `const style = themeNew`)
+  // Also include imported names any `$:` form watches — they are the emitter's
+  // proxy roots. A const that references one (e.g. `const style = themeNew`)
   // must be detected as derived so it gets a createMemo wrapper, not a static const.
-  watchPaths.forEach((p) => {
-    const root = p.path.replace(/\?\./g, '.').split('.')[0]
+  watchRootsOf(dottedWatchDeps(watchPaths, watchHandlers, watchGroups)).forEach((root) => {
     if (!vars[root]) reactiveSet.add(root)  // only add imports, not local lets
   })
   // A call to a binding THIS SCRIPT holds is a second door reactivity comes
@@ -7112,33 +7139,13 @@ export function emitScript(ctx) {
     imp.specifiers.map((s) => s.local.name)
   ))
 
-  // Paths that need a proxy + watchPath signal. Both `$: obj.path` (a bare
-  // watch) and `$: obj.path, handler` (a watch with a body) depend on the same
-  // registration — without it the dep compiles to a plain read of an inert
-  // object and the handler never fires. Only the bare form was collected here,
-  // so `$: cart.total, () => sync()` silently did nothing even though §4.3
-  // documents it.
-  //
-  // Only DOTTED deps are added from handlers. A bare identifier dep (`$: a,
-  // () => f()`) is already served by reading its signal, and registering a
-  // proxy for it would change its accessor from `$$runtime.get($$sig_a)` to
-  // `$$proxy_a` — which is the deep-watch opt-in that only the bare `$: a` form
-  // should trigger.
-  //
-  // A `$: { }` ordered group's deps are read the same way and were collected
-  // nowhere, so every one of them referenced a signal nothing declared — or,
-  // where no proxy root existed at all, was dropped from the group and the
-  // entry never fired (`FJS-599`).
+  // Paths that need a proxy + watchPath signal. Every `$:` form depends on the
+  // same registration — without it a dep compiles to a plain read of an inert
+  // object and the handler never fires — so the list is `dottedWatchDeps`, which
+  // the analyzer's reactive-root seed reads too.
   const groupDeps = watchGroups.flatMap((g) => g.entries.flatMap((e) => e.deps))
-  const dottedDeps = [
-    ...watchPaths.map((p) => p.path),
-    ...watchHandlers.flatMap((wh) => wh.deps.filter((d) => d.includes('.'))),
-    ...groupDeps.filter((d) => d.includes('.')),
-  ]
-
-  const proxyRoots = new Set(
-    dottedDeps.map((path) => path.replace(/\?\.|\./g, '.').split('.')[0])
-  )
+  const dottedDeps = dottedWatchDeps(watchPaths, watchHandlers, watchGroups)
+  const proxyRoots = watchRootsOf(dottedDeps)
 
   // A BARE dep whose root is already a proxy root is the other half. It adds no
   // root — that is the deep-watch opt-in above — but the emitter reads it as

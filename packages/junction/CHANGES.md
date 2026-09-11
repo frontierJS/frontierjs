@@ -1,5 +1,26 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-10 — `CALL_OPTIONS_AT` — where a principal goes, stated where the interface is
+
+`FJS-D258`. Anything outside this package holding a principal and a method NAME
+rather than a call site has to know which argument carries `CallOptions`, and the
+position is not inferable: it varies by method, an overload with a defaulted
+argument makes `fn.length` lie, and *the last argument if it looks like options*
+reads `create({ auth: … })` as one.
+
+`@frontierjs/testing` had the table by hand, with a comment naming this package
+as the source — a copy that can drift because the source changes without the copy
+being opened. It is exported from here now, beside the `ServiceCaller` interface
+it describes.
+
+**The tripwire moved with it, and grades BOTH directions against a real caller.**
+A one-way check passes while half the table is wrong: a method added here is
+invisible to a walk over the table, and a name the caller no longer offers is
+invisible to a walk over the caller. Measured against stubs — removing one row
+reds one test, adding a name the caller does not offer reds the other. The
+control is that the caller was really built, since two set-difference assertions
+both pass against a caller offering nothing.
+
 ## 2026-09-09 — `junction.config.js` declares, `app.configure()` constructs
 
 Eleven of the thirteen keys the file offered for middleware and plugins were read
