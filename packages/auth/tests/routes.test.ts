@@ -22,7 +22,7 @@ import {
   UserNotFoundError, AuthConfigError,
 } from '../errors.ts'
 import { createAuthPlugin } from '../plugin.ts'
-import { makeAuth, type Harness } from './harness.ts'
+import { makeAuth, type Harness, signedIn } from './harness.ts'
 
 let h: Harness
 let app: any
@@ -372,7 +372,7 @@ describe('cookieAuth mode', () => {
     const cookieValue = a.headers['set-cookie'].split(';')[0].split('=')[1]
 
     await request(cookieApp).post('/auth/register').send({ email: email('bearer-wins'), password: 'pw-1' })
-    const other = await scoped.auth.login(email('bearer-wins'), 'pw-1')
+    const other = signedIn(await scoped.auth.login(email('bearer-wins'), 'pw-1'))
 
     const me = await request(cookieApp).get('/account/me')
       .set('cookie', `session=${cookieValue}`)

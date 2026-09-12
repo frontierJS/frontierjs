@@ -149,17 +149,17 @@ title: Environment
 
   $: variables = environment?.variables ?? []
   const APP_COLUMNS = [
-    { key: 'name',    label: 'Name' },
-    { key: 'type',    label: 'Type' },
-    { key: 'status',  label: 'Status' },
-    { key: 'domain',  label: 'Domain' },
-    { key: 'actions', label: 'Actions', hideLabel: true },
+    { name: 'name',    label: 'Name' },
+    { name: 'type',    label: 'Type' },
+    { name: 'status',  label: 'Status' },
+    { name: 'domain',  label: 'Domain' },
+    { name: 'actions', label: 'Actions', hideLabel: true },
   ]
 
   const VARIABLE_COLUMNS = [
-    { key: 'key',     label: 'Key' },
-    { key: 'value',   label: 'Value' },
-    { key: 'actions', label: 'Actions', hideLabel: true },
+    { name: 'key',     label: 'Key' },
+    { name: 'value',   label: 'Value' },
+    { name: 'actions', label: 'Actions', hideLabel: true },
   ]
 </script>
 

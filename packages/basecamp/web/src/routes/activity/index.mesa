@@ -126,11 +126,11 @@ title: Activity
   const actorOf = (r) => r.actorId ? (people[r.actorId] ?? r.actorId) : r.actorType
   const when    = (iso) => iso ? new Date(iso).toLocaleString() : '—'
   const ACTIVITY_COLUMNS = [
-    { key: 'when',    label: 'When' },
-    { key: 'who',     label: 'Who' },
-    { key: 'did',     label: 'Did' },
-    { key: 'to',      label: 'To' },
-    { key: 'changed', label: 'What changed' },
+    { name: 'when',    label: 'When' },
+    { name: 'who',     label: 'Who' },
+    { name: 'did',     label: 'Did' },
+    { name: 'to',      label: 'To' },
+    { name: 'changed', label: 'What changed' },
   ]
 
   // `AuditEvent.diff` is `{ field: { before, after } }`, written by the audit

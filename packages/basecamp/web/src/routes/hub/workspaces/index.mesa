@@ -70,15 +70,15 @@ title: Hub workspaces
   $: active    = rows.filter(w => w.status === 'active').length
   $: suspended = rows.length - active
   const HUB_WORKSPACE_COLUMNS = [
-    { key: 'workspace', label: 'Workspace' },
-    { key: 'type',      label: 'Type' },
-    { key: 'status',    label: 'Status' },
-    { key: 'members',   label: 'Members' },
-    { key: 'servers',   label: 'Servers' },
-    { key: 'projects',  label: 'Projects' },
-    { key: 'owner',     label: 'Owner' },
-    { key: 'created',   label: 'Created' },
-    { key: 'actions',   label: 'Actions', hideLabel: true },
+    { name: 'workspace', label: 'Workspace' },
+    { name: 'type',      label: 'Type' },
+    { name: 'status',    label: 'Status' },
+    { name: 'members',   label: 'Members' },
+    { name: 'servers',   label: 'Servers' },
+    { name: 'projects',  label: 'Projects' },
+    { name: 'owner',     label: 'Owner' },
+    { name: 'created',   label: 'Created' },
+    { name: 'actions',   label: 'Actions', hideLabel: true },
   ]
 </script>
 

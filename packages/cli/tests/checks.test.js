@@ -140,7 +140,17 @@ const CLEAN = {
   // RUNS over the clean tree rather than skipping — a rule that only ever skips
   // is what this file exists to catch — and finds nothing, because a name that
   // claims its own folder is the shape the rule is quiet on.
-  'web/src/routes/leads/index.mesa':    '<div></div>\n',
+  // It also renders a `<Table>`, so `table-column-key` RUNS over the clean tree
+  // rather than skipping — a rule that only ever skips is what this file exists
+  // to catch — and finds nothing, because a column names its field `name`, the
+  // spelling the schema and `resource.columns()` already use. The `ssh_key:`
+  // beside it is the shape the rule must stay quiet on: an ordinary object key
+  // that ENDS in `key`, which is why the match is on a word boundary.
+  'web/src/routes/leads/index.mesa':    '<script>\n' +
+                                        "  import Table from '@frontierjs/ui/components/display/Table.mesa'\n" +
+                                        "  const columns = [{ name: 'ref', label: 'Reference', sortable: true }]\n" +
+                                        "  const LABELS = { ssh_key: 'SSH key' }\n" +
+                                        '</script>\n<Table {columns} rows={[]} />\n',
   'web/src/routes/leads/_leads.Row.mesa': '<tr></tr>\n',
   'web/src/resources/Lead.mesa':        resource('leads'),
   'web/src/resources/Account.mesa':     resource('accounts'),
@@ -306,6 +316,91 @@ describe('the clean app', () => {
     // rules could not see is the result this file is written to make impossible.
     expect(skipped).toEqual([])
     expect(ran.length).toBe(RULES.filter(r => r.scope === 'app').length)
+  })
+})
+
+describe('a <Table> column names its field (FJS-1081)', () => {
+  // Every firing is PAIRED with the legitimate shape one word away. The rule
+  // reads a property NAME, and `key` is an ordinary one — a rule that fired on
+  // every `key:` would satisfy any test asking only about the broken column.
+  const page = (body) =>
+    "<script>\n  import Table from '@frontierjs/ui/components/display/Table.mesa'\n" +
+    `  ${body}\n</script>\n<Table {columns} rows={[]} />\n`
+
+  test('a column spelled `key` is an error, and it carries the whole fix', () => {
+    const root = tree('tck-bad', { 'web/src/routes/a.mesa': page("const columns = [{ key: 'ref', label: 'Reference' }]") })
+    const { findings } = only(root, 'table-column-key')
+    expect(findings.length).toBe(1)
+    expect(findings[0].edit).toMatchObject({ was: 'key', replacement: 'name' })
+  })
+
+  test('a column spelled `name` fires nothing', () => {
+    const root = tree('tck-good', { 'web/src/routes/a.mesa': page("const columns = [{ name: 'ref', label: 'Reference' }]") })
+    expect(only(root, 'table-column-key').findings).toEqual([])
+  })
+
+  test('an ordinary property that ENDS in key is not a column', () => {
+    // `ssh_key:` and `provider_key:` are live in basecamp's own screens. The
+    // word boundary is the whole of what tells them apart, so the control is a
+    // page that carries both them and a correct column.
+    const root = tree('tck-suffix', { 'web/src/routes/a.mesa':
+      page("const LABELS = { ssh_key: 'SSH key', provider_key: 'Provider key' }\n" +
+           "  const columns = [{ name: 'ref', label: 'Reference' }]") })
+    expect(only(root, 'table-column-key').findings).toEqual([])
+  })
+
+  test('a `key` in a file that renders no Table is not judged', () => {
+    // Advice that is wrong is worse than none: a keyed each, a KeyboardEvent
+    // and a lookup table all spell it `key` and none of them is a column.
+    const root = tree('tck-elsewhere', { 'web/src/routes/a.mesa':
+      "<script>\n  const rows = [{ key: 'a', label: 'A' }]\n</script>\n" })
+    const { findings, skipped } = only(root, 'table-column-key')
+    expect(findings).toEqual([])
+    expect(skipped.length).toBe(1)
+  })
+
+  test('the translating map is reported and is deliberately NOT fixable', () => {
+    // Collapsing `cols.map(c => ({…}))` to a spread is a change to the
+    // expression around the match, so a partial fix would leave a map that no
+    // longer maps anything — which is a green check over the bug.
+    const root = tree('tck-map', { 'web/src/routes/a.mesa':
+      page('const columns = [...cols.map(c => ({ key: c.name, label: c.label }))]') })
+    const { findings } = only(root, 'table-column-key')
+    expect(findings.length).toBe(1)
+    expect(findings[0].edit).toBeUndefined()
+  })
+})
+
+describe('the router speaks pathname and search (FJS-1083)', () => {
+  const page = (body) => `<script>\n  import { page, goto } from '@frontierjs/sierra/router'\n  ${body}\n</script>\n`
+
+  test('a retired `page.path` is an error', () => {
+    const root = tree('ppr-bad', { 'web/src/routes/a.mesa': page("function apply(q) { goto(page.path.split('?')[0], q) }") })
+    const { findings } = only(root, 'page-path-retired')
+    expect(findings.length).toBe(1)
+    // No fix: which half the caller wanted is the whole reason the field split.
+    expect(findings[0].edit).toBeUndefined()
+  })
+
+  test('`to.path` on a navigation context is retired with it', () => {
+    // The live defect was here: an exact publicRoutes rule compared against a
+    // path carrying the query stopped matching the URL the guard itself writes.
+    const root = tree('ppr-to', { 'web/src/routes/a.mesa': page('const p = to.path') })
+    expect(only(root, 'page-path-retired').findings.length).toBe(1)
+  })
+
+  test('the two replacements fire nothing', () => {
+    const root = tree('ppr-good', { 'web/src/routes/a.mesa':
+      page('const here = page.pathname\n  const back = page.pathname + page.search') })
+    expect(only(root, 'page-path-retired').findings).toEqual([])
+  })
+
+  test('an ordinary `.path` on something else is not judged', () => {
+    // `route.path` is the matched PATTERN and `node.path` is a scanner field;
+    // both are live in this repo and neither is the retired name.
+    const root = tree('ppr-other', { 'web/src/routes/a.mesa':
+      page('const a = route.path\n  const b = node.path\n  const c = join(x.path, y)') })
+    expect(only(root, 'page-path-retired').findings).toEqual([])
   })
 })
 

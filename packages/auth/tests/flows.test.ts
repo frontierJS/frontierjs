@@ -18,7 +18,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { createLitestoneAuth } from '../auth.ts'
 import { BCRYPT_COST, DUMMY_HASH, API_KEY_PREFIX, generateSessionToken, generateApiKey } from '../crypto.ts'
-import { TEST_KEY, makeAuth, rejectsWith, type Harness } from './harness.ts'
+import { TEST_KEY, makeAuth, rejectsWith, type Harness, signedIn } from './harness.ts'
 import {
   InvalidCredentialsError, EmailTakenError,
   InvalidTokenError, UserNotFoundError, AuthConfigError,
@@ -41,7 +41,7 @@ async function freshUser(name: string, password = 'pw-correct-1') {
 describe('login', () => {
   test('succeeds with the right password and returns a session token', async () => {
     const u = await freshUser('login-ok')
-    const { token, user } = await h.auth.login(u.email, u.password)
+    const { token, user } = signedIn(await h.auth.login(u.email, u.password))
 
     expect(token).toBeTruthy()
     expect(user.email).toBe(u.email)
@@ -212,7 +212,7 @@ describe('createUser', () => {
 describe('verifySession', () => {
   test('returns a context for a live token', async () => {
     const u = await freshUser('vs-live')
-    const { token } = await h.auth.login(u.email, u.password)
+    const { token } = signedIn(await h.auth.login(u.email, u.password))
     expect((await h.auth.verifySession(token))?.email).toBe(u.email)
   })
 
@@ -238,7 +238,7 @@ describe('verifySession', () => {
 
   test('returns null after logout', async () => {
     const u = await freshUser('vs-logout')
-    const { token } = await h.auth.login(u.email, u.password)
+    const { token } = signedIn(await h.auth.login(u.email, u.password))
     await h.auth.logout(token)
     expect(await h.auth.verifySession(token)).toBeNull()
   })
@@ -257,13 +257,13 @@ describe('password reset', () => {
 
     await h.auth.confirmPasswordReset!(h.resetToken(), 'pw-new-2')
 
-    expect((await h.auth.login(u.email, 'pw-new-2')).token).toBeTruthy()
+    expect((signedIn(await h.auth.login(u.email, 'pw-new-2'))).token).toBeTruthy()
     await rejectsWith(() => h.auth.login(u.email, u.password), InvalidCredentialsError)
   })
 
   test('confirm INVALIDATES every pre-existing session', async () => {
     const u = await freshUser('pr-sessions')
-    const live = await h.auth.login(u.email, u.password)
+    const live = signedIn(await h.auth.login(u.email, u.password))
     expect(await h.auth.verifySession(live.token)).not.toBeNull()
 
     await h.auth.requestPasswordReset!(u.email)
@@ -308,7 +308,7 @@ describe('email verification', () => {
     const user = await h.sys.user.findFirst({ where: { email: u.email } })
 
     // Before: emailVerified false → verifiedAt null → grades VISITOR
-    const before = await h.auth.verifySession((await h.auth.login(u.email, u.password)).token)
+    const before = await h.auth.verifySession((signedIn(await h.auth.login(u.email, u.password))).token)
     expect(before!.verifiedAt).toBeNull()
 
     await h.auth.requestEmailVerification!(user.id)
@@ -372,7 +372,7 @@ describe('tokens do not cross protocols', () => {
       InvalidTokenError,
     )
     // and the real password still works
-    expect((await h.auth.login(u.email, u.password)).token).toBeTruthy()
+    expect((signedIn(await h.auth.login(u.email, u.password))).token).toBeTruthy()
   })
 })
 
@@ -477,7 +477,7 @@ describe('api keys', () => {
 
   test('a session token still authenticates, and is not an api key', async () => {
     const u = await freshUser('ak-not-session')
-    const { token } = await h.auth.login(u.email, u.password)
+    const { token } = signedIn(await h.auth.login(u.email, u.password))
 
     const ctx = await h.auth.verifySession(token)
     expect(ctx!.authMethod).toBe('session')
@@ -545,7 +545,7 @@ describe('api keys', () => {
     await expect(h.auth.revokeApiKey!(String(pw.id), { userId: user.id })).rejects.toThrow(/No API key/)
     expect(await h.sys.credential.findUnique({ where: { id: pw.id } })).not.toBeNull()
     // and the password still works
-    expect((await h.auth.login(u.email, u.password)).token).toBeTruthy()
+    expect((signedIn(await h.auth.login(u.email, u.password))).token).toBeTruthy()
   })
 })
 
@@ -555,7 +555,7 @@ describe('deleteUser', () => {
   test('removes the user and every credential, session and pending token', async () => {
     const u    = await freshUser('del')
     const user = await h.sys.user.findFirst({ where: { email: u.email } })
-    await h.auth.login(u.email, u.password)
+    signedIn(await h.auth.login(u.email, u.password))
     await h.auth.requestPasswordReset!(u.email)
     await h.auth.createApiKey!(user.id)
 
@@ -749,7 +749,7 @@ describe('auth records what @@log(audit) cannot see', () => {
   test('logout names the session that ended and who owned it', async () => {
     const h = await makeAuth()
     const u: any = await h.auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
-    const { token } = await h.auth.login('a@b.co', 'correct-horse-1')
+    const { token } = signedIn(await h.auth.login('a@b.co', 'correct-horse-1'))
 
     const rows = await trail(h, () => h.auth.logout(token))
     const row  = rows.find((r: any) => r.operation === 'logout')
@@ -851,7 +851,7 @@ model Verification {
     try {
       await auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
 
-      const { token } = await auth.login('a@b.co', 'correct-horse-1')
+      const { token } = signedIn(await auth.login('a@b.co', 'correct-horse-1'))
       expect(token).toBeTruthy()
 
       await expect(auth.login('a@b.co', 'wrong')).rejects.toThrow()
@@ -969,7 +969,7 @@ describe('the auth hooks', () => {
   test('onLogout runs before the delete, so refusing keeps the session', async () => {
     const h = await makeAuth({ onLogout: () => { throw new Error('not now') } })
     await h.auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
-    const { token } = await h.auth.login('a@b.co', 'correct-horse-1')
+    const { token } = signedIn(await h.auth.login('a@b.co', 'correct-horse-1'))
 
     await expect(h.auth.logout(token)).rejects.toThrow('not now')
     expect(await h.sys.session.count()).toBe(1)
@@ -979,7 +979,7 @@ describe('the auth hooks', () => {
   test('no hooks configured is the behavior that already existed', async () => {
     const h = await makeAuth()
     await h.auth.createUser({ email: 'a@b.co', password: 'correct-horse-1', name: 'A' })
-    const { token } = await h.auth.login('a@b.co', 'correct-horse-1')
+    const { token } = signedIn(await h.auth.login('a@b.co', 'correct-horse-1'))
     expect(token).toBeTruthy()
     await h.auth.logout(token)
     expect(await h.sys.session.count()).toBe(0)

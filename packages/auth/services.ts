@@ -122,7 +122,16 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     // Without `methods` the base service answers every CRUD verb it was not
     // given, and on a service with no model that is a 500 rather than a
     // refusal. It also throws at construction on a name not defined below.
-    methods: ['get', 'changePassword'],
+    methods: [
+      'get', 'changePassword',
+      // The second factor. On `account` rather than a service of its own for the
+      // reason `changePassword` is here: it is a credential this account
+      // authenticates with, not a collection the account owns — which is what
+      // `sessions` and `api-keys` are. A fourth service would also be a fourth
+      // configurable name, a fourth collision check and a fourth thing to
+      // document, for one fact about one account.
+      'totpStatus', 'setupTotp', 'confirmTotp', 'disableTotp', 'regenerateRecoveryCodes',
+    ],
 
     // GET /account/me — the SessionContext the server built, not a User row.
     // A UI needs what the request will be graded as, which is the session; the
@@ -154,6 +163,76 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
 
       await need('changePassword')(user.userId, currentPassword, newPassword)
       return { ok: true }
+    },
+
+    // ── The second factor ────────────────────────────────────────────────
+    //
+    // Every method here is named exactly as the provider names it, so there is
+    // no translation to keep in step — `need()` reads the same key a caller
+    // typed. The three that change what the account REQUIRES take the password
+    // again and are refused inside a support episode; reading whether it is on
+    // is neither, for `sessions.find`'s reason: seeing what somebody sees is
+    // what an episode is for.
+
+    /** Is it on, and how many ways back are left. What a settings screen reads. */
+    async totpStatus(ctx: ServiceContext) {
+      const user = caller(ctx)
+      return need('totpStatus')(user.userId)
+    },
+
+    /**
+     * Begin enrollment. Answers the secret and the URI to render as a QR code.
+     *
+     * Enables nothing — `confirmTotp` does. A screen that treated this as *on*
+     * would be describing an account that still signs in with a password alone.
+     */
+    async setupTotp(ctx: ServiceContext) {
+      const user = caller(ctx)
+      refuseInSupport(user, 'enroll a second factor')
+      const { currentPassword } = (ctx.data ?? {}) as Record<string, string>
+      if (!currentPassword) throw new BadRequest('currentPassword is required')
+
+      return need('setupTotp')(user.userId, currentPassword)
+    },
+
+    /**
+     * Prove the enrollment works, and switch it on. Answers the recovery codes.
+     *
+     * Refused in a support episode although it takes no password: the SUBJECT
+     * may have an enrollment in flight, and an operator finishing it would be
+     * putting a factor on an account it outlives the episode on.
+     *
+     * The codes are answered ONCE and are unreadable afterwards, so a caller
+     * that drops this response has dropped them.
+     */
+    async confirmTotp(ctx: ServiceContext) {
+      const user = caller(ctx)
+      refuseInSupport(user, 'enable a second factor')
+      const { code } = (ctx.data ?? {}) as Record<string, string>
+      if (!code) throw new BadRequest('code is required')
+
+      return need('confirmTotp')(user.userId, code)
+    },
+
+    /** Switch it off and forget the secret and every recovery code. */
+    async disableTotp(ctx: ServiceContext) {
+      const user = caller(ctx)
+      refuseInSupport(user, 'disable a second factor')
+      const { currentPassword } = (ctx.data ?? {}) as Record<string, string>
+      if (!currentPassword) throw new BadRequest('currentPassword is required')
+
+      await need('disableTotp')(user.userId, currentPassword)
+      return { ok: true }
+    },
+
+    /** Fresh recovery codes; the old ones stop working. Answered once. */
+    async regenerateRecoveryCodes(ctx: ServiceContext) {
+      const user = caller(ctx)
+      refuseInSupport(user, 'regenerate recovery codes')
+      const { currentPassword } = (ctx.data ?? {}) as Record<string, string>
+      if (!currentPassword) throw new BadRequest('currentPassword is required')
+
+      return need('regenerateRecoveryCodes')(user.userId, currentPassword)
     },
   }))
 

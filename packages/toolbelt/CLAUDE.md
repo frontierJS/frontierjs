@@ -56,8 +56,10 @@ src/directives/      the `$` convention — which params are directives, how a
                      bag of them splits into filters + directives, and the way
                      back. Two boundaries read it (junction's bridge, sierra's
                      router) and two callers WRITE one: junction's browser
-                     client, and a page rebuilding a URL. Ships a `.d.ts`, for
-                     `/query`'s reason
+                     client, and a page rebuilding a URL. Also `orderByPair` and
+                     `orderByValue`, the one directive whose VALUE has three
+                     legal shapes — read by `<Table>`, which is a third realm
+                     again (`FJS-1077`). Ships a `.d.ts`, for `/query`'s reason
 src/query/           what a query STRING means — types, structure, and the way
                      back. Sibling of /directives: that one says which params
                      are directives, this one says what the values are. Three
@@ -406,4 +408,4 @@ here. An import of either name is stale, and the published `@frontierjs/utils`
 | `inflect` | `packages/litestone`: `bun run test` (table names), `packages/junction` and `packages/sierra`: `bun run test` (model resolution). A rule changed here renames tables — read the DDL snapshot diff before believing a green run |
 | `units` | `packages/toolbelt`: `bun run test`, then `example`: `verify` and `verify:site` — the prices on a live screen and in a PRERENDERED file, which is the one place the formatter runs in node with no browser under it |
 | `gate` | `packages/litestone`: `bun run test` (the boundary that enforces it) · `packages/junction`: `bun run test` — `session-gate-level.test.ts` asserts the export IS the kit's binding, which is the assertion four hand copies could not make · `packages/sierra`: `bun run test` (the screen's verdict). The kit's own spec walks the whole 216-case grid and the whole 0-9 square, because the drift was one branch and asking one grader about one caller is what hid it |
-| `directives` | `packages/junction`: `bun run test` — the bridge strips by this table, and `live-order.test.ts` asserts both transports only emit names it holds. Then `packages/sierra`: `bun run test` (`page-query.test.js`), and `example`: `verify` for a real navigation |
+| `directives` | `packages/junction`: `bun run test` — the bridge strips by this table, and `live-order.test.ts` asserts both transports only emit names it holds. Then `packages/sierra`: `bun run test` (`page-query.test.js`), and `example`: `verify` for a real navigation. **The orderBy pair has a third caller and a browser is the only place it runs**: `packages/ui`: `test:browser`, whose `Table — the modes` pushes the object and bracket-indexed shapes through the prop, each paired with a header that must stay unmarked |

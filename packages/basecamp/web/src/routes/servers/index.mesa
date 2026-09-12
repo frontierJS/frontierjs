@@ -39,10 +39,6 @@ title: Servers
   $: orderBy = page.directives.orderBy ?? ''
   $: offset  = Number(page.directives.offset ?? 0)
 
-  // Table binds a key and a direction; the URL carries the one string junction
-  // parses. `-name` is descending — the same spelling the API accepts.
-  $: sortKey = orderBy.replace(/^-/, '')
-  $: sortDir = orderBy.startsWith('-') ? 'desc' : 'asc'
   $: current = Math.floor(offset / PER_PAGE) + 1
 
   // Both lists come from the schema's enums, through the JSON Schema the build
@@ -69,15 +65,15 @@ title: Servers
     if (!d.orderBy) delete d.orderBy
     if (!d.offset)  delete d.offset
 
-    goto('/servers/', {
-      ...q,
-      ...(d.orderBy ? { $orderBy: d.orderBy } : {}),
-      ...(d.offset  ? { $offset:  d.offset  } : {}),
-    })
+    // `goto` writes the `$` spelling off the same table the router reads one
+    // with, so this page names no transport key (Invariant 10).
+    goto('/servers/', q, { directives: d })
   }
 
-  function sortBy(key, dir) {
-    apply({ directives: { orderBy: dir === 'desc' ? `-${key}` : key } })
+  // `<Table>` reports the whole ordering, so this page names no sort shape of
+  // its own — which is what stopped the three callers from disagreeing.
+  function sortBy(next) {
+    apply({ directives: { orderBy: next } })
   }
 
   function goPage(n) {
@@ -161,13 +157,13 @@ title: Servers
   // sorted or paginated in SQL and `$checkOrderBy` refuses it by name, so
   // offering the header would be offering a 400.
   const SERVER_COLUMNS = [
-    { key: 'name',            label: 'Name',           sortable: true },
-    { key: 'status',          label: 'Status',         sortable: true },
-    { key: 'role',            label: 'Role',           sortable: true },
-    { key: 'region',          label: 'Region',         sortable: true },
-    { key: 'ipAddress',       label: 'Address' },
-    { key: 'lastHeartbeatAt', label: 'Last heartbeat', sortable: true },
-    { key: 'actions',         label: 'Actions', hideLabel: true },
+    { name: 'name',            label: 'Name',           sortable: true },
+    { name: 'status',          label: 'Status',         sortable: true },
+    { name: 'role',            label: 'Role',           sortable: true },
+    { name: 'region',          label: 'Region',         sortable: true },
+    { name: 'ipAddress',       label: 'Address' },
+    { name: 'lastHeartbeatAt', label: 'Last heartbeat', sortable: true },
+    { name: 'actions',         label: 'Actions', hideLabel: true },
   ]
 </script>
 
@@ -230,11 +226,11 @@ title: Servers
     </div>
   </article>
 {:else}
-  <!-- The sort pair is PUSHED from the URL and pushed back out by `onsort`.
+  <!-- The ordering is PUSHED from the URL and pushed back out by `onsort`.
        Binding it would let the component own the sort, and the component
        cannot put it in the address bar. -->
   <Table id="server-rows" columns={SERVER_COLUMNS} rows={rows} striped
-         sortKey={sortKey} sortDir={sortDir} onsort={sortBy}>
+         orderBy={orderBy} onsort={sortBy}>
     {#snippet row(server)}
       <tr>
         <td><a href={`/servers/${server.id}/`}>{server.name}</a></td>

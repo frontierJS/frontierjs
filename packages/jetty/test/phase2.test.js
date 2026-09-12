@@ -224,6 +224,56 @@ group('auth flow')
     catch (e) { ok('login throws on missing token in response') }
   }
 
+  // A login that owes a second factor. Nothing is stored, nothing is upgraded,
+  // and the broadcast says WAITING rather than signed in — a popup that treated
+  // this as a session would show a signed-in toolbar over no session at all.
+  {
+    const { adapter, storage, broadcasts, auth } = setup({
+      'auth.login':         async () => ({ awaitingCode: true, expiresAt: '2030-01-01T00:00:00.000Z' }),
+      'auth.completeLogin': async ({ code }) => code === '123456'
+        ? ({ token: 'T3', user: { id: 3 } })
+        : (() => { throw new Error('Invalid code') })(),
+    })
+
+    const pending = await auth.login({ email: 'a@b' })
+    if (pending.awaitingCode === '2030-01-01T00:00:00.000Z') ok('login answers the pending attempt, not a session')
+    if (pending.authenticated === false && pending.user === null) ok('a challenge is not authenticated')
+    if (!storage._map.has('tok')) ok('a challenge persists no token')
+    if (adapter._token() === null) ok('a challenge does not upgrade the connection')
+    if (broadcasts.length === 1 && !broadcasts[0].payload.authenticated) {
+      ok('the waiting state is broadcast — the popup that asked may already be gone')
+    } else {
+      bad('challenge broadcast wrong', JSON.stringify(broadcasts))
+    }
+
+    // A wrong code leaves the attempt exactly where it was: still nothing stored.
+    try { await auth.submitCode('000000'); bad('a wrong code should throw') }
+    catch { ok('a wrong code throws') }
+    if (!storage._map.has('tok')) ok('a wrong code stores nothing')
+
+    // PAIRED: the right one finishes every half login does.
+    broadcasts.length = 0
+    const session = await auth.submitCode('123456')
+    if (session.user?.id === 3 && session.authenticated) ok('submitCode returns the session')
+    if (storage._map.get('tok') === 'T3') ok('submitCode persists the token')
+    if (adapter._token() === 'T3') ok('submitCode upgrades the connection')
+    if (broadcasts.length === 1 && broadcasts[0].payload.authenticated) ok('submitCode broadcasts the session')
+  }
+
+  // The ticket never reaches a page or a port: `submitCode` takes a code and
+  // nothing else, which is what makes cookie mode work unchanged.
+  {
+    let seen = null
+    const { auth } = setup({
+      'auth.login':         async () => ({ awaitingCode: true, expiresAt: null }),
+      'auth.completeLogin': async (args) => { seen = args; return { token: 'T4', user: { id: 4 } } },
+    })
+    await auth.login({})
+    await auth.submitCode('654321')
+    if (seen && Object.keys(seen).join() === 'code') ok('the second step sends the code alone')
+    else bad('the second step sent more than a code', JSON.stringify(seen))
+  }
+
   // Logout clears
   {
     const { adapter, storage, broadcasts, auth } = setup({

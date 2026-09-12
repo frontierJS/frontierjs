@@ -1,5 +1,22 @@
 # Changes
 
+## 2026-09-12 — `<Table>` takes the ordering, not a pair
+
+`FJS-1077`. `sortKey` and `sortDir` are replaced by one `orderBy` — the
+`$orderBy` directive itself, in any of its legal shapes — and `onsort` reports
+an `orderBy` rather than a `(key, dir)`.
+
+The component derives its own marker through
+`@frontierjs/toolbelt/directives`' `orderByPair`. It belongs here because the
+marker is `aria-sort`, which was already this component's; what it ends is three
+pages deriving that pair by hand, where one threw on the object form and two
+answered a column named `0` on the bracket-indexed one. The second half is the
+report: two pages spelled the same click `{name:'desc'}` and `-name`, so a page
+now names no sort shape at all.
+
+`bind:orderBy` is still how the component owns an uncontrolled sort — one
+bindable where there were two.
+
 ## 2026-09-10 — a withheld column says so
 
 `<Form>` asks `resource.withheld(record)` and passes the names, beside `sealed`

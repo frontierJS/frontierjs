@@ -16,6 +16,14 @@ import { parseTtl, Unauthorized, BadRequest, Forbidden, rateLimitHook } from '@f
 import type { AuthPluginOptions }                                   from './types.ts'
 import { createAuthServices }                                       from './services.ts'
 import { OAUTH_STATE_COOKIE }                                      from './oauth.ts'
+
+/**
+ * Where a half-finished login lives in cookie mode.
+ *
+ * Named like the session cookie rather than after the model, because what a
+ * browser holds is a credential in flight and not a row.
+ */
+const CHALLENGE_COOKIE = 'login_challenge'
 import type { AuthOAuth }                                          from './oauth.ts'
 
 // Rate limiting is junction's `rateLimitHook`, not a copy of it.
@@ -180,6 +188,14 @@ export function createAuthPlugin(
         await auth.createUser({ email, password, name })
         const result = await auth.login(email, password)
 
+        // An account created a line ago has no second factor, so this branch is
+        // unreachable — asserted rather than assumed, because the alternative is
+        // a cast, and a cast here would read `undefined.userId` if a provider ever
+        // enrolled a factor at registration.
+        if ('challenge' in result) {
+          throw new BadRequest('This provider requires a second factor on a new account')
+        }
+
         // Trigger email verification if the IAuth implementation supports it.
         // The email is sent via the onEmailVerificationRequested callback
         // configured in createLitestoneAuth opts — not handled here.
@@ -202,6 +218,37 @@ export function createAuthPlugin(
         if (!password) throw new BadRequest('password is required')
 
         const result = await auth.login(email, password)
+        return respond(ctx, result, cookieAuth, cookieMaxAge)
+      })
+
+      // ── POST /auth/login/challenge ───────────────────────────────────
+      //
+      // The second step, and a ROUTE for the same reason `/login` is one: it is
+      // what produces a session, so it cannot be gated by holding one
+      // (`FJS-D20`). Behind the same limiter as `/login` — a second factor is
+      // six digits, and an attempt here costs an attacker the same as an attempt
+      // there.
+
+      app.post(`${prefix}/login/challenge`, async (ctx: TransportContext) => {
+        loginLimiter(ctx)
+
+        if (!auth.completeLogin) {
+          throw new BadRequest('This auth provider does not issue login challenges')
+        }
+
+        const { challenge, code } = body(ctx)
+        // Cookie mode keeps the ticket out of page JavaScript, so the body has no
+        // `challenge` to carry and the cookie is the only place it exists.
+        const ticket = cookieAuth ? ctx.cookies?.[CHALLENGE_COOKIE] ?? null : challenge ?? null
+
+        if (!ticket) throw new BadRequest('challenge is required')
+        if (!code)   throw new BadRequest('code is required')
+
+        const result = await auth.completeLogin(ticket, code)
+        // Spent either way: the ticket is single-use, and leaving the cookie in
+        // place means the next failed password login answers with a stale one
+        // still in the jar.
+        if (cookieAuth) ctx.setCookie?.(CHALLENGE_COOKIE, '', { maxAge: 0, path: '/' })
         return respond(ctx, result, cookieAuth, cookieMaxAge)
       })
 
@@ -544,7 +591,7 @@ export function createAuthPlugin(
 // So a declared field is a string or the request is a 400 naming it, and a key
 // not declared here does not travel. Presence is still each handler's own
 // question — this one only answers what KIND of thing arrived.
-const BODY_FIELDS = ['email', 'password', 'name', 'token', 'subjectId', 'reason', 'ttl'] as const
+const BODY_FIELDS = ['email', 'password', 'name', 'token', 'subjectId', 'reason', 'ttl', 'challenge', 'code'] as const
 
 interface AuthBody {
   email?:    string
@@ -556,6 +603,10 @@ interface AuthBody {
   subjectId?: string
   reason?:    string
   ttl?:       string
+  // The second step. `challenge` is absent in cookie mode, where the ticket
+  // rides an httpOnly cookie instead — see CHALLENGE_COOKIE.
+  challenge?: string
+  code?:      string
 }
 
 /**
@@ -604,7 +655,29 @@ function respond(
   cookieMaxAge: number,
   status = 200
 ): Response {
-  const payload = data as { token?: string } | null
+  const payload = data as { token?: string; challenge?: string; expiresAt?: string } | null
+
+  // A half-finished login. The ticket stands in for the password for as long as
+  // it lives, so in cookie mode it goes where the token goes and for the same
+  // reason — httpOnly, out of reach of page JavaScript. `sameSite: 'strict'`
+  // rather than 'lax': nothing navigates to this step, so there is no
+  // cross-site GET to accommodate.
+  if (payload?.challenge && typeof payload.token !== 'string') {
+    if (cookieAuth && typeof ctx.setCookie === 'function') {
+      ctx.setCookie(CHALLENGE_COOKIE, payload.challenge, {
+        httpOnly: true,
+        sameSite: 'strict',
+        secure:   process.env.NODE_ENV === 'production',
+        path:     '/',
+        // Seconds, from the expiry the provider already decided. Deriving it here
+        // from a config value would be a second answer to how long a ticket lives.
+        maxAge:   Math.max(1, Math.ceil((new Date(String(payload.expiresAt)).getTime() - Date.now()) / 1000)),
+      })
+      const { challenge: _c, ...withoutTicket } = payload
+      return ctx.json(withoutTicket, status)
+    }
+    return ctx.json(data, status)
+  }
 
   // Cookie mode puts the token in an httpOnly cookie INSTEAD of the body —
   // that is what AuthPluginOptions.cookieAuth documents, and the whole point

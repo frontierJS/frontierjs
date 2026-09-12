@@ -132,10 +132,10 @@ title: Blueprints
   }
 
   const PARAM_COLUMNS = [
-    { key: 'key',     label: 'Variable' },
-    { key: 'label',   label: 'Label' },
-    { key: 'default', label: 'Default' },
-    { key: 'rule',    label: 'Rule' },
+    { name: 'key',     label: 'Variable' },
+    { name: 'label',   label: 'Label' },
+    { name: 'default', label: 'Default' },
+    { name: 'rule',    label: 'Rule' },
   ]
 
   function storage(bp) {

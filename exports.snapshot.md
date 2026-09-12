@@ -16,7 +16,7 @@ release moves sixteen at once, and a file that changes every release is a file
 nobody reads on the release that matters.
 
 ```
-18 publishable package(s) · 0 problem(s)
+19 publishable package(s) · 0 problem(s)
 ```
 
 ## Unpublished entry points
@@ -28,7 +28,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/auth`
 
-`packages/auth` · ships `LICENSE` `README.md` `auth.ts` `cleanup.ts` `crypto.ts` `db/` `errors.ts` `index.ts` `oauth.ts` `package.json` `plugin.ts` `schema.ts` `services.ts` `types.ts`
+`packages/auth` · ships `LICENSE` `README.md` `auth.ts` `cleanup.ts` `crypto.ts` `db/` `errors.ts` `index.ts` `oauth.ts` `package.json` `plugin.ts` `schema.ts` `services.ts` `totp.ts` `types.ts`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -207,6 +207,18 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | bin | `litestone` | `src/tools/cli.js` | yes |
 | main | `main` | `src/index.js` | yes |
 | types | `types` | `src/index.d.ts` | yes |
+
+## `@frontierjs/mcp`
+
+`packages/mcp` · ships `LICENSE` `README.md` `index.ts` `package.json` `src/`
+
+| Kind | Name | Target | Published |
+| --- | --- | --- | --- |
+| exports | `.` | `index.ts` | yes |
+| exports | `./projection` | `src/projection.ts` | yes |
+| main | `main` | `index.ts` | yes |
+
+- peers — `@frontierjs/junction`: `^0.1.0`
 
 ## `@frontierjs/mesa`
 

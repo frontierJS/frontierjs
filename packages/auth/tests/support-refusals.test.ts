@@ -98,6 +98,13 @@ describe('inside an episode the caller IS the subject', () => {
     // Not a blanket refusal: seeing what they see is the feature.
     expect((await request(app).get('/sessions').auth(opToken)).status).toBe(200)
     expect((await request(app).get('/api-keys').auth(opToken)).status).toBe(200)
+    // Including whether they have a second factor. It is a read, so it answers,
+    // and it answers about the SUBJECT — which is what makes the four refusals
+    // below about the writes rather than about the feature.
+    const status = await request(app).post('/account/me').auth(opToken)
+      .set('x-service-method', 'totpStatus').send({})
+    expect(status.status).toBe(200)
+    expect((status.body as any).enabled).toBe(false)
     await end()
   })
 
@@ -144,6 +151,43 @@ describe('the credential paths refuse, and only inside an episode', () => {
       .set('x-service-method', 'revokeOthers').send({})
     expect(inside.status).toBe(403)
     await end()
+  })
+
+  test('enrolling a second factor — refused inside, done by the subject outside', async () => {
+    const totpCall = (token: string, method: string, data: unknown = {}) =>
+      request(app).post('/account/me').auth(token).set('x-service-method', method).send(data as any)
+
+    await start('ticket-8')
+    expect((await totpCall(opToken, 'setupTotp', { currentPassword: PW })).status).toBe(403)
+    // 403 and not 404: the refusal comes from the episode, before the provider is
+    // asked whether an enrollment is in flight. An operator who learned *there is
+    // nothing to confirm* has been told something about the subject's account by
+    // a call that was supposed to be refused.
+    expect((await totpCall(opToken, 'confirmTotp', { code: '000000' })).status).toBe(403)
+    expect((await totpCall(opToken, 'disableTotp', { currentPassword: PW })).status).toBe(403)
+    expect((await totpCall(opToken, 'regenerateRecoveryCodes', { currentPassword: PW })).status).toBe(403)
+    await end()
+
+    // PAIRED, and it is the whole cycle: the subject may do every one of those.
+    const { totp } = await import('../totp.ts')
+    const setup = await totpCall(subToken, 'setupTotp', { currentPassword: PW })
+    expect(setup.status).toBe(200)
+
+    const confirm = await totpCall(subToken, 'confirmTotp', { code: totp((setup.body as any).secret, new Date()) })
+    expect(confirm.status).toBe(200)
+    expect((await totpCall(subToken, 'regenerateRecoveryCodes', { currentPassword: PW })).status).toBe(200)
+
+    // And an episode STARTED while the subject has a factor still reads, which
+    // says the refusals above are the four writes and nothing wider.
+    await start('ticket-9')
+    const inside = await totpCall(opToken, 'totpStatus')
+    expect(inside.status).toBe(200)
+    expect((inside.body as any).enabled).toBe(true)
+    await end()
+
+    // Left off, because a factor on SUB would make every later /auth/login in
+    // this file answer a challenge instead of a token.
+    expect((await totpCall(subToken, 'disableTotp', { currentPassword: PW })).status).toBe(200)
   })
 
   test('detaching a connection refuses BEFORE it asks the provider', async () => {

@@ -100,6 +100,10 @@ export const RULES = [
     title: 'a resource name resolves to the model it means' },
   { id: 'money-rendered-raw',   scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a @money column is not printed as the integer it stores' },
+  { id: 'table-column-key',     scope: 'app',  severity: 'error', invariant: null,
+    title: 'a <Table> column names its field `name`, the way the schema does' },
+  { id: 'page-path-retired',    scope: 'app',  severity: 'error', invariant: null,
+    title: 'the router speaks `pathname` and `search`, as the browser does' },
   { id: 'detail-read-dead',     scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a row a screen KEEPS is watched, not fetched once' },
   { id: 'service-module-db',    scope: 'app',  severity: 'error', invariant: null,
@@ -1483,6 +1487,115 @@ const CHECKS = {
                      `An integer somebody genuinely wants raw is a fair exception; baseline it with a reason.`,
           })
         }
+      }
+    }
+
+    return { findings }
+  },
+
+  'table-column-key': ({ root }) => {
+    // A column identifies a FIELD, and `name` is what the field is called
+    // everywhere else it is named — `resource.columns()` emits it, `<FilterBar>`
+    // reads it off the same list, the schema declares it. `<Table>` alone said
+    // `key`, so every caller carried a `.map` to translate between two spellings
+    // of one thing and the translation had no owner (`FJS-1081`).
+    //
+    // It is an ERROR rather than a warning because of what a miss looks like:
+    // `col.name` is `undefined`, the header still renders its label, the rows
+    // still render, and only the sort is dead — `aria-sort` stuck at `none` and
+    // a header that never reverses. Nothing throws and nothing looks wrong,
+    // which is the failure class the rule exists for.
+    const files = sources(root, ['.mesa'], 'web', 'widgets', 'site', 'extension')
+    if (!files.length) return { skipped: 'no client surface' }
+
+    // Only a file that actually renders one. `key:` is an ordinary property
+    // name — a keyed `{#each}`, a KeyboardEvent, a lookup table — so judging a
+    // file that never imports the component is advice that is wrong.
+    const users = files.filter(p => /display\/Table\.mesa/.test(readCode(p)))
+    if (!users.length) return { skipped: 'no screen renders a <Table>' }
+
+    // The column shape, and only it: a `key` whose sibling is a `label`. The
+    // word boundary is load-bearing — `provider_key:` and `ssh_key:` are
+    // ordinary object keys in this repo's own screens.
+    const DECLARED = /\bkey(\s*:\s*['"][A-Za-z_$][\w$]*['"]\s*,\s*label\s*:)/g
+    // The translation itself, which is the thing the rename exists to delete.
+    const MAPPED   = /\bkey\s*:\s*([A-Za-z_$][\w$]*)\.name\b/g
+
+    const findings = []
+    for (const path of users) {
+      const code = readCode(path)
+
+      for (const m of code.matchAll(DECLARED)) {
+        findings.push({
+          file: path, line: lineOf(code, m.index),
+          // A whole fix: the property is renamed and nothing else moves, which
+          // is what `--fix` may touch.
+          edit: { start: m.index, end: m.index + 3, was: 'key', replacement: 'name' },
+          message: 'a `<Table>` column names its field `name`, not `key` — the spelling the schema, ' +
+                   '`resource.columns()` and `<FilterBar>` all already use. With `key` the component ' +
+                   'reads `undefined`: the header still draws its label and the rows still render, and ' +
+                   'only the sort is dead — `aria-sort` stuck at `none` and a header that never ' +
+                   'reverses. Nothing throws (`FJS-1081`).',
+        })
+      }
+
+      for (const m of code.matchAll(MAPPED)) {
+        findings.push({
+          file: path, line: lineOf(code, m.index),
+          // Deliberately no `edit`: collapsing `cols.map(c => ({…}))` to a
+          // spread is a change to the expression around this, and a partial fix
+          // here would leave a map that no longer maps anything.
+          message: `\`${m[1]}.name\` is being copied onto \`key\` — \`<Table>\` reads \`name\` directly ` +
+                   'now, so the whole `.map` is `...cols`. A column carries its alignment and its ' +
+                   'display beside its name, and a map that lists three properties drops the rest ' +
+                   'silently (`FJS-1081`).',
+        })
+      }
+    }
+
+    return { findings }
+  },
+
+  'page-path-retired': ({ root }) => {
+    // `page.path` was `pathname + search` — a value `window.location` has no
+    // word for, wearing a name that reads like `pathname`. It is retired in
+    // favour of the browser's own two, and this is the rule that makes the
+    // retirement safe to have made: the field is simply absent now, so a page
+    // still reading it gets `undefined` and `goto(undefined, q)` navigates
+    // somewhere wrong rather than throwing. Nothing in the build objects and
+    // nothing on the screen says why (`FJS-1083`).
+    //
+    // `to.path` is the same field on the navigation context and is retired with
+    // it, which is where the live defect was: an exact `publicRoutes` rule was
+    // compared against a path that carried the query, so `/login/` stopped
+    // matching `/login/?returnTo=…`.
+    const files = sources(root, ['.mesa', ...SCRIPT_EXT], 'web', 'widgets', 'site', 'extension')
+    if (!files.length) return { skipped: 'no client surface' }
+
+    // A member access on `page` or on a navigation target, and nothing else:
+    // `node.path`, `route.path` and `join(a.path)` are all ordinary and common.
+    const RETIRED = /\b(page|to|from)\.path\b(?!name)/g
+
+    const findings = []
+    for (const path of files) {
+      const code = readCode(path)
+      for (const m of code.matchAll(RETIRED)) {
+        const whole = m[1] === 'page'
+        findings.push({
+          file: path, line: lineOf(code, m.index),
+          // No `edit`: which of the two replacements is right depends on what
+          // the caller wanted, and that is the whole reason the field was split.
+          // `goto(page.path.split('?')[0], q)` wants `pathname`; an OAuth
+          // `returnTo` wants both halves. A fix that guessed would be a green
+          // check over a wrong navigation.
+          message: `\`${m[1]}.path\` is retired — the router speaks \`pathname\` (the path with no ` +
+                   'query) and `search` (the raw query string, leading `?`), which are ' +
+                   '`window.location`\'s own words. It reads `undefined` now, so a `goto` built on it ' +
+                   'navigates somewhere wrong rather than throwing. Want the path alone? ' +
+                   `\`${m[1]}.pathname\`. Want what the address bar shows` +
+                   (whole ? ' — an OAuth `returnTo`, a saved return path' : '') +
+                   `? \`${m[1]}.pathname + ${m[1]}.search\` (\`FJS-1083\`).`,
+        })
       }
     }
 

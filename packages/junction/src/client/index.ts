@@ -550,13 +550,80 @@ export class AuthClient {
     private _names:  Required<AuthServiceNames>
   ) {}
 
+  /**
+   * The ticket from a sign-in that owes a second factor, in token mode.
+   *
+   * Held here rather than handed back for the caller to thread through a form's
+   * state, because in COOKIE mode there is nothing to thread — the ticket is an
+   * httpOnly cookie no script can read — and a screen that had to write both
+   * arrangements would be writing the cookie one blind. The client already holds
+   * a credential for the life of a session; this holds one for five minutes.
+   *
+   * Not persisted. A reload in token mode loses it and the person starts from the
+   * password, which is the honest outcome: a ticket in storage is a password
+   * substitute sitting where a token would be.
+   */
+  private _pendingChallenge: string | null = null
+
   // ── Establishing a session — the routes ────────────────────────────
 
-  /** Sign in. Stores the token, opens the socket, emits 'authenticated'. */
-  async signIn(email: string, password: string): Promise<AuthResult> {
-    return this._adopt(
-      await this._c._request('POST', `${this._prefix}/login`, { email, password }, { skipAuth: true })
+  /**
+   * Sign in.
+   *
+   * Answers a session, or a challenge when the account has a second factor —
+   * discriminate on `'challenge' in result`. A challenge stores no token, opens
+   * no socket and emits no `authenticated`: nothing has been authenticated yet,
+   * and a client that emitted it would have every listener treat a password as
+   * the whole answer.
+   */
+  async signIn(email: string, password: string): Promise<SignInResult> {
+    // Dropped before the request, not after: a second attempt must not leave the
+    // previous account's ticket redeemable by this one's code.
+    this._pendingChallenge = null
+
+    const raw = await this._c._request(
+      'POST', `${this._prefix}/login`, { email, password }, { skipAuth: true }
+    ) as Record<string, unknown>
+
+    if (raw && 'challenge' in raw) {
+      this._pendingChallenge = String(raw.challenge)
+      return raw as unknown as AuthChallenge
+    }
+    // Cookie mode answers the challenge in the cookie and the body carries only
+    // the expiry, so the KEY the transport strips is the one that decides this.
+    if (raw && 'expiresAt' in raw && !('token' in raw) && !('user' in raw)) {
+      return raw as unknown as AuthChallenge
+    }
+
+    return this._adopt(raw)
+  }
+
+  /**
+   * Finish a sign-in that owed a second factor.
+   *
+   * `code` is a TOTP code or a recovery code — the person typing it is answering
+   * one question and cannot be asked which kind of string they hold.
+   *
+   * The ticket comes from the `signIn` that returned it, or from the httpOnly
+   * cookie in cookie mode. Pass `challenge` only when neither is true — a flow
+   * that navigated away and kept it.
+   */
+  async completeSignIn(code: string, challenge?: string): Promise<AuthResult> {
+    const ticket = challenge ?? this._pendingChallenge
+    const body   = ticket ? { challenge: ticket, code } : { code }
+
+    const result = this._adopt(
+      await this._c._request('POST', `${this._prefix}/login/challenge`, body, { skipAuth: true })
     )
+    // Single-use on the server, so holding it after this could only ever produce
+    // a refusal the caller cannot read the reason for.
+    this._pendingChallenge = null
+    return result
+  }
+
+  /** Is a sign-in waiting on a code. What a screen renders the box from. */
+  get awaitingSecondFactor(): boolean {
+    return this._pendingChallenge !== null
   }
 
   // ── Support mode ───────────────────────────────────────────────────
@@ -682,6 +749,7 @@ export class AuthClient {
       }
     }
     this._c.setToken(null)
+    this._pendingChallenge = null
     this._c.emit('logout')
     return error ? { revoked: false, error } : { revoked: true }
   }
@@ -784,6 +852,23 @@ export interface AuthResult {
   user:         Record<string, unknown>
   workspaceId?: string | null
 }
+
+/**
+ * A password accepted, a code still owed.
+ *
+ * `challenge` is absent in cookie mode, where the ticket is an httpOnly cookie —
+ * so a caller must not read it to decide anything except *is there a ticket I can
+ * pass back*. `awaitingSecondFactor` is the question a screen actually has.
+ */
+export interface AuthChallenge {
+  challenge?: string
+  /** ISO-8601. After this the caller starts again from the password. */
+  expiresAt:  string
+}
+
+/** What `signIn` answers. Discriminate on `'challenge' in result` — or, in cookie
+ *  mode where the ticket never reaches the page, on the absence of `user`. */
+export type SignInResult = AuthResult | AuthChallenge
 
 // Re-declared rather than imported from ../auth/types.ts: this file is the
 // BROWSER bundle and that module is the server's IAuth contract, which pulls

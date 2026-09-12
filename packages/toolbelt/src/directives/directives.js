@@ -180,6 +180,100 @@ export function directiveParams(directives) {
   return p
 }
 
+/*
+ * ─── the orderBy pair ──────────────────────────────────────────────────────
+ *
+ * `$orderBy` is the one directive whose VALUE has more than one legal shape,
+ * and the table above says so and declines to fix one: `-createdAt`,
+ * `{name:'asc'}` and `[{…}]` all reach the Data boundary intact, because only
+ * the query builder can say which a model takes.
+ *
+ * A screen cannot decline. A sorted header has to mark itself — `aria-sort` is
+ * what a screen reader announces, and `<Table>` derives the NEXT direction from
+ * the one it was handed, so a component with no current pair has a header that
+ * never reverses. Three pages wrote that derivation out by hand and the three
+ * disagreed: one assumed a string and THREW on the object form, two answered a
+ * key of `"0"` and a direction that was itself an object on `$orderBy[0][…]`,
+ * which marks a column that does not exist and reverses nothing (`FJS-1077`).
+ *
+ * So the pair is here, beside the table that admits the shapes, and the reading
+ * is the marker's question rather than the boundary's: what is the FIRST column
+ * this ordering sorts by, and which way. It validates nothing and refuses
+ * nothing — an ordering the Data boundary will reject still has a first column,
+ * and reporting that is strictly better than throwing on the way to a 400.
+ */
+
+/** A direction as a marker reads it. Everything that is not descending is `asc`. */
+const asDir = (v) => (String(v).toLowerCase() === 'desc' ? 'desc' : 'asc')
+
+/**
+ * An `orderBy` directive → the `(key, direction)` pair a sorted header marks.
+ *
+ * Every legal shape, and the nesting that bracket notation produces: a value
+ * that is not a direction is itself an ordering, so `$orderBy[0][name]=desc`
+ * descends to `{name:'desc'}` rather than answering the index. An empty key
+ * means *nothing is sorted*, which is not the same as sorted ascending by
+ * nothing — a caller marking a header tests the key.
+ *
+ * @param {unknown} orderBy
+ * @returns {{ key: string, dir: 'asc' | 'desc' }}
+ */
+export function orderByPair(orderBy) {
+  const none = { key: '', dir: 'asc' }
+  if (orderBy === undefined || orderBy === null || orderBy === '') return none
+
+  if (typeof orderBy === 'string') {
+    return orderBy.startsWith('-')
+      ? { key: orderBy.slice(1), dir: 'desc' }
+      : { key: orderBy, dir: 'asc' }
+  }
+
+  if (typeof orderBy !== 'object') return none
+
+  // An array is written `[{name:'desc'}, …]`; bracket notation hands the same
+  // intent back as `{'0': {…}}`, so both are reached by taking the first entry
+  // and asking what it is rather than by testing for an Array.
+  const entries = Object.entries(orderBy)
+  if (entries.length === 0) return none
+
+  const [key, value] = entries[0]
+
+  // Anything structured in the value position is one level further down.
+  if (value !== null && typeof value === 'object') return orderByPair(value)
+
+  // `{'0': '-name'}` — an array of strings that lost its shape in transport.
+  // Decided on the VALUE and not on the key alone: `{'0': 'desc'}` is a
+  // direction, so the numeric key is the column there and the descent would
+  // answer `desc` as a column name. An empty direction is a missing one and
+  // falls through to `asc`, which is why this asks for a direction WORD rather
+  // than for any string.
+  const isDirection = value === 'asc' || value === 'desc'
+  if (!isDirection && key === String(Number(key))) return orderByPair(value)
+
+  return { key, dir: asDir(value) }
+}
+
+/**
+ * The `(key, direction)` pair → the `orderBy` a page writes back.
+ *
+ * `orderByPair`'s inverse, and it exists for that function's reason one
+ * direction over: two pages wrote the next sort in two different shapes, so the
+ * same click produced `{name:'desc'}` on one screen and `-name` on the other.
+ * The string form is what this answers — it is what a URL carries most
+ * compactly, and it round-trips through `orderByPair` unchanged.
+ *
+ * An empty key answers `undefined`, so a caller spreading the result removes
+ * the directive rather than sending an ordering by nothing.
+ *
+ * @param {string} key
+ * @param {'asc' | 'desc'} [dir]
+ * @returns {string | undefined}
+ */
+export function orderByValue(key, dir = 'asc') {
+  if (!key) return undefined
+  return asDir(dir) === 'desc' ? `-${key}` : key
+}
+
 /**
  * One bag of parameters → the two things it was carrying.
  *

@@ -59,6 +59,7 @@ import { vendorWorkspacePackages }                     from '../packages/cli/cor
 import { pickWorkBase, daemonCanRead }                 from '../packages/cli/core/docker-context.js'
 import { apiContainerName }                            from '../packages/cli/core/ports.js'
 import { pointAtLocalServer }                          from '../packages/cli/core/tutor.js'
+import { nginxGuard, DEFAULT_PAGE }                    from '../packages/cli/core/pause.js'
 import { reapTempDirs }                                from '../packages/litestone/src/tmp-dirs.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -72,7 +73,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 // handler covers that; the reap covers the SIGKILL it cannot see, past an age
 // floor so a concurrent run is never touched.
 
-const WORK_PREFIXES = ['fjs-scaffold-', 'fjs-deploy-', 'fjs-journal-']
+const WORK_PREFIXES = ['fjs-scaffold-', 'fjs-deploy-', 'fjs-journal-', 'fjs-pause-']
 const active = new Set()
 let trapped = false
 
@@ -692,6 +693,30 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
       return fail('the deploy wrote no serving transition to the journal on the machine', j1.output)
     log('  ✓ the journal on the machine records it as serving')
 
+    // ── a pause this target cannot honor ──────────────────
+    // The scaffolded target has no nginx in front of it, so there is nothing
+    // that would read the guard file — and a pause that wrote one anyway would
+    // report success while the app went on answering, which is the failure the
+    // whole phase is about, one layer along.
+    //
+    // It is the accepting half that cannot be asked here (that is
+    // `pauseEdgeCycle`, which has an nginx and no app). What this can ask, and
+    // nothing else can, is the refusal against a REAL journal on a real machine:
+    // `openPauseJournal` opens it, reads what is serving, grades the vhost, and
+    // settles nothing.
+    const p1 = inApp(['deploy:pause'])
+    if (p1.status === 0)
+      return fail('deploy:pause succeeded against a target with no guard in its vhost', p1.output)
+    if (!/no-guard/.test(p1.output))
+      return fail('deploy:pause refused for some reason other than the missing guard', p1.output)
+    if (!/deploy:setup/.test(p1.output))
+      return fail('the pause refusal does not name the command that would fix it', p1.output)
+
+    const j1b = inApp(['deploy:journal'])
+    if (/pause/.test(j1b.output))
+      return fail('a refused pause wrote a transition — it is graded before one is opened', j1b.output)
+    log('  ✓ a pause refuses a target whose vhost has no guard, and records nothing')
+
     // ── 2 · deploy again, unchanged ───────────────────────
     // Not asserted as producing the same bytes, and that is a measurement rather
     // than a caution: `04-build-api` re-vendors the workspace on every run, and
@@ -1199,4 +1224,182 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
 
 function indent(text) {
   return text.split('\n').map(l => `    ${l}`).join('\n')
+}
+
+// ─── pauseEdgeCycle ──────────────────────────────────────
+// Phase 3b's other half: the guard `_steps-setup/05-nginx` writes, in front of a
+// real nginx.
+//
+// **A config built from a template is a claim about nginx, and only nginx can
+// answer it.** Every assertion here passes against a file nginx refuses if it is
+// made against the text: `error_page 503 /some-uri` reads perfectly well and is
+// a redirection cycle; a guard placed after the http→https redirect reads
+// perfectly well and answers 301 to every plain-http caller of a paused app.
+//
+// It uses `core/pause.js`'s own `nginxGuard`, which is the only part of that
+// vhost this phase owns — that the STEP emits it, and emits it ahead of the
+// redirect, is asserted in `packages/cli/tests/pause.test.js`. Two halves, and
+// neither claims the other's.
+//
+// No app and no deploy: the upstream is deliberately a port nothing is on, so
+// *serving* answers 502 through the proxy and *paused* answers 503. A guard
+// that refused everything would be indistinguishable from a working one
+// otherwise.
+//
+// Returns { findings, skipped } like its siblings.
+
+export function pauseEdgeCycle({ keep = false, verbose = false, log = console.log } = {}) {
+  const findings = []
+  const fail     = (message, output) => { findings.push({ message, output }); return { findings, skipped: null } }
+
+  if (exec('docker', ['version', '--format', '{{.Server.Version}}'], { verbose: false }).status !== 0)
+    return { findings, skipped: 'no Docker daemon — the edge half needs a real nginx' }
+
+  // ports.js: env 7 test · category 1 be · project 0. 7102 is the journal cycle.
+  // Two, because the ordering claim needs a vhost that redirects and the other
+  // assertions need one that does not — and one nginx serving both is the only
+  // arrangement where the difference is the config rather than the server.
+  const PORT  = 7103
+  const TLSPORT = 7104
+  for (const p of [PORT, TLSPORT])
+    if (!portFree(p))
+      return { findings: [], skipped: `port ${p} is already in use — something else is on this machine's test tier` }
+
+  const base = ciWorkBase(log)
+  const work = workDir('fjs-pause-', base)
+  const name = `fjspause${process.pid}`
+
+  // The path INSIDE the container, which is what the vhost is written for. The
+  // guard is an absolute path, so the two have to agree.
+  const SERVER_PATH = '/srv/app'
+  const srv  = join(work, 'srv', 'app')
+  const conf = join(work, 'confd')
+
+  const curl = (path, port = PORT) => exec('curl',
+    ['-s', '-o', '/dev/null', '-w', '%{http_code}', '--max-time', '10',
+     `http://127.0.0.1:${port}${path}`], { verbose: false }).output.trim()
+  const body = (path, port = PORT) => exec('curl',
+    ['-s', '--max-time', '10', `http://127.0.0.1:${port}${path}`], { verbose: false }).output
+  const headers = (path, port = PORT) => exec('curl',
+    ['-s', '-D-', '-o', '/dev/null', '--max-time', '10', `http://127.0.0.1:${port}${path}`], { verbose: false }).output
+
+  const stop = () => exec('docker', ['rm', '-f', name], { verbose: false })
+
+  try {
+    mkdirSync(join(srv, '.fli'),    { recursive: true })
+    mkdirSync(join(srv, 'current'), { recursive: true })
+    mkdirSync(conf, { recursive: true })
+    writeFileSync(join(srv, 'current', 'index.html'), '<h1>the app</h1>\n')
+    writeFileSync(join(srv, '.fli', 'maintenance.html'), DEFAULT_PAGE)
+
+    // Two vhosts on one nginx. The first is a target with no TLS configured; the
+    // second is one with it, which the real `05-nginx` writes as a rewrite-phase
+    // `return 301` — the same kind of directive as the guard, so which of them
+    // comes first decides what a paused app says to a plain-http caller.
+    const surface = () => `
+  root ${SERVER_PATH}/current;
+  index index.html;
+
+  location / {
+    try_files $uri /index.html;
+  }
+
+  location /api/ {
+    proxy_pass http://127.0.0.1:9/;
+  }
+}
+`
+    writeFileSync(join(conf, 'default.conf'), `server {
+  listen 80;
+  server_name _;
+
+${nginxGuard(SERVER_PATH)}
+${surface()}
+server {
+  listen 81;
+  server_name _;
+
+${nginxGuard(SERVER_PATH)}
+
+  if ($scheme = http) {
+    return 301 https://$host$request_uri;
+  }
+${surface()}`)
+
+    stop()
+    const up = exec('docker', ['run', '-d', '--name', name,
+                               '-p', `127.0.0.1:${PORT}:80`, '-p', `127.0.0.1:${TLSPORT}:81`,
+                               '-v', `${conf}:/etc/nginx/conf.d:ro`,
+                               '-v', `${join(work, 'srv')}:/srv:rw`,
+                               'nginx:alpine'], { verbose })
+    if (up.status !== 0) return fail('could not start nginx over the generated guard', up.output)
+
+    // nginx starts on a config it refuses only to exit; ask it directly, so a
+    // redirection cycle is reported as what it is rather than as a dead port.
+    const t = exec('docker', ['exec', name, 'nginx', '-t'], { verbose: false })
+    if (t.status !== 0) return fail('nginx refuses the config the guard is in', t.output)
+
+    for (let i = 0; i < 40 && curl('/') === '000'; i++) exec('sleep', ['0.25'], { verbose: false })
+
+    // ── serving ───────────────────────────────────────────
+    if (curl('/') !== '200')
+      return fail(`with no guard file the site answers ${curl('/')} and not 200`, headers('/'))
+    // The negative control for every 503 below. Nothing is on the upstream, so a
+    // guard that refused nothing still cannot make this 200 — and a guard that
+    // refused everything could not make it 502.
+    if (curl('/api/health') !== '502')
+      return fail(`with no guard file the dead upstream answers ${curl('/api/health')} and not 502`, headers('/api/health'))
+    log('  ✓ with no guard file the edge serves, and the proxy reaches for the upstream')
+
+    // ── paused ────────────────────────────────────────────
+    writeFileSync(join(srv, '.fli', 'paused'), '')
+
+    if (curl('/') !== '503')
+      return fail(`a paused app answers ${curl('/')} at the root and not 503`, headers('/'))
+    // A URL the SPA fallback would have served. `try_files` never runs.
+    if (curl('/orders/123') !== '503')
+      return fail(`a paused app answers ${curl('/orders/123')} on a deep URL and not 503`, headers('/orders/123'))
+    // The half nginx can do and the app cannot: 502 became 503, so the guard
+    // short-circuits before the proxy rather than beside it.
+    if (curl('/api/health') !== '503')
+      return fail(`a paused app answers ${curl('/api/health')} through the proxy and not 503`, headers('/api/health'))
+    log('  ✓ a paused app refuses the site, a deep URL and the API')
+
+    // ── the ordering, on the vhost that redirects ─────────
+    // The guard and the https redirect are both rewrite-phase returns and the
+    // first one wins. Asked as a PAIR, because a vhost that answered 503 whether
+    // or not it was paused would satisfy the paused half on its own.
+    if (curl('/', TLSPORT) !== '503')
+      return fail(`a paused app behind an https redirect answers ${curl('/', TLSPORT)} and not 503 — the guard is behind the redirect`,
+                  headers('/', TLSPORT))
+    rmSync(join(srv, '.fli', 'paused'))
+    if (curl('/', TLSPORT) !== '301')
+      return fail(`a SERVING app behind an https redirect answers ${curl('/', TLSPORT)} and not 301 — the guard refuses when nothing paused it`,
+                  headers('/', TLSPORT))
+    writeFileSync(join(srv, '.fli', 'paused'), '')
+    log('  ✓ paused wins over the https redirect, and lifting it gives the redirect back')
+
+    // ── what the refusal carries ──────────────────────────
+    const h = headers('/')
+    if (!/^Retry-After:/mi.test(h))
+      return fail('the refusal carries no Retry-After — a 503 without one takes the app out of a search index', h)
+    if (!/^Cache-Control:\s*no-store/mi.test(h))
+      return fail('the refusal is cacheable — a client can be stuck on it after the app is back', h)
+    if (!/Back shortly/.test(body('/')))
+      return fail('the refusal serves nginx\'s own page rather than the maintenance page', body('/').slice(0, 400))
+    log('  ✓ the refusal is a 503 carrying Retry-After, no-store, and the page the app owns')
+
+    // ── unpaused ──────────────────────────────────────────
+    rmSync(join(srv, '.fli', 'paused'))
+    if (curl('/') !== '200')
+      return fail(`after the guard file is gone the site answers ${curl('/')} and not 200`, headers('/'))
+    if (curl('/api/health') !== '502')
+      return fail(`after the guard file is gone the proxy answers ${curl('/api/health')} and not 502`, headers('/api/health'))
+    log('  ✓ removing the file serves again, with no reload')
+
+    return { findings, skipped: null }
+  } finally {
+    stop()
+    if (!keep) { try { rmSync(work, { recursive: true, force: true }); active.delete(work) } catch {} }
+  }
 }

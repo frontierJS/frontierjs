@@ -32,7 +32,25 @@
 // and `--onto-current-bindings` is the operator saying they have read which keys
 // moved and want it anyway.
 
+import { MOVES_SERVING } from './journal.js'
+
 const isoNow = (now) => (now ? new Date(now) : new Date())
+
+/**
+ * The history a revert reads — the transitions that changed WHICH Release is
+ * bound, and nothing else.
+ *
+ * A pause names the Release already serving, so with pause rows counted
+ * `succeeded[0]` and `succeeded[1]` both shift by one and the default target
+ * becomes the Release already running — which `same-bytes` then refuses, on the
+ * day a revert is wanted, in words that read as a bug in the revert rather than
+ * as a pause in the history.
+ *
+ * Applied inside both readers rather than at the call site, because forgetting
+ * it produces a plausible answer rather than an error.
+ */
+export const servingHistory = (history = []) =>
+  history.filter(h => !h.kind || MOVES_SERVING.has(h.kind))
 
 /** The refusals, in the order a person should read them. Each names its own way out. */
 export const REFUSALS = {
@@ -60,7 +78,8 @@ export const REFUSALS = {
  * "the previous different releaseId" is the same answer in the ordinary case and
  * a different one after a revert, where it would offer the release we just left.
  */
-export function chooseTarget(history = [], { to = null } = {}) {
+export function chooseTarget(rawHistory = [], { to = null } = {}) {
+  const history   = servingHistory(rawHistory)
   const succeeded = history.filter(h => h.status === 'succeeded')
   const serving   = succeeded[0] ?? null
   const inFlight  = history.find(h => h.status === 'running' || h.status === 'planned') ?? null
@@ -91,9 +110,9 @@ export function chooseTarget(history = [], { to = null } = {}) {
  * transition. It is what the pivot question is asked of: any ONE of them having
  * crossed means the database can no longer serve the release being restored.
  */
-export function transitionsSince(history = [], targetId) {
+export function transitionsSince(rawHistory = [], targetId) {
   const out = []
-  for (const h of history) {
+  for (const h of servingHistory(rawHistory)) {
     if (h.releaseId === targetId && h.status === 'succeeded') break
     out.push(h)
   }

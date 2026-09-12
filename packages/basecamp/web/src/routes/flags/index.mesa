@@ -192,10 +192,10 @@ title: Flags
   $: types = flags.fields?.type?.enum ?? ['boolean', 'variant']
   const envLabel = (o) => o.environment?.name ?? o.environmentId
   const ROW_COLUMNS = [
-    { key: 'environment', label: 'Environment' },
-    { key: 'state',       label: 'State' },
-    { key: 'rollout',     label: 'Rollout' },
-    { key: 'actions',     label: 'Actions', hideLabel: true },
+    { name: 'environment', label: 'Environment' },
+    { name: 'state',       label: 'State' },
+    { name: 'rollout',     label: 'Rollout' },
+    { name: 'actions',     label: 'Actions', hideLabel: true },
   ]
 </script>
 

@@ -94,3 +94,19 @@ export async function rejectsWith<T extends Error>(
   }
   throw new Error(`expected ${type.name}, but the call resolved`)
 }
+
+/**
+ * A login that produced a session.
+ *
+ * `login()` answers a union since `FJS-D261`, and a test that wanted the token
+ * has to say which half it expected. A cast would have been one character and
+ * would read `undefined.token` the day a fixture grows a second factor; this
+ * names the case instead. `tests/totp-login.test.ts` is where the other half is
+ * asserted on purpose.
+ */
+export function signedIn(result: any): { token: string; user: any } {
+  if (result && 'challenge' in result) {
+    throw new Error('expected a session — this login owed a second factor')
+  }
+  return result
+}

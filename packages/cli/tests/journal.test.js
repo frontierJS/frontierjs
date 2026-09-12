@@ -357,7 +357,8 @@ describe('the journal, through the runner that ships to the target', () => {
   test('an empty journal reports nothing serving', async () => {
     await j.open({ app: 'shop', host: 'deploy@prod' })
     expect(await j.state({ app: 'shop', environment: 'production' }))
-      .toEqual({ serving: null, schemaHash: null, generation: null, transition: null })
+      .toEqual({ serving: null, schemaHash: null, generation: null, transition: null,
+                 kind: null, paused: false, since: null, actor: null })
   })
 
   test('beginning writes the Release, the transition and one row per step', async () => {

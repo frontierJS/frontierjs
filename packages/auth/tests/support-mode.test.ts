@@ -12,7 +12,7 @@
 // on the principal. Everything else here is shape.
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { makeAuth, rejectsWith, type Harness } from './harness.ts'
+import { makeAuth, rejectsWith, type Harness, signedIn } from './harness.ts'
 import { AuthConfigError, UserNotFoundError, InvalidTokenError } from '../errors.ts'
 
 let h: Harness
@@ -23,7 +23,7 @@ let n = 0
 async function person(tag: string) {
   const email = `${tag}-${n++}@example.com`
   const user  = await h.auth.createUser({ email, password: 'pw-correct-1', name: tag })
-  const { token } = await h.auth.login(email, 'pw-correct-1')
+  const { token } = signedIn(await h.auth.login(email, 'pw-correct-1'))
   return { email, userId: user.userId, token }
 }
 

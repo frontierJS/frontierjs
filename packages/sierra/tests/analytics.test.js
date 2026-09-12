@@ -104,7 +104,7 @@ describe('a browser with no requestIdleCallback', () => {
     expect(provider.inits).toHaveLength(1)
     // The consequence, which is the half a caller actually sees: one handler,
     // so one pageview per navigation.
-    globalThis.__afterNav.forEach(fn => fn({ to: { path: '/orders/', node: { meta: {} } } }))
+    globalThis.__afterNav.forEach(fn => fn({ to: { pathname: '/orders/', node: { meta: {} } } }))
     expect(provider.pageviews).toHaveLength(1)
   })
 
@@ -141,7 +141,7 @@ describe('the address a pageview reports', () => {
     const A = await freshAnalytics()
     A.initAnalytics({ provider })
     vi.advanceTimersByTime(10)
-    globalThis.__afterNav.forEach(fn => fn({ to: { path: '/orders/', node: { meta: { label: 'Orders' } } } }))
+    globalThis.__afterNav.forEach(fn => fn({ to: { pathname: '/orders/', node: { meta: { label: 'Orders' } } } }))
     return provider.pageviews[0]
   }
 

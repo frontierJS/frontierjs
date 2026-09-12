@@ -41,18 +41,18 @@ title: Payroll
   import { toasts }          from '@frontierjs/ui/stores/toastStore.js'
 
   const columns = [
-    { key: 'reference', label: 'Reference' },
-    { key: 'period',    label: 'Period' },
-    { key: 'status',    label: 'Status' },
-    { key: 'headcount', label: 'People', align: 'right' },
-    { key: 'actions',   label: '' },
+    { name: 'reference', label: 'Reference' },
+    { name: 'period',    label: 'Period' },
+    { name: 'status',    label: 'Status' },
+    { name: 'headcount', label: 'People', align: 'right' },
+    { name: 'actions',   label: '' },
   ]
 
   const rateColumns = [
-    { key: 'kind',    label: 'Kind' },
-    { key: 'band',    label: 'On the slice', align: 'right' },
-    { key: 'percent', label: 'Rate', align: 'right' },
-    { key: 'from',    label: 'In force from' },
+    { name: 'kind',    label: 'Kind' },
+    { name: 'band',    label: 'On the slice', align: 'right' },
+    { name: 'percent', label: 'Rate', align: 'right' },
+    { name: 'from',    label: 'In force from' },
   ]
 
   // A UI decision, and a value added to the enum lands here as the default

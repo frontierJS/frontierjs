@@ -86,11 +86,11 @@ title: Customers
   // A `const` is a memo in Mesa, so naming hasNotes here is what re-draws the
   // head when an admin's reload brings the column back.
   const columns = [
-    { key: 'name',   label: 'Name' },
-    { key: 'email',  label: 'Email' },
-    { key: 'orders', label: 'Orders' },
-    ...(hasNotes ? [{ key: 'notes', label: 'Notes' }] : []),
-    ...(canEdit || canRemove ? [{ key: 'actions', label: 'Actions' }] : []),
+    { name: 'name',   label: 'Name' },
+    { name: 'email',  label: 'Email' },
+    { name: 'orders', label: 'Orders' },
+    ...(hasNotes ? [{ name: 'notes', label: 'Notes' }] : []),
+    ...(canEdit || canRemove ? [{ name: 'actions', label: 'Actions' }] : []),
   ]
 
   // ── Removal ──────────────────────────────────────────────────────────────

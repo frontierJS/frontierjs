@@ -5,7 +5,7 @@
 // Never touches HTTP — that is the plugin's job.
 // Never sends email — that is the caller's job via the onX callbacks in opts.
 
-import type { IAuth, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo } from '@frontierjs/junction'
+import type { IAuth, LoginResult, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo } from '@frontierjs/junction'
 import {
   hashPassword,
   verifyPassword,
@@ -23,10 +23,15 @@ import {
 } from './oauth.ts'
 import type { OAuthIdentity, TokenSet, AuthOAuth, OAuthResolution } from './oauth.ts'
 import {
+  generateTotpSecret, otpauthUri, verifyTotp as verifyTotpCode,
+  generateRecoveryCodes, normalizeRecoveryCode,
+} from './totp.ts'
+import {
   InvalidCredentialsError, EmailTakenError, InvalidTokenError,
   UserNotFoundError, AuthConfigError,
   LastCredentialError,
   NoPasswordCredentialError, NotFoundError,
+  TotpAlreadyEnabledError, InvalidSecondFactorError,
 } from './errors.ts'
 
 // Minimal interface — avoids a hard import of @frontierjs/litestone types
@@ -55,6 +60,10 @@ export function createLitestoneAuth(
     supportTtl           = '30 minutes',
     passwordResetTtl     = '1 hour',
     emailVerificationTtl = '24 hours',
+    loginChallengeTtl      = '5 minutes',
+    loginChallengeAttempts = 5,
+    totpDrift              = 1,
+    totpIssuer             = 'FrontierJS',
     onPasswordResetRequested,
     onEmailVerificationRequested,
     sessionFields,
@@ -198,6 +207,100 @@ export function createLitestoneAuth(
     })
 
     return { token, user: { ...toContext(user, authMethod), sessionId: String(session.id) } }
+  }
+
+  // ─── The second factor ────────────────────────────────────────────────────
+  //
+  // Three credential types carry it and the split is what makes every read here
+  // unambiguous:
+  //
+  //   totp          the live secret. Its EXISTENCE is what makes a login owe a
+  //                 code, so nothing writes it until a code has been produced.
+  //   totpPending   an enrollment nobody has proved yet. Gates nothing.
+  //   recoveryCode  one row per code, value HMAC'd, deleted when spent.
+
+  const TOTP_LIVE    = 'totp'
+  const TOTP_PENDING = 'totpPending'
+  const RECOVERY     = 'recoveryCode'
+
+  const liveTotp = (userId: string) =>
+    sys.credential.findFirst({ where: { userId, type: TOTP_LIVE } })
+
+  /**
+   * Recovery codes are HMAC'd with the app secret rather than bcrypt'd, which is
+   * the same reasoning `hashApiKey` documents: the value is 49 bits this package
+   * generated, not a word a person chose, so there is nothing to slow an attacker
+   * down for. It also makes the lookup one indexed read instead of a bcrypt
+   * against every code the person holds.
+   */
+  const recoveryHash = (code: string) =>
+    hashApiKey(normalizeRecoveryCode(code), requireEncryptionKey('recovery codes'))
+
+  const matchRecoveryCode = async (userId: string, code: string) => {
+    const normalized = normalizeRecoveryCode(code)
+    // Length-checked before the HMAC so a six-digit TOTP code that simply failed
+    // does not get hashed and looked up as a recovery code on every attempt.
+    if (normalized.length !== 10) return null
+    return sys.credential.findFirst({
+      where: { userId, type: RECOVERY, value: recoveryHash(code) }
+    })
+  }
+
+  const countRecoveryCodes = (userId: string) =>
+    sys.credential.count({ where: { userId, type: RECOVERY } })
+
+  /** Replaces every code this user holds. Returns the plaintext, once. */
+  async function issueRecoveryCodes(userId: string): Promise<string[]> {
+    requireEncryptionKey('recovery codes')
+    const codes = generateRecoveryCodes()
+
+    await sys.credential.deleteMany({ where: { userId, type: RECOVERY } })
+    for (const code of codes) {
+      await sys.credential.create({
+        data: { userId, type: RECOVERY, value: recoveryHash(code) }
+      })
+    }
+    return codes
+  }
+
+  const bumpAttempts = (row: any) =>
+    sys.loginChallenge.update({
+      where: { id: row.id },
+      data:  { attempts: Number(row.attempts ?? 0) + 1 }
+    })
+
+  /**
+   * Whether typing again is worth anything — read AFTER the bump, and it spends
+   * the ticket when it is not. A person left typing into a box that will refuse
+   * every future code has been told nothing, which is the whole of what
+   * `retryable` is for.
+   */
+  async function attemptsLeft(row: any): Promise<boolean> {
+    if (Number(row.attempts ?? 0) + 1 < loginChallengeAttempts) return true
+    await sys.loginChallenge.deleteMany({ where: { id: row.id } })
+    return false
+  }
+
+  /**
+   * The password, again, for a change to the second factor.
+   *
+   * A session that can enroll its own factor has locked the owner out of their
+   * own account, and one that can remove theirs has taken the protection off
+   * without ever knowing the password. Both are reachable from a stolen tab, so
+   * both ask. Pays the comparison cost on a user with no password credential for
+   * the same reason `login()` does.
+   */
+  async function requireCurrentPassword(userId: string, password: string): Promise<any> {
+    const user = await sys.user.findFirst({ where: { id: userId } })
+    if (!user) throw new UserNotFoundError()
+
+    const cred = await sys.credential.findFirst({ where: { userId, type: 'password' } })
+    if (!cred) {
+      await payPasswordCost(password)
+      throw new NoPasswordCredentialError('This account has no password to confirm with')
+    }
+    if (!await verifyPassword(password, cred.value)) throw new InvalidCredentialsError()
+    return user
   }
 
   // Guards for API key operations — encryptionKey is required for these.
@@ -471,7 +574,7 @@ export function createLitestoneAuth(
 
     // ── login ────────────────────────────────────────────────────────────
 
-    async login(email: string, password: string): Promise<{ token: string; user: SessionContext }> {
+    async login(email: string, password: string): Promise<LoginResult> {
       // Every refusal records the same way and answers the same error. The three
       // branches are distinguishable in the trail by `reason` and nowhere else —
       // telling a caller whether the address exists is an enumeration oracle.
@@ -491,7 +594,7 @@ export function createLitestoneAuth(
         // A throw here REPLACES InvalidCredentialsError — a lockout answers 429,
         // not 401. Returned rather than thrown so the call sites read `throw
         // await refuse(...)` and cannot forget to.
-        if (onLoginFailed) await onLoginFailed({ email, userId, reason })
+        if (onLoginFailed) await onLoginFailed({ email, userId, reason, stage: 'password' })
         return new InvalidCredentialsError()
       }
 
@@ -516,7 +619,246 @@ export function createLitestoneAuth(
       const valid = await verifyPassword(password, cred.value)
       if (!valid) throw await refuse('bad-password', user.id)
 
-      return issueSession(user, 'session')
+      // The password is right. Whether that is enough is the next question, and
+      // a `totp` credential existing IS the answer — enrollment writes
+      // `totpPending` and only `confirmTotp` promotes it, so there is no state
+      // here where an unproven secret can gate a login (`FJS-D261`).
+      const totp = await liveTotp(user.id)
+      if (!totp) return issueSession(user, 'session')
+
+      // One live ticket per person. A second password login supersedes the first
+      // rather than adding to it: two open tickets are two independent attempt
+      // budgets, so the ceiling below could be walked around by logging in again.
+      await sys.loginChallenge.deleteMany({ where: { userId: user.id } })
+
+      const value = generateToken()
+      const row   = await sys.loginChallenge.create({
+        data: { userId: user.id, value, expiresAt: expiresAt(loginChallengeTtl) }
+      })
+
+      // Recorded, because a password that was accepted and never finished is the
+      // shape a stolen password makes: the attacker gets this far every time and
+      // no further, and nothing else in the trail would say so.
+      await audit('login.challenged', {
+        model:   'LoginChallenge',
+        records: [String(row.id)],
+        actorId: user.id,
+        actorType: 'user',
+        meta:    { factor: 'totp' },
+      })
+
+      return { challenge: value, expiresAt: String(row.expiresAt) }
+    },
+
+    // ── The second step ──────────────────────────────────────────────────
+    //
+    // Everything here answers one error — five different things can be wrong
+    // and the caller is told none of them, for `login()`'s reason one layer on.
+    // The trail carries the `reason`, and `retryable` carries the only
+    // distinction a screen can act on: whether typing again is worth anything.
+    //
+    // No `payPasswordCost` here, and the asymmetry is deliberate rather than an
+    // omission. `login()` pays it because an EMAIL is guessable and the clock
+    // would say which addresses have accounts. A ticket is 32 random bytes
+    // nobody can enumerate, so there is no oracle to close, and paying a bcrypt
+    // per attempt would only hand an attacker a way to cost the server 220ms a
+    // request.
+
+    async completeLogin(challenge: string, code: string): Promise<{ token: string; user: SessionContext }> {
+      const spend = async (reason: string, row: any, retryable = true) => {
+        await audit('login.failed', {
+          model:   'LoginChallenge',
+          records: row ? [String(row.id)] : [],
+          actorId: row ? String(row.userId) : null,
+          meta:    { reason, stage: 'second-factor' },
+        })
+        if (onLoginFailed) {
+          await onLoginFailed({
+            email:  null,
+            userId: row ? String(row.userId) : null,
+            reason,
+            stage:  'second-factor',
+          })
+        }
+        return new InvalidSecondFactorError(undefined, retryable)
+      }
+
+      const row = await sys.loginChallenge.findFirst({ where: { value: challenge } })
+      if (!row) throw await spend('no-such-challenge', null, false)
+
+      // Read at resolution, so a lapsed ticket stops working the instant it
+      // lapses whether or not the sweep has been anywhere near it.
+      if (new Date(row.expiresAt) <= new Date()) {
+        await sys.loginChallenge.deleteMany({ where: { id: row.id } })
+        throw await spend('challenge-expired', row, false)
+      }
+
+      const user = await sys.user.findFirst({ where: { id: row.userId } })
+      const cred = user ? await liveTotp(row.userId) : null
+      // The account was deleted, or the factor was turned off, between the two
+      // requests. The ticket dies with it rather than becoming a password-free
+      // way in.
+      if (!user || !cred) {
+        await sys.loginChallenge.deleteMany({ where: { id: row.id } })
+        throw await spend(user ? 'factor-removed' : 'no-such-user', row, false)
+      }
+
+      const at   = new Date()
+      const step = verifyTotpCode(cred.value, code, at, totpDrift)
+
+      if (step !== null) {
+        // The window is 30 seconds wide and a code is good for all of it, so
+        // without this the window IS a replay window. `<=` and not `<`: the same
+        // step is the same code.
+        if (cred.totpLastStep != null && step <= Number(cred.totpLastStep)) {
+          await bumpAttempts(row)
+          throw await spend('code-replayed', row, await attemptsLeft(row))
+        }
+
+        await sys.credential.update({ where: { id: cred.id }, data: { totpLastStep: step } })
+        await sys.loginChallenge.deleteMany({ where: { id: row.id } })
+        return issueSession(user, 'session', { factor: 'totp' })
+      }
+
+      // Not a TOTP code — a recovery code is the other thing a person types into
+      // that box, and they cannot be asked to say which one it is.
+      const recovery = await matchRecoveryCode(row.userId, code)
+      if (recovery) {
+        // Deleted rather than flagged. A spent code that still exists is one
+        // column away from being accepted again, and nothing would read wrong.
+        await sys.credential.deleteMany({ where: { id: recovery.id } })
+        await sys.loginChallenge.deleteMany({ where: { id: row.id } })
+
+        const left = await countRecoveryCodes(row.userId)
+        await audit('recovery.used', {
+          model:   'Credential',
+          records: [String(recovery.id)],
+          actorId: String(row.userId),
+          actorType: 'user',
+          meta:    { remaining: left },
+        })
+        return issueSession(user, 'session', { factor: 'recovery', recoveryCodesRemaining: left })
+      }
+
+      await bumpAttempts(row)
+      throw await spend('bad-code', row, await attemptsLeft(row))
+    },
+
+    // ── TOTP: enrollment and the way back ────────────────────────────────
+    //
+    // Every one of these is reached from a service, so the caller is already
+    // authenticated and `userId` is theirs. The password is asked for again on
+    // the three that change what the account requires.
+
+    async setupTotp(userId: string, currentPassword: string): Promise<{ secret: string; qr: string }> {
+      const user = await requireCurrentPassword(userId, currentPassword)
+
+      // Refused rather than replaced. Overwriting would invalidate the secret the
+      // person's authenticator holds while their next login still demands a code
+      // from it — the account is then locked by a call that answered 200.
+      if (await liveTotp(userId)) throw new TotpAlreadyEnabledError()
+
+      // One enrollment in flight. A second `setupTotp` supersedes the first,
+      // because a person who scanned the wrong QR code asks again and the
+      // abandoned secret must not stay confirmable.
+      await sys.credential.deleteMany({ where: { userId, type: TOTP_PENDING } })
+
+      const secret = generateTotpSecret()
+      await sys.credential.create({ data: { userId, type: TOTP_PENDING, value: secret } })
+
+      return { secret, qr: otpauthUri({ secret, account: user.email, issuer: totpIssuer }) }
+    },
+
+    async confirmTotp(userId: string, code: string): Promise<{ recoveryCodes: string[] }> {
+      // No password here, and that is not an inconsistency: this call is the
+      // second half of `setupTotp`, which asked. What it proves is the DEVICE.
+      const pending = await sys.credential.findFirst({ where: { userId, type: TOTP_PENDING } })
+      if (!pending) throw new NotFoundError('No enrollment in progress — call setupTotp first')
+
+      const step = verifyTotpCode(pending.value, code, new Date(), totpDrift)
+      if (step === null) throw new InvalidSecondFactorError()
+
+      // Promoted rather than copied: the row keeps its id and the `totpPending`
+      // spelling stops existing, so there is no window where both types answer
+      // for this user.
+      //
+      // `totpLastStep` is set from the confirming code, which spends it. Left
+      // null, the very code that switched the factor on would also log the person
+      // in for the rest of its window — the replay the column exists to refuse,
+      // reachable on the one request where the code is guaranteed to be on screen.
+      await sys.credential.update({
+        where: { id: pending.id },
+        data:  { type: TOTP_LIVE, totpLastStep: step }
+      })
+
+      const recoveryCodes = await issueRecoveryCodes(userId)
+
+      await audit('totp.enabled', {
+        model: 'Credential', records: [String(pending.id)],
+        actorId: userId, actorType: 'user',
+        meta: { recoveryCodes: recoveryCodes.length },
+      })
+
+      return { recoveryCodes }
+    },
+
+    async disableTotp(userId: string, currentPassword: string): Promise<void> {
+      await requireCurrentPassword(userId, currentPassword)
+
+      const cred = await liveTotp(userId)
+      if (!cred) throw new NotFoundError('Two-factor authentication is not enabled')
+
+      // The codes go with it. A recovery code outliving the factor it recovers is
+      // a second password nobody remembers having.
+      await sys.credential.deleteMany({ where: { userId, type: TOTP_LIVE } })
+      await sys.credential.deleteMany({ where: { userId, type: TOTP_PENDING } })
+      await sys.credential.deleteMany({ where: { userId, type: RECOVERY } })
+      await sys.loginChallenge.deleteMany({ where: { userId } })
+
+      await audit('totp.disabled', {
+        model: 'Credential', records: [String(cred.id)],
+        actorId: userId, actorType: 'user',
+      })
+    },
+
+    async regenerateRecoveryCodes(userId: string, currentPassword: string): Promise<{ recoveryCodes: string[] }> {
+      await requireCurrentPassword(userId, currentPassword)
+
+      if (!await liveTotp(userId)) throw new NotFoundError('Two-factor authentication is not enabled')
+
+      const recoveryCodes = await issueRecoveryCodes(userId)
+      await audit('recoveryCodes.regenerated', {
+        model: 'Credential', records: [],
+        actorId: userId, actorType: 'user',
+        meta: { count: recoveryCodes.length },
+      })
+      return { recoveryCodes }
+    },
+
+    async totpStatus(userId: string): Promise<{ enabled: boolean; recoveryCodesRemaining: number }> {
+      const cred = await liveTotp(userId)
+      return {
+        enabled: Boolean(cred),
+        // Asked only when it is on: the rows are deleted with the factor, so the
+        // count would be 0 either way and a screen cannot tell *off* from
+        // *out of codes* from one number.
+        recoveryCodesRemaining: cred ? Number(await countRecoveryCodes(userId)) : 0,
+      }
+    },
+
+    /**
+     * Does this code verify for this user, right now.
+     *
+     * Does NOT advance `totpLastStep`, where `completeLogin` does. Consuming the
+     * step here would refuse a person who signs in and immediately opens their
+     * settings, using the code still on their screen — and the exposure it would
+     * buy is a replay by somebody who already holds the session, which is not
+     * the attack the column is there for.
+     */
+    async verifyTotp(userId: string, code: string): Promise<boolean> {
+      const cred = await liveTotp(userId)
+      if (!cred) return false
+      return verifyTotpCode(cred.value, code, new Date(), totpDrift) !== null
     },
 
     // ── OAuth: which providers is this app configured for? ───────────────

@@ -70,9 +70,9 @@ title: Home
   const faces = customerRows().map(c => ({ name: c.name }))
 
   const ladderColumns = [
-    { key: 'session', label: 'Session' },
-    { key: 'level',   label: 'Level' },
-    { key: 'can',     label: 'Can' },
+    { name: 'session', label: 'Session' },
+    { name: 'level',   label: 'Level' },
+    { name: 'can',     label: 'Can' },
   ]
 
   // The ladder is data, and api/gate.ts is what makes it true. Written out

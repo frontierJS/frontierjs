@@ -63,24 +63,24 @@ title: Pay run
   const TONE = { draft: 'muted', calculated: 'info', approved: 'warning', paid: 'success' }
 
   const slipColumns = [
-    { key: 'reference',  label: 'Payslip' },
-    { key: 'employee',   label: 'Employee' },
-    { key: 'gross',      label: 'Gross',      align: 'right' },
-    { key: 'deductions', label: 'Deductions', align: 'right' },
-    { key: 'net',        label: 'Net',        align: 'right' },
-    { key: 'sent',       label: 'Sent' },
+    { name: 'reference',  label: 'Payslip' },
+    { name: 'employee',   label: 'Employee' },
+    { name: 'gross',      label: 'Gross',      align: 'right' },
+    { name: 'deductions', label: 'Deductions', align: 'right' },
+    { name: 'net',        label: 'Net',        align: 'right' },
+    { name: 'sent',       label: 'Sent' },
   ]
 
   const lineColumns = [
-    { key: 'description', label: 'Line' },
-    { key: 'amount',      label: 'Amount', align: 'right' },
-    { key: 'counts',      label: '' },
+    { name: 'description', label: 'Line' },
+    { name: 'amount',      label: 'Amount', align: 'right' },
+    { name: 'counts',      label: '' },
   ]
 
   const journalColumns = [
-    { key: 'account', label: 'Account' },
-    { key: 'debit',   label: 'Debit',  align: 'right' },
-    { key: 'credit',  label: 'Credit', align: 'right' },
+    { name: 'account', label: 'Account' },
+    { name: 'debit',   label: 'Debit',  align: 'right' },
+    { name: 'credit',  label: 'Credit', align: 'right' },
   ]
 
   function watch() {

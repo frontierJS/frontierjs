@@ -14,9 +14,10 @@ Last verified by running: **2026-08-29**.
 ## What works
 
 Services + hook pipeline, HTTP and WebSocket transport, channels, the browser
-client, and the batteries (mail, cache, scheduler, workers, file storage,
-webhooks, AI, OpenAPI, manifest, devtools, health, the transactional outbox,
-the backfill).
+client, and the batteries (mail, cache, scheduler, workers, webhooks, AI,
+OpenAPI, manifest, devtools, health, the transactional outbox, the backfill).
+File storage is **not** among them and is Litestone's (`FJS-D260`); junction's
+half of a `File` column is the multipart crossing and `http.static`.
 
 **The backfill** is the middle step of expand → backfill → contract
 (`FJS-D157`): `defineBackfill({ name, model, field, fill })`, a `BackfillRun` row

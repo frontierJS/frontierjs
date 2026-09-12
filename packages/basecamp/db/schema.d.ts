@@ -113,6 +113,17 @@ export interface Credential {
   refreshToken?: string | null
   tokenExpiresAt?: string | null
   scope?: string | null
+  /**
+   * TOTP only — the last step this secret was accepted at, which is what makes
+   * a code single-use. A code is valid for its whole 30-second window, so
+   * without this the window IS a replay window and nothing about the second
+   * code looks wrong. Null until the first successful login.
+   * 
+   * Beside `scope`, `accessToken` and `tokenExpiresAt`, which are OAuth-only in
+   * the same way: one table per KIND of credential would be four tables whose
+   * only difference is which columns are null.
+   */
+  totpLastStep?: number | null
   createdAt: string
 }
 
@@ -126,6 +137,17 @@ export interface CredentialCreate {
   refreshToken?: string | null
   tokenExpiresAt?: string | null
   scope?: string | null
+  /**
+   * TOTP only — the last step this secret was accepted at, which is what makes
+   * a code single-use. A code is valid for its whole 30-second window, so
+   * without this the window IS a replay window and nothing about the second
+   * code looks wrong. Null until the first successful login.
+   * 
+   * Beside `scope`, `accessToken` and `tokenExpiresAt`, which are OAuth-only in
+   * the same way: one table per KIND of credential would be four tables whose
+   * only difference is which columns are null.
+   */
+  totpLastStep?: number | null
 }
 
 export interface CredentialUpdate {
@@ -138,6 +160,7 @@ export interface CredentialUpdate {
   refreshToken?: string | null
   tokenExpiresAt?: string | null
   scope?: string | null
+  totpLastStep?: number | null
 }
 
 export interface CredentialWhere extends WhereBase {
@@ -150,6 +173,7 @@ export interface CredentialWhere extends WhereBase {
   refreshToken?: string | WhereOp<string> | null
   tokenExpiresAt?: string | WhereOp<string> | null
   scope?: string | WhereOp<string> | null
+  totpLastStep?: number | WhereOp<number> | null
   createdAt?: string | WhereOp<string> | null
   AND?: CredentialWhere[]
   OR?:  CredentialWhere[]
@@ -329,6 +353,87 @@ export interface VerificationWhere extends WhereBase {
 export type VerificationOrderBy =
   | { [K in keyof Omit<Verification, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<Verification, never>]?: OrderDir }>
+
+// ─── LoginChallenge ──────────────────────────────────────────────
+
+/**
+ * A login that is half done.
+ * 
+ * The password was right and there is a second factor, so the caller holds a
+ * ticket and no session. It is its own model rather than a fifth
+ * `VerificationPurpose` for the reason `OauthFlow` below is not one either:
+ * nobody is proving control of an ADDRESS here — there is no `identifier` and
+ * the address was settled a step ago — and `attempts` is a column the other
+ * purposes have no use for. Three answers to what a column means is three
+ * tables wearing one name (`FJS-D261`).
+ * 
+ * `attempts` is the whole of what stands between a six-digit code and a
+ * million guesses, so it is counted on the row rather than in a limiter: a
+ * process-local count is reset by a redeploy and is not shared by two
+ * instances, and this is the one table where both of those are an authorization
+ * bypass rather than a slow path.
+ */
+export interface LoginChallenge {
+  id: string
+  userId: string
+  /**
+   * What the caller presents to finish the login. Found by this value alone,
+   * which is safe here and is not in `OauthFlow`: a ticket is handed straight
+   * back to the caller that asked for it, never carried by a redirect somebody
+   * else can start.
+   * @guarded
+   */
+  value: string
+  /**
+   * Counted up on every wrong code. The row is spent when it reaches the
+   * ceiling — the caller signs in from the top rather than guessing again.
+   */
+  attempts: number
+  expiresAt: string
+  createdAt: string
+}
+
+export interface LoginChallengeCreate {
+  id?: string
+  userId: string
+  /**
+   * What the caller presents to finish the login. Found by this value alone,
+   * which is safe here and is not in `OauthFlow`: a ticket is handed straight
+   * back to the caller that asked for it, never carried by a redirect somebody
+   * else can start.
+   */
+  value: string
+  /**
+   * Counted up on every wrong code. The row is spent when it reaches the
+   * ceiling — the caller signs in from the top rather than guessing again.
+   */
+  attempts?: number
+  expiresAt: string
+}
+
+export interface LoginChallengeUpdate {
+  id?: string
+  userId?: string
+  value?: string
+  attempts?: number
+  expiresAt?: string
+}
+
+export interface LoginChallengeWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  userId?: string | WhereOp<string> | null
+  value?: string | WhereOp<string> | null
+  attempts?: number | WhereOp<number> | null
+  expiresAt?: string | WhereOp<string> | null
+  createdAt?: string | WhereOp<string> | null
+  AND?: LoginChallengeWhere[]
+  OR?:  LoginChallengeWhere[]
+  NOT?: LoginChallengeWhere
+}
+
+export type LoginChallengeOrderBy =
+  | { [K in keyof Omit<LoginChallenge, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<LoginChallenge, never>]?: OrderDir }>
 
 // ─── OauthFlow ───────────────────────────────────────────────────
 
@@ -3581,6 +3686,7 @@ export interface ServiceTypes {
   credentials: Credential
   sessions: Session
   verifications: Verification
+  loginChallenges: LoginChallenge
   oauthFlows: OauthFlow
   metricSerieses: MetricSeries
   metricPoints: MetricPoint
@@ -3743,6 +3849,7 @@ export interface LitestoneClient {
   readonly credential: TableClient<Credential, CredentialCreate, CredentialUpdate, CredentialWhere>
   readonly session: TableClient<Session, SessionCreate, SessionUpdate, SessionWhere>
   readonly verification: TableClient<Verification, VerificationCreate, VerificationUpdate, VerificationWhere>
+  readonly loginChallenge: TableClient<LoginChallenge, LoginChallengeCreate, LoginChallengeUpdate, LoginChallengeWhere>
   readonly oauthFlow: TableClient<OauthFlow, OauthFlowCreate, OauthFlowUpdate, OauthFlowWhere>
   readonly metricSeries: TableClient<MetricSeries, MetricSeriesCreate, MetricSeriesUpdate, MetricSeriesWhere>
   readonly metricPoint: TableClient<MetricPoint, MetricPointCreate, MetricPointUpdate, MetricPointWhere>

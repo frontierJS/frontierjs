@@ -23,7 +23,7 @@ import { createJunctionClient, localTokenStore } from '@frontierjs/junction/clie
 // on its own subpath, because `status` and `session` are the two things a
 // component asks this module for and splitting them would be two imports for
 // one subject.
-export { session, ready, refresh, signIn, signUp, signOut, oauthErrorMessage, OAUTH_ERRORS } from './session.js'
+export { session, ready, refresh, signIn, submitCode, signUp, signOut, oauthErrorMessage, OAUTH_ERRORS } from './session.js'
 import { initSession, _onUnauthorized, session, ready as sessionReady } from './session.js'
 
 // Resource factory — re-exported from the resource module
@@ -477,7 +477,10 @@ export function initJunction(config) {
 
   if (auth.publicRoutes) {
     beforeNavigate(async ({ to }) => {
-      const isPublic = auth.publicRoutes.some(r => isPublicRoute(r, to.path))
+      // `pathname`, never the path-with-search: an exact rule is compared with
+      // `===`, so `/login/` stopped matching `/login/?returnTo=…` — the URL this
+      // very guard writes — and bounced a public route to sign-in (`FJS-1083`).
+      const isPublic = auth.publicRoutes.some(r => isPublicRoute(r, to.pathname))
 
       if (isPublic) return true
 
@@ -490,7 +493,9 @@ export function initJunction(config) {
 
       if (!session.user) {
         if (auth.returnPath) {
-          sessionStorage?.setItem('sierra_return_path', to.path)
+          // Both halves here, unlike the match above: coming back to a filtered
+          // list means coming back to its query.
+          sessionStorage?.setItem('sierra_return_path', to.pathname + to.search)
         }
         return auth.redirectTo ?? '/login'
       }

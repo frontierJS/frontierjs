@@ -74,6 +74,9 @@ const NOT_SEEDED: Record<string, string> = {
   session:      'a live sign-in, which nothing here has done',
   verification: 'a token in flight',
   oauth_flow:   'an authorization in flight',
+  // A password accepted and a code still owed. Seeding one would seed a person
+  // standing at a prompt.
+  login_challenge: 'a sign-in halfway through, which nothing here has started',
   // A nonce is spent, not stored: the row exists to refuse a replay for five
   // minutes and is swept after. Seeding one would seed a refusal (FJS-376).
   outpost_nonce: 'a signature already used, which nothing here has sent',

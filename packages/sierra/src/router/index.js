@@ -26,7 +26,7 @@ import { watchProxy } from '@frontierjs/mesa/runtime'
 import {
   matchRoute, normalizePath, buildUrl, parseQueryParams, caseInsensitiveNearMiss,
 } from './match.js'
-import { splitParams } from '@frontierjs/toolbelt/directives'
+import { splitParams, directiveParams } from '@frontierjs/toolbelt/directives'
 import {
   registerModule, buildLayoutMap, registerFileComponent, hmrInvalidate, getComponents,
   loadLayoutChain, linkHrefOf,
@@ -152,7 +152,8 @@ function _reportError(type, context, err) {
  * directly. The fields below are set by the router and therefore reserved —
  * frontmatter using one of these names is overwritten, and the scanner warns.
  *
- * @property {string}      path     current pathname + search
+ * @property {string}      pathname the path with no search — `/invoices/`
+ * @property {string}      search   the raw query string, leading `?` — or `''`
  * @property {object}      params   route params — { slug: 'x' }. PATH captures
  *                                  only; the search string is `query`
  * @property {object}      query    the URL's filters — { status: 'active' }
@@ -166,7 +167,17 @@ function _reportError(type, context, err) {
  * @property {object}      slots    named slots registered via provideSlot()
  */
 export const page = {
-  path:    '/',
+  // `pathname` and `search` are `window.location`'s, borrowed exactly: the path
+  // with no query, and the raw query string with its leading `?`. They replace
+  // a single `path` that was `pathname + search` — a value the browser has no
+  // word for, wearing a name that reads like `pathname`, which three callers
+  // undid by hand with `.split('?')[0]` and a fourth forgot to (`FJS-1083`).
+  //
+  // The one collision is stated rather than hidden: `page.search` is the whole
+  // query STRING, and `page.directives.search` is the `$search` full-text term
+  // (Invariant 10). They live one level apart and mean different things.
+  pathname: '/',
+  search:   '',
   params:  {},
   query:      {},
   directives: {},
@@ -206,7 +217,8 @@ const _w = () => watchProxy(page)
  * Writes go through the proxy so any live watchers see the reset.
  */
 export function _resetPage() {
-  _w().path    = '/'
+  _w().pathname = '/'
+  _w().search   = ''
   _w().params  = {}
   _w().query      = {}
   _w().directives = {}
@@ -371,13 +383,21 @@ export function initRouter(tree, components, loaders = {}, options = {}, layouts
 /**
  * Navigate to a path.
  *
+ * `directives` is the OTHER half of the query, `page.directives` shaped and
+ * unprefixed. The router splits a URL into filters and directives on the way in
+ * (Invariant 10) and joins them here on the way out, so a page never spells a
+ * `$` name: without it every caller wrote `directiveParams` itself, which is a
+ * transport spelling loose in application code and one more thing to get wrong
+ * the day a directive is added.
+ *
  * @param {string} path
  * @param {Record<string, unknown>} [queryParams={}]
- * @param {{ scroll?: boolean | string, replace?: boolean }} [options={}]
+ * @param {{ scroll?: boolean | string, replace?: boolean, directives?: object }} [options={}]
  */
 export async function goto(path, queryParams = {}, options = {}) {
-  const { scroll = true, replace = false } = options
-  const url = buildUrl(path, queryParams, _options.trailingSlash ?? 'always')
+  const { scroll = true, replace = false, directives } = options
+  const params = directives ? { ...queryParams, ...directiveParams(directives) } : queryParams
+  const url = buildUrl(path, params, _options.trailingSlash ?? 'always')
   await _navigate(url, { replace, scroll })
 }
 
@@ -709,7 +729,8 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
 
   // Build pending route context
   const toContext = {
-    path:   normalized + search,
+    pathname: normalized,
+    search,
     params: { ...match.params },
     query,
     directives,
@@ -950,7 +971,8 @@ async function _navigate(url, { replace = false, scroll = true, isPopstate = fal
   }
 
   _w().meta    = _meta
-  _w().path    = normalized + search
+  _w().pathname = normalized
+  _w().search   = search
   _w().params  = toContext.params
   // Only when they changed. `page` fields are assigned every navigation, which
   // is right for the ones a navigation always changes — but a LAYOUT outlives

@@ -109,12 +109,13 @@ landing, not separate questions:
 says nothing**, which is Sierra's rule and Invariant 6's: a client-side gate is
 an affordance and the server enforces regardless. Measured against `example` on
 the day of this ruling — 38 services, 76 models, 43 gated — the projection
-answers 94 tools at STRANGER, 126 at USER and 203 at STAFF, with no allowlist
-written anywhere.
+answers 63 tools at STRANGER, 114 at USER and 196 at STAFF, with no allowlist
+written anywhere — and four withheld from every standing, which are the `@system`
+moves a service still offers as a method, `payRuns.pay` among them.
 
   *Amended 2026-09-10, same day.* **That spread is entirely the CRUD verbs, and
   the qualifier belongs on the evidence.** The same walk over the CUSTOM methods
-  answers 15 services at STRANGER, at USER and at STAFF — byte-identical lists,
+  answered 15 services at STRANGER, at USER and at STAFF — byte-identical lists,
   with `orders.refund` and `payRuns.pay` among them. A custom method's name is not
   one of `@@gate`'s four positions, so permissive-unknown answers *yes* for every
   verb an agent would be delegated. The boundary is unharmed — hooks and
@@ -128,7 +129,21 @@ written anywhere.
   model whose `update` is 8, so grading by the move's number alone would offer it
   two rungs below what the boundary accepts. It does not change this ruling, which is about a name;
   it changes what a projection reading `@@gate` alone can be claimed to do, and
-  the rules are in `IDEAS/agent-surface.md` § *The narrowing is all CRUD*. **The unexercised half is named rather than assumed**: no model
+  the rules are in `IDEAS/agent-surface.md` § *The narrowing is all CRUD*.
+
+  *Amended 2026-09-10, on building the projection.* **The figures first recorded
+  here were 94 / 126 / 203 and were wrong, and the cause is the more useful
+  half.** `describe().model` is not reliably a model: `Service.model` is optional
+  and Junction defaults it to the service's own NAME, so `orders` reports
+  `orders` — camelCase, plural, naming no `$def`. Every gate and every move on
+  `Order` then resolved to `undefined`, which permissive-unknown reads as
+  *nothing is declared*, so the most heavily gated service in the app came out
+  completely open and no assertion failed. Resolution goes through
+  `@frontierjs/toolbelt/inflect`'s `modelName` — Invariant 2's own composition —
+  and a name that still resolves to nothing is REPORTED, because *no rules exist
+  for these rows* and *the rules could not be found* produce the same open tool
+  list. This is the third claim in this ruling that building it corrected, which
+  is the argument for `VERIFYING.md` rather than an embarrassment. **The unexercised half is named rather than assumed**: no model
 in that app offers a method its policy allows and a LOCKED gate refuses, so `9`
 against `levelPasses` versus a bare `>=` is a distinction `example` cannot draw,
 and the fixture carrying that one shape is the surface's first test.
@@ -4694,6 +4709,69 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d261"></a>2026-09-12 · `FJS-D261` — TOTP is a second STEP of login, not a second standing. The half-finished login is its own row, `login()` answers a union, and the gate ladder does not move.
+
+`IAuth` has declared `setupTotp` and `verifyTotp` as optional methods since the
+interface was written and the native provider implements neither, so the surface
+was never the open question — **what a password alone is worth once a second
+factor exists** was, and it decides four things at once.
+
+**The pending login is a model of its own, `LoginChallenge`.** The cheap answer
+is a fifth `VerificationPurpose`, and `auth.lite` has already refused exactly
+this reuse once, in writing, for `OauthFlow`: *nobody is proving anything here,
+there is no address yet* — three different answers to what a column means is
+three tables wearing one name. A TOTP challenge has no `identifier` and proves
+possession of a device rather than control of an address, which is the test that
+file states for whether a row belongs in `Verification` at all. It carries
+`attempts`, which neither of the others needs and which is the whole of what
+stops a six-digit space being brute-forced, so folding it in would put a column
+on two purposes that have no use for it.
+
+**`login()` answers `{ token, user } | { challenge, expiresAt }` and there is no
+second method.** A `loginWithTotp` beside `login` would be two names for signing
+in, and the caller would pick by knowing something about the account it cannot
+know before it asks. A union is refused by the typechecker at every call site the
+day the shape changes, where an added method is refused nowhere and silently
+never called. Nobody depends on the old signature — *preservation vs. evolution*
+— so it is a change rather than an addition, with no alias.
+
+**The challenge step is a ROUTE and everything else is a SERVICE, which is
+`FJS-D20` applied rather than re-decided.** `POST /auth/login/challenge` cannot
+be gated by a session because it is what produces one. Enrolling, confirming,
+disabling and regenerating recovery codes all require a session, so by that
+ruling's own test nothing is lost by making them services and the hook pipeline,
+the audit trail, schema validation and the WebSocket transport are all lost by
+not. They go on `account`, and every one of them is `refuseInSupport` for the
+reason `services.ts` already gives for a password change: an operator inside an
+episode must not be able to plant a factor that outlives it.
+
+**The scope fence, stated here so it cannot drift: a session does not learn that
+two factors were used.** `authMethod` stays the five values it has. *How many
+factors* is trail metadata, and the moment it becomes a rung — *this caller
+proved possession in the last five minutes* — it is a change to
+`@frontierjs/toolbelt/gate`, which four packages read and three realms grade
+against. That is the passkey design and it is not this. The cost of being wrong
+here is the one asymmetry worth naming: a fence removed later costs a ruling, a
+ladder rung removed later costs every app's access baseline.
+
+**Three things can be wrong in silence and each gets an artefact rather than a
+comment.** An enrollment that enables before it verifies is a permanent lockout
+on the first wrong clock, so `totpSetup` enables nothing and `totpConfirm` is
+what does. A code stays valid for its whole window, so the accepted step is
+stored on the credential and a replay is refused by comparison rather than by
+luck. A recovery code is a row that is DELETED on use, not flagged, because a
+flag is a column somebody reads wrong once. All three are tested with the
+succeeding call beside them, since a guard that refuses everything satisfies any
+test that only asks about the refusal.
+
+*Lives in:* `packages/auth/totp.ts` (the arithmetic, clockless — `at` is a
+parameter), `db/auth.lite` (`LoginChallenge`, `@@gate("8")`), `auth.ts` (the two
+steps), `services.ts` (the four session-bound methods). The secret and the
+recovery codes are `Credential` rows of `type: 'totp'` and `type: 'recovery'`,
+so `@guarded`, invariant 7's redaction and gate 8 apply with nothing declared
+twice.
+
 
 ### <a id="fjs-d260"></a>2026-09-12 · `FJS-D260` — file storage has one owner and it is Litestone's. Junction's `createFileStorage` is deleted rather than delegated, because the two were never the same shape.
 

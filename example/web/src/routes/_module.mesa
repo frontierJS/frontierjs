@@ -291,7 +291,7 @@ siteName: Kitchen sink
           <Button
             variant="ghost"
             data-oauth={name}
-            onclick={() => getClient().auth.signInWith(name, { returnTo: page.path })}
+            onclick={() => getClient().auth.signInWith(name, { returnTo: page.pathname + page.search })}
           >Continue with {name}</Button>
         {/each}
       {/if}

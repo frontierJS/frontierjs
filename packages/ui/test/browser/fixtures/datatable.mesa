@@ -25,9 +25,9 @@
   let compactPage = 3
 
   const columns = [
-    { key: 'name',  label: 'Name',  sortable: true },
-    { key: 'email', label: 'Email' },
-    { key: 'total', label: 'Total', sortable: true, align: 'right' },
+    { name: 'name',  label: 'Name',  sortable: true },
+    { name: 'email', label: 'Email' },
+    { name: 'total', label: 'Total', sortable: true, align: 'right' },
   ]
 
   const everyone = [
@@ -38,8 +38,7 @@
 
   let rows     = everyone
   let loading  = false
-  let sortKey  = ''
-  let sortDir  = 'asc'
+  let orderBy  = ''
 </script>
 
 <div id="pg">
@@ -51,7 +50,7 @@
 </div>
 
 <div id="tbl">
-  <Table {columns} {rows} {loading} bind:sortKey bind:sortDir>
+  <Table {columns} {rows} {loading} bind:orderBy>
     {#snippet row(r, i)}
       <tr data-row={i}>
         <td>{r.name}</td>
@@ -69,4 +68,4 @@
 <output id="page">{page}</output>
 <output id="changes">{changes}</output>
 <output id="last-page">{lastPage}</output>
-<output id="sort">{sortKey}:{sortDir}</output>
+<output id="sort">{orderBy}</output>

@@ -34,9 +34,9 @@ title: Reports
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
 
   const columns = [
-    { key: 'status', label: 'State' },
-    { key: 'orders', label: 'Orders', align: 'right' },
-    { key: 'total',  label: 'Taken',  align: 'right' },
+    { name: 'status', label: 'State' },
+    { name: 'orders', label: 'Orders', align: 'right' },
+    { name: 'total',  label: 'Taken',  align: 'right' },
   ]
 
   const { get: rows, unsubscribe } = useStore(revenue.store)

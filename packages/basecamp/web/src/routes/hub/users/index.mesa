@@ -178,13 +178,13 @@ title: Hub users
   $: suspended = rows.filter(u => u.status === 'suspended').length
   $: me = session.user?.userId
   const HUB_USER_COLUMNS = [
-    { key: 'actor',      label: 'Actor' },
-    { key: 'kind',       label: 'Kind' },
-    { key: 'workspaces', label: 'Workspaces' },
-    { key: 'status',     label: 'Status' },
-    { key: 'hub',        label: 'Hub' },
-    { key: 'created',    label: 'Created' },
-    { key: 'actions',    label: 'Actions', hideLabel: true },
+    { name: 'actor',      label: 'Actor' },
+    { name: 'kind',       label: 'Kind' },
+    { name: 'workspaces', label: 'Workspaces' },
+    { name: 'status',     label: 'Status' },
+    { name: 'hub',        label: 'Hub' },
+    { name: 'created',    label: 'Created' },
+    { name: 'actions',    label: 'Actions', hideLabel: true },
   ]
 </script>
 

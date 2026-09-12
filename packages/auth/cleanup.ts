@@ -53,6 +53,10 @@ export function createAuthCleanupJobs(db: LitestoneClient): AuthCleanupHandle {
   const sweepEphemeral = async () => {
     await sys.verification.deleteMany(expired())
     await sys.oauthFlow.deleteMany(expired())
+    // A lapsed challenge is refused at resolution whether or not this has run —
+    // `completeLogin` compares `expiresAt` itself. This keeps the table from
+    // growing by one row per abandoned sign-in, forever.
+    await sys.loginChallenge.deleteMany(expired())
   }
 
   // A closure rather than `this.stop()`: the handle's methods are ordinary

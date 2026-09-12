@@ -28,6 +28,35 @@ export interface LitestoneAuthOptions {
   // How long an email verification token lives. Default: '24 hours'
   emailVerificationTtl?: string
 
+  // How long a half-finished login lives — the window between a correct
+  // password and a second factor. Default: '5 minutes'.
+  //
+  // Short because the ticket stands in for the password for as long as it
+  // exists, and long enough that somebody hunting for their phone does not
+  // start again. A lapsed ticket sends them back to the password, never past it.
+  loginChallengeTtl?: string
+
+  // How many wrong codes one challenge tolerates before it is spent.
+  // Default: 5.
+  //
+  // Counted on the row, so it survives a redeploy and is shared by every
+  // instance. A six-digit code is a million guesses and this is the only thing
+  // standing in front of them.
+  loginChallengeAttempts?: number
+
+  // Steps either side of now that a TOTP code is accepted at. Default: 1,
+  // which is ±30 seconds.
+  //
+  // Every step allowed multiplies the codes valid at any instant. Raise it for a
+  // fleet with bad clocks, knowing what it costs.
+  totpDrift?: number
+
+  // What an authenticator app shows above the account name. Default: 'FrontierJS'.
+  //
+  // Set it to the product's name — a person with several accounts reads this
+  // and nothing else to tell them apart.
+  totpIssuer?: string
+
   // Called immediately after a password reset token is created.
   // The token is the raw value — use it to build a reset link.
   // Called in the same stack as token creation so errors are catchable.
@@ -102,14 +131,23 @@ export interface LitestoneAuthOptions {
    * Before the refusal is raised. Throw to replace `InvalidCredentialsError`
    * with your own — a lockout answers 429, not 401.
    *
-   * `reason` is 'no-such-user' | 'no-password-credential' | 'bad-password'.
-   * `userId` is null when the address matched nobody. Do not leak which:
-   * telling a caller whether an address exists is an enumeration oracle.
+   * `reason` is 'no-such-user' | 'no-password-credential' | 'bad-password' at
+   * the password step, and 'no-such-challenge' | 'challenge-expired' |
+   * 'no-such-user' | 'factor-removed' | 'code-replayed' | 'bad-code' at the
+   * second. `stage` says which, so an app can lock an account on ten bad codes
+   * without counting them against ten bad passwords.
+   *
+   * `userId` is null when the address matched nobody. `email` is null at the
+   * second step, where there is a ticket rather than an address — a hook keying
+   * on the address rate-limits the password step and must fall back to `userId`
+   * for this one. Do not leak which reason fired: telling a caller whether an
+   * address exists is an enumeration oracle.
    */
   onLoginFailed?: (event: {
-    email: string
+    email:  string | null
     userId: string | null
     reason: string
+    stage:  'password' | 'second-factor'
   }) => Promise<void> | void
 
   /** Before the session row is deleted. `sessionId` is null for an unknown token. */

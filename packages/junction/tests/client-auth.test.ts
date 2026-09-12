@@ -52,6 +52,127 @@ afterEach(() => { cleanup?.(); cleanup = null })
 
 // ─── Establishing a session ───────────────────────────────────────────────
 
+describe('client.auth — the second factor', () => {
+
+  it('a challenge stores nothing, opens nothing, and emits no authenticated', async () => {
+    // The property that matters: a password accepted is not a session. A client
+    // that adopted this would have every listener treat the first step as the
+    // whole answer, and the socket would open unauthenticated.
+    const { restore } = mockFetch([{ challenge: 'tik-1', expiresAt: '2030-01-01T00:00:00.000Z' }])
+    cleanup = restore
+    const store = memoryStore()
+    const c = createJunctionClient({ url: 'http://x', tokenStorage: store })
+
+    let authenticated = 0
+    c.on('authenticated', () => { authenticated++ })
+
+    const r = await c.auth.signIn('a@b.c', 'pw')
+
+    expect('challenge' in r).toBe(true)
+    expect(c.token).toBeNull()
+    expect(store.value).toBeNull()
+    expect(authenticated).toBe(0)
+    expect(c.auth.awaitingSecondFactor).toBe(true)
+  })
+
+  it('completeSignIn posts the remembered ticket and adopts the session', async () => {
+    const { calls, restore } = mockFetch([
+      { challenge: 'tik-2', expiresAt: '2030-01-01T00:00:00.000Z' },
+      { token: 'tok-2', user: { email: 'a@b.c' } },
+    ])
+    cleanup = restore
+    const store = memoryStore()
+    const c = createJunctionClient({ url: 'http://x', tokenStorage: store })
+
+    let authenticated = 0
+    c.on('authenticated', () => { authenticated++ })
+
+    await c.auth.signIn('a@b.c', 'pw')
+    const r = await c.auth.completeSignIn('123456')
+
+    expect(calls[1].url).toBe('http://x/auth/login/challenge')
+    expect(calls[1].method).toBe('POST')
+    // The caller passed a code and nothing else — the ticket came from the client.
+    expect(calls[1].body).toEqual({ challenge: 'tik-2', code: '123456' })
+    // And with no Authorization, for `signIn`'s reason: this is still a sign-in.
+    expect(calls[1].headers.Authorization).toBeUndefined()
+
+    expect(r.token).toBe('tok-2')
+    expect(c.token).toBe('tok-2')
+    expect(store.value).toBe('tok-2')
+    expect(authenticated).toBe(1)
+    // Single-use on the server, so keeping it could only produce a refusal whose
+    // reason the caller cannot read.
+    expect(c.auth.awaitingSecondFactor).toBe(false)
+  })
+
+  it('cookie mode: no ticket reaches the page, and the code alone finishes it', async () => {
+    // The transport strips `challenge` the way it strips `token`, so the body
+    // carries only the expiry. A client keyed on the ticket being present would
+    // treat this as a session and adopt a response with no user in it.
+    const { calls, restore } = mockFetch([
+      { expiresAt: '2030-01-01T00:00:00.000Z' },
+      { user: { email: 'a@b.c' } },
+    ])
+    cleanup = restore
+    const c = createJunctionClient({ url: 'http://x', tokenStorage: memoryStore() })
+
+    const r = await c.auth.signIn('a@b.c', 'pw')
+    expect('challenge' in r).toBe(false)
+    expect('user' in r).toBe(false)
+    // Nothing to remember, so nothing is claimed about a box being open.
+    expect(c.auth.awaitingSecondFactor).toBe(false)
+
+    await c.auth.completeSignIn('123456')
+    expect(calls[1].body).toEqual({ code: '123456' })
+  })
+
+  it('an explicit ticket wins over the remembered one', async () => {
+    const { calls, restore } = mockFetch([
+      { challenge: 'tik-3', expiresAt: '2030-01-01T00:00:00.000Z' },
+      { token: 'tok-3', user: {} },
+    ])
+    cleanup = restore
+    const c = createJunctionClient({ url: 'http://x', tokenStorage: memoryStore() })
+
+    await c.auth.signIn('a@b.c', 'pw')
+    await c.auth.completeSignIn('123456', 'kept-across-a-navigation')
+    expect(calls[1].body).toEqual({ challenge: 'kept-across-a-navigation', code: '123456' })
+  })
+
+  it('a second sign-in drops the first ticket BEFORE asking', async () => {
+    // Otherwise one account's code redeems another account's ticket — the
+    // request order is the whole of the guarantee, so the refusal is asserted
+    // from the state rather than from the answer.
+    const { restore } = mockFetch([
+      { challenge: 'tik-a', expiresAt: '2030-01-01T00:00:00.000Z' },
+      { token: 'tok-b', user: {} },
+    ])
+    cleanup = restore
+    const c = createJunctionClient({ url: 'http://x', tokenStorage: memoryStore() })
+
+    await c.auth.signIn('a@b.c', 'pw')
+    expect(c.auth.awaitingSecondFactor).toBe(true)
+
+    // The second answers a session, so nothing is pending afterwards.
+    await c.auth.signIn('b@b.c', 'pw')
+    expect(c.auth.awaitingSecondFactor).toBe(false)
+  })
+
+  it('signing out drops a pending ticket', async () => {
+    const { restore } = mockFetch([
+      { challenge: 'tik-4', expiresAt: '2030-01-01T00:00:00.000Z' },
+      { ok: true },
+    ])
+    cleanup = restore
+    const c = createJunctionClient({ url: 'http://x', tokenStorage: memoryStore() })
+
+    await c.auth.signIn('a@b.c', 'pw')
+    await c.auth.signOut()
+    expect(c.auth.awaitingSecondFactor).toBe(false)
+  })
+})
+
 describe('client.auth — the routes', () => {
 
   it('signIn posts to the auth prefix, keeps the token and opens no second copy of it', async () => {
@@ -68,7 +189,11 @@ describe('client.auth — the routes', () => {
     // Sent with no Authorization — a sign-in carrying the previous caller's
     // token is how a stale session outlives the person who left.
     expect(calls[0].headers.Authorization).toBeUndefined()
-    expect(r.token).toBe('tok-1')
+    // `signIn` answers a union since FJS-D261 — a session here, asserted as one
+    // rather than cast, because a cast would read `undefined.token` the day this
+    // fixture grows a second factor.
+    expect('challenge' in r).toBe(false)
+    expect((r as { token?: string }).token).toBe('tok-1')
     expect(c.token).toBe('tok-1')
     expect(store.value).toBe('tok-1')
   })

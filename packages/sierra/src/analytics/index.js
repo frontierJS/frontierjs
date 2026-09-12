@@ -57,8 +57,12 @@ export function initAnalytics(config) {
           // provider does with it. The built-in providers only ever used `path`;
           // a custom one is the third documented kind and receives this contract
           // too.
+          //
+          // `pathname` is what makes that distinction TRUE. It was `to.path`,
+          // which the router built as pathname + search, so the token this
+          // comment warns about rode along under both keys (`FJS-1083`).
           url: pageUrl(),
-          path: to.path,
+          path: to.pathname,
           meta: to.node?.meta ?? {},
         })
       })

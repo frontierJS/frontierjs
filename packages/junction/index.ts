@@ -89,7 +89,7 @@ export type {
 } from './src/transport/types.ts'
 
 // ─── Auth ─────────────────────────────────────────────────────────────────
-export type { IAuth, SessionVerifier, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo, RateLimitHookOptions } from './src/auth/types.ts'
+export type { IAuth, LoginResult, SessionVerifier, SessionContext, CreateUserInput, ApiKeyOptions, AuthSessionInfo, ApiKeyInfo, RateLimitHookOptions } from './src/auth/types.ts'
 
 // ─── Events ───────────────────────────────────────────────────────────────
 export { createScheduler }                                        from './src/scheduler/index.ts'

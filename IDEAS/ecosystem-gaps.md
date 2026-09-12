@@ -194,10 +194,13 @@ been collected. That is the tracked work, not the building.
 See `IDEAS/testing-and-ci.md`, which treats this as the unblocking step for a
 cross-realm suite.
 
-### 6. Two-factor authentication — and the half of it that is not TOTP
+### 6. Two-factor authentication — ~~missing~~ **TOTP shipped 2026-09-12; passkeys are the open half**
 
-`IAuth` declares `setupTotp` as an optional method; the native provider does not
-implement it. Increasingly table stakes for B2B.
+`IAuth` declared `setupTotp` as an optional method and the native provider
+implemented neither it nor `verifyTotp`. It does now — `FJS-D261`, and
+`packages/auth/CHANGES.md` carries what the ruling cost: a `login()` that answers
+a union, `LoginChallenge` as a model, and a replay guard on the credential row.
+The website's claim about TOTP is true as of that date; OAuth was already.
 
 **Passkeys are the other half and they are further away.** Added 2026-09-11:
 `passkey` and `webauthn` return **0 hits** across every package's source, where
@@ -526,7 +529,7 @@ than re-derived — the boundary is ours, the vendor is the app's.
 | A cache an app can share between nodes | Junction's cache is `bun:sqlite`, which is right for one box and wrong for two. The multi-node story ends here the way § 3's ended at the second machine | in-house driver seam; Redis is not HTTP, so Conduit cannot carry it |
 | Vectors and embeddings | `vector` returns 0 hits across `IDEAS/`. An embedding is a column with a distance comparison, which is `IDEAS/declared-semantics.md`'s family, and `ai/index.ts` already refuses to name a vendor | in-house column type; the model that produces the embedding is a Conduit target already |
 | Secrets at rest | `defineEnv` validates and `/redact` hides, and `@encrypted` covers columns. Nothing encrypts a `.env` or rotates an app secret; `IDEAS/release-transitions.md` reaches for `sops` and does not own it | Deployment realm, in-house — an app secret is a Release fact |
-| Maintenance mode | `fli deploy` mints a Release and swaps; there is no *this app is down on purpose* state. Absent, a deploy that must pause serving has to be done by stopping a container, which the journal then reads as a crash | in-house, small, and it is a transition rather than a flag |
+| Maintenance mode | `fli deploy` mints a Release and swaps; there is no *this app is down on purpose* state. Absent, a deploy that must pause serving has to be done by stopping a container, which the journal then reads as a crash | in-house, and it is a transition rather than a flag. **Built — `IDEAS/release-transitions.md` § Phase 3b** (`fli deploy:pause`), and it was not small: the enum it adds needed a migration path `deploy.db` had never had |
 
 **The one axis where the comparison runs the other way is worth stating**, because
 it is evidence for § *The strategic read* rather than another gap: that framework's

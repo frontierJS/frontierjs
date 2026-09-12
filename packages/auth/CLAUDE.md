@@ -14,11 +14,14 @@ plugin.ts    createAuthPlugin() — mounts /auth/*, declares the cookie mode,
              and registers the three services at boot()
 services.ts  account / sessions / api-keys — the half that is NOT a route
 db/user.lite      model User — the app's. Appended into its schema.lite
-db/auth.lite      Credential / Session / Verification / OauthFlow — imported,
-                  and adjusted at the app end with `extend model`, never pasted
+db/auth.lite      Credential / Session / Verification / LoginChallenge /
+                  OauthFlow — imported, and adjusted at the app end with
+                  `extend model`, never pasted
 schema.ts    reads those two: authUserModel / authMachineryModels /
              authSchemaFragments (both) / retargetDb
 crypto.ts    hashing / token generation
+totp.ts      RFC 6238 codes, base32, recovery codes — clockless, `at` is a
+             parameter (`FJS-D261`)
 cleanup.ts   expired-session pruning
 errors.ts    the auth error classes (each carries its own `status`)
 types.ts     the public types
@@ -36,6 +39,35 @@ index.ts     public API
   API keys and their password all can, so they are ordinary services and get the
   hook pipeline, the audit trail, validation and both transports. `GET /auth/me`
   is `account.get('me')` (`FJS-D20`, `DECISIONS.md` § API design).
+- **A password is not the whole answer, and `login()` says so in its TYPE.** It
+  returns a session OR `{ challenge, expiresAt }` (`FJS-D261`), so every caller
+  discriminates on `'challenge' in result` — which is what found basecamp's three
+  call sites rather than a browser finding them. **A `totp` credential EXISTING is
+  what makes a login owe a code**, which is why enrollment writes `totpPending`
+  and only `confirmTotp` promotes it: there is no state where an unproven secret
+  gates a sign-in, and a wrong clock costs a retry instead of the account. Three
+  credential types carry the factor — `totp`, `totpPending`, `recoveryCode` — and
+  `Credential.totpLastStep` is the replay guard, compared with `<=` so the whole
+  past closes rather than one code. The code that CONFIRMED enrollment is spent by
+  that same rule, which is the one request where it is certainly still on screen.
+- **`verifyTotp` does not consume the step and `completeLogin` does.** Not an
+  inconsistency: consuming in both refuses a person who signs in and immediately
+  opens settings with the code still on their screen, and what it would buy is a
+  replay by somebody who already holds the session. State it before changing it.
+- **The second factor's caller-facing half is on `account`, not a service of its
+  own.** Five methods beside `changePassword`, named exactly as the provider names
+  them so `need()` reads the key a caller typed. Four are `refuseInSupport` and
+  `totpStatus` is not — a read is what an episode is FOR, and the pair is asserted
+  both ways. `confirmTotp` refuses at 403 before the provider is reached: a 404
+  there would tell an operator whether the subject has an enrollment in flight,
+  through a call that was meant to be refused.
+- **A sequence of logins is inexpressible at the shipped drift, so the TOTP tests
+  run two harnesses.** `totpDrift: 1` means three valid steps and `confirmTotp`
+  spends one, so a user can finish exactly one more login. `tests/totp-login.test.ts`
+  declares `totpDrift: 10` for the rows that need several. The rejected
+  alternative was an injectable clock — a seam on the login path that exists only
+  for tests, and a forgeable one the day it reaches a caller. **Never give a code
+  check a caller-supplied `at`.**
 - **Every service method is scoped to the caller, and the ownership is in the
   WHERE.** No method takes a user id; the id a caller supplies names a row, never
   an owner. `revokeSession` and `revokeApiKey` put `userId` into the delete
@@ -88,9 +120,8 @@ index.ts     public API
   `@allow('write', auth().isAdmin)` on `role` and `emailVerified` for the columns
   a resolver grades on — a column the caller can write is not a column a level
   can be graded from. `8` stays on `Credential` / `Session` / `Verification` /
-  `OauthFlow`,
-  which is what 8 is for: a model nothing outside `asSystem()` has anything to
-  say to. Ruled in `DECISIONS.md` § Access control.
+  `OauthFlow` / `LoginChallenge`, which is what 8 is for: a model nothing
+  outside `asSystem()` has anything to say to. Ruled in `DECISIONS.md` § Access control.
 - **An app says what `'admin'` means once, in `sessionFields`.** The policies
   read `auth().isAdmin` — the same standing `FrontierGateGetLevel` and
   `sessionGateLevel()` grade ADMINISTRATOR(5) from — so an app whose resolver

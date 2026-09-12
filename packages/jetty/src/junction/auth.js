@@ -24,6 +24,8 @@ export function makeAuthFlow({ adapter, storage, pages, tokenKey = 'jetty_token'
   const authApi = {
     login:  (credentials) => adapter.auth?.login  ? adapter.auth.login(credentials)
                                                   : adapter.call('auth', 'login',  credentials),
+    completeLogin: (code)  => adapter.auth?.completeLogin ? adapter.auth.completeLogin(code)
+                                                  : adapter.call('auth', 'completeLogin', { code }),
     logout: ()            => adapter.auth?.logout ? adapter.auth.logout()
                                                   : adapter.call('auth', 'logout', {}),
     verify: (token)       => adapter.auth?.verify ? adapter.auth.verify(token)
@@ -46,6 +48,27 @@ export function makeAuthFlow({ adapter, storage, pages, tokenKey = 'jetty_token'
     } catch (e) {
       console.warn('[jetty] auth token persist failed:', e.message)
     }
+  }
+
+  /**
+   * A session answered, stored, upgraded and broadcast.
+   *
+   * One function because both steps of a login end here, and a second copy is
+   * how the two would come to disagree about whether the token is persisted
+   * before the connection is upgraded — which decides what a reload sees after a
+   * crash between them.
+   */
+  async function adopt(result, what) {
+    if (!result?.token) throw new Error(`${what} response missing token`)
+    await persistToken(result.token)
+    await safeSetToken(adapter, result.token)
+    session = {
+      user:          result.user ?? null,
+      authenticated: true,
+      expiresAt:     result.expiresAt ?? null,
+    }
+    pages.broadcast('session', session)
+    return session
   }
 
   return {
@@ -75,24 +98,35 @@ export function makeAuthFlow({ adapter, storage, pages, tokenKey = 'jetty_token'
 
     /**
      * Phase 2 login: credentials → Junction call → store → upgrade → broadcast.
+     *
+     * An account with a second factor answers `{ awaitingCode: true }` and none
+     * of that happens: nothing is stored, the connection is not upgraded, and the
+     * broadcast says the popup is waiting rather than signed in. `submitCode` is
+     * the other half.
      */
     async login(credentials) {
       const result = await authApi.login(credentials)
-      // Expected shape (default adapter convention; real Junction may differ):
-      //   { token, user, expiresAt }
-      if (!result?.token) {
-        throw new Error('auth.login response missing token')
+      if (result?.awaitingCode) {
+        session = { user: null, authenticated: false, expiresAt: null, awaitingCode: result.expiresAt ?? true }
+        // Broadcast, because the popup that asked may already be gone — a
+        // toolbar window closes on a click elsewhere, and the next one to open
+        // has to find the attempt still standing.
+        pages.broadcast('session', session)
+        return session
       }
-      await persistToken(result.token)
-      await safeSetToken(adapter, result.token)
-      session = {
-        user:          result.user ?? null,
-        authenticated: true,
-        expiresAt:     result.expiresAt ?? null,
-      }
-      // Broadcast new session to all connected ports.
-      pages.broadcast('session', session)
-      return session
+      return adopt(result, 'auth.login')
+    },
+
+    /**
+     * Finish a login that owed a code. A TOTP code or a recovery code — the
+     * person typing it is answering one question.
+     *
+     * The ticket is the wire client's and is never carried through a page or a
+     * port: in cookie mode there is no ticket a page could hold, and a popup that
+     * held one would be storing a password substitute for five minutes.
+     */
+    async submitCode(code) {
+      return adopt(await authApi.completeLogin(code), 'auth.completeLogin')
     },
 
     async logout() {

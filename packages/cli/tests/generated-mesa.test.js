@@ -107,17 +107,19 @@ describe('what the generators write', () => {
 
   // A sort a page can SET and cannot SHOW is the shape that passes every test
   // asking what the table renders. <Table> derives the next direction from the
-  // sortKey it was handed, so a page that reports a sort without stating the
+  // ordering it was handed, so a page that reports a sort without stating the
   // current one has a header that never reverses and an aria-sort stuck at
   // none — and the rows are correct the whole time, because the boundary got
-  // the directive. The two props are one feature, so the pair is the assertion.
+  // the directive.
   test('a generated table that offers a sort states the current one', () => {
     let offered = 0
     for (const [what, source] of Object.entries(GENERATED)) {
       if (!source.includes('onsort=')) continue
       offered++
-      expect(source, `${what} takes a sort and never marks it`).toContain('{sortKey}')
-      expect(source, `${what} takes a sort and never marks it`).toContain('{sortDir}')
+      expect(source, `${what} takes a sort and never marks it`).toContain('orderBy={ordering}')
+      // And it parses nothing: reading the three legal shapes is <Table>'s, off
+      // one owner, because three pages did it by hand and disagreed (FJS-1077).
+      expect(source, `${what} parses the orderBy itself`).not.toContain('.replace(/^-/')
       // Read off page.directives and never held locally: the URL is the state,
       // so a pair kept in the page disagrees with the load on the first Back.
       expect(source, `${what} does not read the sort off the URL`).toContain('page.directives?.orderBy')
@@ -140,22 +142,28 @@ describe('what the generators write', () => {
     expect(asked, 'no generated page asks for the omitted half').toBeGreaterThan(0)
   })
 
-  // A filter bar is handed a query the page derives from the URL, and the router
-  // does not remount for a query-only navigation — so a const that compiles to a
-  // plain value leaves the bar rendering the query the page ARRIVED with, forever,
-  // while the rows below it are correct on every filter (`FJS-1065`). The claim is
-  // about EMITTED code rather than source, which is why it lives here: the page is
-  // a string until somebody scaffolds an app, so this is the only place the
-  // generator and the compiler meet.
-  test('a generated page that hands a query to a filter bar derives it', async () => {
+  // A filter bar is handed BOTH halves of the URL's query, because the router
+  // splits them (Invariant 10) and the bar is what puts them back together. A
+  // page that passes the filters alone hands the bar a query with no sort and no
+  // page size in it -- and gets one back the same way, so the first keystroke in
+  // a filter box drops the sort a header just set. Nothing refuses it: the bar
+  // renders, the rows are correct, and only the sort quietly disappears.
+  //
+  // This replaces a tripwire asserting that `const urlQuery` compiled to a
+  // derivation (`FJS-1065`). The const is gone -- the bar reads `page.query` and
+  // `page.directives` as props, which are pushed from an effect -- so the hazard
+  // is removed rather than guarded, and what is left to protect is the pairing.
+  test('a generated page hands a filter bar both halves of the query', () => {
     let handed = 0
     for (const [what, source] of Object.entries(GENERATED)) {
-      if (!source.includes('const urlQuery')) continue
+      if (!source.includes('<FilterBar')) continue
       handed++
-      const ctx = await compileSource(source, { filename: 'Generated.mesa', css: false, debug: false })
-      expect(ctx.result, `${what} reads the URL once and never again`)
-        .toContain('const urlQuery = $$runtime.trackDerived')
+      const at  = source.indexOf('<FilterBar')
+      const tag = source.slice(at, source.indexOf('/>', at))
+      expect(tag, `${what} hands the bar no filters`).toContain('value={page.query}')
+      expect(tag, `${what} hands the bar no directives, so a filter drops the sort`)
+        .toContain('directives={page.directives}')
     }
-    expect(handed, 'no generated page derives a query from the URL').toBeGreaterThan(0)
+    expect(handed, 'no generated page renders a filter bar at all').toBeGreaterThan(0)
   })
 })

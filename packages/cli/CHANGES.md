@@ -1,5 +1,80 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-12 — an app can be taken down on purpose, and the journal can migrate
+
+`IDEAS/release-transitions.md` § Phase 3b. Until now the only way to stop serving
+was to stop the container, which the journal reads as a crash: `readState` goes on
+answering that Release R is serving while nothing answers at all, and the pipeline
+cannot deploy in that state either, since `06-swap` runs the migrations in the
+container's own entrypoint.
+
+`fli deploy:pause` and `fli deploy:unpause`. A pause is a `TransitionKind`, not a
+flag — it names the Release already serving, mints none, and *is this app paused*
+is the kind on the last succeeded transition rather than a column. The refusal
+happens at nginx, which is the only place that can answer for the SPA and the API
+at once while the app keeps running; the guard is `core/pause.js`, tested per
+request, so neither direction needs a reload or sudo.
+
+**The cost was not in the pause and this record did not predict it.** The DDL is
+`CREATE TABLE IF NOT EXISTS` throughout, so a target that has deployed once holds
+`CHECK ("kind" IN ('deploy','revert'))` that no new DDL can reach, and
+`Journal.formatVersion` shipped able to refuse a journal from the future and
+unable to reach the next format at all — a version field that could only refuse.
+So the first half of this is a migration path: `migrationPlan` walks format to
+format in one transaction, the runner takes `foreignKeys` as a stated connection
+setting, and the `journal` table loses its `formatVersion` default on the way
+past, because a default that has to move on every format change is a table whose
+shape moves forever.
+
+**Two things were found by running it rather than by writing it.**
+
+`PRAGMA foreign_keys = OFF` was being set before the DDL, and the DDL snapshot
+opens with `PRAGMA foreign_keys = ON` of its own — so the caller's answer was
+discarded, `DROP TABLE "transition"` cascaded, and the rebuild deleted every step
+of every transition ever recorded while reporting success. The negative control
+is what caught it: `tests/journal-migration.test.js` runs the same statements with
+keys on and asserts the steps are gone, which is the only way *the flag works* can
+be told from *nothing was ever at risk*.
+
+The guard has to sit AHEAD of the http→https redirect. Both are rewrite-phase
+returns and the first one wins, so a guard placed after it answers 301 to every
+plain-http caller of a paused app — the app looks up, over a scheme somebody is
+really using. Asked as a pair in CI's `deploy` phase, against a real nginx.
+
+`core/revert.js` had to be told about the new kinds: `chooseTarget` reads
+`succeeded[0]` as serving and `succeeded[1]` as the previous, so with pause rows
+counted both shift by one and a revert offers the Release already running — which
+`same-bytes` then refuses, on the day a revert is wanted, in words that read as a
+bug in the revert. `servingHistory` filters inside both readers rather than at the
+call site, because forgetting it produces a plausible answer rather than an error.
+
+**`already` is graded on both answers, not on the journal.** The first version
+refused an unpause whenever the journal said serving — which is exactly the state
+of a target somebody paused by hand, the one case `deploy:unpause` documents
+itself as existing for. A journal saying paused over a missing file must accept
+another pause, and a journal saying serving over a present file must accept an
+unpause, because in each the refused command is the one that fixes the drift.
+
+**`openPauseJournal` is called for real in `tests/pause-journal.test.js`**, by
+evaluating `_module.md`'s script block against a `localhost` machine and a temp
+journal. A destructure that did not land left `filePresent` undefined inside it,
+every test that compiles the file stayed green, and the first thing to notice was
+the deploy cycle four minutes into CI. The new file kills that mutant.
+
+`fli deploy:status` prints the journal's answer and the edge's side by side and
+reconciles neither. The two rows that matter are the ones where they disagree:
+recorded but not in force, and paused by hand.
+
+**It is `unpause` and not `resume`** because `fli deploy --resume` already means
+*continue an interrupted transition*, and two different operations one keystroke
+apart in the command somebody types during an incident is worth an uglier word
+for.
+
+**What a pause does not do**: the container is up, so jobs, crons and the outbox
+go on. It stops callers, not the app, and `03-verify` says so at the moment
+somebody has just taken the app down rather than in a document they read
+afterwards.
+
 ## 2026-09-10 — a generated list page's URL watch, and why it is still stated twice
 
 The list page carries two `$:` lines naming the same two properties: the handler that reloads on a

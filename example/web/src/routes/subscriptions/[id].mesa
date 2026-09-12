@@ -80,11 +80,11 @@ title: Subscription
     .map(s => ({ id: s, label: s }))
 
   const columns = [
-    { key: 'number', label: 'Number' },
-    { key: 'status', label: 'Status' },
-    { key: 'period', label: 'Period' },
-    { key: 'total',  label: 'Total', align: 'right' },
-    { key: 'due',    label: 'Due' },
+    { name: 'number', label: 'Number' },
+    { name: 'status', label: 'Status' },
+    { name: 'period', label: 'Period' },
+    { name: 'total',  label: 'Total', align: 'right' },
+    { name: 'due',    label: 'Due' },
   ]
 
   /** The subscription, watched. A renewal is a job — it writes from outside

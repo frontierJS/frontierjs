@@ -40,7 +40,7 @@
  * A resumed transition replays rows an earlier version wrote, so a reader has to
  * be able to ask what wrote them before it parses any of them.
  */
-export const JOURNAL_FORMAT = 1
+export const JOURNAL_FORMAT = 2
 
 /**
  * The table names the DDL emits.
@@ -57,6 +57,16 @@ export const TABLE = {
   transition: 'transition',
   step:       'transition_step',
 }
+
+/**
+ * The kinds that change WHICH Release is bound.
+ *
+ * `pause` and `unpause` are transitions over the Release already serving, so a
+ * reader asking *what is serving* counts them and a reader asking *what to go
+ * back to* must not — a revert offered the Release already running otherwise,
+ * and refused itself by name (`same-bytes`) on the day it was wanted.
+ */
+export const MOVES_SERVING = new Set(['deploy', 'revert'])
 
 const stamp = (now) => now ?? new Date().toISOString()
 const bool  = (v) => (v ? 1 : 0)
@@ -106,7 +116,118 @@ export function journalVerdict(row, { app, host }) {
       ok: false, kind: 'host',
       reason: `this journal was written on "${row.host}" and this deploy targets "${host}" — a copied disk or a restored backup carries a history that is not this machine's`,
     }
+  if (row.formatVersion < JOURNAL_FORMAT)
+    return { ok: true, reason: null, kind: 'behind', from: row.formatVersion }
   return { ok: true, reason: null, kind: 'open' }
+}
+
+// ─── migrating the journal ───────────────────────────────────────────────────
+//
+// `formatVersion` shipped able to refuse a journal from the future and unable to
+// reach the next format at all: the column was written, read, and compared, and
+// nothing in the codebase could move it. That is half a mechanism, and the half
+// that was missing is the one every later change to this schema needs — the DDL
+// is `CREATE TABLE IF NOT EXISTS` throughout, so a target that has deployed once
+// holds a table the new DDL cannot reach.
+//
+// The first thing to need it was one widened CHECK: `TransitionKind` gained
+// `pause` and `unpause`, and without a migration the first pause fails ON THE
+// TARGET, mid-command, against a constraint nobody typed.
+//
+// **A migration's table definition is frozen and is not read off the shipped
+// DDL.** The snapshot is what the table looks like NOW; a migration is what it
+// looked like at one format, and deriving the old shape from the current one
+// means a column added at format 3 silently changes what the 1→2 step builds.
+// The literal is held honest by an oracle instead: the suite migrates a format-1
+// database and compares `sqlite_master` against a database built fresh from the
+// shipped DDL. A model change with no migration beside it fails there.
+//
+// Foreign keys are OFF for the rebuild, which the runner is told rather than
+// decides — `transition_step` cascades from `transition`, so dropping the old
+// table with them on deletes every step of every transition ever recorded.
+
+/**
+ * `journal`, as it stands at format 2. Frozen — see above.
+ *
+ * Rebuilt for one reason: format 1 declared `formatVersion INTEGER NOT NULL
+ * DEFAULT 1`, and a default that has to move on every format change owes this
+ * table a rebuild forever. It has no default now, because `openJournal` binds
+ * the format it writes and nothing ever read one.
+ */
+const JOURNAL_AT_2 = `CREATE TABLE "journal__new" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'journal' CHECK (id = 'journal'),
+  "formatVersion" INTEGER NOT NULL,
+  "app" TEXT NOT NULL,
+  "host" TEXT NOT NULL,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+) STRICT`
+
+/** `transition`, as it stands at format 2. Frozen — see above. */
+const TRANSITION_AT_2 = `CREATE TABLE "transition__new" (
+  "id" TEXT NOT NULL PRIMARY KEY,
+  "kind" TEXT NOT NULL,
+  "app" TEXT NOT NULL,
+  "environment" TEXT NOT NULL,
+  "releaseId" TEXT NOT NULL,
+  "fromReleaseId" TEXT,
+  "generation" INTEGER NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'planned',
+  "crossesPivot" INTEGER NOT NULL DEFAULT 0,
+  "plan" TEXT NOT NULL DEFAULT '[]',
+  "actor" TEXT,
+  "startedAt" TEXT,
+  "finishedAt" TEXT,
+  CHECK ("kind" IN ('deploy', 'revert', 'pause', 'unpause')),
+  CHECK ("status" IN ('planned', 'running', 'succeeded', 'failed')),
+  FOREIGN KEY ("releaseId") REFERENCES "release" ("id")
+) STRICT`
+
+/**
+ * One format to the next. Keyed by the format it moves FROM.
+ *
+ * Each entry is the SQLite table-rebuild recipe: build beside, copy, drop,
+ * rename, put the indexes back. `SELECT *` is correct here and only here —
+ * format 2 changed a constraint and no column, which is what the oracle checks.
+ */
+const MIGRATIONS = {
+  1: () => [
+    { name: 'journal',       sql: JOURNAL_AT_2, params: [] },
+    { name: 'journal-copy',  sql: `INSERT INTO "journal__new" SELECT * FROM "${TABLE.journal}"`, params: [] },
+    { name: 'journal-drop',  sql: `DROP TABLE "${TABLE.journal}"`, params: [] },
+    { name: 'journal-rename', sql: `ALTER TABLE "journal__new" RENAME TO "${TABLE.journal}"`, params: [] },
+    { name: 'build',   sql: TRANSITION_AT_2, params: [] },
+    { name: 'copy',    sql: `INSERT INTO "transition__new" SELECT * FROM "${TABLE.transition}"`, params: [] },
+    { name: 'drop',    sql: `DROP TABLE "${TABLE.transition}"`, params: [] },
+    { name: 'rename',  sql: `ALTER TABLE "transition__new" RENAME TO "${TABLE.transition}"`, params: [] },
+    { name: 'idx1',    sql: `CREATE INDEX IF NOT EXISTS "idx_transition_app_environment_startedAt" ON "${TABLE.transition}" ("app", "environment", "startedAt")`, params: [] },
+    { name: 'idx2',    sql: `CREATE INDEX IF NOT EXISTS "idx_transition_releaseId" ON "${TABLE.transition}" ("releaseId")`, params: [] },
+    { name: 'idx3',    sql: `CREATE INDEX IF NOT EXISTS "idx_transition_status" ON "${TABLE.transition}" ("status")`, params: [] },
+  ],
+}
+
+/**
+ * Every statement between the format a journal is at and the one this fli writes.
+ *
+ * One list rather than one call per step: the whole walk runs in a single
+ * transaction, so a journal is at one format or the other and never between two.
+ * The `formatVersion` write is the last statement of each step, which is what
+ * makes an interrupted migration a no-op rather than a half-migrated file.
+ */
+export function migrationPlan(from, { to = JOURNAL_FORMAT } = {}) {
+  const steps = []
+  for (let v = from; v < to; v++) {
+    const build = MIGRATIONS[v]
+    if (!build) return { ok: false, from, to, reason: `no migration from journal format ${v} — this fli cannot upgrade it`, statements: [] }
+    steps.push(
+      ...build().map(st => ({ ...st, name: `${v}→${v + 1}:${st.name}` })),
+      {
+        name: `${v}→${v + 1}:format`,
+        sql: `UPDATE "${TABLE.journal}" SET "formatVersion" = ? WHERE "id" = 'journal' AND "formatVersion" = ?`,
+        params: [v + 1, v],
+      },
+    )
+  }
+  return { ok: true, from, to, reason: null, statements: steps }
 }
 
 // ─── what is serving ─────────────────────────────────────────────────────────
@@ -490,8 +611,11 @@ export class JournalError extends Error {
  * @param ddl   `db/ddl.snapshot.sql`, sent every call (CREATE TABLE IF NOT EXISTS)
  */
 export function journalClient({ exec, db, ddl, now = null } = {}) {
-  const send = async (statements, { transaction = true } = {}) => {
-    const raw = await exec(JSON.stringify({ db, ddl, statements, transaction }))
+  // `foreignKeys` is a connection setting the caller states, never a decision the
+  // runner makes: the table rebuild in `migrationPlan` drops `transition`, which
+  // cascades away every step of every transition ever recorded if they are on.
+  const send = async (statements, { transaction = true, foreignKeys = true } = {}) => {
+    const raw = await exec(JSON.stringify({ db, ddl, statements, transaction, foreignKeys }))
     let out
     try { out = JSON.parse(String(raw ?? '').trim()) }
     catch { throw new JournalError(`the journal runner answered something that is not JSON: ${String(raw ?? '').slice(0, 200)}`, 'transport') }
@@ -504,13 +628,28 @@ export function journalClient({ exec, db, ddl, now = null } = {}) {
   return {
     send,
 
-    /** Claim the file, and refuse one that belongs to another app or host. */
-    async open({ app, host }) {
+    /**
+     * Claim the file, refuse one that belongs to another app or host, and bring
+     * an older format forward.
+     *
+     * The migration runs AFTER the app and host verdicts, so a path pointed at
+     * somebody else's journal is refused rather than upgraded.
+     */
+    async open({ app, host, migrate = true }) {
       const r = await send(openJournal({ app, host, now }))
       const row = one(r, 'journal')
       const verdict = journalVerdict(row, { app, host })
       if (!verdict.ok) throw new JournalError(verdict.reason, verdict.kind)
-      return { journal: row, verdict }
+      // `migrate: false` is for a reader. `fli deploy:status` asks what is
+      // recorded and must not write a schema change to answer — it reports the
+      // format it found and names the deploy that will move it.
+      if (verdict.kind === 'behind' && !migrate) return { journal: row, verdict, migrated: null }
+      if (verdict.kind !== 'behind') return { journal: row, verdict, migrated: null }
+
+      const plan = migrationPlan(verdict.from)
+      if (!plan.ok) throw new JournalError(plan.reason, 'format')
+      await send(plan.statements, { foreignKeys: false })
+      return { journal: { ...row, formatVersion: plan.to }, verdict, migrated: plan }
     },
 
     /** What is serving, and at which binding generation. */
@@ -522,6 +661,12 @@ export function journalClient({ exec, db, ddl, now = null } = {}) {
         schemaHash:  serving?.schemaHash ?? null,
         generation:  one(r, 'generation')?.generation ?? null,
         transition:  serving?.id ?? null,
+        // Derived, never stored. The last succeeded transition names the Release
+        // bound; its kind is the whole of whether that Release is answering.
+        kind:        serving?.kind ?? null,
+        paused:      serving?.kind === 'pause',
+        since:       serving?.finishedAt ?? serving?.startedAt ?? null,
+        actor:       serving?.actor ?? null,
       }
     },
 
@@ -555,10 +700,16 @@ export function journalClient({ exec, db, ddl, now = null } = {}) {
       }
     },
 
-    /** Record the Release, its bindings and the transition, and read the steps back. */
+    /**
+     * Record the Release, its bindings and the transition, and read the steps back.
+     *
+     * `release` is null for a pause, which names the Release already serving and
+     * mints none — writing one would put a second row in the table for the same
+     * bytes and move `createdAt` on a Release nothing rebuilt.
+     */
     async begin({ release, bindings, transition, steps }) {
       const r = await send([
-        ...recordRelease(release, { now }),
+        ...(release  ? recordRelease(release, { now }) : []),
         ...(bindings ? recordBindings({ ...bindings, now }) : []),
         ...openTransition({ transition, steps, now }),
       ])

@@ -82,11 +82,11 @@ title: Order
   // What an itemization shows. A UI decision, like the orders list's own
   // columns — but every value under it is a column `OrderLine` declares.
   const columns = [
-    { key: 'description', label: 'Item' },
-    { key: 'sku',         label: 'SKU' },
-    { key: 'quantity',    label: 'Qty',   align: 'right' },
-    { key: 'unitPrice',   label: 'Unit',  align: 'right' },
-    { key: 'lineTotal',   label: 'Total', align: 'right' },
+    { name: 'description', label: 'Item' },
+    { name: 'sku',         label: 'SKU' },
+    { name: 'quantity',    label: 'Qty',   align: 'right' },
+    { name: 'unitPrice',   label: 'Unit',  align: 'right' },
+    { name: 'lineTotal',   label: 'Total', align: 'right' },
   ]
 
   // The lifecycle, as the schema states it. `Steps` wants {id,label}; the enum

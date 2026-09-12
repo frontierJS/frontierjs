@@ -361,7 +361,11 @@ export function createInvitationsService(app: BasecampApp) {
           data:  { accountId: workspace.accountId, status: 'active',
                    displayName: name, emailVerified: true },
         })
-        session = await auth.login(email, password)
+        const issued = await auth.login(email, password)
+        // The account was created above with a password and nothing else, so it
+        // owes no second factor. Stated rather than cast — see app.ts's twin.
+        if ('challenge' in issued) throw new BadRequest('A second factor cannot be required on a new account')
+        session = issued
       }
 
       // One transaction: a consumed invitation with no membership behind it is

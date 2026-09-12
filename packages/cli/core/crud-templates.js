@@ -151,7 +151,6 @@ title: ${o.title}
 ${o.imports.map(l => '  ' + l).join('\n')}
   import { useStore } from '@frontierjs/sierra/junction'
   import { page, goto } from '@frontierjs/sierra/router'
-  import { directiveParams } from '@frontierjs/toolbelt/directives'
 ${session}
   ${KIT.alert}
   ${KIT.button}
@@ -179,8 +178,8 @@ ${idFieldLine(o.res)}
   // string says why not. Offering one the Data boundary refuses is a header
   // that throws on click, which is the one thing a generated table must not do.
   const columns = [
-    ...cols.map(c => ({ key: c.name, label: c.label, sortable: c.sortable })),
-    { key: '_actions', label: '' },
+    ...cols,
+    { name: '_actions', label: 'Actions', hideLabel: true },
   ]
 
   // Which columns a bar may offer, with which question, and whether the model
@@ -189,63 +188,37 @@ ${idFieldLine(o.res)}
   // Same ranking as the table, so the filters are over the columns you can see.
   const { filters, search } = ${o.res}.filters()
 
-  // The URL's whole query, put back together.
+  // ── The URL is the state ─────────────────────────────────────────────────
   //
-  // splitParams takes every prefixed key OUT of page.query and into
-  // page.directives under an unprefixed name (Invariant 10), so page.query
-  // alone is the filters and nothing else. A bar handed that has no sort, no
-  // page size and no search to show -- and, worse, hands back a query missing
-  // them, so typing in a filter box silently drops the sort a header just set.
-  // directiveParams is parseDirectives' inverse off the same table, so this
-  // cannot go stale when a directive is added.
-  // Naming them in a bare $: marks page a WATCHED import, which is what the
-  // const below needs to be a derivation rather than a value read once at
-  // setup. The handler form further down does it in the CURRENT compiler and
-  // not in the one an installed app has (FJS-1065 is fixed in the tree and
-  // unpublished), and a scaffold is graded by what npm serves: without this
-  // line the filter bar merges each new filter over the query the page ARRIVED
-  // with, so every filter appears to replace the last. app-config pins mesa at
-  // 'latest', so this line comes out on the release that publishes the fix and
-  // not before.
-  $: (page.query, page.directives)
-
-  const urlQuery = { ...page.query, ...directiveParams(page.directives) }
-
-  // Sort and filter both live in the URL (Invariant 10), so this page writes
-  // the query and lets the router bring it back — which is what makes a
-  // filtered, sorted list a LINK rather than a state somebody has to recreate.
-  // Two-arg goto, and the path is stripped of its own query first. Both halves
-  // are load-bearing. Concatenating instead — goto(page.path + encoded) — hands
-  // the router one string, and page.path ALREADY carries the search, so the
-  // second filter builds /notes/?a=1?b=2 and the first one navigated to a URL
-  // whose query the builder dropped on the floor (FJS-1064). Passing the query
-  // as the argument makes it REPLACE rather than merge, which is what Clear
-  // needs: an empty query over a bare path is a bare path.
-  function apply(query) {
-    goto(page.path.split('?')[0], query)
+  // page.query is the filters and page.directives the $ params, split by the
+  // same module the bridge reads a request with (Invariant 10). Both halves go
+  // to the bar, which puts them back together -- a bar handed the filters alone
+  // has no sort and no page size to show, and hands one back missing them, so
+  // typing in a filter box drops the sort a header just set.
+  //
+  // page.pathname is the path with NO query, which is window.location's own
+  // word for it. Two-arg goto REPLACES rather than merging, which is what Clear
+  // needs: an empty query over a bare path is a bare path. The directives
+  // option is what writes the $ spelling, so nothing here names a transport key.
+  function apply(query, directives) {
+    goto(page.pathname, query, { directives })
   }
 
-  function sortBy(key, dir) {
-    apply({ ...urlQuery, $orderBy: { [key]: dir } })
+  function sortBy(next) {
+    apply(page.query, { ...page.directives, orderBy: next })
   }
 
-  // The header reads back the SAME directive the load does. Without the pair
-  // below, the table is sorted and nothing on it says so: no arrow, and
-  // aria-sort answers none on every header. Worse, the toggle stops inverting
-  // -- <Table> derives the NEXT direction from the sortKey it was handed, so a
-  // column already descending in the URL is re-sent ascending on the next
-  // click and the header never reverses.
+  // The header reads back the SAME directive the load does. Without it the
+  // table is sorted and nothing on it says so: no arrow, and aria-sort answers
+  // none on every header. Worse, the toggle stops inverting -- <Table> derives
+  // the NEXT direction from the ordering it was handed, so a column already
+  // descending in the URL is re-sent ascending on the next click and the header
+  // never reverses.
   //
   // A string, an object and an array of objects are all legal orderBys and the
-  // directive table deliberately does not fix one, so all three are read here.
-  const ordering   = page.directives?.orderBy
-  const firstOrder = Array.isArray(ordering) ? ordering[0] : ordering
-  const sortKey    = typeof firstOrder === 'string'
-    ? firstOrder.replace(/^-/, '')
-    : Object.keys(firstOrder ?? {})[0] ?? ''
-  const sortDir    = typeof firstOrder === 'string'
-    ? (firstOrder.startsWith('-') ? 'desc' : 'asc')
-    : Object.values(firstOrder ?? {})[0] ?? 'asc'
+  // directive table deliberately does not fix one. Reading them is
+  // <Table>'s, off @frontierjs/toolbelt/directives, so nothing is parsed here.
+  const ordering = page.directives?.orderBy
 
   let error = null
 
@@ -267,9 +240,8 @@ ${idFieldLine(o.res)}
   // once at setup and never again: the URL changes, the bar redraws from it,
   // and no request is ever made, so every filter and every sort is a no-op that
   // looks like a working control. It is also what marks page a watched import,
-  // which is what makes urlQuery above a derivation rather than a value read
-  // once -- move load() into a plain effect and the bar goes back to rendering
-  // the query this page arrived with.
+  // which is what makes the bar above redraw from the URL rather than from the
+  // query this page happened to arrive with.
   $: page.query, page.directives, () => load()
 ${gateState}${removeFn}${SC}
 
@@ -281,9 +253,9 @@ ${gateState}${removeFn}${SC}
 
 {#if error}<Alert tone="danger">{error}</Alert>{/if}
 
-<FilterBar {filters} {search} value={urlQuery} onchange={apply} />
+<FilterBar {filters} {search} value={page.query} directives={page.directives} onchange={apply} />
 
-<Table {columns} rows={rows()} {sortKey} {sortDir} striped hover
+<Table {columns} rows={rows()} orderBy={ordering} striped hover
        emptyText="Nothing here yet." onsort={sortBy}>
   {#snippet row(record)}
     <tr>

@@ -169,12 +169,12 @@ title: Channels
   $: active = rows.filter(r => r.isActive).length
   const when = (iso) => iso ? new Date(iso).toLocaleString() : 'never'
   const CHANNEL_COLUMNS = [
-    { key: 'name',     label: 'Name' },
-    { key: 'kind',     label: 'Kind' },
-    { key: 'rules',    label: 'Rules' },
-    { key: 'state',    label: 'State' },
-    { key: 'lasttest', label: 'Last test' },
-    { key: 'actions',  label: 'Actions', hideLabel: true },
+    { name: 'name',     label: 'Name' },
+    { name: 'kind',     label: 'Kind' },
+    { name: 'rules',    label: 'Rules' },
+    { name: 'state',    label: 'State' },
+    { name: 'lasttest', label: 'Last test' },
+    { name: 'actions',  label: 'Actions', hideLabel: true },
   ]
 </script>
 

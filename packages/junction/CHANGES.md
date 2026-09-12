@@ -1,5 +1,23 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-12 — `client.auth.signIn` answers a union, and `completeSignIn` is the other half
+
+`FJS-D261`. An account with a second factor answers `{ expiresAt }` and a ticket, and the client does
+NOT adopt it: no token stored, no socket opened, and **no `authenticated` emitted** — a listener
+firing there would have every subscriber treat a password as the whole answer.
+
+**The two are told apart by the absence of a USER, never by the presence of a ticket.** Cookie mode
+strips `challenge` the way it strips `token`, so the body carries only the expiry and a client keyed on
+the ticket would adopt a response with no user in it.
+
+The ticket is held on the client for the life of the attempt, for the reason the token is held there:
+in cookie mode there is nothing a page could thread, so a screen written to pass it would be writing
+the cookie arrangement blind. It is dropped before the next `signIn` — otherwise one account's code
+redeems another's ticket — and on `signOut`, and it is never persisted: a ticket in storage is a
+password substitute sitting where a token would be. `awaitingSecondFactor` is the question a screen
+actually has, and `completeSignIn(code, challenge?)` takes the ticket explicitly only for a flow that
+navigated away and kept it.
+
 ## 2026-09-12 — `createFileStorage` is deleted; file storage has one owner and it is Litestone's
 
 `FJS-D260`, settling the half `FJS-692` left open. `src/storage/filestorage/`,

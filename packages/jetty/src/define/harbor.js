@@ -315,6 +315,19 @@ async function handleServiceCall(port, msg, ctx) {
     }
     return
   }
+  // The second step of a login, and it is a special case for the same reason the
+  // first is: jetty owns the token storage and the broadcast, so a generic
+  // forward would put a session on the wire client and leave Harbor — the thing
+  // that survives the page — knowing nothing about it.
+  if (service === 'auth' && method === 'submitCode') {
+    try {
+      const result = await ctx.authFlow.submitCode(args?.code)
+      respond(port, msg, { value: result })
+    } catch (e) {
+      respond(port, msg, { _error: e.message })
+    }
+    return
+  }
   if (service === 'auth' && method === 'logout') {
     try {
       const result = await ctx.authFlow.logout()

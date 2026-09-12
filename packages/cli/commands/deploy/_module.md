@@ -799,6 +799,114 @@ const openDeployJournal = async (context, flag, opts) => {
     throw err
   }
 }
+
+// ─── openPauseJournal ─────────────────────────────────────────────────────────
+// Phase 3b. A pause is a transition, so it is recorded the way every other one
+// is — and it is much smaller than a deploy's, because it mints nothing.
+//
+// A pause names the Release ALREADY SERVING. There are no bytes to build, no
+// bindings to record and no pivot to classify: what moves is whether the bound
+// Release is answering, which is the kind on the row and never a column. So
+// `begin` is handed a null release and `crossesPivot` is stated false rather
+// than derived, or an `unknown` pivot on the serving Release would record a
+// crossing that nothing crossed.
+//
+// It refuses on an empty journal rather than opening one. A pause with no
+// history behind it cannot name a Release, and a transition with no Release is
+// not a thing this schema can hold — which is the honest answer: an app that has
+// never deployed through the journal has nothing to pause.
+const openPauseJournal = async (context, flag, opts) => {
+  const core = (name) => import(new URL('file://' + global.fliRoot + '/core/' + name))
+  const { readdirSync, readFileSync } = await import('fs')
+  const { JournalError, resumeDecision } = await core('journal.js')
+  const { stepFilesIn, stepNameOf, planSteps, planTransition } = await core('plan.js')
+  const { extractFrontmatter } = await core('compiler.js')
+  const { occurrenceKey } = await import('@frontierjs/toolbelt/history')
+
+  const { kind, host, serverPath, deployConf, target, stepsDir, log,
+          vhostHasGuard, filePresent } = opts
+  const { pauseRefusals } = await core('pause.js')
+  const app = deployConf.app_id ?? deployConf.appId
+
+  const j = await connectJournal(context, opts)
+
+  try {
+    const opened = await j.open({ app, host })
+    if (opened.migrated)
+      log.info(`  journal migrated ${opened.migrated.from} → ${opened.migrated.to}`)
+
+    const state = await j.state({ app, environment: target })
+
+    // Graded BEFORE a transition is opened. A refused pause that had already
+    // written a row would settle `failed`, and a journal reading *four failed
+    // pauses* for four people who each typed it twice is a history of the
+    // command rather than of the app.
+    const held = state.serving ? await j.live({ kind: 'deploy', app, environment: target }) : null
+    const refused = pauseRefusals({
+      want: kind, vhostHasGuard, journalOpen: !!state.serving,
+      inFlight: held ? `${held.transition.id} is still open — fli deploy --resume finishes it` : null,
+      journalPaused: state.paused, filePresent,
+    })
+    if (refused.length) return { refused, state }
+
+    const release = await j.release(state.serving)
+    if (!release)
+      return { error: `the journal names ${state.serving} as serving and holds no Release row for it` }
+
+    // The steps, off disk, with the runner's own filter and sort — the same rule
+    // `deployPlan` follows, so a pause cannot describe a pipeline that has moved.
+    const dir   = new URL('file://' + global.fliRoot + '/commands/deploy/' + stepsDir).pathname
+    const metas = stepFilesIn(readdirSync(dir)).map(f => {
+      const fm = extractFrontmatter(readFileSync(`${dir}/${f}`, 'utf8')) ?? {}
+      return { name: stepNameOf(f), title: fm.title, skip: fm.skip, runOnAbort: fm.runOnAbort }
+    })
+    const steps = planSteps(metas, { flag, context: context.config })
+
+    const intent = {
+      kind, app, environment: target,
+      fromReleaseId: state.serving, releaseId: state.serving,
+      generation: state.generation ?? 1,
+    }
+    const { attempt } = await j.attempt(intent)
+
+    const real = planTransition({
+      kind, release, steps,
+      fromReleaseId: intent.fromReleaseId,
+      generation:    intent.generation,
+      attempt,
+      crossesPivot:  false,
+      actor:         context.git.user?.() ?? null,
+    })
+
+    const begun = await j.begin({ release: null, bindings: null, transition: real.transition, steps: real.steps })
+    const byName = new Map(begun.steps.map(r => [r.name, r]))
+    const idFor  = (name) => occurrenceKey(kind, real.transition.id, name)
+
+    return {
+      journal: j,
+      transition: real.transition,
+      state,
+      attempt,
+      recorder: {
+        async beforeStep(name) {
+          const d = resumeDecision(byName.get(name))
+          if (d.action === 'skip') return { run: false, note: d.note }
+          await j.claim({ id: idFor(name) })
+          return { run: true, note: d.note }
+        },
+        async afterStep(name, _ordinal, { status, durationMs, output } = {}) {
+          await j.finish({ id: idFor(name), status, durationMs, output: output ?? null })
+        },
+        async settle(status) {
+          await j.settle({ id: real.transition.id, status })
+        },
+      },
+    }
+  } catch (err) {
+    if (err instanceof JournalError) return { error: `deploy journal: ${err.message}` }
+    throw err
+  }
+}
 </script>
 
 ## Overview
@@ -818,6 +926,8 @@ fli deploy --stage      ← deploy to staging
 fli deploy --api        ← API only  (see § Splitting, below)
 fli deploy --web        ← web only
 
+fli deploy:pause        ← take the app down on purpose (the edge refuses; the app keeps running)
+fli deploy:unpause      ← serve again
 fli deploy:status       ← check what's running on the server
 fli deploy:logs         ← stream or show API container logs
 fli deploy:run <cmd>    ← run a one-off command inside the running container

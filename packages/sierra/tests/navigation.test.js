@@ -419,7 +419,7 @@ describe('beforeNavigate', () => {
 
     // Redirect any nav to /login/ → always goes to /blog/ instead
     const unsub = beforeNavigate(({ to }) => {
-      if (to.path === '/login/') return '/blog/'
+      if (to.pathname === '/login/') return '/blog/'
     })
     await goto('/login/')
     unsub()
@@ -442,7 +442,7 @@ describe('beforeNavigate', () => {
     unsub()
 
     expect(capturedFrom?.id).toBe('blog')
-    expect(capturedTo.path).toBe('/login/')
+    expect(capturedTo.pathname).toBe('/login/')
   })
 
   test('guard returning undefined allows navigation', async () => {
@@ -522,7 +522,7 @@ describe('afterNavigate', () => {
     await waitForNav()
 
     const fired = []
-    const unsub = afterNavigate(({ to }) => fired.push(to.path))
+    const unsub = afterNavigate(({ to }) => fired.push(to.pathname))
     await goto('/blog/')
     await goto('/login/')
     unsub()
@@ -546,7 +546,7 @@ describe('afterNavigate', () => {
     unsub()
 
     expect(capturedFrom?.id).toBe('blog')
-    expect(capturedTo.path).toBe('/login/')
+    expect(capturedTo.pathname).toBe('/login/')
   })
 
   test('hook fires after activeRoute is already updated', async () => {
@@ -587,11 +587,11 @@ describe('load() integration', () => {
     await waitForNav()
 
     await goto('/leads/')
-    expect(page.path).toBe('/leads/')
+    expect(page.pathname).toBe('/leads/')
     expect(page.params).toEqual({})
 
     await goto('/leads/42/')
-    expect(page.path).toBe('/leads/42/')
+    expect(page.pathname).toBe('/leads/42/')
     expect(page.params).toMatchObject({ leadId: '42' })
   })
 

@@ -12,7 +12,7 @@
   beforeNavigate(async ({ to }) => {
     await ready
 
-    const path = to.path.split('?')[0]
+    const path = to.pathname
 
     // Order matters. Setup outranks auth: with no account, there is nobody to
     // log in as, and /auth/login would answer 401 forever.

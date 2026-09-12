@@ -146,18 +146,18 @@ title: Members
   const expired = (row) => Date.parse(row.expiresAt) < Date.now()
 
   const MEMBER_COLUMNS = [
-    { key: 'member',  label: 'Member' },
-    { key: 'email',   label: 'Email' },
-    { key: 'role',    label: 'Role' },
-    { key: 'joined',  label: 'Joined' },
-    { key: 'actions', label: 'Actions', hideLabel: true },
+    { name: 'member',  label: 'Member' },
+    { name: 'email',   label: 'Email' },
+    { name: 'role',    label: 'Role' },
+    { name: 'joined',  label: 'Joined' },
+    { name: 'actions', label: 'Actions', hideLabel: true },
   ]
 
   const INVITE_COLUMNS = [
-    { key: 'email',   label: 'Email' },
-    { key: 'role',    label: 'Role' },
-    { key: 'expires', label: 'Expires' },
-    { key: 'actions', label: 'Actions', hideLabel: true },
+    { name: 'email',   label: 'Email' },
+    { name: 'role',    label: 'Role' },
+    { name: 'expires', label: 'Expires' },
+    { name: 'actions', label: 'Actions', hideLabel: true },
   ]
 </script>
 

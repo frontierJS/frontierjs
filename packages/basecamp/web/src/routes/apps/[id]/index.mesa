@@ -227,10 +227,10 @@ title: App
   // Only the tabs with something behind them. See the note at the foot.
   const TABS = ['overview', 'domains', 'config', 'releases', 'logs']
   const APP_RELEASES_COLUMNS = [
-    { key: 'queued',  label: 'Queued' },
-    { key: 'status',  label: 'Status' },
-    { key: 'commit',  label: 'Commit' },
-    { key: 'trigger', label: 'Trigger' },
+    { name: 'queued',  label: 'Queued' },
+    { name: 'status',  label: 'Status' },
+    { name: 'commit',  label: 'Commit' },
+    { name: 'trigger', label: 'Trigger' },
   ]
 </script>
 

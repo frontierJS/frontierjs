@@ -60,10 +60,10 @@ title: Hub overview
   // the fifth and nothing had to change.
   $: queues = Object.entries(info?.queues?.queues ?? {})
   const QUEUE_COLUMNS = [
-    { key: 'queue',   label: 'Queue' },
-    { key: 'pending', label: 'Pending' },
-    { key: 'running', label: 'Running' },
-    { key: 'failed',  label: 'Failed' },
+    { name: 'queue',   label: 'Queue' },
+    { name: 'pending', label: 'Pending' },
+    { name: 'running', label: 'Running' },
+    { name: 'failed',  label: 'Failed' },
   ]
 </script>
 

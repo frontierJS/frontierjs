@@ -136,20 +136,20 @@ export async function run(t) {
   `), 2, 'and only a sortable column gets a button — a header is not a click target')
 
   await t.clickAt('#tbl thead th:first-child button')
-  await t.eventually(`document.querySelector('#sort').textContent`, 'name:asc',
+  await t.eventually(`document.querySelector('#sort').textContent`, 'name',
     'clicking a sortable header sorts by it, ascending')
   await t.eventually(`${headers}[0].getAttribute('aria-sort')`, 'ascending',
     'and announces the direction')
 
   await t.clickAt('#tbl thead th:first-child button')
-  await t.eventually(`document.querySelector('#sort').textContent`, 'name:desc',
+  await t.eventually(`document.querySelector('#sort').textContent`, '-name',
     'clicking it again reverses')
   await t.eventually(`${headers}[0].getAttribute('aria-sort')`, 'descending', 'and says so')
 
   // Moving to another column starts that one ascending rather than inheriting
   // the direction the previous column happened to be left in.
   await t.clickAt('#tbl thead th:last-child button')
-  await t.eventually(`document.querySelector('#sort').textContent`, 'total:asc',
+  await t.eventually(`document.querySelector('#sort').textContent`, 'total',
     'a different column starts ascending again')
   t.is(await t.evaluate(`
     return ${headers}.map(th => th.getAttribute('aria-sort') ?? 'absent').join(',');

@@ -32,14 +32,23 @@
   const refused    = { fields: null, reason: 'the model declares no @@fts' }
 
   // A sort and a page size that must survive, and an offset that must not.
-  let query = { $orderBy: 'title', $limit: 20, $offset: 40 }
-  let last  = ''
+  // Held as the two halves the bar now speaks: filters, and directives in their
+  // unprefixed form (Invariant 10). The bar merges them for display and splits
+  // them again on the way out, so recording both is what lets the spec assert
+  // the SPLIT rather than only the round trip.
+  let query      = {}
+  let directives = { orderBy: 'title', limit: 20, offset: 40 }
+  let last       = ''
 
-  function apply(next) { query = next; last = JSON.stringify(next) }
+  function apply(nextQuery, nextDirectives) {
+    query      = nextQuery
+    directives = nextDirectives ?? {}
+    last       = JSON.stringify({ query, directives })
+  }
 </script>
 
 <div id="searchable">
-  <FilterBar {filters} search={searchable} value={query} onchange={apply} />
+  <FilterBar {filters} search={searchable} value={query} directives={directives} onchange={apply} />
 </div>
 
 <div id="unsearchable">

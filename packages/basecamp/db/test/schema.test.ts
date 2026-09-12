@@ -330,8 +330,10 @@ describe('generated migration', () => {
     // three `@@tenant(none)`, because a reading is about the process
     // (`FJS-956`). 50 with `Notification`, which is a COPY of the fragment
     // `@frontierjs/notifications` ships to be copied rather than imported
-    // (`FJS-967`).
-    expect(tables.length).toBe(50)
+    // (`FJS-967`). 51 with `LoginChallenge`, a login that has passed a password
+    // and owes a second factor — auth's, imported, `@@tenant(none)` because it
+    // belongs to a person the way `Session` does (`FJS-D261`).
+    expect(tables.length).toBe(51)
     expect(raw.query('PRAGMA foreign_key_check').all()).toEqual([])
 
     const nonStrict = tables.filter((t: string) => {

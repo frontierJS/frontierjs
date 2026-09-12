@@ -30,7 +30,7 @@ PRAGMA foreign_keys = ON;
 -- (`FJS-534`), which is why it reads as two.
 CREATE TABLE IF NOT EXISTS "journal" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT 'journal' CHECK (id = 'journal'),
-  "formatVersion" INTEGER NOT NULL DEFAULT 1,
+  "formatVersion" INTEGER NOT NULL,
   "app" TEXT NOT NULL,
   "host" TEXT NOT NULL,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
@@ -81,7 +81,14 @@ CREATE TABLE IF NOT EXISTS "binding_set" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_binding_set_app_environment_hash" ON "binding_set" ("app", "environment", "hash");
 
--- One attempt to move serving state — a deploy or a revert.
+-- One attempt to move serving state.
+-- 
+-- Four kinds, and they split in two. `deploy` and `revert` change WHICH
+-- Release is bound; `pause` and `unpause` change whether the bound Release is
+-- answering, and mint no Release of their own — they name the one already
+-- serving. So *is this app paused* is the kind on the last succeeded
+-- transition and never a column, and a reader that wants the Release serving
+-- filters to the two kinds that move it (`core/revert.js`).
 CREATE TABLE IF NOT EXISTS "transition" (
   "id" TEXT NOT NULL PRIMARY KEY,
   "kind" TEXT NOT NULL,
@@ -96,7 +103,7 @@ CREATE TABLE IF NOT EXISTS "transition" (
   "actor" TEXT,
   "startedAt" TEXT,
   "finishedAt" TEXT,
-  CHECK ("kind" IN ('deploy', 'revert')),
+  CHECK ("kind" IN ('deploy', 'revert', 'pause', 'unpause')),
   CHECK ("status" IN ('planned', 'running', 'succeeded', 'failed')),
   FOREIGN KEY ("releaseId") REFERENCES "release" ("id")
 ) STRICT;

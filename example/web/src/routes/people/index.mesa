@@ -44,11 +44,11 @@ title: People
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
 
   const columns = [
-    { key: 'reference', label: 'Reference' },
-    { key: 'name',      label: 'Name' },
-    { key: 'status',    label: 'Employment' },
-    { key: 'pay',       label: 'On',    align: 'right' },
-    { key: 'actions',   label: '' },
+    { name: 'reference', label: 'Reference' },
+    { name: 'name',      label: 'Name' },
+    { name: 'status',    label: 'Employment' },
+    { name: 'pay',       label: 'On',    align: 'right' },
+    { name: 'actions',   label: '' },
   ]
 
   const { get: rows, unsubscribe } = useStore(employees.store)

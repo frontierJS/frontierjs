@@ -233,8 +233,8 @@ describe('guards and the Back button (FJS-789)', () => {
     await boot('/login/')
     const seen = []
     guard(({ to }) => {
-      seen.push(to.path)
-      return to.path.startsWith('/admin/') ? '/login/' : true
+      seen.push(to.pathname)
+      return to.pathname.startsWith('/admin/') ? '/login/' : true
     })
     const before = seen.length
 
@@ -251,7 +251,7 @@ describe('guards and the Back button (FJS-789)', () => {
   // page the guard just declined, which is the same lie as not guarding at all.
   test('a cancelled popstate puts the address bar back', async () => {
     await boot('/login/')
-    guard(({ to }) => !to.path.startsWith('/admin/'))
+    guard(({ to }) => !to.pathname.startsWith('/admin/'))
 
     window.history.state = { index: 3 }
     S.path = '/admin/'
@@ -365,7 +365,7 @@ describe('navigation supersession (FJS-791)', () => {
 
     expect(page.route?.id).toBe('fast')
     expect(page.data).toEqual({ who: 'FAST' })
-    expect(page.path).toBe('/fast/')
+    expect(page.pathname).toBe('/fast/')
     expect(S.path).toBe('/fast/')   // the address bar was pushed back too
   })
 })
@@ -468,8 +468,8 @@ describe('redirect loops (FJS-795)', () => {
     guard(({ to }) => {
       hops++
       if (hops > 100) return true   // breaker, so a regression fails rather than hangs
-      if (to.path.startsWith('/admin/')) return '/login/'
-      if (to.path.startsWith('/login/')) return '/admin/'
+      if (to.pathname.startsWith('/admin/')) return '/login/'
+      if (to.pathname.startsWith('/login/')) return '/admin/'
       return true
     })
 
@@ -483,7 +483,7 @@ describe('redirect loops (FJS-795)', () => {
 
   test('a legitimate redirect still lands', async () => {
     await boot('/')
-    guard(({ to }) => (to.path.startsWith('/admin/') ? '/login/' : true))
+    guard(({ to }) => (to.pathname.startsWith('/admin/') ? '/login/' : true))
     await goto('/admin/')
     await tick(10)
     expect(page.route?.id).toBe('login')
@@ -549,7 +549,7 @@ describe('a redirect target the browser would refuse (FJS-820)', () => {
   // already guarantees that. The stuck spinner is the finding.
   test('a guard returning an off-origin target is refused by name', async () => {
     await boot('/')
-    guard(({ to }) => (to.path.startsWith('/blog/') ? '//evil.example.com/' : true))
+    guard(({ to }) => (to.pathname.startsWith('/blog/') ? '//evil.example.com/' : true))
 
     await goto('/blog/')
     await tick(10)

@@ -56,10 +56,10 @@ title: Plan
   let draft    = planVersions.make()
 
   const columns = [
-    { key: 'price',   label: 'Price',   align: 'right' },
-    { key: 'from',    label: 'From' },
-    { key: 'to',      label: 'Until' },
-    { key: 'holders', label: 'Subscribers', align: 'right' },
+    { name: 'price',   label: 'Price',   align: 'right' },
+    { name: 'from',    label: 'From' },
+    { name: 'to',      label: 'Until' },
+    { name: 'holders', label: 'Subscribers', align: 'right' },
   ]
 
   /** The plan itself, watched rather than read — a price raised in another tab

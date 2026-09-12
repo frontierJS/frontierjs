@@ -105,11 +105,45 @@ export interface CredentialOrigin {
   headers?: Record<string, unknown> | null
 }
 
+/**
+ * What a password is worth.
+ *
+ * A union, because an account with a second factor turns one exchange into two
+ * and there is no honest single shape for both: the caller either holds a
+ * session or holds a ticket and owes a code. A second METHOD would have been the
+ * cheaper spelling and the wrong one — a caller picks between two methods by
+ * knowing something about the account it cannot know before it asks, and an
+ * unused method is refused by nothing. A union is refused by the typechecker at
+ * every call site (`FJS-D261`).
+ *
+ * Discriminate on the key: `'challenge' in result`.
+ */
+export type LoginResult =
+  | { token: string; user: SessionContext }
+  | {
+      /** Present this to `completeLogin` with the code. Single-use. */
+      challenge: string
+      /** ISO-8601. After this the caller starts again from the password. */
+      expiresAt: string
+    }
+
 export interface IAuth {
   // Session
   verifySession(token: string, from?: CredentialOrigin): Promise<SessionContext | null>
-  login(email: string, password: string):    Promise<{ token: string; user: SessionContext }>
+  login(email: string, password: string):    Promise<LoginResult>
   logout(token: string):                     Promise<void>
+
+  /**
+   * Finish a login that owed a second factor.
+   *
+   * Optional: a provider with no second factor never answers a challenge, so it
+   * never needs this and the route says so by name rather than 500ing.
+   *
+   * `code` is a TOTP code or a recovery code — one field, because the person
+   * typing it is answering one question and a caller cannot be asked to know
+   * which kind of string it holds.
+   */
+  completeLogin?(challenge: string, code: string): Promise<{ token: string; user: SessionContext }>
 
   // Users
   createUser(data: CreateUserInput):         Promise<SessionContext>
@@ -188,8 +222,38 @@ export interface IAuth {
   /** The user's API keys. Never carries the key — it exists once, at creation. */
   listApiKeys?(userId: string):                        Promise<ApiKeyInfo[]>
 
-  // TOTP (optional — provider may not support)
-  setupTotp?(userId: string):                Promise<{ secret: string; qr: string }>
+  // ── TOTP (optional — provider may not support) ────────────────────────
+  //
+  // Two of these take the current password, which is not ceremony: a stolen
+  // session that can enroll its own factor has locked the owner out of their own
+  // account, and one that can disable theirs has removed the protection without
+  // ever knowing the password.
+
+  /**
+   * Begin enrollment. Answers the secret and the `otpauth://` URI to render.
+   *
+   * **Enables nothing.** `confirmTotp` is what does, and the split is the
+   * difference between a wrong clock costing a retry and costing the account:
+   * enrollment that switched on here would gate the next login on codes the
+   * person has never successfully produced.
+   */
+  setupTotp?(userId: string, currentPassword: string): Promise<{ secret: string; qr: string }>
+
+  /** Prove the enrollment works, and switch it on. Answers the recovery codes,
+   *  which are shown once and never readable again. */
+  confirmTotp?(userId: string, code: string): Promise<{ recoveryCodes: string[] }>
+
+  /** Switch it off and forget the secret and every recovery code. */
+  disableTotp?(userId: string, currentPassword: string): Promise<void>
+
+  /** Fresh recovery codes; the old ones stop working. */
+  regenerateRecoveryCodes?(userId: string, currentPassword: string): Promise<{ recoveryCodes: string[] }>
+
+  /** Is it on, and how many ways back are left. What a settings screen reads. */
+  totpStatus?(userId: string): Promise<{ enabled: boolean; recoveryCodesRemaining: number }>
+
+  /** Does this code verify for this user, right now. Does NOT consume the step —
+   *  a re-auth check and a login are different questions. */
   verifyTotp?(userId: string, code: string): Promise<boolean>
 
   // OAuth (optional)

@@ -13,7 +13,7 @@
 //
 // Protocol: one JSON object on stdin, one on stdout.
 //
-//   in   { db, ddl?, statements: [{ name, sql, params }], transaction? }
+//   in   { db, ddl?, statements: [{ name, sql, params }], transaction?, foreignKeys? }
 //   out  { ok: true, results: { <name>: { rows, changes } } }
 //        { ok: false, error }
 //
@@ -37,8 +37,17 @@ const main = async () => {
     // WAL so a reader — `fli deploy:journal`, or the Outpost answering basecamp
     // — never blocks the deploy writing its own history.
     db.exec('PRAGMA journal_mode = WAL')
-    db.exec('PRAGMA foreign_keys = ON')
     if (input.ddl) db.exec(input.ddl)
+    // A connection setting the CALLER states, and it comes AFTER the DDL: the
+    // snapshot opens with `PRAGMA foreign_keys = ON` of its own, so set first it
+    // is turned straight back on and the caller's answer is silently discarded.
+    //
+    // The journal's own migration drops and rebuilds `transition`, and
+    // `transition_step` cascades from it — with keys on, the rebuild deletes
+    // every step of every transition ever recorded and reports success. It is a
+    // pragma rather than a statement because `PRAGMA foreign_keys` is a no-op
+    // inside a transaction, which is where a statement would arrive.
+    db.exec(`PRAGMA foreign_keys = ${input.foreignKeys === false ? 'OFF' : 'ON'}`)
 
     const results = {}
     const run = () => {

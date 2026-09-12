@@ -38,9 +38,12 @@ title: Deployments
   // A header offers a sort only where the SCHEMA takes one: `x-sortable` is
   // emitted as an exception, so absent means yes and a string says why not.
   // Offering one the Data boundary refuses is a click that throws.
+  //
+  // Spread, not mapped: `<Table>` reads the same `name` the column already
+  // carries, so the only entry here is this page's own (FJS-1078).
   const columns = [
-    ...cols.map(c => ({ key: c.name, label: c.label, sortable: c.sortable })),
-    { key: '_open', label: 'Actions', hideLabel: true },
+    ...cols,
+    { name: '_open', label: 'Actions', hideLabel: true },
   ]
 
   // Which columns a bar may offer and with which question. `Deployment`
@@ -52,6 +55,10 @@ title: Deployments
   let error   = null
   let loading = true
   let query   = {}
+  // The bar's other half. Held beside the filters rather than merged into them,
+  // because that is the split the Data boundary reads (Invariant 10): filters
+  // are a WHERE and directives are how much of the answer, in what order.
+  let directives = {}
 
   async function load() {
     error = null; loading = true
@@ -60,7 +67,7 @@ title: Deployments
       // environment, so a row names what it deployed and where without a
       // second request per row. `RelationCell` is what reads them back
       // (`web/src/displays.js`).
-      rows = (await deployments.service.find(query, { limit: 50 })).data
+      rows = (await deployments.service.find(query, { limit: 50, ...directives })).data
     } catch (e) {
       error = e.message
     } finally {
@@ -71,12 +78,15 @@ title: Deployments
   load()
   $: session.workspaceId, () => load()
 
-  // The bar hands back the whole next query and the page decides what to do
-  // with it. This one holds it in memory rather than in the URL: a deployments
-  // list is read while a release is running and a navigation would drop the
-  // live subscription below.
-  function apply(next) {
-    query = next
+  // The bar hands back both halves and the page decides what to do with them.
+  // This one holds them in memory rather than in the URL: a deployments list is
+  // read while a release is running and a navigation would drop the live
+  // subscription below. That is also why the bar is handed `query` and
+  // `directives` from here rather than from `page` — this list is the one
+  // caller whose state is deliberately NOT the address bar.
+  function apply(nextQuery, nextDirectives) {
+    query      = nextQuery
+    directives = nextDirectives ?? {}
     load()
   }
 
@@ -104,7 +114,8 @@ title: Deployments
   </article>
 {/if}
 
-<FilterBar id="deployment-filters" {filters} {search} value={query} onchange={apply} />
+<FilterBar id="deployment-filters" {filters} {search} value={query}
+            directives={directives} onchange={apply} />
 
 {#if loading}
   <p class="text-sm text-muted">Loading…</p>

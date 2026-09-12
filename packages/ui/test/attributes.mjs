@@ -44,7 +44,7 @@ const PROPS = {
   'display/Stat':        { label: 'MRR', value: '£1,204' },
   'display/StatCard':    { label: 'MRR', value: '£1,204' },
   'display/Steps':       { steps: [{ id: 'a', label: 'One' }, { id: 'b', label: 'Two' }] },
-  'display/Table':       { columns: [{ key: 'name', label: 'Name' }], rows: [{ name: 'Ada' }] },
+  'display/Table':       { columns: [{ name: 'name', label: 'Name' }], rows: [{ name: 'Ada' }] },
   'feedback/Toast':      { message: 'Saved' },
   'forms/Combobox':      { options: ['alpha', 'beta'] },
   'forms/Label':         { label: 'Email' },

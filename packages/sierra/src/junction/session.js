@@ -51,6 +51,13 @@ import { watchProxy } from '@frontierjs/mesa/runtime'
  * @property {string|null} oauthMessage  the same thing in words, for rendering.
  *                                `OAUTH_ERRORS` is the table and it is one
  *                                owner, so five apps do not write five switches
+ * @property {string|null} awaitingCode  a password was accepted and a second
+ *                                factor is owed — the ISO instant the attempt
+ *                                lapses at, or null. It is what a sign-in page
+ *                                renders the code box from, and it is REACTIVE
+ *                                for the same reason `error` is: the form awaits
+ *                                the promise, the shell renders off the object,
+ *                                and neither should have to write the other's
  */
 export const session = {
   user:         null,
@@ -59,6 +66,7 @@ export const session = {
   error:        null,
   oauthError:   null,
   oauthMessage: null,
+  awaitingCode: null,
 }
 
 const _w = watchProxy(session)
@@ -139,11 +147,54 @@ export async function refresh() {
 }
 
 /**
- * Sign in. Stores the token, opens the socket, and loads the session — so a
- * caller that awaits this can read `session.user` on the next line.
+ * Sign in.
+ *
+ * Stores the token, opens the socket, and loads the session — so a caller that
+ * awaits this can read `session.user` on the next line.
+ *
+ * An account with a second factor answers a CHALLENGE instead, and then none of
+ * that has happened: `session.user` stays null and `session.awaitingCode` holds
+ * the instant the attempt lapses at. Call `submitCode()` next. Without this
+ * branch the refresh below would ask `account.me` with no credential, take the
+ * 401 as a dead session and clear — a correct sign-in reported as a failure.
  */
 export async function signIn(email, password) {
-  return _attempt(() => _client.auth.signIn(email, password))
+  return _attempt(async () => {
+    const result = await _client.auth.signIn(email, password)
+    if (_isChallenge(result)) {
+      _w.awaitingCode = result.expiresAt ?? null
+      return result
+    }
+    _w.awaitingCode = null
+    return result
+  })
+}
+
+/**
+ * Finish a sign-in that owed a code. A TOTP code or a recovery code — the person
+ * typing it is answering one question.
+ *
+ * The ticket is the client's; nothing here threads it through a page, because in
+ * cookie mode there is no ticket a page could hold.
+ */
+export async function submitCode(code) {
+  return _attempt(async () => {
+    const result = await _client.auth.completeSignIn(code)
+    _w.awaitingCode = null
+    return result
+  })
+}
+
+/**
+ * A challenge and a session are told apart by the KEY, never by the ticket.
+ *
+ * In cookie mode the ticket is an httpOnly cookie and the body carries only the
+ * expiry, so `'challenge' in result` is false for a challenge that is perfectly
+ * real. What is always true is that a session names a user and a challenge does
+ * not.
+ */
+function _isChallenge(result) {
+  return Boolean(result) && !result.user
 }
 
 /** Register and sign in — the plugin's /auth/register does both. */
@@ -164,9 +215,16 @@ async function _attempt(run) {
   _w.error = null
   try {
     const result = await run()
-    await refresh()
+    // A challenge is not a session, so there is nothing to load and asking would
+    // answer 401 with no credential to show for it.
+    if (!_isChallenge(result)) await refresh()
     return result
   } catch (err) {
+    // `retryable: false` is the server saying this attempt is finished — the
+    // ticket was spent, lapsed, or never existed. Closing the box is what sends
+    // the person back to the password instead of typing into something that will
+    // refuse every code.
+    if (err?.data?.retryable === false || err?.retryable === false) _w.awaitingCode = null
     // The message is the server's — junction's client keeps the body of a 401
     // now, so this is "Invalid credentials" rather than "Unauthorized".
     _w.error = err?.message ?? String(err)
@@ -197,6 +255,9 @@ export async function signOut() {
 /** Drop what we know locally. The client's own token is cleared by signOut. */
 function clear() {
   _w.user  = null
+  // A half-finished attempt does not survive a sign-out or a 401. Left set, a
+  // signed-out page renders a code box for a ticket the server has forgotten.
+  _w.awaitingCode = null
   // A caller with no session is STRANGER(0). Not invented and not the app's to
   // disagree with: every gate above 0 refuses a request carrying no principal
   // whatever an app's own resolver says, so this is the one level a browser can

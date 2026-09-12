@@ -364,15 +364,18 @@ try {
   // ─── Your settings ─────────────────────────────────────────────────────
   console.log('\n  /settings/ — the caller\'s own account')
   await goto('/settings/')
-  await until(`document.querySelectorAll('#notification-kinds > div').length`, n => n === 7,
-    'the seven notification kinds never rendered')
-  ok('all seven kinds render, stored merged over defaults')
+  await until(`document.querySelectorAll('#notification-kinds > div').length`, n => n === 8,
+    'the eight notification kinds never rendered')
+  ok('all eight kinds render, stored merged over defaults')
 
   const kindsText = await text('#settings-notifications')
-  // Two are seeded chosen and five have never been touched. A screen that
-  // flattened the two states would show seven identical rows.
+  // Two are seeded chosen and the rest have never been touched. A screen that
+  // flattened the two states would show one identical row per kind.
+  // The COUNT is `NotificationKind`'s and this restates it, which is why it went
+  // stale the day an eighth kind landed and stayed stale until somebody ran the
+  // drive (`FJS-1082`).
   check('chosen and default are distinguished', /chosen/.test(kindsText) && /default/.test(kindsText))
-  check('and the count agrees', /2 of 7 chosen/.test(kindsText), kindsText.slice(0, 80))
+  check('and the count agrees', /2 of 8 chosen/.test(kindsText), kindsText.slice(0, 80))
 
   const sessionsText = await text('#settings-sessions')
   check('this session is listed and marked', /this one/.test(sessionsText ?? ''),
@@ -385,12 +388,12 @@ try {
   // other transport from the KIND's default rather than the column's.
   await click('#notify-member_joined-email')
   await until(`document.getElementById('settings-notifications').textContent`,
-    t => /3 of 7 chosen/.test(t), 'flipping a switch never marked the kind chosen')
+    t => /3 of 8 chosen/.test(t), 'flipping a switch never marked the kind chosen')
   ok('flipping a transport marks that kind chosen')
 
   await goto('/settings/')
   await until(`document.getElementById('settings-notifications')?.textContent ?? ''`,
-    t => /3 of 7 chosen/.test(t), 'the choice did not survive a reload')
+    t => /3 of 8 chosen/.test(t), 'the choice did not survive a reload')
   ok('and it survives a reload')
 
   // ─── The audit trail ───────────────────────────────────────────────────

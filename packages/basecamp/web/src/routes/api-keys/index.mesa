@@ -157,12 +157,12 @@ title: API keys
   const when = (iso) => iso ? new Date(iso).toLocaleDateString() : '—'
   const TONE = { active: 'success', expired: 'warning', revoked: 'muted' }
   const KEY_COLUMNS = [
-    { key: 'name',    label: 'Name' },
-    { key: 'token',   label: 'Token' },
-    { key: 'scopes',  label: 'Scopes' },
-    { key: 'used',    label: 'Used' },
-    { key: 'expires', label: 'Expires' },
-    { key: 'actions', label: 'Actions', hideLabel: true },
+    { name: 'name',    label: 'Name' },
+    { name: 'token',   label: 'Token' },
+    { name: 'scopes',  label: 'Scopes' },
+    { name: 'used',    label: 'Used' },
+    { name: 'expires', label: 'Expires' },
+    { name: 'actions', label: 'Actions', hideLabel: true },
   ]
 </script>
 

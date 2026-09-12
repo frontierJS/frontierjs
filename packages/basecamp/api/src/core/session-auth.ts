@@ -70,6 +70,26 @@ export function basecampSessionFields(user: Record<string, any>): Record<string,
 export function refuseSuspendedLogin(auth: IAuth & { _sessionTtl: string }, db: any) {
   const sys = db.asSystem()
 
+  /**
+   * The check, applied wherever a session comes out.
+   *
+   * Both steps of a login end here, which is the whole reason it is a function:
+   * a second factor means `login()` can answer a ticket instead of a session
+   * (`FJS-D261`), and a suspension checked only on the password step would let a
+   * suspended account with an authenticator straight through.
+   */
+  async function refuseIfSuspended<T extends { token: string; user: { userId: string } }>(result: T): Promise<T> {
+    const user = await sys.user.findUnique({ where: { id: result.user.userId } })
+    if (user?.status === 'suspended') {
+      // The session row was already written. Delete it rather than leave a valid
+      // token nobody was handed — logout takes the token, which is the one thing
+      // we have.
+      await auth.logout(result.token)
+      throw new Forbidden('This account is suspended. Ask a system administrator to restore it.')
+    }
+    return result
+  }
+
   return {
     ...auth,
     async login(email: string, password: string) {
@@ -79,17 +99,22 @@ export function refuseSuspendedLogin(auth: IAuth & { _sessionTtl: string }, db: 
       // careful not to make.
       const result = await auth.login(email, password)
 
-      const user = await sys.user.findUnique({ where: { id: result.user.userId } })
-      if (user?.status === 'suspended') {
-        // The session row was already written by auth.login. Delete it rather
-        // than leave a valid token nobody was handed — logout takes the token,
-        // which is the one thing we have.
-        await auth.logout(result.token)
-        throw new Forbidden('This account is suspended. Ask a system administrator to restore it.')
-      }
+      // A half-finished login carries no session to refuse yet, and nothing is
+      // disclosed by letting it through: the ticket is worth nothing without a
+      // code, and the step that redeems it runs the same check.
+      if ('challenge' in result) return result
 
-      return result
+      return refuseIfSuspended(result)
     },
+
+    // Present only if the provider has it, because `IAuth.completeLogin` is
+    // optional and spreading an absent method would define the key as undefined
+    // — which reads as *implemented* to every `auth.completeLogin ?` check.
+    ...(auth.completeLogin ? {
+      async completeLogin(challenge: string, code: string) {
+        return refuseIfSuspended(await auth.completeLogin!(challenge, code))
+      },
+    } : {}),
   } as IAuth & { _sessionTtl: string }
 }
 

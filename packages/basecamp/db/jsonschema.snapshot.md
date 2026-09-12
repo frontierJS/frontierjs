@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-86 definitions · 50 models · 1 view · 35 enums · 0 other
+87 definitions · 51 models · 1 view · 35 enums · 0 other
 ```
 
 ## Definitions
@@ -28,6 +28,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Credential` | model |
 | `Session` | model |
 | `Verification` | model |
+| `LoginChallenge` | model |
 | `OauthFlow` | model |
 | `MetricSeries` | model |
 | `MetricPoint` | model |
@@ -172,6 +173,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `label` | `string`? | — | — | — | — |
 | `tokenExpiresAt` | `string`? | — | — | `format: "date-time"` | — |
 | `scope` | `string`? | — | — | — | — |
+| `totpLastStep` | `integer`? | — | — | — | — |
 
 **On create**: required — `userId`, `type` · not accepted — `id`
 
@@ -207,6 +209,19 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
 
 **On create**: required — `purpose`, `identifier`, `expiresAt` · not accepted — `id`
+
+### `LoginChallenge`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `userId` | `string` | yes | — | — | — |
+| `attempts` | `integer` = `0` | — | — | — | — |
+| `expiresAt` | `string` | yes | — | `format: "date-time"` | — |
+
+**On create**: required — `userId`, `expiresAt` · not accepted — `id`
 
 ### `OauthFlow`
 

@@ -1,11 +1,15 @@
 // ─── @frontierjs/auth — the credential machinery ─────────────────────────────
 //
-// Credentials:   how you prove who you are — passwords, API keys, OAuth tokens
+// Credentials:   how you prove who you are — passwords, API keys, OAuth tokens,
+//                a TOTP secret, a recovery code
 // Sessions:      are you currently logged in
 // Verifications: ephemeral tokens — password reset, email verify
+// In flight:     an authorization mid-redirect (OauthFlow), a login that has
+//                passed a password and owes a second factor (LoginChallenge)
 //
-// All three are @@gate("8"): nothing outside asSystem() has anything to say to
-// them, and this package is the only thing that calls asSystem() on them. That
+// Every model here is @@gate("8"): nothing outside asSystem() has anything to
+// say to them, and this package is the only thing that calls asSystem() on
+// them. That
 // is the line between this file and user.lite beside it — User is the model an
 // app extends, relates to and puts on screens, so it goes into the app's own
 // schema.lite where it can be read and edited. These three change when this
@@ -42,6 +46,15 @@ model Credential {
   refreshToken    String?    @secret
   tokenExpiresAt  DateTime?
   scope           String?
+  /// TOTP only — the last step this secret was accepted at, which is what makes
+  /// a code single-use. A code is valid for its whole 30-second window, so
+  /// without this the window IS a replay window and nothing about the second
+  /// code looks wrong. Null until the first successful login.
+  ///
+  /// Beside `scope`, `accessToken` and `tokenExpiresAt`, which are OAuth-only in
+  /// the same way: one table per KIND of credential would be four tables whose
+  /// only difference is which columns are null.
+  totpLastStep    Int?
   createdAt       DateTime   @default(now())
 
   @@db(main)
@@ -114,6 +127,42 @@ model Verification {
   @@db(main)
   @@gate("8")
   @@index([purpose, identifier])
+  @@index([expiresAt])
+}
+
+/// A login that is half done.
+///
+/// The password was right and there is a second factor, so the caller holds a
+/// ticket and no session. It is its own model rather than a fifth
+/// `VerificationPurpose` for the reason `OauthFlow` below is not one either:
+/// nobody is proving control of an ADDRESS here — there is no `identifier` and
+/// the address was settled a step ago — and `attempts` is a column the other
+/// purposes have no use for. Three answers to what a column means is three
+/// tables wearing one name (`FJS-D261`).
+///
+/// `attempts` is the whole of what stands between a six-digit code and a
+/// million guesses, so it is counted on the row rather than in a limiter: a
+/// process-local count is reset by a redeploy and is not shared by two
+/// instances, and this is the one table where both of those are an authorization
+/// bypass rather than a slow path.
+model LoginChallenge {
+  id         String    @id @default(uuid())
+  userId     String
+  /// What the caller presents to finish the login. Found by this value alone,
+  /// which is safe here and is not in `OauthFlow`: a ticket is handed straight
+  /// back to the caller that asked for it, never carried by a redirect somebody
+  /// else can start.
+  value      String    @unique @guarded
+  /// Counted up on every wrong code. The row is spent when it reaches the
+  /// ceiling — the caller signs in from the top rather than guessing again.
+  attempts   Int       @default(0)
+
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+
+  @@db(main)
+  @@gate("8")
+  @@index([userId])
   @@index([expiresAt])
 }
 

@@ -18,6 +18,7 @@ import {
   membershipClaim,
   registerErrorMapper,
   Forbidden,
+  BadRequest,
 } from '@frontierjs/junction'
 
 import { conduit }           from '@frontierjs/conduit'
@@ -676,6 +677,10 @@ export async function buildBasecampApp(
       })
 
       const login = await auth.login(email.trim(), password)
+      // An account created two lines ago has no second factor, so a challenge
+      // here is unreachable. Named rather than cast: a cast would read
+      // `undefined.token` if that ever stopped being true.
+      if ('challenge' in login) throw new BadRequest('A second factor cannot be required on a new account')
 
       return ctx.json({
         token:        login.token,

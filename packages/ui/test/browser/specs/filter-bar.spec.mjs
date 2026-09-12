@@ -25,8 +25,18 @@ export const covers = ['display/FilterBar']
 
 const BAR = '#searchable'
 const out = `document.getElementById('out').textContent`
-/** The last query the bar handed back, parsed. */
-const held = (path) => `(() => { const q = JSON.parse(${out} || '{}'); return ${path} })()`
+/**
+ * The last thing the bar handed back, parsed — `{ query, directives }`.
+ *
+ * TWO halves, because that is the contract: the router splits a URL into
+ * filters and directives (Invariant 10) and the bar is what puts them back
+ * together for display and takes them apart again on the way out. A spec that
+ * read one merged bag could not tell a bar that split correctly from one that
+ * handed everything back under `$` names.
+ *
+ * `q` is the filters and `d` the directives, unprefixed.
+ */
+const held = (path) => `(() => { const both = JSON.parse(${out} || '{}'); const q = both.query ?? {}; const d = both.directives ?? {}; return ${path} })()`
 
 export async function run(t) {
   await t.mount('filter-bar')
@@ -50,14 +60,19 @@ export async function run(t) {
   // placeholder saying only "Search" is the failure this key exists to fix.
   t.is(boxes.placeholder, 'Search Body, Title', 'the box names the indexed columns')
 
-  /* ── $search writes, and takes the paging with it ─────────────────────── */
+  /* ── search writes, and takes the paging with it ──────────────────────── */
 
   await t.clickAt(`${BAR} input[type="search"]`)
   await t.type('wid')
-  await t.eventually(held(`q.$search`), 'wid', 'typing in the box writes $search')
+  // A DIRECTIVE, not a filter. `$search` is on Invariant 10's table — it is
+  // served by `table.search()` under `@@fts`, not by a WHERE — so the split
+  // puts it with the reading options even though it reads like a filter.
+  await t.eventually(held(`d.search`), 'wid', 'typing in the box writes the search directive')
+  await t.eventually(held(`q.$search ?? q.search ?? null`), null,
+    'and it is NOT left among the filters, under either spelling')
 
-  const paging = await t.evaluate('return ' + held(`({ off: q.$offset ?? null, after: q.$after ?? null, order: q.$orderBy ?? null, limit: q.$limit ?? null })`))
-  t.is(paging.off, null, 'and drops $offset — page 3 of a different question is not page 3')
+  const paging = await t.evaluate('return ' + held(`({ off: d.offset ?? null, after: d.after ?? null, order: d.orderBy ?? null, limit: d.limit ?? null })`))
+  t.is(paging.off, null, 'and drops the offset — page 3 of a different question is not page 3')
   t.is(paging.order, 'title', 'while the sort survives, because it is how you are reading')
   t.is(paging.limit, 20, 'and so does the page size')
 
@@ -95,11 +110,13 @@ export async function run(t) {
 
   /* ── Clear ───────────────────────────────────────────────────────────── */
   //
-  // `$search` goes with the filters: it is WHAT is being asked for. The sort
-  // and the page size are HOW it is being read, and they stay.
+  // Clear drops what is being ASKED — the filters and the search term — and
+  // keeps how it is being READ. The two live on opposite sides of the split now,
+  // which is why this row reads across both halves: a Clear that emptied the
+  // directives too would take the sort and the page size with it.
 
   await t.clickAt(`${BAR} button.btn`)
-  await t.eventually(held(`[q.$search ?? '-', q.title ?? '-', q.$orderBy ?? '-', q.$limit ?? '-'].join('|')`),
+  await t.eventually(held(`[d.search ?? '-', q.title ?? '-', d.orderBy ?? '-', d.limit ?? '-'].join('|')`),
     '-|-|title|20', 'Clear drops the search and the filters, and keeps the reading')
 
   /* ── Every control has a NAME ─────────────────────────────────────────── */

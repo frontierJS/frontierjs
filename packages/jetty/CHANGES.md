@@ -1,5 +1,18 @@
 # Changes — @frontierjs/jetty
 
+## 2026-09-12 — a toolbar sign-in that owes a code
+
+`adapter.auth.completeLogin(code)` on the wire side, `authFlow.submitCode(code)` through Harbor, and
+`auth/submitCode` routed as a special case for the reason `auth/login` is one: jetty owns the token
+storage and the broadcast, so a generic forward would put a session on the wire client and leave
+Harbor — the thing that survives the page — knowing nothing about it (`FJS-D261`).
+
+A challenge stores no token and does not upgrade the connection, and the waiting state **is
+broadcast**: a toolbar popup closes on a click elsewhere, so the next one to open has to find the
+attempt still standing. Both halves of a login now end in one `adopt()`, because two copies is how
+they would come to disagree about whether the token is persisted before the connection is upgraded —
+which decides what a reload sees after a crash between them.
+
 ## 2026-09-05 — a hook that breaks the chain is refused by name (`FJS-823`)
 
 The same two lines sierra had, hand-copied: `return ctx.result` after the around

@@ -75,11 +75,11 @@ title: DNS & edge
   $: expired  = rows.filter(r => r.cert_status === 'expired').length
 
   const COLUMNS = [
-    { key: 'hostname', label: 'Hostname' },
-    { key: 'app',      label: 'App' },
-    { key: 'cert',     label: 'Certificate' },
-    { key: 'ssl',      label: 'SSL mode' },
-    { key: 'edge',     label: 'Edge' },
+    { name: 'hostname', label: 'Hostname' },
+    { name: 'app',      label: 'App' },
+    { name: 'cert',     label: 'Certificate' },
+    { name: 'ssl',      label: 'SSL mode' },
+    { name: 'edge',     label: 'Edge' },
   ]
 </script>
 

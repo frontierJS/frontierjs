@@ -61,7 +61,7 @@ import { findChrome }                          from '../packages/cli/core/browse
 
 // Packs the working tree and builds a scaffolded app against it. Its own file
 // because the mechanism needs more explaining than the phase does.
-import { scaffoldAndBuild, scaffoldAndDeploy, deployJournalCycle, daemonBlindHint, ciWorkBase, portFree } from './scaffold-build.mjs'
+import { scaffoldAndBuild, scaffoldAndDeploy, deployJournalCycle, pauseEdgeCycle, daemonBlindHint, ciWorkBase, portFree } from './scaffold-build.mjs'
 
 const ROOT       = resolveRoot()
 const ALLOWANCES = join(ROOT, 'scripts', 'ci-allowances.json')
@@ -1410,6 +1410,31 @@ function deploy() {
 
   if (!cycle.findings.length)
     ok('deploy → deploy → crash → resume → revert, against a real machine', Date.now() - c0)
+
+  // ── the edge ──────────────────────────────────────────────
+  // Phase 3b. The cycle above proves serving state can be moved; this proves it
+  // can be SUSPENDED, which happens at nginx and nowhere the cycle above looks —
+  // that app answers on its own port with no vhost in front of it at all.
+  //
+  // Seconds rather than minutes: one `nginx:alpine` and no image build. It is
+  // here rather than in the cli suite because the claim is about nginx, and a
+  // test that asserted on the config text would pass against a file nginx
+  // refuses.
+  const e0 = Date.now()
+  const edge = pauseEdgeCycle({ verbose })
+
+  if (edge.skipped) {
+    if (process.env.FJS_CI_REQUIRE_DOCKER === '1')
+      fail(`pause edge cycle skipped and FJS_CI_REQUIRE_DOCKER=1 — ${edge.skipped}`)
+    else
+      note(`pause edge cycle SKIPPED — ${edge.skipped}. Set FJS_CI_REQUIRE_DOCKER=1 to make this a failure.`)
+    return
+  }
+
+  for (const f of edge.findings) fail(`pause edge: ${f.message}`, f.output)
+
+  if (!edge.findings.length)
+    ok('a paused app refuses at the edge and serves again, against a real nginx', Date.now() - e0)
 }
 
 // ─── phase 8 · tests ────────────────────────────────────────

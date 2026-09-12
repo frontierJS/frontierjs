@@ -68,9 +68,9 @@ title: Home
   // reads inside load() add no subscriptions of their own.
   $: session.workspaceId, () => load()
   const PROJECT_COLUMNS = [
-    { key: 'name',   label: 'Name' },
-    { key: 'slug',   label: 'Slug' },
-    { key: 'status', label: 'Status' },
+    { name: 'name',   label: 'Name' },
+    { name: 'slug',   label: 'Slug' },
+    { name: 'status', label: 'Status' },
   ]
 </script>
 

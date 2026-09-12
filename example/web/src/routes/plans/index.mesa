@@ -30,12 +30,12 @@ title: Plans
   import Table         from '@frontierjs/ui/components/display/Table.mesa'
 
   const columns = [
-    { key: 'code',         label: 'Code' },
-    { key: 'name',         label: 'Name' },
-    { key: 'interval',     label: 'Billed' },
-    { key: 'currentPrice', label: 'Price now', align: 'right' },
-    { key: 'active',       label: 'Offered' },
-    { key: 'actions',      label: '' },
+    { name: 'code',         label: 'Code' },
+    { name: 'name',         label: 'Name' },
+    { name: 'interval',     label: 'Billed' },
+    { name: 'currentPrice', label: 'Price now', align: 'right' },
+    { name: 'active',       label: 'Offered' },
+    { name: 'actions',      label: '' },
   ]
 
   const { get: rows, unsubscribe } = useStore(plans.store)

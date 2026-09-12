@@ -139,6 +139,10 @@ export function planTransition({
   attempt       = 1,
   steps         = [],
   actor         = null,
+  // Stated only where the derivation below would be a claim about the wrong
+  // thing: a pause moves no schema, so *unknown counts as a contract* would
+  // record a pivot crossing that nothing crossed.
+  crossesPivot  = null,
 } = {}) {
   if (!release?.id) throw new Error('planTransition needs a minted Release')
 
@@ -179,7 +183,7 @@ export function planTransition({
       fromReleaseId,
       generation,
       status:        'planned',
-      crossesPivot:  release.pivot !== 'expand',
+      crossesPivot:  crossesPivot ?? release.pivot !== 'expand',
       plan: {
         formatVersion: PLAN_FORMAT,
         attempt,

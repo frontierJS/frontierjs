@@ -11,7 +11,12 @@
   // reader announces, so it is also the single source of truth for the arrow.
   //
   // COLUMNS shape:
-  //   { key, label, sortable?, align?: 'left'|'center'|'right', width?, hideLabel? }
+  //   { name, label, sortable?, align?: 'left'|'center'|'right', width?, hideLabel? }
+  //
+  // `name` is the FIELD, which is what `resource.columns()` already calls it and
+  // what `<FilterBar>` already reads off the same list — this component said
+  // `key` and every caller carried a `.map` to translate, which is a shape
+  // translation with no owner (`FJS-1081`).
   //
   // `hideLabel` is for the column that holds a row's actions. The header cell
   // still has to be announced — a <th> with no text leaves a screen reader
@@ -28,25 +33,40 @@
   //   </Table>
   //
   // USAGE — with sort handling:
-  //   <Table {columns} {rows} bind:sortKey bind:sortDir>
+  //   <Table {columns} {rows} bind:orderBy>
   //     {#snippet row(r)}...{/snippet}
   //   </Table>
+  //
+  // SORT is one value and it is the `$orderBy` directive itself, not a pair.
+  // Three pages derived `(key, direction)` from that directive by hand and the
+  // three disagreed — one assumed a string and threw on the object form, two
+  // answered a column named `0` on the bracket-indexed form — because the
+  // directive deliberately admits `-name`, `{name:'asc'}` and `[{…}]` alike and
+  // nothing owned reading it (`FJS-1077`). `orderByPair` does, in
+  // `@frontierjs/toolbelt/directives` beside the table that admits the shapes,
+  // and this component is the only thing in the kit that needs it: the marker
+  // is `aria-sort`, which is already ours.
 
+  import { orderByPair, orderByValue } from '@frontierjs/toolbelt/directives'
   import { cx } from '../../utils.js'
 
-  export let columns    = []       // { key, label, sortable?, align?, width? }[]
+  export let columns    = []       // { name, label, sortable?, align?, width? }[]
   export let rows       = []       // any[] — passed to the row snippet
   export let loading    = false
   export let emptyText  = 'No results found'
-  export let sortKey    = ''       // bindable — currently sorted column key
-  export let sortDir    = 'asc'    // bindable — 'asc' | 'desc'
-  // Report the next sort instead of taking it. `bind:sortKey` makes this
+  export let orderBy    = ''       // bindable — the `$orderBy` directive, any legal shape
+  // Report the next ordering instead of taking it. `bind:orderBy` makes this
   // component the owner of the sort, and a component cannot own something that
   // lives in the address bar: a list sorted from the URL has to navigate, and
-  // then the pair arrives back as a prop. With `onsort` set the component
+  // then the ordering arrives back as a prop. With `onsort` set the component
   // states the move and changes nothing, so there is no flash of an arrow the
   // caller is about to overrule.
-  export let onsort     = undefined // (key, dir) => void
+  //
+  // It reports an `orderBy` and not a pair, so a page writes
+  // `apply({ …q, $orderBy: next })` and never spells a sort shape of its own —
+  // which is the half of `FJS-1077` that was a divergence rather than a crash:
+  // two pages wrote the same click as `{name:'desc'}` and as `-name`.
+  export let onsort     = undefined // (orderBy) => void
   export let striped    = false    // alternate row shading
   export let hover      = true     // row hover highlight
   export let compact    = false    // reduce row padding
@@ -59,18 +79,28 @@
   // Skeleton row count while loading
   export var skeletonRows = 5
 
+  // Read at call time rather than derived once: `orderBy` is a prop and the
+  // marker has to answer for the ordering the caller is showing NOW, which is
+  // the defect this component was already carrying one layer up — a header that
+  // reports a sort without stating the current one never reverses.
+  function sortedBy(col) {
+    const { key, dir } = orderByPair(orderBy)
+    return key === col.name ? dir : null
+  }
+
   function handleSort(col) {
     if (!col.sortable) return
-    const dir = sortKey === col.key ? (sortDir === 'asc' ? 'desc' : 'asc') : 'asc'
-    if (onsort) return onsort(col.key, dir)
-    sortKey = col.key
-    sortDir = dir
+    const current = sortedBy(col)
+    const next = orderByValue(col.name, current === 'asc' ? 'desc' : 'asc')
+    if (onsort) return onsort(next)
+    orderBy = next
   }
 
   function sortStateOf(col) {
     if (!col.sortable) return null
-    if (sortKey !== col.key) return 'none'
-    return sortDir === 'asc' ? 'ascending' : 'descending'
+    const dir = sortedBy(col)
+    if (!dir) return 'none'
+    return dir === 'asc' ? 'ascending' : 'descending'
   }
 </script>
 
@@ -86,7 +116,7 @@
     <table class={cx('table', striped && 'striped', hover && 'hover', compact && 'compact')}>
       <thead>
         <tr>
-          {#each columns as col (col.key)}
+          {#each columns as col (col.name)}
             <th
               scope="col"
               aria-sort={sortStateOf(col)}
@@ -103,9 +133,9 @@
                 -->
                 <button type="button" class="btn link" on:click={() => handleSort(col)}>
                   {col.label}
-                  {#if sortKey === col.key && sortDir === 'asc'}
+                  {#if sortedBy(col) === 'asc'}
                     <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M6 3l4 6H2z"/></svg>
-                  {:else if sortKey === col.key && sortDir === 'desc'}
+                  {:else if sortedBy(col) === 'desc'}
                     <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true"><path d="M6 9L2 3h8z"/></svg>
                   {:else}
                     <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true" style:opacity="0.4"><path d="M6 2l3 4H3zm0 8L3 6h6z"/></svg>
@@ -128,11 +158,11 @@
                did every time it was used. -->
           {#each Array.from({ length: skeletonRows }) as _, i (i)}
             <tr aria-busy="true">
-              {#each columns as col (col.key)}
+              {#each columns as col (col.name)}
                 <td>
                   <div
                     class="skeleton text"
-                    style:inline-size="{50 + ((i * 13 + col.key.length * 7) % 35)}%"
+                    style:inline-size="{50 + ((i * 13 + col.name.length * 7) % 35)}%"
                   ></div>
                 </td>
               {/each}

@@ -77,10 +77,10 @@ title: Audit trail
 
   const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
   const AUDIT_COLUMNS = [
-    { key: 'when',    label: 'When' },
-    { key: 'action',  label: 'Action' },
-    { key: 'subject', label: 'Subject' },
-    { key: 'actor',   label: 'Actor' },
+    { name: 'when',    label: 'When' },
+    { name: 'action',  label: 'Action' },
+    { name: 'subject', label: 'Subject' },
+    { name: 'actor',   label: 'Actor' },
   ]
 </script>
 

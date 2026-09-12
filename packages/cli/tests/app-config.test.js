@@ -225,7 +225,13 @@ describe('every framework package a generator imports is one a scaffold declares
     // scan that matched nothing passes vacuously, which is exactly what a
     // tripwire reading the wrong file looks like.
     expect(imported.size).toBeGreaterThan(0)
-    expect([...imported.keys()]).toContain('@frontierjs/toolbelt')
+    // Named on `sierra` because every generated page imports its router, which
+    // is the one specifier that cannot leave without the page ceasing to be a
+    // page. It named `toolbelt` until seam 3 of `list-controller.md` took
+    // `directiveParams` out of the templates — the router writes the `$`
+    // spelling now — and a control naming a package the templates no longer
+    // import is the vacuous pass this assertion exists to prevent.
+    expect([...imported.keys()]).toContain('@frontierjs/sierra')
 
     const undeclared = [...imported.entries()]
       .filter(([pkg]) => !(pkg in FJS_PACKAGES))

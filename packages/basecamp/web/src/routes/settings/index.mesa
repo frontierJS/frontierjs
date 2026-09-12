@@ -163,9 +163,9 @@ title: Your settings
   }
 
   const SESSION_COLUMNS = [
-    { key: 'where', label: 'Where' },
-    { key: 'seen',  label: 'Last seen' },
-    { key: 'act',   label: '' },
+    { name: 'where', label: 'Where' },
+    { name: 'seen',  label: 'Last seen' },
+    { name: 'act',   label: '' },
   ]
 </script>
 

@@ -154,11 +154,11 @@ title: Disk cleanup
     return 'muted'
   }
   const SWEEP_COLUMNS = [
-    { key: 'server',  label: 'Server' },
-    { key: 'status',  label: 'Status' },
-    { key: 'freed',   label: 'Freed' },
-    { key: 'targets', label: 'Targets' },
-    { key: 'when',    label: 'When' },
+    { name: 'server',  label: 'Server' },
+    { name: 'status',  label: 'Status' },
+    { name: 'freed',   label: 'Freed' },
+    { name: 'targets', label: 'Targets' },
+    { name: 'when',    label: 'When' },
   ]
 </script>
 

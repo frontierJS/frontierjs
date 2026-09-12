@@ -25,6 +25,32 @@ CREATE TABLE IF NOT EXISTS "verification" (
 CREATE INDEX IF NOT EXISTS "idx_verification_purpose_identifier" ON "verification" ("purpose", "identifier");
 CREATE INDEX IF NOT EXISTS "idx_verification_expiresAt" ON "verification" ("expiresAt");
 
+-- A login that is half done.
+-- 
+-- The password was right and there is a second factor, so the caller holds a
+-- ticket and no session. It is its own model rather than a fifth
+-- `VerificationPurpose` for the reason `OauthFlow` below is not one either:
+-- nobody is proving control of an ADDRESS here — there is no `identifier` and
+-- the address was settled a step ago — and `attempts` is a column the other
+-- purposes have no use for. Three answers to what a column means is three
+-- tables wearing one name (`FJS-D261`).
+-- 
+-- `attempts` is the whole of what stands between a six-digit code and a
+-- million guesses, so it is counted on the row rather than in a limiter: a
+-- process-local count is reset by a redeploy and is not shared by two
+-- instances, and this is the one table where both of those are an authorization
+-- bypass rather than a slow path.
+CREATE TABLE IF NOT EXISTS "login_challenge" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "userId" TEXT NOT NULL,
+  "value" TEXT NOT NULL UNIQUE,
+  "attempts" INTEGER NOT NULL DEFAULT 0,
+  "expiresAt" TEXT NOT NULL,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_login_challenge_userId" ON "login_challenge" ("userId");
+CREATE INDEX IF NOT EXISTS "idx_login_challenge_expiresAt" ON "login_challenge" ("expiresAt");
+
 -- An authorization in flight.
 -- 
 -- `Oauth` and not `OAuth`, for the reason basecamp's `ThreeCX` is not `3CX`:
@@ -261,6 +287,7 @@ CREATE TABLE IF NOT EXISTS "credential" (
   "refreshToken" TEXT,
   "tokenExpiresAt" TEXT,
   "scope" TEXT,
+  "totpLastStep" INTEGER,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;

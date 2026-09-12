@@ -55,11 +55,11 @@ title: Invoice
   const TONE = { issued: 'warning', paid: 'success', void: 'muted' }
 
   const columns = [
-    { key: 'description', label: 'Item' },
-    { key: 'period',      label: 'For' },
-    { key: 'quantity',    label: 'Qty',  align: 'right' },
-    { key: 'unitAmount',  label: 'Unit', align: 'right' },
-    { key: 'amount',      label: 'Amount', align: 'right' },
+    { name: 'description', label: 'Item' },
+    { name: 'period',      label: 'For' },
+    { name: 'quantity',    label: 'Qty',  align: 'right' },
+    { name: 'unitAmount',  label: 'Unit', align: 'right' },
+    { name: 'amount',      label: 'Amount', align: 'right' },
   ]
 
   function watch() {

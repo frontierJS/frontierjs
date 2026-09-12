@@ -541,6 +541,14 @@ extend model OauthFlow {
   @@tenant(none)
 }
 
+// A login in flight belongs to a person, not to a workspace — the same reason
+// Session does not, one step earlier in the same sign-in. No relation to User:
+// a cascade would be a foreign key on the hottest write in the second step, and
+// the row is swept by expiry either way.
+extend model LoginChallenge {
+  @@tenant(none)
+}
+
 // ============================================================
 // ACCOUNT
 // ============================================================

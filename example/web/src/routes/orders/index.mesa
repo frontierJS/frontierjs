@@ -26,15 +26,15 @@ title: Orders
   // but every VALUE below still comes from the schema. Nothing in this list
   // adds a field the model does not have.
   const columns = [
-    { key: 'reference',  label: 'Reference' },
-    { key: 'status',     label: 'Status' },
-    { key: 'total',      label: 'Total' },
-    { key: 'customerId', label: 'Customer' },
-    { key: 'note',       label: 'Note' },
+    { name: 'reference',  label: 'Reference' },
+    { name: 'status',     label: 'Status' },
+    { name: 'total',      label: 'Total' },
+    { name: 'customerId', label: 'Customer' },
+    { name: 'note',       label: 'Note' },
     // Written by a job, not by anything on this page — see the note below.
-    { key: 'trackingCode', label: 'Tracking' },
-    { key: 'moves',      label: 'Moves' },
-    { key: 'actions',    label: 'Actions' },
+    { name: 'trackingCode', label: 'Tracking' },
+    { name: 'moves',      label: 'Moves' },
+    { name: 'actions',    label: 'Actions' },
   ]
 
   const { get: rows, unsubscribe } = useStore(orders.store)

@@ -42,6 +42,18 @@ export function parseDirectives(params: Record<string, unknown> | null | undefin
 /** The structured directives → the `$` keys that carry them. */
 export function directiveParams(directives: Directives | null | undefined): Record<string, unknown>
 
+/** The column a sorted header marks, and which way. An empty key is *nothing is sorted*. */
+export interface OrderByPair {
+  key: string
+  dir: 'asc' | 'desc'
+}
+
+/** An `orderBy` directive → the pair a sorted header marks. Reads every legal shape. */
+export function orderByPair(orderBy: unknown): OrderByPair
+
+/** The pair → the `orderBy` a page writes back. `orderByPair`'s inverse; an empty key answers `undefined`. */
+export function orderByValue(key: string, dir?: 'asc' | 'desc'): string | undefined
+
 /** One bag of parameters → the two things it was carrying. Neither half has a `$`. */
 export function splitParams(params: Record<string, unknown> | null | undefined): {
   query: Record<string, unknown>

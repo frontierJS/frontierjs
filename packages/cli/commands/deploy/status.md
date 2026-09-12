@@ -82,6 +82,53 @@ try {
   echo(`  health:     unreachable`)
 }
 
+// ─── Pause ────────────────────────────────────────────────────────────────────
+// Two answers to one question, printed side by side and never reconciled. The
+// journal records an intent somebody had; the file records what is in force. A
+// reader that printed one of them would be right until the day they differ,
+// which is the only day this section matters.
+echo('\nPause')
+try {
+  const { driftVerdict, pausedFile, vhostPath, GUARD_MARKER } =
+    await import(new URL('file://' + global.fliRoot + '/core/pause.js'))
+
+  const filePresent = ask(`[ -f ${pausedFile(path)} ] && echo yes || echo no`).trim() === 'yes'
+  const hasGuard    = ask(`grep -qF '${GUARD_MARKER}' ${vhostPath(appId)} 2>/dev/null && echo yes || echo no`).trim() === 'yes'
+
+  let journalPaused = false, since = null, actor = null, behind = null
+  if (deployConf.journal !== false) {
+    try {
+      // A reader, so it does not migrate: answering a question must not change
+      // the schema of the thing being asked.
+      const j = await connectJournal(context, { host, serverPath: path, deployConf })
+      const opened = await j.open({ app: appId, host, migrate: false })
+      if (opened.verdict.kind === 'behind') behind = opened.verdict.from
+      const st = await j.state({ app: appId, environment: target })
+      journalPaused = st.paused
+      since         = st.since
+      actor         = st.actor
+    } catch (err) {
+      echo(`  journal:    could not be read — ${err.message}`)
+    }
+  }
+
+  const v = driftVerdict({ journalPaused, filePresent })
+  echo(`  state:      ${v.summary}${v.drift ? '  ⚠ DRIFT' : ''}`)
+  if (v.state === 'paused' && since) echo(`  since:      ${since}${actor ? ` · ${actor}` : ''}`)
+  if (v.drift) {
+    echo(`  ${v.detail}`)
+    echo(`  ⚠ ${v.fix}`)
+  }
+  if (!hasGuard) {
+    echo(`  guard:      absent from ${vhostPath(appId)}`)
+    echo(`  ℹ  this target was set up before pause existed — fli deploy:setup rewrites the vhost`)
+  }
+  if (behind !== null)
+    echo(`  journal:    format ${behind} — the next deploy migrates it`)
+} catch {
+  echo(`  state:      could not read`)
+}
+
 // ─── Web release ─────────────────────────────────────────────────────────────
 if (deployConf.web !== false) {
   echo('\nWeb')

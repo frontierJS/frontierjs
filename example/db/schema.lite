@@ -3167,8 +3167,8 @@ model User {
   // from.
   //
   // Registration is unaffected: every write this package makes goes through
-  // asSystem(), which is above the ladder. The three models in auth.lite stay
-  // at 8 — they hold the credential material, and that is the case 8 is for.
+  // asSystem(), which is above the ladder. Every model in auth.lite stays at 8
+  // — they hold the credential material, and that is the case 8 is for.
   @@gate("4.4.4.5")
   @@allow('update', id == auth().id || auth().isAdmin)
   @@log(audit)

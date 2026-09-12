@@ -67,8 +67,10 @@ src/
   junction/              — the API seam
     index.js             WebSocket client integration
     session.js           who the browser thinks you are — the reactive object,
-                         the boot restore, signIn/signOut, and `ready`
+                         the boot restore, signIn/submitCode/signOut, and `ready`
     resource.js          createResource — coerce → blankToNull → validate
+    list.js              resource.list() — where a list's state lives, its load
+                         and re-run, and the window. Imports the router
     field-rules.js       schema → field rules; the control table and the
                          registry over it; toFieldErrors. LEAF: no client import
     schema-registry.js   modelNameFor / schemaFor
@@ -82,6 +84,17 @@ src/
 ---
 
 ## What bites here
+
+- **A sign-in can answer a CHALLENGE, and it must not be refreshed.** `signIn`
+  loads the session after the call; an account with a second factor has no
+  session to load, so the branch that skips `refresh()` is load-bearing — without
+  it `account.me` is asked with no credential, the 401 reads as a dead session,
+  `clear()` runs, and a correct sign-in is reported to the person as a failure.
+  **A challenge is told apart by the absence of a USER**, never by a ticket:
+  cookie mode strips `challenge` on the wire, so a real challenge arrives carrying
+  only the expiry. `session.awaitingCode` is what a page renders the box from and
+  `submitCode(code)` finishes it; `retryable: false` closes the box, because the
+  attempt is spent and every further code will be refused (`FJS-D261`).
 
 - **A shadow root on the host element is not necessarily OURS.** `el.shadowRoot
   ?? el.attachShadow()` reads a root the host page attached as one to move into,
@@ -106,7 +119,7 @@ src/
   omitted deliberately.
 - **Route matching is CASE-SENSITIVE** (`FJS-D210`). It was not, and it was the
   only one of four readers of *which route is this* that was not — `isActive`,
-  the prefetch cache key, `page.path` and the filename a static build writes are
+  the prefetch cache key, `page.pathname` and the filename a static build writes are
   all case-sensitive, so `/ADMIN/` rendered in the SPA and 404'd on the static
   host. A case-only miss is NAMED rather than merely refused, at both entrances:
   the quiet one is an app with a catch-all, where the match is truthy and
@@ -568,8 +581,8 @@ a `$:` path watch; there is no cross-package signal registry.
 | | |
 | --- | --- |
 | Created per | **navigation** — mutated in place through the router's write handle so path watches fire |
-| Carries | `path`, `params`, `query`, `directives`, `meta`, `route`, `pending`, `data`, `error`, `slots` — **plus the route's frontmatter spread onto it**, so `{page.title}` works |
-| Reserved | those ten names. Frontmatter using one is shadowed and the scanner warns |
+| Carries | `pathname`, `search`, `params`, `query`, `directives`, `meta`, `route`, `pending`, `data`, `error`, `slots` — **plus the route's frontmatter spread onto it**, so `{page.title}` works |
+| Reserved | those eleven names. Frontmatter using one is shadowed and the scanner warns |
 
 Two crossings with the API realm, both worth stating outright:
 
@@ -602,8 +615,9 @@ for a whole-call concern like a loading flag.
 **One word each.** `params` is path captures, `locals` is scratch, and the second
 argument to `find`/`load`/`getOptions` — like the field on the hook context and
 junction's own `QueryDirectives` (`FJS-290`) — is **`directives`** (Invariant 10).
-`optionsQuery` and `detailQuery` both take `{ query, directives }`, declared beside
-the model rather than at every call site (`FJS-D114`). The write is
+`optionsQuery`, `detailQuery` and `listQuery` all take `{ query, directives }`, declared beside
+the model rather than at every call site (`FJS-D114`) — and `listQuery` reaches `list()` alone, never a
+bare `find()`, because a default filter there would narrow every picker and job in silence. The write is
 `save(data, { mode })`, the one owner of create-or-patch, which `<Form>` calls
 rather than picking a service method.
 

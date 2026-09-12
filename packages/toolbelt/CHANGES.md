@@ -1,5 +1,32 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-12 — `/directives` — the orderBy pair
+
+`FJS-1077`. `orderByPair(orderBy)` answers the `{key, dir}` a sorted header
+marks, and `orderByValue(key, dir)` is its inverse — the ordering a page writes
+back.
+
+`$orderBy` is the one directive whose VALUE has more than one legal shape, and
+the table here says so and declines to fix one: only the query builder can say
+which a model takes. A SCREEN cannot decline. Three pages derived the pair by
+hand and the three disagreed — one assumed a string and threw `ob.replace is not
+a function` on `?$orderBy[name]=desc`, taking the screen with it; two answered a
+column named `0` and a direction that was itself an object on
+`?$orderBy[0][name]=desc`, which marks a header on a column that does not exist
+and reverses nothing.
+
+**It is here rather than in either caller because `@frontierjs/ui` and
+`@frontierjs/sierra` are siblings** — neither may import the other, and both
+already depend on this package, so it is the one place the two can agree.
+`<Table>` is now the only thing that reads an orderBy, deriving its own
+`aria-sort`; the pair left every page rather than being hidden in one.
+
+Two rules worth knowing. The nesting is decided on the VALUE and not the key:
+`{'0': '-name'}` is an array that lost its shape in transport and is descended
+into, while `{'0': 'desc'}` is a direction, so the numeric key is the column
+there. And a missing direction is ascending rather than unsorted — `?$orderBy
+[name]=` names a column and not a null sort.
+
 ## 2026-09-10 — `/predicate` — does this record satisfy a declared expression?
 
 `FJS-D259`. The `.lite` policy expression language, evaluated against one record
@@ -38,7 +65,7 @@ gate declares four positions and a caller names `find`, `patch`, `remove`,
 own key, finds nothing, and answers permissive. `restore` is the sharp one,
 because permissive there is a WRITE.
 
-**Two rows are new against Sierra's table**: `aggregate` maps to `read` and
+**Two rows are new against Sierra's table** (`FJS-1080`): `aggregate` maps to `read` and
 `upsert` to `update`. Both were previously unmapped and therefore always
 permitted as affordances, which was wrong in the direction that offers a control
 the boundary refuses. It narrows what a screen offers and changes no enforcement

@@ -58,12 +58,12 @@ title: Jobs
   const RUN_TONE = { success: 'success', failed: 'danger', timeout: 'warning', running: 'info' }
   const when = (iso) => iso ? new Date(iso).toLocaleString() : 'never'
   const JOB_COLUMNS = [
-    { key: 'name',     label: 'Name' },
-    { key: 'kind',     label: 'Kind' },
-    { key: 'schedule', label: 'Schedule' },
-    { key: 'status',   label: 'Status' },
-    { key: 'lastrun',  label: 'Last run' },
-    { key: 'actions',  label: 'Actions', hideLabel: true },
+    { name: 'name',     label: 'Name' },
+    { name: 'kind',     label: 'Kind' },
+    { name: 'schedule', label: 'Schedule' },
+    { name: 'status',   label: 'Status' },
+    { name: 'lastrun',  label: 'Last run' },
+    { name: 'actions',  label: 'Actions', hideLabel: true },
   ]
 </script>
 

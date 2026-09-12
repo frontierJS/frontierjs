@@ -139,8 +139,21 @@ export function createJunctionAdapter(config = {}) {
       async login(credentials = {}) {
         const c = need()
         const r = await c.auth.signIn(credentials.email, credentials.password)
+        // A second factor is owed. Told apart by the absence of a USER, never by
+        // the presence of a ticket — in cookie mode the ticket is a cookie no
+        // script can read. Passed through with no token, because there is none:
+        // the ticket lives on the wire client and `completeLogin` redeems it.
+        if (r && !r.user) return { awaitingCode: true, expiresAt: r.expiresAt ?? null }
+
         // `signIn` has already adopted the token onto the client; Harbor still
         // needs it back, because Harbor is what survives the page.
+        return { token: r?.token ?? c.token, user: r?.user ?? null, expiresAt: null }
+      },
+
+      /** Finish a login that owed a code — a TOTP code or a recovery code. */
+      async completeLogin(code) {
+        const c = need()
+        const r = await c.auth.completeSignIn(code)
         return { token: r?.token ?? c.token, user: r?.user ?? null, expiresAt: null }
       },
 

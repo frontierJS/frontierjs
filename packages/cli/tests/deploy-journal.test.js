@@ -99,19 +99,24 @@ describe('the fragment', () => {
     const journal = await createClient({ schema: FRAGMENT, db: join(mkroot(), 'deploy.db') })
     const sys     = journal.asSystem()
 
-    await sys.journal.create({ data: { app: 'shop', host: 'box-1' } })
+    // `formatVersion` is stated on every write. The column carries no default,
+    // because a default that has to move on every format change is a table whose
+    // shape moves forever — and `openJournal` has always bound it.
+    const header = { formatVersion: 1, app: 'shop', host: 'box-1' }
+
+    await sys.journal.create({ data: header })
 
     // A translated refusal, not SQLite's own sentence (`FJS-534`): the CHECK
     // names the column it is declared on, so this arrives as a ValidationError
     // on `id` and reaches a caller as a 400 rather than a 500.
     let refusal = null
-    try { await sys.journal.create({ data: { id: 'other', app: 'shop', host: 'box-1' } }) }
+    try { await sys.journal.create({ data: { ...header, id: 'other' } }) }
     catch (e) { refusal = e }
     expect(refusal?.name).toBe('ValidationError')
     expect(refusal.errors).toEqual([{ path: ['id'], message: 'is not valid' }])
     expect(refusal.constraint).toBe("id = 'journal'")
 
-    await expect(sys.journal.create({ data: { app: 'shop', host: 'box-1' } }))
+    await expect(sys.journal.create({ data: header }))
       .rejects.toThrow(/already taken/)
 
     expect(await sys.journal.findMany()).toHaveLength(1)

@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-50 models · 1 view · 51 gated · 0 unrestricted
-37 with row policies · 9 with protected fields · 21 declared moves · 10 @system · 0 @seals
+51 models · 1 view · 52 gated · 0 unrestricted
+37 with row policies · 10 with protected fields · 21 declared moves · 10 @system · 0 @seals
 ```
 
 ## Gates
@@ -49,6 +49,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Invitation` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Job` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `JobRun` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `LoginChallenge` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `MetricHour` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `MetricPoint` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `MetricSeries` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -418,6 +419,7 @@ rather than refusing the row.
 | `Credential` | `accessToken` | `@secret` |
 | `Credential` | `refreshToken` | `@secret` |
 | `Invitation` | `token` | `@guarded` |
+| `LoginChallenge` | `value` | `@guarded` |
 | `OauthFlow` | `state` | `@guarded` |
 | `OauthFlow` | `verifier` | `@guarded` |
 | `Secret` | `data` | `@encrypted` |

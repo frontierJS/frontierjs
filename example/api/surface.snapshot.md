@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-38 services · 38 routes · 12 plugins · prefix /api
+38 services · 39 routes · 12 plugins · prefix /api
 ```
 
 ## App hooks
@@ -33,8 +33,8 @@ name when it declares none.
 
 ### `account` · model `account`
 
-- **methods** — `get`, `changePassword`
-- **custom methods** — `changePassword`
+- **methods** — `get`, `changePassword`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
+- **custom methods** — `changePassword`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -677,6 +677,7 @@ once; everything else was registered by hand or by a plugin.
 | GET | `/api/auth/email/verify` | raw |
 | POST | `/api/auth/email/verify/request` | raw |
 | POST | `/api/auth/login` | raw |
+| POST | `/api/auth/login/challenge` | raw |
 | POST | `/api/auth/logout` | raw |
 | GET | `/api/auth/oauth` | raw |
 | POST | `/api/auth/password-reset/confirm` | raw |

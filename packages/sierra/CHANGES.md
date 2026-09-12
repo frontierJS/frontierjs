@@ -1,5 +1,56 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-12 — `resource.list()`, and the URL in the browser's own words
+
+**A list is one call now.** `resource.list()` owns the five wirings every list page restated — the
+store subscription, where the filters live, the load, its re-run on a change, and the window through
+`more()`/`hasMore()` — and hands back `rows`, `query`, `directives`, `loading`, `error`, `hasMore`,
+`apply`, `sort`, `more`, `reload` and `destroy`. It owns no markup. `state: 'url'` is the default and
+makes the address bar the list, with nothing held here; `state: 'local'` is the embedded list that must
+not navigate, and `where` scopes it OVER the filters so a bar can neither see nor widen the scope.
+`IDEAS/list-controller.md` carries the argument; `tests/resource-list.test.js` drives it through the
+real router and Junction's real client, and every mutant tried reds at least one row — the route guard,
+replace-versus-merge, `where` under the filters, the local re-run, the debounce, a default filter
+merged under the URL, and the `columns:` default.
+
+**Two findings are in the design rather than the tests.** The router commits `query` BEFORE `route`,
+so a list that answered every change to `page.query` re-asked the server with the NEXT route's filters
+on the way out — the list answers only while its own route is on screen. And `<FilterBar>` hands back
+the whole bag it holds and clears a value by leaving its key out, so `apply` REPLACES each half; the
+first draft merged, and a search box that had been emptied went on searching.
+
+**`listQuery` and `columns:` are declared in the resource file**, beside `detailQuery` and
+`optionsQuery`. `listQuery` reaches `list()` and never a bare `find()` or `load()`, because a default
+filter reaching every read narrows pickers, jobs and live stores with nothing saying so. Its filters
+apply only while the state carries none, since merged under the URL key for key a default could never
+be cleared from a bar. `columns:` defaults `columns()` and therefore `filters()`, key for key under the
+call's own.
+
+**`page.path` is gone; `page.pathname` and `page.search` replace it**, borrowed exactly from
+`window.location`. `path` was `pathname + search` under a name that reads like the first, and the one
+caller that did not split it by hand was the public-route guard, so an exact `publicRoutes` rule stopped
+matching `/login/?returnTo=…` (`FJS-1083`); analytics sent a reset token under `path` for the same
+reason. `goto(path, query, { directives })` joins the two halves the router splits, so no page spells a
+`$` name in either direction. `page.search` is the whole query STRING and `page.directives.search` the
+`$search` term — one level apart, and they mean different things.
+
+## 2026-09-12 — a sign-in that owes a code
+
+`session.awaitingCode` holds the instant a half-finished attempt lapses at, and `submitCode(code)`
+finishes it (`FJS-D261`). Reactive for `session.error`'s reason: a form awaits the promise, a shell
+renders off the object, and neither should have to write the other's half.
+
+**The defect this was written to prevent is the refresh.** `signIn` loads the session after the call,
+and a challenge has no session to load — so without the branch, `account.me` is asked with no
+credential, the 401 reads as a dead session, `clear()` runs, and a correct sign-in is reported to the
+person as a failure.
+
+`retryable: false` on the refusal is the server saying the attempt is finished — spent, lapsed, or
+never there — and it closes the box, which is what sends somebody back to the password instead of
+typing into something that will refuse every code. A retryable one leaves it open. Both directions are
+asserted, because a box closed on a typo and a box left open for a spent ticket are opposite failures
+one line apart.
+
 ## 2026-09-10 — a column the caller was not allowed to read
 
 `withheldFields(fields, record)` reads `x-litestone-read-policy`, and
@@ -61,7 +112,7 @@ surface moved.
 Litestone's generator emits, not about the ladder — and the ruling that moved its
 neighbor is amended to say so.
 
-**Two operations are graded now that were not**: `aggregate` and `upsert` were
+**Two operations are graded now that were not** (`FJS-1080`): `aggregate` and `upsert` were
 absent from the local map and fell through to permissive, so `resource.can()`
 offered them at every level. They map to `read` and `update`. An affordance
 narrows; the boundary is unchanged.

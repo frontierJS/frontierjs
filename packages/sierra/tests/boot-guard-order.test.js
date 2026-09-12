@@ -104,8 +104,8 @@ describe('boot navigation hook ordering', () => {
 
     const before = []
     const after = []
-    onBefore(({ to }) => { before.push(to.path); return true })
-    onAfter(({ to }) => { after.push(to.path) })
+    onBefore(({ to }) => { before.push(to.pathname); return true })
+    onAfter(({ to }) => { after.push(to.pathname) })
 
     await settle()
 
@@ -120,8 +120,8 @@ describe('boot navigation hook ordering', () => {
 
     const before = []
     const after = []
-    onBefore(({ to }) => { before.push(to.path); return true })
-    onAfter(({ to }) => { after.push(to.path) })
+    onBefore(({ to }) => { before.push(to.pathname); return true })
+    onAfter(({ to }) => { after.push(to.pathname) })
     await settle()
 
     await goto('/login/')
@@ -138,7 +138,7 @@ describe('boot navigation hook ordering', () => {
     initRouter(tree, makeComponents(tree), {}, { trailingSlash: 'always' }, {})
 
     onBefore(({ to }) => {
-      if (to.path.startsWith('/dashboard/')) return '/login/'
+      if (to.pathname.startsWith('/dashboard/')) return '/login/'
     })
     await settle()
 

@@ -2,13 +2,13 @@
 id: release-transitions
 status: partial
 dated: 2026-08-12
-revised: 2026-08-26
+revised: 2026-09-12
 ---
 
 # Idea — Reversible deployment transitions: the Release realm, sequenced
 
-**Status: IDEA / ARCHITECTURE — except Phase 0, which shipped 2026-08-15**
-(`litestone release` / `fli release:check`; see § Phases). Dated 2026-08-12. Produced
+**Status: IDEA / ARCHITECTURE for Phase 4; phases 0 through 3b have shipped**
+(see § Phases and § What each phase lets us honestly say). Dated 2026-08-12. Produced
 by two rounds of outside research — first a survey of how eleven deployment systems
 actually fail, then a deliberate attempt to falsify the conclusions of the first.
 Two of the six starting claims were falsified and are recorded as such below; the
@@ -965,6 +965,271 @@ wire that reads it back.
 Extends the guarantee to browsers that already loaded the old version, within the
 window. Still refuses full-page navigation pinning, which nobody has.
 
+### Phase 3b — Pause — **shipped 2026-09-12**
+
+`fli deploy:pause` / `fli deploy:unpause`, `core/pause.js`, `_steps-pause/`, the
+guard in `_steps-setup/05-nginx`, and the journal's first migration.
+
+**Five things this record did not predict, and each was found by building it.**
+
+**The pragma was being set before the DDL.** `core/journal-runner.mjs` took
+`foreignKeys` from the caller and then ran the snapshot, which opens with
+`PRAGMA foreign_keys = ON` of its own — so the caller's answer was discarded,
+`DROP TABLE "transition"` cascaded, and the rebuild deleted every step of every
+transition ever recorded while reporting success. **The negative control is what
+caught it**, not the feature test: the same statements run with keys ON, asserted
+to lose the steps. Without that row a passing suite says only that nothing was
+ever at risk.
+
+**The `journal` table had to be rebuilt too, and that is what the oracle is for.**
+Format 1 declared `formatVersion INTEGER NOT NULL DEFAULT 1`, so a migrated
+database and a fresh one differed in a default nothing reads — which the oracle
+reported, correctly, as two different databases. The fix is not to bump the
+default: a default that has to move on every format change is a table whose shape
+moves forever and owes every later migration a rebuild it does not need. It has
+no default now, because `openJournal` has always bound the value.
+
+**The guard has to sit AHEAD of the http→https redirect.** Both are rewrite-phase
+returns and the first one wins, so a guard placed after it answers 301 to every
+plain-http caller of a paused app — the app looks up, over a scheme somebody is
+really using. It is asked as a PAIR in CI on a second vhost, since a vhost
+answering 503 whether or not anything paused it satisfies the paused half alone.
+
+**`already` had to be graded on the pair, not on the journal.** The first
+version refused an unpause whenever the journal said serving — the exact state of
+a target somebody paused by hand, which is the case the command exists for. In
+both drift rows the refused command is the one that fixes the drift, so *already*
+means the journal and the file agree AND agree with what was asked.
+
+**One step directory, not two.** The proposal below says `_steps-pause/` and
+`_steps-unpause/` mirroring each other. They are one pipeline with the direction
+on `context.config.pauseKind` and a `skip:` on each of the two acting steps —
+which is what `_steps-docker` already does with `doApi`, and which makes the
+journal record the half that did not run rather than hiding it.
+
+**And one thing is narrower than the proposal claimed.** The migration is proved
+against a real SQLite file through the real runner in
+`packages/cli/tests/journal-migration.test.js`, and NOT inside
+`deployJournalCycle`: that cycle's journal is created fresh at format 2, so there
+is nothing there to migrate, and the runner it would exercise is the same file
+the suite already drives. What the cycle gained instead is the half only it can
+ask — `fli deploy:pause` against a real journal on a real machine, refusing a
+target whose vhost carries no guard, and writing no transition for the refusal.
+
+The original text of this phase follows.
+
+The gap `IDEAS/ecosystem-gaps.md` § 17 records: `fli deploy` mints a Release and
+swaps, and there is no *this app is down on purpose* state. A deploy that must
+pause serving is done today by stopping a container, which is not a missing
+convenience — **it is the journal being told a lie.** `readState` goes on
+answering that Release R is serving while nothing answers at all, and every
+reader downstream — `deploy:status`, a future console — reads a stopped
+container and a crashed one as the same fact.
+
+Numbered `3b` rather than 4 for the reason `_steps-docker/02b` is: it is
+insertable between two things that have shipped, and renumbering a phase two
+rulings already cite would cost more than the half-number does.
+
+---
+
+#### The shape is an enum value, and that is the whole of what it adds
+
+`TransitionKind { deploy revert pause unpause }`. Nothing is coined. A pause has
+steps, a precondition, an actor, a status and a resume, and every one of those is
+already a column on `Transition`. The Release it names is the one serving, so no
+Release is minted, `recordRelease` is not called, and `pivot`, `digest` and
+`retentionUntil` are untouched — a pause changes who can reach the app, not what
+the app is.
+
+**Whether it is paused is DERIVED and not stored.** `readState`'s `serving` query
+already selects `t.*`, so `kind` comes back with the row: the last succeeded
+transition names the Release bound and its kind says whether that Release is
+answering. A `paused` column beside it would be a second origin for one fact, and
+the one that goes stale is always the column.
+
+---
+
+#### 3b-i — the journal has to be able to migrate, and cannot
+
+**This record did not predict the cost and it is not in the pause at all.**
+`db/ddl.snapshot.sql` emits `CHECK ("kind" IN ('deploy', 'revert'))`, and
+`core/journal-runner.mjs` sends the DDL on every call precisely because it is
+`CREATE TABLE IF NOT EXISTS` throughout. So a target that has deployed once holds
+a table whose constraint the new DDL cannot reach, and the first pause fails
+**on the target, mid-command**, with a SQLite constraint error naming a column
+nobody typed.
+
+`Journal.formatVersion` is written, is read, and is used only to refuse: there is
+no path in this codebase that reaches format 2. **A version field that can only
+refuse is half a mechanism**, and the half that is missing is the one every
+future change to this schema needs.
+
+So the first half of this phase is a migration path for `deploy.db`:
+
+- The runner takes `migrations` beside `ddl` — statements keyed by the format
+  they move *from*, applied inside the same transaction that follows them, with
+  `formatVersion` moved on the `journal` row as the last statement of the set.
+- The brain stays in `core/journal.js` and the runner still decides nothing,
+  which is the split the whole design turns on.
+- **Widening one CHECK is the smallest migration this schema will ever need**,
+  which is the argument for building the mechanism against it rather than against
+  the first hard one.
+
+Nothing else is pre-added to the enum on the way past. An audience `promote` kind
+belongs to phase 4 and adding it then costs a second migration rather than a
+redesign, which is exactly what having a path buys.
+
+---
+
+#### 3b-ii — where a pause happens, measured rather than chosen
+
+Three candidates, and two are refused by things already in the tree.
+
+**Stop the container** — what an operator does today. `06-swap` runs the
+migrations in the entrypoint, so a stopped container cannot deploy, and deploying
+while paused is the single case a pause exists to allow. Refused by the pipeline
+itself.
+
+**The app refuses** — the app would have to be told, which is a binding, which is
+a restart, which is a deploy. That is the flag this design is not.
+
+**The edge.** nginx serves the SPA from `current/` and proxies `/api/`, so it is
+the one place that can answer for both surfaces while the app stays up. And the
+measurement that makes it free: **the deploy's health poll goes to
+`http://localhost:<apiPort>` directly** (`_module.md`, `healthOrRestore`), never
+through nginx. A paused app therefore still deploys, still migrates and still
+passes health — and `deploy:status` reading 200 from health while the edge
+answers 503 is the correct pair of answers rather than a contradiction to
+reconcile.
+
+The mechanism is a file, tested per request:
+
+```
+if (-f /srv/<app>/paused) { return 503; }
+error_page 503 /_paused.html;
+location = /_paused.html { root /srv/<app>/nginx; internal; }
+```
+
+Pause is one write and unpause is one `rm`. Neither needs `nginx -s reload`,
+neither needs sudo, and the guard cannot be half-applied. It is Capistrano's
+shape and it has been right for fifteen years.
+
+**What it costs is one line in the vhost**, which `_steps-setup/05-nginx` writes
+and which a target set up before this phase does not carry. That is a refusal
+naming the command that rewrites it, not a `sed` run against a live nginx config
+from inside a deploy.
+
+---
+
+#### 3b-iii — the file and the journal can disagree, so they are compared
+
+A file somebody can touch by hand is the original complaint one level along. So
+`deploy:status` reads both and reports the pair, under the rule
+`preconditionVerdict` already holds — **nothing reconciles, drift names itself**.
+
+| Journal | File | What it is |
+| --- | --- | --- |
+| not paused | absent | serving |
+| paused | present | paused, and the row says by whom and when |
+| paused | absent | **the pause is not in force** — the app is answering and the journal says it is not |
+| not paused | present | **paused by hand** — nothing recorded why, who, or what it is waiting for |
+
+The two bold rows are the whole reason this is a transition rather than a file.
+
+---
+
+#### What a pause does not do
+
+The container is up, so jobs, crons and the outbox keep running. Caravan owns the
+clock (`FJS-D36`) and nothing at the edge reaches it. **A pause stops callers, not
+the app** — so the case it is most reached for, a contract migration during which
+nothing may write, is half covered, and `fli deploy:pause` says so in words rather
+than leaving it to be found.
+
+The other half is an API-realm build: a queue that can be told to stop picking up
+work, and a way to say so to a running process that is not a restart. It is named
+here so it cannot be mistaken for part of this phase, and it is not scheduled.
+
+---
+
+#### Naming, and the collision that decides it
+
+`fli deploy --resume` already means *continue an interrupted transition*. So the
+verbs are **`pause` / `unpause`**, at the command and in the enum both, because
+`fli deploy:resume` sitting one keystroke from `fli deploy --resume` is two
+different operations in the command an operator types during an incident.
+`unpause` is the uglier word and it is the one that cannot be misread.
+
+Nothing in the machinery is called *maintenance mode*. The page a visitor sees is
+the maintenance page, and that is the only place the ecosystem's word earns its
+keep.
+
+**The page is 503 with `Retry-After`**, because that is what stops a paused app
+being deindexed and no application should have to know it. `deploy:setup` writes
+a default; `deploy.maintenancePage` names a file in the app instead. One key, and
+the ground for it is that this page is the only thing a customer sees during the
+app's worst hour.
+
+---
+
+#### The steps, and the one thing that has to change elsewhere
+
+`_steps-pause/` is `01-preflight` (lock, journal, verdict), `02-pause` (write) and
+`03-verify` (ask the edge and require a 503). `_steps-unpause/` mirrors it and its
+verify requires a non-503 from the edge and a 200 from health. Same runner, same
+occurrence keys, same resume — a pause interrupted between the write and the
+verify replays into a no-op like everything else.
+
+It takes the deploy lock. Two operators, one pausing and one deploying, is
+exactly the race the lock exists for.
+
+**`core/revert.js` has to be told.** `chooseTarget` reads `succeeded[0]` as
+serving and `succeeded[1]` as the previous; with pause rows in the history both
+move by one, and a revert after a pause offers the Release already serving, which
+`same-bytes` then refuses — a revert that cannot be performed, on the day it is
+wanted, for a reason that reads as a bug. So the history a revert reads is
+filtered to the kinds that MOVE serving, while `readState` stays unfiltered
+because the pause row carries the serving Release's id and its kind is what says
+that Release is not answering. One query, two readers, one derivation.
+
+---
+
+#### What proves it
+
+The journal migration and the drift table by `deployJournalCycle` in CI's
+`deploy` phase — deploy under format 1, migrate, pause, deploy while paused,
+unpause, revert. Reading rows an earlier format wrote is the claim, and it is the
+one thing no unit test can make.
+
+The edge half by an **nginx container over the generated vhost**. The config is
+built from a template, so a test asserting on its text would pass against a file
+nginx refuses; docker is already this phase's dependency, so running the real
+server against the real config costs nothing new.
+
+---
+
+#### The nine questions
+
+| | |
+| --- | --- |
+| Another origin of truth? | One: the file nginx stats. It is unavoidable — something must be true at request time — and the drift table above is the artefact that makes it visible |
+| Concept budget | Two enum values and no noun. A pause is a Transition, which already exists |
+| Whose complexity | The problem's. Serving and not-serving are two states and the journal records one |
+| Predictability | Improves it — *down* stops being one word for two things |
+| Derived, not restated | `paused` is the last succeeded transition's kind. No column |
+| One owner | `core/journal.js` for the vocabulary, the vhost for the answer, `_steps-pause/` for the act |
+| Boundary | `TransitionKind`, the DDL's CHECK, and a migration keyed on `formatVersion` |
+| Failure proportional | A pause that did not take is the failure, and `03-verify` asks the edge rather than trusting the write |
+| Wrong in silence? | Yes, in exactly one way — journal and file disagreeing — which is why `deploy:status` prints the pair |
+
+Adjudication in tension: **ergonomics vs. strictness**, resolved by cost — a
+pause is reached for during an incident, so every refusal names the command that
+clears it and the unpause verify is stricter than the pause's.
+
+Tier: assessment, in this record, until it is built.
+
+Effort: 3b-i `M` and it is the whole of the risk; 3b-ii `S`; the drift report `S`.
+
 ### Phase 4 and later — not soon, and say so
 
 Multi-host; percentage canary; metric verdicts; automated schema shadowing of the
@@ -998,6 +1263,7 @@ journal that is already a queryable database.
 | 1 | *…and if it is, one command puts it back.* | shipped |
 | 2 | *…and every external dependency is declared, so environments cannot drift silently.* | shipped |
 | 3 | *…and that includes the browsers already out there — they keep working, and are told when they cannot.* | shipped |
+| 3b | *…and it can be taken down on purpose, which is not the same as being down.* | shipped |
 
 Each line is true when shipped and stays true afterwards. No phase invalidates the
 previous mental model, which is the actual test — *preserve the mental model, not the

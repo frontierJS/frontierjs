@@ -39,7 +39,6 @@ title: Invoices
   import { prefs } from '@/prefs.js'
   import { useStore } from '@frontierjs/sierra/junction'
   import { page, goto } from '@frontierjs/sierra/router'
-  import { directiveParams } from '@frontierjs/toolbelt/directives'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
@@ -71,9 +70,12 @@ title: Invoices
   // A header offers a sort only where the SCHEMA takes one: `x-sortable` is
   // emitted as an exception, so absent means yes and a string says why not.
   // Offering one the Data boundary refuses is a click that throws.
+  //
+  // Spread, not mapped: `<Table>` reads the same `name` the column already
+  // carries, so the only entry here is this page's own (FJS-1078).
   const columns = [
-    ...cols.map(c => ({ key: c.name, label: c.label, sortable: c.sortable })),
-    { key: '_open', label: '' },
+    ...cols,
+    { name: '_open', label: '' },
   ]
 
   // Which columns a bar may offer and with which question, plus whether the
@@ -94,29 +96,20 @@ title: Invoices
 
   // ── The URL is the state ─────────────────────────────────────────────────
   //
-  // splitParams takes every $-prefixed key OUT of page.query and into
-  // page.directives under an unprefixed name (Invariant 10), so page.query
-  // alone is the filters. A bar handed that has no sort and no page size to
-  // show — and worse, hands back a query missing them, so typing in a filter
-  // box silently drops the sort a header just set. `directiveParams` is
-  // `parseDirectives`' inverse off the same table, so this cannot go stale
-  // when a directive is added.
-  // No bare $: above this: the handler form below marks page watched, which is
-  // what makes this a derivation. The GENERATED page states it twice on purpose
-  // — an app installs mesa from npm, this resolves it to packages/mesa/
-  // (FJS-1073).
-  const urlQuery = { ...page.query, ...directiveParams(page.directives) }
-
-  // Two-arg, over a path stripped of its own query: page.path carries the
-  // search, so concatenating builds /invoices/?a=1?b=2 on the second filter and
-  // the router drops the query of the first. As an argument it REPLACES, which
-  // is what Clear needs.
-  function apply(query) {
-    goto(page.path.split('?')[0], query)
+  // `page.query` is the filters and `page.directives` the `$` params, split by
+  // the same module the bridge reads a request with (Invariant 10). Both halves
+  // go to the bar, which puts them back together — a bar handed the filters
+  // alone has no sort and no page size to show, and hands back a query missing
+  // them, so typing in a filter box drops the sort a header just set.
+  //
+  // `page.pathname` is the path with NO query, which is `window.location`'s own
+  // word for it. Two-arg `goto` REPLACES, which is what Clear needs.
+  function apply(query, directives) {
+    goto(page.pathname, query, { directives })
   }
 
-  function sortBy(key, dir) {
-    apply({ ...urlQuery, $orderBy: { [key]: dir } })
+  function sortBy(next) {
+    apply(page.query, { ...page.directives, orderBy: next })
   }
 
   // Newest first until the URL says otherwise. `page.directives` is spread
@@ -129,16 +122,11 @@ title: Invoices
   load()
   $: page.query, page.directives, () => load()
 
-  // The header arrow reads the same directive the load does, or a sorted list
-  // arrives with no column marked and clicking the one it is already sorted by
-  // does nothing visible.
-  const ordering = page.directives?.orderBy ?? { issuedAt: 'desc' }
-  const sortKey  = typeof ordering === 'string'
-    ? ordering.replace(/^-/, '')
-    : Object.keys(ordering)[0] ?? ''
-  const sortDir  = typeof ordering === 'string'
-    ? (ordering.startsWith('-') ? 'desc' : 'asc')
-    : Object.values(ordering)[0] ?? 'asc'
+  // The header reads the same directive the load does, DEFAULT INCLUDED, or a
+  // sorted list arrives with no column marked and clicking the column it is
+  // already sorted by does nothing visible. `<Table>` reads every legal shape
+  // off `@frontierjs/toolbelt/directives`, so there is no parse here (FJS-1077).
+  const ordering = page.directives?.orderBy ?? '-issuedAt'
 
   // Overdue is not a status. It is `dueAt` against the clock, so it is true
   // from one moment onward with nothing writing a row.
@@ -156,9 +144,10 @@ title: Invoices
 
 {#if error}<Alert tone="danger" id="i-error">{error}</Alert>{/if}
 
-<FilterBar id="i-filters" {filters} {search} value={urlQuery} onchange={apply} />
+<FilterBar id="i-filters" {filters} {search} value={page.query}
+            directives={page.directives} onchange={apply} />
 
-<Table {columns} rows={rows()} {sortKey} {sortDir} onsort={sortBy}
+<Table {columns} rows={rows()} orderBy={ordering} onsort={sortBy}
        striped hover compact={prefs.dense} emptyText="No invoice matches that.">
   {#snippet row(inv)}
     <tr data-invoice={inv.id} data-number={inv.number}>

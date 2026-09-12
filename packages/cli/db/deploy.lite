@@ -31,7 +31,7 @@
 // package owns and an application does not write.
 
 enum PivotKind        { expand contract unknown }
-enum TransitionKind   { deploy revert }
+enum TransitionKind   { deploy revert pause unpause }
 enum TransitionStatus { planned running succeeded failed }
 enum StepStatus       { pending running succeeded failed skipped }
 
@@ -53,7 +53,15 @@ enum StepStatus       { pending running succeeded failed skipped }
 model Journal {
   id            String   @id @default("journal") @check("id = 'journal'")
 
-  formatVersion Int      @default(1)
+  /// Moved by a migration, never by a deploy. `core/journal.js` holds the
+  /// statements that reach the next format and the runner applies them; a
+  /// journal further ahead than this `fli` understands is still a refusal.
+  ///
+  /// No `@default`, and that is the point: `openJournal` binds the format it
+  /// writes, so a default is never read — and a default that had to be bumped
+  /// on every format change is a column whose SHAPE moves forever, which makes
+  /// every later migration owe this table a rebuild it does not need.
+  formatVersion Int
   app           String
   host          String
 
@@ -152,7 +160,14 @@ model BindingSet {
   @@index([app, environment, hash])
 }
 
-/// One attempt to move serving state — a deploy or a revert.
+/// One attempt to move serving state.
+///
+/// Four kinds, and they split in two. `deploy` and `revert` change WHICH
+/// Release is bound; `pause` and `unpause` change whether the bound Release is
+/// answering, and mint no Release of their own — they name the one already
+/// serving. So *is this app paused* is the kind on the last succeeded
+/// transition and never a column, and a reader that wants the Release serving
+/// filters to the two kinds that move it (`core/revert.js`).
 model Transition {
   /// `occurrenceKey('deploy', …)`. The id IS the idempotency key, so a replayed
   /// attempt is the same row rather than a second one.

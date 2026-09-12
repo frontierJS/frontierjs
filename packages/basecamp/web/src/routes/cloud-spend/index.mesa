@@ -138,11 +138,11 @@ title: Cloud spend
   $: online    = machines.filter(s => s.status === 'online').length
 
   const COLUMNS = [
-    { key: 'name',     label: 'Server' },
-    { key: 'provider', label: 'Provider' },
-    { key: 'region',   label: 'Region' },
-    { key: 'plan',     label: 'Plan' },
-    { key: 'status',   label: 'Status' },
+    { name: 'name',     label: 'Server' },
+    { name: 'provider', label: 'Provider' },
+    { name: 'region',   label: 'Region' },
+    { name: 'plan',     label: 'Plan' },
+    { name: 'status',   label: 'Status' },
   ]
 
   const TONE = { healthy: 'success', unconfigured: 'muted', unreachable: 'danger', degraded: 'warning' }

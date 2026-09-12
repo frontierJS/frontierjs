@@ -110,6 +110,102 @@ describe('account', () => {
   })
 })
 
+// ─── account: the second factor ────────────────────────────────────────────
+//
+// The provider's own behavior is `tests/totp-login.test.ts`. What is asked here
+// is the crossing: that these reach the provider AT ALL over HTTP with the
+// caller's id rather than one the request supplied, and that the fields a raw
+// body cannot be trusted to carry are checked.
+
+describe('account — TOTP over HTTP', () => {
+
+  const call = (method: string, token: string, data: unknown = {}) =>
+    request(app).post('/account/me').set('x-service-method', method).auth(token).send(data as any)
+
+  test('a stranger reaches none of them', async () => {
+    for (const method of ['totpStatus', 'setupTotp', 'confirmTotp', 'disableTotp', 'regenerateRecoveryCodes']) {
+      expect((await request(app).post('/account/me').set('x-service-method', method).send({})).status).toBe(401)
+    }
+  })
+
+  test('the whole cycle, and the id is the CALLER’s and not the body’s', async () => {
+    const email = 'totp-http@example.com'
+    await request(app).post('/auth/register').send({ email, password: PW })
+    const token = ((await request(app).post('/auth/login').send({ email, password: PW })).body as any).token
+
+    expect((await call('totpStatus', token)).body).toEqual({ enabled: false, recoveryCodesRemaining: 0 })
+
+    // A body naming somebody else changes nothing — every method scopes to the
+    // session, so the extra key is not even read.
+    const setup = await call('setupTotp', token, { currentPassword: PW, userId: 'bob' })
+    expect(setup.status).toBe(200)
+    const secret = (setup.body as any).secret
+    expect((setup.body as any).qr).toContain('otpauth://totp/')
+
+    // Still off until it is confirmed, asked through the same surface a screen
+    // would ask through.
+    expect(((await call('totpStatus', token)).body as any).enabled).toBe(false)
+
+    const { totp } = await import('../totp.ts')
+    const confirm = await call('confirmTotp', token, { code: totp(secret, new Date()) })
+    expect(confirm.status).toBe(200)
+    expect((confirm.body as any).recoveryCodes).toHaveLength(10)
+    expect((await call('totpStatus', token)).body).toEqual({ enabled: true, recoveryCodesRemaining: 10 })
+
+    // And the login route now answers a challenge rather than a token, which is
+    // the only assertion here that crosses back out to the transport.
+    const login = await request(app).post('/auth/login').send({ email, password: PW })
+    expect(login.status).toBe(200)
+    expect((login.body as any).token).toBeUndefined()
+    expect((login.body as any).challenge).toBeTruthy()
+
+    const regen = await call('regenerateRecoveryCodes', token, { currentPassword: PW })
+    expect((regen.body as any).recoveryCodes).toHaveLength(10)
+    expect((regen.body as any).recoveryCodes).not.toEqual((confirm.body as any).recoveryCodes)
+
+    expect((await call('disableTotp', token, { currentPassword: PW })).status).toBe(200)
+    expect(((await call('totpStatus', token)).body as any).enabled).toBe(false)
+    // Back to one step, which is what says disable reached the provider rather
+    // than answering ok.
+    expect(((await request(app).post('/auth/login').send({ email, password: PW })).body as any).token).toBeTruthy()
+  })
+
+  test('the fields a body cannot be trusted for are 400, by name', async () => {
+    expect((await call('setupTotp', aliceToken, {})).status).toBe(400)
+    expect((await call('confirmTotp', aliceToken, {})).status).toBe(400)
+    expect((await call('disableTotp', aliceToken, {})).status).toBe(400)
+    expect((await call('regenerateRecoveryCodes', aliceToken, {})).status).toBe(400)
+
+    // Paired with the reason it is 400 rather than 500: the field is missing,
+    // not the method. With the field present this same call reaches the provider
+    // and is refused on the password instead.
+    expect((await call('setupTotp', aliceToken, { currentPassword: 'wrong' })).status).toBe(401)
+  })
+
+  test('a provider without them says so by name rather than 500ing', async () => {
+    const scoped = await makeAuth()
+    const partial = { ...scoped.auth } as any
+    for (const m of ['totpStatus', 'setupTotp', 'confirmTotp', 'disableTotp', 'regenerateRecoveryCodes']) {
+      delete partial[m]
+    }
+
+    const other = await createTestApp({ auth: partial })
+    other.setAuth(partial)
+    other.configure(createAuthPlugin(partial, {
+      loginRateLimit:    { max: 10_000, window: '15 minutes' },
+      registerRateLimit: { max: 10_000, window: '15 minutes' },
+    }))
+    await request(other).post('/auth/register').send({ email: 'nototp@example.com', password: PW })
+    const token = ((await request(other).post('/auth/login').send({ email: 'nototp@example.com', password: PW })).body as any).token
+
+    const res = await request(other).post('/account/me')
+      .set('x-service-method', 'totpStatus').auth(token).send({})
+    expect(res.status).toBe(400)
+    expect(JSON.stringify(res.body)).toContain('totpStatus')
+    scoped.cleanup()
+  })
+})
+
 // ─── sessions ─────────────────────────────────────────────────────────────
 
 describe('sessions', () => {

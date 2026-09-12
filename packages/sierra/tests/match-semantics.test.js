@@ -78,7 +78,7 @@ describe('static segments', () => {
     /*
      * This matched case-insensitively for a long time, and it was the only one
      * of four readers of *which route is this* that did — `isActive`, the
-     * prefetch cache key, `page.path` and the filename a static build writes
+     * prefetch cache key, `page.pathname` and the filename a static build writes
      * are all case-sensitive. So `/BLOG/` rendered the blog page in the SPA,
      * reported itself as not active, cached under its own key, and 404'd on a
      * static host. Ruled in favor of the other three.

@@ -33,12 +33,12 @@ title: Subscriptions
   import { toasts }          from '@frontierjs/ui/stores/toastStore.js'
 
   const columns = [
-    { key: 'reference',  label: 'Reference' },
-    { key: 'customerId', label: 'Customer' },
-    { key: 'status',     label: 'Status' },
-    { key: 'quantity',   label: 'Seats', align: 'right' },
-    { key: 'renews',     label: 'Renews' },
-    { key: 'actions',    label: '' },
+    { name: 'reference',  label: 'Reference' },
+    { name: 'customerId', label: 'Customer' },
+    { name: 'status',     label: 'Status' },
+    { name: 'quantity',   label: 'Seats', align: 'right' },
+    { name: 'renews',     label: 'Renews' },
+    { name: 'actions',    label: '' },
   ]
 
   // The tone a state reads in. A UI decision — the STATES are the schema's,

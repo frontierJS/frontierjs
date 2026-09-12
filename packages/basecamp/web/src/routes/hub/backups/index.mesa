@@ -126,11 +126,11 @@ title: Hub backups
   }
 
   const COLUMNS = [
-    { key: 'when',   label: 'Taken' },
-    { key: 'kind',   label: 'Kind' },
-    { key: 'status', label: 'Status' },
-    { key: 'size',   label: 'Size' },
-    { key: 'where',  label: 'Where' },
+    { name: 'when',   label: 'Taken' },
+    { name: 'kind',   label: 'Kind' },
+    { name: 'status', label: 'Status' },
+    { name: 'size',   label: 'Size' },
+    { name: 'where',  label: 'Where' },
   ]
 </script>
 

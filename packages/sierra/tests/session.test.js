@@ -30,7 +30,7 @@ async function freshSession() {
 }
 
 /** The smallest thing initSession() can drive: a client with an auth surface. */
-function fakeClient({ token = null, cookieAuth = false, me = null, fail = null } = {}) {
+function fakeClient({ token = null, cookieAuth = false, me = null, fail = null, challenge = null, codeFail = null } = {}) {
   const calls = []
   return {
     token,
@@ -48,6 +48,15 @@ function fakeClient({ token = null, cookieAuth = false, me = null, fail = null }
       async signIn(email, password) {
         calls.push(`signIn:${email}:${password}`)
         if (fail) throw fail
+        // A challenge names no user, which is the ONE thing true of it in both
+        // credential modes — cookie mode strips the ticket and leaves the expiry.
+        if (challenge) return { ...(challenge === 'cookie' ? {} : { challenge: 'tik' }), expiresAt: '2030-01-01T00:00:00.000Z' }
+        this._c.token = 'tok'
+        return { token: 'tok', user: me }
+      },
+      async completeSignIn(code) {
+        calls.push(`completeSignIn:${code}`)
+        if (codeFail) throw codeFail
         this._c.token = 'tok'
         return { token: 'tok', user: me }
       },
@@ -285,6 +294,105 @@ describe('signing in', () => {
     // Both, because there are two shapes of caller: a form awaits and catches,
     // a shell renders {#if session.error} and never touches the promise.
     expect(s.session.error).toBe('Invalid credentials')
+  })
+})
+
+describe('signing in with a second factor', () => {
+
+  test('a challenge loads NO session and opens the code box', async () => {
+    // The defect this exists to prevent: `refresh()` after a challenge asks
+    // account.me with no credential, takes the 401 as a dead session and clears —
+    // a correct sign-in reported to the person as a failure.
+    const s = await freshSession()
+    const client = fakeClient({ challenge: 'token', me: { userId: 'u1', email: 'a@b.c' } })
+    client.auth._c = client
+    s.initSession(client)
+    await s.ready
+
+    const r = await s.signIn('a@b.c', 'pw')
+
+    expect(client.calls).toEqual(['signIn:a@b.c:pw'])   // no 'me'
+    expect(s.session.user).toBeNull()
+    expect(s.session.awaitingCode).toBe('2030-01-01T00:00:00.000Z')
+    expect(r.expiresAt).toBeTruthy()
+  })
+
+  test('cookie mode has no ticket in the body and is still a challenge', async () => {
+    // Told apart by the absence of a USER, never by the presence of a ticket:
+    // the transport strips `challenge` in cookie mode the way it strips `token`.
+    const s = await freshSession()
+    const client = fakeClient({ challenge: 'cookie', cookieAuth: true, me: { userId: 'u1', email: 'a@b.c' } })
+    client.auth._c = client
+    s.initSession(client)
+    await s.ready
+
+    // The boot restore already asked `me` — cookie mode has a credential from the
+    // first paint — so what matters is that the challenge added no SECOND one.
+    const beforeSignIn = client.calls.length
+    await s.signIn('a@b.c', 'pw')
+    expect(s.session.awaitingCode).toBe('2030-01-01T00:00:00.000Z')
+    expect(client.calls.slice(beforeSignIn)).toEqual(['signIn:a@b.c:pw'])
+  })
+
+  test('submitCode finishes it, loads the session and closes the box', async () => {
+    const s = await freshSession()
+    const client = fakeClient({ challenge: 'token', me: { userId: 'u1', email: 'a@b.c' } })
+    client.auth._c = client
+    s.initSession(client)
+    await s.ready
+
+    await s.signIn('a@b.c', 'pw')
+    await s.submitCode('123456')
+
+    // The ticket is the wire client's — nothing here threaded it through a page.
+    expect(client.calls).toEqual(['signIn:a@b.c:pw', 'completeSignIn:123456', 'me'])
+    expect(s.session.user.email).toBe('a@b.c')
+    expect(s.session.awaitingCode).toBeNull()
+  })
+
+  test('a retryable refusal keeps the box open; a final one closes it', async () => {
+    // The pair. A box left open for a ticket the server has spent asks somebody
+    // to type into something that will refuse every code, and a box closed on a
+    // typo sends them back to the password for nothing.
+    const s = await freshSession()
+    const client = fakeClient({
+      challenge: 'token',
+      codeFail:  Object.assign(new Error('Invalid code'), { code: 401, data: { retryable: true } }),
+    })
+    client.auth._c = client
+    s.initSession(client)
+    await s.ready
+
+    await s.signIn('a@b.c', 'pw')
+    await expect(s.submitCode('000000')).rejects.toThrow('Invalid code')
+    expect(s.session.awaitingCode).toBe('2030-01-01T00:00:00.000Z')
+    expect(s.session.error).toBe('Invalid code')
+
+    client.auth.codeFail = null
+    const spent = await freshSession()
+    const c2 = fakeClient({
+      challenge: 'token',
+      codeFail:  Object.assign(new Error('Invalid code'), { code: 401, data: { retryable: false } }),
+    })
+    c2.auth._c = c2
+    spent.initSession(c2)
+    await spent.ready
+
+    await spent.signIn('a@b.c', 'pw')
+    await expect(spent.submitCode('000000')).rejects.toThrow('Invalid code')
+    expect(spent.session.awaitingCode).toBeNull()
+  })
+
+  test('signing out drops a half-finished attempt', async () => {
+    const s = await freshSession()
+    const client = fakeClient({ challenge: 'token', token: 't' })
+    client.auth._c = client
+    s.initSession(client)
+    await s.ready
+
+    await s.signIn('a@b.c', 'pw')
+    await s.signOut()
+    expect(s.session.awaitingCode).toBeNull()
   })
 })
 

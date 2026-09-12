@@ -135,6 +135,31 @@ describe('a wildcard public route stops at a segment boundary', () => {
   })
 })
 
+describe('a query does not make a public route private (FJS-1083)', () => {
+  // The guard was handed `to.path`, which the router built as pathname + search,
+  // and an EXACT rule is compared with `===` — so `/blog/` stopped being public
+  // the moment the URL carried a query, and the caller was bounced to sign-in.
+  //
+  // The wildcard branch is why it survived: that one is a `startsWith`, so a
+  // query rides along harmlessly and an app whose public routes are all
+  // wildcards is correct by accident. Both forms are asserted here for that
+  // reason — the exact one is the regression, the wildcard one is the control
+  // that was already passing and must go on passing.
+  test('an exact rule still matches when the URL carries a query', async () => {
+    expect(await bootAt('/blog/?tag=news', ['/login/', '/blog/'])).toBe('blog')
+  })
+
+  test('and so does a wildcard one, which never broke', async () => {
+    expect(await bootAt('/blog/?tag=news', ['/login/', '/blog*'])).toBe('blog')
+  })
+
+  test('a guarded route with a query is still guarded', async () => {
+    // The negative control: a fix that made every query-carrying URL public
+    // would satisfy both rows above.
+    expect(await bootAt('/docs/?x=1', ['/login/'])).toBe('login')
+  })
+})
+
 describe('the matcher, stated', () => {
   let isPublicRoute
   beforeEach(async () => {

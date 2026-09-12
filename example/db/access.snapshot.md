@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-42 models · 1 view · 43 gated · 0 unrestricted
-13 with row policies · 20 with protected fields · 15 declared moves · 8 @system · 1 @seals
+43 models · 1 view · 44 gated · 0 unrestricted
+13 with row policies · 21 with protected fields · 15 declared moves · 8 @system · 1 @seals
 ```
 
 ## Gates
@@ -35,6 +35,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `InvoiceLine` | 1 VISITOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `JournalEntry` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
 | `JournalLine` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
+| `LoginChallenge` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `MetricHour` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `MetricPoint` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `MetricSeries` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -183,6 +184,7 @@ rather than refusing the row.
 | `Invoice` | `userId` | `@system` |
 | `InvoiceLine` | `userId` | `@system` |
 | `JournalEntry` | `postedAt` | `@system` |
+| `LoginChallenge` | `value` | `@guarded` |
 | `OauthFlow` | `state` | `@guarded` |
 | `OauthFlow` | `verifier` | `@guarded` |
 | `Order` | `subtotal` | `@system` |

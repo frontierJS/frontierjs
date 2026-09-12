@@ -68,17 +68,17 @@ title: Person
   let askErr  = null
 
   const columns = [
-    { key: 'rate',  label: 'Rate',  align: 'right' },
-    { key: 'basis', label: 'Basis' },
-    { key: 'from',  label: 'From' },
-    { key: 'to',    label: 'Until' },
+    { name: 'rate',  label: 'Rate',  align: 'right' },
+    { name: 'basis', label: 'Basis' },
+    { name: 'from',  label: 'From' },
+    { name: 'to',    label: 'Until' },
   ]
 
   const slipColumns = [
-    { key: 'reference', label: 'Payslip' },
-    { key: 'period',    label: 'Period' },
-    { key: 'gross',     label: 'Gross', align: 'right' },
-    { key: 'net',       label: 'Net',   align: 'right' },
+    { name: 'reference', label: 'Payslip' },
+    { name: 'period',    label: 'Period' },
+    { name: 'gross',     label: 'Gross', align: 'right' },
+    { name: 'net',       label: 'Net',   align: 'right' },
   ]
 
   /** Watched rather than read: a raise entered in another tab moves the tile

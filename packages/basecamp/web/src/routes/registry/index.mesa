@@ -92,11 +92,11 @@ title: Registry
   }
 
   const TAG_COLUMNS = [
-    { key: 'tag',    label: 'Tag' },
-    { key: 'digest', label: 'Digest' },
-    { key: 'size',   label: 'Size' },
-    { key: 'pushed', label: 'Pushed' },
-    { key: 'use',    label: 'In use' },
+    { name: 'tag',    label: 'Tag' },
+    { name: 'digest', label: 'Digest' },
+    { name: 'size',   label: 'Size' },
+    { name: 'pushed', label: 'Pushed' },
+    { name: 'use',    label: 'In use' },
   ]
 </script>
 

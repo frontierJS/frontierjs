@@ -119,10 +119,10 @@ title: Project
   // tier to the schema adds it to this picker with no edit.
   $: tiers = environments.fields?.tier?.enum ?? ['development', 'staging', 'production']
   const ENVIRONMENT_COLUMNS = [
-    { key: 'name',      label: 'Name' },
-    { key: 'tier',      label: 'Tier' },
-    { key: 'protected', label: 'Protected' },
-    { key: 'actions',   label: 'Actions', hideLabel: true },
+    { name: 'name',      label: 'Name' },
+    { name: 'tier',      label: 'Tier' },
+    { name: 'protected', label: 'Protected' },
+    { name: 'actions',   label: 'Actions', hideLabel: true },
   ]
 </script>
 

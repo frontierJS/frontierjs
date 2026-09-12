@@ -111,3 +111,33 @@ export class NotFoundError extends AuthError {
   readonly name = 'NotFoundError'
   readonly status = 404
 }
+
+/**
+ * A second factor is already on this account, so enrollment would overwrite the
+ * secret the person's authenticator holds.
+ *
+ * Specific rather than folded into one message, because the caller is
+ * authenticated and acting on their own account — there is nothing to enumerate,
+ * and *you already have this* is the only answer a settings screen can act on.
+ * → 409
+ */
+export class TotpAlreadyEnabledError extends AuthError {
+  constructor(message = 'Two-factor authentication is already enabled') { super(message) }
+  readonly status = 409
+}
+
+/**
+ * A code that did not verify, a challenge that does not exist, one that has
+ * lapsed, one that has been spent, and a code replayed inside its own window.
+ *
+ * One type and one message for all five, for the reason `InvalidCredentialsError`
+ * is one for three: the differences are in the trail and nowhere the caller can
+ * read. `retryable` is what a screen needs and it is FALSE once the challenge is
+ * spent — a person typing into a box that will refuse every future code has been
+ * told nothing.
+ * → 401
+ */
+export class InvalidSecondFactorError extends AuthError {
+  constructor(message = 'Invalid code', readonly retryable = true) { super(message) }
+  readonly status = 401
+}

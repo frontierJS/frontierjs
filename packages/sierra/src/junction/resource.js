@@ -149,6 +149,7 @@ import { singularize } from '@frontierjs/toolbelt/inflect'
 import { humanize } from '@frontierjs/toolbelt/inflect'
 import { runPhase, runAroundHooks, mergeHooks, hookContext, answered } from '@frontierjs/toolbelt/hooks'
 import { createMakeFromSchema as makeFromSchema } from '@frontierjs/toolbelt/jsonschema'
+import { createList } from './list.js'
 
 // Re-exported so `sierra/junction` stays the one import for resource work.
 export {
@@ -388,9 +389,9 @@ export function resetResourcesForIdentityChange() {
  *              declared types. See opts.coerce.
  *   hooks()  — add hooks after creation.
  *
- * ── opts.detailQuery / opts.optionsQuery ───────────────────────────────────
- * The two reads a resource answers for its own callers, declared once beside
- * the model rather than restated per call site. Both are `{ query, directives }`
+ * ── opts.detailQuery / opts.optionsQuery / opts.listQuery ──────────────────
+ * The three reads a resource answers for its own callers, declared once beside
+ * the model rather than restated per call site. All are `{ query, directives }`
  * — filters, and how much of the answer in what order (Invariant 10).
  *
  *   detailQuery  — what `get(id)` asks for when the caller states no
@@ -398,6 +399,14 @@ export function resetResourcesForIdentityChange() {
  *   optionsQuery — what THIS resource's own `getOptions()` asks for: the thin
  *                  list a picker over it wants, usually
  *                  `{ directives: { orderBy: 'name', limit: 500 } }`.
+ *   listQuery    — what `list()` starts on, under the URL or the caller. It
+ *                  reaches `list()` alone and never a bare `find()`/`load()`.
+ *
+ * ── opts.columns ───────────────────────────────────────────────────────────
+ * The `columns()` options this model's tables take when a caller states none —
+ * `{ only: [...] }` for the set a list of this model shows. Key for key under
+ * the call's own, so a page naming `only` replaces the file's. `filters()`
+ * reads it through `columns()`, so the bar offers what the table shows.
  *
  * `optionsQuery` does NOT reach `options(field)`. That asks the field's SOURCE
  * model, whose resource is minted here (`relatedResource`) and carries nobody's
@@ -477,7 +486,7 @@ export function resetResourcesForIdentityChange() {
  * for the resource that is merely misspelt.
  */
 export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
-  let serviceName, model, optionsQuery, detailQuery, initialHooks, schema, idField, opts
+  let serviceName, model, optionsQuery, detailQuery, listQuery, columnDefaults, initialHooks, schema, idField, opts
 
   if (typeof nameOrSpec === 'string') {
     serviceName = nameOrSpec
@@ -510,6 +519,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     model        = opts.model    ?? serviceName
     optionsQuery = opts.optionsQuery
     detailQuery  = opts.detailQuery
+    listQuery    = opts.listQuery
+    columnDefaults = opts.columns
   } else {
     // object form
     opts         = nameOrSpec
@@ -517,6 +528,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     model        = opts.model        ?? serviceName
     optionsQuery = opts.optionsQuery
     detailQuery  = opts.detailQuery
+    listQuery    = opts.listQuery
+    columnDefaults = opts.columns
     initialHooks = opts.hooks        ?? {}
     schema       = opts.schema
     idField      = 'idField' in opts ? opts.idField : 'id'
@@ -1266,6 +1279,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     const answer = columnList(readFields, {
       identify: modelDef?.['x-identify'],
       label:    modelDef?.['x-label-field'],
+      ...columnDefaults,
       ...opts,
     })
     // The renderer is resolved with the column rather than by the caller, for
@@ -2162,8 +2176,21 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     stale.reset?.()
   })
 
+  /**
+   * This model as a list — the store, where its filters live, the load and its
+   * re-run, and the window. `listQuery` is what it starts on; see `list.js`.
+   *
+   * `listQuery` reaches this and nothing else. A bare `find()` or `load()` never
+   * reads it, because a default FILTER reaching every read would narrow pickers,
+   * jobs and live stores with nothing saying so — where `detailQuery` may reach
+   * `get(id)`, since a directive over one row cannot hide a record.
+   */
+  function list(opts) {
+    return createList({ store, load, more, hasMore: junctionResource.hasMore }, listQuery, opts)
+  }
+
   return {
-    service, store, stale, make, load, save, record, mutate, aggregate,
+    service, store, stale, make, load, save, record, mutate, aggregate, list,
     more, hasMore: junctionResource.hasMore,
     fields, relations, gate, can, transitions, validate, normalize, coerce,
     version, versionField: versionOf, conflict,

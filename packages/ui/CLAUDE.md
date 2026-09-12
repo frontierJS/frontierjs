@@ -77,6 +77,17 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   search box — it is `aria-required`, never a native one: a group is not
   labelable, and a search box whose resting state is empty would refuse every
   submit.
+- **`<Table>` takes the `$orderBy` DIRECTIVE, not a `(key, dir)` pair**, and is
+  the only thing in the repo that reads one. The directive admits `-name`,
+  `{name:'asc'}` and `[{…}]` alike — deliberately, since only the query builder
+  can say which a model takes — so three pages derived the pair by hand and the
+  three disagreed: one threw on the object form and took the screen with it, two
+  answered a column named `0` on `?$orderBy[0][name]=desc` (`FJS-1077`). Reading
+  it is `@frontierjs/toolbelt/directives`' `orderByPair`, which is where it has
+  to live because this package and sierra are SIBLINGS that may not import each
+  other and both depend on toolbelt. `onsort` reports an `orderBy` too, so a
+  page names no sort shape of its own; `bind:orderBy` is still the uncontrolled
+  mode.
 - **A `Table` column that holds row actions declares `hideLabel: true`.** Not an
   empty `label` — a `<th>` with no text announces nothing for a column that has
   a control in every row, and the app's own a11y pass only checks `scope`, so

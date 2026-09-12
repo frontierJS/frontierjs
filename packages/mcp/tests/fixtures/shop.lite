@@ -1,0 +1,81 @@
+// tests/fixtures/shop.lite — the schema the projection is graded against.
+//
+// Real source, parsed by Litestone's own parser and run through the real
+// `generateJsonSchema`, rather than a hand-built `$defs` blob. A blob is a guess
+// at what the generator emits, and two of the three findings this package was
+// built out of were wrong guesses about exactly that.
+//
+// Three shapes here do not exist in `example` and are the reason this file does:
+//
+//   Ledger    a LOCKED position (9) on a model whose service still OFFERS the
+//             verb. Every @@gate("…9") in that app sits behind a method policy
+//             that removed the verb first, so the gate is never consulted and
+//             `levelPasses` against a bare `>=` cannot be told apart.
+//   Invoice   a @gate(5) move on a model written at 8 — the FLOOR case, which
+//             `example` does have and which is reproduced with its real numbers
+//             so the regression is answerable without booting a shop.
+//   Credential a @secret and a @guarded column, so `audience: 'client'` is
+//             provable rather than asserted about an empty model.
+
+enum OrderStatus { pending paid shipped refunded cancelled }
+enum InvoiceStatus { draft issued void }
+
+/// Read by a visitor, written by a user, removed by staff.
+model Order {
+  id        Int         @id
+  reference String      @length(3, 20) @unique
+  status    OrderStatus @default(pending)
+  total     Int         @money
+  note      String?
+
+  @@gate("1.4.4.5")
+  @@transitions(status,
+    pay:    pending         -> paid,
+    ship:   paid            -> shipped,
+    refund: paid            -> refunded @gate(5),
+    cancel: [pending, paid] -> cancelled
+  )
+}
+
+/// Written by the application only. `void` declares @gate(5) and the model's
+/// update level is 8, so the move needs 8 — the floor, not the move's number.
+model Invoice {
+  id     Int           @id
+  status InvoiceStatus @default(draft)
+  amount Int           @money
+
+  @@gate("1.8.8.8")
+  @@transitions(status,
+    issue: draft  -> issued @system,
+    void:  issued -> void   @gate(5)
+  )
+}
+
+/// Append-only. Staff read; nobody updates or deletes, asSystem() included.
+model Ledger {
+  id     Int    @id
+  memo   String
+  amount Int    @money
+
+  @@gate("5.8.9.9")
+}
+
+/// No gate at all. 33 of `example`'s 76 models are this shape, and a guest
+/// basket reaching its own rows at STRANGER is correct rather than a hole.
+model Cart {
+  id    Int     @id
+  token String  @unique
+}
+
+/// The audience case. Neither column may reach a tool description.
+model Credential {
+  id    Int    @id
+  label String
+  value String @secret
+  scope String @guarded
+}
+
+/// A declared input type — what `describe().inputs` names for a custom method.
+type TrackingUpdate {
+  trackingCode String @length(4, 40)
+}

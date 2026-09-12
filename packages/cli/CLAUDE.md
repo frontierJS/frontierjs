@@ -132,7 +132,21 @@ core/
   journal.js    the deploy journal — statements and verdicts, all pure. The
                 brain is HERE and `journal-runner.mjs` is the half that ships to
                 the target: it binds parameters and decides nothing, which is
-                what lets the suite drive the real runner against a temp file
+                what lets the suite drive the real runner against a temp file.
+                `migrationPlan` is how a journal reaches the next FORMAT: the
+                DDL is `CREATE TABLE IF NOT EXISTS` throughout, so a target that
+                has deployed once holds constraints no new DDL can reach, and
+                `formatVersion` shipped able only to refuse. A migration's table
+                text is FROZEN here and never read off the snapshot — a snapshot
+                is the shape now and a migration is the shape at one format —
+                and it is held honest by an oracle that migrates a fixture and
+                compares it to a fresh database
+  pause.js      taking an app down on purpose: the nginx guard, the file it
+                stats, the page, the drift verdict and the refusals. All pure.
+                The guard goes AHEAD of the https redirect (both are
+                rewrite-phase returns, first one wins) and sends 503 to a NAMED
+                location (a URI re-enters the rewrite phase and nginx refuses
+                the config for a redirection cycle)
   journal-runner.mjs  copied to the target and run with bun. Imports
                 `bun:sqlite` and nothing else, because a deploy target has no
                 node_modules — the build is inside Docker
@@ -502,6 +516,21 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   **`bindings` is a refusal rather than a fix**: `fli` writes no `.env` on a
   target, so once the generation has moved a revert genuinely cannot restore the
   pair, only put old code onto today's config.
+- **A pause is a transition and the file is only the mechanism.** `deploy:pause`
+  writes `<path>/.fli/paused`; nginx stats it per request, so neither direction
+  needs a reload or sudo and the guard cannot be half applied. *Is it paused* is
+  the KIND on the last succeeded transition and never a column. The container
+  stays up on purpose — `06-swap` runs the migrations in its entrypoint, so a
+  stopped container cannot deploy, which is the one case a pause exists for —
+  and the deploy's health poll goes to `localhost:<apiPort>` directly, so a
+  paused app still deploys and still passes health while the edge answers 503.
+- **The journal and the file can disagree, and nothing reconciles them.**
+  `driftVerdict` grades the pair and `deploy:status` prints it. Recorded but not
+  in force means the pause is not happening; in force but not recorded means
+  somebody did it by hand. Picking one would be a guess about which is stale.
+- **A reader does not migrate.** `open({ migrate: false })` is what
+  `deploy:status` uses: answering a question must not change the schema of the
+  thing being asked. Every writer migrates.
 - **`swapContainer` and `healthOrRestore` live in `deploy/_module.md` and have
   two callers each.** The going-back path is the one nobody exercises until the
   day it matters, so `_steps-revert` calls the same functions `_steps-docker`

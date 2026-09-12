@@ -172,10 +172,10 @@ title: Recipes
     return `${Math.floor(hours / 24)}d ago`
   }
   const RUN_COLUMNS = [
-    { key: 'server', label: 'Server' },
-    { key: 'status', label: 'Status' },
-    { key: 'exit',   label: 'Exit' },
-    { key: 'when',   label: 'When' },
+    { name: 'server', label: 'Server' },
+    { name: 'status', label: 'Status' },
+    { name: 'exit',   label: 'Exit' },
+    { name: 'when',   label: 'When' },
   ]
 </script>
 

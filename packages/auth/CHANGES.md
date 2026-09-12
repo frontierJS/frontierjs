@@ -1,5 +1,66 @@
 # Changes — @frontierjs/auth
 
+## 2026-09-12 — a second factor, and a password that is no longer the whole answer
+
+**TOTP ships, and the shape of the login changed with it** ([`FJS-D261`](../../DECISIONS.md#fjs-d261)).
+`IAuth` had declared `setupTotp` and `verifyTotp` as optional since the interface was written and the
+native provider implemented neither, so what was missing was never the surface — it was an answer to
+*what is a password worth once there is a second factor*.
+
+`login()` now answers a union: a session, or `{ challenge, expiresAt }` and no token anywhere in the
+reply. A second method would have been the cheaper spelling and the wrong one — a caller picks
+between two methods by knowing something about the account it cannot know before it asks, and an
+unused method is refused by nothing. The union is refused by the typechecker at every call site,
+which is how the three call sites in basecamp were found rather than discovered in a browser.
+
+**A half-finished login is its own row**, `LoginChallenge`, not a fifth `VerificationPurpose`:
+`auth.lite` had already refused that reuse once, in writing, for `OauthFlow`. It carries `attempts`,
+counted on the ROW so the ceiling survives a redeploy and is shared by every instance — the one table
+where a process-local counter is an authorization bypass rather than a slow path.
+
+Three things can be wrong in silence and each got an artefact rather than a comment:
+
+- **`setupTotp` enables nothing.** `confirmTotp` does, and the split is why a wrong clock costs a
+  retry instead of the account. `totpPending` is the type an unproven enrollment carries, so nothing
+  about it can gate a login.
+- **A code is single-use inside its own window.** `Credential.totpLastStep` stores the accepted step
+  and the comparison is `<=`, so the whole past closes rather than one code. The code that CONFIRMED
+  enrollment is spent by the same rule, which is the one request where the code is guaranteed to be
+  on screen.
+- **A recovery code is deleted when spent, not flagged.** Ten of them, HMAC'd with the app secret the
+  way an API key is — 49 bits this package generated, so there is nothing for bcrypt to slow down and
+  the lookup is one indexed read.
+
+`onLoginFailed` gained `stage`, and `email` is now `string | null`: the second step has a ticket
+rather than an address, so a hook rate-limiting on the address cannot see it and must key on `userId`.
+
+`verifyTotp` deliberately does NOT consume the step where `completeLogin` does — consuming in both
+would refuse somebody who signs in and immediately opens their settings using the code still on their
+screen, and what it would buy is a replay by a caller who already holds the session.
+
+Two harnesses in `tests/totp-login.test.ts`, and the second is not a convenience: at the shipped
+`totpDrift: 1` only three steps are ever valid and `confirmTotp` spends one, so a SEQUENCE of logins
+is inexpressible. The alternative was an injectable clock — a seam on the login path that exists only
+for tests, and a forgeable one if it ever reached a caller.
+
+**The five caller-facing methods are services on `account`**, beside `changePassword` — a second factor
+is a credential this account authenticates with, not a collection it owns, which is what `sessions`
+and `api-keys` are. A fourth service would have been a fourth configurable name, a fourth boot-time
+collision check and a fourth thing to document, for one fact about one account. Each is named exactly
+as the provider names it, so `need()` reads the key a caller typed and there is no translation to keep
+in step.
+
+The four that change what the account REQUIRES are `refuseInSupport`; `totpStatus` is not, and the
+asymmetry is asserted as a pair — an operator inside an episode reads the subject's status and is
+refused all four writes. `confirmTotp` refuses with 403 before the provider is asked, because an
+operator who learned *there is nothing to confirm* has been told something about the subject's account
+by a call that was meant to be refused.
+
+The browser half landed with it: `client.auth.signIn` answers the same union and `completeSignIn(code)`
+redeems the ticket, which the client holds so no page has to — see junction's, sierra's and jetty's own
+`CHANGES.md`. No app screen in this repo enrolls a factor yet, so nothing here signs in through the
+second step in a real browser.
+
 ## 2026-09-08 — 1.0.4 closes the schema an installed app could not parse
 
 **`1.0.3` shipped `@guarded(all)` and the language had deleted that argument.** The tree's copy was

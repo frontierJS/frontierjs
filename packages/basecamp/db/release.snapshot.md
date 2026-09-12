@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-50 model(s) · 35 enum(s) · 2 database(s)
+51 model(s) · 35 enum(s) · 2 database(s)
 audit → logger · main → sqlite
 ```
 
@@ -457,6 +457,7 @@ table `credential` · db `main` · gate `8`
 | `refreshToken` | `String` | yes | — | @secret |
 | `scope` | `String` | yes | — | — |
 | `tokenExpiresAt` | `DateTime` | yes | — | — |
+| `totpLastStep` | `Int` | yes | — | — |
 | `type` | `String` | no | — | **required on write** |
 | `user` | `User` | — | — | relation |
 | `userId` | `String` | no | — | **required on write** |
@@ -902,6 +903,24 @@ table `job_run` · db `main` · gate `2.8`
 @@deny('post-update', !check(job, 'read'))
 @@deny('read', !check(job, 'read'))
 @@deny('update', !check(job, 'read'))
+```
+
+### `LoginChallenge`
+
+table `login_challenge` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `attempts` | `Int` | no | `0` | — |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `expiresAt` | `DateTime` | no | — | **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `userId` | `String` | no | — | **required on write** |
+| `value` | `String` | no | — | unique · @guarded · **required on write** |
+
+```
+@@index(expiresAt)
+@@index(userId)
 ```
 
 ### `MetricHour`

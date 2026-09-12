@@ -86,21 +86,21 @@ title: Inventory
   // ── What the tables show ────────────────────────────────────────────────
 
   const levelColumns = [
-    { key: 'sku',       label: 'SKU' },
-    { key: 'product',   label: 'Product' },
-    { key: 'variant',   label: 'Variant' },
-    { key: 'onHand',    label: 'On hand',   align: 'right' },
-    { key: 'held',      label: 'Held',      align: 'right' },
-    { key: 'available', label: 'Available', align: 'right' },
+    { name: 'sku',       label: 'SKU' },
+    { name: 'product',   label: 'Product' },
+    { name: 'variant',   label: 'Variant' },
+    { name: 'onHand',    label: 'On hand',   align: 'right' },
+    { name: 'held',      label: 'Held',      align: 'right' },
+    { name: 'available', label: 'Available', align: 'right' },
   ]
 
   const ledgerColumns = [
-    { key: 'createdAt', label: 'When' },
-    { key: 'sku',       label: 'SKU' },
-    { key: 'kind',      label: 'Why' },
-    { key: 'quantity',  label: 'Change', align: 'right' },
-    { key: 'shelf',     label: 'Shelf',  align: 'right' },
-    { key: 'reference', label: 'Reference' },
+    { name: 'createdAt', label: 'When' },
+    { name: 'sku',       label: 'SKU' },
+    { name: 'kind',      label: 'Why' },
+    { name: 'quantity',  label: 'Change', align: 'right' },
+    { name: 'shelf',     label: 'Shelf',  align: 'right' },
+    { name: 'reference', label: 'Reference' },
   ]
 
   // A movement carries `variantId` and nothing a person recognizes, so the SKU

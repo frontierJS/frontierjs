@@ -21,13 +21,13 @@ export async function run(t) {
   await t.mount('table-depth')
 
   // ── a sort the CALLER owns ──────────────────────────────────────────────
-  // `bind:sortKey` makes the component the owner, and a component cannot own a
+  // `bind:orderBy` makes the component the owner, and a component cannot own a
   // sort that lives in the URL. With `onsort` the component states the move and
   // changes nothing — so a caller that navigates instead of assigning does not
   // get an arrow flipping to a state it is about to overrule.
   await t.clickAt('#reported thead th:nth-child(3) button')
-  await t.eventually(`document.getElementById('reported-out').textContent`, 'amount:asc',
-    'a new column reports ascending')
+  await t.eventually(`document.getElementById('reported-out').textContent`, 'amount',
+    'a new column reports ascending, as the orderBy a page writes back')
 
   const untouched = await t.evaluate(`
     const th = document.querySelectorAll('#reported thead th');
@@ -38,8 +38,27 @@ export async function run(t) {
 
   // Clicking the column the caller pushed asks for the opposite direction.
   await t.clickAt('#reported thead th:nth-child(1) button')
-  await t.eventually(`document.getElementById('reported-out').textContent`, 'ref:desc',
-    'the sorted column reports the flip')
+  await t.eventually(`document.getElementById('reported-out').textContent`, '-ref',
+    'the sorted column reports the flip, in the one spelling a page sends')
+
+  // ── every shape a URL can carry ─────────────────────────────────────────
+  // `$orderBy` admits a string, an object and an array, and this component is
+  // now the only thing that reads it — three pages did it by hand and one THREW
+  // on the object form while two answered a column named `0` on the indexed one
+  // (FJS-1077). Each arrives through the PROP, which is the path a restored URL
+  // takes, and each is PAIRED with a header it must leave alone: a component
+  // that marked every column would satisfy any assertion about the marked one.
+  await t.clickAt('#push-object')
+  await t.eventually(`document.querySelectorAll('#reported thead th')[2].getAttribute('aria-sort')`, 'descending',
+    'the object form marks its own column, where a page assuming a string threw')
+  await t.eventually(`document.querySelectorAll('#reported thead th')[0].getAttribute('aria-sort')`, 'none',
+    'and marks nothing else')
+
+  await t.clickAt('#push-indexed')
+  await t.eventually(`document.querySelectorAll('#reported thead th')[0].getAttribute('aria-sort')`, 'ascending',
+    'a bracket-indexed ordering names its column rather than the index')
+  await t.eventually(`document.querySelectorAll('#reported thead th')[2].getAttribute('aria-sort')`, 'none',
+    'and the column the previous push marked is released')
 
   // A `hideLabel` column. An actions column with a bare <th> leaves a screen
   // reader saying nothing for a column that has a control in every row, and a
@@ -165,9 +184,9 @@ export async function run(t) {
 
   /* ── sorting, pushed from outside ─────────────────────────────────────── */
 
-  // A bound sort pair is how a list restores its sort out of a URL. The push
+  // A bound ordering is how a list restores its sort out of a URL. The push
   // takes a different path through the component than a header click does, and
-  // the arrow and `aria-sort` are derived from the same pair, so both have to
+  // the arrow and `aria-sort` are derived from the same value, so both have to
   // follow.
   t.is(await t.evaluate(`
     return ${headers}.map(th => th.getAttribute('aria-sort') ?? 'none').join(',');
@@ -182,7 +201,7 @@ export async function run(t) {
   // Clicking that same column now continues the cycle from where the outside
   // put it, rather than restarting at ascending.
   await t.clickAt('#plain thead th:last-child button')
-  await t.eventually(`document.querySelector('#sort').textContent`, 'amount:asc',
+  await t.eventually(`document.querySelector('#sort').textContent`, 'amount',
     'clicking it continues the cycle rather than restarting it')
 
   /* ── sorting is STATE, not an ordering ────────────────────────────────── */
@@ -205,10 +224,10 @@ export async function run(t) {
   t.is(await t.evaluate(`return document.activeElement?.closest('th')?.textContent?.trim().split(/\\s+/)[0];`),
     'Reference', 'a sortable header is focusable')
   await t.press('Enter')
-  await t.eventually(`document.querySelector('#sort').textContent`, 'ref:asc',
+  await t.eventually(`document.querySelector('#sort').textContent`, 'ref',
     'and Enter sorts by it — the whole reason it is a button')
   await t.press(' ')
-  await t.eventually(`document.querySelector('#sort').textContent`, 'ref:desc', 'Space reverses it')
+  await t.eventually(`document.querySelector('#sort').textContent`, '-ref', 'Space reverses it')
 
   // A plain column offers nothing to press: a header that looks interactive
   // and is not is worse than one that never invited the click.

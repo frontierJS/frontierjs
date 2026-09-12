@@ -37,7 +37,7 @@ const CASES = [
   ['components/display/Stat.mesa',      { label: 'MRR', value: '1' }, ['tile-label', 'tile-value']],
   ['components/display/EmptyState.mesa',{ title: 'None' },           ['empty', 'empty-title']],
   ['components/display/Breadcrumbs.mesa', { items: [{ label: 'Home' }] }, ['breadcrumb']],
-  ['components/display/Table.mesa',     { columns: [{ key: 'a', label: 'A' }] }, ['table', 'table-wrap']],
+  ['components/display/Table.mesa',     { columns: [{ name: 'a', label: 'A' }] }, ['table', 'table-wrap']],
   ['components/display/Kbd.mesa',       {},                          ['kbd']],
   // The heading TAG is the assertion: it comes from <mesa:element this={'h'+level}>,
   // and a level that stopped reaching the DOM would render something that looks

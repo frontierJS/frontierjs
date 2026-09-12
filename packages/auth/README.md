@@ -180,9 +180,66 @@ Injected into `db/schema.lite` by `fli auth:install`:
 true of credential material and false of the table an app's own screens list —
 see `litestone/docs/access-control.md` § The identity models.
 
+## Two-factor authentication
+
+A `totp` credential existing is what makes a login owe a code, so an account with
+none behaves exactly as it did. One enrolls in two calls — `setupTotp` answers a
+secret and an `otpauth://` URI, and **`confirmTotp` is what switches it on**,
+because enrollment that enabled before it verified would cost the account rather
+than a retry on the first wrong clock.
+
+```typescript
+const { secret, qr } = await auth.setupTotp(userId, currentPassword)
+const { recoveryCodes } = await auth.confirmTotp(userId, codeFromTheApp)
+```
+
+`login()` then answers one of two things, and the caller discriminates on the key:
+
+```typescript
+const result = await auth.login(email, password)
+
+if ('challenge' in result) {
+  // No token was issued. The ticket is single-use and lives 5 minutes.
+  const { token, user } = await auth.completeLogin(result.challenge, code)
+} else {
+  const { token, user } = result
+}
+```
+
+`code` takes a TOTP code or a recovery code — the person typing it is answering
+one question. A code is single-use inside its own 30-second window, and every
+code from before the last accepted step is refused with it.
+
+Over HTTP the second step is `POST /auth/login/challenge`, a raw route for the
+reason `/auth/login` is one: it is what produces a session, so it cannot be gated
+by holding one. In `cookieAuth` mode the ticket rides an httpOnly cookie and the
+body carries only the expiry.
+
+Everything a signed-in caller does to their own factor is a SERVICE on `account`,
+beside `changePassword` — a call that can be refused for want of a session is not
+a route (`FJS-D20`):
+
+| Method | Takes | Answers |
+| --- | --- | --- |
+| `totpStatus` | — | `{ enabled, recoveryCodesRemaining }` |
+| `setupTotp` | `currentPassword` | `{ secret, qr }` — enables nothing |
+| `confirmTotp` | `code` | `{ recoveryCodes }` — this is what enables it |
+| `disableTotp` | `currentPassword` | `{ ok: true }` |
+| `regenerateRecoveryCodes` | `currentPassword` | `{ recoveryCodes }` |
+
+```typescript
+const account = client.service('account')
+const { secret, qr } = await account.setupTotp({ currentPassword })
+const { recoveryCodes } = await account.confirmTotp({ code })
+```
+
+The four that change what the account requires are refused inside a support
+episode. `totpStatus` is not — seeing what somebody sees is what an episode is
+for, and it answers about the subject.
+
 ## Escape hatch
 
-Need OAuth, TOTP, SSO, or magic links? Swap to Better Auth:
+Need SSO or magic links? Swap to Better Auth:
 
 ```typescript
 import { createBetterAuthAdapter, createBetterAuthPlugin } from '@frontierjs/junction'

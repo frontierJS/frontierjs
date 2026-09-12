@@ -161,6 +161,11 @@ may not import (Invariant 1). Both are thin over `@frontierjs/toolbelt/gate`'s
 (`FJS-D197`). The move is to `@frontierjs/toolbelt/gate`, with Sierra importing it
 — a fifth copy is the thing that ruling exists to refuse.
 
+**4. `describe().model` is not reliably a model**, and it is the trap that makes
+a projection quietly permissive rather than broken — see § *The measurement*. Any
+consumer reading it has to resolve through `@frontierjs/toolbelt/inflect` and
+report what still does not resolve.
+
 **3. Dispatching a tool needs the argument position of `CallOptions` per method,
 and that table was hand-copied once** — as `OPTS_AT` in `@frontierjs/testing`,
 which refuses an unknown method rather than guessing because a guess binds the
@@ -174,37 +179,55 @@ Junction offer something this table has never heard of* — so both stay.
 ## The measurement
 
 The claim under everything here is *the tool list is derived from the seed and
-narrows with the standing*. It was run against `example`'s real app — 38 services,
+narrows with the standing*. It is run against `example`'s real app — 38 services,
 76 models, 43 of them gated — by booting the app in process and projecting
-`describe().methods` through each model's `x-gate`:
+`describe().methods` through the model's `@@gate`, the declared move's floor, and
+`@system`:
 
-| Standing | Tools |
-| --- | --- |
-| STRANGER (0) | 94 |
-| USER (4) | 126 |
-| STAFF (5) | 203 |
-| OWNER (6) | 203 |
+| Standing | Tools | Withheld | Ungraded |
+| --- | --- | --- | --- |
+| STRANGER (0) | 63 | 140 | 31 |
+| USER (4) | 114 | 89 | 31 |
+| STAFF (5) | 196 | 7 | 31 |
+| OWNER (6) | 196 | 7 | 31 |
+| SYSTEM (8) | 199 | 4 | 31 |
 
-203 tools declared, 109 of them invisible to a stranger, and no hand-written
-allowlist anywhere. The projection applies the method policy first and the gate
-second, and the two already agree where they overlap: `journalEntries` declares
-`@@gate` 9 for update and delete AND `methods: ['find','get']`, so the locked
-operations are gone before the gate is consulted.
+203 tools declared, 140 of them invisible to a stranger, and no hand-written
+allowlist anywhere. **Four are invisible to everybody** — `invoices.settle`,
+`payRuns.calculate`, `payRuns.pay`, `subscriptions.cancel`, the `@system` moves a
+service still offers as a method. `payRuns.pay` was offered to an anonymous
+caller before this. **Six are graded by a declared move**, `invoices.void` at 8
+among them. **Thirty-one remain ungraded** and that number is the honest
+remainder: they are custom methods the seed says nothing about.
 
-**Which is the hole in the measurement and must be named.** No model in `example`
-offers a method the policy allows and a LOCKED gate refuses, so the projection's
-handling of 9 is unexercised — `levelPasses` against a bare `>=` is exactly the
-`FJS-D197` shape, and this app cannot tell them apart. A fixture with that one
-shape in it is the first test, not the last.
+**An earlier run of this reported 94 / 126 / 203 and was wrong**, for a reason
+worth keeping because it is invisible: `describe().model` is not reliably a
+model. `Service.model` is optional and Junction defaults it to the service's own
+NAME, so `orders` reports `orders` — camelCase, plural, matching no `$def`. Every
+gate and every move on `Order` resolved to `undefined`, which permissive-unknown
+reads as *nothing is declared*, so the most heavily gated service in the app came
+out completely open and nothing failed. The name is resolved through
+`@frontierjs/toolbelt/inflect`'s `modelName` now, which is Invariant 2's own
+composition, and a service whose model still names nothing is REPORTED rather
+than logged — *this app declares no rules for these rows* and *this projection
+could not find the rules that exist* produce the same open list otherwise.
+`example` has four: `shopfront`, `account`, `api-keys`, `connections`.
+
+**The hole that remains, named.** No model in `example` offers a method the policy
+allows AND a LOCKED gate refuses — every `@@gate` 9 there sits behind a method
+policy that removed the verb first, so the gate is never consulted. That fixture
+is hand-built in the package's own tests, together with the `describe().model`
+trap above, because both are shapes this app cannot produce.
 
 **The permissive-unknown rule is a decision, not a default.** 33 of 76 models
 declare no `@@gate`, and an ungated model contributes every one of its tools at
-level 0 — which is why a stranger sees 94. Sierra's rule is permissive because
-hiding a control the user could have used is the quieter failure; for an agent the
-same tradeoff holds with different stakes on both sides (a tool that always 403s
-burns turns and invites a jailbreak attempt; a hidden one makes the agent useless).
-It stays permissive and the reason is recorded here, because visibility is an
-affordance and Invariant 6 already says the server enforces regardless.
+level 0. Sierra's rule is permissive because hiding a control the user could have
+used is the quieter failure; for an agent the same tradeoff holds with different
+stakes on both sides (a tool that always 403s burns turns and invites a jailbreak
+attempt; a hidden one makes the agent useless). It stays permissive, it is
+LABELLED `ungraded` rather than filed with the rules that cleared a number, and
+the reason is recorded here — visibility is an affordance and Invariant 6 says
+the server enforces regardless.
 
 ## The narrowing is all CRUD, and the interesting half is ungraded
 
@@ -286,7 +309,17 @@ agent, which is useful and is not the claim this file makes.
 ## What would have to be built
 
 1. **A tool projection.** `describe()` + `generateJsonSchema` → MCP tool
-   definitions. Mechanical, and now measured; both halves exist.
+   definitions. Mechanical, and now measured; both halves exist. **The argument
+   schema is the second half of it and it carries one decision that is not
+   mechanical at all**: `generateJsonSchema`'s `audience` is `client` or
+   `system`, and `system` includes `@guarded` and `@secret` — so the tempting
+   reading (*the agent acts for the application, so give it what the application
+   knows*) puts a password hash and the OAuth tokens into a tool DESCRIPTION,
+   disclosed before any call is made. It is `FJS-976`'s shape on a new surface,
+   and the answer is that the audience is not a parameter: the projection takes
+   the schema and owns the generator calls, so no caller can ask for the other
+   one. Measured on `example` — `Credential` carries three extra properties at
+   `system` and `Session` carries `token`.
 2. **Per-session tool filtering** against the session's level, through the kit's
    `canAtLevel` — and over all THREE inputs, or it grades only the CRUD half (see
    § *The narrowing is all CRUD*). A `@system` move is withheld from everybody, a

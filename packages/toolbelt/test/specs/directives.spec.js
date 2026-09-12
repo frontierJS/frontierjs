@@ -11,7 +11,9 @@
 import {
   DIRECTIVE_PARAMS, TRANSPORT_PARAMS, RESERVED_PARAMS,
   parseDirectives, directiveParams, splitParams, unknownDirectives,
+  orderByPair, orderByValue,
 } from '../../src/directives/directives.js'
+import { parseQueryString } from '../../src/query/query.js'
 
 /* ── The table ─────────────────────────────────────────────────────── */
 
@@ -239,4 +241,68 @@ test('directives: a URL round-trips', function () {
   const back = directiveParams(parseDirectives(url))
   assert.deepEqual(parseDirectives(back), parseDirectives(url))
   assert.equal(back.$limit, 20, 'and it comes back TYPED, having been parsed once')
+})
+
+/* ── The orderBy pair ──────────────────────────────────────────────── */
+
+test('directives: the pair reads every shape the table admits', function () {
+  assert.deepEqual(orderByPair('-name'),         { key: 'name', dir: 'desc' })
+  assert.deepEqual(orderByPair('name'),          { key: 'name', dir: 'asc'  })
+  assert.deepEqual(orderByPair({ name: 'desc' }), { key: 'name', dir: 'desc' })
+  assert.deepEqual(orderByPair([{ name: 'desc' }, { id: 'asc' }]), { key: 'name', dir: 'desc' },
+    'the FIRST ordering, because a header marks one column')
+  assert.deepEqual(orderByPair(['-name', 'id']), { key: 'name', dir: 'desc' })
+})
+
+test('directives: nothing sorted is an empty KEY, not a direction', function () {
+  // A caller marking a header tests the key. Answering `{key:'', dir:'asc'}`
+  // for *unsorted* and for *ascending by nothing* alike is what lets one test
+  // cover both, and there is no third state to confuse it with.
+  for (const v of [undefined, null, '', {}, []]) {
+    assert.deepEqual(orderByPair(v), { key: '', dir: 'asc' }, JSON.stringify(v))
+  }
+})
+
+test('directives: the pair is read off a REAL url, which is where it broke', function () {
+  // The crossing, and the only shape that could see FJS-1077: `/query` decides
+  // what bracket notation MEANS and `/directives` decides what is a directive,
+  // so a hand-built object grades neither. Each row is the URL somebody types.
+  const pairFor = (qs) => orderByPair(parseDirectives(parseQueryString(qs)).orderBy)
+
+  assert.deepEqual(pairFor('$orderBy=-name'),          { key: 'name', dir: 'desc' })
+  assert.deepEqual(pairFor('$orderBy[name]=desc'),     { key: 'name', dir: 'desc' },
+    'the shape that THREW: three pages assumed a string and called .replace on it')
+  assert.deepEqual(pairFor('$orderBy[0][name]=desc'),  { key: 'name', dir: 'desc' },
+    'the shape that answered key "0" and a direction that was itself an object')
+  assert.deepEqual(pairFor('$orderBy[0]=-name'),       { key: 'name', dir: 'desc' },
+    'bracket indices come back as an object, so Array.isArray is false for a caller who wrote one')
+})
+
+test('directives: a numeric key is only residue when the value is not a direction', function () {
+  // The ambiguity is real and is decided on the value. `{'0':'desc'}` is a
+  // column named 0 sorted descending — absurd, and still better than descending
+  // INTO 'desc' and reporting a column by that name.
+  assert.deepEqual(orderByPair({ 0: 'desc' }),   { key: '0', dir: 'desc' })
+  assert.deepEqual(orderByPair({ 0: '-name' }),  { key: 'name', dir: 'desc' })
+})
+
+test('directives: a missing direction is ascending, not unsorted', function () {
+  // `?$orderBy[name]=` — the column is named and the direction is not. Losing
+  // the key here would unmark a header the URL plainly sorts by.
+  assert.deepEqual(orderByPair({ name: '' }), { key: 'name', dir: 'asc' })
+  assert.deepEqual(orderByPair({ name: 'DESC' }), { key: 'name', dir: 'desc' },
+    'and the direction is read the way a marker reads it, not the way a parser would')
+})
+
+test('directives: the pair round-trips through the value a page writes back', function () {
+  // Two pages wrote the next sort in two shapes for one click. `orderByValue`
+  // is the one spelling, and this is the assertion that it is `orderByPair`'s
+  // inverse rather than merely a second opinion.
+  for (const [key, dir] of [['name', 'asc'], ['total', 'desc'], ['createdAt', 'desc']]) {
+    assert.deepEqual(orderByPair(orderByValue(key, dir)), { key, dir })
+  }
+  assert.equal(orderByValue(''), undefined,
+    'an empty key removes the directive rather than ordering by nothing')
+  assert.deepEqual(directiveParams({ orderBy: orderByValue('total', 'desc') }), { $orderBy: '-total' },
+    'and what it writes is what the table carries')
 })
