@@ -112,9 +112,6 @@ const PKGS = [
       why:'Boot an app in-process, send real requests through the full hook pipeline, and stub only auth. Tests exercise the code that runs in production.',
       code:"const app = await createTestApp({ db, auth: createStubAuth() })\nawait request(app).post('/api/invoices').send({ total: 5 })",
       r:['supertest + mock layers'] },
-    { k:'Storage', v:'<code>IFileStorage</code> — local and object-store drivers',
-      why:'One contract for file storage with local-disk and object-store implementations, so moving from a laptop to production is a driver swap, not a rewrite.',
-      r:['multer + cloud SDK glue'] },
   ],
   extra:{
     title:'Packages that attach through the plugin protocol',

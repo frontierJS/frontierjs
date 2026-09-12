@@ -19,7 +19,6 @@
     "./cache": "./src/cache/index.ts",
     "./scheduler": "./src/scheduler/index.ts",
     "./workers": "./src/workers/index.ts",
-    "./filestorage": "./src/storage/filestorage/index.ts",
     "./database": "./src/storage/database/index.ts",
     "./mail": "./src/mail/index.ts",
     "./ai": "./src/ai/index.ts",

@@ -110,6 +110,14 @@ That is an Invariant 4 problem — one owner per translation — rather than a f
 and the question is whether Junction's should delegate to Litestone's plugin or be
 retired.
 
+**Answered 2026-09-12: retired** ([FJS-D260](../DECISIONS.md#fjs-d260)). Delegation was
+not available — `useStorage()` takes a stored ref and has no `list`, `meta` or
+`toResponse`, so a forwarding `app.filestorage` would have been a third shape rather
+than one owner. Nothing in the workspace called it. The claim above that Litestone's S3
+path is *tested* is the part of this section that did not survive the closing: it is
+cited by no test file, which is [FJS-1076](../ISSUES.md#fjs-1076) and is now the only
+object-store signer the framework has.
+
 - **Why it still matters:** an app that stores files through Junction's interface rather
   than a `File` column still cannot run on more than one node
 - **Size:** small, and it is a reconciliation rather than a build
@@ -186,10 +194,29 @@ been collected. That is the tracked work, not the building.
 See `IDEAS/testing-and-ci.md`, which treats this as the unblocking step for a
 cross-realm suite.
 
-### 6. Two-factor authentication
+### 6. Two-factor authentication — and the half of it that is not TOTP
 
 `IAuth` declares `setupTotp` as an optional method; the native provider does not
 implement it. Increasingly table stakes for B2B.
+
+**Passkeys are the other half and they are further away.** Added 2026-09-11:
+`passkey` and `webauthn` return **0 hits** across every package's source, where
+`totp` at least names a method and a `better-auth` provider type. The two are
+usually listed together and should not be, for the same reason § 16 separates SMS
+from push: TOTP is a secret, a clock and a comparison, and a passkey is **rows plus
+a ceremony** — a challenge that must be single-use and short-lived, a credential
+with a public key, a signature counter, and a transport list. `Credential` already
+exists and `@encrypted` / invariant 7 redaction already apply to it, which is the
+same argument § 16 makes for the push subscription: making it a Model is what buys
+the gate, the audit trail and the expiry for free.
+
+**The reason it cannot be a package an app picks up**: what a passkey changes is
+not a login route, it is the **standing** a session carries — *this caller proved
+possession of a device in the last five minutes* is a rung on the gate ladder
+(`@frontierjs/toolbelt/gate`), and an app cannot add a rung from outside. That
+makes it in-house for a reason unrelated to how hard the crypto is. Nothing else
+here needs a vendor, so Conduit buys nothing: WebAuthn is a browser API and a
+signature check.
 
 ### 7. Feature flags
 
@@ -461,6 +488,54 @@ recipient is a vendor rather than the user. It is also the same question
 
 Effort: SMS `S`, push `M`. SMS is `stakes` — every competitor has it. Push is `edge`,
 for the subscription-as-a-Model reason, and only if the boundary above is settled first.
+
+---
+
+### 17. A pass against a competing Bun framework's own agent map
+
+Added 2026-09-11. The input was `stacksjs/stacks`' committed `AGENTS.md` — the one
+file that framework asks every agent to read, and therefore its own statement of
+what it believes it ships. It is a useful outside document for the same reason the
+2026-08-15 feature-catalog pass was: it is a **catalog**, so it enumerates the
+things a framework is expected to answer, rather than the things a competitor
+wants to be judged on.
+
+**Most of it landed on rows this file already has, which is the result to record
+rather than the findings.** i18n (§ 4, ruled V2), object storage (§ 3), 2FA (§ 6),
+SMS and push (§ 16). A comparison that finds the register already holds the answer
+is the register working.
+
+**Two claims made while reading the tree were wrong, both in the direction this
+file has been wrong before — grepping one package.**
+
+- *Junction's `FileStorage` is local-disk-only, so an app on two machines cannot
+  store a file.* True of that file and false of the repo; § 3 corrected this on
+  2026-08-12 and the finding is a duplicate abstraction, not a missing driver.
+- *Notification transports are a closed set — `drivers/` holds `email.ts` and
+  `inapp.ts`.* False. `notify.ts` carries a `state.drivers` registry, a registered
+  driver wins over a built-in transport name of the same spelling, and an
+  unregistered one is refused by name before any delivery starts. § 16's *adding a
+  channel is a solved problem* stands; SMS is unwritten, not unbuildable.
+
+**Four things in the catalog map to nothing filed anywhere here.** Each is one
+line because none is argued yet; the verdict column is FJS-D153's, applied rather
+than re-derived — the boundary is ours, the vendor is the app's.
+
+| Missing | Shape | Verdict |
+| --- | --- | --- |
+| A cache an app can share between nodes | Junction's cache is `bun:sqlite`, which is right for one box and wrong for two. The multi-node story ends here the way § 3's ended at the second machine | in-house driver seam; Redis is not HTTP, so Conduit cannot carry it |
+| Vectors and embeddings | `vector` returns 0 hits across `IDEAS/`. An embedding is a column with a distance comparison, which is `IDEAS/declared-semantics.md`'s family, and `ai/index.ts` already refuses to name a vendor | in-house column type; the model that produces the embedding is a Conduit target already |
+| Secrets at rest | `defineEnv` validates and `/redact` hides, and `@encrypted` covers columns. Nothing encrypts a `.env` or rotates an app secret; `IDEAS/release-transitions.md` reaches for `sops` and does not own it | Deployment realm, in-house — an app secret is a Release fact |
+| Maintenance mode | `fli deploy` mints a Release and swaps; there is no *this app is down on purpose* state. Absent, a deploy that must pause serving has to be done by stopping a container, which the journal then reads as a crash | in-house, small, and it is a transition rather than a flag |
+
+**The one axis where the comparison runs the other way is worth stating**, because
+it is evidence for § *The strategic read* rather than another gap: that framework's
+agent map lists ~52 typed config files and vendor code inside the framework —
+SES, SendGrid, Mailgun, Algolia, Meilisearch, Stripe, Bedrock, CDK. FJS ruled the
+opposite in `FJS-D153` and `packages/junction/src/ai/index.ts` is the ruling
+executed: the adapter shape ships, no vendor does, and the reason is written in the
+file. Out-cohering is the bet, and a catalog three times the size with the vendors
+inside it is what the bet is against.
 
 ---
 

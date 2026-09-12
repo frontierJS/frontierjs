@@ -3508,6 +3508,57 @@ export function analyzeScript(raw, ast) {
     if (callsLocal(v.initNode)) { reactiveSet.add(v.name); opaqueLocalCall.add(v.name) }
   }
 
+  // Whether a name is PROMOTED and whether a binding over it is STATIC are two
+  // decisions, and entangling them is what FJS-1070 was. `const list =
+  // users.list()` is correctly not promoted — FJS-D212 keeps the initializer
+  // eager, and EXTERNAL_REACTIVITY.md is why an imported call is not a door
+  // reactivity comes through on its own — but what the call HANDED BACK may
+  // hold getters over signals, so `{list.sortKey}` is not provably static.
+  //
+  // The downgrade in _renderGroup guessed from emitted text and answered by
+  // the shape of the read: a call on a bare local was reactive, the identical
+  // value behind a member was not. So one page had `<Table sortKey={list.sortKey} />`
+  // moving — a prop is pushed from inside an effect — and `{list.sortKey}` in
+  // the sentence beside it frozen, which reads as a data bug and sends the
+  // reader to the service.
+  //
+  // Every name a call's result was bound to, then, including through a pattern:
+  // `const { get: rows } = useStore(s)` is the same fact one destructure along.
+  const opaqueValues = new Set()
+  // Whether the initializer's VALUE is a call's result — not whether a call
+  // appears somewhere inside it. A blanket walk marks `const shown = (v) =>
+  // JSON.stringify(v)`, whose body holds a call and whose value is a function
+  // this script wrote, and basecamp's activity log was exactly that.
+  const yieldsCall = (n) => {
+    if (!n) return false
+    switch (n.type) {
+      case 'CallExpression': case 'NewExpression': case 'TaggedTemplateExpression': return true
+      case 'AwaitExpression':       return yieldsCall(n.argument)
+      case 'ChainExpression':       return yieldsCall(n.expression)
+      case 'ConditionalExpression': return yieldsCall(n.consequent) || yieldsCall(n.alternate)
+      case 'LogicalExpression':     return yieldsCall(n.left) || yieldsCall(n.right)
+      case 'SequenceExpression':    return yieldsCall(n.expressions[n.expressions.length - 1])
+      // `useStore(s).get` — the destructured half of the same fact.
+      case 'MemberExpression':      return yieldsCall(n.object)
+      default: return false
+    }
+  }
+  const bindNames = (id, out) => {
+    if (!id || typeof id !== 'object') return
+    if (id.type === 'Identifier') { out.add(id.name); return }
+    if (id.type === 'ObjectPattern') { id.properties.forEach((pr) => bindNames(pr.value ?? pr.argument, out)); return }
+    if (id.type === 'ArrayPattern') { id.elements.forEach((el) => bindNames(el, out)); return }
+    if (id.type === 'AssignmentPattern') { bindNames(id.left, out); return }
+    if (id.type === 'RestElement') bindNames(id.argument, out)
+  }
+  for (const node of ast.body) {
+    const decl = node.type === 'VariableDeclaration' ? node
+      : node.type === 'ExportNamedDeclaration' && node.declaration?.type === 'VariableDeclaration' ? node.declaration
+      : null
+    if (!decl) continue
+    for (const d of decl.declarations) if (yieldsCall(d.init)) bindNames(d.id, opaqueValues)
+  }
+
   // Closure: `const a = 1; const b = a; const c = b + page` promotes only `c`.
   for (let changed = true; changed;) {
     changed = false
@@ -3663,6 +3714,7 @@ export function analyzeScript(raw, ast) {
     contextProvides,
     exportedMembers,
     reactiveNames: [...reactiveSet],
+    opaqueValues: [...opaqueValues],
     passthroughDeclStarts
   }
 }
@@ -8380,8 +8432,14 @@ function indexToKey(i) {
 //   - $$proxy_                — watched path proxy
 //   - \bword()                — bare no-arg function call (each-block item/index getter)
 //     e.g. item().r, index()  — these are signal getters passed as makeBlock params
-function _isReactive(expr) {
+function _isReactive(expr, opaqueRe) {
   if (expr.includes('$$runtime.get') || expr.includes('$$proxy_')) return true
+  // A value that came out of a call, named by the analysis rather than guessed
+  // from here. Everything below this line reads emitted TEXT and answers by the
+  // SHAPE of the read, which is why a call on a bare local was reactive and the
+  // same value behind a member was not (FJS-1070) — and why three of the four
+  // rules under it are carve-outs for a shape that guess got wrong.
+  if (opaqueRe && opaqueRe.test(expr)) return true
   // A reactive {@const} is a memo, read as `$$_const_name()`. The bare-call
   // pattern below cannot see it — its lookbehind excludes `$` on purpose — so
   // an attribute whose only dependency was a {@const} was classed static and
@@ -8396,8 +8454,11 @@ function _isReactive(expr) {
   // rendered its first value and ignored every later one: the frozen-argument
   // bug the getters exist to prevent, arriving through the fix for FJS-339.
   if (/\$\$arg\d+\(\)/.test(expr)) return true
-  // Bare no-arg call: identifier immediately followed by () — signal getter pattern.
-  // Excludes method chains like Math.floor() (preceded by '.') and $$runtime.x().
+  // Bare no-arg call: identifier immediately followed by () — signal getter
+  // pattern. Kept below the analysis rule rather than replaced by it: a getter
+  // reached through a snippet parameter or an each binding is named by no
+  // declaration this script holds, so there is nothing for the analysis to put
+  // in the set. Excludes method chains like Math.floor() and $$runtime.x().
   if (/(?<![.$])\b[a-z_][a-zA-Z0-9_]*\(\)/.test(expr)) return true
   // External signal .get() calls — the Mesa bridge patches Sierra signals so their
   // .get() becomes Mesa's reactive read function. Matches: identifier.get()
@@ -8432,7 +8493,17 @@ function _isCompleteBindLine(line) {
   return ticks % 2 === 0
 }
 
-function _renderGroup(code) {
+function _renderGroup(code, opaqueValues) {
+  // One regex for the whole set — this runs per binding run, per file.
+  // Reached THROUGH — a member, an index or a call — and never the bare name.
+  // What the analysis knows is that the VALUE came out of a call and so may
+  // hold getters over signals; the binding itself is a const and cannot move,
+  // so `{titleId}` over `const titleId = uniqueId()` stays the one-time write
+  // it should be. Twelve kit components take that shape and the bare form
+  // would have put every one of them in a render block for nothing.
+  const opaqueRe = opaqueValues?.length
+    ? new RegExp(`(?<![.$\\w])(?:${opaqueValues.join('|')})\\s*(?=[.?[(])`)
+    : null
   // Collect consecutive runs of complete bindText / bindAttribute statements at
   // the same indent, and fold each run into one render() block.
   //
@@ -8474,8 +8545,8 @@ function _renderGroup(code) {
       return { type: 'raw', line }
     })
 
-    const reactive = bindings.filter(b => b.type !== 'raw' && _isReactive(b.expr))
-    const statics  = bindings.filter(b => b.type !== 'raw' && !_isReactive(b.expr))
+    const reactive = bindings.filter(b => b.type !== 'raw' && _isReactive(b.expr, opaqueRe))
+    const statics  = bindings.filter(b => b.type !== 'raw' && !_isReactive(b.expr, opaqueRe))
     const raws     = bindings.filter(b => b.type === 'raw')
 
     const I = indent
@@ -9452,7 +9523,7 @@ export async function compile(source, config = {}) {
       }
     })
     for (const k in ctx.glob ?? {}) resolveDependencies(ctx.glob[k])
-    return _renderGroup(_domTraversal(hoistTemplates(xBuild(root, { warning: config.warning })))).replace(/^const \$\$set_/mg, (m) => '  ' + m)
+    return _renderGroup(_domTraversal(hoistTemplates(xBuild(root, { warning: config.warning }))), ctx.analysis?.opaqueValues).replace(/^const \$\$set_/mg, (m) => '  ' + m)
   })
 
   // Position markers are OFF unless asked for, and the caller that asks is the

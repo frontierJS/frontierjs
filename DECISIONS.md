@@ -110,7 +110,25 @@ says nothing**, which is Sierra's rule and Invariant 6's: a client-side gate is
 an affordance and the server enforces regardless. Measured against `example` on
 the day of this ruling — 38 services, 76 models, 43 gated — the projection
 answers 94 tools at STRANGER, 126 at USER and 203 at STAFF, with no allowlist
-written anywhere. **The unexercised half is named rather than assumed**: no model
+written anywhere.
+
+  *Amended 2026-09-10, same day.* **That spread is entirely the CRUD verbs, and
+  the qualifier belongs on the evidence.** The same walk over the CUSTOM methods
+  answers 15 services at STRANGER, at USER and at STAFF — byte-identical lists,
+  with `orders.refund` and `payRuns.pay` among them. A custom method's name is not
+  one of `@@gate`'s four positions, so permissive-unknown answers *yes* for every
+  verb an agent would be delegated. The boundary is unharmed — hooks and
+  `@@transitions` refuse the call — but visibility, which is the half this surface
+  leads with, grades only the half nobody wanted an agent for. The missing input
+  is a second keyword rather than a heuristic: `x-transitions` carries
+  `{from, to, gate, system}` per move, three of `example`'s fifteen carry a gate
+  and eight are `@system`. **A move's gate is a FLOOR over the model's update
+  level and not a replacement for it** — Litestone's catalog says so and
+  `example` measures the difference: `invoices.void` declares `@gate 5` on a
+  model whose `update` is 8, so grading by the move's number alone would offer it
+  two rungs below what the boundary accepts. It does not change this ruling, which is about a name;
+  it changes what a projection reading `@@gate` alone can be claimed to do, and
+  the rules are in `IDEAS/agent-surface.md` § *The narrowing is all CRUD*. **The unexercised half is named rather than assumed**: no model
 in that app offers a method its policy allows and a LOCKED gate refuses, so `9`
 against `levelPasses` versus a bare `>=` is a distinction `example` cannot draw,
 and the fixture carrying that one shape is the surface's first test.
@@ -4676,6 +4694,75 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d260"></a>2026-09-12 · `FJS-D260` — file storage has one owner and it is Litestone's. Junction's `createFileStorage` is deleted rather than delegated, because the two were never the same shape.
+
+`FJS-692` hardened a store it also filed as a second owner, and left the
+ownership question open as a ruling. This is the ruling.
+
+**Two modules answered *where do an app's files live* and one of them could not
+reach a second machine.** Litestone's `FileStorage` plugin is the schema half: a
+`File` column stores a JSON reference, the bytes go to a provider (`local`, `r2`,
+`s3`, `b2`, `minio`) over a hand-written sigv4, and `@accept`, `keyPattern`,
+`@keepVersions` and delete-cleanup are declared beside the column. Junction's
+`createFileStorage` was a keyed blob store over local disk with no provider seam
+at all — the caller supplies the id and the filename, a `.meta.json` sidecar
+holds the rest. Same word, opposite shape, adjacent packages. That is Invariant 4
+and it is also the worst kind of break of it: a developer reading `FileStorage`
+in one package header has nothing telling them the other one ends at the first
+machine.
+
+**Nothing called it.** `app.filestorage(` has zero occurrences in the workspace —
+not `example`, not `basecamp`, not junction's own `packages/junction/example/file-upload.ts`, which
+does uploads through Litestone's plugin and never touches it. The `./filestorage`
+subpath was published in `@frontierjs/junction` 0.1.0–0.1.6; it is removed with no
+alias and no deprecation under the pre-alpha policy, and the version bump is the
+announcement.
+
+**Delegation was the option that looked available and is not.** `useStorage()`
+takes a stored REF, not an id, and has no `list`, no `meta`, no `stats` and no
+`toResponse`. An `app.filestorage` forwarding to it would have been a shim
+inventing the half that did not exist, which is a third shape rather than one
+owner. The choice was delete or keep, and only one of those is Invariant 4.
+
+**What junction owns is the CROSSING, and it is easy to mistake for a store.**
+Three places, all of which stay: `transport/body.ts` parses `multipart/form-data`,
+`transport/bridge.ts` merges the parsed files into `ctx.data` as `File` objects,
+and the client turns a `File` value in a payload into multipart on the way out.
+Serving the local provider's bytes is `http.static` rooted at the storage
+directory — `example/api/src/app.ts` states why it is rooted there rather than on
+a `/storage` route, and that reason is unaffected. A `File` column crossing a
+browser is proved by `example`: `verify:catalog`.
+
+**What grows next belongs below, and the junction-shaped half of it is a route.**
+The two things a real object store will want are a PUT presign (litestone signs
+`GET` only today, which is why direct-to-bucket upload is unsupported) and
+serving a PRIVATE file. The first is `presignUrl` in litestone plus a thin route
+that hands out a slot. The second is a route that grades the caller against the
+row's own gate and **redirects** to `provider.sign(key)` — a redirect rather than
+a proxy, because proxying is what would tempt a second store back into junction.
+If proxying is ever needed, the response half of the deleted module — range,
+etag, `nosniff`, attachment for anything outside a small inert allow-list — is
+real work `FJS-692` paid for and is recoverable from the commit that carries this
+ruling, which deletes it; it comes back as a function over a Litestone ref, never
+as a store.
+
+**Two answers were partial and are filed rather than smoothed over.** *Is the
+boundary named, typed, tested* — the surviving one is not fully: `providers/s3.js`
+and `sigv4.js` have zero test files, which mattered less while a second store
+existed and matters most now that this is the only one, and doubly so if the next
+work is built on it (`FJS-1076`). *Can this be wrong without anything saying so* —
+`exports.snapshot.md` makes a re-added published subpath a diff the `snapshots`
+phase fails, but nothing catches a private second store, so the artefact is a map
+sentence in `packages/junction/CLAUDE.md` and this ruling, which is weaker than a
+check and is named as such.
+
+**Adjudication: preservation vs. evolution, the *where nobody does* branch** — no
+caller in the tree, pre-alpha, so a deletion is a deletion. *Batteries vs.
+smallness* is the near miss worth naming: the module was severable and came out
+without surgery on the core, which is the test that adjudication sets and it
+passed — what it failed was one owner. The nine were answered **after the code
+edits began**, which is late, and is recorded as late.
 
 ### <a id="fjs-d256"></a>2026-09-09 · `FJS-D256` — `junction.config.js` DECLARES; `app.configure()` CONSTRUCTS. What the option takes decides which, and every declarable key is graded by a test.
 

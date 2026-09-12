@@ -1,5 +1,37 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-12 — `createFileStorage` is deleted; file storage has one owner and it is Litestone's
+
+`FJS-D260`, settling the half `FJS-692` left open. `src/storage/filestorage/`,
+`IFileStorage`, `StorageFile`, `StorageSaveOptions`, `app.filestorage(name)`, the
+`filestorage` option on `createApp` and the `./filestorage` export subpath are all
+gone. No replacement and no alias — the subpath shipped in 0.1.0–0.1.6 and is
+removed under the pre-alpha policy, with the version bump as the announcement.
+
+**It was a second owner of the same noun and it could not reach a second machine.**
+Litestone's `FileStorage` plugin is the schema half — a `File` column, a JSON ref in
+SQLite, providers for local, r2, s3, b2 and minio, `@accept`, `keyPattern`,
+`@keepVersions`, delete cleanup. This one was a keyed blob store over local disk
+where the caller supplied the id, with no provider seam at all. Same word, adjacent
+packages, opposite shape.
+
+**Delegation looked available and was not.** `useStorage()` takes a stored ref rather
+than an id and has no `list`, `meta`, `stats` or `toResponse`, so forwarding would
+have invented a third shape. `app.filestorage(` had zero occurrences in the
+workspace — including junction's own `example/file-upload.ts`, which does uploads
+through Litestone's plugin.
+
+**Nothing about a `File` column over HTTP changes**, because none of it lived here:
+`transport/body.ts` parses multipart, `transport/bridge.ts` merges the files into
+`ctx.data`, the client turns a `File` value into multipart, and the local provider's
+bytes are served by `http.static`. `example`: `verify:catalog` is unaffected and is
+still what proves that path.
+
+`tests/filestorage-safety.test.ts` went with the module. Its subject — the id that
+escaped the root, the SVG served inline, the 206 answering an unsatisfiable range —
+is in git, and comes back as a function over a Litestone ref if a private file is
+ever proxied rather than redirected.
+
 ## 2026-09-10 — `CALL_OPTIONS_AT` — where a principal goes, stated where the interface is
 
 `FJS-D258`. Anything outside this package holding a principal and a method NAME

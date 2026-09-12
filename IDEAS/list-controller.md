@@ -1,20 +1,22 @@
 ---
 id: list-controller
 status: proposed
-dated: 2026-09-10
+dated: 2026-09-12
 ---
 
 # Idea — `resource.list()`: the layer above the table
 
-**Status: PROPOSED and BLOCKED.** The design is settled by measurement rather
-than by argument — the compiler decides the signature, not taste — and it cannot
-land until `FJS-1070` is ruled, because the shape it would ship is the shape that
-freezes. Claims here were read off the source and RUN on 2026-09-10; every
-number below came from a probe, not from a reading. See `VERIFYING.md`.
+**Status: PROPOSED. The block is gone.** `FJS-1070` closed 2026-09-12 — the
+compiler no longer freezes a binding over a value a call handed back — and with
+it the reason this could not be built. Two of the nine questions failed on
+2026-09-10 and both failed on that defect; they are re-answered below and the
+answers are dated, because an answer that changed is the one a reader must not
+mistake for the original.
 
-The nine questions were answered before any code was written and are in
-§ *The nine*, which is the unusual half of this file: two of them fail, and the
-repair is an ORDER rather than a redesign.
+**What the fix also removed was the signature.** The design was forced into a
+destructure by a compiler behavior, and the shape that reads better is now the
+shape that works. Claims here were read off the source and RUN on 2026-09-10
+and re-run on 2026-09-12. See `VERIFYING.md`.
 
 ---
 
@@ -59,55 +61,42 @@ each measured against a mutant.
 
 ---
 
-## What the compiler decides, which is most of the design
+## What the compiler decided, and no longer does
 
-The obvious signature — return an object, dot into it — does not work, and the
-way it fails is worse than not working. Mounted in happy-dom over a real
-controller reading a real `page` object, driven by a real navigation:
+The obvious signature — return an object, dot into it — did not work on
+2026-09-10, and the way it failed was worse than not working. Mounted in
+happy-dom over a real controller reading a real `page` object, driven by a real
+navigation:
 
-| binding site | `const list = users.list()` |
-| --- | --- |
-| `<Table sortKey={list.sortKey} />` | **live** — `pushProps` sits in a `createEffect`; it saw `-` then `total` |
-| `{#each list.rows() as r}` | **live** — a thunk, re-invoked per pass |
-| `<span data-sort={list.sortKey}>` | **frozen** |
-| `{list.sortKey}` in text | **frozen** — emitted as `$$el0.nodeValue = …`, outside any effect |
+| binding site | `const list = users.list()`, 2026-09-10 | since `FJS-1070` |
+| --- | --- | --- |
+| `<Table sortKey={list.sortKey} />` | live — `pushProps` sits in an effect | live |
+| `{#each list.rows() as r}` | live — a thunk | live |
+| `<span data-sort={list.sortKey}>` | **frozen** | live |
+| `{list.sortKey}` in text | **frozen** | live |
 
-A page over that controller is half live: the table moves and the sentence
-beside it does not. Filed as `FJS-1070`.
+A page over that controller was half live: the table moved and the sentence
+beside it did not. The compiler now names the fact in the analysis
+(`opaqueValues` — every name a call's result was bound to) instead of guessing
+it from emitted text, and all four positions agree.
 
-Four shapes were then measured against the same driven navigation, and only one
-survives:
-
-| shape | text and attribute |
-| --- | --- |
-| `const list = …` → `{list.sortKeyProp}` (getter) | frozen |
-| `const list = …` → `{list.sortKey()}` (method) | frozen |
-| `let list = …` → `{list.sortKey}` | live |
-| `const { sortKey } = users.list()` → `{sortKey()}` | **live** |
-
-**A call of a bare local is tracked; a call of a member is not.** `let` is live
-for the wrong reason — the binding is never reassigned, so the keyword is a lie
-told to the analysis, and a design that depends on one is a design that breaks
-when somebody tidies it.
-
-So the signature is forced, and it is the idiom the file already uses one line
-higher for `const { get: rows, unsubscribe } = useStore(users.store)`:
+**So the signature is a choice again, and the readable one is available:**
 
 ```mesa
-const { rows, columns, cols, filters, search, value, apply, sortBy,
-        sortKey, sortDir, omitted, error, destroy } = users.list()
-$.onDestroy(destroy)
+const list = users.list()
+$.onDestroy(list.destroy)
 ```
 
 ```mesa
-<FilterBar {filters} {search} value={value()} onchange={apply} />
-<Table columns={columns()} rows={rows()} sortKey={sortKey()} sortDir={sortDir()}
-       onsort={sortBy} striped hover emptyText="Nothing here yet.">
+<FilterBar filters={list.filters} search={list.search} value={list.value} onchange={list.apply} />
+<Table columns={list.columns} rows={list.rows()} sortKey={list.sortKey} sortDir={list.sortDir}
+       onsort={list.sortBy} striped hover emptyText="Nothing here yet." />
 ```
 
-Every name is a bare local and every read is a call, so there is no position in
-a page that can freeze. **That property is the reason for the signature** — the
-alternative reads better and is the one that breaks.
+The destructure still works and is what a page wanting bare names writes. Which
+of the two the generator emits is worth deciding when it is built rather than
+here — one line versus a dozen names in scope is an ergonomics question, and
+both are now correct, which is the only thing this file had to establish.
 
 ## The other half a plain module has to own
 
@@ -133,14 +122,14 @@ relies on a `const` being promoted, because the derivations are explicit
 - **Derived rather than restated?** Yes, and this is the question that carries the proposal: every line of the page is a restatement of a derivation.
 - **One owner?** Sierra's resource layer, the layer that already owns `columns()`. It owns no markup — `<Table>` and `<FilterBar>` stay presentational — and reads `@frontierjs/toolbelt/directives` rather than copying it.
 - **Boundary named, typed, tested?** Only if they land together: a sierra test driving a real navigation against a real `page`, plus both app callers.
-- **Failure proportional?** **No.** A one-keyword slip produces a half-live page, which is the maximum-confusion outcome.
-- **Wrong with nothing saying so?** **Yes, three ways.** The dotted form freezes; a missing `watchPath` loads nothing and raises nothing; a `sortKey` that drifts from what `load()` sends is the defect just fixed in the generator.
+- **Failure proportional?** *2026-09-10: no* — a one-keyword slip produced a half-live page. **2026-09-12: yes.** `FJS-1070` is closed, the keyword decides nothing, and what is left is a wrong list, which is a visible wrong list.
+- **Wrong with nothing saying so?** *2026-09-10: yes, three ways.* One of the three is gone with `FJS-1070`. The other two remain and each is covered by a test that has to ship with the controller anyway: a missing `watchPath` loads nothing and raises nothing, and a `sortKey` that drifts from what `load()` sends is the defect fixed in the generator on 2026-09-10.
 
-**Fails the last two.** The repair is an order, not a redesign: `FJS-1070`
-settled first removes the freezing hazard outright, and the remaining two are
-each covered by a test that has to ship with the controller anyway. A
-`fli check` rule refusing the dotted form is the other answer and is the worse
-one — it widens the shoulder and records the hole.
+**Passes, as of 2026-09-12.** It failed the last two when written and the repair
+was an order rather than a redesign — settle the compiler question first — which
+is what happened. The alternative considered and not taken was a `fli check`
+rule refusing the dotted form: it would have widened the shoulder and recorded
+the hole.
 
 **Adjudications.** *Paved road vs. the workaround* is in tension and favors
 building: two hand-fixes of one wiring is the measurement, and the road either
@@ -174,7 +163,7 @@ column and filter derivations, `omitted`, paging through `more()`.
 
 ## Order
 
-1. **`FJS-1070` is ruled.** Blocking, and the ruling decides whether the controller needs an enforcer at all.
+1. ~~`FJS-1070` is ruled.~~ **Closed 2026-09-12.** No enforcer is needed.
 2. The controller, with its sierra test driving a real navigation.
 3. `core/crud-templates.js` becomes a consumer, the way it consumed `columns()`.
 4. `example` invoices and `basecamp` deployments adopt it — **both**, because between them they take the ranking pinned and unaided, and one caller measures nothing.

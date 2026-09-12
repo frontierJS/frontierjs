@@ -70,8 +70,14 @@ an HTTP request does — via `IAuth.verifySession` and `sessionGateLevel()` — 
 **Tool visibility should be derived from the gate, not just enforced by it.** An
 agent that can see a `deleteUser` tool and always gets a 403 wastes turns and
 invites jailbreak attempts. Compute the tool list per session level so the tool
-simply is not there — `canAtLevel()` already answers exactly this question, and it
-is already used for the same purpose in the UI (`resource.can()`).
+simply is not there — `canAtLevel()` answers that for the CRUD verbs, and is
+already used for the same purpose in the UI (`resource.can()`).
+
+**It is not the whole question, and the shortfall is measured rather than
+suspected**: a custom method's name is not a gate position, so `canAtLevel` alone
+answers permissive for every verb an agent would actually be delegated. The
+missing input is `x-transitions` — see § *The narrowing is all CRUD*, which is
+where the rules and the numbers are.
 
 ## Why this is stronger here than anywhere else
 
@@ -200,12 +206,92 @@ burns turns and invites a jailbreak attempt; a hidden one makes the agent useles
 It stays permissive and the reason is recorded here, because visibility is an
 affordance and Invariant 6 already says the server enforces regardless.
 
+## The narrowing is all CRUD, and the interesting half is ungraded
+
+Measured the same day, one level deeper, and it changes what the projection is.
+The 94 → 203 spread above is **entirely the CRUD verbs**. Run the same walk over
+the CUSTOM methods alone and the answer does not move at all:
+
+| Standing | Services offering custom tools |
+| --- | --- |
+| STRANGER (0) | 15 |
+| USER (4) | 15 |
+| STAFF (5) | 15 |
+
+Byte-identical lists. A stranger is offered `orders.refund`, `payRuns.pay`,
+`employees.setPay`, `invoices.void` and `inventory.adjust`.
+
+**The cause is structural, not a bug in the walk.** A custom method's name is not
+one of `@@gate`'s four positions, so the permissive-unknown rule answers *yes* for
+every one of them — and permissive there is a WRITE. The boundary is unharmed: the
+service's own hooks and the model's `@@transitions` refuse the call. But visibility
+is the half this proposal leads with, and it is worthless for exactly the tools
+somebody would delegate. `find` on `Product` is not what anyone wants an agent for.
+
+**The seed already carries what the projection is missing, and it is a second
+keyword rather than a heuristic.** `x-transitions` is on the generated schema per
+`FJS-999`, keyed by field then by move, each carrying `{from, to, gate, system}`.
+`example` declares 15 moves:
+
+| Model.field | Moves |
+| --- | --- |
+| `Order.status` | pay · ship · **refund `@gate 5`** · cancel |
+| `Invoice.status` | issue `@system` · settle `@system` · **void `@gate 5`** |
+| `PayRun.status` | calculate `@system` · revert · **approve `@gate 5`** · pay `@system` |
+| `Subscription.status` | activate · lapse · recover · cancel — all four `@system` |
+
+Three of the fifteen carry their own gate and eight are `@system`. So three rules
+fall out, in descending value:
+
+1. **A `@system` move is visible to nobody, at any standing.** It is the verb
+   half of `LOCKED` and it is the largest single subtraction available — eight of
+   fifteen moves in this app, `subscriptions.activate` among them. A caller cannot
+   drive one by construction, so offering it is pure jailbreak surface.
+2. **A move's own `@gate` is a FLOOR on top of the model's update level, and the
+   tool needs the higher of the two.** Litestone's catalog states it —
+   *`@gate(N)` on a move is a floor on top of the model update level* — and
+   `example` proves why the distinction is not pedantry:
+
+   | Tool | model `update` | move `@gate` | needs |
+   | --- | --- | --- | --- |
+   | `orders.refund` | 4 | 5 | **5** |
+   | `invoices.void` | 8 | 5 | **8** |
+   | `payRuns.approve` | 5 | 5 | **5** |
+   | `orders.pay` | 4 | — | **4** |
+
+   Grading by the move's own number alone offers `invoices.void` at STAFF(5) when
+   the boundary needs 8. That is a WIDENING, which is the one direction that is a
+   security-shaped mistake rather than a missing affordance — the whole `Invoice`
+   model is system-written here, which is why it is the row that catches it. The
+   first draft of this section had that rule wrong and the app is what said so.
+3. **A custom method backed by no declared move is UNKNOWN and must stay so.**
+   `carts.checkout`, `payments.start`, `inventory.adjust` drive no `@@transitions`
+   field. Nothing in the seed says what standing they need, so a projection that
+   guessed would be inventing access. This is the case the hold exists for — not
+   a default to be picked.
+
+**The negative control, which any fix has to keep passing.** `carts.*` at
+STRANGER is CORRECT: a guest basket is owned by a caller with no session at all,
+through the `cartToken` claim, and `example`'s own `verify:cart` drive exists to
+prove it. A rule that withheld everything at level 0 would read as a tightening
+and would break the storefront. *Visible at 0* is therefore not evidence of a
+hole, which is what makes this measurable rather than a matter of taste.
+
+**What it means for the projection.** Item 1 below is no longer *`describe()` plus
+`generateJsonSchema`*. A tool's visibility has three inputs — the method policy,
+the model's `@@gate`, and the move's own `gate`/`system` — and the third is the
+one that reaches the verbs. A projection reading the first two is the read-side
+agent, which is useful and is not the claim this file makes.
+
 ## What would have to be built
 
 1. **A tool projection.** `describe()` + `generateJsonSchema` → MCP tool
    definitions. Mechanical, and now measured; both halves exist.
 2. **Per-session tool filtering** against the session's level, through the kit's
-   `levelPasses` — after the move in change 2 above, not beside it.
+   `canAtLevel` — and over all THREE inputs, or it grades only the CRUD half (see
+   § *The narrowing is all CRUD*). A `@system` move is withheld from everybody, a
+   gated move takes its own number, and a custom method backed by no move stays
+   unknown rather than guessed.
 3. **A transport.** stdio and HTTP, dispatching through `app.service(name)` per
    change 1, so no second execution path exists to diverge from the first.
 4. **A read-only mode and a dry-run mode.** Not derivable — an explicit choice,
@@ -234,7 +320,11 @@ are in the ruling rather than restated here.
 - **Custom methods are the interesting tools and they dispatch by header**
   (`X-Service-Method`). MCP has no such concept, so the projection must name them
   directly — `posts.publish` — which is an argument that the header dispatch was
-  always an HTTP-shaped decision leaking into the service model.
+  always an HTTP-shaped decision leaking into the service model. *Half answered
+  2026-09-10 by measurement:* they are indeed the interesting tools, and they are
+  the ones the gate says nothing about. Naming is the smaller half; grading them
+  off `x-transitions` is the larger, and the remainder is the third rule above —
+  a custom method that drives no declared move.
 - **Does the agent surface get its own audit trail?** Almost certainly yes, and
   `IDEAS/compliance-from-the-seed.md` is where it should land rather than here.
 - **Rate limiting and cost.** An agent will call `find` in a loop. `ctx.directives`

@@ -29,7 +29,6 @@ import type { ILogger, LoggerOptions }          from './logger.ts'
 import type { AppConfig }                          from '../config/index.ts'
 import type { IAuth, SessionVerifier } from '../auth/types.ts'
 import type { IMail }               from '../mail/index.ts'
-import type { IFileStorage }        from '../storage/filestorage/index.ts'
 import type { ICache }              from '../cache/index.ts'
 import type { IEventBus }           from '../events/index.ts'
 import type { AIRegistry }          from '../ai/index.ts'
@@ -289,9 +288,6 @@ export interface App {
   /** Per-app service cache — created lazily by cache-declaring services,
    *  destroyed by stop(). See resolveCache in core/service.ts. */
   _serviceCache?: ICache
-
-  // File storage factory
-  filestorage: (name: string) => Promise<IFileStorage>
 
   // ── Service caller — Feathers-style internal service calls ────────
   //
@@ -682,7 +678,6 @@ export interface AppOptions {
    * `false` to disable auto-discovery entirely.
    */
   autoload?:    string | false
-  filestorage?: string   // path to storage root dir
 }
 
 // ─── ServiceCaller — returned by app.service(name) ───────────────────────
@@ -968,18 +963,6 @@ export function createApp(opts: AppOptions = {}): App {
     }
   })
 
-  // ── File storage factory ─────────────────────────────────────────────
-  const storageRoot = opts.filestorage ?? './storage'
-  const storageCache = new Map<string, IFileStorage>()
-
-  async function getFileStorage(name: string): Promise<IFileStorage> {
-    if (storageCache.has(name)) return storageCache.get(name)!
-    const { createFileStorage } = await import('../storage/filestorage/index.ts')
-    const store = createFileStorage(name, storageRoot)
-    storageCache.set(name, store)
-    return store
-  }
-
   // ── Plugin registry ──────────────────────────────────────────────────
   const plugins: Plugin[] = []
   let started = false   // set to true once app.start() completes
@@ -1006,8 +989,6 @@ export function createApp(opts: AppOptions = {}): App {
     auth:    opts.auth,
     mail:    opts.mail,
     ai:      opts.ai,
-
-    filestorage: getFileStorage,
 
     // ── Service caller ────────────────────────────────────────────────
     service(name: string): ServiceCaller {

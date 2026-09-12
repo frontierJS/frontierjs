@@ -655,17 +655,18 @@ src/
   stated** — absent means *this app does not model that stage* and only `null`
   grades down, so defaulting them would move the standing of every test that
   never mentioned one.
-- **`createFileStorage` is a SECOND owner of file storage and is hardened rather
-  than trusted** (`FJS-692`). Litestone already ships the real `FileStorage`
-  (local + S3, `@accept`, cleanup), so retiring this one is a ruling and not a
-  refactor. Until then: `assertSafeId` sits on both path builders rather than on
-  the entry points, so nothing in that module reaches the filesystem without
-  having passed it — an id is a path segment, and `../../../../outside/p2` wrote
-  two directories above the root; the type comes off a CALLER-SUPPLIED filename,
-  so every response carries `nosniff` and anything outside a small image
-  allow-list that EXCLUDES svg is an attachment; and an unsatisfiable range is
-  416 with `bytes */N`, where `bytes=50-10` used to answer 206 with
-  `content-length: -39`.
+- **Junction owns no file store, and adding one back is the mistake to catch.**
+  Litestone's `FileStorage` plugin is the single owner — the `File` column, the
+  provider seam (local, r2, s3, b2, minio), `@accept`, `keyPattern`, cleanup —
+  and junction's half is the CROSSING, in three places that are easy to mistake
+  for a store: `transport/body.ts` parses multipart, `transport/bridge.ts` merges
+  the files into `ctx.data`, and the client turns a `File` value into multipart.
+  Serving the local provider's bytes is `http.static`, not a route. `FJS-D260`
+  retired a second `createFileStorage` that lived here; it was a keyed blob store
+  over local disk with no provider seam, nothing in the workspace called it, and
+  the shared word made the two indistinguishable from a package header. What
+  grows next belongs below: a PUT presign is `presignUrl` in litestone, and the
+  junction-shaped half of it is a route that grades the caller and redirects.
 - **Every address and every header value on a mail message is refused at BOTH
   ends** (`FJS-677`). SMTP is line-oriented, so a CRLF in a `to` is not a bad
   address but a second transaction — a fake MTA queued TWO messages from one

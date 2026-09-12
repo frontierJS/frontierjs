@@ -65,10 +65,19 @@ The API is chainable and terminal at `.bytes()` / `.blob()` / `.buffer()` /
 `.dataurl()` / `.write()`, with `avif`, `webp`, `jpeg`, `png`, `heic`, `resize`,
 `rotate`, `flip`, `flop` and `modulate`.
 
+> **Corrected 2026-09-12 — the owner named below is gone.** `IFileStorage` and
+> junction's own file store were deleted by
+> [FJS-D260](../DECISIONS.md#fjs-d260): nothing called them, and file storage has one
+> owner, Litestone's `FileStorage` plugin. This section's *one owner* answer is
+> therefore wrong as written — a derivative store belongs beside the provider seam,
+> which means litestone and not junction, and the objection it raises against itself
+> (*not litestone, which would need the bytes*) is the real design question rather
+> than a settled one: litestone's providers already `get(key)`, so the bytes are
+> reachable there. Re-run the nine against the litestone placement before building.
+
 **Two homes, and the second is a defect rather than a feature.**
 
-1. **Derivatives in `packages/junction/src/storage/filestorage/`.** `IFileStorage`
-   already owns save/read/range/`toResponse`; a variant is that same store keyed by
+1. **Derivatives beside the store.** A variant is the same store keyed by
    `<id>@<width>.<format>`, and `Bun.Image.placeholder()` is what a `File` column
    needs so a catalog grid has something to paint before the bytes arrive.
 2. **A stored file's type is currently the caller's word for it.** The storage
@@ -160,11 +169,15 @@ is worth re-measuring against it rather than assumed.
 - **Derived rather than restated?** Yes, and this is the sharp one — a derivative
   and a placeholder are derived from the stored bytes, never stored beside them as
   a second claim.
-- **One owner?** `IFileStorage` in junction. Not litestone (which would need the
-  bytes) and not an app.
-- **Boundary named, typed, tested?** It has to be: a variant method on
-  `IFileStorage`, typed there, and a test that a `.png` carrying SVG bytes is
-  refused — that assertion is what makes the second item real rather than a claim.
+- **One owner?** Answered `IFileStorage` in junction, and that answer died with the
+  interface ([FJS-D260](../DECISIONS.md#fjs-d260)). The live candidate is litestone's
+  provider seam — the *which would need the bytes* objection does not hold, since a
+  provider already exposes `get(key)`.
+- **Boundary named, typed, tested?** It has to be: a variant method on the storage
+  interface, typed there, and a test that a `.png` carrying SVG bytes is refused —
+  that assertion is what makes the second item real rather than a claim. Note what
+  [FJS-1076](../ISSUES.md#fjs-1076) says about the surviving seam's existing coverage
+  before treating *typed there* as sufficient.
 - **Failure proportional?** An unreadable image must be a refusal at write time, not
   a broken `<img>` later.
 - **Can it be wrong silently?** Yes, in the way that matters: a derivative

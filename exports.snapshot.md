@@ -160,7 +160,6 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./cache` | `src/cache/index.ts` | yes |
 | exports | `./scheduler` | `src/scheduler/index.ts` | yes |
 | exports | `./workers` | `src/workers/index.ts` | yes |
-| exports | `./filestorage` | `src/storage/filestorage/index.ts` | yes |
 | exports | `./database` | `src/storage/database/index.ts` | yes |
 | exports | `./mail` | `src/mail/index.ts` | yes |
 | exports | `./ai` | `src/ai/index.ts` | yes |

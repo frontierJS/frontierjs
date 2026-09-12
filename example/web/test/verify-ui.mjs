@@ -892,7 +892,11 @@ const expected = {
 
   'palette.opensOnClick': { panelOpacity: '1', backdropOpacity: '1', topmostIsPalette: true, hasSize: true },
   'palette.opensOnCtrlK': { open: true, focused: 'INPUT' },
-  'palette.filters':      { query: 'ord', options: ['Orders', 'New order'] },
+  // `Reports` matches on its SUBTITLE — "What the shop took, by order state" —
+  // which is the palette ranking by where the match is rather than on the label
+  // alone. A route added with a subtitle that mentions an existing noun lands
+  // here, so the expectation is the three the box really offers.
+  'palette.filters':      { query: 'ord', options: ['Orders', 'New order', 'Reports'] },
   'palette.runsCommand':  { path: '/orders/', open: false },
 
   'consoleErrors': [],

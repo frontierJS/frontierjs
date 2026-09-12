@@ -1,5 +1,42 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-12 — whether a value can move, and whether the binding over it is static, are two questions
+
+**[`FJS-1070`](../../ISSUES.md#fjs-1070).** `const list = users.list()` is not promoted, and must not
+be: [`FJS-D212`](../../DECISIONS.md#fjs-d212) keeps the initializer eager, and `EXTERNAL_REACTIVITY.md`
+is why a call to an IMPORT is not a door reactivity comes through on its own. What the call hands
+BACK is a different fact — it may hold getters over signals — and the four places a template can read
+`list.sortKey` disagreed about it. A prop is pushed from inside an effect and an `{#each}` takes a
+thunk, so both moved; a text interpolation and an attribute were emitted outside any effect and
+froze.
+
+A page over such a controller is half live: the table moves and the sentence beside it does not,
+which reads as a data bug and sends the reader to the service.
+
+The downgrade that froze the last two had no access to the fact. `_isReactive` reads emitted TEXT and
+answered by the SHAPE of the read — a call on a bare local was reactive, the identical value behind a
+member was not — which is also why three of its four rules were already carve-outs for shapes the
+guess got wrong: a `{@const}` memo, a snippet parameter, and Sierra signals' `.get()`. The fact is
+now named in the analysis as `opaqueValues` — every name a call's result was bound to, patterns
+included — and the downgrade consults it.
+
+**The narrowing is the half that took the measuring, and both halves of it were found by running the
+whole tree.** A binding is reached THROUGH the value and never by the bare name, because the const
+itself cannot move: marking `{titleId}` over `const titleId = uniqueId()` put twelve kit components
+in a render block for nothing. And the initializer's VALUE decides rather than what appears inside
+it — a blanket walk marked `const shown = (v) => JSON.stringify(v)`, a function the script wrote
+whose body holds a call, which is what basecamp's activity log is.
+
+Blast radius on FULL emitted output, the instrument [`FJS-1065`](../../ISSUES.md#fjs-1065) used: 423
+in-repo `.mesa` files compile and **one moves** — `example`'s invoices page, whose `{search.reason}`
+off `invoices.filters()` is the defect itself in a shipped screen.
+
+`test/binding-position-parity.test.js` asserts it as a PROPERTY over the positions rather than as
+four expectations, so a position added to the language fails here if it wires only some of them. Its
+two negative controls are the narrowing rather than the fix. Measured both directions: the fix
+stubbed reds 3 of 8 rows, the narrowing 1 — and the each-thunk and destructured rows stay green under
+both, which is what separates *the frozen positions were fixed* from *everything was made reactive*.
+
 ## 2026-09-10 — which imported roots are reactive, derived once instead of twice
 
 **[`FJS-1065`](../../ISSUES.md#fjs-1065).** A `$:` has three shapes that name a path — a bare watch,
@@ -34,6 +71,11 @@ because the wider seed also filters `reactiveDeps` on handlers and groups and a 
 `trackDerived` cannot see that: 393 of 394 in-repo `.mesa` files compile BYTE-IDENTICALLY, and the
 one that moves is `example`'s invoices page, whose workaround was removed in the same change. So
 nothing gained a lazy initializer and [`FJS-1062`](../../ISSUES.md#fjs-1062)'s hazard is where it was.
+
+**The GENERATOR keeps its workaround and that is not an oversight.** `example` resolves mesa to
+`packages/mesa/`; a scaffolded app installs it from npm, where this fix is not yet published, so a
+generated page that relied on the handler form alone shipped the frozen filter bar to every new app
+([cli CHANGES](../cli/CHANGES.md)). It comes out on the release that publishes this.
 
 ## 2026-09-09 — two ways to write a binding that cannot hold a write
 

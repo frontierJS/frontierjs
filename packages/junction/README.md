@@ -126,8 +126,7 @@ packages/junction/
 │   └── ai/, scheduler/   ← re-export shims for src/ai, src/scheduler
 │
 ├── src/storage/
-│   ├── database/index.ts    ← createDatabase() — WAL, foreign keys, migrations
-│   └── filestorage/index.ts ← chunked disk storage, range, etag, stream
+│   └── database/index.ts    ← createDatabase() — WAL, foreign keys, migrations
 │
 ├── src/auth/
 │   ├── types.ts          ← IAuth, SessionContext
@@ -2200,7 +2199,6 @@ expect(stubs['provider:hetzner'].calls).toHaveLength(1)
 | AI           | `IAIModel`     | OpenAI, Anthropic, Ollama  |
 | Cache        | `ICache`       | memory, SQLite, Redis       |
 | Events       | `IEventBus`    | in-process (`on`, `once`, `onAny`), Redis pub/sub  |
-| File storage | `IFileStorage` | disk, S3, R2               |
 
 The blast radius of swapping a provider is exactly one file.
 

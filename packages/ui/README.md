@@ -166,6 +166,22 @@ its `@length` as `maxlength` — and if the write is rejected, the message lands
 under that control without anyone routing it there. The form puts the rules and
 the error map in context; each control resolves its own.
 
+**A form can save itself.** `autosave` turns on a quiet window — `true` for the
+kit's own, or a number of ms — and the form writes once the typing stops:
+
+```svelte
+<Form {leads} record={lead} autosave bind:autosaveState={saving} />
+```
+
+It is not a submit and does not pretend to be one. It reveals nothing, so a
+timer never speaks for a field the person has not visited; it fires
+`onautosaved` rather than `ondone`, so a drawer that closes on `ondone` cannot
+shut itself under somebody still typing; it does not retry a refusal, because
+the next keystroke is the retry; and pressing the button disarms it. A CREATE is
+refused by name — there is no id to patch, and a timer that makes rows makes one
+per pause. `flushAutosave()` on the imperative api sends what is waiting, for
+the screen that is being dismissed.
+
 **A `DateTime` column gets `DateTimeInput`**, and it is the one control where
 the value on screen is not the value on the wire. Litestone stores an instant;
 `<input type="datetime-local">` has no zone at all, so the component converts

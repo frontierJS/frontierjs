@@ -570,6 +570,25 @@ try {
     return document.querySelector('tbody tr td:nth-child(' + col + ')')?.textContent.trim() ?? null;
   `))
 
+  // …and the same column in the EDIT DRAWER, which is the half a table cannot
+  // show. `notes` is `@allow('read', …)`, and the boundary enforces it by
+  // STRIPPING the key — so for anybody but an admin the form holds no value and
+  // an ordinary empty box saves that emptiness over the note. This drawer is
+  // where that costs the most: it carries `autosave={1000}`, so nobody has to
+  // press anything. The staff half is `customers.notesWithheldForStaff`.
+  t('customers.notesEditableForAdmin', await evaluate(`
+    document.querySelector('tbody tr button[data-edit]').click();
+    await waitFor(() => document.querySelector('[name="notes"]'));
+    const el = document.querySelector('[name="notes"]');
+    const g  = el.closest('.field-group') ?? el.parentElement;
+    const out = { disabled: !!el.disabled, hidden: /hidden/i.test(g.textContent || ''), value: el.value };
+    // Cancel rather than Escape: a dispatched KeyboardEvent is not trusted and
+    // dismisses no <dialog>, so the drawer would stay open over the next screen.
+    byText('button', 'Cancel').click();
+    await waitFor(() => !document.querySelector('[name="notes"]'));
+    return out;
+  `))
+
   // 7 ─ the generated form
   await goto('/orders/create/')
   t('form.controls', await evaluate(`
@@ -1180,6 +1199,30 @@ try {
     return [...document.querySelectorAll('thead th')].map(th => th.textContent.trim());
   `))
 
+  // The pair, and the one that is about the COMPONENT rather than the boundary.
+  // Level 4 may update a customer (`@@gate("1.4.4.5")`), so the drawer opens and
+  // the form declares `notes` like it does for everyone — the schema is the same
+  // document for every caller, and only the ROW is policed. What arrived has no
+  // `notes` key at all, so the control is locked and BADGED, because a disabled
+  // empty box and an empty one are otherwise the same screen.
+  t('customers.notesWithheldForStaff', await evaluate(`
+    document.querySelector('tbody tr button[data-edit]').click();
+    await waitFor(() => document.querySelector('[name="notes"]'));
+    const el = document.querySelector('[name="notes"]');
+    const g  = el.closest('.field-group') ?? el.parentElement;
+    const out = {
+      disabled: !!el.disabled,
+      hidden:   /hidden/i.test(g.textContent || ''),
+      said:     /permission to view/i.test(g.textContent || ''),
+      value:    el.value,
+    };
+    // Cancel rather than Escape: a dispatched KeyboardEvent is not trusted and
+    // dismisses no <dialog>, so the drawer would stay open over the next screen.
+    byText('button', 'Cancel').click();
+    await waitFor(() => !document.querySelector('[name="notes"]'));
+    return out;
+  `))
+
   await goto('/orders/')
   t('moves.user', await evaluate(`
     await settled('tbody tr');
@@ -1251,6 +1294,9 @@ const expected = {
   'customers.headersUser':  ['Name', 'Email', 'Orders', 'Actions'],
   'customers.headersAdmin': ['Name', 'Email', 'Orders', 'Notes', 'Actions'],
   'customers.notesValue':   'Net-30. Always disputes shipping.',
+  'customers.notesEditableForAdmin':  { disabled: false, hidden: false,
+                                        value: 'Net-30. Always disputes shipping.' },
+  'customers.notesWithheldForStaff':  { disabled: true,  hidden: true, said: true, value: '' },
 
   'orders.title':              'Orders',
   'orders.rows':               3,

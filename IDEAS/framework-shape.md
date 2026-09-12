@@ -40,8 +40,12 @@ schema, is what the framework should lead with.**
 **Coverage is broader than a gap-hunt expects.** Probing for "obvious" holes kept
 finding real implementations: `packages/junction/src/testing/index.ts`
 (`createTestApp`, `request`, `createStubAuth`, `testCtx`), `core/logger.ts`,
-`storage/filestorage/`, plus jobs, cron, mail, cache, webhooks, AI, channels,
-tenants, studio.
+plus jobs, cron, mail, cache, webhooks, AI, channels, tenants, studio.
+`storage/filestorage/` was on this list and was the exception that proved the
+hunt's weakness: it existed, nothing called it, and it has since been deleted
+([FJS-D260](../DECISIONS.md#fjs-d260)). **A gap-hunt that counts implementations
+cannot see an implementation with no callers**, which is the failure mode one
+level up from the one this section reports.
 
 **The failure envelope already crosses realms.** `core/errors.ts` has the full
 `FrameworkError` hierarchy, and `toFrameworkError()` normalizes Litestone's
@@ -119,11 +123,13 @@ one package down: **Litestone ships an S3 provider** (`src/storage/providers/s3.
 over a hand-written `sigv4.js` — signed requests and presigned URLs, no SDK), driving
 R2, B2, MinIO and S3 from the `FileStorage` plugin, documented and tested.
 
-`IFileStorage` in `packages/junction/src/storage/filestorage/index.ts` really is
-local-disk-only. So the remaining work is not a driver — it is that **two file-storage
+`IFileStorage`, junction's own file store, really was local-disk-only. So the remaining work is not a driver — it is that **two file-storage
 abstractions exist and one of them cannot reach object storage**, which is an
 Invariant 4 question (one owner per translation) rather than a missing feature.
-Delegate Junction's to Litestone's plugin, or retire it. Full note in
+**Answered 2026-09-12: retired, not delegated** ([FJS-D260](../DECISIONS.md#fjs-d260)),
+because nothing called it and the two interfaces were not the same shape. The *and
+tested* above did not survive the closing — the S3 path is cited by no test file
+([FJS-1076](../ISSUES.md#fjs-1076)). Full note in
 `IDEAS/ecosystem-gaps.md` §3.
 
 ### 3. A Release story.

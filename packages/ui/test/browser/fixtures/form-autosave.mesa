@@ -67,6 +67,12 @@
   let doneA   = 0
   let apiA    = null
 
+  // Stated BARE, which is the spelling the README shows: no number, so the
+  // kit's own quiet window. A bare attribute reaching the component as
+  // anything but `true` would make that example a lie.
+  let recordC = { ...EXISTING }
+  let stateC  = 'idle'
+
   let recordB = { ...EXISTING }
   let stateB  = 'idle'
 
@@ -96,6 +102,10 @@
   <Form resource={RESOURCE} autosave={QUIET} />
 </div>
 
+<div id="bare">
+  <Form resource={RESOURCE} bind:record={recordC} bind:autosaveState={stateC} autosave />
+</div>
+
 <!-- Autosave off is the control for every row above. -->
 <div id="manual">
   <Form resource={RESOURCE} record={{ ...EXISTING }} />
@@ -109,6 +119,7 @@
 <output id="count">{calls.length}</output>
 <output id="state">{stateA}</output>
 <output id="state-b">{stateB}</output>
+<output id="state-c">{stateC}</output>
 <output id="held-version">{recordA?.version}</output>
 <output id="autosaved">{savedA}</output>
 <output id="done">{doneA}</output>

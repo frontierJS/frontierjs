@@ -198,6 +198,17 @@ ${idFieldLine(o.res)}
   // them, so typing in a filter box silently drops the sort a header just set.
   // directiveParams is parseDirectives' inverse off the same table, so this
   // cannot go stale when a directive is added.
+  // Naming them in a bare $: marks page a WATCHED import, which is what the
+  // const below needs to be a derivation rather than a value read once at
+  // setup. The handler form further down does it in the CURRENT compiler and
+  // not in the one an installed app has (FJS-1065 is fixed in the tree and
+  // unpublished), and a scaffold is graded by what npm serves: without this
+  // line the filter bar merges each new filter over the query the page ARRIVED
+  // with, so every filter appears to replace the last. app-config pins mesa at
+  // 'latest', so this line comes out on the release that publishes the fix and
+  // not before.
+  $: (page.query, page.directives)
+
   const urlQuery = { ...page.query, ...directiveParams(page.directives) }
 
   // Sort and filter both live in the URL (Invariant 10), so this page writes

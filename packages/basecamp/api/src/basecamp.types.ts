@@ -8,7 +8,7 @@ import type { BasecampDb } from './core/db.ts'
 import type { CaravanInstance } from '@frontierjs/caravan'
 
 // ─── Provider interfaces ──────────────────────────────────────────────────────
-// Junction covers: cache, events, scheduler, workers, filestorage, mail, ai
+// Junction covers: cache, events, scheduler, workers, mail, ai
 // Basecamp speaks to 10 more, each a party outside the app in the sense
 // FJS-D06 rules the word. Eight are self-hosted appliances; two are somebody
 // else's service, and the split matters for one reason — an appliance is

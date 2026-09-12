@@ -142,6 +142,17 @@ export async function run(t) {
   t.is(await t.evaluate(`return ${text('#done')};`), '1',
     'that one WAS a submit, so ondone fires for it')
 
+  /* ── the bare spelling ────────────────────────────────────────────────── */
+
+  // `<Form autosave />` with no number is what the README shows. A bare
+  // attribute arriving as anything but `true` would make that example a lie,
+  // and it would fail as silence rather than as an error.
+  const beforeBare = Number(await t.evaluate(`return ${text('#count')};`))
+  await typeInto(t, '#bare [name=reference]', 'BARE-1')
+  await t.eventually(text('#state-c'), 'saved', 'a bare `autosave` uses the kit window and saves')
+  t.is(await t.evaluate(`return ${text('#count')};`), String(beforeBare + 1),
+    'and writes exactly once')
+
   /* ── the control: autosave off ────────────────────────────────────────── */
 
   // Everything above is a claim about a form that opted IN. If the shared write

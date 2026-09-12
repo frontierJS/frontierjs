@@ -101,6 +101,10 @@ title: Invoices
   // box silently drops the sort a header just set. `directiveParams` is
   // `parseDirectives`' inverse off the same table, so this cannot go stale
   // when a directive is added.
+  // No bare $: above this: the handler form below marks page watched, which is
+  // what makes this a derivation. The GENERATED page states it twice on purpose
+  // — an app installs mesa from npm, this resolves it to packages/mesa/
+  // (FJS-1073).
   const urlQuery = { ...page.query, ...directiveParams(page.directives) }
 
   // Two-arg, over a path stripped of its own query: page.path carries the

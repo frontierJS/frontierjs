@@ -108,10 +108,6 @@ export type { ICache, CacheStats, MemoryCacheOptions, SqliteCacheOptions } from 
 export { createThread, createPool, workerHandler, workerData }    from './src/workers/index.ts'
 export type { WorkerHandle, WorkerPoolHandle, PoolStats }         from './src/workers/index.ts'
 
-// ─── File Storage ─────────────────────────────────────────────────────────
-export { createFileStorage }                                      from './src/storage/filestorage/index.ts'
-export type { IFileStorage, StorageFile, StorageSaveOptions }     from './src/storage/filestorage/index.ts'
-
 // ─── Mail ─────────────────────────────────────────────────────────────────
 export { createResendMailer, createSmtpMailer, mailerPlugin, createMessage, MailBuilder } from './src/mail/index.ts'
 export type { IMail, MailMessage, MailAttachment, SendResult, SmtpMailerOptions, ResendOptions } from './src/mail/index.ts'
