@@ -36,6 +36,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+import { authenticator, wrongCode, enrolledAccount } from '../../web/test/lib/authenticator.mjs'
+
 const HERE = dirname(fileURLToPath(import.meta.url))
 const EXT  = join(HERE, '..')
 const ROOT = join(EXT, '..')
@@ -358,6 +360,54 @@ check('the island mounted on the storefront, cross-origin, in a shadow root',
 const plain = await (await fetch(`http://localhost:${SITE_PORT}/products/${slug}/`)).text()
 check('and nothing about it is in the file the storefront serves',
       plain.includes('data-stock'), false)
+
+// ─── a second factor, from the toolbar ─────────────────────────────────────
+//
+// The popup is the one surface here that CLOSES between the two requests: a
+// toolbar window goes on a click elsewhere, and the person comes back with the
+// code. So the attempt lives in the harbor, and the assertion that only this
+// drive can make is that a popup opened AFTER the password still asks for the
+// code rather than the password.
+
+await evaluate(`(() => { document.querySelector('.who button').click(); return true })()`)
+await until(async () => await evaluate(`!!document.querySelector('[data-signin]') || null`))
+
+const twoStep = await enrolledAccount(API, `two-step-${Date.now().toString(36)}@shop.test`, ADMIN.password)
+const fillDock = (pairs, click, sessionId = dock) => evaluate(`(() => {
+  for (const [sel, v] of ${JSON.stringify(pairs)}) {
+    const el = document.querySelector(sel); el.value = v
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  document.querySelector(${JSON.stringify(click)}).click()
+  return true
+})()`, sessionId)
+
+await fillDock([['[data-email]', twoStep.email], ['[data-password]', ADMIN.password]], '[data-signin]')
+const codeBox = await until(async () => await evaluate(`!!document.querySelector('[data-code-box]') || null`))
+check('a password alone asks the popup for a code', codeBox, true)
+check('…and the popup is not signed in', await evaluate(`!!document.querySelector('[data-who]')`), false)
+
+// A second popup, opened after the first — the harbor's copy of the attempt is
+// what it renders from, since nothing of the first page survives.
+const { result: again } = await send('Target.createTarget', { url: `chrome-extension://${extId}/dock.html` })
+const { result: againSession } = await send('Target.attachToTarget', { targetId: again.targetId, flatten: true })
+await send('Runtime.enable', {}, againSession.sessionId)
+const stillWaiting = await until(async () => await evaluate(`!!document.querySelector('[data-code-box]') || null`, againSession.sessionId))
+check('a popup opened after the password still asks for the code', stillWaiting, true)
+
+await fillDock([['[data-code]', wrongCode(twoStep.secret)]], '[data-code-submit]', againSession.sessionId)
+const dockRefusal = await until(async () => await evaluate(`document.querySelector('[data-error]')?.textContent ?? null`, againSession.sessionId))
+check('a wrong code is refused in the popup', typeof dockRefusal, 'string')
+check('…and the box stays, because the attempt is not spent',
+      await evaluate(`!!document.querySelector('[data-code-box]')`, againSession.sessionId), true)
+
+await fillDock([['[data-code]', authenticator(twoStep.secret)]], '[data-code-submit]', againSession.sessionId)
+const dockWho = await until(async () => await evaluate(`document.querySelector('[data-who]')?.textContent ?? null`, againSession.sessionId))
+check('the right code signs the popup in', dockWho, twoStep.email)
+// Both popups hear the harbor's broadcast, so the first one is signed in too.
+const firstToo = await until(async () => await evaluate(`document.querySelector('[data-who]')?.textContent ?? null`))
+check('…and the popup that typed the password hears it', firstToo, twoStep.email)
+await twoStep.disable()
 
 // ─── the quiet assertion ───────────────────────────────────────────────────
 

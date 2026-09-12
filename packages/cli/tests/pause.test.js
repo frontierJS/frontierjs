@@ -13,6 +13,11 @@
 //   a file: the journal records an intent and the file records what is in
 //   force, and the two rows that matter are the ones where they disagree.
 //
+//   the QUEUE half (FJS-D262) — the script that runs Caravan's bin in the
+//   container, and the verdict read off what it printed. Each verdict row is
+//   paired with the one beside it, since a grader that failed everything or
+//   passed everything would satisfy the rows about either alone.
+//
 //   the REVERT filter, paired both ways — a pause in the history must not move
 //   which Release a revert offers, and removing the filter has to be visible.
 
@@ -21,7 +26,9 @@ import { readFileSync } from 'fs'
 import {
   GUARD_MARKER, nginxGuard, pausedFile, pagePath, fliDir, vhostPath,
   DEFAULT_PAGE, driftVerdict, pauseRefusals, REFUSALS,
+  queueScript, queueVerdict, queueStateLine, QUEUE_HOLDER, CARAVAN_BIN,
 } from '../core/pause.js'
+import { execFileSync } from 'child_process'
 import { chooseTarget, transitionsSince, servingHistory } from '../core/revert.js'
 
 const NGINX_STEP = readFileSync(new URL('../commands/deploy/_steps-setup/05-nginx.md', import.meta.url).pathname, 'utf8')
@@ -253,5 +260,117 @@ describe('a pause in the history', () => {
   // would hide real deploys, so an unstated kind counts.
   test('a row with no kind is kept', () => {
     expect(servingHistory([{ id: 'old', status: 'succeeded', releaseId: 'r1' }])).toHaveLength(1)
+  })
+})
+
+// ─── the queues ──────────────────────────────────────────────────────────────
+
+describe('the queue script', () => {
+  const script = (o = {}) => queueScript({ container: 'shop_api_3000', verb: 'drain', actor: 'jordan', reason: 'fli deploy:pause t1', ...o })
+
+  test('parses as a shell script, with an actor carrying the quote that breaks naive quoting', () => {
+    for (const s of [script(), script({ actor: "O'Neil; rm -rf /" }), script({ verb: 'resume' })])
+      execFileSync('sh', ['-n'], { input: s })
+  })
+
+  // A hostile actor is ONE argument. Run the arguments through a real shell and
+  // count what arrives, rather than reading the text for quotes.
+  test('hands the bin the actor as one argument, whatever it contains', () => {
+    const actor = "O'Neil; echo pwned $(id)"
+    const line  = queueScript({ container: 'c', verb: 'pause', actor }).split('\n').find(l => l.includes(' bun '))
+    const args  = line.slice(line.indexOf('queue')).replace(/ 2>&1 \|\| true$/, '')
+    const got   = execFileSync('sh', ['-c', `printf '%s\\n' ${args}`], { encoding: 'utf8' }).trim().split('\n')
+    expect(got.slice(0, 6)).toEqual(['queue', 'pause', '--actor', actor, '--holder', QUEUE_HOLDER])
+  })
+
+  test('runs the bin by path, never through bunx', () => {
+    expect(script()).toContain(`bun ${CARAVAN_BIN}`)
+    expect(script()).not.toMatch(/bunx/)
+  })
+
+  test('a resume carries the holder and no reason', () => {
+    expect(script({ verb: 'resume' })).toContain(`--holder '${QUEUE_HOLDER}'`)
+    expect(script({ verb: 'resume' })).not.toContain('--reason')
+  })
+})
+
+describe('what the queue half concludes', () => {
+  const answer = (o) => JSON.stringify({ db: '/db/jobs.db', source: 'open', exists: true, caravan: true, liveInstances: 1, ...o })
+  const v = (kind, o, noise = '') => queueVerdict({ kind, output: `${noise}${typeof o === 'string' ? o : answer(o)}\n` })
+
+  test('a pause it made is ok; the same pause held by an operator warns that the unpause leaves it', () => {
+    expect(v('pause', { changed: true, drained: true, running: 0, pause: { holder: QUEUE_HOLDER } }).level).toBe('ok')
+    const other = v('pause', { changed: false, drained: true, running: 0, pause: { holder: null, actor: 'alice', reason: 'incident' } })
+    expect(other.level).toBe('warn')
+    expect(other.lines.join()).toMatch(/alice \(incident\)/)
+  })
+
+  test('a re-run over its own pause is ok, not a warning about somebody else', () => {
+    expect(v('pause', { changed: false, drained: true, running: 0, pause: { holder: QUEUE_HOLDER } }).level).toBe('ok')
+  })
+
+  test('a drain that stopped waiting warns with the count; one that finished does not', () => {
+    const late = v('pause', { changed: true, drained: false, running: 2, pause: { holder: QUEUE_HOLDER } })
+    expect(late.level).toBe('warn')
+    expect(late.lines.join()).toMatch(/2 job/)
+  })
+
+  test('nobody heartbeating on the file warns; one instance does not', () => {
+    expect(v('pause', { changed: true, drained: true, running: 0, liveInstances: 0, pause: { holder: QUEUE_HOLDER } }).level).toBe('warn')
+  })
+
+  test('two databases open is a FAILURE naming both; nothing open is a note', () => {
+    const two = v('pause', { exists: undefined, error: '2 Caravan jobs databases are open here', candidates: ['/db/a.db', '/db/b.db'] })
+    expect(two.level).toBe('fail')
+    expect(two.lines.join('\n')).toMatch(/\/db\/a\.db[\s\S]*\/db\/b\.db/)
+    expect(v('pause', { exists: false, error: 'no process here has a Caravan jobs database open' }).level).toBe('note')
+  })
+
+  test('no container warns, no Caravan is a note, and output nobody can read fails', () => {
+    expect(v('pause', '{"fli":"no-container"}').level).toBe('warn')
+    expect(v('pause', '{"fli":"no-caravan"}').level).toBe('note')
+    expect(queueVerdict({ kind: 'pause', output: 'error: Module not found\n' }).level).toBe('fail')
+  })
+
+  test('reads the LAST JSON line, past whatever bun printed first', () => {
+    expect(v('pause', { changed: true, drained: true, running: 0, pause: { holder: QUEUE_HOLDER } }, 'warn: something {"not":"it"\n').level).toBe('ok')
+  })
+
+  test("an unpause that lifted its pause is ok; one that found an operator's still in force warns", () => {
+    expect(v('unpause', { changed: true, pause: null }).level).toBe('ok')
+    expect(v('unpause', { changed: false, pause: null }).level).toBe('ok')
+    const held = v('unpause', { changed: false, pause: { queue: '*', actor: 'alice', holder: null } })
+    expect(held.level).toBe('warn')
+    expect(held.lines.join()).toMatch(/caravan queue resume/)
+  })
+})
+
+describe('the queues line deploy:status prints', () => {
+  const state = (o) => JSON.stringify({ db: '/db/jobs.db', source: 'open', exists: true, caravan: true, liveInstances: 1, verb: 'state', ...o })
+  const deployPause = { queue: '*', pausedAt: 0, actor: 'jordan', reason: 'fli deploy:pause t1', holder: QUEUE_HOLDER }
+
+  test('agreeing with the edge is not drift, in both directions', () => {
+    expect(queueStateLine({ output: state({ paused: deployPause, queues: {} }), edgePaused: true }).drift).toBe(false)
+    expect(queueStateLine({ output: state({ paused: null, queues: { default: { paused: null } } }), edgePaused: false })).toEqual({ text: 'claiming', drift: false })
+  })
+
+  test('an edge paused over claiming queues is drift; a deploy pause over a serving edge is drift', () => {
+    expect(queueStateLine({ output: state({ paused: null, queues: { default: { paused: null } } }), edgePaused: true }).drift).toBe(true)
+    expect(queueStateLine({ output: state({ paused: deployPause, queues: {} }), edgePaused: false }).drift).toBe(true)
+  })
+
+  // An operator's own pause over a serving edge is an operator's business.
+  test("an operator's pause over every queue is not drift with the edge serving", () => {
+    expect(queueStateLine({ output: state({ paused: { ...deployPause, holder: null }, queues: {} }), edgePaused: false }).drift).toBe(false)
+  })
+
+  test('an app with no Caravan is never drift', () => {
+    expect(queueStateLine({ output: '{"fli":"no-caravan"}', edgePaused: true })).toEqual({ text: 'this app has no Caravan', drift: false })
+  })
+
+  test('the state script passes neither an actor nor a holder, and parses', () => {
+    const s = queueScript({ container: 'c', verb: 'state' })
+    execFileSync('sh', ['-n'], { input: s })
+    expect(s).not.toMatch(/--actor|--holder/)
   })
 })

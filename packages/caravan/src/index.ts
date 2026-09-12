@@ -19,7 +19,8 @@ import { occurrenceKey } from '@frontierjs/toolbelt/history'
 import { LEVELS, levelPasses, levelName, gradeStanding } from '@frontierjs/toolbelt/gate'
 import type { Database }                            from 'bun:sqlite'
 import { openDb, buildStatements, aggregateStats, reclaimFreePages, isPrimaryKeyCollision, isUniqueKeyCollision } from './db.ts'
-import type { Statements }                          from './db.ts'
+import type { Statements, PauseRow }                from './db.ts'
+import { EVERY_QUEUE, DEFAULT_DB_PATH, DEFAULT_LEASE_MS } from './db.ts'
 import { QueueWorker, WorkerPool }                  from './worker.ts'
 import { autoloadJobs }                             from './autoload.ts'
 import { CronScheduler }                            from './cron.ts'
@@ -56,7 +57,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   // does not exist until an app hands it over, and opening the database and
   // building the workers in this function is exactly what made `db`,
   // `pollInterval`, `queues` and `admin` unsettable from a config file at all.
-  let dbPath       = opts.db           ?? './db/jobs.db'
+  let dbPath       = opts.db           ?? DEFAULT_DB_PATH
   let busyTimeout  = opts.busyTimeout  ?? 5_000
   let synchronous  = opts.synchronous  ?? 'NORMAL'
   let pollInterval = opts.pollInterval ?? 1_000
@@ -65,7 +66,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   let cleanupAfter = opts.cleanupAfter ?? 7 * 24 * 60 * 60 * 1_000  // 7 days
   let adminOpts    = opts.admin
   let heartbeatMs  = opts.heartbeat ?? 5_000
-  let leaseMs      = opts.lease     ?? 30_000
+  let leaseMs      = opts.lease     ?? DEFAULT_LEASE_MS
 
   const queueConf: Record<string, QueueConfig> = {
     default: { concurrency: 2 },
@@ -175,8 +176,8 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
     return [...names].sort()
   }
 
-  const toPause = (row: { queue: string; paused_at: number; actor_id: string | null; reason: string | null }): QueuePause => ({
-    queue: row.queue, pausedAt: row.paused_at, actor: row.actor_id, reason: row.reason,
+  const toPause = (row: PauseRow): QueuePause => ({
+    queue: row.queue, pausedAt: row.paused_at, actor: row.actor_id, reason: row.reason, holder: row.holder,
   })
 
   // Absent is not null: an unstated actor is whoever is in scope, a stated
@@ -190,6 +191,49 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
     telemetry?.emit(`caravan.queue.${verb}`, { queue, actor, at, ...(detail ?? {}) })
   }
 
+  // One implementation for a queue and for every queue, since the only thing
+  // that differs is the row the verbs write. `scope` is a queue name or '*'.
+  const operatorVerbs = (scope: string) => {
+    const verbs = {
+      pause(o: OperatorOptions = {}) {
+        const { stmts } = rt()
+        const actor  = operatorOf(o)
+        const reason = o.reason ?? null
+        const res    = stmts.pauseQueue.run({ queue: scope, at: Date.now(), actor, reason, holder: o.holder ?? null })
+        const pause  = toPause(stmts.getPause.get({ queue: scope })!)
+        // Nothing changed, so nothing is recorded — an audit row for a pause
+        // that was already in force would name the wrong person as holding it.
+        if (res.changes > 0) recordEvent(scope, 'pause', actor, reason ? { reason } : null)
+        return { changed: res.changes > 0, pause }
+      },
+
+      resume(o: OperatorOptions = {}) {
+        const { stmts } = rt()
+        const held = stmts.getPause.get({ queue: scope })
+        const res  = stmts.resumeQueue.run({ queue: scope, holder: o.holder ?? null })
+        if (res.changes > 0)
+          recordEvent(scope, 'resume', operatorOf(o), held ? { pausedAt: held.paused_at, pausedBy: held.actor_id } : null)
+        const still = stmts.pauseInForce.get({ queue: scope })
+        return { changed: res.changes > 0, pause: still ? toPause(still) : null }
+      },
+
+      async drain(o: OperatorOptions & { timeout?: number } = {}) {
+        const timeout = o.timeout ?? drainTimeout
+        const { pause } = verbs.pause(o)
+        const deadline  = Date.now() + timeout
+        const running   = () => rt().stmts.runningInQueue.get({ queue: scope })?.count ?? 0
+        let count = running()
+        while (count > 0 && Date.now() < deadline) {
+          await Bun.sleep(100)
+          count = running()
+        }
+        recordEvent(scope, 'drain', operatorOf(o), { drained: count === 0, running: count, timeout })
+        return { drained: count === 0, running: count, pause }
+      },
+    }
+    return verbs
+  }
+
   const queueHandle = (name: string): QueueHandle => {
     const known = knownQueues()
     if (!known.includes(name))
@@ -197,46 +241,13 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         new Error(`[Caravan] no queue named '${name}' — the queues this app has are: ${known.join(', ') || '(none)'}`),
         { status: 404 })
 
-    const handle: QueueHandle = {
+    return {
       name,
-
-      pause(o = {}) {
-        const { stmts } = rt()
-        const actor  = operatorOf(o)
-        const reason = o.reason ?? null
-        const res    = stmts.pauseQueue.run({ queue: name, at: Date.now(), actor, reason })
-        const pause  = toPause(stmts.getPause.get({ queue: name })!)
-        // Nothing changed, so nothing is recorded — an audit row for a pause
-        // that was already in force would name the wrong person as holding it.
-        if (res.changes > 0) recordEvent(name, 'pause', actor, reason ? { reason } : null)
-        return { changed: res.changes > 0, pause }
-      },
-
-      resume(o = {}) {
-        const { stmts } = rt()
-        const held = stmts.getPause.get({ queue: name })
-        const res  = stmts.resumeQueue.run({ queue: name })
-        if (res.changes > 0)
-          recordEvent(name, 'resume', operatorOf(o), held ? { pausedAt: held.paused_at, pausedBy: held.actor_id } : null)
-        return { changed: res.changes > 0 }
-      },
-
-      async drain(o = {}) {
-        const timeout = o.timeout ?? drainTimeout
-        const { pause } = handle.pause(o)
-        const deadline  = Date.now() + timeout
-        let running = rt().stmts.runningInQueue.get({ queue: name })?.count ?? 0
-        while (running > 0 && Date.now() < deadline) {
-          await Bun.sleep(100)
-          running = rt().stmts.runningInQueue.get({ queue: name })?.count ?? 0
-        }
-        recordEvent(name, 'drain', operatorOf(o), { drained: running === 0, running, timeout })
-        return { drained: running === 0, running, pause }
-      },
+      ...operatorVerbs(name),
 
       state(o = {}) {
         const { stmts } = rt()
-        const held   = stmts.getPause.get({ queue: name })
+        const held   = stmts.pauseInForce.get({ queue: name })
         const events = stmts.queueEvents.all({ queue: name, limit: o.events ?? 20 }).map(e => ({
           id: e.id, queue: e.queue, verb: e.verb as QueueEvent['verb'], actor: e.actor_id, at: e.at,
           detail: e.detail ? JSON.parse(e.detail) : null,
@@ -244,7 +255,6 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         return { name, paused: held ? toPause(held) : null, stats: caravan.stats().queues[name], events }
       },
     }
-    return handle
   }
 
   const ensureQueue = (queue: string): void => {
@@ -861,6 +871,8 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
     queue(name: string): QueueHandle {
       return queueHandle(name)
     },
+
+    ...operatorVerbs(EVERY_QUEUE),
 
     // ── start ────────────────────────────────────────────────────────────────
 

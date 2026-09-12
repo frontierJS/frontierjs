@@ -59,7 +59,7 @@ import { vendorWorkspacePackages }                     from '../packages/cli/cor
 import { pickWorkBase, daemonCanRead }                 from '../packages/cli/core/docker-context.js'
 import { apiContainerName }                            from '../packages/cli/core/ports.js'
 import { pointAtLocalServer }                          from '../packages/cli/core/tutor.js'
-import { nginxGuard, DEFAULT_PAGE }                    from '../packages/cli/core/pause.js'
+import { nginxGuard, DEFAULT_PAGE, queueScript, queueVerdict, queueStateLine } from '../packages/cli/core/pause.js'
 import { reapTempDirs }                                from '../packages/litestone/src/tmp-dirs.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -73,7 +73,7 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 // handler covers that; the reap covers the SIGKILL it cannot see, past an age
 // floor so a concurrent run is never touched.
 
-const WORK_PREFIXES = ['fjs-scaffold-', 'fjs-deploy-', 'fjs-journal-', 'fjs-pause-']
+const WORK_PREFIXES = ['fjs-scaffold-', 'fjs-deploy-', 'fjs-journal-', 'fjs-pause-', 'fjs-queues-']
 const active = new Set()
 let trapped = false
 
@@ -1396,6 +1396,131 @@ ${surface()}`)
     if (curl('/api/health') !== '502')
       return fail(`after the guard file is gone the proxy answers ${curl('/api/health')} and not 502`, headers('/api/health'))
     log('  ✓ removing the file serves again, with no reload')
+
+    return { findings, skipped: null }
+  } finally {
+    stop()
+    if (!keep) { try { rmSync(work, { recursive: true, force: true }); active.delete(work) } catch {} }
+  }
+}
+
+// ─── pauseQueueCycle ─────────────────────────────────────
+// FJS-D262's crossing: the script `_steps-pause/03b-queues-pause` sends, against
+// a real container with a real Caravan worker claiming inside it.
+//
+// **Every unit test on either side passes with the crossing broken.** Caravan's
+// bin is tested by spawning it on a developer's machine with `--pid` narrowing
+// the search, and the cli's verdict by feeding it JSON somebody typed. Neither
+// can say that `docker exec -w /app` finds the bin at the path the script names,
+// that the /proc search inside a container finds the ONE database the app has
+// open with no `--pid` at all, or that what comes back through two shells still
+// parses. The worker opens `/data/jobs.db` — not Caravan's default path — because
+// a default that happened to match is the answer a guessed path would give too.
+//
+// No image build and no app: `oven/bun` with Caravan's and toolbelt's source
+// mounted where an installed app has them. The worker writes a file per job, and
+// every pending assertion is paired with a job that DID run, since a worker that
+// never claimed would satisfy the pause on its own.
+//
+// Returns { findings, skipped } like its siblings.
+
+export function pauseQueueCycle({ keep = false, verbose = false, log = console.log } = {}) {
+  const findings = []
+  const fail     = (message, output) => { findings.push({ message, output }); return { findings, skipped: null } }
+
+  if (exec('docker', ['version', '--format', '{{.Server.Version}}'], { verbose: false }).status !== 0)
+    return { findings, skipped: 'no Docker daemon — the queue half needs a real container' }
+
+  const base  = ciWorkBase(log)
+  const work  = workDir('fjs-queues-', base)
+  const name  = `fjsqueues${process.pid}`
+  const data  = join(work, 'data')
+  const IMAGE = 'oven/bun:1-slim'
+
+  const wait = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+  const until = (fn, ms) => { const end = Date.now() + ms; while (Date.now() < end) { if (fn()) return true; wait(50) } return fn() }
+  const ran   = (n) => existsSync(join(data, `ran-${n}`))
+  const sh    = (script) => exec('sh', ['-s'], { input: script, verbose: false }).output
+  const stop  = () => exec('docker', ['rm', '-f', name], { verbose: false })
+
+  const dispatch = (n) => exec('docker', ['exec', '-w', '/app', name, 'bun', '/app/dispatch.ts', String(n)], { verbose: false })
+
+  try {
+    mkdirSync(join(work, 'app'), { recursive: true })
+    mkdirSync(data, { recursive: true })
+    writeFileSync(join(work, 'app', 'worker.ts'), `import { createCaravan } from '@frontierjs/caravan'
+const jobs = createCaravan({ db: '/data/jobs.db', pollInterval: 50, cleanupAfter: 0, queues: { mail: { concurrency: 1 } } })
+jobs.handle('send', async ({ data }: { data: { n: number } }) => { await Bun.write('/data/ran-' + data.n, 'x') }, { queue: 'mail' })
+await jobs.start()
+await Bun.write('/data/ready', 'x')
+setInterval(() => {}, 1 << 30)
+`)
+    writeFileSync(join(work, 'app', 'dispatch.ts'), `import { createCaravan } from '@frontierjs/caravan'
+const jobs = createCaravan({ db: '/data/jobs.db' })
+await jobs.dispatch('send', { n: Number(process.argv[2]) }, { queue: 'mail' })
+await jobs.stop()
+`)
+
+    const pkg = (p) => join(ROOT, 'packages', p)
+    const mounts = [
+      [pkg('caravan/src'),           '/app/node_modules/@frontierjs/caravan/src'],
+      [pkg('caravan/bin'),           '/app/node_modules/@frontierjs/caravan/bin'],
+      [pkg('caravan/package.json'),  '/app/node_modules/@frontierjs/caravan/package.json'],
+      [pkg('toolbelt/src'),          '/app/node_modules/@frontierjs/toolbelt/src'],
+      [pkg('toolbelt/package.json'), '/app/node_modules/@frontierjs/toolbelt/package.json'],
+      [join(work, 'app', 'worker.ts'),   '/app/worker.ts'],
+      [join(work, 'app', 'dispatch.ts'), '/app/dispatch.ts'],
+    ].flatMap(([from, to]) => ['-v', `${from}:${to}:ro`])
+
+    stop()
+    const started = exec('docker', ['run', '-d', '--name', name, '-w', '/app', ...mounts, '-v', `${data}:/data`, IMAGE, 'bun', '/app/worker.ts'], { verbose })
+    if (started.status !== 0) return fail('the worker container did not start', started.output)
+    if (!until(() => existsSync(join(data, 'ready')), 60_000))
+      return fail('the Caravan worker never reported ready', exec('docker', ['logs', name], { verbose: false }).output)
+
+    // ── the control: a job runs before anything is paused ─
+    const first = dispatch(0)
+    if (first.status !== 0) return fail('dispatching a job inside the container failed', first.output)
+    if (!until(() => ran(0), 10_000))
+      return fail('a job dispatched before the pause never ran — the worker claims nothing, so nothing below means anything',
+                  exec('docker', ['logs', name], { verbose: false }).output)
+    log('  ✓ the worker claims a job with nothing paused')
+
+    // ── the pause, sent the way the step sends it ─────────
+    const pauseOut = sh(queueScript({ container: name, verb: 'drain', actor: 'ci', reason: 'fli deploy:pause ci' }))
+    const paused   = queueVerdict({ kind: 'pause', output: pauseOut })
+    if (paused.level !== 'ok')
+      return fail(`the drain answered ${paused.level}: ${paused.lines.join(' · ')}`, pauseOut)
+    const answer = JSON.parse(pauseOut.trim().split('\n').reverse().find(l => l.startsWith('{')))
+    if (answer.source !== 'open' || answer.db !== '/data/jobs.db')
+      return fail(`the bin chose ${answer.db} (${answer.source}) rather than the database the worker has open`, pauseOut)
+    if (answer.liveInstances < 1)
+      return fail('the bin found the worker\'s database and counted nobody heartbeating on it', pauseOut)
+    log('  ✓ the bin finds the database the app opened at its own path, with no --db')
+
+    dispatch(1)
+    wait(1_000)
+    if (ran(1)) return fail('a job dispatched while every queue was paused ran anyway', pauseOut)
+
+    const edgeView = queueStateLine({ output: sh(queueScript({ container: name, verb: 'state' })), edgePaused: true })
+    if (edgeView.drift || !/every queue paused/.test(edgeView.text))
+      return fail(`deploy:status would print "${edgeView.text}" for a drained app`, edgeView.text)
+    log('  ✓ a job dispatched while paused waits, and the status line says why')
+
+    // ── the unpause ───────────────────────────────────────
+    const resumeOut = sh(queueScript({ container: name, verb: 'resume', actor: 'ci' }))
+    const resumed   = queueVerdict({ kind: 'unpause', output: resumeOut })
+    if (resumed.level !== 'ok' || !resumed.lines.some(l => /resumed/.test(l)))
+      return fail(`the resume answered ${resumed.level}: ${resumed.lines.join(' · ')}`, resumeOut)
+    if (!until(() => ran(1), 10_000))
+      return fail('the job held by the pause did not run after the resume', resumeOut)
+    log('  ✓ resuming runs the job the pause held')
+
+    // ── nothing to ask ────────────────────────────────────
+    const gone = queueVerdict({ kind: 'pause', output: sh(queueScript({ container: `${name}-absent`, verb: 'drain', actor: 'ci' })) })
+    if (gone.level !== 'warn' || !/no container/.test(gone.lines.join()))
+      return fail(`a container that does not exist reads as ${gone.level}: ${gone.lines.join(' · ')}`)
+    log('  ✓ a container that is not running is said so, not failed')
 
     return { findings, skipped: null }
   } finally {

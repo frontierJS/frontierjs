@@ -122,6 +122,24 @@ export async function login(credentials) {
 }
 
 /**
+ * Finish a login that owed a second factor. `login()` resolved with
+ * `awaitingCode` set, and the harbor holds the attempt — a page never sees the
+ * ticket. A TOTP code or a recovery code; the person typing it cannot be asked
+ * which kind of string they hold.
+ *
+ * @param {string} code
+ */
+export async function submitCode(code) {
+  const port = _activePort
+  if (!port) throw new Error('jetty.submitCode: no active port (call after page mount)')
+  return port.request('service:call', {
+    service: 'auth',
+    method:  'submitCode',
+    args:    { code },
+  })
+}
+
+/**
  * Trigger logout via harbor. Harbor clears its stored token and broadcasts
  * a logged-out session.
  */

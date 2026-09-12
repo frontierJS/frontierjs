@@ -28,13 +28,6 @@ if (pauseKind === 'pause') {
     throw new Error(`pause did not take: the edge answered ${edge}`)
   }
   log.success(`The edge answers 503 → ${name}`)
-
-  // Worth saying at the moment somebody has just taken the app down, rather than
-  // in a document they will read afterwards: the container never stopped.
-  log.info('')
-  log.warn('  The app is still RUNNING. A pause stops callers, not the app —')
-  log.warn('  jobs, crons and the outbox go on exactly as before.')
-  log.info('')
   return
 }
 

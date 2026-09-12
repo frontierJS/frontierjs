@@ -32,7 +32,7 @@
 
   const KEY = 'shop_account_token'
 
-  let state    = 'loading'    // loading | out | in | working
+  let state    = 'loading'    // loading | out | code | in | working
   let me       = null
   let orders   = []
   let lines    = new Map()
@@ -51,6 +51,8 @@
   let email    = ''
   let password = ''
   let name     = ''
+  let code     = ''
+  let checking = false
 
   let client = null
 
@@ -148,9 +150,15 @@
     error = ''
     state = 'working'
     try {
-      if (mode === 'up') await client.auth.signUp({ email, password, name })
-      else               await client.auth.signIn(email, password)
+      const answered = mode === 'up'
+        ? await client.auth.signUp({ email, password, name })
+        : await client.auth.signIn(email, password)
       password = ''
+      // An account with a second factor answers a challenge: no token, no user,
+      // and `load()` would ask `account.me` with nothing to show for it. Told
+      // apart by the absent USER, because in cookie mode the ticket never
+      // reaches a page.
+      if (!answered?.user) { state = 'code'; return }
       await load()
     } catch (e) {
       // A shop tells a shopper what to do next, and "Invalid credentials" is
@@ -163,6 +171,35 @@
         : (e?.message ?? 'That did not work')
       state = 'out'
     }
+  }
+
+  /** The second request. The client holds the ticket; this sends the code. */
+  async function verify() {
+    error    = ''
+    checking = true
+    try {
+      await client.auth.completeSignIn(code.trim())
+      code = ''
+      await load()
+    } catch (e) {
+      // `retryable: false` is an attempt that is over — spent, lapsed, or
+      // refused five times — and every further code would be refused too, so the
+      // shopper goes back to the password. Anything else is a code to retype.
+      if (e?.data?.retryable === false) {
+        error = 'That sign-in attempt has ended. Enter your password again.'
+        state = 'out'
+      } else {
+        error = e?.code === 401 ? 'That code did not match. Try the current one.' : (e?.message ?? 'That did not work')
+      }
+    } finally { checking = false }
+  }
+
+  // Drops the ticket the client is holding, so a code typed after this cannot
+  // finish the attempt that was abandoned. No request is sent: there is no
+  // session for the server to end.
+  async function startOver() {
+    await client.auth.signOut()
+    code = ''; error = ''; state = 'out'
   }
 
   function signOut() {
@@ -334,6 +371,18 @@
         {/each}
       </ul>
     {/if}
+
+  {:else if state === 'code'}
+    <form class="signin" onsubmit={e => { e.preventDefault(); verify() }} data-code-form>
+      <h2>Enter your code</h2>
+      <p class="text-sm text-muted">From your authenticator app — or one of your recovery codes.</p>
+      <label>Code<input bind:value={code} autocomplete="one-time-code" inputmode="numeric" data-code required /></label>
+      <button class="btn primary" type="submit" data-code-submit disabled={checking}>Verify</button>
+      {#if error}<p class="error" data-error>{error}</p>{/if}
+      <p class="text-sm text-muted">
+        <button type="button" class="link" onclick={startOver} data-code-cancel>Start over</button>
+      </p>
+    </form>
 
   {:else}
     <form class="signin" onsubmit={e => { e.preventDefault(); submit() }}>

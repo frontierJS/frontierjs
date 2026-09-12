@@ -31,7 +31,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Discount` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Employee` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `InventoryMovement` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 9 LOCKED | 9 LOCKED |
-| `Invoice` | 1 VISITOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `Invoice` | 1 VISITOR | 8 SYSTEM | 4 USER | 8 SYSTEM |
 | `InvoiceLine` | 1 VISITOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `JournalEntry` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
 | `JournalLine` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
@@ -110,6 +110,7 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 - allow **read** — `auth().isStaff`
 - allow **read** — `userId == auth().id`
+- allow **update** — `auth().isStaff`
 
 ### `InvoiceLine`
 

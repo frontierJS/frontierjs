@@ -1,5 +1,14 @@
 # Changes — @frontierjs/jetty
 
+## 2026-09-12 — a page can finish the second step, and a spent attempt closes the box
+
+`submitCode(code)` joins `login` and `logout` in `@frontierjs/jetty/resources`, so a popup can answer
+the code the harbor was already able to route. **A refusal with `retryable: false` now clears the
+harbor's waiting state and broadcasts it.** The port hands a page an error's message and nothing else,
+so without the broadcast a popup kept showing a box that would refuse every code it was given. A
+retryable refusal leaves the attempt where it was; `test/phase2.test.js` asserts the two as a pair, and
+stubbing the branch out reds the spent row alone.
+
 ## 2026-09-12 — a toolbar sign-in that owes a code
 
 `adapter.auth.completeLogin(code)` on the wire side, `authFlow.submitCode(code)` through Harbor, and

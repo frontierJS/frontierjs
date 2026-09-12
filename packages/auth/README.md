@@ -235,6 +235,10 @@ const { recoveryCodes } = await client.auth.confirmTotp(code)
 A wrong password or code here answers **403**, not 401. The session that sent it
 is fine, and a 401 is what a browser client signs the person out on.
 
+The methods that check the password again share a rate limit per account,
+`services: { reauthenticationRateLimit }`, which defaults to login's own
+10 per 15 minutes. Over it is a 429, and the session stays signed in.
+
 The four that change what the account requires are refused inside a support
 episode. `totpStatus` is not — seeing what somebody sees is what an episode is
 for, and it answers about the subject.

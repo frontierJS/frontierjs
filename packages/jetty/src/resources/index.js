@@ -26,7 +26,7 @@ export { createResource,
 export { createStore }               from './store.js'
 export { createMakeFromSchema }      from '@frontierjs/toolbelt/jsonschema'
 
-export { login, logout,
+export { login, submitCode, logout,
          getConnectionState,
          onConnectionChange,
          getActivePort,

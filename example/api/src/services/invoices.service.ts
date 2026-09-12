@@ -1,7 +1,8 @@
 // The documents.
 //
-// `@@gate("1.8.8.8")` — read at 1 and every write is the system's, because an
-// invoice is issued by the renewal job and by nothing else. There is no
+// `@@gate("1.8.4.8")` — read at 1, created and deleted by the system alone,
+// because an invoice is issued by the renewal job and by nothing else. Update
+// is staff's, and reaches only the moves. There is no
 // `create` a person can reach, and that is the schema's statement rather than
 // this file's: `api/src/domain/billing` writes them through `asSystem()`, and it is
 // the only thing that does.
@@ -14,6 +15,19 @@ import { settleInvoice }                  from '../domain/billing'
 
 type Invoices = { invoice: { transition(id: unknown, name: string): Promise<unknown> } }
 const invoices = () => $.db as unknown as Invoices
+
+/** The invoice this call names, read as the caller.
+ *
+ *  Before a move, because a move refused on a row the caller cannot read
+ *  answers differently from one on a row that does not exist — 403 against
+ *  204 — which confirms which invoice numbers are real (`FJS-1093`). Read
+ *  first, both are this 404, and the move's own refusal only reaches a caller
+ *  who can already see the row. */
+async function readable(): Promise<{ id: number }> {
+  const row = await ($.db as any).invoice.findFirst({ where: { id: Number($.id) } })
+  if (!row) throw new NotFound('Invoice not found')
+  return row
+}
 
 export function createInvoicesService() {
   return createBaseService({
@@ -66,26 +80,31 @@ export function createInvoicesService() {
      * hand. Both go through the same transition, which is the only arrangement
      * where they cannot drift.
      *
+     * On the CALLER's client. `@system` on the move is lifted by naming it on
+     * the call, which leaves the gate and `@@allow('update', auth().isStaff)`
+     * grading who pressed the button — `asSystem()` here grades nobody, and a
+     * custom method's gate floor is only a presence check (`FJS-1087`).
+     *
      * Dunning notices on its own — `dun-subscriptions` recovers a subscription
      * whose ledger has come clean — so nothing here has to know that a
      * subscription exists.
      */
     settle: async () => {
-      const db = $.db as any
-      await settleInvoice(db.asSystem(), Number($.id))
-      return await db.invoice.findFirst({ where: { id: Number($.id) } })
+      const db  = $.db as any
+      const row = await readable()
+      await settleInvoice(db, row.id)
+      return await db.invoice.findFirst({ where: { id: row.id } })
     },
 
     /**
      * It should never have been issued.
      *
      * `@gate(5)` on the move: voiding is a manager's decision, where settling is
-     * the engine's. It is the only write to an issued invoice anybody may ask
-     * for, and it changes the status alone — every figure on the row stays
-     * exactly as it was issued, because a voided invoice still has to be
-     * readable as the document it was.
+     * the shop recording money it received. It changes the status alone —
+     * every figure on the row stays exactly as it was issued, because a voided
+     * invoice still has to be readable as the document it was.
      */
-    void: async () => invoices().invoice.transition($.id, 'void'),
+    void: async () => invoices().invoice.transition((await readable()).id, 'void'),
 
     methods: ['find', 'get', 'settle', 'void'],
   })

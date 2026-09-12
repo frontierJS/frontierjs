@@ -261,6 +261,19 @@ export interface AuthServicesOptions {
    * A UI reads the answer to decide what to offer. It is never a boundary.
    */
   level?: (session: SessionContext) => number
+
+  /**
+   * How many times one account may offer its CURRENT password — to
+   * `changePassword`, `setupTotp`, `disableTotp` and `regenerateRecoveryCodes`,
+   * one bucket for all four. Default `{ max: 10, window: '15 minutes' }`,
+   * login's own budget.
+   *
+   * Each of those verifies the password for whoever holds the session, so an
+   * unbounded one is a guessing oracle for a stolen session — the one caller the
+   * re-check exists to stop. Over budget is a 429 and the session stays valid.
+   * In-process, like every limiter here: two instances are two budgets.
+   */
+  reauthenticationRateLimit?: RateLimitHookOptions
 }
 
 // ─── createAuthPlugin options ─────────────────────────────────────────

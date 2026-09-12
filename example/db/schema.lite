@@ -1889,9 +1889,12 @@ model Invoice {
   status         InvoiceStatus   @default(draft)
 
   customer       Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  customerId     Int
+  /// `@immutable` because staff may update an invoice (to settle it), and a
+  /// document re-pointed at another customer is not the document that was
+  /// issued.
+  customerId     Int             @immutable
   subscription   Subscription?   @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
-  subscriptionId Int?
+  subscriptionId Int?            @immutable
 
   /// Cents, frozen, and written by the shop. `@system` and `@immutable` are
   /// two different sentences and the invoice needs both: the first says no
@@ -1930,23 +1933,31 @@ model Invoice {
 
   userId         String?         @system
 
-  /// Read at 1, and every write is the system's — an invoice is issued by the
-  /// renewal job and by nothing else. `OrderLine` is the same shape for the
-  /// same reason.
-  @@gate("1.8.8.8")
-  @@allow('read', auth().isStaff)
-  @@allow('read', userId == auth().id)
+  /// Read at 1; created and deleted by the system alone — an invoice is issued
+  /// by the renewal job and by nothing else. Update is 4 and staff-only, and
+  /// what it can reach is the moves: every other column is `@system` or
+  /// `@immutable`. The ladder cannot say *staff* — a verified shopper grades 4
+  /// too — so the policy does, and a move is an update underneath, so the
+  /// policy grades `transition()` without the machine restating it.
+  @@gate("1.8.4.8")
+  @@allow('read',   auth().isStaff)
+  @@allow('read',   userId == auth().id)
+  @@allow('update', auth().isStaff)
 
   /// The one-row half of the receipt identity. The other half — that the lines
   /// sum to `subtotal` — is the cross-row invariant this language cannot state.
   @@check("total = subtotal + tax",
           "An invoice total is its subtotal plus tax")
 
-  /// `issue` is the seal. It is `@system` for the same reason every other write
-  /// here is: an invoice is issued by the renewal job and by nothing else. Its
-  /// gate is the model's own, which for a `@@gate("1.8.8.8")` model is already
-  /// higher than any caller reaches — the `@system` is what says the APPLICATION
-  /// makes it, and the two are separate facts.
+  /// `issue` is the seal, and `@system`: an invoice is issued by the renewal
+  /// job and by nothing else.
+  ///
+  /// `settle` is `@system` too, and that does not mean `asSystem()`: it means
+  /// no caller may ask to be marked paid, and the application makes the move
+  /// with `{ system: true }` on whichever client it holds. The payment webhook
+  /// holds the system's; the staff button holds the caller's, so the gate and
+  /// the update policy above still grade who pressed it. Reaching for
+  /// `asSystem()` in that button grades nobody (`FJS-1087`).
   ///
   /// `void` and `paid` seal too, and nothing here says so: the sealed set is
   /// everything reachable from `issued`.

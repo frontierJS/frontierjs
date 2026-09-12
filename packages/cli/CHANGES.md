@@ -1,5 +1,14 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-12 — the scaffolded sign-in page asks for a code
+
+`fli new`'s `routes/login/index.mesa` did `await signIn(); goto('/')`, so an account with two-step
+sign-in landed on `/` signed out with nothing said. It renders the code box from
+`session.awaitingCode` now, sends it with `submitCode`, and offers *Start over*, which drops the
+pending attempt through `signOut`. The page is emitted from a string in `commands/project/new.md`,
+which `tests/generated-mesa.test.js` does not reach — it was compiled and its output parsed by hand;
+the `scaffold` CI phase is what builds it inside a real app.
+
 ## 2026-09-12 — a scaffolded app can name its API origin at build time
 
 **`fli new` writes `junction.url` as `VITE_API_URL` when the build sets it**, and the page's own

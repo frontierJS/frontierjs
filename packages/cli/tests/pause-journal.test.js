@@ -72,7 +72,7 @@ const deployed = async () => {
 
 /** Run a pause's steps to the end the way the runner would, and settle. */
 const complete = async (opened) => {
-  for (const step of ['01-preflight', '02-pause', '02b-unpause', '03-verify', '04-cleanup']) {
+  for (const step of ['01-preflight', '02-pause', '02a-queues-resume', '02b-unpause', '03-verify', '03b-queues-pause', '04-cleanup']) {
     const d = await opened.recorder.beforeStep(step)
     if (d.run) await opened.recorder.afterStep(step, 0, { status: 'succeeded' })
   }
@@ -102,7 +102,7 @@ describe('a pause through the journal', () => {
     const opened = await pause('pause')
     const j = await journal()
     const names = (await j.stepsOf(opened.transition.id)).map(s => s.name)
-    expect(names).toEqual(['01-preflight', '02-pause', '02b-unpause', '03-verify', '04-cleanup'])
+    expect(names).toEqual(['01-preflight', '02-pause', '02a-queues-resume', '02b-unpause', '03-verify', '03b-queues-pause', '04-cleanup'])
   })
 
   test('an unpause after it puts the app back to serving, and the same Release', async () => {

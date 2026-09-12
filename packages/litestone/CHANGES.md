@@ -1,5 +1,29 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-12 — the S3 signer is graded by AWS, and a key with a space in it signs
+
+`FJS-1076`. `storage/sigv4.js` had no test, and it is the only path from a `File` column to a second
+machine. `test/storage-sigv4.test.ts` runs it against ten cases of AWS's own SigV4 suite, vendored
+under `test/fixtures/sigv4/` at a pinned commit, and against the three worked examples in AWS's S3
+documentation — the old signer passed those three and they are what had to stay green.
+
+- **The canonical path is built from the decoded key.** `URL.pathname` is already percent-encoded,
+  and encoding it again signed `a%2520b` for a request that sent `a%20b` — a 403
+  `SignatureDoesNotMatch` that reads as bad credentials, for any key with a space, a non-ASCII
+  letter, `+`, `&` or `#`.
+- **The canonical query is sorted**, and encoded with AWS's unreserved set rather than
+  `URLSearchParams`, which leaves `*` alone, encodes `~`, and sends a space as `+`. A presigned URL
+  is written from that string for the last reason.
+- **Header values are trimmed and inner whitespace collapsed**, as the spec requires.
+- **`x-amz-content-sha256` and `UNSIGNED-PAYLOAD` are S3's**, keyed on `service === 's3'`. Every
+  production caller passes `s3`, so nothing changes for them; it is what lets the suite's
+  `service: "service"` cases run the real functions end to end.
+- **`S3Provider` encodes the key into the URL per segment.** Joined raw, a `?` or `#` ended the path,
+  so PUT, GET and DELETE addressed a prefix of the object with a signature that agreed with the
+  truncated request, and nothing refused it.
+
+The public-URL builders still disagree about the bucket — `FJS-1094`.
+
 ## 2026-09-12 — a tenant registry exposes its parsed schema
 
 `registry.schema`, read-only. A reader that needs a model's declarations and no rows — junction's

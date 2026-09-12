@@ -41,7 +41,8 @@
  *     password answers a ticket with no token, and the ticket plus a code
  *     answers the session. The package's own tests run a harness app; this is
  *     the only run through a real app's plugin, its per-shop provider proxy and
- *     a tenant database, with codes from an authenticator written in this file.
+ *     a tenant database, with codes from `lib/authenticator.mjs` rather than
+ *     from the server's own arithmetic.
  *
  * ─── The trap this file exists to stay out of ────────────────────────────────
  *
@@ -62,9 +63,10 @@
  * positive one touches the same row, and the row is restored at the end.
  */
 import { spawn, execFileSync } from 'node:child_process'
-import { createHmac }          from 'node:crypto'
 import { dirname, join }       from 'node:path'
 import { fileURLToPath }       from 'node:url'
+
+import { authenticator, wrongCode } from './lib/authenticator.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
@@ -307,9 +309,8 @@ check('…and it is the set-a-password one', invites[0]?.subject, 'Set your pass
 // proxy (api/src/core/auth.ts routes every method it is handed, including ones
 // written after it) and its tenant database.
 //
-// The authenticator below is written here rather than imported from
-// @frontierjs/auth. The server's `totp.ts` agreeing with itself is the failure a
-// second implementation exists to catch — a phone is not running our code.
+// Codes come from `lib/authenticator.mjs`, a second implementation of the
+// arithmetic, rather than from the server's own `totp.ts`.
 //
 // The account is registered per run, never a seeded one: a run that dies
 // between enabling and disabling leaves the factor on, and every other drive
@@ -319,21 +320,6 @@ check('…and it is the set-a-password one', invites[0]?.subject, 'Set your pass
 // codes are chosen by step: confirm with the PREVIOUS step's code, sign in with
 // the current one. At the shipped drift of one step both remain acceptable
 // across a boundary crossed mid-run.
-
-const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
-function authenticator(secret, offset = 0) {
-  let bits = 0, acc = 0
-  const key = []
-  for (const ch of secret) {
-    acc = (acc << 5) | B32.indexOf(ch); bits += 5
-    if (bits >= 8) { key.push((acc >>> (bits - 8)) & 255); bits -= 8 }
-  }
-  const counter = Buffer.alloc(8)
-  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000) + offset))
-  const mac = createHmac('sha1', Buffer.from(key)).update(counter).digest()
-  const o   = mac[mac.length - 1] & 0x0f
-  return String((mac.readUInt32BE(o) & 0x7fffffff) % 1e6).padStart(6, '0')
-}
 
 console.log('\n  users — a second factor')
 
@@ -406,10 +392,7 @@ check('…and it is spent: nine remain', (await account(tok, 'totpStatus')).body
 
 // The ceiling. Five wrong codes spend the ticket, and a code that would be
 // accepted is then refused on it — beside the same code accepted on a fresh one.
-const wrong = (() => {
-  const live = new Set([-1, 0, 1, 2].map(o => authenticator(secret, o)))
-  for (let n = 0; ; n++) { const c = String(n).padStart(6, '0'); if (!live.has(c)) return c }
-})()
+const wrong = wrongCode(secret)
 const third = await password(twoStep)
 const tries = []
 for (let i = 0; i < 5; i++) tries.push((await answer(third.body.challenge, wrong)).body?.retryable)
@@ -545,11 +528,6 @@ async function until(expr, tries = 80) {
 }
 const has    = (sel) => `!!document.querySelector(${JSON.stringify(sel)})`
 const stored = () => evaluate(`localStorage.getItem('shop_token')`)
-const notLive = (sec) => {
-  const live = new Set([-1, 0, 1, 2].map(o => authenticator(sec, o)))
-  for (let n = 0; ; n++) { const c = String(n).padStart(6, '0'); if (!live.has(c)) return c }
-}
-
 const onScreen2 = addr('u')
 const screenJoin = await post('/auth/register', { email: onScreen2, password: PASSWORD, name: 'On Screen' })
 await open('/account/', screenJoin.body.token, '#totp[data-totp-state="off"]')
@@ -570,7 +548,7 @@ const shownSecret = await evaluate(`document.querySelector('[data-totp-secret]')
 check('the right password shows a secret to add to an app', /^[A-Z2-7]{32}$/.test(shownSecret ?? ''), true)
 check('…which switches nothing on yet', (await account(screenJoin.body.token, 'totpStatus')).body?.enabled, false)
 
-await fill('#totp-code', notLive(shownSecret))
+await fill('#totp-code', wrongCode(shownSecret))
 await click('#totp-confirm')
 await until(has('#account-error'))
 check('a wrong code keeps the enrollment open and the tab signed in',
@@ -598,7 +576,7 @@ check('a password alone opens the code box', await evaluate(has('#code-box')), t
 check('…and stores no token', await stored(), null)
 check('…and the shell is not signed in', await evaluate(has('#nav-account')), false)
 
-await fill('#code-input', notLive(shownSecret))
+await fill('#code-input', wrongCode(shownSecret))
 await click('#code-submit')
 await until(has('#session-error'))
 check('a wrong code is refused in words', await evaluate(`document.querySelector('#session-error')?.textContent.trim()`),

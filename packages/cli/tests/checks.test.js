@@ -1968,11 +1968,21 @@ describe('queue-operator-verb', () => {
     expect(findings[0].message).toMatch(/job file/)
   })
 
+  test('pausing EVERY queue from a service is an error too', () => {
+    const root = tree('qov-every', {
+      'api/src/services/ops.service.ts':
+        "export default () => createService({ halt: (ctx) => ctx.app.jobs.pause({ reason: 'x' }) })\n",
+    })
+    const { findings } = only(root, 'queue-operator-verb')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/^jobs\.pause\(\)/)
+  })
+
   // The pair: the app verbs on the same handle are the app's to call.
   test('reading a queue from a service is silent', () => {
     const root = tree('qov-read', {
       'api/src/services/ops.service.ts':
-        "export default () => createService({ status: (ctx) => ctx.app.jobs.queue('mail').state() })\n",
+        "export default () => createService({ status: (ctx) => ctx.app.jobs.queue('mail').state(), all: (ctx) => ctx.app.jobs.stats() })\n",
     })
     expect(only(root, 'queue-operator-verb').findings).toEqual([])
   })

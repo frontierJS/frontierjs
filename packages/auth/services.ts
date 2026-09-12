@@ -27,7 +27,7 @@
 // each method answers 400 by name, the way the /auth routes already do for
 // password reset.
 
-import { createService, BadRequest, Unauthorized, Forbidden, NotFound } from '@frontierjs/junction'
+import { createService, rateLimitHook, BadRequest, Unauthorized, Forbidden, NotFound } from '@frontierjs/junction'
 import type { IAuth, SessionContext, ServiceContext, Service } from '@frontierjs/junction'
 import type { AuthServicesOptions } from './types.ts'
 import type { AuthOAuth }           from './oauth.ts'
@@ -49,6 +49,24 @@ export const DEFAULT_SERVICE_NAMES = {
 export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions = {}): Service[] {
 
   const level = opts.level
+
+  // ─── The password, asked again ─────────────────────────────────────────
+  //
+  // Every method that verifies the CURRENT password is an oracle for it, to
+  // whoever holds the session — and a stolen session is exactly the caller
+  // these methods exist to stop. `/auth/login` is limited and these were not,
+  // so the side door answered as many guesses as it was sent (four doors, one
+  // bucket, or a guesser spreads the attempts across them).
+  //
+  // Keyed by the account, which is the limiter's own default for a caller with
+  // a session. The default is login's own budget, so this is no wider than the
+  // front door. The sweep timer lives as long as the services, which is
+  // junction's stated position for a service-level limiter.
+  const reauthenticate = rateLimitHook(opts.reauthenticationRateLimit ?? {
+    max:     10,
+    window:  '15 minutes',
+    message: 'Too many password attempts on this account. Wait a few minutes and try again.',
+  })
 
   const names = {
     account:  opts.account  ?? DEFAULT_SERVICE_NAMES.account,
@@ -161,6 +179,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       if (!currentPassword) throw new BadRequest('currentPassword is required')
       if (!newPassword)     throw new BadRequest('newPassword is required')
 
+      reauthenticate(ctx)
       await need('changePassword')(user.userId, currentPassword, newPassword)
       return { ok: true }
     },
@@ -192,6 +211,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       const { currentPassword } = (ctx.data ?? {}) as Record<string, string>
       if (!currentPassword) throw new BadRequest('currentPassword is required')
 
+      reauthenticate(ctx)
       return need('setupTotp')(user.userId, currentPassword)
     },
 
@@ -221,6 +241,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       const { currentPassword } = (ctx.data ?? {}) as Record<string, string>
       if (!currentPassword) throw new BadRequest('currentPassword is required')
 
+      reauthenticate(ctx)
       await need('disableTotp')(user.userId, currentPassword)
       return { ok: true }
     },
@@ -232,6 +253,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       const { currentPassword } = (ctx.data ?? {}) as Record<string, string>
       if (!currentPassword) throw new BadRequest('currentPassword is required')
 
+      reauthenticate(ctx)
       return need('regenerateRecoveryCodes')(user.userId, currentPassword)
     },
   }))

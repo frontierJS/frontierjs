@@ -9,7 +9,7 @@
   // Everything below is `@frontierjs/jetty/resources`, which is jetty's own
   // orchestrator and deliberately NOT a copy of Sierra's — Sierra calls
   // `client.service(name)` and this calls `harbor.request('service:call')`.
-  import { createResource, login, logout, getConnectionState } from '@frontierjs/jetty/resources'
+  import { createResource, login, submitCode, logout, getConnectionState } from '@frontierjs/jetty/resources'
   import { formatMoney, fromMinor } from '@frontierjs/toolbelt/units'
 
   export let harbor = null
@@ -20,6 +20,7 @@
   let error    = ''
   let email    = 'alex@shop.test'
   let password = ''
+  let code     = ''
 
   // One resource, one channel. `createResource` subscribes to `orders` and the
   // EVENT that arrives decides what happens to the store — `orders pay` from
@@ -43,14 +44,19 @@
 
   if (harbor) {
     harbor.on('session', p => {
-      session = { authenticated: p?.authenticated, user: p?.user }
+      // `awaitingCode` rides the same broadcast: a password was accepted and a
+      // code is owed. It comes from the HARBOR and not from the promise below,
+      // because this popup closes on a click elsewhere and the next one to open
+      // has to find the attempt still standing.
+      session = { authenticated: p?.authenticated, user: p?.user, awaitingCode: p?.awaitingCode ?? null }
       status  = p?.authenticated ? 'signed in' : 'signed out'
       if (p?.authenticated) load()
     })
     harbor.onDisconnect(() => status = 'harbor gone')
   }
 
-  const signIn  = () => guard(async () => { await login({ email, password }); })
+  const signIn  = () => guard(async () => { await login({ email, password }); password = '' })
+  const verify  = () => guard(async () => { await submitCode(code.trim()); code = '' })
   const signOut = () => guard(async () => { await logout(); orders = [] })
 
   // `ship` is a TRANSITION, declared in db/schema.lite and named by the orders
@@ -96,6 +102,16 @@
         <li class="empty">Nothing waiting.</li>
       {/each}
     </ul>
+  {:else if session?.awaitingCode}
+    <!-- Nothing is stored and the socket is not upgraded until this is
+         answered. A spent attempt comes back as a broadcast with no
+         awaitingCode, which is what returns the popup to the password. -->
+    <div class="signin" data-code-box>
+      <span>Code from your authenticator, or a recovery code</span>
+      <input bind:value={code} autocomplete="one-time-code" placeholder="123456" data-code />
+      <button onclick={verify} data-code-submit>Verify</button>
+      <button onclick={signOut} data-code-cancel>Start over</button>
+    </div>
   {:else}
     <div class="signin">
       <input bind:value={email} placeholder="email" data-email />

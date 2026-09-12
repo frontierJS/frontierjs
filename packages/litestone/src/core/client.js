@@ -718,6 +718,9 @@ function enumOptions(meta, offending) {
 const REL_FILTER_MODES = new Set(['some', 'every', 'none', 'is', 'isNot'])
 const WHERE_LOGIC      = new Set(['AND', 'OR', 'NOT'])
 const NO_KEYS          = new Set()
+// checkTransitions' answer for a row outside the caller's read scope — distinct
+// from null, which means *no move applies* and lets the write go on.
+const NOT_VISIBLE      = Symbol('not-visible')
 
 function fieldReadRelationError(found, accessorName, method) {
   const first = found[0]
@@ -3543,6 +3546,23 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return await ctx.levelFor(modelName, ctx)
   }
 
+  // What this caller could READ of the table, as one WHERE fragment beside the
+  // caller's own: the global filter, the plugins' read filters, then the read
+  // policy — the composition `exists()` uses, in its bind order. Soft delete and
+  // templates are not here because the update's own where already carries them.
+  // null when nothing narrows.
+  function callerReadScope() {
+    const params  = []
+    const filters = [resolveGlobalFilter(), ...(plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : [])].filter(Boolean)
+    const filterSql = filters.length
+      ? buildWhereWithEncryption(filters.length === 1 ? filters[0] : { AND: filters }, params)
+      : ''
+    const policy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
+    if (policy) params.push(...policy.params)
+    const parts = [filterSql, policy?.sql].filter(Boolean)
+    return parts.length ? { sql: parts.map(p => `(${p})`).join(' AND '), params } : null
+  }
+
   async function checkTransitions(data, whereParams, whereSql, systemFields = null, requestedMove = null) {
     if (!_tableTransitions) return null
     if (ctx.isSystem) return null   // SYSTEM always bypasses — logged below
@@ -3595,9 +3615,17 @@ function makeTable(readDb, writeDb, shape, ctx) {
       let newValue = data[fieldName]
       if (newValue == null) continue
 
-      // Fetch current value — needed to validate from-state
-      const current = readDb.query(`SELECT "${fieldName}" FROM "${tableName}" WHERE ${whereSql}`).get(...whereParams)
-      if (!current) return null   // record not found — let update() handle that
+      // Fetch current value — needed to validate from-state — through the
+      // caller's READ scope. Every refusal below names the move, its gate or the
+      // row's state, so reaching one on a row this caller cannot read tells them
+      // the row exists (`FJS-1093`). Outside the scope it is NOT_VISIBLE, and
+      // update() answers null before any refusal reader runs, exactly as for a
+      // row that is not there — § Rule one in access-control.md.
+      const scope = callerReadScope()
+      const current = readDb.query(
+        `SELECT "${fieldName}" FROM "${tableName}" WHERE (${whereSql})${scope ? ` AND (${scope.sql})` : ''}`,
+      ).get(...whereParams, ...(scope?.params ?? []))
+      if (!current) return NOT_VISIBLE
       // The raw column, not a read() row, so a boolean arrives as 1/0; the write
       // payload is coerced the same way and the declaration holds real booleans.
       // Unnormalized, `0 === false` is false so a no-op looked like a move, and
@@ -7536,6 +7564,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // Check before SQL: validates from-state, throws TransitionViolationError if invalid.
         // Note: uses whereParams (original, no policy filter) for the current-value SELECT.
         _transResult = await checkTransitions(row, whereParams, whereSql, system, _move)
+        // Every no-match reader below reads the row UNSCOPED to name why — the
+        // version, the seal, the move's refusal — so a row outside the caller's
+        // read scope leaves before any of them can describe it.
+        if (_transResult === NOT_VISIBLE) return true
         // If transitions apply, narrow WHERE to include AND field = currentValue (optimistic lock)
         const { sql: _txWhereSql, params: _txWhereParams } = _transResult
           ? applyTransitionWhereClause(_transResult, finalWhereSql, finalWhereParams)

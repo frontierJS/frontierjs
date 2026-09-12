@@ -125,6 +125,15 @@ try {
   }
   if (behind !== null)
     echo(`  journal:    format ${behind} — the next deploy migrates it`)
+
+  // The other half of a pause (FJS-D262), asked of Caravan's own bin in the
+  // container. Printed beside the edge and never reconciled with it.
+  const { queueScript, queueStateLine } = await import(new URL('file://' + global.fliRoot + '/core/pause.js'))
+  const q = queueStateLine({ output: ask(queueScript({ container, verb: 'state' })), edgePaused: filePresent })
+  echo(`  queues:     ${q.text}${q.drift ? '  ⚠ DRIFT' : ''}`)
+  if (q.drift) echo(filePresent
+    ? `  ⚠ the edge is paused and jobs are running — fli deploy:pause drains them`
+    : `  ⚠ a deploy's queue pause is still in force with the edge serving — fli deploy:unpause lifts it`)
 } catch {
   echo(`  state:      could not read`)
 }

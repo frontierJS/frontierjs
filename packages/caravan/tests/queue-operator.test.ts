@@ -141,7 +141,7 @@ describe('a paused queue', () => {
         max_attempts: 3, retry_delay: null, unique_key: null, run_at: now - 1, created_at: now,
         actor_id: null, tenant_id: null, correlation_id: null,
       })
-    st.pauseQueue.run({ queue: 'mail', at: now, actor: null, reason: null })
+    st.pauseQueue.run({ queue: 'mail', at: now, actor: null, reason: null, holder: null })
 
     const claim = (queue: string) => st.claimNextNamed(1).get({ queue, now, owner: 'o', n0: 'x' })
     expect(st.anyPending.get({ queue: 'mail', now })).toBeNull()
@@ -233,6 +233,111 @@ describe('a verb that changes nothing', () => {
   })
 })
 
+// ─── every queue ──────────────────────────────────────────────────────────────
+
+describe('a pause over every queue', () => {
+  // A process outside the app cannot list the queues — some live only in job
+  // files — so the pause names none of them. Asked of the claim statement with a
+  // queue that did not exist when the pause was written.
+  it('stops a queue first named AFTER it, in the claim statement itself', () => {
+    const db  = openDb(tmpPath())
+    const st  = buildStatements(db)
+    const now = Date.now()
+    st.pauseQueue.run({ queue: '*', at: now, actor: 'deploy', reason: null, holder: 'fli:deploy' })
+    st.insert.run({
+      id: 'j-late', queue: 'late', name: 'x', data: '{}', status: 'pending', priority: 0,
+      max_attempts: 3, retry_delay: null, unique_key: null, run_at: now - 1, created_at: now,
+      actor_id: null, tenant_id: null, correlation_id: null,
+    })
+    const claim = () => st.claimNextNamed(1).get({ queue: 'late', now, owner: 'o', n0: 'x' })
+    expect(st.anyPending.get({ queue: 'late', now })).toBeNull()
+    expect(claim()).toBeNull()
+
+    st.resumeQueue.run({ queue: '*', holder: null })
+    expect(claim()?.id).toBe('j-late')
+    db.close()
+  })
+
+  it('is honored by another instance, and every queue runs again on resume', async () => {
+    const path = tmpPath()
+    const operator = queueAt(path)
+    const worker   = queueAt(path)
+    worker.handle('send',  async () => {}, { queue: 'mail' })
+    worker.handle('build', async () => {}, { queue: 'reports' })
+    await worker.start()
+
+    expect(operator.pause({ actor: 'ops' }).pause).toMatchObject({ queue: '*', actor: 'ops' })
+    const a = await operator.dispatch('send',  {}, { queue: 'mail' })
+    const b = await operator.dispatch('build', {}, { queue: 'reports' })
+    await Bun.sleep(150)
+    expect([statusOf(operator, a), statusOf(operator, b)]).toEqual(['pending', 'pending'])
+
+    operator.resume({ actor: 'ops' })
+    await waitFor(() => statusOf(operator, a) === 'done' && statusOf(operator, b) === 'done')
+  })
+
+  it("is the pause a queue's own state reports, since the queue has no row of its own", () => {
+    const c = queueAt(tmpPath())
+    c.pause({ actor: 'deploy', holder: 'fli:deploy' })
+    expect(c.queue('mail').state().paused).toMatchObject({ queue: '*', holder: 'fli:deploy' })
+    expect(c.stats().queues.reports.pausedMs).toBeGreaterThanOrEqual(0)
+  })
+
+  it("is not a queue — queue('*') refuses", () => {
+    const c = queueAt(tmpPath())
+    c.pause()
+    expect(() => c.queue('*')).toThrow(/no queue named/)
+  })
+
+  it('waits on running work in every queue when drained', async () => {
+    const c = queueAt(tmpPath())
+    let release!: () => void
+    const gate = new Promise<void>(r => { release = r })
+    c.handle('slow', async () => { await gate }, { queue: 'reports' })
+    await c.start()
+    const id = await c.dispatch('slow', {})
+    await waitFor(() => statusOf(c, id) === 'running')
+
+    expect(await c.drain({ timeout: 120 })).toMatchObject({ drained: false, running: 1 })
+    release()
+    await waitFor(() => statusOf(c, id) === 'done')
+    expect(await c.drain({ timeout: 500 })).toMatchObject({ drained: true, running: 0 })
+  })
+})
+
+// ─── the holder ───────────────────────────────────────────────────────────────
+
+describe('a holder', () => {
+  // FJS-D262: a deploy lifts its own pause, and a pause an operator put on a
+  // queue before the deploy is still there after it.
+  it("a resume stating a holder leaves an operator's own queue pause in force", () => {
+    const c = queueAt(tmpPath())
+    c.queue('mail').pause({ actor: 'alice', reason: 'bounce storm' })
+    c.pause({ actor: 'deploy', holder: 'fli:deploy' })
+
+    expect(c.resume({ holder: 'fli:deploy' }).changed).toBe(true)
+    expect(c.queue('mail').state().paused).toMatchObject({ queue: 'mail', actor: 'alice' })
+    expect(c.queue('reports').state().paused).toBeNull()
+  })
+
+  it("does not lift another holder's row, and names what still holds it", () => {
+    const c = queueAt(tmpPath())
+    c.pause({ actor: 'alice' })
+
+    const out = c.resume({ holder: 'fli:deploy' })
+    expect(out.changed).toBe(false)
+    expect(out.pause).toMatchObject({ queue: '*', actor: 'alice', holder: null })
+    // The pair: the same resume with no holder is an operator's, and lifts it.
+    expect(c.resume({ actor: 'alice' })).toEqual({ changed: true, pause: null })
+  })
+
+  it("a queue resume says the pause over every queue still holds it", () => {
+    const c = queueAt(tmpPath())
+    c.pause({ actor: 'deploy', holder: 'fli:deploy' })
+    expect(c.queue('mail').resume({ actor: 'bob' })).toMatchObject({ changed: false, pause: { queue: '*' } })
+  })
+})
+
 // ─── the audit ────────────────────────────────────────────────────────────────
 
 describe('queue_events', () => {
@@ -302,6 +407,17 @@ describe('stats()', () => {
       { queue: 'b', paused_at: now - 90_000 },
     ])
     expect(s.queues.a.pausedMs).toBe(5_000)
+    expect(s.total.pausedMs).toBe(90_000)
+  })
+
+  it('applies the pause over every queue to each queue, the longer of the two winning', () => {
+    const now = 1_000_000
+    const s = aggregateStats([], ['a', 'b'], [], now, [
+      { queue: 'a', paused_at: now - 90_000 },
+      { queue: '*', paused_at: now - 5_000 },
+    ])
+    expect(s.queues.a.pausedMs).toBe(90_000)
+    expect(s.queues.b.pausedMs).toBe(5_000)
     expect(s.total.pausedMs).toBe(90_000)
   })
 })

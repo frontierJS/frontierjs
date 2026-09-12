@@ -99,10 +99,15 @@ export function createSubscriptionsService() {
      * the one owner of the arithmetic and this only names the call.
      *
      * `asSystem()` because issuing is a system context by declaration —
-     * `Invoice` is `@@gate("1.8.8.8")` — and what that does NOT drop is
-     * `@immutable`, which is why the numbers it writes can never be restated.
-     * The caller's own right to be here is graded before this line runs, by the
-     * model's gate and its row policies.
+     * `Invoice` creates at 8 — and what that does NOT drop is `@immutable`,
+     * which is why the numbers it writes can never be restated.
+     *
+     * So the caller's right to THIS subscription is read first, through their
+     * own client: a custom method's gate floor is a presence check and no row
+     * policy runs before the body, so without the read any signed-in shopper
+     * could reprice somebody else's arrangement and issue them the invoice
+     * (`FJS-1087`). The read policy and the update policy name the same two
+     * callers — staff, and the subscription's owner.
      */
     changePlan: async () => {
       const body = ($.data ?? {}) as { planVersionId?: number, quantity?: number }
@@ -112,8 +117,11 @@ export function createSubscriptionsService() {
       if (body.planVersionId == null && body.quantity == null)
         throw Object.assign(new Error('Name a plan version, a quantity, or both'), { status: 400 })
 
-      const db = $.db as any
-      return await changePlan(db.asSystem(), Number($.id), body)
+      const db  = subs()
+      const row = await db.subscription.findFirst({ where: { id: Number($.id) } })
+      if (!row) throw Object.assign(new Error('No such subscription'), { status: 404 })
+
+      return await changePlan(db.asSystem(), row.id, body)
     },
 
     // Stated whole, because declaring one method declares the list — a service

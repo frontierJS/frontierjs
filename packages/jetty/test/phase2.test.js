@@ -260,6 +260,33 @@ group('auth flow')
     if (broadcasts.length === 1 && broadcasts[0].payload.authenticated) ok('submitCode broadcasts the session')
   }
 
+  // A SPENT attempt clears the waiting state and says so; a merely wrong code
+  // does not. The pair is the test — clearing on every refusal would close the
+  // popup's box on a ticket that still has four attempts left.
+  {
+    let spent = false
+    const { broadcasts, auth } = setup({
+      'auth.login':         async () => ({ awaitingCode: true, expiresAt: '2030-01-01T00:00:00.000Z' }),
+      'auth.completeLogin': async () => {
+        throw Object.assign(new Error('Invalid code'), { data: { retryable: !spent } })
+      },
+    })
+    await auth.login({})
+    broadcasts.length = 0
+
+    try { await auth.submitCode('000000') } catch {}
+    if (auth.session.awaitingCode && broadcasts.length === 0) ok('a retryable refusal keeps the attempt waiting, and broadcasts nothing')
+    else bad('a retryable refusal moved the waiting state', JSON.stringify({ session: auth.session, broadcasts }))
+
+    spent = true
+    try { await auth.submitCode('000000') } catch {}
+    if (!auth.session.awaitingCode && broadcasts.length === 1 && !broadcasts[0].payload.awaitingCode) {
+      ok('a spent attempt clears the waiting state and broadcasts it')
+    } else {
+      bad('a spent attempt left the popup waiting', JSON.stringify({ session: auth.session, broadcasts }))
+    }
+  }
+
   // The ticket never reaches a page or a port: `submitCode` takes a code and
   // nothing else, which is what makes cookie mode work unchanged.
   {

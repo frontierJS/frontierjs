@@ -61,7 +61,7 @@ import { findChrome }                          from '../packages/cli/core/browse
 
 // Packs the working tree and builds a scaffolded app against it. Its own file
 // because the mechanism needs more explaining than the phase does.
-import { scaffoldAndBuild, scaffoldAndDeploy, deployJournalCycle, pauseEdgeCycle, daemonBlindHint, ciWorkBase, portFree } from './scaffold-build.mjs'
+import { scaffoldAndBuild, scaffoldAndDeploy, deployJournalCycle, pauseEdgeCycle, pauseQueueCycle, daemonBlindHint, ciWorkBase, portFree } from './scaffold-build.mjs'
 
 const ROOT       = resolveRoot()
 const ALLOWANCES = join(ROOT, 'scripts', 'ci-allowances.json')
@@ -1435,6 +1435,27 @@ function deploy() {
 
   if (!edge.findings.length)
     ok('a paused app refuses at the edge and serves again, against a real nginx', Date.now() - e0)
+
+  // ── the queues ────────────────────────────────────────────
+  // The other half of a pause (FJS-D262): the script the pause step sends,
+  // against a real Caravan worker in a real container. The only place the
+  // bin's /proc search runs with no --pid, and the only place its answer has
+  // crossed two shells before the verdict reads it.
+  const q0 = Date.now()
+  const queues = pauseQueueCycle({ verbose })
+
+  if (queues.skipped) {
+    if (process.env.FJS_CI_REQUIRE_DOCKER === '1')
+      fail(`pause queue cycle skipped and FJS_CI_REQUIRE_DOCKER=1 — ${queues.skipped}`)
+    else
+      note(`pause queue cycle SKIPPED — ${queues.skipped}. Set FJS_CI_REQUIRE_DOCKER=1 to make this a failure.`)
+    return
+  }
+
+  for (const f of queues.findings) fail(`pause queues: ${f.message}`, f.output)
+
+  if (!queues.findings.length)
+    ok('a pause drains every queue in a running container and the unpause runs what it held', Date.now() - q0)
 }
 
 // ─── phase 8 · tests ────────────────────────────────────────

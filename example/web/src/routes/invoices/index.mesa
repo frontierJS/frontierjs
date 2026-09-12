@@ -6,8 +6,8 @@ title: Invoices
   // filters and cells all come out of `db/schema.lite`.
   //
   // Nothing on this screen edits anything, and that is the model rather than a
-  // decision here: `Invoice` is `@@gate("1.8.8.8")` and every money column on
-  // it is `@system @immutable`, so the writable set is empty and there is no
+  // decision here: `Invoice` is created only by the system and every column
+  // on it is `@system` or `@immutable`, so the writable set is empty and there is no
   // form to generate (`FJS-D162`). What a person may do to an invoice is
   // settle it or void it, and both are named moves on its own screen. A table
   // over a model nobody can write is the shape `columns()` is FOR: a form

@@ -66,12 +66,25 @@ Stopping the container is the thing this replaces: it looks identical to a crash
 from every reader, and it cannot deploy, because the migrations run in the
 container's own entrypoint.
 
-## What it does not do
+## The queues
 
-**A pause stops callers, not the app.** Jobs, crons and the transactional outbox
-go on exactly as before, because nothing at the edge reaches them. If the reason
-for pausing is a migration during which nothing may write, this covers the half
-that arrives over HTTP and not the half the app does to itself.
+**The edge stops callers; the queues are the other half.** Jobs, crons and the
+transactional outbox run inside the container, which stays up, so once the edge
+is refusing the pause drains every Caravan queue in the running app — the case a
+pause is most reached for is a migration nothing may write through, and a job is
+a writer. Work already running finishes; a job dispatched while paused is queued
+and runs on unpause.
+
+It is done by running Caravan's own `caravan queue drain` inside the serving
+container (`FJS-D262`), so the database it pauses is the one the app has open
+and nothing here knows where that is. The pause is held by the deploy, and
+`fli deploy:unpause` lifts that one and no other: a queue an operator paused
+before you is still paused after.
+
+An app with no Caravan, or no container running, is said so and is not a
+failure. A bin that REFUSES — two jobs databases open in one container — fails
+the transition with the edge still paused, and running the pause again is how
+it finishes.
 
 ## Deploying while paused
 

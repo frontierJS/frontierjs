@@ -57,6 +57,13 @@ index.ts     public API
   the caller HOLDS a session: `login()` and `completeLogin` have none to lose and
   keep 401; everything reached through a service throws
   `ReauthenticationFailedError`.
+- **Every method that checks the CURRENT password is rate-limited per account,
+  as one bucket.** `changePassword`, `setupTotp`, `disableTotp` and
+  `regenerateRecoveryCodes` each verify the password for whoever holds the
+  session, so unbounded they are a guessing oracle for a stolen session.
+  `reauthenticationRateLimit` defaults to login's own budget. A fifth method
+  that takes `currentPassword` calls `reauthenticate(ctx)` before the provider
+  or it is a door the others do not share.
 - **`verifyTotp` does not consume the step and `completeLogin` does.** Not an
   inconsistency: consuming in both refuses a person who signs in and immediately
   opens settings with the code still on their screen, and what it would buy is a

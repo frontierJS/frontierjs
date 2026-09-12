@@ -35,7 +35,7 @@ beforeAll(async () => {
   app.configure(createAuthPlugin(h.auth, {
     loginRateLimit:    { max: 10_000, window: '15 minutes' },
     registerRateLimit: { max: 10_000, window: '15 minutes' },
-    services:          { level: () => 4 },
+    services:          { level: () => 4, reauthenticationRateLimit: { max: 10_000, window: '15 minutes' } },
   }))
 
   await request(app).post('/auth/register').send({ email: ALICE, password: PW })
@@ -206,6 +206,55 @@ describe('account — TOTP over HTTP', () => {
       .set('x-service-method', 'totpStatus').auth(token).send({})
     expect(res.status).toBe(400)
     expect(JSON.stringify(res.body)).toContain('totpStatus')
+    scoped.cleanup()
+  })
+})
+
+// ─── account: the password, asked again ────────────────────────────────────
+//
+// Four methods verify the CURRENT password for whoever holds the session, which
+// makes each one a guessing oracle for a stolen session. Every row below is a
+// refusal beside the answer that separates it from a limiter that refuses
+// everything, or one that counts nothing: a second account untouched, a method
+// that asks for no password spending nothing, and the session still a session.
+
+describe('account — the password, asked again, is bounded per account', () => {
+  test('guesses spread across three methods share one bucket, and the fourth — the right password — is refused', async () => {
+    const scoped  = await makeAuth({ encryptionKey: TEST_KEY })
+    const bounded = await createTestApp({ auth: scoped.auth as any })
+    bounded.setAuth(scoped.auth as any)
+    bounded.configure(createAuthPlugin(scoped.auth, {
+      loginRateLimit:    { max: 10_000, window: '15 minutes' },
+      registerRateLimit: { max: 10_000, window: '15 minutes' },
+      services:          { reauthenticationRateLimit: { max: 3, window: '15 minutes' } },
+    }))
+
+    const tokenFor = async (email: string) => {
+      await request(bounded).post('/auth/register').send({ email, password: PW })
+      return ((await request(bounded).post('/auth/login').send({ email, password: PW })).body as any).token as string
+    }
+    const guesser   = await tokenFor('guesser@example.com')
+    const bystander = await tokenFor('bystander@example.com')
+    const reader    = await tokenFor('reader@example.com')
+    const as = (token: string, method: string, data: Record<string, unknown>) =>
+      request(bounded).post('/account/me').set('x-service-method', method).auth(token).send(data as any)
+
+    expect((await as(guesser, 'setupTotp',               { currentPassword: 'guess-1' })).status).toBe(403)
+    expect((await as(guesser, 'changePassword',          { currentPassword: 'guess-2', newPassword: 'x' })).status).toBe(403)
+    expect((await as(guesser, 'regenerateRecoveryCodes', { currentPassword: 'guess-3' })).status).toBe(403)
+
+    const fourth = await as(guesser, 'setupTotp', { currentPassword: PW })
+    expect(fourth.status).toBe(429)
+    // A 429 is not a 401: the session that hit the limit is still a session.
+    expect((await request(bounded).get('/account/me').auth(guesser)).status).toBe(200)
+
+    // The bucket is the ACCOUNT's. A limiter keyed on anything wider refuses here.
+    expect((await as(bystander, 'setupTotp', { currentPassword: PW })).status).toBe(200)
+
+    // And only the password spends it: four reads, then the password, answered.
+    for (let i = 0; i < 4; i++) expect((await as(reader, 'totpStatus', {})).status).toBe(200)
+    expect((await as(reader, 'setupTotp', { currentPassword: PW })).status).toBe(200)
+
     scoped.cleanup()
   })
 })

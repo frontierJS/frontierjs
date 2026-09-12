@@ -626,7 +626,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `Invoice`
 
-- gate `read:1 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- gate `read:1 create:8 update:4 delete:8` · closed (`additionalProperties: false`)
 - relation `customer` — belongsTo `Customer` via `customerId` · on delete Restrict
 - relation `subscription` — belongsTo `Subscription` via `subscriptionId` · on delete Restrict · optional
 - relation `lines` — hasMany `InvoiceLine`

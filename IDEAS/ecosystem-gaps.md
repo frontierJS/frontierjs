@@ -113,10 +113,7 @@ retired.
 **Answered 2026-09-12: retired** ([FJS-D260](../DECISIONS.md#fjs-d260)). Delegation was
 not available — `useStorage()` takes a stored ref and has no `list`, `meta` or
 `toResponse`, so a forwarding `app.filestorage` would have been a third shape rather
-than one owner. Nothing in the workspace called it. The claim above that Litestone's S3
-path is *tested* is the part of this section that did not survive the closing: it is
-cited by no test file, which is [FJS-1076](../ISSUES.md#fjs-1076) and is now the only
-object-store signer the framework has.
+than one owner. Nothing in the workspace called it. The claim above that Litestone's S3 path is *tested* did not survive the closing — it was cited by no test file ([FJS-1076](../ISSUES.md#fjs-1076)). It is now, against AWS's own SigV4 suite, and the test found both defects that row predicted plus a third in the provider.
 
 - **Why it still matters:** an app that stores files through Junction's interface rather
   than a `File` column still cannot run on more than one node

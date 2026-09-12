@@ -296,7 +296,7 @@ table `inventory_movement` · db `main` · gate `5.5.9.9`
 
 ### `Invoice`
 
-table `invoice` · db `main` · gate `1.8.8.8`
+table `invoice` · db `main` · gate `1.8.4.8`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
@@ -326,6 +326,7 @@ table `invoice` · db `main` · gate `1.8.8.8`
 @@check(total = subtotal + tax)
 @@allow('read', auth().isStaff)
 @@allow('read', userId == auth().id)
+@@allow('update', auth().isStaff)
 transition status.issue: draft → issued @system @seals
 transition status.settle: issued → paid @system
 transition status.void: issued → void @gate(5)

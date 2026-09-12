@@ -1,5 +1,19 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-12 — a composed list
+
+**`list({ composed: true })` is `record(id, { composed: true })` for a list.** Where a service's
+`find()` answers more than the rows — an `include:`, a per-row count — a push carries the row alone and
+the store's `upsert` replaces what was held, so a store-backed list blanks every relation cell at the
+first announcement. A composed list holds its rows itself and never writes them to the store, since a
+node holding one screen's includes would hand them to every other list over the model. Any announcement
+on the service, or a reconnect (jittered up to 2s), re-reads the window; a burst during a read is ONE
+more read. Growing the window widens the limit instead of resuming from a cursor, because the next push
+re-reads all of it anyway. The other answer — merge the push over the held row — was refused: it is free
+and goes stale in silence once a push moves a key an include was read through. `tests/resource-list.test.js`
+carries six rows, with the push paired against a store-backed control that loses the relation; every
+mutant tried reds at least one. **Nothing notices an omitted flag**, the gap `record()` already has.
+
 ## 2026-09-12 — a page served from a custom scheme keeps its router
 
 **Links are intercepted on any scheme the page itself is served from** (`FJS-1085`). The click handler

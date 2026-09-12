@@ -113,7 +113,7 @@ export const RULES = [
   { id: 'scheduler-dispatch',   scope: 'app',  severity: 'error', invariant: null,
     title: 'a timer that dispatches into a queue is the queue\'s schedule' },
   { id: 'queue-operator-verb',  scope: 'app',  severity: 'error', invariant: null,
-    title: 'pausing, resuming or draining a queue is an operator\'s act, not a service\'s' },
+    title: 'pausing, resuming or draining a queue — or every queue — is an operator\'s act, not a service\'s' },
   { id: 'gate-unreachable',     scope: 'app',  severity: 'warn',  invariant: 6,
     title: 'a declared @@gate level something can actually reach' },
   { id: 'static-publish-db',    scope: 'app',  severity: 'error', invariant: null,
@@ -1878,9 +1878,9 @@ const CHECKS = {
     if (!files.length) return { skipped: 'no *.service.* or *.job.* under api/' }
 
     const findings = []
-    const say = (path, code, index, verb) => findings.push({
+    const say = (path, code, index, verb, target = 'queue(…)') => findings.push({
       file: path, line: lineOf(code, index),
-      message: `queue(…).${verb}() in a ${/\.job\./.test(path) ? 'job' : 'service'} file. Pausing, resuming and ` +
+      message: `${target}.${verb}() in a ${/\.job\./.test(path) ? 'job' : 'service'} file. Pausing, resuming and ` +
                `draining a queue are operator verbs (FJS-D198): over HTTP caravan requires ADMINISTRATOR ` +
                `for them, and a call from here skips that gate — whoever can reach this code can stop ` +
                `work every tenant is waiting on. Run it from a console or the admin route instead.`,
@@ -1888,6 +1888,9 @@ const CHECKS = {
 
     for (const path of files) {
       const code = readCode(path)
+      // Every queue at once: app.jobs.pause() — the one a deploy runs (FJS-D262)
+      for (const m of code.matchAll(/\.jobs\s*\.(pause|resume|drain)\s*\(/g))
+        say(path, code, m.index, m[1], 'jobs')
       // Chained: app.jobs.queue('mail').pause()
       for (const m of code.matchAll(/\.queue\s*\([^)]*\)\s*\.(pause|resume|drain)\s*\(/g))
         say(path, code, m.index, m[1])

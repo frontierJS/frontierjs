@@ -1,5 +1,16 @@
 # Changes — Basecamp
 
+## 2026-09-12 — the deployments list is one composed `list()`
+
+`web/src/routes/deployments/index.mesa` stops wiring its own load, its own filter state and its own
+push merge: it is `deployments.list({ state: 'local', composed: true, directives: { limit: 50 } })`,
+and it gains *Load more*. Composed because `deployments.find` includes the app and the environment and a
+push does not. The hand merge it replaces was right about that and would have gone stale the day a push
+moved `appId`. `verify` now patches the release from the list page through the real API and asserts the
+pair: the row MOVES and the app cell still names the app. Measured with each half broken: `composed:
+false` reds the app-cell row (it shows the raw id), a list that ignores pushes reds the row that moves.
+325/325.
+
 ## 2026-09-08 — the deployments list is derived from the schema
 
 `web/src/routes/deployments/index.mesa` takes `resource.columns()` UNAIDED —

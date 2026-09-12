@@ -62,9 +62,8 @@ grading on any keyword in it, and which three it may grade on is the design.
 
 There is no drive. That is the biggest thing wrong with this package: `CHANGES.md`
 carries two measured tables and a claim that no credential column appears in any
-tool schema, and nothing regenerates or regrades any of them.
-
-There is no drive. `bun run test` is all there is, and the gap is named in
+tool schema, and nothing regenerates or regrades any of them. `bun run test` is
+all there is, and the gap is named in
 `PROJECT_STATE.md`. A change to `describe()`, to `generateJsonSchema`'s keywords
 or to `@frontierjs/toolbelt/gate` can move this package's answers with nothing
 here failing — run `packages/junction`, `packages/litestone` and

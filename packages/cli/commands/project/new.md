@@ -1357,13 +1357,21 @@ function makeRouteLogin() {
 title: Sign in
 ---
 <script>
-  import { goto }         from '@frontierjs/sierra/router'
-  import { signIn }       from '@frontierjs/sierra/junction'
+  import { goto }                                    from '@frontierjs/sierra/router'
+  import { session, signIn, submitCode, signOut }    from '@frontierjs/sierra/junction'
 
   let email    = ''
   let password = ''
+  let code     = ''
   let error    = ''
   let loading  = false
+
+  // A password is not always the whole answer. An account with two-step
+  // sign-in turned on answers a CHALLENGE: nothing is stored, nobody is signed
+  // in, and \`session.awaitingCode\` holds when the attempt lapses. The code box
+  // below renders from it — without that branch this page sent a person with a
+  // second factor to / signed out, with nothing on screen saying why.
+  $: session.awaitingCode
 
   async function handleSubmit() {
     loading = true
@@ -1372,14 +1380,37 @@ title: Sign in
       // signIn does the whole thing: POST to the auth plugin's own login
       // route (the client composes apiPrefix + authPrefix, so no path is
       // written here), store the token, open the socket, and load the session
-      // — so \`session.user\` is there on the next line.
+      // — so \`session.user\` is there on the next line, unless a code is owed.
       await signIn(email, password)
+      password = ''
+      if (session.user) goto('/')
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  async function handleCode() {
+    loading = true
+    error   = ''
+    try {
+      // The ticket is the client's; this sends the code. A refusal that ends
+      // the attempt clears \`session.awaitingCode\`, which puts the password
+      // form back.
+      await submitCode(code.trim())
+      code = ''
       goto('/')
     } catch (e) {
       error = e.message
     } finally {
       loading = false
     }
+  }
+
+  async function startOver() {
+    await signOut()
+    code = ''; error = ''
   }
 ${sc}
 
@@ -1390,13 +1421,22 @@ ${sc}
     <p class="error">{error}</p>
   {/if}
 
-  <input bind:value={email}    type="email"    placeholder="Email" />
-  <input bind:value={password} type="password" placeholder="Password" />
-  <button on:click={handleSubmit} disabled={loading}>
-    {loading ? 'Signing in…' : 'Sign in'}
-  </button>
+  {#if session.awaitingCode}
+    <p class="alt">Enter the code from your authenticator app, or one of your recovery codes.</p>
+    <input bind:value={code} autocomplete="one-time-code" inputmode="numeric" placeholder="123456" />
+    <button on:click={handleCode} disabled={loading}>
+      {loading ? 'Checking…' : 'Verify'}
+    </button>
+    <button on:click={startOver} disabled={loading}>Start over</button>
+  {:else}
+    <input bind:value={email}    type="email"    placeholder="Email" />
+    <input bind:value={password} type="password" placeholder="Password" />
+    <button on:click={handleSubmit} disabled={loading}>
+      {loading ? 'Signing in…' : 'Sign in'}
+    </button>
 
-  <p class="alt">No account? <a href="/register/">Create one</a></p>
+    <p class="alt">No account? <a href="/register/">Create one</a></p>
+  {/if}
 
   <!-- A fresh app has no rows in \`user\`, so the first person to open this
        page cannot sign in and there is nothing on screen saying why. The other

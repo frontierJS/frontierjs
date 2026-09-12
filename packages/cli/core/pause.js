@@ -199,3 +199,128 @@ export function pauseRefusals({
 
   return out
 }
+
+// ─── the queues (FJS-D262) ───────────────────────────────────────────────────
+//
+// The container stays up, so a pause at the edge leaves every job, cron and
+// outbox delivery running — and the case a pause is most reached for, a
+// migration nothing may write through, is exactly the case that matters. The
+// queues are Caravan's, and this file never writes Caravan's tables: it builds
+// the script that runs Caravan's OWN bin inside the serving container, so the
+// code writing the pause row is the code the app reads it with, and it grades
+// the bin's answer. Which database, which queues and whether anybody is claiming
+// are all the bin's to find out; nothing here restates them.
+
+/** What a deploy's queue pause is held by. A resume stating it lifts nothing an operator paused. */
+export const QUEUE_HOLDER = 'fli:deploy'
+
+/** Where the bin is inside an app image. Run by path: `bunx caravan` fetches whatever npm calls that. */
+export const CARAVAN_BIN = 'node_modules/@frontierjs/caravan/bin/caravan.ts'
+
+const sq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`
+
+/**
+ * The script that runs one verb over every queue in `container`.
+ *
+ * Always exits 0 and prints one JSON line last: the bin's answer, or a
+ * `{"fli": …}` line where there was nothing to ask. A non-zero exit from the
+ * bin is a refusal with a reason in its JSON, and `capture` throwing on it
+ * would throw that reason away.
+ */
+export function queueScript({ container, verb, actor, reason = null }) {
+  const args = [
+    'queue', verb,
+    ...(verb === 'state' ? [] : ['--actor', sq(actor || 'fli'), '--holder', sq(QUEUE_HOLDER)]),
+    ...(reason && (verb === 'pause' || verb === 'drain') ? ['--reason', sq(reason)] : []),
+  ].join(' ')
+  return `if [ "$(docker inspect -f '{{.State.Running}}' ${container} 2>/dev/null)" != "true" ]; then
+  echo '{"fli":"no-container"}'
+elif ! docker exec -w /app ${container} test -f ${CARAVAN_BIN}; then
+  echo '{"fli":"no-caravan"}'
+else
+  docker exec -w /app ${container} bun ${CARAVAN_BIN} ${args} 2>&1 || true
+fi`
+}
+
+const who = (p) => `${p.actor ?? 'nobody'}${p.reason ? ` (${p.reason})` : ''}`
+
+/**
+ * What the step says and whether the transition fails, from what the script printed.
+ *
+ * `fail` is kept for the bin REFUSING — two databases open, a file that is not
+ * Caravan's, output nobody can read. Nothing running to pause is not a failure:
+ * there is no work being claimed to stop, and a failed transition over an app
+ * that is down would ask a person to fix something that is not broken.
+ */
+export function queueVerdict({ kind, output }) {
+  const line = String(output ?? '').trim().split('\n').reverse().find(l => l.trim().startsWith('{'))
+  let a
+  try { a = line ? JSON.parse(line) : null } catch { a = null }
+  if (!a)
+    return { level: 'fail', lines: ['the Caravan bin answered nothing a deploy can read', ...String(output ?? '').trim().split('\n').slice(-3)] }
+
+  if (a.fli === 'no-container')
+    return { level: 'warn', lines: [kind === 'pause'
+      ? 'no container is running, so no queue was paused — a container started while the edge is paused runs its jobs'
+      : 'no container is running, so no queue was resumed'] }
+  if (a.fli === 'no-caravan')
+    return { level: 'note', lines: ['this app has no Caravan — there are no queues to ' + (kind === 'pause' ? 'pause' : 'resume')] }
+
+  if (a.error) {
+    if (a.exists === false && a.source === 'open')
+      return { level: 'note', lines: ['no process in the container has a Caravan jobs database open — nothing is claiming jobs'] }
+    return { level: 'fail', lines: [
+      `the Caravan bin refused: ${a.error}`,
+      ...(a.candidates ?? []).map(c => `  ${c}`),
+    ] }
+  }
+
+  const lines = []
+  let level = 'ok'
+  const warn = (text) => { level = 'warn'; lines.push(text) }
+
+  if (kind === 'pause') {
+    if (a.changed)                          lines.push(`every queue paused → ${a.db}`)
+    else if (a.pause?.holder === QUEUE_HOLDER) lines.push(`every queue was already paused by a deploy → ${a.db}`)
+    else warn(`every queue was already paused by ${who(a.pause)} — the unpause will leave that pause in force`)
+    if (a.drained === false)
+      warn(`${a.running} job(s) still running when the drain stopped waiting — they finish, and nothing new starts`)
+    if (a.liveInstances === 0)
+      warn(`no Caravan instance has heartbeated on ${a.db} within a lease — the pause is written and is read at the next start`)
+    return { level, lines }
+  }
+
+  if (a.changed)       lines.push(`every queue resumed → ${a.db}`)
+  else if (!a.pause)   lines.push('no queue pause was held by a deploy — nothing to lift')
+  else warn(`every queue is still paused by ${who(a.pause)}, which a deploy did not make — lift it with: caravan queue resume --actor <you>`)
+  return { level, lines }
+}
+
+/**
+ * One line for `deploy:status`, from `queueScript({ verb: 'state' })`'s output,
+ * with the disagreement with the edge named rather than reconciled — the same
+ * rule `driftVerdict` holds for the journal and the file.
+ */
+export function queueStateLine({ output, edgePaused }) {
+  const line = String(output ?? '').trim().split('\n').reverse().find(l => l.trim().startsWith('{'))
+  let a
+  try { a = line ? JSON.parse(line) : null } catch { a = null }
+  if (!a)                          return { text: 'could not be read', drift: false }
+  if (a.fli === 'no-container')    return { text: 'no container running', drift: false }
+  if (a.fli === 'no-caravan')      return { text: 'this app has no Caravan', drift: false }
+  if (a.error)                     return { text: `could not be read — ${a.error}`, drift: false }
+
+  if (a.paused) {
+    const byDeploy = a.paused.holder === QUEUE_HOLDER
+    const since    = new Date(a.paused.pausedAt).toISOString()
+    return {
+      text:  `every queue paused · since ${since} · ${who(a.paused)}${byDeploy ? ' · held by a deploy' : ''}`,
+      // A deploy's pause with the edge serving is a pause nobody will lift: the
+      // unpause that owns it has already run, or never will.
+      drift: byDeploy && !edgePaused,
+    }
+  }
+  const own = Object.entries(a.queues ?? {}).filter(([, q]) => q.paused).map(([n]) => n)
+  const text = own.length ? `${own.length} of ${Object.keys(a.queues).length} paused (${own.join(', ')})` : 'claiming'
+  return { text, drift: edgePaused }
+}

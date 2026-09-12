@@ -128,11 +128,21 @@ const SCHEMA = `
   -- Named for what it holds, not 'queues'. The SET of queues is derived from
   -- configuration, job files and dispatch (FJS-D198) and a table called queues
   -- would read as a second declaration of it.
+  --
+  -- The queue '*' is every queue, including one first named after the pause. A
+  -- process outside the app cannot enumerate the set -- part of it lives in job
+  -- files only the app imports -- so a pause that listed queues would let a cron
+  -- whose queue has never held a row go on running.
+  --
+  -- holder is what may lift a pause that is not an operator's own (FJS-D262): a
+  -- resume that states a holder deletes only a row carrying it, so a deploy
+  -- lifting its pause cannot lift the one an operator put on a queue before it.
   CREATE TABLE IF NOT EXISTS queue_pauses (
     queue      TEXT    PRIMARY KEY,
     paused_at  INTEGER NOT NULL,
     actor_id   TEXT,
-    reason     TEXT
+    reason     TEXT,
+    holder     TEXT
   );
 
   -- Every operator verb run against a queue, append-only. The pause row says
@@ -507,7 +517,7 @@ export function buildStatements(db: Database) {
       WHERE  queue  = $queue
         AND  status = 'pending'
         AND  run_at <= $now
-        AND  NOT EXISTS (SELECT 1 FROM queue_pauses WHERE queue = $queue)
+        AND  NOT EXISTS (SELECT 1 FROM queue_pauses WHERE queue IN ($queue, '*'))
       ORDER BY priority DESC, run_at ASC
       LIMIT 1
     )
@@ -536,7 +546,7 @@ export function buildStatements(db: Database) {
             AND  status = 'pending'
             AND  run_at <= $now
             AND  name IN (${names})
-            AND  NOT EXISTS (SELECT 1 FROM queue_pauses WHERE queue = $queue)
+            AND  NOT EXISTS (SELECT 1 FROM queue_pauses WHERE queue IN ($queue, '*'))
           ORDER BY priority DESC, run_at ASC
           LIMIT 1
         )
@@ -609,7 +619,7 @@ export function buildStatements(db: Database) {
   const anyPending = wrap<{ one: number }, { queue: string; now: number }>(db.prepare(`
     SELECT 1 AS one FROM jobs
     WHERE queue = $queue AND status = 'pending' AND run_at <= $now
-      AND NOT EXISTS (SELECT 1 FROM queue_pauses WHERE queue = $queue)
+      AND NOT EXISTS (SELECT 1 FROM queue_pauses WHERE queue IN ($queue, '*'))
     LIMIT 1
   `))
 
@@ -622,29 +632,44 @@ export function buildStatements(db: Database) {
   // and the pause's insert are ordered by the write lock, so a claim either sees
   // the row or committed before it existed — and drain() waits for that one.
 
-  const pauseQueue = wrap<void, { queue: string; at: number; actor: string | null; reason: string | null }>(db.prepare(`
-    INSERT INTO queue_pauses (queue, paused_at, actor_id, reason)
-    VALUES ($queue, $at, $actor, $reason)
+  const pauseQueue = wrap<void, { queue: string; at: number; actor: string | null; reason: string | null; holder: string | null }>(db.prepare(`
+    INSERT INTO queue_pauses (queue, paused_at, actor_id, reason, holder)
+    VALUES ($queue, $at, $actor, $reason, $holder)
     ON CONFLICT(queue) DO NOTHING
   `))
 
-  const resumeQueue = wrap<void, { queue: string }>(db.prepare(`
-    DELETE FROM queue_pauses WHERE queue = $queue
+  // An unstated holder lifts whatever is there -- an operator may always resume.
+  // A stated one lifts only its own row.
+  const resumeQueue = wrap<void, { queue: string; holder: string | null }>(db.prepare(`
+    DELETE FROM queue_pauses WHERE queue = $queue AND ($holder IS NULL OR holder = $holder)
   `))
 
-  const getPause = wrap<{ queue: string; paused_at: number; actor_id: string | null; reason: string | null }, { queue: string }>(db.prepare(`
-    SELECT queue, paused_at, actor_id, reason FROM queue_pauses WHERE queue = $queue
+  const getPause = wrap<PauseRow, { queue: string }>(db.prepare(`
+    SELECT queue, paused_at, actor_id, reason, holder FROM queue_pauses WHERE queue = $queue
   `))
 
-  const allPauses = db.prepare<
-    { queue: string; paused_at: number; actor_id: string | null; reason: string | null }, []
-  >(`SELECT queue, paused_at, actor_id, reason FROM queue_pauses`)
+  // The pause a claim in this queue is actually stopped by: its own row first,
+  // then the pause over every queue. Answering with the own row alone reports a
+  // queue as unpaused while '*' holds it.
+  const pauseInForce = wrap<PauseRow, { queue: string }>(db.prepare(`
+    SELECT queue, paused_at, actor_id, reason, holder FROM queue_pauses
+    WHERE queue IN ($queue, '*') ORDER BY queue = '*' LIMIT 1
+  `))
+
+  const allPauses = db.prepare<PauseRow, []>(
+    `SELECT queue, paused_at, actor_id, reason, holder FROM queue_pauses`)
 
   // Every instance's running rows, not this process's — a drain that waited
   // only on its own workers would report a queue quiet while another replica
   // is midway through a job in it.
   const runningInQueue = wrap<{ count: number }, { queue: string }>(db.prepare(`
-    SELECT COUNT(*) AS count FROM jobs WHERE queue = $queue AND status = 'running'
+    SELECT COUNT(*) AS count FROM jobs WHERE status = 'running' AND ($queue = '*' OR queue = $queue)
+  `))
+
+  // Instances that have heartbeated since the cutoff. Zero on a file that exists
+  // is the answer that tells a pause it was written where nobody is claiming.
+  const liveOwners = wrap<{ count: number }, { cutoff: number }>(db.prepare(`
+    SELECT COUNT(*) AS count FROM job_owners WHERE seen_at >= $cutoff
   `))
 
   const recordQueueEvent = wrap<void, { queue: string; verb: string; actor: string | null; at: number; detail: string | null }>(db.prepare(`
@@ -663,7 +688,7 @@ export function buildStatements(db: Database) {
   const queuesInData = db.prepare<{ queue: string }, []>(`
     SELECT DISTINCT queue FROM jobs
     UNION
-    SELECT queue FROM queue_pauses
+    SELECT queue FROM queue_pauses WHERE queue != '*'
   `)
 
   // ── Cancel ──────────────────────────────────────────────────────────────────
@@ -827,8 +852,10 @@ export function buildStatements(db: Database) {
     pauseQueue,
     resumeQueue,
     getPause,
+    pauseInForce,
     allPauses,
     runningInQueue,
+    liveOwners,
     recordQueueEvent,
     queueEvents,
     queuesInData,
@@ -847,6 +874,17 @@ export function buildStatements(db: Database) {
 }
 
 export type Statements = ReturnType<typeof buildStatements>
+
+/** Where the jobs database is when nothing says otherwise. The bin reads it too. */
+export const DEFAULT_DB_PATH  = './db/jobs.db'
+
+/** How long an instance may go without a heartbeat before its work is abandoned. */
+export const DEFAULT_LEASE_MS = 30_000
+
+/** The queue name a pause over every queue is stored under. Never a queue of its own. */
+export const EVERY_QUEUE = '*'
+
+export type PauseRow = { queue: string; paused_at: number; actor_id: string | null; reason: string | null; holder: string | null }
 
 // ─── Stats aggregation ────────────────────────────────────────────────────────
 
@@ -901,11 +939,22 @@ export function aggregateStats(
   // reason and one more: `/metrics` keeps numbers only, so a boolean would never
   // reach a series — and *paused for longer than an hour* is the rule worth
   // alerting on, since the pause somebody forgot is the one that costs.
+  //
+  // The '*' row is every queue's pause and names no queue of its own, so it is
+  // applied to each one after its own row, and the longer of the two is the age.
+  const longer = (a: number | null, b: number) => a == null ? b : Math.max(a, b)
+  const every  = pauses.find(p => p.queue === EVERY_QUEUE)
   for (const row of pauses) {
+    if (row.queue === EVERY_QUEUE) continue
     if (!result.queues[row.queue]) result.queues[row.queue] = zero()
     const age = Math.max(0, now - row.paused_at)
-    result.queues[row.queue].pausedMs = age
-    result.total.pausedMs = result.total.pausedMs == null ? age : Math.max(result.total.pausedMs, age)
+    result.queues[row.queue].pausedMs = longer(result.queues[row.queue].pausedMs, age)
+    result.total.pausedMs = longer(result.total.pausedMs, age)
+  }
+  if (every) {
+    const age = Math.max(0, now - every.paused_at)
+    for (const q of Object.values(result.queues)) q.pausedMs = longer(q.pausedMs, age)
+    result.total.pausedMs = longer(result.total.pausedMs, age)
   }
 
   return result

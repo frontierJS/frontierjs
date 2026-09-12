@@ -440,12 +440,18 @@ export interface QueueStats {
   pausedMs: number | null
 }
 
-/** Who is holding a queue paused, since when, and what they said. */
+/**
+ * Who is holding a queue paused, since when, and what they said. `queue` is
+ * `'*'` for the pause over every queue, which is what stops a queue whose own
+ * row is absent.
+ */
 export interface QueuePause {
   queue:    string
   pausedAt: number
   actor:    string | null
   reason:   string | null
+  /** What may lift it besides an operator — `null` for an operator's own pause (`FJS-D262`). */
+  holder:   string | null
 }
 
 /** One operator verb run against a queue — the audit a resume does not erase. */
@@ -466,6 +472,12 @@ export interface QueueEvent {
 export interface OperatorOptions {
   actor?:  string | null
   reason?: string
+  /**
+   * On a pause, recorded on the row. On a resume, the resume lifts only a row
+   * carrying it — a deploy lifting its own pause must not lift one an operator
+   * put on the queue first. Unstated, a resume lifts whatever is there.
+   */
+  holder?: string
 }
 
 /**
@@ -490,8 +502,12 @@ export interface QueueHandle {
    */
   pause(opts?: OperatorOptions): { changed: boolean; pause: QueuePause }
 
-  /** Claim again. `changed: false` where nothing was paused. */
-  resume(opts?: OperatorOptions): { changed: boolean }
+  /**
+   * Claim again. `changed: false` where nothing was lifted, and `pause` is what
+   * still stops the queue — another holder's row, or the pause over every queue
+   * — so a resume that did nothing says why.
+   */
+  resume(opts?: OperatorOptions): { changed: boolean; pause: QueuePause | null }
 
   /**
    * Pause, then wait until nothing is RUNNING in this queue on any instance.
@@ -503,7 +519,7 @@ export interface QueueHandle {
    */
   drain(opts?: OperatorOptions & { timeout?: number }): Promise<{ drained: boolean; running: number; pause: QueuePause }>
 
-  /** The pause in force, this queue's counts, and the most recent operator verbs. */
+  /** The pause in force — this queue's own, else the one over every queue — its counts, and the most recent operator verbs. */
   state(opts?: { events?: number }): { name: string; paused: QueuePause | null; stats: QueueStats; events: QueueEvent[] }
 }
 
@@ -640,6 +656,17 @@ export interface CaravanInstance {
    * queue the pause itself created is a green answer to a question nobody asked.
    */
   queue(name: string): QueueHandle
+
+  /**
+   * Operator verbs over EVERY queue, including one first named after the pause.
+   * Not `stop()`: that ends this process's workers, where a pause is read by
+   * every instance on the jobs database and outlives a restart. Recorded under
+   * the queue `'*'`; a queue's own pause is a separate row and survives this
+   * resume.
+   */
+  pause(opts?: OperatorOptions): { changed: boolean; pause: QueuePause }
+  resume(opts?: OperatorOptions): { changed: boolean; pause: QueuePause | null }
+  drain(opts?: OperatorOptions & { timeout?: number }): Promise<{ drained: boolean; running: number; pause: QueuePause }>
 
   /** Start the worker polling loop. Called automatically when used as a plugin. */
   start(): Promise<void>

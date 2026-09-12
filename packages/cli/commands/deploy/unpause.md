@@ -52,6 +52,14 @@ context.config.startTime  = Date.now()
 log.info(`Unpausing ${context.config.appId} on ${target}`)
 ```
 
+## The queues come back first
+
+The reverse of the pause: every queue a deploy paused is resumed, and only then
+is the guard file removed. A queue pause somebody made by hand — `caravan queue
+pause` from a console — is left in force and printed, because this command owns
+the pause a deploy made and not theirs. If the resume is refused, the edge is
+left paused rather than serving an app whose jobs are held.
+
 ## Why it is not called `deploy:resume`
 
 `fli deploy --resume` already means *continue an interrupted transition*. Two

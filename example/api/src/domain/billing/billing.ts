@@ -213,7 +213,7 @@ export function prorate(args: {
  * this is the only writer, which is what makes that acceptable.
  *
  * `system:` is not enough here and `asSystem()` is what the caller must hand
- * in: `Invoice` is `@@gate("1.8.8.8")`, so the write is a system context by
+ * in: `Invoice` creates at 8, so the write is a system context by
  * declaration. What `asSystem()` does NOT drop is `@immutable` — which is the
  * whole point of the tier it sits in, and is why this function can be the only
  * one that ever writes these numbers.
@@ -304,10 +304,12 @@ export async function issueInvoice(
  *
  * `system: ['paidAt']` rather than a bare write: the column is `@system`, and
  * naming it on the call keeps the gate, the row policies and the audit actor
- * where `asSystem()` would drop all three to write one value.
+ * where `asSystem()` would drop all three to write one value. The move is
+ * `@system` for the same reason and says so the same way, so the staff button
+ * hands this the CALLER's client and the update policy decides who may press it.
  */
 export async function settleInvoice(client: Client, id: number, at?: string): Promise<unknown> {
-  await client.invoice.transition(id, 'settle')
+  await client.invoice.transition(id, 'settle', { system: true })
   return await client.invoice.update({
     where: { id },
     data:  { paidAt: at ?? new Date().toISOString() },

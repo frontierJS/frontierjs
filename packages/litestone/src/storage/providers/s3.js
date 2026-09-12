@@ -1,7 +1,7 @@
 // storage/providers/s3.js — S3-compatible provider
 // Handles Cloudflare R2, AWS S3, Backblaze B2, MinIO — all use the S3 API.
 
-import { signRequest, presignUrl } from '../sigv4.js'
+import { signRequest, presignUrl, uriEncode } from '../sigv4.js'
 
 // ─── Provider map ─────────────────────────────────────────────────────────────
 
@@ -25,9 +25,13 @@ export class S3Provider {
     this._service    = 's3'
   }
 
+  // The key is encoded here, per segment. Joined in raw, a `?` or `#` in it ends
+  // the path, so the object written is a prefix of the one asked for, and the
+  // signature agrees with the truncated request, so nothing refuses it.
   _objectUrl(key) {
-    if (this._endpoint) return `${this._endpoint}/${this._bucket}/${key}`
-    return `https://${this._bucket}.s3.${this._region}.amazonaws.com/${key}`
+    const path = key.split('/').map(uriEncode).join('/')
+    if (this._endpoint) return `${this._endpoint}/${this._bucket}/${path}`
+    return `https://${this._bucket}.s3.${this._region}.amazonaws.com/${path}`
   }
 
   _opts() {

@@ -126,7 +126,20 @@ export function makeAuthFlow({ adapter, storage, pages, tokenKey = 'jetty_token'
      * held one would be storing a password substitute for five minutes.
      */
     async submitCode(code) {
-      return adopt(await authApi.completeLogin(code), 'auth.completeLogin')
+      try {
+        return adopt(await authApi.completeLogin(code), 'auth.completeLogin')
+      } catch (err) {
+        // `retryable: false` is the server saying the attempt is spent. The port
+        // hands a page the message and nothing else, so a waiting state left
+        // standing here is a box in the popup that refuses every code it is ever
+        // given — the broadcast is the only way the page learns to ask for the
+        // password again. A retryable refusal leaves the attempt where it was.
+        if (err?.data?.retryable === false || err?.retryable === false) {
+          session = { user: null, authenticated: false, expiresAt: null }
+          pages.broadcast('session', session)
+        }
+        throw err
+      }
     },
 
     async logout() {

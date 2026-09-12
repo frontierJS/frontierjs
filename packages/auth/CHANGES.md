@@ -1,5 +1,20 @@
 # Changes — @frontierjs/auth
 
+## 2026-09-12 — the password asked again is rate-limited per account
+
+`changePassword`, `setupTotp`, `disableTotp` and `regenerateRecoveryCodes` verify the current password
+for whoever holds the session, and none of them was limited, where `/auth/login` is. A stolen session
+could guess the password as fast as it could send requests, through four doors, which is the caller
+the re-check exists to stop. The second factor added three of those doors to `changePassword`'s one.
+
+**One bucket for all four, keyed by the account**, through junction's own `rateLimitHook`, so spreading
+guesses across methods buys nothing. `services: { reauthenticationRateLimit }` defaults to login's
+`{ max: 10, window: '15 minutes' }`, so the side door is no wider than the front. Over budget is a 429,
+which the browser client does not read as a dead session. `tests/services.test.ts` refuses the RIGHT
+password once the budget is spent, beside a second account unaffected and a method that asks for no
+password spending nothing; with the limiter stubbed out the right password is accepted and the row
+goes red.
+
 ## 2026-09-12 — a wrong password inside a session is a 403
 
 `FJS-1088`. `changePassword` and the second factor's setup, confirm, disable and regenerate answered a

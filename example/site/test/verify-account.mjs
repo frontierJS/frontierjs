@@ -36,6 +36,8 @@ import { fileURLToPath } from 'node:url'
 
 import { serveSite } from '@frontierjs/sierra/site/serve'
 
+import { authenticator, wrongCode, enrolledAccount } from '../../web/test/lib/authenticator.mjs'
+
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SITE = join(HERE, '..')
 const DIST = join(SITE, 'dist')
@@ -491,6 +493,50 @@ const strangerBills = await (await fetch(`${API}/api/invoices`, {
   headers: { authorization: `Bearer ${newToken}` } })).json()
 check('nor any invoice — the gate lets them in and the policy gives them nothing',
       [strangerBills.total, strangerBills.data.length], [0, 0])
+
+// ── a shopper with two-step sign-in ───────────────────────────────────────
+//
+// Turned on in the console, signed into HERE. The island used to go straight
+// from the password to loading orders, which for this account is a load with
+// no session behind it: a challenge carries no token and no user. Asked on this
+// origin because the ticket is the storefront client's and nothing of the
+// console's crosses to it.
+
+await evaluate(`(() => { document.querySelector('[data-signout]').click(); return true })()`)
+await until(async () => await evaluate(`!!document.querySelector('[data-submit]') || null`))
+// The section above left the form in SIGN-UP mode, where the button registers.
+await evaluate(`(() => { document.querySelector('[data-to-signin]')?.click(); return true })()`)
+await until(async () => await evaluate(`!document.querySelector('[data-name]') || null`))
+
+const twoStep = await enrolledAccount(API, `two-step-${Date.now().toString(36)}@buyer.test`, BUYER.password)
+const fillIn = (pairs, click) => evaluate(`(() => {
+  for (const [sel, v] of ${JSON.stringify(pairs)}) {
+    const el = document.querySelector(sel); el.value = v
+    el.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  document.querySelector(${JSON.stringify(click)}).click()
+  return true
+})()`)
+
+await fillIn([['[data-email-input]', twoStep.email], ['[data-password]', BUYER.password]], '[data-submit]')
+const codeForm = await until(async () => await evaluate(`!!document.querySelector('[data-code-form]') || null`))
+check('a password alone asks the shopper for a code', codeForm, true)
+check('…and stores nothing on this origin yet',
+      await evaluate(`localStorage.getItem('shop_account_token')`), null)
+check('…and shows no account', await evaluate(`!!document.querySelector('[data-email]')`), false)
+
+await fillIn([['[data-code]', wrongCode(twoStep.secret)]], '[data-code-submit]')
+const refusedCode = await until(async () => await evaluate(`document.querySelector('[data-error]')?.textContent ?? null`))
+check('a wrong code is said in words', /did not match/.test(refusedCode ?? ''), true)
+check('…and the code form stays, because the attempt is not spent',
+      await evaluate(`!!document.querySelector('[data-code-form]')`), true)
+
+await fillIn([['[data-code]', authenticator(twoStep.secret)]], '[data-code-submit]')
+const twoStepWho = await until(async () => await evaluate(`document.querySelector('[data-email]')?.textContent ?? null`))
+check('the right code signs the shopper in on the storefront', twoStepWho, twoStep.email)
+const twoStepToken = await evaluate(`localStorage.getItem('shop_account_token')`)
+check('…and only now is a session stored here', typeof twoStepToken, 'string')
+await twoStep.disable(twoStepToken)
 
 // The document this run issued to somebody else goes with the run. It exists to
 // be the negative control for *only their own*, and leaving one per run in the
