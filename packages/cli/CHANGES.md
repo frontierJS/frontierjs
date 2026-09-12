@@ -1,5 +1,40 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-12 — a scaffolded app can name its API origin at build time
+
+**`fli new` writes `junction.url` as `VITE_API_URL` when the build sets it**, and the page's own
+origin otherwise. The origin alone assumed a proxy in front of the API, which is true under Vite
+and under `fli deploy`'s nginx and false for an API on a domain of its own (`api.example.com`
+beside `app.example.com`) and for a build a native shell bundles, where the page is
+`tauri://localhost` and every call went to the shell. `VITE_API_URL` is the name `example/site`
+already read for the same question. Unset, the built bundle is unchanged — measured on `example`
+and basecamp, which carry the same line.
+
+## 2026-09-12 — `skill-pointer` reads a skill's own tables
+
+A skill can cite skills — `which-skill` is nothing else — and a name renamed out from under it
+left every other line reading correctly. Every `.claude/skills/*/SKILL.md` is now read for a table
+with a `Skill` column, the way the root `CLAUDE.md` already was; prose in a skill is not, because it
+is full of backticked words that are not skills. Its first run over the router found a real one:
+`discovery` is a per-user skill under `~/.claude/skills` and absent from this repo, so the router
+cites it in prose that says so rather than in a graded table. `tests/checks.test.js` carries the
+pair plus the frontmatter case reported once however many skills cite it; removing the new reader
+reds the first.
+
+## 2026-09-12 — a generated list page is one `list()` call
+
+`core/crud-templates.js`'s list page reads its state through `resource.list()` (sierra) and wires
+none of it: no store subscription, no `load()`, no bare `$: page.query` watch, no `apply` or
+`sortBy`, and no `@frontierjs/sierra/router` import at all. The bar is handed `list.query` and
+`list.directives`, the table `list.rows` and `list.directives.orderBy`, and **a *Load more* is
+rendered while `list.hasMore`** — keyset `more()` was built, correct and called by no page, so
+every generated list stopped at the server's page size with nothing saying there was a row 21.
+
+The two silent failures the hand-wiring carried are tripwires now rather than comments: a page that
+wires a load by hand or subscribes to the store itself, and a page that never offers the window.
+`generated-mesa.test.js` asserts all four per generated list; the `scaffold` CI phase builds a
+scaffolded model's page against packed tarballs.
+
 ## 2026-09-12 — an app can be taken down on purpose, and the journal can migrate
 
 `IDEAS/release-transitions.md` § Phase 3b. Until now the only way to stop serving

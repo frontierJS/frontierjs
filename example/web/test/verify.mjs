@@ -126,6 +126,13 @@ const { sessionId } = await send(browser, 'Target.attachToTarget', { targetId, f
 
 const cmd = (method, params) => send(browser, method, params, sessionId)
 
+// A headless window's FOCUS belongs to the browser, not the page: about thirty
+// seconds after launch Chrome starts its component extensions, the window blurs,
+// and from then on `el.focus()` moves `activeElement` and fires no `focus`
+// event. A combobox that opens on focus then never opens, and the failure lands
+// on whichever step the drive reached at that second (FJS-1084). Emulated focus
+// keeps the page focused whatever the browser does with its window.
+await cmd('Emulation.setFocusEmulationEnabled', { enabled: true })
 await cmd('Page.enable')
 await cmd('Runtime.enable')
 
@@ -1145,6 +1152,53 @@ try {
     };
   `))
 
+  // ── The list's STATE, which is `resource.list()` and not the page ────────
+  //
+  // Every row above reads a page that has just loaded. These three MOVE it,
+  // and they are the half a compiled page can get wrong while each row above
+  // still passes: a binding frozen at setup renders the first answer correctly
+  // and never another. The default order is `resources/Invoice.mesa`'s and
+  // nothing on the URL states it, so a marked header is the resource file
+  // reaching the table through the list. The click is `sort`, which NAVIGATES,
+  // so the arrow moving and the rows reordering are the router, the load and
+  // the render all answering. Back is the one move no code here makes.
+  const invoiceOrder = `(() => ({
+      url:     location.search,
+      sorted:  [...document.querySelectorAll('thead th')]
+                 .filter(th => th.getAttribute('aria-sort') && th.getAttribute('aria-sort') !== 'none')
+                 .map(th => th.textContent.trim() + ':' + th.getAttribute('aria-sort')),
+      numbers: [...document.querySelectorAll('tbody tr[data-invoice]')].map(tr => tr.dataset.number),
+    }))()`
+
+  t('invoicesList.defaultOrder', await evaluate(`
+    await settled('tbody tr[data-invoice]');
+    const o = ${invoiceOrder};
+    return { url: o.url, sorted: o.sorted };
+  `))
+
+  // The waits below REPORT rather than throw: a thrown wait halts the drive and
+  // every assertion under it goes unrun, which reads as one failure (FJS-1082).
+  t('invoicesList.sortNavigates', await evaluate(`
+    const before = ${invoiceOrder}.numbers;
+    byText('thead th button', 'Number').click();
+    const ascending = (n) => n.length === before.length && n.join() === [...n].sort().join();
+    await waitFor(() => ${invoiceOrder}.sorted[0] === 'Number:ascending' && ascending(${invoiceOrder}.numbers), 4000).catch(() => null);
+    const o = ${invoiceOrder};
+    return {
+      navigated: o.url.includes('orderBy=number'),
+      sorted:    o.sorted,
+      ascending: ascending(o.numbers),
+      moved:     o.numbers.join() !== before.join(),
+    };
+  `))
+
+  t('invoicesList.backRestores', await evaluate(`
+    history.back();
+    await waitFor(() => !location.search.includes('orderBy') && ${invoiceOrder}.sorted[0] === 'Issued At:descending', 4000).catch(() => null);
+    const o = ${invoiceOrder};
+    return { url: o.url, sorted: o.sorted };
+  `))
+
   // The reader's chosen currency, which is the whole reason this app registers
   // a display for `money` at all: `@money(USD)` says what the column STORES and
   // a shop that stores dollars can still be read in euros, which no schema can
@@ -1223,7 +1277,11 @@ try {
     return out;
   `))
 
-  await goto('/orders/')
+  // The same filtered window `moves.admin` reads, for its reason (`FJS-558`):
+  // page one is the newest twenty, every run of this drive adds an order, and
+  // the seed does not remove them, so the oldest seeded order leaves page one
+  // on the twenty-first and this read would lose ORD-1001 for nothing it asserts.
+  await goto('/orders/?reference[contains]=ORD-100')
   t('moves.user', await evaluate(`
     await settled('tbody tr');
     await waitFor(() => byText('header .badge', 'level 4'));
@@ -1430,6 +1488,11 @@ const expected = {
   },
   'invoicesList.searchRefused': { box: false, controls: true, said: true, omitted: true },
   'invoicesList.currency':      { sameCents: true, moved: true, inPounds: true },
+  // Nothing on the URL, and the header still says descending by issue date:
+  // the default is the resource file's.
+  'invoicesList.defaultOrder':  { url: '', sorted: ['Issued At:descending'] },
+  'invoicesList.sortNavigates': { navigated: true, sorted: ['Number:ascending'], ascending: true, moved: true },
+  'invoicesList.backRestores':  { url: '', sorted: ['Issued At:descending'] },
 
   'signOut.ledgerGoes':      true,
   'consoleErrors':           [],

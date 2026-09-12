@@ -126,4 +126,22 @@ describe('junction surface', () => {
 
     await app.stop()
   })
+
+  it('lists every custom method whose caller is not graded, and says why', async () => {
+    const app = await buildApp()
+    const surface = describeSurface(app)
+    const pay = surface.services.find(s => s.name === 'orders')!.methodGrades.pay
+
+    // No client and no registry here, so the floor's number is unknown — and it
+    // is reported as unknown rather than guessed.
+    expect(pay).toEqual({ source: 'floor', level: null, graded: false })
+
+    const out = renderSurfaceSnapshot(surface)
+    const section = out.slice(out.indexOf("## Custom methods whose caller's standing is not graded"), out.indexOf('## App hooks'))
+    expect(section).toContain('| `orders.pay` | **presence only**')
+    // The per-service line carries the same sentence, so the two cannot disagree.
+    expect(out).toContain('  - `pay` — **presence only**')
+
+    await app.stop()
+  })
 })

@@ -16,8 +16,11 @@ export default {
   // flatten it.
 
   junction: {
-    // Same origin as the page: Vite proxies the API paths to :8120.
-    url: typeof location !== 'undefined' ? location.origin : 'http://localhost:8020',
+    // Same origin as the page while Vite (or the image's Caddy) proxies the API
+    // paths to :8120. An API on its own origin, or a build a native shell
+    // bundles, is named at build time with VITE_API_URL. Guarded twice because
+    // Vite also loads this file in Node.
+    url: import.meta.env?.VITE_API_URL ?? (typeof location !== 'undefined' ? location.origin : 'http://localhost:8020'),
 
     // Both of these are the client's own defaults, spelled out because they are
     // load-bearing. Basecamp mounts services at /{service} (junction's default

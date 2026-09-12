@@ -1344,6 +1344,8 @@ export interface TenantRegistryOptions {
 }
 
 export declare function createTenantRegistry(options: TenantRegistryOptions): Promise<{
+  /** The parsed schema every tenant is built from — declarations only, no connection. */
+  readonly schema: ParseResult['schema']
   get(id: string): Promise<LitestoneClient>
   create(id: string, meta?: Record<string, unknown>): Promise<void>
   delete(id: string): Promise<void>

@@ -35,7 +35,11 @@ const S = {
   go: [], scrolledTo: [], lookedUp: [], reported: [],
 }
 
-function install(initialPath = '/') {
+// `base` is the page's scheme and host. A native shell serves the app from a
+// custom scheme, and Node reports the ORIGIN of one as "null" — stricter than
+// WebKit, which is the reason the mock states `origin` beside it.
+function install(initialPath = '/', base = 'http://localhost') {
+  const { protocol, host } = new URL(base)
   S.path = initialPath
   S.index = 0
   S.win = {}
@@ -55,8 +59,10 @@ function install(initialPath = '/') {
       go(delta) { S.go.push(delta) },
     },
     location: {
-      origin: 'http://localhost',
-      get href() { return 'http://localhost' + S.path },
+      origin: base,
+      protocol,
+      host,
+      get href() { return base + S.path },
       get pathname() { return S.path.split('#')[0].split('?')[0] },
       get search() { const b = S.path.split('#')[0]; return b.includes('?') ? '?' + b.split('?')[1] : '' },
       get hash() { return S.path.includes('#') ? '#' + S.path.split('#')[1] : '' },
@@ -148,8 +154,8 @@ function makeComponents(tree) {
 const unsubs = []
 function guard(fn) { unsubs.push(beforeNavigate(fn)) }
 
-async function boot(path = '/', { loaders = {}, components, options = {} } = {}) {
-  install(path)
+async function boot(path = '/', { loaders = {}, components, options = {}, base } = {}) {
+  install(path, base)
   const tree = makeTree()
   initRouter(tree, components ?? makeComponents(tree), loaders, { trailingSlash: 'always', ...options })
   await tick(10)
@@ -417,11 +423,56 @@ describe('link interception (FJS-793)', () => {
     expect(page.route?.id).toBe('leads')
   })
 
+  // A path the table ROUTES, or the route miss keeps the click and the origin
+  // check is never reached.
   test('a cross-origin link keeps its click', async () => {
     await boot('/blog/')
-    const ev = clickLink('https://example.com/x')
+    const ev = clickLink('https://example.com/leads/')
     await tick(10)
     expect(ev.prevented).toBe(false)
+  })
+})
+
+// ─── FJS-1085 — a page served from a custom scheme ───────────────────────────
+
+describe('link interception under a native shell (FJS-1085)', () => {
+  // Tauri serves an app from tauri://localhost. The guard allowed http: and
+  // https: only and compared url.origin, which is "null" for that scheme, so
+  // every link was a full page load. Each refusal below sits beside a routed
+  // link on the same page, because a guard that declined everything passes
+  // every refusal.
+  const TAURI = 'tauri://localhost'
+
+  test('a routed link on a custom-scheme page is intercepted', async () => {
+    await boot('/blog/', { base: TAURI })
+    const ev = clickLink('/leads/')
+    await tick(10)
+    expect(ev.prevented).toBe(true)
+    expect(page.route?.id).toBe('leads')
+  })
+
+  test('the same link written absolute is intercepted too', async () => {
+    await boot('/blog/', { base: TAURI })
+    const ev = clickLink('tauri://localhost/leads/')
+    await tick(10)
+    expect(ev.prevented).toBe(true)
+    expect(page.route?.id).toBe('leads')
+  })
+
+  test('the same host under another scheme keeps its click', async () => {
+    await boot('/blog/', { base: TAURI })
+    const ev = clickLink('http://localhost/leads/')
+    await tick(10)
+    expect(ev.prevented).toBe(false)
+    expect(page.route?.id).toBe('blog')
+  })
+
+  test('the same scheme on another host keeps its click', async () => {
+    await boot('/blog/', { base: TAURI })
+    const ev = clickLink('tauri://elsewhere/leads/')
+    await tick(10)
+    expect(ev.prevented).toBe(false)
+    expect(page.route?.id).toBe('blog')
   })
 })
 

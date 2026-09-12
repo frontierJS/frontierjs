@@ -1,5 +1,18 @@
 # Changes — @frontierjs/auth
 
+## 2026-09-12 — a wrong password inside a session is a 403
+
+`FJS-1088`. `changePassword` and the second factor's setup, confirm, disable and regenerate answered a
+wrong current password — or, for `confirmTotp`, a wrong code — with **401**, and 401 is what the
+browser client reads as *this credential is not a session*. Sierra signs the person out on that, so a
+typo on a settings screen cost the session that typed it, over HTTP and never over a socket.
+
+**`ReauthenticationFailedError` is the answer and it is 403**: the caller proved who they are when the
+session was issued, and what was refused is the proof offered now. `InvalidCredentialsError` stays on
+`login()`, where there is no session to lose, and `InvalidSecondFactorError` stays on `completeLogin`
+for the same reason. `tests/services.test.ts` asserts the 403 beside the same token still answering
+`account.get('me')`, which is the half a status assertion alone cannot see.
+
 ## 2026-09-12 — a second factor, and a password that is no longer the whole answer
 
 **TOTP ships, and the shape of the login changed with it** ([`FJS-D261`](../../DECISIONS.md#fjs-d261)).

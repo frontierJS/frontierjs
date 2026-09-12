@@ -119,6 +119,36 @@ const SCHEMA = `
   CREATE UNIQUE INDEX IF NOT EXISTS jobs_unique_live
     ON jobs(unique_key) WHERE unique_key IS NOT NULL AND status IN ('pending', 'running');
 
+  -- A queue that is PAUSED, one row while it is. In the file rather than in a
+  -- worker, because one jobs.db is opened by every instance of the app: a pause
+  -- held in memory stops the replica it was issued to and the other one goes on
+  -- claiming. And it outlives a restart, which is the case an operator reaches
+  -- for it in -- a crash loop the pause was meant to stop must not lift it.
+  --
+  -- Named for what it holds, not 'queues'. The SET of queues is derived from
+  -- configuration, job files and dispatch (FJS-D198) and a table called queues
+  -- would read as a second declaration of it.
+  CREATE TABLE IF NOT EXISTS queue_pauses (
+    queue      TEXT    PRIMARY KEY,
+    paused_at  INTEGER NOT NULL,
+    actor_id   TEXT,
+    reason     TEXT
+  );
+
+  -- Every operator verb run against a queue, append-only. The pause row says
+  -- who is holding a queue NOW and is deleted by the resume; this is what is
+  -- left of it afterwards, which is the question an incident review asks.
+  CREATE TABLE IF NOT EXISTS queue_events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    queue      TEXT    NOT NULL,
+    verb       TEXT    NOT NULL,
+    actor_id   TEXT,
+    at         INTEGER NOT NULL,
+    detail     TEXT
+  );
+  CREATE INDEX IF NOT EXISTS queue_events_queue
+    ON queue_events(queue, at DESC);
+
   -- Lookup index for the dedup check and for admin queries by key.
   CREATE INDEX IF NOT EXISTS jobs_unique_key
     ON jobs(unique_key) WHERE unique_key IS NOT NULL;
@@ -477,6 +507,7 @@ export function buildStatements(db: Database) {
       WHERE  queue  = $queue
         AND  status = 'pending'
         AND  run_at <= $now
+        AND  NOT EXISTS (SELECT 1 FROM queue_pauses WHERE queue = $queue)
       ORDER BY priority DESC, run_at ASC
       LIMIT 1
     )
@@ -505,6 +536,7 @@ export function buildStatements(db: Database) {
             AND  status = 'pending'
             AND  run_at <= $now
             AND  name IN (${names})
+            AND  NOT EXISTS (SELECT 1 FROM queue_pauses WHERE queue = $queue)
           ORDER BY priority DESC, run_at ASC
           LIMIT 1
         )
@@ -577,8 +609,62 @@ export function buildStatements(db: Database) {
   const anyPending = wrap<{ one: number }, { queue: string; now: number }>(db.prepare(`
     SELECT 1 AS one FROM jobs
     WHERE queue = $queue AND status = 'pending' AND run_at <= $now
+      AND NOT EXISTS (SELECT 1 FROM queue_pauses WHERE queue = $queue)
     LIMIT 1
   `))
+
+  // ── Queue pauses ────────────────────────────────────────────────────────────
+  //
+  // The claim above carries the pause INSIDE its own WHERE rather than a worker
+  // reading it first. A check-then-claim has a window: a claim already past the
+  // check lands after pause() returns, and drain() then reports a queue as quiet
+  // with a job starting in it. Inside the statement, the claim's BEGIN IMMEDIATE
+  // and the pause's insert are ordered by the write lock, so a claim either sees
+  // the row or committed before it existed — and drain() waits for that one.
+
+  const pauseQueue = wrap<void, { queue: string; at: number; actor: string | null; reason: string | null }>(db.prepare(`
+    INSERT INTO queue_pauses (queue, paused_at, actor_id, reason)
+    VALUES ($queue, $at, $actor, $reason)
+    ON CONFLICT(queue) DO NOTHING
+  `))
+
+  const resumeQueue = wrap<void, { queue: string }>(db.prepare(`
+    DELETE FROM queue_pauses WHERE queue = $queue
+  `))
+
+  const getPause = wrap<{ queue: string; paused_at: number; actor_id: string | null; reason: string | null }, { queue: string }>(db.prepare(`
+    SELECT queue, paused_at, actor_id, reason FROM queue_pauses WHERE queue = $queue
+  `))
+
+  const allPauses = db.prepare<
+    { queue: string; paused_at: number; actor_id: string | null; reason: string | null }, []
+  >(`SELECT queue, paused_at, actor_id, reason FROM queue_pauses`)
+
+  // Every instance's running rows, not this process's — a drain that waited
+  // only on its own workers would report a queue quiet while another replica
+  // is midway through a job in it.
+  const runningInQueue = wrap<{ count: number }, { queue: string }>(db.prepare(`
+    SELECT COUNT(*) AS count FROM jobs WHERE queue = $queue AND status = 'running'
+  `))
+
+  const recordQueueEvent = wrap<void, { queue: string; verb: string; actor: string | null; at: number; detail: string | null }>(db.prepare(`
+    INSERT INTO queue_events (queue, verb, actor_id, at, detail)
+    VALUES ($queue, $verb, $actor, $at, $detail)
+  `))
+
+  const queueEvents = wrap<{ id: number; queue: string; verb: string; actor_id: string | null; at: number; detail: string | null }, { queue: string; limit: number }>(db.prepare(`
+    SELECT id, queue, verb, actor_id, at, detail FROM queue_events
+    WHERE queue = $queue ORDER BY at DESC, id DESC LIMIT $limit
+  `))
+
+  // Every queue the DATA names. The set is derived (FJS-D198), and a process
+  // only knows the queues its own configuration and job files declare — a web
+  // process asked to pause the worker process's queue must still find it.
+  const queuesInData = db.prepare<{ queue: string }, []>(`
+    SELECT DISTINCT queue FROM jobs
+    UNION
+    SELECT queue FROM queue_pauses
+  `)
 
   // ── Cancel ──────────────────────────────────────────────────────────────────
   // Allows cancelling pending OR running jobs. A running job still completes its
@@ -738,6 +824,14 @@ export function buildStatements(db: Database) {
     cancel,
     releaseClaim,
     anyPending,
+    pauseQueue,
+    resumeQueue,
+    getPause,
+    allPauses,
+    runningInQueue,
+    recordQueueEvent,
+    queueEvents,
+    queuesInData,
     retryTerminal,
     statsByQueue,
     oldestRunning,
@@ -760,10 +854,11 @@ export function aggregateStats(
   rows:    { queue: string; status: string; count: number }[],
   queues:  string[],
   oldest:  { queue: string; started_at: number }[] = [],
-  now:     number = Date.now()
+  now:     number = Date.now(),
+  pauses:  { queue: string; paused_at: number }[] = [],
 ): CaravanStats {
   const zero = (): QueueStats => ({
-    pending: 0, running: 0, done: 0, failed: 0, cancelled: 0, oldestRunningMs: null,
+    pending: 0, running: 0, done: 0, failed: 0, cancelled: 0, oldestRunningMs: null, pausedMs: null,
   })
 
   const result: CaravanStats = {
@@ -799,6 +894,18 @@ export function aggregateStats(
     result.total.oldestRunningMs = result.total.oldestRunningMs == null
       ? age
       : Math.max(result.total.oldestRunningMs, age)
+  }
+
+  // A paused queue and an idle one report the same counts, so the pause has to
+  // be a field of its own. An AGE rather than a flag, for `oldestRunningMs`'s
+  // reason and one more: `/metrics` keeps numbers only, so a boolean would never
+  // reach a series — and *paused for longer than an hour* is the rule worth
+  // alerting on, since the pause somebody forgot is the one that costs.
+  for (const row of pauses) {
+    if (!result.queues[row.queue]) result.queues[row.queue] = zero()
+    const age = Math.max(0, now - row.paused_at)
+    result.queues[row.queue].pausedMs = age
+    result.total.pausedMs = result.total.pausedMs == null ? age : Math.max(result.total.pausedMs, age)
   }
 
   return result

@@ -218,3 +218,66 @@ describe('a declared gate is a level, and is refused otherwise', () => {
     })
   }
 })
+
+// ─── what the register says about it ──────────────────────────────────────────
+//
+// `surface.snapshot.md` prints who may call each custom method, and a reader
+// acts on that line — it is how `invoices.settle` was found reachable by every
+// signed-in shopper while writing through `asSystem()`. So the grade is asserted
+// against the GATE'S OWN ANSWER for the same caller, method by method. A test
+// on the rendering alone passes with the two drifted apart, which is the one
+// failure a register cannot afford.
+
+describe('the surface reports the grade the gate enforces', () => {
+
+  test('each grade agrees with what a caller is actually answered', async () => {
+    const s = await shop()
+    const { describeSurface } = await import('../src/core/app-model.ts')
+    const grades = Object.fromEntries(describeSurface(s.app).services
+      .map(svc => [svc.name, svc.methodGrades]))
+
+    // A floor above 0 is presence alone: the shopper reaches the body.
+    expect(grades.orders.refund).toEqual({ source: 'floor', level: 1, graded: false })
+    expect((await s.call('nobody',  'orders', 'refund')).status).toBe(401)
+    expect((await s.call('shopper', 'orders', 'refund')).status).toBe(200)
+
+    // A declared level is graded: the shopper stops, staff pass.
+    expect(grades.orders.settle).toEqual({ source: 'declared', level: 5, graded: true })
+    expect((await s.call('shopper', 'orders', 'settle')).status).toBe(403)
+    expect((await s.call('staff',   'orders', 'settle')).status).toBe(200)
+
+    // A floor of 0 is open, a stranger included.
+    expect(grades.variants.availability).toEqual({ source: 'floor', level: 0, graded: false })
+    expect((await s.call('nobody', 'variants', 'availability')).status).toBe(200)
+
+    // CRUD verbs are graded by operation and are not a custom method's row.
+    expect('find' in grades.orders).toBe(false)
+
+    await s.close()
+  })
+})
+
+describe('customMethodGrade', () => {
+  const levels = { read: 1, create: 4, update: 4, delete: 5 }
+
+  test('a declared level is graded; an undeclared one takes the read gate as a presence check', async () => {
+    const { customMethodGrade } = await import('../src/core/litestone.ts')
+    expect(customMethodGrade('settle', { settle: 5 }, levels)).toEqual({ source: 'declared', level: 5, graded: true })
+    expect(customMethodGrade('settle', { settle: 0 }, levels)).toEqual({ source: 'declared', level: 0, graded: true })
+    expect(customMethodGrade('refund', {},            levels)).toEqual({ source: 'floor',    level: 1, graded: false })
+  })
+
+  test('no @@gate means nothing is checked — a declared level included', async () => {
+    // Pinned as it is: the gate reads levels off the model, and a model that
+    // declares none gives it nothing to compare a declaration against.
+    const { customMethodGrade } = await import('../src/core/litestone.ts')
+    expect(customMethodGrade('graph', { graph: 5 }, null)).toEqual({ source: 'unchecked', level: 5, graded: false })
+    expect(customMethodGrade('graph', {},           null)).toEqual({ source: 'unchecked', level: null, graded: false })
+  })
+
+  test('a describer holding no schema reports the declaration and does not guess the floor', async () => {
+    const { customMethodGrade } = await import('../src/core/litestone.ts')
+    expect(customMethodGrade('settle', { settle: 5 }, undefined)).toEqual({ source: 'declared', level: 5, graded: true })
+    expect(customMethodGrade('refund', {},            undefined)).toEqual({ source: 'floor', level: null, graded: false })
+  })
+})

@@ -13,6 +13,16 @@ export const tree = {
   params: [],
   children: [
   {
+      id: "account",
+      path: "/account/",
+      file: "src/routes/account/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Account\",\"isIndex\":true}"),
+      params: [],
+      children: [],
+    },
+  {
       id: "cart",
       path: "/cart/",
       file: "src/routes/cart/index.mesa",
@@ -220,6 +230,16 @@ export const tree = {
       ],
     },
   {
+      id: "sign-in",
+      path: "/sign-in/",
+      file: "src/routes/sign-in/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Sign in\",\"isIndex\":true}"),
+      params: [],
+      children: [],
+    },
+  {
       id: "subscriptions",
       path: "/subscriptions/",
       file: "src/routes/subscriptions/index.mesa",
@@ -256,6 +276,7 @@ export const tree = {
 // Component factory map — resolved lazily by the router on navigation
 export const components = {
   'root': () => import('../src/routes/index.mesa'),
+  'account': () => import('../src/routes/account/index.mesa'),
   'cart': () => import('../src/routes/cart/index.mesa'),
   'customers': () => import('../src/routes/customers/index.mesa'),
   'inventory': () => import('../src/routes/inventory/index.mesa'),
@@ -276,6 +297,7 @@ export const components = {
   'reports': () => import('../src/routes/reports/index.mesa'),
   'settings': () => import('../src/routes/settings/index.mesa'),
   'settings.fields': () => import('../src/routes/settings/fields.mesa'),
+  'sign-in': () => import('../src/routes/sign-in/index.mesa'),
   'subscriptions': () => import('../src/routes/subscriptions/index.mesa'),
   'subscriptions.[id]': () => import('../src/routes/subscriptions/[id].mesa'),
   'users': () => import('../src/routes/users/index.mesa'),
@@ -299,6 +321,7 @@ export const layouts = {
 // Flat URL arrays for route table consumers (sitemap, llms.txt, deploys)
 export const all = [
   "/",
+  "/account/",
   "/cart/",
   "/customers/",
   "/inventory/",
@@ -319,6 +342,7 @@ export const all = [
   "/reports/",
   "/settings/",
   "/settings/fields/",
+  "/sign-in/",
   "/subscriptions/",
   "/subscriptions/:id/",
   "/users/"
@@ -326,6 +350,7 @@ export const all = [
 
 export const published = [
   "/",
+  "/account/",
   "/cart/",
   "/customers/",
   "/inventory/",
@@ -346,6 +371,7 @@ export const published = [
   "/reports/",
   "/settings/",
   "/settings/fields/",
+  "/sign-in/",
   "/subscriptions/",
   "/subscriptions/:id/",
   "/users/"
@@ -353,6 +379,7 @@ export const published = [
 
 export const indexed = [
   "/",
+  "/account/",
   "/cart/",
   "/customers/",
   "/inventory/",
@@ -367,6 +394,7 @@ export const indexed = [
   "/reports/",
   "/settings/",
   "/settings/fields/",
+  "/sign-in/",
   "/subscriptions/",
   "/users/"
 ]

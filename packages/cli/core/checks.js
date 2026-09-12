@@ -112,6 +112,8 @@ export const RULES = [
     title: 'asSystem() off the app client crosses tenants; off the request client it does not' },
   { id: 'scheduler-dispatch',   scope: 'app',  severity: 'error', invariant: null,
     title: 'a timer that dispatches into a queue is the queue\'s schedule' },
+  { id: 'queue-operator-verb',  scope: 'app',  severity: 'error', invariant: null,
+    title: 'pausing, resuming or draining a queue is an operator\'s act, not a service\'s' },
   { id: 'gate-unreachable',     scope: 'app',  severity: 'warn',  invariant: 6,
     title: 'a declared @@gate level something can actually reach' },
   { id: 'static-publish-db',    scope: 'app',  severity: 'error', invariant: null,
@@ -1859,6 +1861,40 @@ const CHECKS = {
                    `cron:<job>:<minute>, where the second fire is a no-op.`,
         })
       }
+    }
+    return { findings }
+  },
+
+  // `FJS-D198`: a Queue's verbs split in two. `handle`, `dispatch` and
+  // `schedule` are the app's; `pause`, `resume` and `drain` are an operator's,
+  // run from a console during an incident. Over HTTP caravan refuses them below
+  // ADMINISTRATOR, and that gate is the one thing a call from a service or a job
+  // does not pass through — the handle is a plain function, so a service method
+  // any USER can reach is a pause any USER can make. Read in the two kinds of
+  // file that run on somebody else's behalf, and nowhere else: a console script
+  // or a deploy hook calling one is what the verb is for.
+  'queue-operator-verb': ({ root }) => {
+    const files = scripts(root, 'api').filter(p => /\.(service|job)\.[cm]?[jt]s$/.test(p))
+    if (!files.length) return { skipped: 'no *.service.* or *.job.* under api/' }
+
+    const findings = []
+    const say = (path, code, index, verb) => findings.push({
+      file: path, line: lineOf(code, index),
+      message: `queue(…).${verb}() in a ${/\.job\./.test(path) ? 'job' : 'service'} file. Pausing, resuming and ` +
+               `draining a queue are operator verbs (FJS-D198): over HTTP caravan requires ADMINISTRATOR ` +
+               `for them, and a call from here skips that gate — whoever can reach this code can stop ` +
+               `work every tenant is waiting on. Run it from a console or the admin route instead.`,
+    })
+
+    for (const path of files) {
+      const code = readCode(path)
+      // Chained: app.jobs.queue('mail').pause()
+      for (const m of code.matchAll(/\.queue\s*\([^)]*\)\s*\.(pause|resume|drain)\s*\(/g))
+        say(path, code, m.index, m[1])
+      // Bound: const q = app.jobs.queue('mail') … q.pause()
+      for (const b of code.matchAll(/\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*[^;\n]*\.queue\s*\(/g))
+        for (const m of code.matchAll(new RegExp(`\\b${b[1].replace(/\$/g, '\\$')}\\.(pause|resume|drain)\\s*\\(`, 'g')))
+          say(path, code, m.index, m[1])
     }
     return { findings }
   },
@@ -3775,22 +3811,17 @@ export function formatFindings(findings, root) {
 // promises is a judgement; whether the file is there is a fact, and it is the
 // half that rots. A skill CLAUDE.md never names is not reported: a skill fires
 // off its own description, and a pointer is one way in rather than the only one.
+//
+// A skill can point at skills too — `which-skill` is nothing but pointers — so
+// every `SKILL.md` is read the same way, tables only: a skill's prose is full of
+// backticked words, and the Skill column is the one place a name is unambiguous.
 
 const SKILL_PROSE = /`([a-z][a-z0-9-]*)`\s*\(`\.claude\/skills\/`\)/g
 
-function skillPointer({ root }) {
-  const claude = join(root, 'CLAUDE.md')
-  if (!existsSync(claude)) return { skipped: 'no root CLAUDE.md' }
-  const text  = readFileSync(claude, 'utf8')
-  const lines = text.split('\n')
-  const named = new Map()
-
-  for (const m of text.matchAll(SKILL_PROSE))
-    if (!named.has(m[1])) named.set(m[1], text.slice(0, m.index).split('\n').length)
-
-  // A table whose header has a Skill column: every row's cell in that column.
+/** Skill name → first line it is cited on, from `text`'s Skill-column tables. */
+function skillTableNames(text, named = new Map()) {
   let col = -1
-  lines.forEach((line, i) => {
+  text.split('\n').forEach((line, i) => {
     if (!line.startsWith('|')) { col = -1; return }
     const cells = line.split('|').slice(1, -1).map(c => c.trim())
     if (col === -1) { col = cells.findIndex(c => /^skill$/i.test(c)); return }
@@ -3798,25 +3829,51 @@ function skillPointer({ root }) {
     const m = /^`([a-z][a-z0-9-]*)`$/.exec(cells[col] ?? '')
     if (m && !named.has(m[1])) named.set(m[1], i + 1)
   })
+  return named
+}
 
-  if (!named.size) return { skipped: 'CLAUDE.md names no skill' }
+function skillPointer({ root }) {
+  const claude = join(root, 'CLAUDE.md')
+  if (!existsSync(claude)) return { skipped: 'no root CLAUDE.md' }
+  const skillsDir = join(root, '.claude', 'skills')
+
+  const citers = []
+  const text   = readFileSync(claude, 'utf8')
+  const named  = new Map()
+  for (const m of text.matchAll(SKILL_PROSE))
+    if (!named.has(m[1])) named.set(m[1], text.slice(0, m.index).split('\n').length)
+  citers.push({ file: claude, label: 'CLAUDE.md', named: skillTableNames(text, named) })
+
+  for (const dir of safeRead(skillsDir).sort()) {
+    const file = join(skillsDir, dir, 'SKILL.md')
+    if (!existsSync(file)) continue
+    const cited = skillTableNames(readFileSync(file, 'utf8'))
+    if (cited.size) citers.push({ file, label: `the skill \`${dir}\``, named: cited })
+  }
+
+  if (!citers.some(c => c.named.size)) return { skipped: 'CLAUDE.md names no skill' }
 
   const findings = []
-  for (const [name, line] of named) {
-    const file = join(root, '.claude', 'skills', name, 'SKILL.md')
-    if (!existsSync(file)) {
-      findings.push({ file: claude, line,
-        message: `names the skill \`${name}\` and \`.claude/skills/${name}/SKILL.md\` is not in the tree. ` +
-                 `The sentence reads the same with nothing behind it — point it at what replaced the ` +
-                 `skill, or put the skill back.` })
-      continue
+  const graded   = new Set()
+  for (const { file: citer, label, named } of citers) {
+    for (const [name, line] of named) {
+      const file = join(skillsDir, name, 'SKILL.md')
+      if (!existsSync(file)) {
+        findings.push({ file: citer, line,
+          message: `names the skill \`${name}\` and \`.claude/skills/${name}/SKILL.md\` is not in the tree. ` +
+                   `The sentence reads the same with nothing behind it — point it at what replaced the ` +
+                   `skill, or put the skill back.` })
+        continue
+      }
+      if (graded.has(name)) continue
+      graded.add(name)
+      const front = /^---\n([\s\S]*?)\n---/.exec(readFileSync(file, 'utf8'))
+      const declared = /^name:\s*(\S+)\s*$/m.exec(front?.[1] ?? '')?.[1]
+      if (declared !== name) findings.push({ file, line: 1,
+        message: `is named \`${name}\` by ${label} and declares \`name: ${declared ?? '(none)'}\`. The Skill ` +
+                 `tool registers it under the frontmatter, so the pointer names a skill the tool cannot ` +
+                 `find — make the two agree.` })
     }
-    const front = /^---\n([\s\S]*?)\n---/.exec(readFileSync(file, 'utf8'))
-    const declared = /^name:\s*(\S+)\s*$/m.exec(front?.[1] ?? '')?.[1]
-    if (declared !== name) findings.push({ file, line: 1,
-      message: `is named \`${name}\` by CLAUDE.md and declares \`name: ${declared ?? '(none)'}\`. The Skill ` +
-               `tool registers it under the frontmatter, so the pointer names a skill the tool cannot ` +
-               `find — make the two agree.` })
   }
   return { findings }
 }

@@ -16,7 +16,6 @@ title: Project
   $: page.params
 
   let project   = null
-  let envs      = []
   let error     = null
   let loadError = null
   let loading   = true
@@ -49,14 +48,18 @@ title: Project
 
   $.onDestroy(() => { unwatch?.(); rowView?.release() })
 
+  // This project's environments: an EMBEDDED list, so its state is local — the
+  // address bar belongs to the project — and `projectId` is its scope rather
+  // than a filter. The workspace is already on the header. A different project
+  // is a different route key, and the router remounts this page for it, so a
+  // scope read once here cannot go stale.
+  const envList = environments.list({ state: 'local', where: { projectId: page.params.id } })
+
   async function load() {
     error = null; loadError = null; loading = true
     try {
       await watchRow()
       draft   = fromRow(project)
-      // The environments service filters by projectId; the workspace is already
-      // on the header, so this is the only filter the page supplies.
-      envs = (await environments.service.find({ projectId: page.params.id })).data
     } catch (e) {
       // A project in another workspace answers 404, not 403 — an id you cannot
       // see should not be confirmable by asking.
@@ -106,7 +109,9 @@ title: Project
         tier:        newTier,
         isProtected: newTier === 'production',
       })
-      envs = (await environments.service.find({ projectId: project.id })).data
+      // Asked again rather than waited for: the row this call wrote is the one a
+      // person is looking for, and a push is a second path it may not take.
+      await envList.reload()
     } catch (e) {
       error = e.message
     } finally {
@@ -176,12 +181,18 @@ title: Project
     </div>
   </div>
 
-  {#if !envs.length}
+  {#if envList.error}
+    <article class="alert danger">
+      <div class="alert-content">{envList.error.message}</div>
+    </article>
+  {/if}
+
+  {#if !envList.rows.length}
     <article class="alert info">
       <div class="alert-content">No environments yet. Add one above — the slug is unique per project, so each tier exists once.</div>
     </article>
   {:else}
-    <Table id="environment-rows" columns={ENVIRONMENT_COLUMNS} rows={envs} striped>
+    <Table id="environment-rows" columns={ENVIRONMENT_COLUMNS} rows={envList.rows} striped>
       {#snippet row(environment)}
         <tr>
           <td><a href={`/environments/${environment.id}/`}>{environment.name}</a></td>

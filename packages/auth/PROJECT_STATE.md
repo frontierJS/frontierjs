@@ -26,21 +26,28 @@ plugin.ts    createAuthPlugin() — the /auth/* routes (no error mapping: see er
 errors.ts    named domain errors (AuthError and friends)
 db/*.lite    the models this package ships — user.lite (the app's) + auth.lite
 schema.ts    reads those two — authUserModel / authMachineryModels / both
+services.ts  account / sessions / api-keys / connections — the half that is not a route
 cleanup.ts   createAuthCleanupJobs() — expiry sweeps
 crypto.ts    hashing / token generation
+totp.ts      RFC 6238 codes, base32, recovery codes — clockless (`FJS-D261`)
 types.ts
-tests/harness.ts               real Litestone db + auth, shared by both suites
+tests/harness.ts               real Litestone db + auth, shared by the suites
 tests/schema-accessors.test.ts schema fragments + accessor naming (pre-existing)
-tests/flows.test.ts            the 13 IAuth methods, failure paths, gate enforcement
+tests/flows.test.ts            the IAuth methods, failure paths, gate enforcement
 tests/routes.test.ts           /auth/* against a real Junction app
+tests/totp.test.ts             RFC 4648 and RFC 6238 published vectors
+tests/totp-login.test.ts       enrollment, the two-step login, recovery, the ceiling
 ```
+
+The file list above is the core; `tests/` also holds the OAuth, support-mode,
+services and cleanup suites.
 
 ## Verified state
 
 | | |
 |---|---|
 | Version | **1.0.0** — the only package here above 0.x; CLAUDE.md says it has run in production |
-| Tests | **70 pass, 0 fail**, 3 files (`bun run test`) — was 7 in 1 file |
+| Tests | **360 pass, 0 fail**, 15 files (`bun run test`, 2026-09-12) — was 7 in 1 file |
 | Typecheck | **4 errors**, baseline 4, all pre-existing in `schema-accessors.test.ts` |
 | Published? | **No — `npm view @frontierjs/auth` 404s.** Junction 404s too; only litestone (1.1.0) is on npm |
 
@@ -92,6 +99,32 @@ an access rule may not. Verified by breaking it: dropping the row policy from th
 CLI copy turns the suite red.
 
 Rate limiting works: 5 registers then `429`, keyed per-IP off `ctx.ip`.
+
+---
+
+## The second factor — shipped 2026-09-12
+
+TOTP is a second STEP of login and not a second standing (`FJS-D261`): with a
+live `totp` credential, `login()` answers `{ challenge, expiresAt }` and no
+token, and `POST /auth/login/challenge` with a code or a recovery code answers
+the session. Enrollment, confirmation, disable and recovery-code regeneration
+are `account` service methods; the gate ladder and `authMethod` are unchanged.
+
+Verified at three distances:
+
+- **The arithmetic** against RFC 4648's and RFC 6238's published vectors
+  (`tests/totp.test.ts`), which are the only assertions here written by
+  somebody other than the implementation.
+- **The provider and both transports** against a harness app — every refusal
+  paired with the succeeding call (`tests/totp-login.test.ts`,
+  `tests/services.test.ts`, `tests/support-refusals.test.ts`).
+- **A real app** — `example`: `verify:users` registers a fresh account, enrolls
+  it, and signs in through `example`'s per-shop provider proxy and tenant
+  database, with codes from an authenticator written in the drive rather than
+  imported from `totp.ts`.
+
+`example` enrolls from `/account/` and signs in through `/sign-in/` with the
+shell's code box, and `verify:users` drives both in Chrome. Open: passkeys.
 
 ---
 

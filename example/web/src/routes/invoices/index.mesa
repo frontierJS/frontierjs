@@ -37,8 +37,6 @@ title: Invoices
   import { invoices } from '@/resources/Invoice.mesa'
   import { session } from '@/session.js'
   import { prefs } from '@/prefs.js'
-  import { useStore } from '@frontierjs/sierra/junction'
-  import { page, goto } from '@frontierjs/sierra/router'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
@@ -50,83 +48,36 @@ title: Invoices
 
   // ── Which columns ────────────────────────────────────────────────────────
   //
-  // `only:` bypasses the ranking, and naming the columns is also naming the
-  // order. The ranked default is a good answer to *show me this model* and a
-  // worse one to *show me an invoice ledger*: `Invoice` declares three money
-  // columns and five timestamps, so the tiers fill with `subtotal` and `tax`
-  // ahead of the day the thing was due. That is the ranking working — within a
-  // tier the file's order is the only ordering anybody stated — and it is why
-  // the escape hatch exists.
-  //
-  // `omitted` is what keeps it from being a silent choice: every column this
-  // table does NOT show is named below with the reason, so a column added to
-  // the schema that does not appear here is answerable without reading this
-  // file. Basecamp's deployments table takes the ranking unaided; between the
-  // two, both halves of `columns()` have a caller.
-  const { columns: cols, omitted } = invoices.columns({
-    only: ['number', 'status', 'customerId', 'total', 'issuedAt', 'dueAt'],
-  })
+  // The six, and the order, are `resources/Invoice.mesa`'s: a ledger is what a
+  // list of invoices IS, wherever one is listed. `omitted` is what keeps that
+  // from being a silent choice — every column this table does NOT show is named
+  // below with the reason. Basecamp's deployments table takes the ranking
+  // unaided; between the two, both halves of `columns()` have a caller.
+  const { columns: cols, omitted } = invoices.columns()
 
   // A header offers a sort only where the SCHEMA takes one: `x-sortable` is
   // emitted as an exception, so absent means yes and a string says why not.
-  // Offering one the Data boundary refuses is a click that throws.
-  //
-  // Spread, not mapped: `<Table>` reads the same `name` the column already
-  // carries, so the only entry here is this page's own (FJS-1078).
   const columns = [
     ...cols,
     { name: '_open', label: '' },
   ]
 
-  // Which columns a bar may offer and with which question, plus whether the
-  // model answers a search at all. `Invoice` declares no `@@fts`, so `search`
-  // comes back refused WITH the reason and no box is drawn — a search box that
-  // 400s on every word is worse than none. `Product` is the model in this app
-  // that does declare one.
-  const { filters, search } = invoices.filters({
-    only: ['number', 'status', 'customerId', 'total', 'issuedAt', 'dueAt'],
-  })
-
-  const { get: rows, unsubscribe } = useStore(invoices.store)
-  $.onDestroy(unsubscribe)
+  // `Invoice` declares no `@@fts`, so `search` comes back refused WITH the
+  // reason and no box is drawn — a search box that 400s on every word is worse
+  // than none.
+  const { filters, search } = invoices.filters()
 
   $: (session.level, prefs.dense, prefs.currency)
 
-  let error = null
-
   // ── The URL is the state ─────────────────────────────────────────────────
   //
-  // `page.query` is the filters and `page.directives` the `$` params, split by
-  // the same module the bridge reads a request with (Invariant 10). Both halves
-  // go to the bar, which puts them back together — a bar handed the filters
-  // alone has no sort and no page size to show, and hands back a query missing
-  // them, so typing in a filter box drops the sort a header just set.
-  //
-  // `page.pathname` is the path with NO query, which is `window.location`'s own
-  // word for it. Two-arg `goto` REPLACES, which is what Clear needs.
-  function apply(query, directives) {
-    goto(page.pathname, query, { directives })
-  }
-
-  function sortBy(next) {
-    apply(page.query, { ...page.directives, orderBy: next })
-  }
-
-  // Newest first until the URL says otherwise. `page.directives` is spread
-  // AFTER the default, so `?$orderBy=number` wins and a filtered, sorted list
-  // is a LINK rather than a state somebody has to recreate.
-  function load() {
-    invoices.load(page.query, { orderBy: '-issuedAt', ...page.directives })
-      .catch(e => { error = e.message })
-  }
-  load()
-  $: page.query, page.directives, () => load()
-
-  // The header reads the same directive the load does, DEFAULT INCLUDED, or a
-  // sorted list arrives with no column marked and clicking the column it is
-  // already sorted by does nothing visible. `<Table>` reads every legal shape
-  // off `@frontierjs/toolbelt/directives`, so there is no parse here (FJS-1077).
-  const ordering = page.directives?.orderBy ?? '-issuedAt'
+  // `list()` reads `page.query` and `page.directives`, loads, re-runs on a
+  // navigation, and navigates on `apply` and `sort` — so a filtered, sorted
+  // list is a LINK. The resource file's `-issuedAt` sits under the URL's
+  // directives, so `?$orderBy=number` wins, and the header reads the same
+  // directives the load sends, default included, or a sorted list arrives with
+  // no column marked.
+  const list = invoices.list()
 
   // Overdue is not a status. It is `dueAt` against the clock, so it is true
   // from one moment onward with nothing writing a row.
@@ -142,12 +93,12 @@ title: Invoices
   {/snippet}
 </SectionHeader>
 
-{#if error}<Alert tone="danger" id="i-error">{error}</Alert>{/if}
+{#if list.error}<Alert tone="danger" id="i-error">{list.error.message}</Alert>{/if}
 
-<FilterBar id="i-filters" {filters} {search} value={page.query}
-            directives={page.directives} onchange={apply} />
+<FilterBar id="i-filters" {filters} {search} value={list.query}
+            directives={list.directives} onchange={list.apply} />
 
-<Table {columns} rows={rows()} orderBy={ordering} onsort={sortBy}
+<Table {columns} rows={list.rows} orderBy={list.directives.orderBy} onsort={list.sort}
        striped hover compact={prefs.dense} emptyText="No invoice matches that.">
   {#snippet row(inv)}
     <tr data-invoice={inv.id} data-number={inv.number}>
@@ -165,6 +116,10 @@ title: Invoices
     </tr>
   {/snippet}
 </Table>
+
+{#if list.hasMore}
+  <Button variant="ghost" id="i-more" onclick={list.more}>Load more</Button>
+{/if}
 
 <Alert tone="info" id="i-derived">
   Every header, every filter and every cell above came out of

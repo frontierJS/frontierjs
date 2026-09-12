@@ -367,6 +367,10 @@ The builder's `lines` are rendered to text and HTML here — `MailMessage` is th
 
 ## Custom drivers
 
+**`inApp` and `email` are the only transports this package ships.** SMS, push, Slack — every other medium is a driver the APP registers, usually a few lines over a Conduit target, because a connector to a named vendor lives in the app and not in the framework (`FJS-D153`). Nothing in this package names the transport: the key under `transports:` is the name, and a formatter of the same name on the definition is its message. The recipient carries whatever the driver addresses by — a `phone`, a `deviceToken`.
+
+A value under `transports:` with no `send()` is refused when the plugin is constructed, naming the key. `email: { mailer }` is the one plain object accepted, since it selects the built-in path; `sms: { provider: 'twilio' }` would configure nothing and was otherwise found at the first send.
+
 ```typescript
 // api/src/drivers/SlackDriver.ts
 import type { NotificationDriver, Recipient, App } from '@frontierjs/notifications'
@@ -455,8 +459,6 @@ The first three are thrown before any delivery starts; the last is the only one 
 
 ## Out of scope (future)
 
-- SMS driver — when a Conduit SMS provider is available. `sms` is not built in, so it needs a registered driver like any other custom transport
-- Push notifications — APNs / FCM, requires a device token model
 - Notification preferences model — per-recipient transport preferences in the DB
 - Digest mode — batch into scheduled email digest
 - Bulk mark-as-read endpoint

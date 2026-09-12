@@ -4,7 +4,7 @@ siteName: Kitchen sink
 <script>
   import { page, isActive, goto } from '@frontierjs/sierra/router'
   import { status, getClient } from '@frontierjs/sierra/junction'
-  import { session, signIn, signOut } from '@/session.js'
+  import { session, signIn, submitCode, signOut } from '@/session.js'
   import { cart, refresh as refreshCart } from '@/cart.js'
 
   import AccountStatus  from '@frontierjs/ui/components/display/AccountStatus.mesa'
@@ -14,6 +14,8 @@ siteName: Kitchen sink
   import Button         from '@frontierjs/ui/components/forms/Button.mesa'
   import CommandPalette from '@frontierjs/ui/components/overlay/CommandPalette.mesa'
   import Dot            from '@frontierjs/ui/components/display/Dot.mesa'
+  import Field          from '@frontierjs/ui/components/forms/Field.mesa'
+  import Input          from '@frontierjs/ui/components/forms/Input.mesa'
   import Kbd            from '@frontierjs/ui/components/display/Kbd.mesa'
   import Pill           from '@frontierjs/ui/components/display/Pill.mesa'
   import Toaster        from '@frontierjs/ui/components/feedback/Toaster.mesa'
@@ -85,7 +87,7 @@ siteName: Kitchen sink
 
   $: (cart.count)
   $: (page.siteName, page.route)
-  $: (status.connected, session.user, session.level, session.error)
+  $: (status.connected, session.user, session.level, session.error, session.awaitingCode)
   $: commandPalette.open
 
   // ⌘K. The commands are ordinary functions — the palette is a way to reach
@@ -104,6 +106,8 @@ siteName: Kitchen sink
     { id: 'go-subscriptions', group: 'Navigate', label: 'Subscriptions', sub: 'Who is paying, and what state that is in', action: () => goto('/subscriptions/') },
     { id: 'go-invoices',      group: 'Navigate', label: 'Invoices',      sub: 'The documents', action: () => goto('/invoices/') },
     { id: 'go-settings',  group: 'Navigate', label: 'Settings',   action: () => goto('/settings/') },
+    { id: 'go-account',   group: 'Navigate', label: 'Account',    sub: 'Two-step sign-in and recovery codes', action: () => goto('/account/') },
+    { id: 'go-sign-in',   group: 'Session',  label: 'Sign in with an email and password', action: () => goto('/sign-in/') },
     { id: 'sign-in-user',  group: 'Session', label: 'Sign in as sam (level 4)',  action: () => as('user') },
     { id: 'sign-in-admin', group: 'Session', label: 'Sign in as alex (level 5)', action: () => as('admin') },
     { id: 'sign-out',      group: 'Session', label: 'Sign out',                  action: out },
@@ -151,6 +155,26 @@ siteName: Kitchen sink
     await signOut()
     goto('/')
   }
+
+  // ── The second step ──────────────────────────────────────────────────────
+  //
+  // In the shell rather than on /sign-in/, because any sign-in can owe one —
+  // the dev buttons above and the palette's commands call the same signIn — and
+  // a box that lived on one page would leave the others holding a password
+  // accepted and nowhere to type the code.
+  //
+  // A refusal lands on session.error like any other; `retryable: false` closes
+  // the box in sierra, which is what sends the person back to the password
+  // rather than typing into an attempt that is already spent.
+  let code      = ''
+  let codeBusy  = false
+
+  async function verify() {
+    codeBusy = true
+    try { await submitCode(code.trim()); code = '' } catch {} finally { codeBusy = false }
+  }
+
+  const lapses = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 </script>
 
 <!--
@@ -216,6 +240,9 @@ siteName: Kitchen sink
         <a class="navlink" id="nav-reports" href="/reports/" aria-current={(page.route, isActive('/reports/')) ? 'page' : null}>Reports</a>
       {/if}
       <a class="navlink" href="/settings/"  aria-current={(page.route, isActive('/settings/')) ? 'page' : null}>Settings</a>
+      {#if session.user}
+        <a class="navlink" id="nav-account" href="/account/" aria-current={(page.route, isActive('/account/')) ? 'page' : null}>Account</a>
+      {/if}
     </nav>
 
     <span class="cluster">
@@ -285,6 +312,7 @@ siteName: Kitchen sink
       {:else}
         <Button variant="outlined" onclick={() => as('user')}  disabled={busy}>Sign in (user)</Button>
         <Button variant="primary"  onclick={() => as('admin')} disabled={busy}>Sign in (admin)</Button>
+        <a class="navlink" id="nav-sign-in" href="/sign-in/">Sign in…</a>
         {#each providers as name}
           <!-- signInWith LEAVES THE PAGE — the flow is a browser navigation, so
                nothing after it runs and there is no promise to await. -->
@@ -300,7 +328,27 @@ siteName: Kitchen sink
 
   <main class="screen">
     {#if session.error}
-      <Alert tone="danger">{session.error}</Alert>
+      <Alert tone="danger" id="session-error">{session.error}</Alert>
+    {/if}
+
+    <!--
+      A password was accepted and nothing is signed in yet: no token is stored and
+      no socket is open until this box is answered. `one-time-code` is what lets a
+      phone offer the code from the message it just received.
+    -->
+    {#if session.awaitingCode}
+      <form class="card stack" id="code-box" style="max-width: 28rem"
+            onsubmit={e => { e.preventDefault(); verify() }}>
+        <h2 class="h4">Enter the code from your authenticator</h2>
+        <p class="text-sm text-muted">A recovery code works here too. This attempt lapses at {lapses(session.awaitingCode)}.</p>
+        <Field label="Code">
+          <Input id="code-input" bind:value={code} autocomplete="one-time-code" required />
+        </Field>
+        <div class="cluster">
+          <Button type="submit" id="code-submit" disabled={codeBusy}>Verify</Button>
+          <Button variant="ghost" id="code-cancel" onclick={out}>Start over</Button>
+        </div>
+      </form>
     {/if}
 
     <!--

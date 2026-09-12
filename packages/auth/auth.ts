@@ -27,7 +27,7 @@ import {
   generateRecoveryCodes, normalizeRecoveryCode,
 } from './totp.ts'
 import {
-  InvalidCredentialsError, EmailTakenError, InvalidTokenError,
+  InvalidCredentialsError, ReauthenticationFailedError, EmailTakenError, InvalidTokenError,
   UserNotFoundError, AuthConfigError,
   LastCredentialError,
   NoPasswordCredentialError, NotFoundError,
@@ -299,7 +299,7 @@ export function createLitestoneAuth(
       await payPasswordCost(password)
       throw new NoPasswordCredentialError('This account has no password to confirm with')
     }
-    if (!await verifyPassword(password, cred.value)) throw new InvalidCredentialsError()
+    if (!await verifyPassword(password, cred.value)) throw new ReauthenticationFailedError()
     return user
   }
 
@@ -776,7 +776,7 @@ export function createLitestoneAuth(
       if (!pending) throw new NotFoundError('No enrollment in progress — call setupTotp first')
 
       const step = verifyTotpCode(pending.value, code, new Date(), totpDrift)
-      if (step === null) throw new InvalidSecondFactorError()
+      if (step === null) throw new ReauthenticationFailedError('Invalid code')
 
       // Promoted rather than copied: the row keeps its id and the `totpPending`
       // spelling stops existing, so there is no window where both types answer
@@ -1540,8 +1540,8 @@ export function createLitestoneAuth(
       // Same refusal for "no password set" as for "wrong password". An account
       // with only an OAuth credential is a fact about that account, and this is
       // reachable by anyone holding a session for it.
-      if (!cred) throw new InvalidCredentialsError()
-      if (!await verifyPassword(currentPassword, cred.value)) throw new InvalidCredentialsError()
+      if (!cred) throw new ReauthenticationFailedError()
+      if (!await verifyPassword(currentPassword, cred.value)) throw new ReauthenticationFailedError()
 
       await sys.credential.update({
         where: { id: cred.id },

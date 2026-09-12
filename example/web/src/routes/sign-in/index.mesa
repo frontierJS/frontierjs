@@ -1,0 +1,52 @@
+---
+title: Sign in
+---
+<script>
+  // Signing in as anybody, by typing. The topbar's two buttons sign in as the
+  // seeded staff and nobody else, which is a shortcut for a demo and not a way
+  // in for an account somebody made — and an account made with a second factor
+  // is exactly the one this app had no way to sign in as.
+  //
+  // This page asks for the password and nothing more. The code, when the
+  // account owes one, is the shell's box: `signIn` resolves with no session and
+  // `session.awaitingCode` set, and the layout renders from that.
+  import { session, signIn } from '@/session.js'
+
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout       from '@frontierjs/ui/components/display/Callout.mesa'
+  import Field         from '@frontierjs/ui/components/forms/Field.mesa'
+  import Input         from '@frontierjs/ui/components/forms/Input.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+
+  $: (session.user, session.awaitingCode)
+
+  let email    = ''
+  let password = ''
+  let busy     = false
+
+  async function submit() {
+    busy = true
+    // The refusal is on session.error and the shell renders it.
+    try { await signIn(email.trim(), password); password = '' } catch {} finally { busy = false }
+  }
+</script>
+
+<SectionHeader title="Sign in" level={1} sub="an email and a password — and a code, if the account asks for one" />
+
+{#if session.user}
+  <Callout tone="success" id="signed-in">
+    Signed in as {session.user.email}. <a href="/account/">Your account</a>
+  </Callout>
+{:else if session.awaitingCode}
+  <p class="text-muted" id="sign-in-waiting">The password was accepted. The code above finishes signing in.</p>
+{:else}
+  <form class="card stack" style="max-width: 28rem" onsubmit={e => { e.preventDefault(); submit() }}>
+    <Field label="Email">
+      <Input id="si-email" type="email" bind:value={email} autocomplete="username" required />
+    </Field>
+    <Field label="Password">
+      <Input id="si-password" type="password" bind:value={password} autocomplete="current-password" required />
+    </Field>
+    <Button type="submit" id="si-submit" disabled={busy}>Sign in</Button>
+  </form>
+{/if}

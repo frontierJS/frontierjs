@@ -49,6 +49,22 @@ export class InvalidCredentialsError extends AuthError {
   readonly status = 401
 }
 
+/**
+ * A password or a code offered to confirm an action, by a caller who is ALREADY
+ * signed in, and it did not match — `changePassword`, and the second factor's
+ * setup, confirm, disable and regenerate.
+ *
+ * 403 and not 401, because the session is fine. A 401 is what a client reads as
+ * *this credential is not a session* and answers by signing the person out, so
+ * a mistyped password on a settings screen cost the whole session — over HTTP,
+ * and not over a socket, which is the same typo answered two ways (FJS-1088).
+ * → 403
+ */
+export class ReauthenticationFailedError extends AuthError {
+  constructor(message = 'Incorrect password') { super(message) }
+  readonly status = 403
+}
+
 /** createUser() against an email that already exists. → 409 */
 export class EmailTakenError extends AuthError {
   constructor(message = 'Email already registered') { super(message) }

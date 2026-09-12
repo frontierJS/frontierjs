@@ -30,7 +30,7 @@
 // be renamed while the rows keep the old string.
 
 import type {
-  InAppMessage, MailMessage, Recipient, SmsMessage, Transport,
+  InAppMessage, MailMessage, Recipient, Transport,
 } from './types.ts'
 
 /** Set by the loader. Not exported from the package — an app has no reason to
@@ -58,7 +58,6 @@ export interface NotificationDefinition<P> {
 
   inApp?:  Formatter<P, InAppMessage>
   email?:  Formatter<P, MailMessage>
-  sms?:    Formatter<P, SmsMessage>
 
   /** A custom transport, named for the driver registered under it. */
   [transport: string]: unknown
@@ -107,7 +106,7 @@ export function defineNotification<P = void>(
   if (transports.length === 0) {
     throw new Error(
       '[notifications] defineNotification has no transport formatter. Add one ' +
-      'named for the transport it formats — `inApp`, `email`, `sms`, or the name ' +
+      'named for the transport it formats — `inApp`, `email`, or the name ' +
       'a custom driver is registered under.'
     )
   }

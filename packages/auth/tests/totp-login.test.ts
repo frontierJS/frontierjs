@@ -16,7 +16,7 @@ import {
   totp, totpStep, generateTotpSecret, TOTP_STEP_SEC,
 } from '../totp.ts'
 import {
-  InvalidCredentialsError, InvalidSecondFactorError,
+  InvalidCredentialsError, InvalidSecondFactorError, ReauthenticationFailedError,
   TotpAlreadyEnabledError, NotFoundError, NoPasswordCredentialError,
 } from '../errors.ts'
 
@@ -105,7 +105,7 @@ describe('enrollment — setup proves nothing, confirm is what switches it on', 
     const u = await makeUser()
     const { secret } = await h.auth.setupTotp!(u.userId, PASSWORD)
 
-    await rejectsWith(() => h.auth.confirmTotp!(u.userId, '000000'), InvalidSecondFactorError)
+    await rejectsWith(() => h.auth.confirmTotp!(u.userId, '000000'), ReauthenticationFailedError)
     expect((await h.auth.totpStatus!(u.userId)).enabled).toBe(false)
 
     await h.auth.confirmTotp!(u.userId, totp(secret, new Date()))
@@ -120,7 +120,7 @@ describe('enrollment — setup proves nothing, confirm is what switches it on', 
 
   test('the wrong password enrolls nothing — paired with the right one', async () => {
     const u = await makeUser()
-    await rejectsWith(() => h.auth.setupTotp!(u.userId, 'not-the-password'), InvalidCredentialsError)
+    await rejectsWith(() => h.auth.setupTotp!(u.userId, 'not-the-password'), ReauthenticationFailedError)
     await h.auth.setupTotp!(u.userId, PASSWORD)   // the pair: one character apart
   })
 
@@ -143,7 +143,7 @@ describe('enrollment — setup proves nothing, confirm is what switches it on', 
     const second = await h.auth.setupTotp!(u.userId, PASSWORD)
     expect(second.secret).not.toBe(first.secret)
 
-    await rejectsWith(() => h.auth.confirmTotp!(u.userId, totp(first.secret, new Date())), InvalidSecondFactorError)
+    await rejectsWith(() => h.auth.confirmTotp!(u.userId, totp(first.secret, new Date())), ReauthenticationFailedError)
     await h.auth.confirmTotp!(u.userId, totp(second.secret, new Date()))
     expect((await h.auth.totpStatus!(u.userId)).enabled).toBe(true)
   })
@@ -381,7 +381,7 @@ describe('recovery codes — the way back, spent on use', () => {
 
   test('regenerate needs the password, and needs the factor to be on', async () => {
     const u = await makeUserWithTotp()
-    await rejectsWith(() => h.auth.regenerateRecoveryCodes!(u.userId, 'wrong'), InvalidCredentialsError)
+    await rejectsWith(() => h.auth.regenerateRecoveryCodes!(u.userId, 'wrong'), ReauthenticationFailedError)
 
     const plain = await makeUser()
     await rejectsWith(() => h.auth.regenerateRecoveryCodes!(plain.userId, PASSWORD), NotFoundError)
@@ -408,7 +408,7 @@ describe('disableTotp — off means off, and takes the codes with it', () => {
 
   test('the wrong password disables nothing — paired with the right one', async () => {
     const u = await makeUserWithTotp()
-    await rejectsWith(() => h.auth.disableTotp!(u.userId, 'wrong'), InvalidCredentialsError)
+    await rejectsWith(() => h.auth.disableTotp!(u.userId, 'wrong'), ReauthenticationFailedError)
     expect((await h.auth.totpStatus!(u.userId)).enabled).toBe(true)
 
     await h.auth.disableTotp!(u.userId, PASSWORD)

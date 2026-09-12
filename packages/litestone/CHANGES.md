@@ -1,5 +1,11 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-12 — a tenant registry exposes its parsed schema
+
+`registry.schema`, read-only. A reader that needs a model's declarations and no rows — junction's
+`surface.snapshot.md` grading a custom method against `@@gate` — had nothing to read under `strategy
+database` except a tenant's client, and opening one creates a database file (`FJS-1087`).
+
 ## 2026-09-10 — the policy evaluator moves to toolbelt, and a condition reaches the browser
 
 `FJS-D259`. `evalJs` was here and a condition cannot cross to a browser as a

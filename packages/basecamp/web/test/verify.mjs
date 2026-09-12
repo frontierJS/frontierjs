@@ -1171,6 +1171,31 @@ check('the deployments list shows the release',
   await evaluate(`document.getElementById('deployment-rows')?.textContent ?? ''`),
   t => t.includes('success'))
 
+// A push carries the row WITHOUT the includes `deployments.find` answers, so a
+// list holding pushed rows loses the app's name at the first announcement.
+// A real patch through the API, announced over the real socket — and asked as a
+// pair: the duration cell MOVES (the push was applied) while the app cell keeps
+// the name (it was applied by re-reading, not by adopting the pushed row). A
+// list that ignored pushes passes the second row alone; one that adopted them
+// passes the first.
+const deployCell = (col) =>
+  `document.querySelector('#deployment-rows td[data-col="${col}"]')?.textContent.trim() ?? ''`
+const appCellBefore      = await evaluate(deployCell('appId'))
+const durationCellBefore = await evaluate(deployCell('durationMs'))
+check('…its app cell names the app, read off the include',
+  appCellBefore, t => t.length > 0 && !/^[0-9a-f-]{36}$/.test(t))
+await evaluate(`
+  (async () => {
+    const m = await import('/src/resources/Deployment.mesa')
+    await m.deployments.service.patch(${JSON.stringify(deployPath.split('/')[2])}, { durationMs: 4242000 })
+  })()
+`)
+check('a pushed patch moves the list without a navigation',
+  await waitFor(deployCell('durationMs'), t => t !== durationCellBefore, 10_000),
+  t => t !== durationCellBefore)
+check('…and the app cell still names the app after the push',
+  await evaluate(deployCell('appId')), appCellBefore)
+
 // Cancel is a state change, not a delete — history is the point of the record.
 await goto(deployPath)
 check('a finished release offers no cancel',

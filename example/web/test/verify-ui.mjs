@@ -115,6 +115,13 @@ const { targetId } = await send(browser, 'Target.createTarget', { url: 'about:bl
 const { sessionId } = await send(browser, 'Target.attachToTarget', { targetId, flatten: true })
 const cmd = (method, params) => send(browser, method, params, sessionId)
 
+// A headless window's FOCUS belongs to the browser, not the page: about thirty
+// seconds after launch Chrome starts its component extensions, the window blurs,
+// and from then on `el.focus()` moves `activeElement` and fires no `focus`
+// event. A combobox that opens on focus then never opens, and the failure lands
+// on whichever step the drive reached at that second (FJS-1084). Emulated focus
+// keeps the page focused whatever the browser does with its window.
+await cmd('Emulation.setFocusEmulationEnabled', { enabled: true })
 await cmd('Page.enable')
 await cmd('Runtime.enable')
 

@@ -1,4 +1,4 @@
-import type { InAppMessage, MailMessage, Recipient, SmsMessage, Transport } from './types.ts'
+import type { InAppMessage, MailMessage, Recipient, Transport } from './types.ts'
 
 /**
  * Abstract base class for all notification types.
@@ -7,7 +7,6 @@ import type { InAppMessage, MailMessage, Recipient, SmsMessage, Transport } from
  *   - via()           — which transports to deliver on for this recipient
  *   - toInApp()       — if 'inApp' is returned by via()
  *   - toEmail()       — if 'email' is returned by via()
- *   - toSms()         — if 'sms' is returned by via()
  *   - to<Transport>() — for any custom driver's transport name
  *
  * Usage:
@@ -78,13 +77,6 @@ export abstract class Notification {
    * Required if via() returns 'email'. Requires mailerPlugin to be configured.
    */
   toEmail?(recipient: Recipient): MailMessage
-
-  /**
-   * Format this notification for the 'sms' transport.
-   * Required if via() returns 'sms'. There is no built-in SMS driver, so this
-   * transport needs one registered under the name 'sms'.
-   */
-  toSms?(recipient: Recipient): SmsMessage
 
   // ─── Custom transport formatters ──────────────────────────────────────────
 

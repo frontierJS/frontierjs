@@ -17,8 +17,8 @@
 // arrangement is trying to stop.
 
 import { buildRoutes, serializeHookMap } from '../plugins/manifest/index.ts'
-import { describePrincipalRealm }        from './litestone.ts'
-import type { PrincipalRealm }           from './litestone.ts'
+import { describePrincipalRealm, customMethodGrade, gateLevels, isCrudGatedMethod, TENANT_REGISTRY } from './litestone.ts'
+import type { PrincipalRealm, CustomMethodGrade }                                 from './litestone.ts'
 import type { App }                      from './app.ts'
 
 // ─── the surface ──────────────────────────────────────────────────────────────
@@ -34,6 +34,11 @@ export interface SurfaceService {
   customMethods: string[]
   /** The `type` in the seed each method's payload must satisfy, keyed by method. */
   inputs:        Record<string, string>
+  /**
+   * Who may call each custom method the service answers, as the gate decides it.
+   * Keyed by method, CRUD verbs excluded — those are graded by operation.
+   */
+  methodGrades:  Record<string, CustomMethodGrade>
   channel:       string[]
   transactional: string[]
   softDelete:    string | null
@@ -55,6 +60,15 @@ export interface Surface {
 export function describeSurface(app: App): Surface {
   const cfg = app.config as Record<string, unknown>
 
+  // The gate reads `@@gate` off the client a call runs with. Under
+  // `strategy database` there is no app-wide one and opening a tenant would make
+  // a description tool create a database file, so the registry's parsed schema
+  // stands in. An app handing `createApp` a wrapper that does not forward it
+  // gets the levels reported as unknown rather than guessed.
+  const registry = (app as unknown as Record<symbol, unknown>)[TENANT_REGISTRY] as { schema?: unknown } | undefined
+  const client   = (app as unknown as { db?: unknown }).db
+    ?? (registry?.schema ? { $schema: registry.schema } : undefined)
+
   const services = [...app.services.values()].map(svc => {
     const d = svc.describe()
     // `channel` is a service field rather than part of describe() — normalized
@@ -71,6 +85,7 @@ export function describeSurface(app: App): Surface {
       methods:       d.methods,
       customMethods: d.customMethods,
       inputs:        d.inputs ?? {},
+      methodGrades:  gradeCustomMethods(d, client),
       channel,
       transactional: d.transactional,
       softDelete:    d.softDelete,
@@ -90,6 +105,28 @@ export function describeSurface(app: App): Surface {
     services,
     routes:   buildRoutes(app),
   }
+}
+
+/**
+ * `gateAuthAround` is the service-level around hook every built service carries;
+ * a service without it is checked by nothing at the API boundary, which is the
+ * same answer as a model with no `@@gate`.
+ */
+function gradeCustomMethods(
+  d:      { name: string; model: string; methods: string[]; methodGates?: Record<string, number>; hooks: unknown },
+  client: unknown,
+): Record<string, CustomMethodGrade> {
+  const around  = (serializeHookMap(d.hooks as never) as unknown as Record<string, Record<string, string[]>>).around ?? {}
+  const gated   = (around.all ?? []).includes('gateAuth')
+  const levels  = !gated ? null : client ? gateLevels(client, d.model || d.name) : undefined
+  const declared = d.methodGates ?? {}
+
+  const out: Record<string, CustomMethodGrade> = {}
+  for (const method of d.methods) {
+    if (isCrudGatedMethod(method)) continue
+    out[method] = customMethodGrade(method, declared, levels)
+  }
+  return out
 }
 
 // ─── unattended work ──────────────────────────────────────────────────────────

@@ -1,0 +1,171 @@
+---
+title: Account
+---
+<script>
+  // The signed-in person's own account: two-step sign-in, and the recovery codes
+  // that are the way back when the phone is gone.
+  //
+  // Every call is `client.auth`, which is the `account` service scoped to the
+  // caller — nothing here names a user id, and there is no model behind the
+  // screen, because the credential rows are `@@gate("8")` and nothing outside the
+  // provider may read one.
+  //
+  // Three of the four writes ask for the password again. They change what the
+  // account needs in order to sign in, and a session left open on a shared
+  // machine is not the person who owns it.
+  //
+  // No QR image: drawing one needs an encoder this app does not ship. The
+  // `otpauth://` URI and the secret are both what an authenticator accepts when
+  // the camera is not an option, so the screen offers both to copy.
+  import { session }   from '@/session.js'
+  import { getClient } from '@frontierjs/sierra/junction'
+
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout       from '@frontierjs/ui/components/display/Callout.mesa'
+  import CopyButton    from '@frontierjs/ui/components/display/CopyButton.mesa'
+  import Field         from '@frontierjs/ui/components/forms/Field.mesa'
+  import Input         from '@frontierjs/ui/components/forms/Input.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+
+  $: session.user
+
+  let status        = null   // { enabled, recoveryCodesRemaining }
+  let enrollment    = null   // { secret, qr } between setup and confirm
+  let recoveryCodes = []     // shown once, straight after they are issued
+  let password      = ''
+  let code          = ''
+  let error         = null
+  let busy          = false
+
+  const auth = () => getClient().auth
+
+  // Asked whenever the person changes, not once at mount: the boot restore may
+  // still be in flight when this page mounts, and a sign-out on another tab
+  // makes the last answer somebody else's.
+  $: { if (session.user) load(); else status = null }
+
+  async function load() {
+    try { status = await auth().totpStatus() } catch (e) { error = e?.message ?? String(e) }
+  }
+
+  async function run(fn) {
+    error = null
+    busy  = true
+    try { await fn() } catch (e) { error = e?.message ?? String(e) } finally { busy = false }
+  }
+
+  const begin = () => run(async () => {
+    enrollment = await auth().setupTotp(password)
+    password   = ''
+  })
+
+  const confirm = () => run(async () => {
+    recoveryCodes = (await auth().confirmTotp(code.trim())).recoveryCodes
+    enrollment    = null
+    code          = ''
+    await load()
+    toasts.success('Two-step sign-in is on')
+  })
+
+  const regenerate = () => run(async () => {
+    recoveryCodes = (await auth().regenerateRecoveryCodes(password)).recoveryCodes
+    password      = ''
+    await load()
+  })
+
+  const disable = () => run(async () => {
+    await auth().disableTotp(password)
+    password      = ''
+    recoveryCodes = []
+    await load()
+    toasts.info('Two-step sign-in is off')
+  })
+
+  // The pending secret stays on the server until the next setup supersedes it.
+  // It gates nothing — only a confirmed factor is asked for at sign-in.
+  const abandon = () => { enrollment = null; code = ''; error = null }
+</script>
+
+<SectionHeader title="Account" level={1} sub="how you sign in, and the way back if you lose your phone" />
+
+{#if !session.user}
+  <Callout tone="info" id="account-signed-out">
+    <a href="/sign-in/">Sign in</a> to manage your account.
+  </Callout>
+{:else}
+  {#if error}<Callout tone="danger" id="account-error">{error}</Callout>{/if}
+
+  <section class="card stack" style="max-width: 40rem" id="totp" data-totp-state={status ? (status.enabled ? 'on' : 'off') : 'loading'}>
+    <div class="cluster">
+      <h2 class="h4">Two-step sign-in</h2>
+      {#if status}
+        <Pill tone={status.enabled ? 'success' : 'muted'}>{status.enabled ? 'on' : 'off'}</Pill>
+      {/if}
+    </div>
+
+    {#if recoveryCodes.length}
+      <!-- Before anything else on the card: this is the only time they exist in
+           readable form, and a person who scrolls past them has none. -->
+      <Callout tone="warning" title="Save these recovery codes now">
+        Each one signs you in once, in place of a code. They are not shown again.
+      </Callout>
+      <ol class="stack" id="recovery-codes">
+        {#each recoveryCodes as rc}
+          <li><Mono data-recovery-code>{rc}</Mono></li>
+        {/each}
+      </ol>
+      <div class="cluster">
+        <CopyButton text={recoveryCodes.join('\n')} label="Copy all" variant="outlined" />
+        <Button variant="ghost" id="recovery-done" onclick={() => { recoveryCodes = [] }}>I have saved them</Button>
+      </div>
+    {:else if !status}
+      <p class="text-muted">Asking…</p>
+    {:else if enrollment}
+      <p>Add this account to your authenticator app, then type the six-digit code it shows.</p>
+      <Field label="Secret" hint="type this into the app if it cannot scan">
+        <div class="cluster">
+          <Mono id="totp-secret" data-totp-secret={enrollment.secret}>{enrollment.secret}</Mono>
+          <CopyButton text={enrollment.secret} label="Copy" />
+        </div>
+      </Field>
+      <div class="cluster">
+        <CopyButton text={enrollment.qr} label="Copy the otpauth:// link" variant="outlined" />
+      </div>
+      <form class="stack" onsubmit={e => { e.preventDefault(); confirm() }}>
+        <Field label="Code from the app">
+          <Input id="totp-code" bind:value={code} autocomplete="one-time-code" inputmode="numeric" required />
+        </Field>
+        <div class="cluster">
+          <Button type="submit" id="totp-confirm" disabled={busy}>Turn it on</Button>
+          <Button variant="ghost" id="totp-abandon" onclick={abandon}>Cancel</Button>
+        </div>
+      </form>
+    {:else if !status.enabled}
+      <p>Signing in asks for your password only. Turn this on and it will also ask for a code from an app on your phone.</p>
+      <form class="stack" onsubmit={e => { e.preventDefault(); begin() }}>
+        <Field label="Your password" hint="asked again because this changes how the account signs in">
+          <Input id="totp-password" type="password" bind:value={password} autocomplete="current-password" required />
+        </Field>
+        <Button type="submit" id="totp-enable" disabled={busy}>Set up two-step sign-in</Button>
+      </form>
+    {:else}
+      <p>
+        Signing in asks for a code as well as your password.
+        <span id="totp-remaining">{status.recoveryCodesRemaining}</span> recovery
+        {status.recoveryCodesRemaining === 1 ? 'code' : 'codes'} left.
+      </p>
+      <form class="stack" onsubmit={e => e.preventDefault()}>
+        <Field label="Your password" hint="needed for either of these">
+          <Input id="totp-password" type="password" bind:value={password} autocomplete="current-password" required />
+        </Field>
+        <div class="cluster">
+          <Button variant="outlined" id="totp-regenerate" disabled={busy} onclick={regenerate}>New recovery codes</Button>
+          <Button tone="danger" variant="outlined" id="totp-disable" disabled={busy} onclick={disable}>Turn it off</Button>
+        </div>
+      </form>
+    {/if}
+  </section>
+{/if}

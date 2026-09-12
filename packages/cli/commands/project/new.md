@@ -1033,11 +1033,16 @@ export default {
   trailingSlash: 'always',
 
   junction: {
-    // Vite loads this file in NODE to build its own config, where there is no
-    // \`location\` — an unguarded reference here takes the dev server down before
-    // it serves a byte. Same origin as the page; the client upgrades to ws
-    // itself, so this stays http.
-    url:      typeof location !== 'undefined' ? location.origin : 'http://localhost:8000',
+    // Where the API is. Unset, it is the page's own origin, which is right while
+    // Vite or nginx proxies /api to it. An API on its own origin
+    // (api.example.com beside app.example.com) or a build a native shell bundles
+    // has no proxy in front of it, so the build names it:
+    //   VITE_API_URL=https://api.example.com bun run build
+    // Vite inlines the value at build time and loads this file in NODE too,
+    // where there is neither \`import.meta.env\` nor \`location\` — an unguarded
+    // reference to either takes the dev server down before it serves a byte.
+    // The client upgrades to ws itself, so this stays http.
+    url:      import.meta.env?.VITE_API_URL ?? (typeof location !== 'undefined' ? location.origin : 'http://localhost:8000'),
     tokenKey: '${appName}_token',
     // Must match the API's config.apiPrefix (api/config/default.ts). Junction
     // defaults to no prefix — services at /{service} — so this line and that

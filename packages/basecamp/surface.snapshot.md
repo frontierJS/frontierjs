@@ -14,6 +14,128 @@ a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 34 services · 34 routes · 14 plugins · prefix (none)
 ```
 
+## Custom methods whose caller's standing is not graded
+
+A custom method with no `gate:` in `methods:` takes the model's read gate as a
+FLOOR, and a floor checks only that a caller is signed in (`FJS-826`). A method
+that writes through `asSystem()` from here is open to every caller who can sign
+in, whatever the row policies say, because the Data boundary never sees who
+asked. Each row below is either meant — a read-shaped method, a scoped write —
+or wants `methods: [{ method, gate }]`.
+
+| Method | Who may call it |
+| --- | --- |
+| `account.changePassword` | **any signed-in caller** — floor, read gate 6; standing not graded |
+| `account.totpStatus` | **any signed-in caller** — floor, read gate 6; standing not graded |
+| `account.setupTotp` | **any signed-in caller** — floor, read gate 6; standing not graded |
+| `account.confirmTotp` | **any signed-in caller** — floor, read gate 6; standing not graded |
+| `account.disableTotp` | **any signed-in caller** — floor, read gate 6; standing not graded |
+| `account.regenerateRecoveryCodes` | **any signed-in caller** — floor, read gate 6; standing not graded |
+| `alerts.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `alerts.events` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `alerts.attachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `alerts.detachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `alerts.acknowledge` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `alerts.resolve` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `api-keys.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `api-keys.revoke` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `api-keys.scopes` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `apps.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `apps.logs` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `apps.place` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `apps.unplace` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `blueprints.categories` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `blueprints.setParams` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `channels.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `channels.rules` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `channels.test` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `cleanup.usage` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `cleanup.targets` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `cleanup.run` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `cleanup.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `cleanup.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `conduit-targets.restore` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `dashboards.kinds` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `dashboards.addWidget` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `dashboards.updateWidget` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `dashboards.removeWidget` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `dashboards.reorder` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `deployments.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `deployments.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `deployments.stepStatus` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `deployments.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `domains.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `domains.uploadCert` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `domains.makePrimary` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `environments.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `environments.setVariable` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `environments.deleteVariable` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `flags.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `flags.setOverride` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `flags.clearOverride` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `flags.resolve` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `hub.overview` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `hub.workspaces` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `hub.users` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `hub.flags` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `hub.setWorkspaceStatus` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `hub.setUserStatus` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `hub.setSystemAdmin` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `hub.createBot` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `hub.setFlag` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `hub-config.current` | **any signed-in caller** — floor, read gate 7; standing not graded |
+| `hub-config.save` | **any signed-in caller** — floor, read gate 7; standing not graded |
+| `infra.graph` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `infra.onboarding` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `invitations.resend` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `jobs.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `jobs.trigger` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `jobs.cancel` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `jobs.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `jobs.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `metrics-store.read` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `networks.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `networks.members` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `networks.attach` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `networks.detach` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `notification-preferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `portal.restore` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `projects.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `recipes.run` | **any signed-in caller** — floor, read gate 4; standing not graded |
+| `recipes.runs` | **any signed-in caller** — floor, read gate 4; standing not graded |
+| `recipes.startRun` | **any signed-in caller** — floor, read gate 4; standing not graded |
+| `recipes.finishRun` | **any signed-in caller** — floor, read gate 4; standing not graded |
+| `registry.repositories` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `secrets.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `secrets.verify` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `servers.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.events` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.feed` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.sync` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.logEvent` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.reboot` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.drain` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.undrain` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.catalog` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.providers` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.provision` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.provisionStep` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.destroy` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.destroyStep` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.reconcile` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `servers.issueEnrollment` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `sessions.revokeOthers` | **any signed-in caller** — floor, read gate 8; standing not graded |
+| `volumes.usage` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `volumes.prune` | **any signed-in caller** — floor, read gate 2; standing not graded |
+| `workspaces.restore` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `workspaces.members` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `workspaces.addMember` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `workspaces.setMemberRole` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `workspaces.removeMember` | **any signed-in caller** — floor, read gate 1; standing not graded |
+
 ## App hooks
 
 Run around EVERY service call, machine-facing endpoints included. `all` is not
@@ -38,6 +160,13 @@ name when it declares none.
 
 - **methods** — `get`, `changePassword`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
 - **custom methods** — `changePassword`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
+- **who may call** —
+  - `changePassword` — **any signed-in caller** — floor, read gate 6; standing not graded
+  - `totpStatus` — **any signed-in caller** — floor, read gate 6; standing not graded
+  - `setupTotp` — **any signed-in caller** — floor, read gate 6; standing not graded
+  - `confirmTotp` — **any signed-in caller** — floor, read gate 6; standing not graded
+  - `disableTotp` — **any signed-in caller** — floor, read gate 6; standing not graded
+  - `regenerateRecoveryCodes` — **any signed-in caller** — floor, read gate 6; standing not graded
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -53,6 +182,13 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `attachChannel`, `detachChannel`, `acknowledge`, `resolve`
 - **custom methods** — `events`, `attachChannel`, `detachChannel`, `acknowledge`, `resolve`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `events` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `attachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `detachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `acknowledge` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `resolve` — **any signed-in caller** — floor, read gate 2; standing not graded
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -75,6 +211,10 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `revoke`, `scopes`
 - **custom methods** — `revoke`, `scopes`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 5; standing not graded
+  - `revoke` — **any signed-in caller** — floor, read gate 5; standing not graded
+  - `scopes` — **any signed-in caller** — floor, read gate 5; standing not graded
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -94,6 +234,11 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `place`, `unplace`
 - **custom methods** — `logs`, `place`, `unplace`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `logs` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `place` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `unplace` — **any signed-in caller** — floor, read gate 2; standing not graded
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -144,6 +289,9 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `create`, `patch`, `remove`, `categories`, `setParams`
 - **custom methods** — `categories`, `setParams`
+- **who may call** —
+  - `categories` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `setParams` — **any signed-in caller** — floor, read gate 1; standing not graded
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -161,6 +309,10 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `rules`, `test`
 - **custom methods** — `rules`, `test`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `rules` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `test` — **any signed-in caller** — floor, read gate 2; standing not graded
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -180,6 +332,13 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `usage`, `targets`, `run`, `startRun`, `finishRun`, `report`
 - **custom methods** — `usage`, `targets`, `run`, `startRun`, `finishRun`, `report`
+- **who may call** —
+  - `usage` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `targets` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `run` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `finishRun` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `report` — anyone, a stranger included — declared `gate: 0`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -199,6 +358,8 @@ name when it declares none.
 ### `conduit-targets` · model `conduit-targets`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **who may call** —
+  - `restore` — **nothing at the API boundary** — the model declares no `@@gate`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -229,6 +390,12 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `create`, `patch`, `remove`, `kinds`, `addWidget`, `updateWidget`, `removeWidget`, `reorder`
 - **custom methods** — `kinds`, `addWidget`, `updateWidget`, `removeWidget`, `reorder`
+- **who may call** —
+  - `kinds` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `addWidget` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `updateWidget` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `removeWidget` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `reorder` — **any signed-in caller** — floor, read gate 2; standing not graded
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -251,6 +418,12 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `rollback`, `startRun`, `stepStatus`, `finishRun`
 - **custom methods** — `rollback`, `startRun`, `stepStatus`, `finishRun`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `rollback` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `stepStatus` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `finishRun` — **any signed-in caller** — floor, read gate 2; standing not graded
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -272,6 +445,10 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `uploadCert`, `makePrimary`
 - **custom methods** — `uploadCert`, `makePrimary`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `uploadCert` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `makePrimary` — **any signed-in caller** — floor, read gate 2; standing not graded
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -292,6 +469,10 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `setVariable`, `deleteVariable`
 - **custom methods** — `setVariable`, `deleteVariable`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `setVariable` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `deleteVariable` — **any signed-in caller** — floor, read gate 2; standing not graded
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -312,6 +493,11 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `setOverride`, `clearOverride`, `resolve`
 - **custom methods** — `setOverride`, `clearOverride`, `resolve`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `setOverride` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `clearOverride` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `resolve` — **any signed-in caller** — floor, read gate 2; standing not graded
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -347,6 +533,16 @@ name when it declares none.
 
 - **methods** — `overview`, `workspaces`, `users`, `flags`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
 - **custom methods** — `overview`, `workspaces`, `users`, `flags`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
+- **who may call** —
+  - `overview` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `workspaces` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `users` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `flags` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `setWorkspaceStatus` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `setUserStatus` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `setSystemAdmin` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `createBot` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `setFlag` — **nothing at the API boundary** — the model declares no `@@gate`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -363,6 +559,9 @@ name when it declares none.
 
 - **methods** — `current`, `save`
 - **custom methods** — `current`, `save`
+- **who may call** —
+  - `current` — **any signed-in caller** — floor, read gate 7; standing not graded
+  - `save` — **any signed-in caller** — floor, read gate 7; standing not graded
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -379,6 +578,9 @@ name when it declares none.
 
 - **methods** — `graph`, `onboarding`
 - **custom methods** — `graph`, `onboarding`
+- **who may call** —
+  - `graph` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `onboarding` — **nothing at the API boundary** — the model declares no `@@gate`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -395,6 +597,10 @@ name when it declares none.
 
 - **methods** — `find`, `create`, `remove`, `resend`, `preview`, `accept`
 - **custom methods** — `resend`, `preview`, `accept`
+- **who may call** —
+  - `resend` — **any signed-in caller** — floor, read gate 5; standing not graded
+  - `preview` — anyone, a stranger included — declared `gate: 0`
+  - `accept` — anyone, a stranger included — declared `gate: 0`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -414,6 +620,12 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `trigger`, `cancel`, `startRun`, `finishRun`
 - **custom methods** — `trigger`, `cancel`, `startRun`, `finishRun`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `trigger` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `cancel` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `finishRun` — **any signed-in caller** — floor, read gate 2; standing not graded
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -437,6 +649,8 @@ name when it declares none.
 - **methods** — `find`, `read`
 - **custom methods** — `read`
 - **also answers to** — `metrics`
+- **who may call** —
+  - `read` — **nothing at the API boundary** — the model declares no `@@gate`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -453,6 +667,11 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `members`, `attach`, `detach`
 - **custom methods** — `members`, `attach`, `detach`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `members` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `attach` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `detach` — **any signed-in caller** — floor, read gate 2; standing not graded
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -473,6 +692,9 @@ name when it declares none.
 
 - **methods** — `find`, `save`, `reset`
 - **custom methods** — `save`, `reset`
+- **who may call** —
+  - `save` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `reset` — **any signed-in caller** — floor, read gate 1; standing not graded
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -487,6 +709,8 @@ name when it declares none.
 ### `portal` · model `portal`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **who may call** —
+  - `restore` — **nothing at the API boundary** — the model declares no `@@gate`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -502,6 +726,8 @@ name when it declares none.
 ### `projects` · model `Project`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -520,6 +746,11 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `create`, `patch`, `remove`, `run`, `runs`, `startRun`, `finishRun`
 - **custom methods** — `run`, `runs`, `startRun`, `finishRun`
+- **who may call** —
+  - `run` — **any signed-in caller** — floor, read gate 4; standing not graded
+  - `runs` — **any signed-in caller** — floor, read gate 4; standing not graded
+  - `startRun` — **any signed-in caller** — floor, read gate 4; standing not graded
+  - `finishRun` — **any signed-in caller** — floor, read gate 4; standing not graded
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -541,6 +772,8 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `repositories`
 - **custom methods** — `repositories`
+- **who may call** —
+  - `repositories` — **any signed-in caller** — floor, read gate 2; standing not graded
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -557,6 +790,9 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `verify`
 - **custom methods** — `verify`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 5; standing not graded
+  - `verify` — **any signed-in caller** — floor, read gate 5; standing not graded
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -576,6 +812,25 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `heartbeat`
 - **custom methods** — `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `heartbeat`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `events` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `feed` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `sync` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `logEvent` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `metrics` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `reboot` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `drain` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `undrain` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `catalog` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `providers` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `provision` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `provisionStep` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `destroy` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `destroyStep` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `reconcile` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `issueEnrollment` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `heartbeat` — anyone, a stranger included — declared `gate: 0`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -601,6 +856,8 @@ name when it declares none.
 
 - **methods** — `find`, `remove`, `revokeOthers`
 - **custom methods** — `revokeOthers`
+- **who may call** —
+  - `revokeOthers` — **any signed-in caller** — floor, read gate 8; standing not graded
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -616,6 +873,10 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `remove`, `usage`, `prune`, `report`
 - **custom methods** — `usage`, `prune`, `report`
+- **who may call** —
+  - `usage` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `prune` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `report` — anyone, a stranger included — declared `gate: 0`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
@@ -635,6 +896,12 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `members`, `addMember`, `setMemberRole`, `removeMember`
 - **custom methods** — `members`, `addMember`, `setMemberRole`, `removeMember`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `members` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `addMember` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `setMemberRole` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `removeMember` — **any signed-in caller** — floor, read gate 1; standing not graded
 
 | Phase | Method | Chain |
 | --- | --- | --- |

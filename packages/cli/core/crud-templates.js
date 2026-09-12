@@ -149,8 +149,6 @@ title: ${o.title}
 ---
 <script>
 ${o.imports.map(l => '  ' + l).join('\n')}
-  import { useStore } from '@frontierjs/sierra/junction'
-  import { page, goto } from '@frontierjs/sierra/router'
 ${session}
   ${KIT.alert}
   ${KIT.button}
@@ -160,9 +158,6 @@ ${session}
   ${KIT.filters}
 
 ${idFieldLine(o.res)}
-
-  const { get: rows, unsubscribe } = useStore(${o.res}.store)
-  $.onDestroy(unsubscribe)
 
   // Ranked from the schema, with the header text taken from each column's
   // declared label where it has one. To pin the set instead, name them:
@@ -188,61 +183,22 @@ ${idFieldLine(o.res)}
   // Same ranking as the table, so the filters are over the columns you can see.
   const { filters, search } = ${o.res}.filters()
 
-  // ── The URL is the state ─────────────────────────────────────────────────
+  // ── The list ─────────────────────────────────────────────────────────────
   //
-  // page.query is the filters and page.directives the $ params, split by the
-  // same module the bridge reads a request with (Invariant 10). Both halves go
-  // to the bar, which puts them back together -- a bar handed the filters alone
-  // has no sort and no page size to show, and hands one back missing them, so
-  // typing in a filter box drops the sort a header just set.
+  // list() owns what this page used to wire by hand: the store, the load, its
+  // re-run when the filters change, and the window. The URL is the state -- a
+  // filtered list is a LINK, copied, bookmarked and survived by the back button
+  // -- so apply() and sort() navigate and the change comes back through the
+  // router. The resource file's listQuery is what it starts on, and a page
+  // wanting a different default passes directives: { orderBy: '...' } here.
   //
-  // page.pathname is the path with NO query, which is window.location's own
-  // word for it. Two-arg goto REPLACES rather than merging, which is what Clear
-  // needs: an empty query over a bare path is a bare path. The directives
-  // option is what writes the $ spelling, so nothing here names a transport key.
-  function apply(query, directives) {
-    goto(page.pathname, query, { directives })
-  }
-
-  function sortBy(next) {
-    apply(page.query, { ...page.directives, orderBy: next })
-  }
-
-  // The header reads back the SAME directive the load does. Without it the
-  // table is sorted and nothing on it says so: no arrow, and aria-sort answers
-  // none on every header. Worse, the toggle stops inverting -- <Table> derives
-  // the NEXT direction from the ordering it was handed, so a column already
-  // descending in the URL is re-sent ascending on the next click and the header
-  // never reverses.
-  //
-  // A string, an object and an array of objects are all legal orderBys and the
-  // directive table deliberately does not fix one. Reading them is
-  // <Table>'s, off @frontierjs/toolbelt/directives, so nothing is parsed here.
-  const ordering = page.directives?.orderBy
+  // The bar is handed BOTH halves, because it hands back the whole query it
+  // holds: given the filters alone, the first keystroke in a filter box would
+  // drop the sort a header just set. The table is handed the same orderBy the
+  // load sends, or it is sorted with no arrow and its header never reverses.
+  const list = ${o.res}.list()
 
   let error = null
-
-  // The filter lives in the URL (Invariant 10): page.query is the filters and
-  // page.directives the $limit / $offset / $orderBy, split by the same module
-  // the bridge reads a request with. So a filtered list is a LINK — copied,
-  // bookmarked, and survived by the back button — and a detail screen can point
-  // at its own child rows without this page knowing anything about them.
-  function load() {
-    ${o.res}.load(page.query, page.directives).catch(e => { error = e.message })
-  }
-
-  load()
-
-  // The $: line is what makes the filter bar and the sort headers DO anything.
-  // apply() navigates to the same route with a different query, and the router
-  // does not remount for that — it moves page.query and page.directives and
-  // expects the page to be watching them. Without this line the load above runs
-  // once at setup and never again: the URL changes, the bar redraws from it,
-  // and no request is ever made, so every filter and every sort is a no-op that
-  // looks like a working control. It is also what marks page a watched import,
-  // which is what makes the bar above redraw from the URL rather than from the
-  // query this page happened to arrive with.
-  $: page.query, page.directives, () => load()
 ${gateState}${removeFn}${SC}
 
 <SectionHeader title="${o.heading}" level={1}>
@@ -252,11 +208,12 @@ ${gateState}${removeFn}${SC}
 </SectionHeader>
 
 {#if error}<Alert tone="danger">{error}</Alert>{/if}
+{#if list.error}<Alert tone="danger">{list.error.message}</Alert>{/if}
 
-<FilterBar {filters} {search} value={page.query} directives={page.directives} onchange={apply} />
+<FilterBar {filters} {search} value={list.query} directives={list.directives} onchange={list.apply} />
 
-<Table {columns} rows={rows()} orderBy={ordering} striped hover
-       emptyText="Nothing here yet." onsort={sortBy}>
+<Table {columns} rows={list.rows} orderBy={list.directives.orderBy} loading={list.loading && !list.rows.length}
+       striped hover emptyText="Nothing here yet." onsort={list.sort}>
   {#snippet row(record)}
     <tr>
       {#each cols as c}<td><Cell value={record[c.name]} column={c} {record} /></td>{/each}
@@ -266,6 +223,12 @@ ${gateState}${removeFn}${SC}
     </tr>
   {/snippet}
 </Table>
+
+<!-- A keyset window: rows written while somebody reads are neither skipped
+     nor served twice, which an offset cannot promise. -->
+{#if list.hasMore}
+  <Button variant="ghost" onclick={list.more}>Load more</Button>
+{/if}
 
 {#if omitted.length}
   <p class="text-sm text-muted">

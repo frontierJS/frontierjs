@@ -5,6 +5,9 @@ import { notify } from './notify.ts'
 import { resolveNotificationsDir, loadNotifications, sealRegistry } from './loader.ts'
 import type { NotificationRegistry } from './loader.ts'
 
+const isDriver = (v: unknown): v is NotificationDriver =>
+  typeof (v as NotificationDriver | null)?.send === 'function'
+
 /**
  * notificationsPlugin — wires app.notify and registers transport drivers.
  *
@@ -43,6 +46,21 @@ export function notificationsPlugin(opts: NotificationsPluginOptions) {
     )
   }
 
+  // `sms: { provider: 'twilio' }` is the shape other frameworks take. There is
+  // no built-in SMS to configure, so it registered nothing and was found at the
+  // first send — which for an alert is the moment it was needed.
+  for (const [transportName, config] of Object.entries(opts.transports ?? {})) {
+    if (config === undefined || isDriver(config)) continue
+    if (transportName === 'email' && typeof config === 'object' && config !== null) continue
+
+    throw new Error(
+      `[notifications] transports.${transportName} has no send(), so it configures ` +
+      'nothing. Only `email` takes a plain object — `{ mailer }`, the built-in path ' +
+      `over app.mail. Every other transport is a driver: register ` +
+      `\`${transportName}: { send(recipient, message, app) { … } }\`.`
+    )
+  }
+
   // Declare the mailer dependency to Junction ONLY when the email transport is
   // actually configured — an app that notifies in-app only must not be forced
   // to install a mailer.
@@ -53,8 +71,7 @@ export function notificationsPlugin(opts: NotificationsPluginOptions) {
   // notificationsPlugin" was a comment in an examples file, and getting it
   // wrong surfaced as a failed send long after startup rather than at boot.
   const emailTransport   = opts.transports?.email
-  const emailUsesMailer  = !!emailTransport &&
-    typeof (emailTransport as { send?: unknown }).send !== 'function'
+  const emailUsesMailer  = !!emailTransport && !isDriver(emailTransport)
 
   const drivers = new Map<string, NotificationDriver>()
   let registry: NotificationRegistry = new Map()   // sealed once the loader answers
@@ -64,22 +81,11 @@ export function notificationsPlugin(opts: NotificationsPluginOptions) {
     ...(emailUsesMailer ? { requires: ['mailer'] } : {}),
 
     register(app: App) {
-      if (opts.transports) {
-        for (const [transportName, config] of Object.entries(opts.transports)) {
-          // Anything with send() is a driver and is registered under its
-          // transport name — including a built-in name like 'inApp' or 'email',
-          // which acts as an explicit override (notify() prefers a registered
-          // driver).
-          //
-          // 'email' and 'sms' used to be skipped unconditionally, so an SMS
-          // driver could never be registered and SMS was unimplementable; and
-          // 'inApp' was registered but never read. Plain config objects like
-          // { mailer: 'default' } or { provider: 'x' } have no send() and are
-          // still ignored here — they configure the built-in path.
-          if (config && typeof (config as NotificationDriver).send === 'function') {
-            drivers.set(transportName, config as NotificationDriver)
-          }
-        }
+      // Anything with send() is a driver and is registered under its transport
+      // name — a built-in name included, which overrides (notify() prefers a
+      // registered driver). Everything else was refused at construction.
+      for (const [transportName, config] of Object.entries(opts.transports ?? {})) {
+        if (isDriver(config)) drivers.set(transportName, config)
       }
 
       // The db and the driver registry live under one symbol rather than as

@@ -89,7 +89,11 @@ describe('account', () => {
       .set('x-service-method', 'changePassword')
       .auth(token)
       .send({ currentPassword: 'not-it', newPassword: 'new-pw' })
-    expect(wrong.status).toBe(401)
+    // 403 and not 401: the session is fine and the typed password is not. A 401
+    // here is what a browser client signs the person out on (FJS-1088), so the
+    // pair is the same token still answering afterwards.
+    expect(wrong.status).toBe(403)
+    expect((await request(app).get('/account/me').auth(token)).status).toBe(200)
 
     const ok = await request(app).post('/account/me')
       .set('x-service-method', 'changePassword')
@@ -179,7 +183,7 @@ describe('account — TOTP over HTTP', () => {
     // Paired with the reason it is 400 rather than 500: the field is missing,
     // not the method. With the field present this same call reaches the provider
     // and is refused on the password instead.
-    expect((await call('setupTotp', aliceToken, { currentPassword: 'wrong' })).status).toBe(401)
+    expect((await call('setupTotp', aliceToken, { currentPassword: 'wrong' })).status).toBe(403)
   })
 
   test('a provider without them says so by name rather than 500ing', async () => {

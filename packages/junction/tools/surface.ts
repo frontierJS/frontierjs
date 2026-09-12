@@ -35,6 +35,7 @@ import { flag, getFlag, rel, fatal, loadApp, checkSnapshot } from './app-module.
 
 import { describeSurface }              from '../src/core/app-model.ts'
 import type { Surface }                 from '../src/core/app-model.ts'
+import type { CustomMethodGrade }       from '../src/core/litestone.ts'
 
 
 // ─── rendering ────────────────────────────────────────────────────────────────
@@ -46,6 +47,25 @@ import type { Surface }                 from '../src/core/app-model.ts'
 // Run order, not declaration order: `around` wraps everything (the derived
 // `gateAuth` lives there), then before, then validated, then after.
 const PHASES = ['around', 'before', 'validated', 'after', 'error'] as const
+
+// Who may call a custom method, in the words a reader acts on. The mechanism
+// is `customMethodGrade`; this is only the sentence. A floor is a PRESENCE
+// check, so the dangerous row is a floor above 0 on a method that writes
+// through `asSystem()` — the Data boundary never sees who asked.
+function gradeSentence(g: CustomMethodGrade): string {
+  if (g.source === 'unchecked')
+    return '**nothing at the API boundary** — the model declares no `@@gate`' +
+      (g.level !== null ? `, so the declared \`gate: ${g.level}\` is not enforced` : '')
+  if (g.source === 'declared')
+    return g.level === 0 ? 'anyone, a stranger included — declared `gate: 0`'
+                         : `standing ${g.level} or above — declared \`gate: ${g.level}\``
+  if (g.level === 0) return 'anyone, a stranger included — floor, the model\'s read gate is 0'
+  if (g.level === null) return '**presence only** — floor, the model\'s read gate; standing not graded'
+  return `**any signed-in caller** — floor, read gate ${g.level}; standing not graded`
+}
+
+const ungraded = (g: CustomMethodGrade): boolean =>
+  g.source === 'unchecked' || (g.source === 'floor' && g.level !== 0)
 
 function hookRows(map: Record<string, Record<string, string[]>>): string[] {
   const rows: string[] = []
@@ -80,6 +100,27 @@ export function renderSurfaceSnapshot(surface: Surface, opts: { source?: string;
   out.push(`${surface.services.length} services · ${surface.routes.length} routes · ` +
            `${surface.plugins.length} plugins · prefix ${surface.prefix || '(none)'}`)
   out.push('```')
+  out.push('')
+
+  // ── Custom methods nobody grades ──
+  const loose = surface.services.flatMap(svc =>
+    Object.entries(svc.methodGrades).filter(([, g]) => ungraded(g)).map(([m, g]) => ({ svc: svc.name, m, g })))
+  out.push('## Custom methods whose caller\'s standing is not graded')
+  out.push('')
+  out.push('A custom method with no `gate:` in `methods:` takes the model\'s read gate as a')
+  out.push('FLOOR, and a floor checks only that a caller is signed in (`FJS-826`). A method')
+  out.push('that writes through `asSystem()` from here is open to every caller who can sign')
+  out.push('in, whatever the row policies say, because the Data boundary never sees who')
+  out.push('asked. Each row below is either meant — a read-shaped method, a scoped write —')
+  out.push('or wants `methods: [{ method, gate }]`.')
+  out.push('')
+  if (loose.length) {
+    out.push('| Method | Who may call it |')
+    out.push('| --- | --- |')
+    for (const { svc, m, g } of loose) out.push(`| \`${svc}.${m}\` | ${gradeSentence(g)} |`)
+  } else {
+    out.push('None — every custom method declares its level or is open by a read gate of 0.')
+  }
   out.push('')
 
   // ── App hooks ──
@@ -118,6 +159,11 @@ export function renderSurfaceSnapshot(surface: Surface, opts: { source?: string;
     // file and readable nowhere else.
     for (const [method, type] of Object.entries(svc.inputs).sort())
       out.push(`- **input** — \`${method}\` takes \`${type}\``)
+    const grades = Object.entries(svc.methodGrades)
+    if (grades.length) {
+      out.push('- **who may call** —')
+      for (const [method, g] of grades) out.push(`  - \`${method}\` — ${gradeSentence(g)}`)
+    }
     if (svc.channel.length)       out.push(`- **broadcasts on** — ${svc.channel.map(c => `\`${c}\``).join(', ')}`)
     if (svc.transactional.length) out.push(`- **transactional** — ${svc.transactional.map(m => `\`${m}\``).join(', ')}`)
     if (svc.softDelete)           out.push(`- **soft delete** — \`${svc.softDelete}\``)

@@ -4710,6 +4710,107 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d262"></a>2026-09-12 · `FJS-D262` — a deploy pause stops the queues too, and Caravan does the stopping. `fli` runs Caravan's own bin inside the serving container, never opens `jobs.db`, and a queue pause is lifted only by whoever made it.
+
+`fli deploy:pause` stops callers at the edge and leaves the app running, so the
+case it is most reached for — a contract migration during which nothing may
+write — was half covered. `FJS-D198`'s operator verbs built the other half:
+`app.jobs.queue(name).pause()` writes a `queue_pauses` row the claim statement
+reads. What was open is the JOIN, and it had three wirings.
+
+**The deploy writing the row itself is refused.** The journal runner can already
+bind a statement against a SQLite file on the target, so this is the short one,
+and it makes `fli` a second writer of a table Caravan owns — Invariant 4's shape
+one package over, and *batteries vs. smallness*' tendril: Caravan stops being
+severable the moment another package knows its table text. The skew it buys is
+silent. The cli runs from an operator's laptop at one version and the image
+holds Caravan at another, so a renamed column is an error at best, and a moved
+file is a pause written where no instance reads it — a green answer.
+
+**The deploy calling the ADMINISTRATOR route is refused.** It needs an app
+credential on the deploy machine, a secret that exists for nothing else, passing
+through the app's `authorize` and a session store a deploy has no business in.
+
+**The deploy runs the owner's bin in the serving image, which is `05-backup`'s
+shape** — `docker exec <container> bunx litestone backup` is already how a deploy
+asks a package to act on its own file. The code writing the row is the code the
+running app reads it with, same image and same version, so the skew above cannot
+happen by construction. `fli` imports nothing from Caravan and gains no edge in
+the dependency graph.
+
+**The rules:**
+
+1. **Caravan ships an operator bin** — `queue pause | resume | drain | state`,
+   the handle's verbs with the handle's answers as JSON. It is the only thing
+   outside the plugin that writes `queue_pauses`. Its gate is the shell: reaching
+   `docker exec` on the target is above ADMINISTRATOR, and `FJS-D198`'s audit
+   still holds — the actor is passed, never defaulted.
+2. **`fli` runs it by path, never `bunx caravan`.** `bunx` resolves a bin it cannot
+   find locally by fetching whatever npm publishes under that name. An image with
+   no Caravan bin is an app with no queues, and the pause says so in words.
+3. **The file is graded, not assumed.** The bin resolves the path the way the
+   plugin does (junction config's `caravan.db`, then the default) and refuses a
+   file that does not exist or holds no Caravan tables — it never creates one,
+   though `openDb` would. A path passed in CODE rather than config is invisible to
+   it, and this refusal is what makes that visible. A file whose `job_owners` has
+   no fresh heartbeat is not refused: an app that is down still takes a pause,
+   honored at its next start, and the answer says which of the two it was.
+4. **Order is LIFO.** Pause stops the edge, then drains every queue Caravan knows
+   (the derived set — `FJS-D198`, never a list the deploy keeps). A drain that
+   times out is reported with its running count and does not fail the pause,
+   because a long job is the operator's judgment and not a reason maintenance
+   cannot start. Unpause resumes the queues, then lifts the edge.
+5. **A queue pause is lifted by whoever made it.** The pause row names its holder,
+   the transition's id, and unpause resumes only rows that name it. A queue an
+   operator paused before the deploy is still paused after it. The holder is READ
+   off the row rather than copied into `deploy.db`, so a resumed pause step —
+   whose second attempt finds its own rows and reports `changed: false` — loses
+   nothing. Which column carries the holder is Caravan's call at build time. **The
+   limit is named, not solved**: a pause is one row per queue, not a stack, so an
+   operator pausing a queue the deploy already holds is a no-op that the unpause
+   then lifts. The bin's answer names the holder, which is what tells them.
+6. **On by default, with no flag.** *Ergonomics vs. strictness* is decided by what
+   a mistake destroys: a queue left running through a migration writes through a
+   half-changed schema, where a queue paused needlessly delays mail by the length
+   of the pause and loses nothing, since dispatch still queues. And *paved road
+   vs. the workaround* refuses `--edge-only` before anyone has asked for it.
+7. **Half a pause is a failure, and it stays paused.** If the queue half cannot
+   run, the edge pause stands, the transition ends failed naming the queue half,
+   and `--resume` re-runs the step — more paused is the safe direction. Drift
+   between the journal and a queue someone resumed from a console is reported by
+   `deploy:status` beside the edge's, and not reconciled, which is the rule the
+   edge drift table already follows.
+
+**§ V, answered before anything was built:**
+
+- *Another origin of truth?* No. The pause stays one row in `jobs.db`, and which
+  queues the deploy holds is read off that row.
+- *Concept budget?* Unchanged. No noun, and `pause` is already the verb at the
+  edge and on the queue.
+- *The problem's complexity?* Yes. The state lives in two places owned by two
+  packages, and a bin is the smallest crossing that keeps one writer.
+- *Predictability?* Up. `deploy:pause` now means the app stops doing things, which
+  is how the word was already being read.
+- *Derived?* The queue set is Caravan's own, the path is the plugin's own
+  resolution, and the holder comes off the row.
+- *One owner?* Caravan writes; `fli` invokes.
+- *Boundary explicit?* The bin's argv and JSON answer, tested in Caravan. The
+  crossing is `deployJournalCycle`'s, since `pauseEdgeCycle` builds no image and
+  has no Caravan in it.
+- *Failure proportional?* Default on, because the omission destroys data. A drain
+  timeout is reported, because a long job destroys nothing.
+- *Wrong without saying?* Three silent shapes, each with a refusal: `bunx`
+  fetching a stranger, a file nobody reads, and a path stated in code.
+
+**Adjudications named:** *batteries vs. smallness* (the refused direct write),
+*ergonomics vs. strictness* and *paved road vs. the workaround* (the default).
+This ruling amends nothing in `FJS-D198`: a bin is not a service file, and the
+shell is above the gate it asks for.
+
+*Lives in:* `IDEAS/release-transitions.md` § Phase 3b *What a pause does not do* ·
+`packages/caravan` (the bin, not built) · `packages/cli/commands/deploy/_steps-pause/`
+(the join, not built) · `FJS-D198` · `FJS-D36` · [`FJS-711`](ISSUES.md#fjs-711)
+
 ### <a id="fjs-d261"></a>2026-09-12 · `FJS-D261` — TOTP is a second STEP of login, not a second standing. The half-finished login is its own row, `login()` answers a union, and the gate ladder does not move.
 
 `IAuth` has declared `setupTotp` and `verifyTotp` as optional methods since the

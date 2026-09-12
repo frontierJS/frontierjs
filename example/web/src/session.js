@@ -12,7 +12,9 @@
 // arrival.
 //
 // Readers declare `$: session.level`. Signing in is `await signIn(...)`, which
-// resolves with the session already loaded.
+// resolves with the session already loaded — or, for an account with a second
+// factor, with `session.awaitingCode` set and no session yet; `submitCode` is
+// the second request.
 
 // TODO: [CLEANUP] - remove this file and just import it from junction in the files..
-export { session, signIn, signOut, refresh, ready } from '@frontierjs/sierra/junction'
+export { session, signIn, submitCode, signOut, refresh, ready } from '@frontierjs/sierra/junction'

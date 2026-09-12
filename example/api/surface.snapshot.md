@@ -11,8 +11,55 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-38 services · 39 routes · 12 plugins · prefix /api
+38 services · 44 routes · 12 plugins · prefix /api
 ```
+
+## Custom methods whose caller's standing is not graded
+
+A custom method with no `gate:` in `methods:` takes the model's read gate as a
+FLOOR, and a floor checks only that a caller is signed in (`FJS-826`). A method
+that writes through `asSystem()` from here is open to every caller who can sign
+in, whatever the row policies say, because the Data boundary never sees who
+asked. Each row below is either meant — a read-shaped method, a scoped write —
+or wants `methods: [{ method, gate }]`.
+
+| Method | Who may call it |
+| --- | --- |
+| `account.changePassword` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `account.totpStatus` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `account.setupTotp` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `account.confirmTotp` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `account.disableTotp` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `account.regenerateRecoveryCodes` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `customers.restore` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `customers.segment` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `customFields.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `discounts.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `employees.setPay` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `employees.payOn` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `inventory.levels` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `inventory.receive` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `inventory.adjust` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `invoices.settle` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `invoices.void` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `orders.pay` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `orders.ship` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `orders.refund` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `orders.cancel` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `orders.paymentCode` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `orders.recordTracking` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `paymentMethods.startSetup` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `payments.refund` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `payments.record` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `payRuns.calculate` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `payRuns.calculateNow` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `payRuns.revert` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `payRuns.pay` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `sessions.revokeOthers` | **any signed-in caller** — floor, read gate 8; standing not graded |
+| `shopfront.settings` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `subscriptions.cancel` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `subscriptions.resume` | **any signed-in caller** — floor, read gate 1; standing not graded |
+| `subscriptions.changePlan` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
 ## App hooks
 
@@ -35,6 +82,13 @@ name when it declares none.
 
 - **methods** — `get`, `changePassword`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
 - **custom methods** — `changePassword`, `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`, `regenerateRecoveryCodes`
+- **who may call** —
+  - `changePassword` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `totpStatus` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `setupTotp` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `confirmTotp` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `disableTotp` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `regenerateRecoveryCodes` — **nothing at the API boundary** — the model declares no `@@gate`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -67,6 +121,17 @@ name when it declares none.
 - **input** — `applyDiscount` takes `DiscountCode`
 - **input** — `checkout` takes `CheckoutDetails`
 - **input** — `setShipping` takes `ShippingChoice`
+- **who may call** —
+  - `open` — anyone, a stranger included — floor, the model's read gate is 0
+  - `addLine` — anyone, a stranger included — floor, the model's read gate is 0
+  - `setQuantity` — anyone, a stranger included — floor, the model's read gate is 0
+  - `removeLine` — anyone, a stranger included — floor, the model's read gate is 0
+  - `applyDiscount` — anyone, a stranger included — floor, the model's read gate is 0
+  - `setShipping` — anyone, a stranger included — floor, the model's read gate is 0
+  - `removeDiscount` — anyone, a stranger included — floor, the model's read gate is 0
+  - `handoff` — anyone, a stranger included — floor, the model's read gate is 0
+  - `redeem` — anyone, a stranger included — floor, the model's read gate is 0
+  - `checkout` — anyone, a stranger included — floor, the model's read gate is 0
 - **broadcasts on** — `carts`
 - **transactional** — `addLine`, `setQuantity`, `removeLine`, `checkout`, `redeem`
 
@@ -86,6 +151,8 @@ name when it declares none.
 ### `colors` · model `Color`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **who may call** —
+  - `restore` — anyone, a stranger included — floor, the model's read gate is 0
 - **broadcasts on** — `colors`
 
 | Phase | Method | Chain |
@@ -133,6 +200,9 @@ name when it declares none.
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `segment`
 - **custom methods** — `segment`
 - **input** — `segment` takes `SegmentQuery`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `segment` — **any signed-in caller** — floor, read gate 1; standing not graded
 - **broadcasts on** — `customers`
 
 | Phase | Method | Chain |
@@ -150,6 +220,8 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **also answers to** — `custom-fields`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 5; standing not graded
 - **broadcasts on** — `customFields`
 
 | Phase | Method | Chain |
@@ -165,6 +237,8 @@ name when it declares none.
 ### `discounts` · model `Discount`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 5; standing not graded
 - **broadcasts on** — `discounts`
 
 | Phase | Method | Chain |
@@ -183,6 +257,9 @@ name when it declares none.
 - **custom methods** — `setPay`, `payOn`
 - **input** — `payOn` takes `AsAtQuery`
 - **input** — `setPay` takes `EmploymentPay`
+- **who may call** —
+  - `setPay` — **any signed-in caller** — floor, read gate 5; standing not graded
+  - `payOn` — **any signed-in caller** — floor, read gate 5; standing not graded
 - **broadcasts on** — `employees`
 - **transactional** — `setPay`
 
@@ -204,6 +281,10 @@ name when it declares none.
 - **custom methods** — `levels`, `receive`, `adjust`
 - **input** — `adjust` takes `StockAdjustment`
 - **input** — `receive` takes `StockReceipt`
+- **who may call** —
+  - `levels` — **any signed-in caller** — floor, read gate 5; standing not graded
+  - `receive` — **any signed-in caller** — floor, read gate 5; standing not graded
+  - `adjust` — **any signed-in caller** — floor, read gate 5; standing not graded
 - **transactional** — `receive`, `adjust`
 
 | Phase | Method | Chain |
@@ -238,6 +319,9 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `settle`, `void`
 - **custom methods** — `settle`, `void`
+- **who may call** —
+  - `settle` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `void` — **any signed-in caller** — floor, read gate 1; standing not graded
 - **broadcasts on** — `invoices`
 
 | Phase | Method | Chain |
@@ -317,6 +401,13 @@ name when it declares none.
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `pay`, `ship`, `refund`, `cancel`, `paymentCode`, `recordTracking`
 - **custom methods** — `pay`, `ship`, `refund`, `cancel`, `paymentCode`, `recordTracking`
 - **input** — `recordTracking` takes `TrackingUpdate`
+- **who may call** —
+  - `pay` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `ship` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `refund` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `cancel` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `paymentCode` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `recordTracking` — **any signed-in caller** — floor, read gate 1; standing not graded
 - **broadcasts on** — `orders`
 - **transactional** — `pay`, `refund`
 
@@ -351,6 +442,8 @@ name when it declares none.
 - **methods** — `find`, `get`, `startSetup`
 - **custom methods** — `startSetup`
 - **also answers to** — `payment-methods`
+- **who may call** —
+  - `startSetup` — **any signed-in caller** — floor, read gate 1; standing not graded
 - **broadcasts on** — `payment-methods`
 
 | Phase | Method | Chain |
@@ -367,6 +460,10 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `start`, `refund`, `record`
 - **custom methods** — `start`, `refund`, `record`
+- **who may call** —
+  - `start` — anyone, a stranger included — declared `gate: 0`
+  - `refund` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `record` — **any signed-in caller** — floor, read gate 1; standing not graded
 - **broadcasts on** — `payments`
 - **transactional** — `record`
 
@@ -401,6 +498,11 @@ name when it declares none.
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `calculate`, `calculateNow`, `revert`, `pay`
 - **custom methods** — `calculate`, `calculateNow`, `revert`, `pay`
 - **also answers to** — `pay-runs`
+- **who may call** —
+  - `calculate` — **any signed-in caller** — floor, read gate 5; standing not graded
+  - `calculateNow` — **any signed-in caller** — floor, read gate 5; standing not graded
+  - `revert` — **any signed-in caller** — floor, read gate 5; standing not graded
+  - `pay` — **any signed-in caller** — floor, read gate 5; standing not graded
 - **broadcasts on** — `pay-runs`
 - **transactional** — `calculateNow`, `revert`, `pay`
 
@@ -466,6 +568,8 @@ name when it declares none.
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `reprice`
 - **custom methods** — `reprice`
 - **input** — `reprice` takes `PlanPrice`
+- **who may call** —
+  - `reprice` — anyone, a stranger included — floor, the model's read gate is 0
 - **broadcasts on** — `plans`
 - **transactional** — `reprice`
 
@@ -484,6 +588,8 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **also answers to** — `plan-versions`
+- **who may call** —
+  - `restore` — anyone, a stranger included — floor, the model's read gate is 0
 - **broadcasts on** — `plan-versions`
 
 | Phase | Method | Chain |
@@ -500,6 +606,8 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **also answers to** — `product-images`
+- **who may call** —
+  - `restore` — anyone, a stranger included — floor, the model's read gate is 0
 - **broadcasts on** — `product-images`
 
 | Phase | Method | Chain |
@@ -515,6 +623,8 @@ name when it declares none.
 ### `products` · model `products`
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **who may call** —
+  - `restore` — anyone, a stranger included — floor, the model's read gate is 0
 - **broadcasts on** — `products`
 
 | Phase | Method | Chain |
@@ -532,6 +642,9 @@ name when it declares none.
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `availability`, `embed`
 - **custom methods** — `availability`, `embed`
 - **also answers to** — `product-variants`
+- **who may call** —
+  - `availability` — anyone, a stranger included — floor, the model's read gate is 0
+  - `embed` — anyone, a stranger included — floor, the model's read gate is 0
 - **broadcasts on** — `product-variants`
 
 | Phase | Method | Chain |
@@ -563,6 +676,8 @@ name when it declares none.
 
 - **methods** — `find`, `remove`, `revokeOthers`
 - **custom methods** — `revokeOthers`
+- **who may call** —
+  - `revokeOthers` — **any signed-in caller** — floor, read gate 8; standing not graded
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -578,6 +693,8 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **also answers to** — `shipping-methods`
+- **who may call** —
+  - `restore` — anyone, a stranger included — floor, the model's read gate is 0
 - **broadcasts on** — `shipping-methods`
 
 | Phase | Method | Chain |
@@ -594,6 +711,8 @@ name when it declares none.
 
 - **methods** — `settings`
 - **custom methods** — `settings`
+- **who may call** —
+  - `settings` — **nothing at the API boundary** — the model declares no `@@gate`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -610,6 +729,10 @@ name when it declares none.
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `cancel`, `resume`, `changePlan`
 - **custom methods** — `cancel`, `resume`, `changePlan`
 - **input** — `changePlan` takes `PlanChange`
+- **who may call** —
+  - `cancel` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `resume` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `changePlan` — **any signed-in caller** — floor, read gate 1; standing not graded
 - **broadcasts on** — `subscriptions`
 
 | Phase | Method | Chain |
@@ -627,6 +750,8 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **also answers to** — `tax-rates`
+- **who may call** —
+  - `restore` — anyone, a stranger included — floor, the model's read gate is 0
 - **broadcasts on** — `tax-rates`
 
 | Phase | Method | Chain |
@@ -695,6 +820,11 @@ once; everything else was registered by hand or by a plugin.
 | GET | `/api/jobs/{id}` | raw |
 | POST | `/api/jobs/{id}/cancel` | raw |
 | POST | `/api/jobs/{id}/retry` | raw |
+| GET | `/api/jobs/queues` | raw |
+| GET | `/api/jobs/queues/{name}` | raw |
+| POST | `/api/jobs/queues/{name}/drain` | raw |
+| POST | `/api/jobs/queues/{name}/pause` | raw |
+| POST | `/api/jobs/queues/{name}/resume` | raw |
 | POST | `/api/jobs/run/{name}` | raw |
 | GET | `/api/jobs/schedules` | raw |
 | GET | `/api/manifest` | raw |

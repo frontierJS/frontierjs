@@ -29,7 +29,7 @@ import {
 import { splitParams, directiveParams } from '@frontierjs/toolbelt/directives'
 import {
   registerModule, buildLayoutMap, registerFileComponent, hmrInvalidate, getComponents,
-  loadLayoutChain, linkHrefOf,
+  loadLayoutChain, linkHrefOf, isSameDocumentOrigin,
 } from './internals.js'
 import { sierraFetch } from '../fetch/index.js'
 import {
@@ -1148,11 +1148,8 @@ function _handleClick(event) {
     return
   }
 
-  // Only intercept same-origin links
-  if (url.origin !== window.location.origin) return
-
-  // Skip mailto/tel etc
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return
+  // A mailto:, a tel: and another host all differ in scheme or host.
+  if (!isSameDocumentOrigin(url)) return
 
   const trailingSlash = _options.trailingSlash ?? 'always'
   const normalized = normalizePath(url.pathname, trailingSlash)

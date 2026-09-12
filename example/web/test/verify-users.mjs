@@ -10,7 +10,7 @@
  *
  * Every other drive in this app is over a model `db/schema.lite` declares. This
  * one is over `@frontierjs/auth`'s `User`, which the app appends IN MEMORY
- * (api/src/core/db.ts) and extends in db/user.lite. Three things follow, and
+ * (api/src/core/db.ts) and extends in db/user.lite. Four things follow, and
  * nothing else here can ask any of them:
  *
  *   · **A row policy over a model from a package.** `User` reads at USER(4), so
@@ -37,6 +37,12 @@
  *     where a policy THROWS rather than filtering, so a shopper is refused by
  *     name where a read would have been an empty list.
  *
+ *   · **Signing in as two requests.** Once an account has a second factor, a
+ *     password answers a ticket with no token, and the ticket plus a code
+ *     answers the session. The package's own tests run a harness app; this is
+ *     the only run through a real app's plugin, its per-shop provider proxy and
+ *     a tenant database, with codes from an authenticator written in this file.
+ *
  * ─── The trap this file exists to stay out of ────────────────────────────────
  *
  * **This drive leaves one account behind per run, and cannot not.** The service
@@ -56,8 +62,9 @@
  * positive one touches the same row, and the row is restored at the end.
  */
 import { spawn, execFileSync } from 'node:child_process'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { createHmac }          from 'node:crypto'
+import { dirname, join }       from 'node:path'
+import { fileURLToPath }       from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
@@ -293,6 +300,139 @@ const invites = (Array.isArray(outbox) ? outbox : []).filter(m => JSON.stringify
 check('an invitation reached the outbox', invites.length, 1)
 check('…and it is the set-a-password one', invites[0]?.subject, 'Set your password')
 
+// ─── A second factor ───────────────────────────────────────────────────────
+//
+// Signing in as TWO requests. Every test of it in the package runs a harness
+// app; this is the one run through a real app's plugin, its per-shop `IAuth`
+// proxy (api/src/core/auth.ts routes every method it is handed, including ones
+// written after it) and its tenant database.
+//
+// The authenticator below is written here rather than imported from
+// @frontierjs/auth. The server's `totp.ts` agreeing with itself is the failure a
+// second implementation exists to catch — a phone is not running our code.
+//
+// The account is registered per run, never a seeded one: a run that dies
+// between enabling and disabling leaves the factor on, and every other drive
+// signs in as the seeded people.
+//
+// The clock is real and the replay guard spends a step per acceptance, so the
+// codes are chosen by step: confirm with the PREVIOUS step's code, sign in with
+// the current one. At the shipped drift of one step both remain acceptable
+// across a boundary crossed mid-run.
+
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+function authenticator(secret, offset = 0) {
+  let bits = 0, acc = 0
+  const key = []
+  for (const ch of secret) {
+    acc = (acc << 5) | B32.indexOf(ch); bits += 5
+    if (bits >= 8) { key.push((acc >>> (bits - 8)) & 255); bits -= 8 }
+  }
+  const counter = Buffer.alloc(8)
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000) + offset))
+  const mac = createHmac('sha1', Buffer.from(key)).update(counter).digest()
+  const o   = mac[mac.length - 1] & 0x0f
+  return String((mac.readUInt32BE(o) & 0x7fffffff) % 1e6).padStart(6, '0')
+}
+
+console.log('\n  users — a second factor')
+
+const post = async (path, data, tok, method) => {
+  const r = await fetch(`${BASE}${path}`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      ...(tok    ? { authorization: `Bearer ${tok}` } : {}),
+      ...(method ? { 'x-service-method': method }     : {}),
+    },
+    body: JSON.stringify(data),
+  })
+  return { status: r.status, body: await r.json().catch(() => null) }
+}
+const account  = (tok, method, data = {}) => post('/account/me', data, tok, method)
+const password = (email) => post('/auth/login', { email, password: PASSWORD })
+const answer   = (challenge, code) => post('/auth/login/challenge', { challenge, code })
+const whoami   = async (tok) => (await fetch(`${BASE}/account/me`, { headers: { authorization: `Bearer ${tok}` } })).status
+
+const twoStep = addr('t')
+const joined  = await post('/auth/register', { email: twoStep, password: PASSWORD, name: 'Two Step' })
+check('a fresh account registers with a session', [joined.status, typeof joined.body?.token], [201, 'string'])
+let tok = joined.body.token
+
+// Re-authenticating is the pair: the same call one field different. 403 and
+// not 401, and the session answering afterwards is asserted beside it, because
+// a 401 is what a browser client signs the person out on (FJS-1088).
+check('setting up a factor with the wrong password is refused as 403',
+      (await account(tok, 'setupTotp', { currentPassword: 'not-it' })).status, 403)
+check('…and the session that sent it is still a session', await whoami(tok), 200)
+const setup = await account(tok, 'setupTotp', { currentPassword: PASSWORD })
+check('…and with the right one answers a secret and an otpauth URI',
+      [setup.status, /^[A-Z2-7]{32}$/.test(setup.body?.secret ?? ''), setup.body?.qr?.startsWith('otpauth://totp/')],
+      [200, true, true])
+const secret = setup.body.secret
+
+check('a pending enrollment does not change how the account signs in',
+      typeof (await password(twoStep)).body?.token, 'string')
+
+const confirmed = await account(tok, 'confirmTotp', { code: authenticator(secret, -1) })
+check('confirming with a code from a SECOND implementation switches it on',
+      [confirmed.status, confirmed.body?.recoveryCodes?.length], [200, 10])
+const recoveryCodes = confirmed.body.recoveryCodes
+check('…and the status says so', (await account(tok, 'totpStatus')).body,
+      { enabled: true, recoveryCodesRemaining: 10 })
+
+// The headline. A password alone is now worth a ticket and nothing else.
+const first = await password(twoStep)
+check('a password alone answers a challenge', [first.status, typeof first.body?.challenge], [200, 'string'])
+check('…carrying no token and no user', ['token' in (first.body ?? {}), 'user' in (first.body ?? {})], [false, false])
+check('…and the ticket is not a session', await whoami(first.body.challenge), 401)
+
+const code = authenticator(secret)
+const done = await answer(first.body.challenge, code)
+check('the ticket plus a code answers a token', [done.status, typeof done.body?.token], [200, 'string'])
+check('…that the account service accepts', await whoami(done.body.token), 200)
+
+// The replay, paired with a recovery code accepted on the SAME ticket — which
+// is also what shows a refused attempt leaves the ticket usable.
+const second = await password(twoStep)
+const replay = await answer(second.body.challenge, code)
+check('the code that just signed in is refused the second time', replay.status, 401)
+check('…as retryable, because the ticket survives it', replay.body?.retryable, true)
+const viaRecovery = await answer(second.body.challenge, recoveryCodes[0].toLowerCase())
+check('a recovery code on the same ticket answers a token, typed in lower case',
+      [viaRecovery.status, await whoami(viaRecovery.body?.token)], [200, 200])
+tok = viaRecovery.body.token
+check('…and it is spent: nine remain', (await account(tok, 'totpStatus')).body?.recoveryCodesRemaining, 9)
+
+// The ceiling. Five wrong codes spend the ticket, and a code that would be
+// accepted is then refused on it — beside the same code accepted on a fresh one.
+const wrong = (() => {
+  const live = new Set([-1, 0, 1, 2].map(o => authenticator(secret, o)))
+  for (let n = 0; ; n++) { const c = String(n).padStart(6, '0'); if (!live.has(c)) return c }
+})()
+const third = await password(twoStep)
+const tries = []
+for (let i = 0; i < 5; i++) tries.push((await answer(third.body.challenge, wrong)).body?.retryable)
+check('five wrong codes: four say try again, the fifth says stop', tries, [true, true, true, true, false])
+const good = authenticator(secret, 1)
+check('…and a good code on that ticket is refused', (await answer(third.body.challenge, good)).status, 401)
+const fourth = await password(twoStep)
+const control = await answer(fourth.body.challenge, good)
+check('…where the same code on a fresh ticket is accepted', [control.status, typeof control.body?.token], [200, 'string'])
+
+// Switching it off. A ticket issued before does not become a way in without
+// the factor it was issued for.
+const stale = await password(twoStep)
+check('disabling with the wrong password is refused as 403',
+      (await account(tok, 'disableTotp', { currentPassword: 'not-it' })).status, 403)
+check('…and with the right one succeeds',
+      (await account(tok, 'disableTotp', { currentPassword: PASSWORD })).status, 200)
+check('a ticket issued before the factor was removed is refused, and says stop',
+      await answer(stale.body.challenge, authenticator(secret, 1)).then(r => [r.status, r.body?.retryable]), [401, false])
+check('the status is back to nothing, recovery codes included', (await account(tok, 'totpStatus')).body,
+      { enabled: false, recoveryCodesRemaining: 0 })
+check('a password alone answers a token again', typeof (await password(twoStep)).body?.token, 'string')
+
 // ─── Chrome over CDP ───────────────────────────────────────────────────────
 
 const chrome = start(CHROME, [
@@ -373,6 +513,110 @@ check('the standing column is derived from isStaff and role, not from the level'
 await open('/users/', asShopper, 'tr[data-user]', 1)
 check('a shopper gets a working page with only themselves on it',
       await evaluate(`document.querySelectorAll('tr[data-user]').length`), 1)
+
+// ─── A second factor, on screen ────────────────────────────────────────────
+//
+// The same feature as the HTTP section, asked of the screens, and three things
+// only a browser can answer. That a person can ENROLL from /account/ with codes
+// from a second implementation. That signing in through /sign-in/ stores NO
+// token until the code box is answered. And that a wrong code keeps both the
+// box and the tab's state — FJS-1088's shape: the client announced every 401
+// as a dead session, and the shell signed the person out on it.
+//
+// A fresh account again, for the HTTP section's reason. Its token is planted to
+// reach /account/; the sign-in half types, because typing is what is under test.
+
+console.log('\n  users — a second factor, on screen')
+
+const fill = (sel, v) => evaluate(`(() => {
+  const el = document.querySelector(${JSON.stringify(sel)})
+  el.value = ${JSON.stringify(v)}
+  el.dispatchEvent(new Event('input',  { bubbles: true }))
+  el.dispatchEvent(new Event('change', { bubbles: true }))
+  return true
+})()`)
+const click = (sel) => evaluate(`(document.querySelector(${JSON.stringify(sel)}).click(), true)`)
+async function until(expr, tries = 80) {
+  for (let i = 0; i < tries; i++) {
+    if (await evaluate(expr)) return true
+    await new Promise(r => setTimeout(r, 150))
+  }
+  return false
+}
+const has    = (sel) => `!!document.querySelector(${JSON.stringify(sel)})`
+const stored = () => evaluate(`localStorage.getItem('shop_token')`)
+const notLive = (sec) => {
+  const live = new Set([-1, 0, 1, 2].map(o => authenticator(sec, o)))
+  for (let n = 0; ; n++) { const c = String(n).padStart(6, '0'); if (!live.has(c)) return c }
+}
+
+const onScreen2 = addr('u')
+const screenJoin = await post('/auth/register', { email: onScreen2, password: PASSWORD, name: 'On Screen' })
+await open('/account/', screenJoin.body.token, '#totp[data-totp-state="off"]')
+check('/account/ says two-step sign-in is off', await evaluate(`document.querySelector('#totp').dataset.totpState`), 'off')
+
+await fill('#totp-password', 'not-it')
+await click('#totp-enable')
+await until(has('#account-error'))
+check('a wrong password is refused ON the screen, and no secret is shown',
+      [await evaluate(has('#account-error')), await evaluate(has('[data-totp-secret]'))], [true, false])
+check('…and the tab is still signed in', [await stored(), await evaluate(has('#nav-account'))],
+      [screenJoin.body.token, true])
+
+await fill('#totp-password', PASSWORD)
+await click('#totp-enable')
+await until(has('[data-totp-secret]'))
+const shownSecret = await evaluate(`document.querySelector('[data-totp-secret]')?.dataset.totpSecret ?? null`)
+check('the right password shows a secret to add to an app', /^[A-Z2-7]{32}$/.test(shownSecret ?? ''), true)
+check('…which switches nothing on yet', (await account(screenJoin.body.token, 'totpStatus')).body?.enabled, false)
+
+await fill('#totp-code', notLive(shownSecret))
+await click('#totp-confirm')
+await until(has('#account-error'))
+check('a wrong code keeps the enrollment open and the tab signed in',
+      [await evaluate(has('[data-totp-secret]')), await evaluate(has('[data-recovery-code]')), await stored()],
+      [true, false, screenJoin.body.token])
+
+await fill('#totp-code', authenticator(shownSecret, -1))
+await click('#totp-confirm')
+await until(`document.querySelectorAll('[data-recovery-code]').length === 10`)
+const shownCodes = await evaluate(`[...document.querySelectorAll('[data-recovery-code]')].map(e => e.textContent.trim())`)
+check('a code from this file turns it on, and ten recovery codes are shown', shownCodes.length, 10)
+check('…and the server agrees', (await account(screenJoin.body.token, 'totpStatus')).body,
+      { enabled: true, recoveryCodesRemaining: 10 })
+
+// Signed out, the long way round: no token in storage and a fresh load, so the
+// app boots as a stranger and nothing from the enrollment survives in memory.
+await evaluate(`(localStorage.removeItem('shop_token'), true)`)
+await send('Page.navigate', { url: UI + '/sign-in/' }, sessionId)
+await until(has('#si-email'))
+await fill('#si-email', onScreen2)
+await fill('#si-password', PASSWORD)
+await click('#si-submit')
+await until(has('#code-box'))
+check('a password alone opens the code box', await evaluate(has('#code-box')), true)
+check('…and stores no token', await stored(), null)
+check('…and the shell is not signed in', await evaluate(has('#nav-account')), false)
+
+await fill('#code-input', notLive(shownSecret))
+await click('#code-submit')
+await until(has('#session-error'))
+check('a wrong code is refused in words', await evaluate(`document.querySelector('#session-error')?.textContent.trim()`),
+      (t) => /invalid code/i.test(t ?? ''))
+check('…and the box stays open, because the ticket is still good', await evaluate(has('#code-box')), true)
+
+await fill('#code-input', authenticator(shownSecret, 0))
+await click('#code-submit')
+await until(`!document.querySelector('#code-box') && !!document.querySelector('#nav-account')`)
+const signedToken = await stored()
+check('the right code signs in: the box closes and the shell knows who',
+      [await evaluate(has('#code-box')), await evaluate(has('#nav-account'))], [false, true])
+check('…and now a token is stored, which the account service accepts',
+      [typeof signedToken, await whoami(signedToken)], ['string', 200])
+
+// Left as the drive found it: nobody else ever signs in as this address, but a
+// factor left on is a thing a later reader of the database has to explain.
+await account(signedToken, 'disableTotp', { currentPassword: PASSWORD })
 
 console.log('')
 console.log(`  ${pass} passed, ${fail} failed`)

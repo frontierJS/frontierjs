@@ -2460,6 +2460,55 @@ function customGateFloor(levels: Record<GateOp, number>): number {
   return levels.read
 }
 
+/**
+ * What stands between a caller and one custom method, as `gateAuthAround`
+ * decides it. `surface.snapshot.md` renders this rather than restating the
+ * rule, so the register and the refusal cannot disagree.
+ *
+ *   declared   a `methods: [{ method, gate }]` level — the caller's standing is
+ *              GRADED against it
+ *   floor      the model's read gate, and only a PRESENCE check: any signed-in
+ *              caller passes whatever their standing, which is `find`'s rule.
+ *              A method writing through `asSystem()` from here is reachable by
+ *              every caller who can sign in, row policies included, because the
+ *              Data boundary never sees who asked
+ *   unchecked  the service's model declares no `@@gate`, or its accessor names
+ *              no model — nothing is checked at the API boundary, a declared
+ *              level included
+ *
+ * `levels` is what `_gateLevels` answered: a record, or `null` for no gate.
+ * `undefined` is a describer that holds no schema — `strategy database` has no
+ * app-wide client — so the declared half is reported and the floor's number is
+ * not, rather than guessing which of `floor` and `unchecked` it is.
+ */
+export interface CustomMethodGrade {
+  source: 'declared' | 'floor' | 'unchecked'
+  /** The level a caller must clear; `null` where the describer cannot read it. */
+  level:  number | null
+  /** Whether the caller's standing is compared to `level`, or only their presence. */
+  graded: boolean
+}
+
+export function customMethodGrade(
+  method:   string,
+  declared: Record<string, number>,
+  levels:   Record<GateOp, number> | null | undefined,
+): CustomMethodGrade {
+  if (levels === null) return { source: 'unchecked', level: declared[method] ?? null, graded: false }
+  if (declared[method] !== undefined) return { source: 'declared', level: declared[method], graded: true }
+  return { source: 'floor', level: levels ? customGateFloor(levels) : null, graded: false }
+}
+
+/** The model's `@@gate` as four levels, `null` where none is declared. */
+export function gateLevels(client: unknown, accessor: string): Record<GateOp, number> | null {
+  return _gateLevels(client, accessor)
+}
+
+/** Whether a method name is one of the CRUD verbs `gateAuth` grades by operation. */
+export function isCrudGatedMethod(method: string): boolean {
+  return method in OP_FOR_METHOD
+}
+
 /** Said once per method, never per request — a refusal an attacker can repeat. */
 const _floorWarned = new Set<string>()
 
@@ -2515,9 +2564,9 @@ export function gateAuthAround(
       if (!check) { check = make(accessor, op); checks.set(op, check) }
       check(ctx)
     } else {
-      const levels = _gateLevels(ctx.locals.db, accessor ?? ctx.service)
-      if (levels) {
-        const need = declared[method] ?? customGateFloor(levels)
+      const grade = customMethodGrade(method, declared, _gateLevels(ctx.locals.db, accessor ?? ctx.service))
+      if (grade.source !== 'unchecked') {
+        const need = grade.level as number
         if (need > 0) {
           // A stranger and a caller who is merely too junior are different
           // answers and a client acts on them differently — a 401 is what a
@@ -2539,7 +2588,7 @@ export function gateAuthAround(
           // presence check, exactly as `find` is: how far above `read` a caller
           // stands is the Data boundary's to answer, and re-deciding it here
           // would be a second reading of the model's own gate.
-          if (declared[method] !== undefined && !levelPasses(need, sessionGateLevel(ctx.auth.user)))
+          if (grade.graded && !levelPasses(need, sessionGateLevel(ctx.auth.user)))
             throw new Forbidden(
               `'${ctx.service}.${method}' requires level ${need}, ` +
               `caller has level ${sessionGateLevel(ctx.auth.user)}`)
@@ -3636,6 +3685,12 @@ export interface ResolvedTenancy {
 /** The surface `withTenantDb` needs — a Litestone TenantRegistry satisfies it. */
 export interface TenantRegistryLike {
   tenancy?:   ResolvedTenancy | null
+  /**
+   * The parsed schema, for a reader that needs declarations and no rows. Under
+   * `strategy database` there is no app-wide client to read `@@gate` off, and
+   * opening a tenant to get one would make a description tool create a file.
+   */
+  schema?:    unknown
   tenantFor?: (from: { host?: string | null; headers?: Record<string, unknown> | null; principal?: unknown }) => string | null
   get:        (id: string) => Promise<LitestoneClient>
   exists?:    (id: string) => boolean

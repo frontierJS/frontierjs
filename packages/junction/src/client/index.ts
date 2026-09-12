@@ -785,6 +785,41 @@ export class AuthClient {
     await this._c.service(this._names.account).invoke('changePassword', 'me', { currentPassword, newPassword })
   }
 
+  // ── The second factor — also the account's ────────────────────────
+  //
+  // The method names are the provider's, so the header a screen sends is the
+  // key `need()` reads on the server. Three of the four writes re-ask for the
+  // password: they change what the account requires to sign in, and a session
+  // left open on a shared machine is not the account holder.
+
+  /** Whether signing in owes a code, and how many ways back remain. */
+  async totpStatus(): Promise<TotpStatus> {
+    return this._c.service(this._names.account).invoke('totpStatus', 'me', {}) as Promise<TotpStatus>
+  }
+
+  /**
+   * Begin enrolling. Answers the secret and the `otpauth://` URI an
+   * authenticator scans; drawing that as a QR code is the screen's. Nothing is
+   * required of a sign-in until `confirmTotp` proves the device holds it.
+   */
+  async setupTotp(currentPassword: string): Promise<{ secret: string; qr: string }> {
+    return this._c.service(this._names.account).invoke('setupTotp', 'me', { currentPassword }) as Promise<{ secret: string; qr: string }>
+  }
+
+  /** Prove the device, switch the factor on. The recovery codes are shown ONCE, here. */
+  async confirmTotp(code: string): Promise<{ recoveryCodes: string[] }> {
+    return this._c.service(this._names.account).invoke('confirmTotp', 'me', { code }) as Promise<{ recoveryCodes: string[] }>
+  }
+
+  async disableTotp(currentPassword: string): Promise<void> {
+    await this._c.service(this._names.account).invoke('disableTotp', 'me', { currentPassword })
+  }
+
+  /** Replaces every unused recovery code. The old ones stop working at once. */
+  async regenerateRecoveryCodes(currentPassword: string): Promise<{ recoveryCodes: string[] }> {
+    return this._c.service(this._names.account).invoke('regenerateRecoveryCodes', 'me', { currentPassword }) as Promise<{ recoveryCodes: string[] }>
+  }
+
   /** Every live session of this caller's, the one making the request marked `current`. */
   async sessions(): Promise<AuthSessionInfo[]> {
     const list = await this._c.service(this._names.sessions).find()
@@ -869,6 +904,11 @@ export interface AuthChallenge {
 /** What `signIn` answers. Discriminate on `'challenge' in result` — or, in cookie
  *  mode where the ticket never reaches the page, on the absence of `user`. */
 export type SignInResult = AuthResult | AuthChallenge
+
+export interface TotpStatus {
+  enabled:                boolean
+  recoveryCodesRemaining: number
+}
 
 // Re-declared rather than imported from ../auth/types.ts: this file is the
 // BROWSER bundle and that module is the server's IAuth contract, which pulls
@@ -1856,7 +1896,12 @@ export class JunctionClient extends EventEmitter {
       }
 
       if (res.status === 401) {
-        this.emit('unauthorized')
+        // `unauthorized` means the credential this client holds is not a session,
+        // and every listener answers it by signing the person out. A `skipAuth`
+        // request presented no credential — it is a sign-in, a code, a register —
+        // so its 401 is about what was typed, and emitting would close a code box
+        // whose ticket is still good (FJS-1088).
+        if (!opts.skipAuth) this.emit('unauthorized')
         // The server's own sentence, not the word "Unauthorized". This threw
         // before reading the body at all, so every app that wanted to tell a
         // person "wrong email or password" had to re-map the status itself —

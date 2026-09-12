@@ -428,6 +428,83 @@ export interface QueueStats {
    * this instant*.
    */
   oldestRunningMs: number | null
+
+  /**
+   * How long this queue has been paused, in ms — `null` when it is not.
+   *
+   * A paused queue and an idle one report identical counts, so without this the
+   * two are the same answer (`FJS-D198`). An age rather than a flag because
+   * `/metrics` keeps numbers only, and because the rule worth alerting on is a
+   * pause somebody forgot. Who paused it and why is `queue(name).state()`.
+   */
+  pausedMs: number | null
+}
+
+/** Who is holding a queue paused, since when, and what they said. */
+export interface QueuePause {
+  queue:    string
+  pausedAt: number
+  actor:    string | null
+  reason:   string | null
+}
+
+/** One operator verb run against a queue — the audit a resume does not erase. */
+export interface QueueEvent {
+  id:     number
+  queue:  string
+  verb:   'pause' | 'resume' | 'drain'
+  actor:  string | null
+  at:     number
+  detail: Record<string, unknown> | null
+}
+
+/**
+ * Whoever ran an operator verb, and why. `actor` defaults to the principal in
+ * scope; state it from a console, where there is none. `null` is a stated
+ * nobody, and `in` decides — absent is not null.
+ */
+export interface OperatorOptions {
+  actor?:  string | null
+  reason?: string
+}
+
+/**
+ * A Queue, addressed by name — a VIEW over the set Caravan already derives from
+ * configuration, job files and dispatch, never a copy of it (`FJS-D198`).
+ *
+ * **These are operator verbs.** They belong to a console and an incident, not to
+ * a service file: `drain()` blocks and a pause stops work every tenant is
+ * waiting on. Over HTTP they are refused below ADMINISTRATOR, and every one that
+ * changes something is written to `queue_events`.
+ */
+export interface QueueHandle {
+  readonly name: string
+
+  /**
+   * Stop claiming work from this queue, on every instance that shares the
+   * jobs database. Work already running finishes; dispatch still queues.
+   *
+   * A pause over a pause changes nothing and records nothing, and answers with
+   * the pause already in force — so the second person is told who the first
+   * one was rather than handed a success.
+   */
+  pause(opts?: OperatorOptions): { changed: boolean; pause: QueuePause }
+
+  /** Claim again. `changed: false` where nothing was paused. */
+  resume(opts?: OperatorOptions): { changed: boolean }
+
+  /**
+   * Pause, then wait until nothing is RUNNING in this queue on any instance.
+   * The queue stays paused — lifting it is `resume()`, stated separately.
+   *
+   * `drained: false` with the count still running is an answer, not a throw:
+   * the timeout is the operator's, and a handler that does not finish in it is
+   * a fact they need in front of them, not an exception between them and it.
+   */
+  drain(opts?: OperatorOptions & { timeout?: number }): Promise<{ drained: boolean; running: number; pause: QueuePause }>
+
+  /** The pause in force, this queue's counts, and the most recent operator verbs. */
+  state(opts?: { events?: number }): { name: string; paused: QueuePause | null; stats: QueueStats; events: QueueEvent[] }
 }
 
 export interface CaravanStats {
@@ -555,6 +632,14 @@ export interface CaravanInstance {
 
   /** Current queue statistics. */
   stats(): CaravanStats
+
+  /**
+   * One queue, by name. REFUSES a name no configuration, job file, job row or
+   * pause has ever named, and lists the ones that exist — `ensureQueue` creates
+   * on demand, which is right for a dispatch and wrong here, because pausing a
+   * queue the pause itself created is a green answer to a question nobody asked.
+   */
+  queue(name: string): QueueHandle
 
   /** Start the worker polling loop. Called automatically when used as a plugin. */
   start(): Promise<void>

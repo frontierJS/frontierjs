@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-24 routes · 1 layout · target spa · trailing slash always
+26 routes · 1 layout · target spa · trailing slash always
 ```
 
 ## Routes
@@ -23,6 +23,7 @@ column is what the page DECLARED, already merged down the layout chain.
 | Route | File | Layout | Params |
 | --- | --- | --- | --- |
 | `/` | `src/routes/index.mesa` | `src/routes/_module.mesa` | — |
+| `/account/` | `src/routes/account/index.mesa` | `src/routes/_module.mesa` | — |
 | `/cart/` | `src/routes/cart/index.mesa` | `src/routes/_module.mesa` | — |
 | `/customers/` | `src/routes/customers/index.mesa` | `src/routes/_module.mesa` | — |
 | `/inventory/` | `src/routes/inventory/index.mesa` | `src/routes/_module.mesa` | — |
@@ -43,6 +44,7 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/reports/` | `src/routes/reports/index.mesa` | `src/routes/_module.mesa` | — |
 | `/settings/` | `src/routes/settings/index.mesa` | `src/routes/_module.mesa` | — |
 | `/settings/fields/` | `src/routes/settings/fields.mesa` | `src/routes/_module.mesa` | — |
+| `/sign-in/` | `src/routes/sign-in/index.mesa` | `src/routes/_module.mesa` | — |
 | `/subscriptions/` | `src/routes/subscriptions/index.mesa` | `src/routes/_module.mesa` | — |
 | `/subscriptions/:id/` | `src/routes/subscriptions/[id].mesa` | `src/routes/_module.mesa` | `id` |
 | `/users/` | `src/routes/users/index.mesa` | `src/routes/_module.mesa` | — |
@@ -55,6 +57,7 @@ arriving from a layout appears on every page under it, which is the change
 this section exists to show.
 
 - `/` — siteName: `Kitchen sink` · title: `Home`
+- `/account/` — siteName: `Kitchen sink` · title: `Account`
 - `/cart/` — siteName: `Kitchen sink` · title: `Basket`
 - `/customers/` — siteName: `Kitchen sink` · title: `Customers`
 - `/inventory/` — siteName: `Kitchen sink` · title: `Inventory`
@@ -75,6 +78,7 @@ this section exists to show.
 - `/reports/` — siteName: `Kitchen sink` · title: `Reports`
 - `/settings/` — siteName: `Kitchen sink` · title: `Settings`
 - `/settings/fields/` — siteName: `Kitchen sink` · title: `Customer fields`
+- `/sign-in/` — siteName: `Kitchen sink` · title: `Sign in`
 - `/subscriptions/` — siteName: `Kitchen sink` · title: `Subscriptions`
 - `/subscriptions/:id/` — siteName: `Kitchen sink` · title: `Subscription`
 - `/users/` — siteName: `Kitchen sink` · title: `Users`
@@ -84,4 +88,4 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
-- `src/routes/_module.mesa` — 24 routes: `/`, `/cart/`, `/customers/`, `/inventory/`, `/invoices/`, `/invoices/:id/`, `/orders/`, `/orders/:id/`, `/orders/create/`, `/payroll/`, `/payroll/:id/`, `/people/`, `/people/:id/`, `/plans/`, `/plans/:id/`, `/products/`, `/products/:id/`, `/products/create/`, `/reports/`, `/settings/`, `/settings/fields/`, `/subscriptions/`, `/subscriptions/:id/`, `/users/`
+- `src/routes/_module.mesa` — 26 routes: `/`, `/account/`, `/cart/`, `/customers/`, `/inventory/`, `/invoices/`, `/invoices/:id/`, `/orders/`, `/orders/:id/`, `/orders/create/`, `/payroll/`, `/payroll/:id/`, `/people/`, `/people/:id/`, `/plans/`, `/plans/:id/`, `/products/`, `/products/:id/`, `/products/create/`, `/reports/`, `/settings/`, `/settings/fields/`, `/sign-in/`, `/subscriptions/`, `/subscriptions/:id/`, `/users/`

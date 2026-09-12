@@ -50,6 +50,13 @@ index.ts     public API
   `Credential.totpLastStep` is the replay guard, compared with `<=` so the whole
   past closes rather than one code. The code that CONFIRMED enrollment is spent by
   that same rule, which is the one request where it is certainly still on screen.
+- **A refused proof inside a live session is 403, never 401.** A 401 is what the
+  browser client reads as *this credential is not a session*, and sierra signs
+  the person out on it — so a wrong current password or a wrong enrollment code
+  answering 401 cost the session that typed it (`FJS-1088`). The line is whether
+  the caller HOLDS a session: `login()` and `completeLogin` have none to lose and
+  keep 401; everything reached through a service throws
+  `ReauthenticationFailedError`.
 - **`verifyTotp` does not consume the step and `completeLogin` does.** Not an
   inconsistency: consuming in both refuses a person who signs in and immediately
   opens settings with the code still on their screen, and what it would buy is a
@@ -242,4 +249,7 @@ index.ts     public API
 ## Proving a change
 
 `bun run test`, then `example`: `verify` (sign-in, gate ladder) and `basecamp`:
-`verify` (first-run setup, login, the navigation guard).
+`verify` (first-run setup, login, the navigation guard). A change to the second
+factor — `totp.ts`, `completeLogin`, the challenge route, the `account` TOTP
+methods — also runs `example`: `verify:users`, the only place the two-step
+login crosses a real app.

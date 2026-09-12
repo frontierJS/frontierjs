@@ -1,5 +1,54 @@
 # Changes — @frontierjs/caravan
 
+## 2026-09-12 — a queue can be paused, resumed and drained, by an operator
+
+`FJS-D198`'s first operator verbs, and the half of `IDEAS/release-transitions.md`
+§ Phase 3b the edge could not reach: `fli deploy:pause` stops callers and the
+container stays up, so jobs, crons and the outbox went on writing through a
+migration the pause was taken for. `app.jobs.queue(name)` is the handle, and
+`pause`, `resume`, `drain` and `state` are what it carries.
+
+**A pause is a row in `jobs.db`, not a flag in a worker.** One jobs.db is opened
+by every instance of an app, so a pause held in memory stops the replica it was
+issued to while the other goes on claiming — and a pause taken during a crash
+loop has to outlive the restart it was meant to stop. `queue_pauses` holds one
+row per paused queue; `queue_events` keeps every verb with who ran it, so the
+record survives the resume that deletes the row.
+
+**The check is INSIDE the claim statement.** A worker reading the pause first
+has a window: a claim already past the check lands after `pause()` returns, and
+`drain()` then calls a queue quiet with a job starting in it. In the statement,
+the claim's `BEGIN IMMEDIATE` and the pause's insert are ordered by the write
+lock. `EXPLAIN` is unchanged — the claim still seeks `jobs_poll`, and the pause
+is one primary-key lookup. With the clause removed, four of the new tests fail.
+
+**`drain()` counts every instance's running rows**, not this process's, and
+answers `drained: false` with the count rather than throwing when its timeout
+comes first. It leaves the queue paused; lifting it is `resume()`.
+
+**Over HTTP the verbs need ADMINISTRATOR** on top of the app's `authorize`,
+graded with `gradeStanding` from `@frontierjs/toolbelt/gate` — the function
+junction's `sessionGateLevel` is — so caravan imports no junction. A caller with
+no session is refused even where the admin surface is open, because a secret is
+a password for the surface and not a standing. `fli check`'s
+`queue-operator-verb` refuses the verbs in a `*.service.*` or `*.job.*` file,
+which is the one path that gate does not cover.
+
+**`queue('typo')` refuses and lists the queues that exist**, where a dispatch
+creates on demand. The set it checks is still derived — configuration, job files,
+and what the DATA names — so a web process can pause a queue only the worker
+process declared.
+
+**`stats()` carries `pausedMs`**, the age of the pause or `null`. A paused queue
+and an idle one report identical counts, and `/metrics` keeps numbers only, so a
+flag would never reach a series; *paused for more than an hour* is the alert
+worth having.
+
+A pause over a pause changes nothing, records nothing, and answers with the
+pause already in force — the second person is told who the first one was.
+
+Still open under `FJS-711`: `purge`, cancelling a RUNNING job, and the rate limit.
+
 ## A job records which request asked for it
 
 `actor_id` records WHO and `tenant_id` records WHICH TENANT, both resolved at

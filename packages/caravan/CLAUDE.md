@@ -127,6 +127,21 @@ src/
   boolean }` composes with the app's own session and gate, `{ secret }` is a
   development shortcut compared constant-time and refused in production, and
   `data` is `[redacted]` in the list unless the request asks with `?data=1`.
+- **A pause is a ROW, and the claim statement reads it.** `queue(name).pause()`
+  writes `queue_pauses`, which every instance on the file honors and a restart
+  does not lift; the `NOT EXISTS` is inside `claimNext`, `claimNextNamed` and
+  `anyPending`, not a check a worker makes first, because a check-then-claim lets
+  a job start after `pause()` returned. **Dispatch still queues** into a paused
+  queue — a pause stops execution, not intake — so a long pause accumulates one
+  pending row per cron fire. `drain()` counts running rows across instances and
+  leaves the queue paused.
+- **`pause`, `resume` and `drain` are operator verbs (`FJS-D198`).** Over HTTP
+  (`POST {base}/queues/{name}/pause|resume|drain`) they need ADMINISTRATOR on top
+  of `authorize`, graded by toolbelt's `gradeStanding`; a caller with no session
+  is 401 even with the admin surface open. The handle itself is a plain function
+  and is not gated, which is why `fli check`'s `queue-operator-verb` refuses it
+  in a service or job file. `queue('typo')` refuses by name — it must NOT go
+  through `ensureQueue`, which would create the queue it was asked about.
 - **`unique` is a lock on work IN FLIGHT, not an idempotency key.** Once a job is
   terminal the key is free and the same work can be queued again later. A key
   built from a row id is not idempotent either — SQLite reuses ids, so
@@ -223,3 +238,8 @@ src/
 The principal is not visible in those assertions; read `example/db/audit/`
 afterwards, where a `book-courier` write names the staff member who shipped and
 a sweep cancel names `system`.
+
+A change to the claim or to a pause is `tests/queue-operator.test.ts`, whose
+cross-instance rows use a real FILE — `:memory:` is a database per instance and
+agrees with any bug — and whose statement row asks the SQL directly, with an
+unpaused queue beside it.

@@ -1148,7 +1148,19 @@ than leaving it to be found.
 
 The other half is an API-realm build: a queue that can be told to stop picking up
 work, and a way to say so to a running process that is not a restart. It is named
-here so it cannot be mistaken for part of this phase, and it is not scheduled.
+here so it cannot be mistaken for part of this phase.
+
+**Its caravan half was built on 2026-09-12** (`FJS-D198`, `packages/caravan`
+`CHANGES.md`): `app.jobs.queue(name).pause()` writes a row in `jobs.db` that the
+claim statement reads, so every instance honors it and a restart does not lift it.
+A row in a file is also the answer to *a way to say so that is not a restart* — no
+signal and no route has to reach the process. **The join is ruled and not built** (`FJS-D262`): `fli deploy:pause` will drain
+every queue by running Caravan's own bin inside the serving container —
+`05-backup`'s shape — rather than writing `queue_pauses` through the journal's
+runner, which would have made `fli` a second writer of Caravan's schema. On by
+default with no flag, LIFO order, and a queue pause is lifted only by the
+transition that holds it. Until that lands the command still says in words that
+jobs keep running.
 
 ---
 

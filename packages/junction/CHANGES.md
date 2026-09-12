@@ -1,5 +1,38 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-12 — `client.auth` gains the second factor, and a sign-in's 401 is not a dead session
+
+**Five account methods on `client.auth`** — `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`,
+`regenerateRecoveryCodes` — beside `changePassword` and named exactly as the provider names them, so
+the `X-Service-Method` a screen sends is the key the service reads. A test pins all five header names
+against their bodies; a rename on one side is a 400 by name on the other.
+
+**`unauthorized` is emitted only for a request that presented the credential** (`FJS-1088`). It fired
+on every 401, and every listener answers it with a sign-out — so a wrong code at
+`/auth/login/challenge`, which is retryable by design, closed sierra's code box on a ticket that was
+still good. A `skipAuth` request is a sign-in, a code or a register, and its 401 is about what was
+typed. Measured: the unconditional emit reds two of the three new rows, and the third — a 401 on a
+call carrying the token still emits — is the control that keeps the fix from being *never emit*.
+
+## 2026-09-12 — `surface.snapshot.md` says who may call each custom method
+
+`FJS-1087`. The register named every custom method and not what stands in front of one, so *can a
+shopper call `invoices.settle`* was answered by reading `gateAuthAround`, the model's `@@gate` and the
+method body together — and it was answered wrongly from the seed alone, because `settle` is `@system`
+in `@@transitions` and the service reaches it through `asSystem()`.
+
+**`customMethodGrade` is the one owner**, and `gateAuthAround` now calls it rather than holding the
+decision inline, so the register and the refusal cannot disagree. Three answers: `declared` (graded),
+`floor` (the model's read gate, presence only) and `unchecked` (no `@@gate`, a declared level
+included). `describe().methodGates` carries the declarations, and the snapshot gains a section listing
+every method whose caller's standing is not graded. **The level under `strategy database` comes from
+the tenant registry's parsed schema** (`TenantRegistryLike.schema`), because opening a tenant to read
+it off a client would make a description tool create a database file; an app wrapper that does not
+forward it gets the floor reported as unknown rather than guessed.
+
+`tests/custom-method-gate.test.ts` asserts each grade against the gate's own answer for the same
+caller — a rendering test alone passes with the two drifted apart.
+
 ## 2026-09-12 — `client.auth.signIn` answers a union, and `completeSignIn` is the other half
 
 `FJS-D261`. An account with a second factor answers `{ expiresAt }` and a ticket, and the client does

@@ -228,10 +228,12 @@ a route (`FJS-D20`):
 | `regenerateRecoveryCodes` | `currentPassword` | `{ recoveryCodes }` |
 
 ```typescript
-const account = client.service('account')
-const { secret, qr } = await account.setupTotp({ currentPassword })
-const { recoveryCodes } = await account.confirmTotp({ code })
+const { secret, qr }    = await client.auth.setupTotp(currentPassword)
+const { recoveryCodes } = await client.auth.confirmTotp(code)
 ```
+
+A wrong password or code here answers **403**, not 401. The session that sent it
+is fine, and a 401 is what a browser client signs the person out on.
 
 The four that change what the account requires are refused inside a support
 episode. `totpStatus` is not — seeing what somebody sees is what an episode is

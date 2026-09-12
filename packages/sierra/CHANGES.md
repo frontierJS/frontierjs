@@ -1,5 +1,14 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-12 — a page served from a custom scheme keeps its router
+
+**Links are intercepted on any scheme the page itself is served from** (`FJS-1085`). The click handler
+allowed `http:` and `https:` only and compared `url.origin`, which is `"null"` for a non-special scheme,
+so inside a native shell — Tauri's `tauri://localhost`, Capacitor's `capacitor://localhost` — every link
+was a full page load and prefetch warmed nothing. `isSameDocumentOrigin(url)` in `router/internals.js`
+compares scheme and host against the page's own and is the one check both readers call. A `mailto:`, a
+`tel:` and another host still keep their click, since each differs in one of the two.
+
 ## 2026-09-12 — `resource.list()`, and the URL in the browser's own words
 
 **A list is one call now.** `resource.list()` owns the five wirings every list page restated — the
@@ -24,7 +33,8 @@ first draft merged, and a search box that had been emptied went on searching.
 filter reaching every read narrows pickers, jobs and live stores with nothing saying so. Its filters
 apply only while the state carries none, since merged under the URL key for key a default could never
 be cleared from a bar. `columns:` defaults `columns()` and therefore `filters()`, key for key under the
-call's own.
+call's own — and NOT `summary()`, which asks what a form cannot show rather than what a table
+shows, so a ledger's six columns narrowing a detail screen would drop columns from it in silence.
 
 **`page.path` is gone; `page.pathname` and `page.search` replace it**, borrowed exactly from
 `window.location`. `path` was `pathname + search` under a name that reads like the first, and the one

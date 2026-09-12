@@ -237,6 +237,15 @@ export interface ServiceDescription {
    * place it is written is a service file nobody calling the API can read.
    */
   inputs:     Record<string, string>
+  /**
+   * The level each custom method declared in `methods:`, keyed by method.
+   *
+   * Reported beside `inputs` for the same reason: it is a fact about who may
+   * call the method, written in a service file nobody calling the API can read,
+   * and a method missing from it is graded by presence alone
+   * (`customMethodGrade` in `core/litestone.ts`).
+   */
+  methodGates: Record<string, number>
   /** The merged hook declaration — what ran, not how it was resolved. */
   hooks:      HookMap
   /**
@@ -317,6 +326,13 @@ export interface Service {
    * form, for `describe()` and everything that reads it.
    */
   _inputs?: Record<string, string>
+
+  /**
+   * The level each custom method DECLARED in `methods:`, keyed by name. The
+   * hook that enforces it is built from the same read; this is the readable
+   * form, and a method absent here takes the model's read gate as its floor.
+   */
+  _methodGates?: Record<string, number>
 
   find:     (ctx: ServiceContext) => Promise<unknown>
   get:      (ctx: ServiceContext) => Promise<unknown>
@@ -2275,6 +2291,7 @@ export function createService(def: ServiceDefinition): Service {
   // null levels, autoValidate finds no definition), and calling the unused CRUD
   // methods now fails with the base's diagnostic — which names the spellings
   // tried and what the client actually has — instead of a bare sentence.
+  const declaredGates = collectMethodGates(def.methods, (def.name as string) ?? '(unnamed)')
   const base = createBaseService({
     model:      def.model,
     name:       def.name,
@@ -2291,7 +2308,7 @@ export function createService(def: ServiceDefinition): Service {
     // outer definition owns. What it needs is the levels, for the hook it
     // builds — without them the declaration parsed, was reported, and enforced
     // nothing, which is the shape of the defect it exists to fix.
-    methodGates: collectMethodGates(def.methods, (def.name as string) ?? '(unnamed)'),
+    methodGates: declaredGates,
   })
   const baseHooks = (base as unknown as { hooks?: HookMap }).hooks
 
@@ -2506,6 +2523,7 @@ export function createService(def: ServiceDefinition): Service {
         idField:    (meta.idField as string) ?? 'id',
         transactional: [...(service._transactional ?? [])],
         inputs:        { ...(service._inputs ?? {}) },
+        methodGates:   { ...(service._methodGates ?? {}) },
         channel:    describeChannel(service.channel as PublishDeclaration | undefined),
         hooks:      service._hookMap,
         ...(schemas ? { schemas } : {}),
@@ -2549,6 +2567,7 @@ export function createService(def: ServiceDefinition): Service {
   }
   ;(service as Service)._customMethods = custom
   ;(service as Service)._inputs = methodInputs
+  ;(service as Service)._methodGates = declaredGates
 
   // Resolve the method policy AFTER the custom methods are on, because an allow-list
   // may name one and the unknown-name check has to be able to see it.

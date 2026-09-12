@@ -26,7 +26,7 @@
  */
 
 import { matchRoute, normalizePath } from './match.js'
-import { loadLayoutChain, linkHrefOf } from './internals.js'
+import { loadLayoutChain, linkHrefOf, isSameDocumentOrigin } from './internals.js'
 import { sierraFetch } from '../fetch/index.js'
 
 // URLs already prefetched this session.
@@ -310,8 +310,7 @@ export async function prefetchHref(href) {
     return
   }
 
-  // Only same-origin
-  if (url.origin !== window.location.origin) return
+  if (!isSameDocumentOrigin(url)) return
 
   const pathname = normalizePath(url.pathname, _options.trailingSlash ?? 'always')
   const match = matchRoute(pathname, _tree, _options)

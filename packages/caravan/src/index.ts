@@ -16,6 +16,7 @@
 
 import { timingSafeEqual } from 'node:crypto'
 import { occurrenceKey } from '@frontierjs/toolbelt/history'
+import { LEVELS, levelPasses, levelName, gradeStanding } from '@frontierjs/toolbelt/gate'
 import type { Database }                            from 'bun:sqlite'
 import { openDb, buildStatements, aggregateStats, reclaimFreePages, isPrimaryKeyCollision, isUniqueKeyCollision } from './db.ts'
 import type { Statements }                          from './db.ts'
@@ -27,6 +28,7 @@ import type {
   CaravanStats, DispatchOptions, HandlerOptions,
   JobDefinition, JobHandler, JobRecord, JobRef, JobStatus,
   QueueConfig, RegisteredHandler,
+  QueueHandle, QueuePause, QueueEvent, OperatorOptions,
 } from './types.ts'
 
 export type {
@@ -34,6 +36,7 @@ export type {
   Job, JobContext, JobDefinition, JobHandler, JobRef, JobRegistrar,
   HandlerOptions, DispatchOptions,
   JobRecord, JobStatus, QueueConfig, QueueStats,
+  QueueHandle, QueuePause, QueueEvent, OperatorOptions,
   CronEntry,
 } from './types.ts'
 
@@ -157,6 +160,92 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
   // after autoload, so a queue a job file or a config file names still gets
   // one; a queue named for the first time after that (a runtime dispatch, a
   // late handle()) gets its worker immediately.
+
+  // ── operator verbs ────────────────────────────────────────────────────────
+  //
+  // `queue(name)` is a view over the derived set of queues and never a copy of
+  // it (`FJS-D198`). What it adds is a NAME that refuses: the set is every queue
+  // configuration, a job file, a job row or a pause has ever named, and anything
+  // else is a typo whose pause would otherwise be a green answer about a queue
+  // nothing uses.
+
+  const knownQueues = (): string[] => {
+    const names = new Set(Object.keys(queueConf))
+    for (const row of rt().stmts.queuesInData.all()) names.add(row.queue)
+    return [...names].sort()
+  }
+
+  const toPause = (row: { queue: string; paused_at: number; actor_id: string | null; reason: string | null }): QueuePause => ({
+    queue: row.queue, pausedAt: row.paused_at, actor: row.actor_id, reason: row.reason,
+  })
+
+  // Absent is not null: an unstated actor is whoever is in scope, a stated
+  // `null` is nobody. The same rule `dispatch` makes about the same column.
+  const operatorOf = (o: OperatorOptions = {}): string | null =>
+    'actor' in o ? o.actor ?? null : host?.principal?.()?.userId ?? null
+
+  const recordEvent = (queue: string, verb: QueueEvent['verb'], actor: string | null, detail: Record<string, unknown> | null) => {
+    const at = Date.now()
+    rt().stmts.recordQueueEvent.run({ queue, verb, actor, at, detail: detail ? JSON.stringify(detail) : null })
+    telemetry?.emit(`caravan.queue.${verb}`, { queue, actor, at, ...(detail ?? {}) })
+  }
+
+  const queueHandle = (name: string): QueueHandle => {
+    const known = knownQueues()
+    if (!known.includes(name))
+      throw Object.assign(
+        new Error(`[Caravan] no queue named '${name}' — the queues this app has are: ${known.join(', ') || '(none)'}`),
+        { status: 404 })
+
+    const handle: QueueHandle = {
+      name,
+
+      pause(o = {}) {
+        const { stmts } = rt()
+        const actor  = operatorOf(o)
+        const reason = o.reason ?? null
+        const res    = stmts.pauseQueue.run({ queue: name, at: Date.now(), actor, reason })
+        const pause  = toPause(stmts.getPause.get({ queue: name })!)
+        // Nothing changed, so nothing is recorded — an audit row for a pause
+        // that was already in force would name the wrong person as holding it.
+        if (res.changes > 0) recordEvent(name, 'pause', actor, reason ? { reason } : null)
+        return { changed: res.changes > 0, pause }
+      },
+
+      resume(o = {}) {
+        const { stmts } = rt()
+        const held = stmts.getPause.get({ queue: name })
+        const res  = stmts.resumeQueue.run({ queue: name })
+        if (res.changes > 0)
+          recordEvent(name, 'resume', operatorOf(o), held ? { pausedAt: held.paused_at, pausedBy: held.actor_id } : null)
+        return { changed: res.changes > 0 }
+      },
+
+      async drain(o = {}) {
+        const timeout = o.timeout ?? drainTimeout
+        const { pause } = handle.pause(o)
+        const deadline  = Date.now() + timeout
+        let running = rt().stmts.runningInQueue.get({ queue: name })?.count ?? 0
+        while (running > 0 && Date.now() < deadline) {
+          await Bun.sleep(100)
+          running = rt().stmts.runningInQueue.get({ queue: name })?.count ?? 0
+        }
+        recordEvent(name, 'drain', operatorOf(o), { drained: running === 0, running, timeout })
+        return { drained: running === 0, running, pause }
+      },
+
+      state(o = {}) {
+        const { stmts } = rt()
+        const held   = stmts.getPause.get({ queue: name })
+        const events = stmts.queueEvents.all({ queue: name, limit: o.events ?? 20 }).map(e => ({
+          id: e.id, queue: e.queue, verb: e.verb as QueueEvent['verb'], actor: e.actor_id, at: e.at,
+          detail: e.detail ? JSON.parse(e.detail) : null,
+        }))
+        return { name, paused: held ? toPause(held) : null, stats: caravan.stats().queues[name], events }
+      },
+    }
+    return handle
+  }
 
   const ensureQueue = (queue: string): void => {
     if (!queueConf[queue]) queueConf[queue] = { concurrency: 2 }
@@ -328,6 +417,70 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
         const c = ctx as Record<string, unknown>
         await guard(c)
         return Response.json(caravan.nextRuns())
+      })
+
+      // ── operator verbs ──────────────────────────────────────────────────────
+      //
+      // Registered ahead of `{id}`, or `queues` is read as a job id.
+      //
+      // A read is the admin surface's ordinary tier. A pause, a resume and a
+      // drain are not (`FJS-D198`): they stop work every tenant is waiting on,
+      // so on top of the app's own `authorize` the caller must STAND at
+      // ADMINISTRATOR, graded by the one function every realm grades a session
+      // with. A caller with no session is refused even in development — a secret
+      // is a password for the admin surface and not a standing.
+
+      const operator = async (c: Record<string, unknown>): Promise<void> => {
+        await guard(c)
+        const user = (c.user ?? host?.principal?.() ?? null) as Parameters<typeof gradeStanding>[0]
+        if (!user) deny(401, 'An operator verb needs a signed-in caller')
+        const level = gradeStanding(user)
+        if (!levelPasses(LEVELS.ADMINISTRATOR, level))
+          deny(403, `An operator verb needs ${levelName(LEVELS.ADMINISTRATOR)} — this caller stands at ${levelName(level)}`)
+      }
+
+      const named = (c: Record<string, unknown>): QueueHandle =>
+        caravan.queue((c.route as Record<string, string>)?.name)
+
+      const bodyOf = (c: Record<string, unknown>): Record<string, unknown> =>
+        (c.body && typeof c.body === 'object') ? c.body as Record<string, unknown> : {}
+
+      appRouter.get(`${basePath}/queues`, async (ctx: unknown) => {
+        const c = ctx as Record<string, unknown>
+        await guard(c)
+        return Response.json(knownQueues().map(n => caravan.queue(n).state({ events: 0 })))
+      })
+
+      appRouter.get(`${basePath}/queues/{name}`, async (ctx: unknown) => {
+        const c = ctx as Record<string, unknown>
+        await guard(c)
+        return Response.json(named(c).state())
+      })
+
+      appRouter.post(`${basePath}/queues/{name}/pause`, async (ctx: unknown) => {
+        const c = ctx as Record<string, unknown>
+        await operator(c)
+        const reason = bodyOf(c).reason
+        return Response.json(named(c).pause(typeof reason === 'string' ? { reason } : {}))
+      })
+
+      appRouter.post(`${basePath}/queues/{name}/resume`, async (ctx: unknown) => {
+        const c = ctx as Record<string, unknown>
+        await operator(c)
+        return Response.json(named(c).resume())
+      })
+
+      // Bounded, because a request that blocks longer than the proxy in front
+      // of it is cut off and the operator loses the answer while the drain goes
+      // on without them. A longer wait is `state()` polled, which is what a
+      // console does anyway.
+      appRouter.post(`${basePath}/queues/{name}/drain`, async (ctx: unknown) => {
+        const c = ctx as Record<string, unknown>
+        await operator(c)
+        const b       = bodyOf(c)
+        const timeout = Math.min(typeof b.timeout === 'number' ? b.timeout : drainTimeout, 60_000)
+        const reason  = typeof b.reason === 'string' ? b.reason : undefined
+        return Response.json(await named(c).drain({ timeout, ...(reason ? { reason } : {}) }))
       })
 
       appRouter.get(`${basePath}/{id}`, async (ctx: unknown) => {
@@ -700,7 +853,13 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       const oldest = stmts.oldestRunning.all() as {
         queue: string; started_at: number
       }[]
-      return aggregateStats(rows, Object.keys(queueConf), oldest)
+      return aggregateStats(rows, Object.keys(queueConf), oldest, Date.now(), stmts.allPauses.all())
+    },
+
+    // ── queue ────────────────────────────────────────────────────────────────
+
+    queue(name: string): QueueHandle {
+      return queueHandle(name)
     },
 
     // ── start ────────────────────────────────────────────────────────────────

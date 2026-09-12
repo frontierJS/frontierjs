@@ -1276,10 +1276,16 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * reason, for `formFields()`' reason exactly.
    */
   function columns(opts) {
+    return rankColumns({ ...columnDefaults, ...opts })
+  }
+
+  // The ranking with no `columns:` default under it. `summary()` asks a
+  // different question from a table — what a FORM cannot show — so a table's
+  // `only` narrowing it would drop columns from a detail screen in silence.
+  function rankColumns(opts) {
     const answer = columnList(readFields, {
       identify: modelDef?.['x-identify'],
       label:    modelDef?.['x-label-field'],
-      ...columnDefaults,
       ...opts,
     })
     // The renderer is resolved with the column rather than by the caller, for
@@ -1377,7 +1383,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     const offered = new Set(
       formFields().filter(f => f.control).map(f => f.name),
     )
-    return columns({ limit: 99, ...opts, except: [...offered, ...(opts.except ?? [])] })
+    return rankColumns({ limit: 99, ...opts, except: [...offered, ...(opts.except ?? [])] })
   }
 
   /**
@@ -2186,7 +2192,12 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * `get(id)`, since a directive over one row cannot hide a record.
    */
   function list(opts) {
-    return createList({ store, load, more, hasMore: junctionResource.hasMore }, listQuery, opts)
+    return createList({
+      store, load, more, hasMore: junctionResource.hasMore,
+      find:     service.find,
+      on:       service.on,
+      onResync: (fn) => client.on('resync', fn),
+    }, listQuery, opts)
   }
 
   return {

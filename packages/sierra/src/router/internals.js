@@ -46,6 +46,25 @@ export function linkHrefOf(el) {
   return el.getAttribute?.('href') ?? null
 }
 
+/**
+ * Does `url` point at the document this router is running in?
+ *
+ * Scheme and host are compared against the page's OWN rather than against an
+ * allow-list of `http:`/`https:` or `url.origin`. A native shell serves the app
+ * from a custom scheme — Tauri's `tauri://localhost`, Capacitor's
+ * `capacitor://localhost` — and there an allow-list declines every link, while
+ * the URL spec makes the origin of a non-special scheme the string `"null"`, so
+ * an origin comparison declines them too. Both fail as a full page load on
+ * every click, which looks like a working app that has lost its state (`FJS-1085`).
+ *
+ * @param {URL} url — already resolved against the current URL
+ * @returns {boolean}
+ */
+export function isSameDocumentOrigin(url) {
+  const here = window.location
+  return url.protocol === here.protocol && url.host === here.host
+}
+
 export function registerModule(routeId, module) {
   _loadedModules.set(routeId, module)
   if (module.default) {

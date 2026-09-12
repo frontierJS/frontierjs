@@ -210,6 +210,7 @@ registry.meta.set(DEFAULT_SHOP, {
  */
 export const shops = {
   tenancy:   registry.tenancy,
+  schema:    registry.schema,
   tenantFor: (from: { host?: string | null, headers?: Record<string, unknown> | null, principal?: unknown }) =>
     registry.tenantFor(from) ?? DEFAULT_SHOP,
   get:       (id: string) => openShop(id),

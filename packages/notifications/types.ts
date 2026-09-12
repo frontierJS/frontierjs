@@ -5,7 +5,11 @@
 // package also uses (the in-app driver publishes on `app.channel(...)`), and
 // the two words sat fourteen lines apart in this file meaning different things.
 
-export type BuiltInTransport = 'inApp' | 'email' | 'sms'
+// Every other name — sms, push, slack — is a registered driver. The type is read
+// off this list so the two cannot disagree about what ships.
+export const BUILT_IN_TRANSPORTS = ['inApp', 'email'] as const
+
+export type BuiltInTransport = typeof BUILT_IN_TRANSPORTS[number]
 export type Transport        = BuiltInTransport | string   // open for custom drivers
 
 // ─── InApp message ────────────────────────────────────────────────────────────
@@ -54,13 +58,6 @@ export interface MailMessage {
    */
   html?:    string
   text?:    string
-}
-
-// ─── SMS message ──────────────────────────────────────────────────────────────
-
-export interface SmsMessage {
-  body: string
-  to?:  string        // optional override — defaults to recipient.phone
 }
 
 // ─── Stored notification record (mirrors schema.lite model) ──────────────────
@@ -171,10 +168,15 @@ export interface NotificationsPluginOptions {
    */
   notifications?: string | false
 
+  /**
+   * A driver per transport name. `email: { mailer }` is the one plain object
+   * accepted — it selects the built-in email path over `app.mail`; any other
+   * value without `send()` is refused at construction, since it would
+   * configure nothing.
+   */
   transports?: {
-    email?:    { mailer?: string }
-    sms?:      { provider?: string }
-    [key: string]: NotificationDriver | { mailer?: string } | { provider?: string } | undefined
+    email?:    NotificationDriver | { mailer?: string }
+    [key: string]: NotificationDriver | { mailer?: string } | undefined
   }
 }
 

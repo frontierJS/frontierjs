@@ -1,3 +1,4 @@
+import { BUILT_IN_TRANSPORTS } from './types.ts'
 import type { App, InAppMessage, MailMessage, Recipient, TransportError } from './types.ts'
 import type { Notification } from './notification.ts'
 import { stateOf, type NotificationsState } from './state.ts'
@@ -12,12 +13,10 @@ import { sendEmail }  from './drivers/email.ts'
 
 // ─── Built-in transports ─────────────────────────────────────────────────────
 //
-// Transports this package implements natively. 'sms' is deliberately NOT here:
-// there is no built-in SMS implementation, so declaring it built-in let
-// validation pass and then failed at delivery with a bare Error. Treating it
-// as a normal transport means it needs a registered driver, and a missing one
-// is caught eagerly as NotificationDriverNotFoundError like any other.
-const BUILT_IN_TRANSPORTS = new Set(['inApp', 'email'])
+// A name outside this set with no registered driver is refused before any
+// delivery; a name declared built-in with no implementation would pass that
+// check and fail at delivery instead, after other transports had landed.
+const BUILT_IN = new Set<string>(BUILT_IN_TRANSPORTS)
 
 // ─── Message materialization ─────────────────────────────────────────────────
 //
@@ -98,7 +97,7 @@ export async function notify(
       throw new NotificationTransportNotImplementedError(transport, notificationType)
     }
 
-    if (!BUILT_IN_TRANSPORTS.has(transport) && !state.drivers.has(transport)) {
+    if (!BUILT_IN.has(transport) && !state.drivers.has(transport)) {
       throw new NotificationDriverNotFoundError(transport, notificationType)
     }
 

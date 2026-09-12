@@ -67,7 +67,6 @@ export type {
   InAppAction,
   MailMessage,
   MailLine,
-  SmsMessage,
   NotificationRecord,
   NotificationDriver,
   NotificationsPluginOptions,

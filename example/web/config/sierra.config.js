@@ -25,8 +25,10 @@ export default {
   },
 
   junction: {
-    // Same origin as the page: Vite proxies /api, /auth, /session and /ws.
-    url:       typeof location !== 'undefined' ? location.origin : 'http://localhost:8010',
+    // Same origin as the page while Vite proxies /api and /ws. An API on its own
+    // origin, or a build a native shell bundles, is named at build time with
+    // VITE_API_URL. Guarded twice because Vite also loads this file in Node.
+    url:       import.meta.env?.VITE_API_URL ?? (typeof location !== 'undefined' ? location.origin : 'http://localhost:8010'),
     apiPrefix: '/api',
     tokenKey:  'shop_token',
   },

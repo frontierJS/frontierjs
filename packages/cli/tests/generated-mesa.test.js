@@ -116,13 +116,12 @@ describe('what the generators write', () => {
     for (const [what, source] of Object.entries(GENERATED)) {
       if (!source.includes('onsort=')) continue
       offered++
-      expect(source, `${what} takes a sort and never marks it`).toContain('orderBy={ordering}')
+      // The SAME directives the load sends, read off the list and never held
+      // locally: a pair kept in the page disagrees with the load on the first Back.
+      expect(source, `${what} takes a sort and never marks it`).toContain('orderBy={list.directives.orderBy}')
       // And it parses nothing: reading the three legal shapes is <Table>'s, off
       // one owner, because three pages did it by hand and disagreed (FJS-1077).
       expect(source, `${what} parses the orderBy itself`).not.toContain('.replace(/^-/')
-      // Read off page.directives and never held locally: the URL is the state,
-      // so a pair kept in the page disagrees with the load on the first Back.
-      expect(source, `${what} does not read the sort off the URL`).toContain('page.directives?.orderBy')
     }
     expect(offered, 'no generated page offers a sort at all').toBeGreaterThan(0)
   })
@@ -160,10 +159,30 @@ describe('what the generators write', () => {
       handed++
       const at  = source.indexOf('<FilterBar')
       const tag = source.slice(at, source.indexOf('/>', at))
-      expect(tag, `${what} hands the bar no filters`).toContain('value={page.query}')
+      expect(tag, `${what} hands the bar no filters`).toContain('value={list.query}')
       expect(tag, `${what} hands the bar no directives, so a filter drops the sort`)
-        .toContain('directives={page.directives}')
+        .toContain('directives={list.directives}')
     }
     expect(handed, 'no generated page renders a filter bar at all').toBeGreaterThan(0)
+  })
+
+  // A list page is a consumer of resource.list() and wires none of it itself.
+  // The hand-wired shape failed in silence twice: without the bare $: watch the
+  // load ran once and every filter and sort was a control that did nothing, and
+  // with it a generated page restated the store, the load and the URL round-trip
+  // per model. And the window: more() was built, keyset and correct, and no page
+  // called it, so every list stopped at the server's page size with nothing
+  // saying there were more rows.
+  test('a generated list page reads its state through list() and offers the window', () => {
+    let lists = 0
+    for (const [what, source] of Object.entries(GENERATED)) {
+      if (!source.includes('<Table')) continue
+      lists++
+      expect(source, `${what} does not use list()`).toMatch(/const list = \w+\.list\(/)
+      expect(source, `${what} still wires a load by hand`).not.toMatch(/\$:\s*page\.query/)
+      expect(source, `${what} still subscribes to the store by hand`).not.toContain('useStore(')
+      expect(source, `${what} never offers more rows`).toContain('{#if list.hasMore}')
+    }
+    expect(lists, 'no generated page renders a table at all').toBeGreaterThan(0)
   })
 })

@@ -56,9 +56,11 @@ Channel is junction's broadcast set**, which the in-app driver publishes on
 (`app.channel('notifications:user:<id>')`). `FJS-D06` ruled it; both words are
 in this package and they are not interchangeable.
 
-`inApp` and `email` are the only built-ins. **`sms` is not one**: there is no
-built-in implementation, so it needs a registered driver like any other name,
-and a missing one is an eager `NotificationDriverNotFoundError`.
+`inApp` and `email` are the only built-ins, listed once in `BUILT_IN_TRANSPORTS`
+and typed off that list. **Every other name is a registered driver** — SMS and
+push included, which are app-side connectors (`FJS-D153`) — and a missing one is
+an eager `NotificationDriverNotFoundError`. A `transports:` value with no
+`send()` is refused at construction unless it is `email`'s `{ mailer }`.
 
 ## The unit of address
 

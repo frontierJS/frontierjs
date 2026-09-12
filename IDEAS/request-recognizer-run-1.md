@@ -46,7 +46,8 @@ The record set a bar before the run: seven in ten means the middle really is a
 lookup, four in ten means the shape changes. **5.2 lands between them, and the
 14 in U decide which side.** With the UI realm indexed the same number is 45 of 60,
 7.5 in ten, over the bar. The design survives conditionally, and the condition is
-`lexicon.md`'s interface tier plus a route-level index of what each screen shows.
+a route-level index of what each screen shows — **and not `lexicon.md`'s string
+catalog, which would have answered none of the fourteen**: not one was about wording.
 
 **How many never reached the Data realm: 43 of 60 (72%).**
 
@@ -162,7 +163,9 @@ and `@frontierjs/mcp`'s `move-system` verdict would make the same mistake.
 **4. The UI realm is the dependency, measured.** Fourteen messages needed a `.mesa`
 file read, and five of them were *the data already exists, only a screen is
 missing* (A14, A23, B3, B8, B23) — the cheapest changes in the run and the ones a
-lookup could not reach.
+lookup could not reach. **None of the fourteen was about wording.** Every one asked
+what a screen shows or does — a column, a filter, an action, a component's options,
+whether a control exists — which is an index of screens and not a catalog of strings.
 
 **5. Subtypes are not the thin spot.** One message (A8, a class as a product with a
 date). `polymorphic-relations.md` is not a dependency.

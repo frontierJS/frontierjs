@@ -72,7 +72,7 @@ function makeLoaders() {
 
 function installDom() {
   globalThis.window = {
-    location: { origin: 'http://localhost', pathname: '/', search: '' },
+    location: { origin: 'http://localhost', protocol: 'http:', host: 'localhost', pathname: '/', search: '' },
     addEventListener() {},
     fetch: () => Promise.resolve(new Response('{}')),
   }

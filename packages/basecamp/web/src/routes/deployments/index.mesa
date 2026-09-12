@@ -51,56 +51,24 @@ title: Deployments
   // box is drawn — a box the Data boundary answers 400 to is worse than none.
   const { filters, search } = deployments.filters()
 
-  let rows    = []
-  let error   = null
-  let loading = true
-  let query   = {}
-  // The bar's other half. Held beside the filters rather than merged into them,
-  // because that is the split the Data boundary reads (Invariant 10): filters
-  // are a WHERE and directives are how much of the answer, in what order.
-  let directives = {}
+  // The service includes app → environment and the deployment's own
+  // environment, so a row names what it deployed and where without a second
+  // request per row. `RelationCell` is what reads them back
+  // (`web/src/displays.js`).
+  //
+  // That is why this list is COMPOSED. The job pushes `deployments patched` on
+  // every step of a release, and a push carries the row without its includes —
+  // held in the store, the first step of a running release would blank both
+  // relation cells. Composed rows are this list's own, and a push re-reads the
+  // window instead, one query per burst. Merging the push over the held row
+  // costs nothing and goes stale in silence the moment a push moves a key an
+  // include was read through.
+  //
+  // Held in memory rather than in the URL: a deployments list is read while a
+  // release is running, and nothing here is worth a history entry per filter.
+  const list = deployments.list({ state: 'local', composed: true, directives: { limit: 50 } })
 
-  async function load() {
-    error = null; loading = true
-    try {
-      // The service includes app → environment and the deployment's own
-      // environment, so a row names what it deployed and where without a
-      // second request per row. `RelationCell` is what reads them back
-      // (`web/src/displays.js`).
-      rows = (await deployments.service.find(query, { limit: 50, ...directives })).data
-    } catch (e) {
-      error = e.message
-    } finally {
-      loading = false
-    }
-  }
-
-  load()
-  $: session.workspaceId, () => load()
-
-  // The bar hands back both halves and the page decides what to do with them.
-  // This one holds them in memory rather than in the URL: a deployments list is
-  // read while a release is running and a navigation would drop the live
-  // subscription below. That is also why the bar is handed `query` and
-  // `directives` from here rather than from `page` — this list is the one
-  // caller whose state is deliberately NOT the address bar.
-  function apply(nextQuery, nextDirectives) {
-    query      = nextQuery
-    directives = nextDirectives ?? {}
-    load()
-  }
-
-  // Live: the job pushes `deployments patched` to workspace:<id> on every
-  // step transition. Merging the payload beats re-fetching the list — the push
-  // carries the whole row, and a list that re-queries on every step of every
-  // concurrent release is a poll with extra steps.
-  const off = deployments.service.on('patched', (row) => {
-    const i = rows.findIndex(r => r.id === row.id)
-    // Replacement, not mutation: `rows[i] = …` on an array Mesa is watching
-    // notifies nothing (RULE 43).
-    if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...row }, ...rows.slice(i + 1)]
-  })
-  $.onDestroy(off)
+  $: session.workspaceId, () => list.reload()
 </script>
 
 <div class="section-header">
@@ -108,25 +76,25 @@ title: Deployments
   <span class="text-sm text-muted">newest first</span>
 </div>
 
-{#if error}
+{#if list.error}
   <article class="alert danger">
-    <div class="alert-content">{error}</div>
+    <div class="alert-content">{list.error.message}</div>
   </article>
 {/if}
 
-<FilterBar id="deployment-filters" {filters} {search} value={query}
-            directives={directives} onchange={apply} />
+<FilterBar id="deployment-filters" {filters} {search} value={list.query}
+            directives={list.directives} onchange={list.apply} />
 
-{#if loading}
+{#if list.loading && !list.rows.length}
   <p class="text-sm text-muted">Loading…</p>
-{:else if !rows.length}
+{:else if !list.rows.length}
   <article class="alert info">
     <div class="alert-content">
       No deployments match. Open an environment and deploy an app, or seed the example fleet with <code>bun run db:seed</code>.
     </div>
   </article>
 {:else}
-  <Table id="deployment-rows" {columns} rows={rows} striped>
+  <Table id="deployment-rows" {columns} rows={list.rows} striped>
     {#snippet row(deployment)}
       <tr>
         {#each cols as c}
@@ -136,6 +104,9 @@ title: Deployments
       </tr>
     {/snippet}
   </Table>
+  {#if list.hasMore}
+    <Button variant="ghost" id="deployment-more" onclick={list.more}>Load more</Button>
+  {/if}
 {/if}
 
 {#if omitted.length}

@@ -2,6 +2,30 @@
 
 Newest first.
 
+## 2026-09-12 — SMS stopped pretending to ship
+
+The transport seam was already open: anything with `send()` registers under its
+key, and `notify()` consults it before the built-ins. What was left said
+otherwise. `BuiltInTransport` still read `'inApp' | 'email' | 'sms'` while
+`notify.ts` had removed `sms` from its own set, so the two lists of what ships
+disagreed; `transports.sms: { provider }` was a typed option that registered
+nothing; and `SmsMessage`, `toSms()` and the `sms` formatter key described a
+message shape with no driver behind it.
+
+- **`BUILT_IN_TRANSPORTS` is the one list** (`types.ts`) and `BuiltInTransport`
+  is read off it.
+- **A `transports:` value with no `send()` is refused at construction**, naming
+  the key. `email: { mailer }` is the one plain object left, because it selects a
+  built-in path. Before, `sms: { provider: 'twilio' }` was found at the first
+  send.
+- **`SmsMessage`, `toSms()` and `sms?:` on a definition are gone.** A driver
+  owns its message shape; the index signature on a definition still takes any
+  transport name.
+
+Tests: the refusal as a pair with the shapes that must still pass (a driver, the
+email config, an undefined key) — stubbing the refusal fails it — and
+`defineNotification` delivering to a `push` driver the package names nowhere.
+
 ## 2026-09-07 — the plugin could not be configured in a typechecked app
 
 `App.mail` declared `send(msg): Promise<void>`. Junction's `IMail.send` answers

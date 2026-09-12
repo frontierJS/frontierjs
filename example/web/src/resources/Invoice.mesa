@@ -23,5 +23,18 @@
 
   import { createResource } from '@frontierjs/sierra/junction'
 
-  export const invoices = createResource('invoices')
+  // ─── What a list of invoices is ───────────────────────────────────────────
+  //
+  // A LEDGER, newest first, over six columns. Both are true of this model
+  // wherever it is listed, so they are stated here rather than on a page: the
+  // ranked default is a good answer to *show me this model* and a worse one to
+  // *show me a ledger* — `Invoice` declares three money columns and five
+  // timestamps, so the tiers fill with `subtotal` and `tax` ahead of the day
+  // the thing was due. `columns:` names the set AND its order, and `filters()`
+  // reads the same set, so the bar offers what the table shows. `listQuery`
+  // reaches `list()` alone; a picker over invoices is not a ledger.
+  export const invoices = createResource('invoices', {
+    listQuery: { directives: { orderBy: '-issuedAt' } },
+    columns:   { only: ['number', 'status', 'customerId', 'total', 'issuedAt', 'dueAt'] },
+  })
 </script>

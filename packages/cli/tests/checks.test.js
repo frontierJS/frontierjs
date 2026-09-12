@@ -1268,6 +1268,54 @@ describe('drive-preamble', () => {
 })
 
 
+describe('skill-pointer', () => {
+
+  // A router skill is nothing but names, so a skill renamed out from under it
+  // leaves every other line of the router reading correctly. Its tables are
+  // graded like CLAUDE.md's; its prose is not, since a skill's prose is full of
+  // backticked words that are not skills.
+
+  const skill = (name, body = '') => ({
+    [`.claude/skills/${name}/SKILL.md`]: `---\nname: ${name}\ndescription: x\n---\n\n${body}`,
+  })
+  const router = (...names) =>
+    `| Situation | Skill |\n| --- | --- |\n${names.map(n => `| x | \`${n}\` |`).join('\n')}\n`
+  const claude = { 'CLAUDE.md': '| Realm | Skill |\n| --- | --- |\n| Data | `data-hazards` |\n' }
+
+  test('a skill whose table names a skill that is not in the tree is an error on the citing skill', () => {
+    const root = tree('skill-router-dead', {
+      ...claude, ...skill('data-hazards'),
+      ...skill('which-skill', router('data-hazards', 'gone-hazards')),
+    })
+    const { findings } = only(root, 'skill-pointer', { scope: 'repo' })
+    expect(findings).toHaveLength(1)
+    expect(findings[0].severity).toBe('error')
+    expect(findings[0].file).toMatch(/which-skill\/SKILL\.md$/)
+    expect(findings[0].message).toMatch(/`gone-hazards`/)
+  })
+
+  test('every name resolving is clean, and backticked prose in a skill is not read as a pointer', () => {
+    const root = tree('skill-router-ok', {
+      ...claude, ...skill('data-hazards'),
+      ...skill('which-skill', `Run \`bun run test\` first.\n\n${router('data-hazards', 'which-skill')}`),
+    })
+    expect(only(root, 'skill-pointer', { scope: 'repo' }).findings).toEqual([])
+  })
+
+  test('a frontmatter name disagreeing with the directory is reported once, however many cite it', () => {
+    const root = tree('skill-router-name', {
+      ...claude,
+      '.claude/skills/data-hazards/SKILL.md': '---\nname: data\ndescription: x\n---\n',
+      ...skill('which-skill', router('data-hazards')),
+    })
+    const { findings } = only(root, 'skill-pointer', { scope: 'repo' })
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/declares `name: data`/)
+  })
+
+})
+
+
 describe('dev-host-unique', () => {
 
   // A dev name is derived from the package name and the surface, so two
@@ -1893,6 +1941,49 @@ describe('scheduler-dispatch', () => {
   test('a timer with no row behind it is what app.scheduler is for', () => {
     const root = tree('sd-cache', api("app.scheduler.every('1m', () => cache.sweep())\n"))
     expect(only(root, 'scheduler-dispatch').findings).toEqual([])
+  })
+})
+
+describe('queue-operator-verb', () => {
+  test('a service that pauses a queue is an error, and names the gate it skips', () => {
+    const root = tree('qov-service', {
+      'api/src/services/ops.service.ts':
+        "export default () => createService({ halt: (ctx) => ctx.app.jobs.queue('mail').pause() })\n",
+    })
+    const { findings } = only(root, 'queue-operator-verb')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/ADMINISTRATOR/)
+  })
+
+  test('a bound handle is read too, and so is a job file', () => {
+    const root = tree('qov-bound', {
+      'api/src/jobs/nightly.job.ts':
+        "export default defineJob({ run: async (ctx) => {\n" +
+        "  const q = ctx.app.jobs.queue('reports')\n" +
+        "  await q.drain({ timeout: 1000 })\n" +
+        "}})\n",
+    })
+    const { findings } = only(root, 'queue-operator-verb')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/job file/)
+  })
+
+  // The pair: the app verbs on the same handle are the app's to call.
+  test('reading a queue from a service is silent', () => {
+    const root = tree('qov-read', {
+      'api/src/services/ops.service.ts':
+        "export default () => createService({ status: (ctx) => ctx.app.jobs.queue('mail').state() })\n",
+    })
+    expect(only(root, 'queue-operator-verb').findings).toEqual([])
+  })
+
+  // A console script or a deploy hook is where the verb belongs.
+  test('the same call outside a service or job file is silent', () => {
+    const root = tree('qov-script', {
+      'api/scripts/maintenance.ts': "await app.jobs.queue('mail').pause({ reason: 'migration' })\n",
+    })
+    expect(only(root, 'queue-operator-verb').skipped ?? only(root, 'queue-operator-verb').findings).toBeTruthy()
+    expect(only(root, 'queue-operator-verb').findings ?? []).toEqual([])
   })
 })
 

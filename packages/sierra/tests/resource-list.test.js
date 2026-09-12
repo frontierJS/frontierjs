@@ -19,6 +19,12 @@ import { describe, test, expect, vi, beforeEach, afterEach, afterAll } from 'vit
 import { createJunctionClient } from '../../junction/src/client/index.ts'
 import { setRenderEnvironment, flushSync } from '@frontierjs/mesa/runtime'
 import { initRouter, goto, page, _resetPage } from '../src/router/index.js'
+import { mkdtempSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+const SIERRA_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 
 // ─── The server ─────────────────────────────────────────────────────────────
 
@@ -31,17 +37,23 @@ const ROWS = [
 let sent = []        // one URLSearchParams per list read
 let failNext = false
 let total = ROWS.length
+// What a service whose `find()` includes a relation answers: the row PLUS a
+// key no push carries.
+let includes = false
+let delayMs  = 0
 
 const original = globalThis.fetch
 globalThis.fetch = (async (url, init) => {
   const u = new URL(String(url))
   if ((init?.method ?? 'GET') !== 'GET') return json({})
   sent.push(u.searchParams)
+  if (delayMs) await new Promise(r => setTimeout(r, delayMs))
   if (failNext) {
     failNext = false
     return new Response(JSON.stringify({ message: 'boom' }), { status: 500, headers: { 'Content-Type': 'application/json' } })
   }
-  return json({ kind: 'list', object: 'invoices', data: ROWS, errors: [], total, limit: 20, offset: 0 })
+  const data = includes ? ROWS.map(r => ({ ...r, customer: { id: 9, name: 'Acme' } })) : ROWS
+  return json({ kind: 'list', object: 'invoices', data, errors: [], total, limit: 20, offset: 0 })
 })
 
 function json(body) {
@@ -52,8 +64,7 @@ let client
 vi.mock('@frontierjs/sierra/junction', () => ({ getClient: () => client }))
 const { createResource } = await import('../src/junction/resource.js')
 const { registerSchemas } = await import('../src/junction/schema-registry.js')
-const { parse } = await import('../../litestone/src/core/parser.js')
-const { generateJsonSchema } = await import('../../litestone/src/jsonschema.js')
+const { generateSchemas }  = await import('../src/build/schema-plugin.js')
 
 // ─── The router ─────────────────────────────────────────────────────────────
 
@@ -127,6 +138,8 @@ beforeEach(() => {
   sent = []
   failNext = false
   total = ROWS.length
+  includes = false
+  delayMs = 0
 })
 
 afterEach(() => {
@@ -352,23 +365,36 @@ describe('listQuery reaches list() and nothing else', () => {
 })
 
 describe('columns: in the resource file', () => {
-  const { schema } = parse(`
+  // Through the build's own schema step, because what reaches the browser is a
+  // create table plus the read and update patches — a hand-registered `full`
+  // document hands every column a control and leaves summary() nothing to say.
+  async function build(source) {
+    const dir  = mkdtempSync(join(tmpdir(), 'sierra-list-'))
+    const file = join(dir, 'schema.lite')
+    writeFileSync(file, source)
+    const g = await generateSchemas(file, () => {}, SIERRA_ROOT)
+    registerSchemas(g.defs, g.models, g.updatePatch, g.readPatch)
+  }
+  const SOURCE = `
     model Invoice {
-      id       Int    @id
+      id       Int       @id
       number   String
       status   String
       total    Int
       memo     String?
     }
-  `)
-  const defs = generateJsonSchema(schema, { mode: 'full' }).$defs
+  `
 
-  test('columns() takes the file\'s set, and a call naming its own replaces it', () => {
-    registerSchemas(defs, ['Invoice'])
+  test('columns() takes the file\'s set, and a call naming its own replaces it', async () => {
+    await build(SOURCE)
     const invoices = createResource('invoices', { model: 'Invoice', columns: { only: ['number', 'total'] } })
 
     expect(invoices.columns().columns.map(c => c.name)).toEqual(['number', 'total'])
     expect(invoices.columns({ only: ['status'] }).columns.map(c => c.name)).toEqual(['status'])
+    // A detail screen's summary is not a table and does not take its set: the
+    // key is read-only, so it is a summary column, and the file's table set
+    // does not name it.
+    expect(invoices.summary().columns.map(c => c.name)).toContain('id')
     // The control: the same model with nothing declared ranks on its own.
     expect(createResource('invoices', { model: 'Invoice' }).columns().columns.map(c => c.name))
       .not.toEqual(['number', 'total'])
@@ -414,6 +440,109 @@ describe('loading, error, the window, teardown', () => {
     await goto('/invoices/', { status: 'paid' })
     await settle()
     expect(sent.length).toBe(before)
+  })
+})
+
+// ─── A composed list ────────────────────────────────────────────────────────
+
+describe('composed: the rows carry what a push does not', () => {
+  // What the socket delivers when somebody patches INV-2: the row, and nothing
+  // that hangs off it.
+  const push = (event = 'patched') =>
+    client.service('invoices').emit(event, { id: 2, number: 'INV-2', status: 'paid', total: 200 })
+
+  test('a push re-reads the window and the relation survives it; a store-backed list loses it', async () => {
+    await boot('/invoices/')
+    includes = true
+
+    const plain = track(invoicesResource().list({ state: 'local' }))
+    await settle()
+    expect(plain.rows[1].customer).toEqual({ id: 9, name: 'Acme' })
+    push()
+    await settle()
+    // The control: the hazard is real, or the composed row below proves nothing.
+    const inv2 = plain.rows.find(r => r.id === 2)
+    expect(inv2.status).toBe('paid')
+    expect(inv2.customer).toBeUndefined()
+
+    const list = track(invoicesResource().list({ state: 'local', composed: true }))
+    await settle()
+    const before = sent.length
+    push()
+    await settle()
+    expect(sent.length).toBe(before + 1)
+    expect(list.rows.find(r => r.id === 2).customer).toEqual({ id: 9, name: 'Acme' })
+  })
+
+  test('its rows never enter the store, so another list over the model is not handed them', async () => {
+    await boot('/invoices/')
+    includes = true
+    const invoices = invoicesResource()
+    const list = track(invoices.list({ state: 'local', composed: true }))
+    await settle()
+    expect(list.rows).toHaveLength(3)
+    expect(invoices.store.get()).toEqual([])
+
+    track(invoices.list({ state: 'local' }))
+    await settle()
+    expect(invoices.store.get()).toHaveLength(3)
+
+    // Nor does it START on the store's rows: those carry no relation, and would
+    // show until the first read answered.
+    expect(track(invoices.list({ state: 'local', composed: true })).rows).toEqual([])
+  })
+
+  test('a burst of pushes during a read is ONE more read, not one each', async () => {
+    await boot('/invoices/')
+    const list = track(invoicesResource().list({ state: 'local', composed: true }))
+    await settle()
+    delayMs = 20
+    const before = sent.length
+
+    push(); await settle()
+    push(); push(); push('removed')
+    await new Promise(r => setTimeout(r, 80))
+    await settle()
+
+    expect(sent.length).toBe(before + 2)
+    expect(list.loading).toBe(false)
+  })
+
+  test('growing the window widens the limit and re-reads from the top', async () => {
+    await boot('/invoices/')
+    total = 10
+    const list = track(invoicesResource().list({ state: 'local', composed: true }))
+    await settle()
+    expect(list.hasMore).toBe(true)
+
+    await list.more()
+    await settle()
+    expect(last().get('$limit')).toBe('23')
+    expect(last().get('$after')).toBe(null)
+
+    // A change of state is a new question and starts from its own limit.
+    list.apply({ status: 'open' }, list.directives)
+    await settle()
+    expect(last().get('$limit')).toBe(null)
+  })
+
+  test('a reconnect re-reads; a list that is not composed leaves that to the store', async () => {
+    await boot('/invoices/')
+    vi.spyOn(Math, 'random').mockReturnValue(0)
+    const list = track(invoicesResource().list({ state: 'local', composed: true }))
+    await settle()
+    const before = sent.length
+
+    client.emit('resync', { downMs: 10 })
+    await settle()
+    expect(sent.length).toBe(before + 1)
+
+    list.destroy()
+    client.emit('resync', { downMs: 10 })
+    push()
+    await settle()
+    expect(sent.length).toBe(before + 1)
+    vi.restoreAllMocks()
   })
 })
 

@@ -337,6 +337,80 @@ describe('client.auth — the services', () => {
     expect(calls[0].headers['X-Service-Method']).toBe('changePassword')
     expect(calls[0].body).toEqual({ currentPassword: 'old', newPassword: 'new' })
   })
+
+  // The provider's method names are the wire's. A client that renamed one here
+  // sends a header `need()` has never heard of and is answered 400 by name —
+  // which only a test naming both halves sees before a screen does.
+  it('the second factor is five custom methods on the same account, named as the provider names them', async () => {
+    const { calls, restore } = mockFetch([
+      { enabled: false, recoveryCodesRemaining: 0 },
+      { secret: 'S', qr: 'otpauth://totp/x' },
+      { recoveryCodes: ['A'] },
+      { recoveryCodes: ['B'] },
+      { ok: true },
+    ])
+    cleanup = restore
+    const c = createJunctionClient({ url: 'http://x', token: 't' })
+
+    expect(await c.auth.totpStatus()).toEqual({ enabled: false, recoveryCodesRemaining: 0 })
+    expect(await c.auth.setupTotp('pw')).toEqual({ secret: 'S', qr: 'otpauth://totp/x' })
+    expect(await c.auth.confirmTotp('123456')).toEqual({ recoveryCodes: ['A'] })
+    expect(await c.auth.regenerateRecoveryCodes('pw')).toEqual({ recoveryCodes: ['B'] })
+    await c.auth.disableTotp('pw')
+
+    expect(calls.map(k => [k.method, k.url, k.headers['X-Service-Method'], k.body])).toEqual([
+      ['POST', 'http://x/account/me', 'totpStatus',              {}],
+      ['POST', 'http://x/account/me', 'setupTotp',               { currentPassword: 'pw' }],
+      ['POST', 'http://x/account/me', 'confirmTotp',             { code: '123456' }],
+      ['POST', 'http://x/account/me', 'regenerateRecoveryCodes', { currentPassword: 'pw' }],
+      ['POST', 'http://x/account/me', 'disableTotp',             { currentPassword: 'pw' }],
+    ])
+  })
+})
+
+// ─── What a 401 means ─────────────────────────────────────────────────────
+//
+// `unauthorized` is answered by every listener with a sign-out. A 401 on a
+// request that PRESENTED the credential says the credential is dead; one on a
+// request that established rather than presented a session says what was typed
+// was wrong. The pair is the test — a client that emitted on neither would pass
+// the first row alone (FJS-1088).
+
+describe('client — which 401 is a dead session', () => {
+
+  it('a refused code at /login/challenge does not announce a dead session', async () => {
+    const { restore } = mockFetch([{ message: 'Invalid code', retryable: true }], 401)
+    cleanup = restore
+    const c = createJunctionClient({ url: 'http://x', token: 'a-live-session' })
+    let emitted = 0
+    c.on('unauthorized', () => { emitted++ })
+
+    await expect(c.auth.completeSignIn('000000', 'ticket')).rejects.toThrow('Invalid code')
+    expect(emitted).toBe(0)
+  })
+
+  it('a refused sign-in does not either', async () => {
+    const { restore } = mockFetch([{ message: 'Invalid credentials' }], 401)
+    cleanup = restore
+    const c = createJunctionClient({ url: 'http://x', token: 'a-live-session' })
+    let emitted = 0
+    c.on('unauthorized', () => { emitted++ })
+
+    await expect(c.auth.signIn('a@b.c', 'wrong')).rejects.toThrow('Invalid credentials')
+    expect(emitted).toBe(0)
+  })
+
+  it('…while a 401 on a call that presented the token still does', async () => {
+    const { calls, restore } = mockFetch([{ message: 'Authentication required' }], 401)
+    cleanup = restore
+    const c = createJunctionClient({ url: 'http://x', token: 'expired' })
+    let emitted = 0
+    c.on('unauthorized', () => { emitted++ })
+
+    await expect(c.auth.me()).rejects.toThrow()
+    expect(calls[0].headers['Authorization']).toBe('Bearer expired')
+    expect(emitted).toBe(1)
+  })
 })
 
 // ─── The token ────────────────────────────────────────────────────────────
@@ -396,16 +470,13 @@ describe('a 401 keeps the server\'s own sentence', () => {
     await expect(c.auth.signIn('a@b.c', 'nope')).rejects.toThrow('Invalid credentials')
   })
 
-  it('still carries the code and still emits unauthorized', async () => {
+  it('still carries the code', async () => {
     const { restore } = mockFetch([{ message: 'Invalid credentials' }], 401)
     cleanup = restore
     const c = createJunctionClient({ url: 'http://x' })
-    let fired = false
-    c.on('unauthorized', () => { fired = true })
 
     const err = await c.auth.signIn('a@b.c', 'nope').catch(e => e)
     expect(err.code).toBe(401)
-    expect(fired).toBe(true)
   })
 })
 

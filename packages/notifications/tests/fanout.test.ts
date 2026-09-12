@@ -26,6 +26,7 @@ import {
   NotificationTransportNotImplementedError,
 } from '../errors.ts'
 import { notificationsPlugin } from '../plugin.ts'
+import { defineNotification } from '../define.ts'
 import { createTestApp, mailerPlugin } from '@frontierjs/junction'
 import { makeApp, type Harness } from './harness.ts'
 import type { InAppMessage, MailMessage, Recipient, Transport } from '../types.ts'
@@ -265,8 +266,8 @@ describe('transport drivers', () => {
     expect((await a.rows()).length).toBe(before)   // built-in did not also write
   })
 
-  // 'email'/'sms' were skipped unconditionally when building the registry, so
-  // an SMS driver could never be registered and SMS was unimplementable.
+  // SMS ships as nothing: it is a name like slack, reached only through a
+  // registered driver.
   test('sms becomes available once a driver is registered', async () => {
     const delivered: unknown[] = []
     const sms = { transport: 'sms', send: async (_r: Recipient, m: unknown) => { delivered.push(m) } }
@@ -299,6 +300,44 @@ describe('transport drivers', () => {
 
     expect(a.sent.length).toBe(1)
     expect(a.sent[0].subject).toBe('Welcome aboard')
+  })
+
+  // The pair to the test above: a plain object anywhere but `email` has no
+  // built-in path to configure, so accepting it registers nothing.
+  test('a plain config object under any other transport is refused at construction', () => {
+    const build = (transports: Record<string, unknown>) => () =>
+      notificationsPlugin({ db: null, transports: transports as never })
+
+    expect(build({ sms: { provider: 'twilio' } })).toThrow(/transports\.sms has no send\(\)/)
+    expect(build({ inApp: {} })).toThrow(/transports\.inApp has no send\(\)/)
+    expect(build({ push: 'fcm' })).toThrow(/transports\.push has no send\(\)/)
+
+    expect(build({ email: { mailer: 'default' } })).not.toThrow()
+    expect(build({ sms: { send: async () => {} } })).not.toThrow()
+    expect(build({ sms: undefined })).not.toThrow()
+  })
+
+  // The whole seam from an app's side: a definition formats a transport the
+  // package has never heard of, and the driver under that name delivers it.
+  test('defineNotification reaches a custom driver with nothing in the package naming it', async () => {
+    const seen: Array<{ recipient: Recipient, message: unknown }> = []
+    const push = {
+      transport: 'push',
+      send: async (recipient: Recipient, message: unknown) => { seen.push({ recipient, message }) },
+    }
+    const Shipped = defineNotification<{ orderId: number }>({
+      type:  'Shipped',
+      via:   () => ['push'],
+      push:  (p: { orderId: number }) => ({ title: `Order #${p.orderId} shipped` }),
+    })
+
+    const a = await makeApp({ transports: { push } })
+    const before = (await a.rows()).length
+    await a.app.notify({ id: 'u17', deviceToken: 'tok' }, Shipped({ orderId: 42 }))
+
+    expect(seen).toEqual([{ recipient: { id: 'u17', deviceToken: 'tok' }, message: { title: 'Order #42 shipped' } }])
+    expect((await a.rows()).length).toBe(before)   // no in-app row for a push-only send
+    expect(a.sent.length).toBe(0)
   })
 })
 

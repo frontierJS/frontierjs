@@ -43,12 +43,31 @@
  * `where` is not a default. It is applied OVER the filters on every load and is
  * never part of `query`, so a bar cannot see it or widen it — which is what
  * makes an embedded list scoped rather than pre-filtered.
+ *
+ * ─── A composed list ───────────────────────────────────────────────────────
+ *
+ * `{ composed: true }` where the service's `find()` answers more than the rows —
+ * an `include:`, a per-row count. It is `record(id, { composed: true })` for a
+ * list, and for the same reason (`FJS-533`): the store holds one row per node
+ * and a push carries the row alone, so a store-backed list drops every
+ * relation cell at the first announcement.
+ *
+ * So these rows are this list's own and never enter the store — a node holding
+ * one screen's includes would hand them to every other list over the model. An
+ * announcement on the service, or a reconnect, is the TRIGGER and the whole
+ * window is read again, one request per burst. Growing the window therefore
+ * widens the limit rather than resuming from a cursor: the next push re-reads
+ * all of it anyway.
  */
 
 import { createSignal, createEffect, watchPath, untrack, onCleanup } from '@frontierjs/mesa/runtime'
 import { page, goto } from '../router/index.js'
 
 const SEARCH_DEBOUNCE_MS = 300
+
+// A deploy drops every socket at once, so an unjittered re-read on reconnect is
+// every client querying in the same tick. The same bound junction's store uses.
+const RESYNC_JITTER_MS = 2000
 
 const isEmpty = (o) => !o || Object.keys(o).length === 0
 
@@ -64,7 +83,8 @@ function overlay(base, top) {
 }
 
 /**
- * @param {object} resource  the resource this list reads — `load`, `more`, `hasMore`, `store`
+ * @param {object} resource  the resource this list reads — `load`, `more`, `hasMore`, `store`,
+ *                           and for a composed list `find`, `on` and `onResync`
  * @param {{ query?: object, directives?: object } | undefined} listQuery  the resource file's defaults
  * @param {object} [opts]
  * @param {'url'|'local'} [opts.state='url']
@@ -72,6 +92,7 @@ function overlay(base, top) {
  * @param {object} [opts.query]       starting filters, over `listQuery.query`
  * @param {object} [opts.directives]  starting directives, over `listQuery.directives`
  * @param {number} [opts.debounce=300] milliseconds a `search` change waits
+ * @param {boolean} [opts.composed=false] the service's `find()` answers more than the rows
  */
 export function createList(resource, listQuery, opts = {}) {
   const {
@@ -79,6 +100,7 @@ export function createList(resource, listQuery, opts = {}) {
     where    = {},
     debounce = SEARCH_DEBOUNCE_MS,
   } = opts
+  const composed = opts.composed === true
   if (state !== 'url' && state !== 'local') {
     throw new Error(`[list] state must be 'url' or 'local', got ${JSON.stringify(state)}`)
   }
@@ -88,29 +110,39 @@ export function createList(resource, listQuery, opts = {}) {
 
   // ─── State ──────────────────────────────────────────────────────────────
 
-  const [rows,      setRows]      = createSignal(resource.store.get())
+  const [rows,      setRows]      = createSignal(composed ? [] : resource.store.get())
   const [loading,   setLoading]   = createSignal(false)
   const [error,     setError]     = createSignal(null)
   const [more,      setMore]      = createSignal(false)
   const [localQ,    setLocalQ]    = createSignal(startQuery)
   const [localD,    setLocalD]    = createSignal(startDirectives)
 
-  let timer = null
+  let timer       = null
+  let resyncTimer = null
+
+  const route = state === 'url' ? page.route : null
 
   // Inside an effect so a component that forgets `destroy` still releases the
   // store: the effect is owned by whatever scope created the list, and its
   // cleanups run when that scope is torn down. Nothing in the body is read
   // reactively, so it never re-runs.
   const release = createEffect(() => {
-    const unsubscribe = untrack(() => resource.store.subscribe((next) => {
-      setRows(next)
-      setMore(resource.hasMore())
-    }))
-    onCleanup(unsubscribe)
+    if (composed) {
+      onCleanup(resource.on('*', announced))
+      onCleanup(resource.onResync(() => {
+        clearTimeout(resyncTimer)
+        resyncTimer = setTimeout(announced, Math.random() * RESYNC_JITTER_MS)
+      }))
+    } else {
+      const unsubscribe = untrack(() => resource.store.subscribe((next) => {
+        setRows(next)
+        setMore(resource.hasMore())
+      }))
+      onCleanup(unsubscribe)
+    }
     onCleanup(() => clearTimeout(timer))
+    onCleanup(() => clearTimeout(resyncTimer))
   })
-
-  const route = state === 'url' ? page.route : null
 
   function currentQuery() {
     if (state === 'local') return localQ()
@@ -125,19 +157,57 @@ export function createList(resource, listQuery, opts = {}) {
   // ─── Loading ────────────────────────────────────────────────────────────
 
   let issued = 0
+  // A composed list's burst state. `running` is the read in flight; `dirty`
+  // says an announcement arrived during it, so its answer may already be old
+  // and one more read follows — rather than a request per announcement racing
+  // to write the rows in arrival order.
+  let running = false
+  let dirty   = false
+  // How many rows a composed read asks for once the window has grown. Null is
+  // the state's own limit; a change of state resets it.
+  let extent  = null
+  // The page a composed read was answered with — the server's, off the
+  // envelope, since a caller naming no limit still got one.
+  let pageSize = null
+
   async function run() {
     const stamp = ++issued
+    running = true
     setLoading(true)
     setError(null)
     try {
-      await resource.load({ ...currentQuery(), ...where }, currentDirectives())
-      if (stamp !== issued) return
-      setMore(resource.hasMore())
+      const query = { ...currentQuery(), ...where }
+      if (composed) {
+        const directives = extent == null ? currentDirectives() : { ...currentDirectives(), limit: extent }
+        const res = await resource.find(query, directives)
+        if (stamp !== issued) return
+        const data = res?.data ?? []
+        if (extent == null && typeof res?.limit === 'number') pageSize = res.limit
+        setRows(data)
+        setMore(res?.hasMore === true || (typeof res?.total === 'number' && res.total > data.length))
+      } else {
+        await resource.load(query, currentDirectives())
+        if (stamp !== issued) return
+        setMore(resource.hasMore())
+      }
     } catch (err) {
       if (stamp === issued) setError(err)
     } finally {
-      if (stamp === issued) setLoading(false)
+      if (stamp === issued) {
+        running = false
+        setLoading(false)
+        if (dirty) {
+          dirty = false
+          untrack(run)
+        }
+      }
     }
+  }
+
+  function announced() {
+    if (state === 'url' && page.route !== route) return
+    if (running) { dirty = true; return }
+    untrack(run)
   }
 
   const stop = createEffect(() => {
@@ -149,6 +219,8 @@ export function createList(resource, listQuery, opts = {}) {
       localQ()
       localD()
     }
+    extent = null
+    dirty  = false
     untrack(run)
   })
 
@@ -195,6 +267,10 @@ export function createList(resource, listQuery, opts = {}) {
   }
 
   async function growWindow() {
+    if (composed) {
+      extent = rows().length + (pageSize ?? currentDirectives().limit ?? rows().length)
+      return untrack(run)
+    }
     setError(null)
     try {
       await resource.more()

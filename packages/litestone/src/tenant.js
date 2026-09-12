@@ -434,6 +434,13 @@ class TenantRegistry {
   get tenancy() { return this.#tenancy }
 
   /**
+   * The parsed schema every tenant is built from. A reader that needs a model's
+   * declarations and no rows — a register describing the app — takes it here,
+   * because opening a tenant to read one off a client creates a database file.
+   */
+  get schema() { return this.#parseResult.schema }
+
+  /**
    * Which tenant is this request for?
    *
    * Asked rather than copied: an API layer holds the request and this holds the

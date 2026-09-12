@@ -49,9 +49,10 @@ const loaders = (ids) => Object.fromEntries(ids.map(id => [id, () => Promise.res
 
 const IDS = ['docs', 'old', 'files', 'admin']
 
-function installDom() {
+function installDom(base = 'http://localhost') {
+  const { protocol, host } = new URL(base)
   globalThis.window = {
-    location: { origin: 'http://localhost', href: 'http://localhost/', pathname: '/', search: '' },
+    location: { origin: base, protocol, host, href: base + '/', pathname: '/', search: '' },
     addEventListener() {},
   }
   globalThis.document = {
@@ -110,5 +111,28 @@ describe('prefetch skips routes the router would never render', () => {
     await prefetchHref('http://localhost/admin/')
     await settle()
     expect(loadCalls).toEqual(['admin'])
+  })
+})
+
+describe('prefetch under a native shell (FJS-1085)', () => {
+  // The same guard the click handler had, one reader along: a page served from
+  // tauri://localhost warmed nothing. The second test is the refusal the fix
+  // must keep, on the same page.
+  beforeEach(() => {
+    _resetPrefetch()
+    installDom('tauri://localhost')
+    initPrefetch(makeTree(), factories(IDS), loaders(IDS), { trailingSlash: 'always' })
+  })
+
+  test('a route on the page\'s own custom scheme is warmed', async () => {
+    await prefetchHref('tauri://localhost/docs/')
+    await settle()
+    expect(loadCalls).toEqual(['docs'])
+  })
+
+  test('the same path under http: is not', async () => {
+    await prefetchHref('http://localhost/docs/')
+    await settle()
+    expect(loadCalls).toEqual([])
   })
 })

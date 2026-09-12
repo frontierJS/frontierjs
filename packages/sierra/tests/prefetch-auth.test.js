@@ -57,7 +57,7 @@ function makeLoaders() {
 
 function installDom() {
   globalThis.window = {
-    location: { origin: 'http://localhost', pathname: '/', search: '' },
+    location: { origin: 'http://localhost', protocol: 'http:', host: 'localhost', pathname: '/', search: '' },
     addEventListener() {},
     // Deliberately distinguishable from the global: if prefetch reaches for
     // window.fetch again, the request never reaches `requests`.

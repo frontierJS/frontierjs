@@ -26,6 +26,34 @@ and which arrives in whatever words that person has.
 already lives.** If it lives somewhere, the answer is a citation. If it lives
 nowhere, the answer is a ticket, and the shape of the fact is the estimate.
 
+## The principles
+
+Two kinds, and they are not one ranked list. **The first three hold at every step**
+and a verdict that breaks one is wrong whatever else it got right. **The rest are the
+pipeline, in order**, and each names the section below that carries it.
+
+**Always true:**
+
+| Rule | Why | Where |
+| --- | --- | --- |
+| **The model never decides truth.** It never picks the target; it may only read the prose attached to the target the lookup found | a candidate carrying an identifier is a hallucinated fact; a `///` paragraph on a found node is bounded reading | § *The shape*, § *The index already exists* |
+| **A wrong answer is worse than no answer.** Prefer `unhomed` to a confident guess | run 1's one wrong verdict read as a clean refusal and nothing said so | § *Where the lookup is thin*, § *The nine* 9 |
+| **Never promise.** No hours; `needs us` is unapproved until a person approves it | a verdict shown to a customer is the cost being priced | § *What this is and is not* |
+
+**In order:**
+
+| # | Step | Where |
+| --- | --- | --- |
+| 1 | **Find existing truth first** — the seed and the registers before anything is generated | § *The index already exists* |
+| 2 | **Resolve to a canonical target** — words become an identifier through `/inflect`, never through the model | § *The shape* |
+| 3 | **Separate an incident from a request** — a wrong row is routed, not designed | § *Six verdicts* |
+| 4 | **Separate a UI gap from a capability gap** — the data may already exist with only a screen missing | § *Classification* |
+| 5 | **Classify the change by dependency depth** — UI, API, a Data declaration, a migration | § *Cost is the deepest realm the request reaches* |
+| 6 | **Explain an intentional no** — the citation and the supported path | § *Six verdicts* |
+| 7 | **Correct a wrong assumption** — with the line that contradicts it | § *Six verdicts* |
+| 8 | **Dedupe by resolved identity** — never by the text | § *Dedupe by resolved target* |
+| 9 | **Turn unresolved demand into modeling feedback** — the model that attracts the most misses is the one modeled wrong | § *Read it backwards* |
+
 ---
 
 ## The shape
@@ -103,6 +131,12 @@ difference between 31 answered and 45.
 Placing the fact in a realm before describing it is `oracle-reasoning.md` rule 3, and
 it is what stops the taxonomy from being a data-modeling list applied to requests
 that have nothing to do with data.
+
+**A UI gap and a capability gap are different verdicts about one request.** Five of
+run 1's sixty wanted something the data already carried — a photograph per variant,
+the rate on a payslip, the discount on an order — and only a screen was missing.
+Classifying those as Data would price a column that exists; classifying them as UI
+without saying the data is there hides the cheapest answer in the run.
 
 | Realm | Shapes |
 | --- | --- |
@@ -248,12 +282,17 @@ gap with two readers waiting on it rather than a resolver bug.
 matter.** One request in sixty classified as a subtype (a candle-making class as a
 product with a date). `polymorphic-relations.md` is not a dependency of this record.
 
-**UI strings have no address, and UI requests are the most common and the cheapest.**
-*Change 'Submit' to 'Place order'* should be the easiest verdict in the system and is
-currently the hardest to look up, because a string authored in a `.mesa` file is
-addressable by nothing — which is `lexicon.md`'s complaint, arrived at from a
-direction that has nothing to do with translation. **The interface-tier catalog is
-the index a UI-realm resolver needs.** The two records pay each other off.
+**What a screen shows has no index, and it is the gap run 1 measured.** Fourteen
+requests needed a `.mesa` file read, and **none of the fourteen was about wording**:
+they asked which columns a list has, which filters and actions it offers, what a
+component does, whether a control exists. `routes.snapshot.md` already maps a URL to
+a file; what is missing is the file to what it renders — the resources and models it
+reads, the fields and moves it shows, a widget's props.
+
+**This record once named `lexicon.md` as that index, and run 1 disproved it.** An
+interface-tier string catalog answers *change 'Submit' to 'Place order'*, which is a
+real request that a synthetic set probably under-represents — but it would have
+answered none of the fourteen. The two records are neighbors, not dependencies.
 
 ## What this is and is not
 
@@ -327,7 +366,7 @@ the customer-facing word can be loose while the verdict stays precise.
   different machines.
 - ~~**What fraction never reaches Data?**~~ **72%**, synthetic (run 1): 25 of 60
   needed no change at all, 12 UI, 6 API, 17 Data — five of those a single
-  declaration. `lexicon.md` and a screen index move ahead of the Data work.
+  declaration. A screen index moves ahead of the Data work.
 - ~~**How often does a request classify as a subtype?**~~ **1 in 60.** Not a
   dependency.
 - **Who may call a custom method?** The surface register names a method and not its
@@ -394,8 +433,8 @@ is.
 
 `request-recognizer-run-1.md` (sixty synthetic requests, resolved by hand) ·
 `oracle-reasoning.md` (the birth moment, and rules 1–3 used throughout) ·
-`app-atlas.md` (shipped — the API-realm index) · `lexicon.md` (the UI-realm index
-this needs) · `polymorphic-relations.md` (the one Data shape the language cannot
+`app-atlas.md` (shipped — the API-realm index) · `lexicon.md` (the string catalog,
+a neighbor rather than the index this needs) · `polymorphic-relations.md` (the one Data shape the language cannot
 express) · `tenant-declared-fields.md` (the `you can do this` verdict) ·
 `packages/mcp` (`ungraded` kept apart from a verdict) · `DECISIONS.md` `FJS-D14`
 (an app built on the framework is not a gap in it)
