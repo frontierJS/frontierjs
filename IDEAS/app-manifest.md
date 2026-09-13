@@ -166,7 +166,7 @@ remembering starts enforcing itself.
 
 ## Part 3 — the reconcile, which is doctor's missing third leg
 
-`IDEAS/diagnostics.md` proposes a rule registry over source text and schema. This adds
+The diagnostics record (since deleted, ruled as `FJS-D133`) proposed a rule registry over source text and schema. This adds
 the leg that catches what text cannot:
 
 | Leg | Source | Cost |
@@ -260,7 +260,7 @@ has copied it. `--check` matches the precedent already set by
 3. **`fli lock`** — boot in the existing test path (`runStartPhases`, `needsHost`
    phases skipped) and serialize the registry. This is the load-bearing piece.
 4. **The diff** — three-way, one direction per message, as rules in the
-   `IDEAS/diagnostics.md` registry rather than a separate command.
+   `fli check` registry (`FJS-D133`) rather than a separate command.
 5. **`fli scaffold -c`** last. It is the demo, but it is worth nothing until the
    reconcile exists, because a scaffold you cannot re-run is `fli make:*` with extra
    steps.
@@ -294,15 +294,13 @@ has copied it. `--check` matches the precedent already set by
   and everything about "it is produced by booting" says it will be noisy. Possibly
   committed but coarse — registrations and baselines, not routes.
 - **Overlap with `atlas` and `project:map --json`.** Same substrate as
-  `IDEAS/diagnostics.md`'s open question. The lock may simply *be* `project:map`'s
+  the diagnostics record's open question (since deleted). The lock may simply *be* `project:map`'s
   output, committed.
 
 ## See also
 
-- `IDEAS/diagnostics.md` — `fli doctor`; this supplies the third leg and the ratchet
 - `IDEAS/ecosystem-gaps.md` — `create-frontier` (overview 1.2); `scaffold -c` is that
   command with an input
-- `IDEAS/testing-and-ci.md` — where `doctor --check` runs
 - `IDEAS/agent-surface.md` — the same "hard to get wrong" argument, one layer down
 - `CLAUDE.md` § Invariants 5, 14, 17, 18 — what the vocabulary and the lock enforce
 - `packages/basecamp/db/generate.js --check` — the existing reconcile, Data realm only

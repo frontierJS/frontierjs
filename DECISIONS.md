@@ -2876,7 +2876,7 @@ the forwarded field, the form validates against the unfiltered queryset — whic
 what gets built when nothing declares it. No app in this repo calls `options()`
 yet, so the hole is a trap rather than a live defect.
 
-*Lives in:* `IDEAS/value-sets.md` · not built — `FJS-953`.
+*Lives in:* `packages/litestone/docs/schema.md` (`@values`) · built — `FJS-953`.
 
 ### <a id="fjs-d189"></a>2026-09-03 · `FJS-D189` — a polymorphic relation is refused. The closed set is `@@arc`, the open set stays two plain columns, and the reason is that a relation's target is an input to the access-control compiler.
 
@@ -4245,7 +4245,7 @@ fusing membership with order is the failure this shape exists to avoid — a
 with one word for both cannot say *anyone may be assigned, but show me the three
 I actually use*.
 
-*Lives in:* `IDEAS/value-sets.md` · not built — `FJS-412`.
+*Lives in:* `packages/litestone/docs/schema.md` (`@values`) · built — `FJS-412`.
 
 ### <a id="fjs-d39"></a>2026-08-18 · `FJS-D39` — There is no `@@history` block, and the seed will not grow one.
 
@@ -6237,7 +6237,7 @@ backfill having touched no tenant's rows.
 
 ### <a id="fjs-d145"></a>2026-08-25 · `FJS-D145` — a live list's answer is a WINDOW THAT GROWS, not pages. A keyset cursor is the wire under it and never a concept anyone types. `offset` stays, for the numbered page it was always right for.
 
-The last thing `IDEAS/client-data-lifecycle.md` was written about (its Hole 4,
+The last thing the client-data-lifecycle record (since deleted) was written about (its Hole 4,
 ranked 2.15). It is ruled after the rest of that file was built, because what
 the store became changes the answer.
 
@@ -6522,7 +6522,7 @@ this ruling.
 
 **What this deliberately does not do.** No differential dataflow — the
 incremental list logic is already the win that engine buys. No cursor: paging
-is a separate axis (`IDEAS/client-data-lifecycle.md` hole 4), and it gets
+is a separate axis (`FJS-D145`), and it gets
 cheaper once a list holds ids rather than rows, not harder. No offline; the
 order everywhere else has been normalize first and persist second, and building
 the store twice is the outcome that order avoids. And nothing new for jetty —
@@ -10754,7 +10754,7 @@ transition.
 
 ### <a id="fjs-d133"></a>2026-08-24 · `FJS-D133` — the live-hazard catalog is `fli check`'s rule table. `fli doctor` stays what it already is: fli's own setup.
 
-`IDEAS/diagnostics.md` proposed `fli doctor` — § Live hazards turned into
+the diagnostics record (since deleted) proposed `fli doctor` — § Live hazards turned into
 executable rules — and was written before `fli check` existed. Both commands now
 exist and mean different things: **`fli doctor` asks whether this MACHINE can run
 fli** (binaries on PATH, the global env file, every namespace's declared
@@ -11181,7 +11181,7 @@ JavaScript correctness; `fli check` owns everything derived from the seed; neith
 reimplements the other. It is not a maturity gap — Biome reads neither `.mesa` nor
 `.lite`, and doctor-class questions are cross-file anyway (*does this resource
 name resolve to a model?* cannot be answered from the file it appears in). Without
-the sentence, four of `IDEAS/diagnostics.md`'s checks get written as lint rules,
+the sentence, four of the diagnostics record's checks (since deleted) get written as lint rules,
 two registries disagree, and neither is authoritative — the shape Invariant 4
 exists to prevent. A scaffolded app's `bun run check` therefore runs `fli check`
 **first**.

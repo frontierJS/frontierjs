@@ -306,7 +306,7 @@ its own venue's zone), *the viewer's* (a report), and *the tenant's* (a workspac
 a stated business zone, which is what basecamp would want). This is where the design
 gets interesting, because the viewer's zone is a per-request fact resolved onto the
 principal — **which is exactly the mechanism `applyStanding()` already implements for
-membership** (`IDEAS/row-level-tenancy.md`). A zone on the session is the same shape as
+membership** (`FJS-D05`). A zone on the session is the same shape as
 a standing on the session, and it should be the same seam rather than a second one.
 
 **What recurs, and where is that stated?** *Every second Tuesday at 09:00 in the
@@ -410,8 +410,6 @@ is which subset earns a name.
   audit side; §4's resumable process is the sibling remainder
 - `IDEAS/compliance-from-the-seed.md` — `@retain`, a duration that needs this settled
 - `IDEAS/testing-realm.md` — the movable clock this would make testable
-- `IDEAS/row-level-tenancy.md` — `applyStanding()`, the per-request resolution seam a
-  viewer's zone would reuse
 - `packages/caravan/src/cron.ts` — the one place in the repo that already gets a
   timezone right
 - `packages/toolbelt/mockup/datetime/README.md` — the claim, now a kit inside toolbelt (`FJS-D14`, ruled)

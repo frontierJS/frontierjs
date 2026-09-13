@@ -36,7 +36,7 @@ Count what a person in this workspace can start:
 
 Every one of those is derived from a file that already exists. None of them is in
 front of a person at the moment they need it, and the two documents that come
-closest — `CLAUDE.md` § Running things and `repo-map.snapshot.html` — are **read**
+closest — `CLAUDE.md` § Running things and `repo-report.snapshot.html` — are **read**
 rather than **used**: they tell you the port and the script, and then you go and
 type it in a terminal, and neither of them can tell you whether the thing is already
 answering on that port.

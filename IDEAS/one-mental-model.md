@@ -451,7 +451,7 @@ a **target**, not to "the UI" generically — a slice could ship an `extension`
 surface and a `spa` surface from one component set. That should be settled before
 `IDEAS/slices.md` specifies `resource/`.
 
-Item 3 is also the natural vehicle for `IDEAS/framework-shape.md` item 1
+Item 3 is also the natural vehicle for the framework-shape assessment (since deleted) item 1
 (schema → UI): a schema-derived form is just another Mesa target consumer, and
 building it as one keeps it target-independent — which is what
 `IDEAS/offline-first-and-release.md` requires anyway.
@@ -459,6 +459,5 @@ building it as one keeps it target-independent — which is what
 ## See also
 
 - `ARCHITECT.md` §2 (mandatory vocabulary, and the "under review" list) and §5
-- `IDEAS/framework-shape.md` — schema → UI is the missing derivation
 - `IDEAS/offline-first-and-release.md` — targets and artifacts are the same axis
 - `IDEAS/slices.md` — what a slice's `resource/` part contributes to

@@ -290,7 +290,6 @@ hatch is that the snapshot is a file — pipe it wherever you already send files
   write path
 - `ISSUES.md` § Closed `FJS-074` — the bulk-write audit gap
 - `IDEAS/compliance-from-the-seed.md` — `marshal`, the same log read for audit
-- `IDEAS/testing-and-ci.md` — the Suite realm, the cheapest consumer
 - `IDEAS/offline-first-and-release.md` — `compass`, which relies on the same
   the-database-is-a-file property
 - `CLAUDE.md` § Live hazards — the logger buffers ~1s and flushes on exit; a probe

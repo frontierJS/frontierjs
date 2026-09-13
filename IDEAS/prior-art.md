@@ -84,12 +84,12 @@ argued against a working instance of the same idea.
   only at length, and the open question here is how the two compose
   (`FJS-D146` rules that they do, ANDed, with the gate as the floor).
 - **Ash is Postgres-shaped; the Data realm here is one file.** That decides
-  different answers about backup (`FJS-540`), tenancy as a file copy, and
+  different answers about backup (`FJS-552`), tenancy as a file copy, and
   sandboxes (4.25). Their assumptions do not transfer.
 - **Ash stops at the API and hands the UI to LiveView.** This project owns mesa
   and sierra, which is why `x-gate`, `x-transitions`, `x-values` and
   `x-label-field` reach a browser at all. The client half of the live store
-  (`FJS-D138`, `client-data-lifecycle.md`) has no counterpart there.
+  (`FJS-D138`) has no counterpart there.
 - **Committed generated artefacts as the drift mechanism** — a snapshot naming
   its own generator, reasserted by a CI phase that carries no list — is unusual
   anywhere, Ash included (`committed-artifacts.md`).
@@ -114,14 +114,13 @@ known for.
 Classifies a schema diff as destructive or not, as a product rather than as a
 phase. That is `classifyPivot` built by people for whom it is the whole company.
 Worth reading for its vocabulary and for what it refuses to decide
-automatically — `release-transitions.md` and `FJS-D145`'s neighbors are the
-consumers.
+automatically — `release-transitions.md` is the consumer.
 
 ## Already read, so not restated here
 
 `live-queries.md` reads Remult (a per-connection query registry, correct and
 stateful, against this project's derived client-side matcher).
-`client-data-lifecycle.md` reads Meteor's minimongo and latency compensation.
+The client-data-lifecycle record (since deleted) read Meteor's minimongo and latency compensation.
 `slices.md` reads RedwoodJS. `testing-realm.md` reads Redwood, Wasp, SvelteKit
 and Supabase. `release-transitions.md` reads nine systems for what they RECORD —
 Cloud Run, Workers, Helm, Nomad, NixOS, Kamal, Argo, OTP and Vercel.

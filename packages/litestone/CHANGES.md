@@ -1,5 +1,41 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-13 — a schema assistant any chat model can run
+
+`litestone assistant` prints one document to paste into Claude, ChatGPT or anything else: a
+playbook for a guided conversation — summarize the schema back, ask what the person wants in plain
+words, interview one question at a time, propose the smallest change as a before and after, check
+it, hand it back to the parser — followed by the whole language and the schema with every file it
+imports. `fli db:assistant` is the same from an app. **Almost none of it is written in
+`src/tools/assistant.js`**: every word's meaning, example, synonyms and tier are the catalog's, the
+visibility table, rules and opportunities are advise's, and the judgment is lifted out of
+`AGENTS.md` by heading, refusing by name when a heading moves. `--snapshot` writes
+`assistant.snapshot.md` with no schema, which is what the GitHub raw URL serves, and `--check` is
+its CI half. `test/assistant.test.ts` holds the document to its sources — every catalog word with
+its blurb, every rule, the lifted sections, the tier names the playbook steers by — and the paste
+to the imports it has to follow. Its first run caught the playbook ranking words by a tier the
+catalog does not have.
+
+## 2026-09-13 — `writeData` is small enough to optimize again
+
+`FJS-1108`. A one-column `update()` read 15.95 µs against 11.61 at `4f46e5b` once the transaction
+wrapper was off it, and 13.18 now; bytes allocated per update 9,155 → 7,635 against 6,857.
+
+- **`writeData`'s cold halves are named functions beside it**: the `@@extensible` slot and mirror,
+  the `@guarded`/`@system`/`@immutable` refusals, the required and clearing checks, encryption,
+  enums, the field-write drop and the unbindable-value check. Their conditions stay in `writeData`,
+  which went from 11,171 bytecodes to 3,362. Inline they had doubled it since `4f46e5b`, and at that
+  size JSC's optimizing tier made the same work 40% slower — with it off, the trees were 15% apart.
+- `checkOrderBy`, `checkSelect` and `checkTakeSkip` return first when the call names no `orderBy`,
+  `select`/`distinct`/`include` or `take`/`skip`; the three had cost an update ~18K instructions
+  building nothing.
+- `enforceValueSets` answers `undefined` for a model binding no set rather than an async function's
+  promise; `setFragment` binds directly on a model with no field-write policy; `stampSets` takes the
+  column list, so a model with no stamp column builds no `Set`.
+- **Instruction counts read this fix as a regression** (314.2K → 323.4K an update): a 1,000-update
+  count grades code the optimizer has not reached, and the split adds calls there.
+  `IDEAS/performance-regression-watch.md` carries what that means for a counted gate.
+
 ## 2026-09-13 — a one-statement update is its own transaction too
 
 `FJS-1107`. `update()` ran every call inside `tx.exclusive`, the same wrapper `FJS-1106` took off

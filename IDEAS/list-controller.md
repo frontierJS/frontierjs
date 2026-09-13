@@ -383,5 +383,4 @@ header, so it owes a `fli check` rule rather than a note.
 ## Relationship to the other files
 
 - `tables-from-the-seed.md` — the file whose closing paragraph this is
-- `forms-from-the-seed.md` — the sibling one surface over, and the shape to copy: `<Form>` is what this is to a table
 - `IDEAS/overview.md` 1.1 — the row both belong to

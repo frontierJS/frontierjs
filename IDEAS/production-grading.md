@@ -117,8 +117,6 @@ is silent by construction today.
 ## See also
 
 - `IDEAS/lantern.md` — the store and the export this waits on
-- `IDEAS/diagnostics.md` — the same *silent by construction* sentence, one layer
-  down and aimed at a developer's machine rather than a deployed one
 - `IDEAS/deploy-plane.md` — build once and promote a digest, which is what makes
   *the Release on this machine* a question with one answer
 - `invariants.snapshot.md` · `packages/cli/core/invariants.js` — the register of

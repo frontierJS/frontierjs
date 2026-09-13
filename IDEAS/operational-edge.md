@@ -137,7 +137,7 @@ secrets are scoped, and who is allowed to spend the resources.
 
 - **Spans, not just a correlation id.** The correlation id exists and is threaded;
   what is missing is the tree — which hook, which query, how long. Junction already
-  has the seam list to instrument, and `IDEAS/framework-shape.md` item 4 wants
+  has the seam list to instrument, and the framework-shape assessment (since deleted) item 4 wants
   request-correlated logging anyway. Same work, done once.
   **Specified 2026-08-26 in `IDEAS/lantern.md`**, and probing moved the gap: the
   query→call correlation already ships, so the missing pieces are a store, an id
@@ -208,7 +208,7 @@ Encore is a better *backend platform*. FJS is a better *application framework*. 
 difference that matters is that Encore made deployment and operations a first-class
 product, while FJS still has Release as the one realm with no package — now the
 **third** independent analysis arriving at that same conclusion
-(`IDEAS/framework-shape.md` item 3, `IDEAS/offline-first-and-release.md`, and this).
+(the framework-shape assessment (since deleted) item 3, `IDEAS/offline-first-and-release.md`, and this).
 
 Three documents pointing at one hole is not a coincidence. It is the next thing to
 build.
@@ -217,6 +217,5 @@ build.
 
 - `IDEAS/offline-first-and-release.md` — the Release realm, and the tension with provisioning
 - `IDEAS/ecosystem-gaps.md` — the Laravel comparison (breadth of batteries)
-- `IDEAS/framework-shape.md` — item 3 (Release) and item 4 (observability)
 - `packages/cli/commands/project/map.md`, `view.md` — the app model that already exists
 - `IDEAS/lantern.md` — item 3's first half, specified: the trace, and the decision inside it

@@ -180,7 +180,6 @@ both are built the traversal should be written once.
   half that already works
 - `IDEAS/compliance-from-the-seed.md` — DSAR export, the same traversal with a
   different scope
-- `IDEAS/forms-from-the-seed.md` — the derived-UI generator this screen belongs to
 - `IDEAS/declared-semantics.md` §4 — the resumable-process noun a large import needs
 - `IDEAS/ecosystem-gaps.md` §14 — inbound integrations; a file upload and a webhook are
   the same question about untrusted external data

@@ -36,16 +36,16 @@ on the framework, ruled `FJS-D14`.
 
 | Name | Realm | What it is | Source |
 | --- | --- | --- | --- |
-| **`foundry`** | UI | **Schema → UI.** `<AutoForm resource={posts}>`, `<AutoTable>`, `<AutoFilter>`, and a gate-aware generated admin. Absorbs and replaces `fli admin:generate`, which emits `.svelte` and is drifted past usefulness. | `framework-shape.md` item 1; `pros-and-cons.md` con 6 |
-| **`depot`** | Release | The realm with no package. Artifact kinds first-class (single binary / container / static+API / PWA), preview environments, provisioning from declarations — degrading to nothing for the one-file path. | `offline-first-and-release.md`, `operational-edge.md`, `framework-shape.md` item 3 |
-| **`assay`** | Testing | The Suite noun. Junction's test kit extracted, `createTestEnv`, factories from field rules, a browser harness, and **derived per-model suites**. The plug slices' `suite/` part needs. | `testing-and-ci.md` |
+| **`foundry`** | UI | **Schema → UI.** `<AutoForm resource={posts}>`, `<AutoTable>`, `<AutoFilter>`, and a gate-aware generated admin. Absorbs and replaces `fli admin:generate`, which emits `.svelte` and is drifted past usefulness. | `pros-and-cons.md` con 6 |
+| **`depot`** | Release | The realm with no package. Artifact kinds first-class (single binary / container / static+API / PWA), preview environments, provisioning from declarations — degrading to nothing for the one-file path. | `offline-first-and-release.md`, `operational-edge.md` |
+| **`assay`** | Testing | The Suite noun. Junction's test kit extracted, `createTestEnv`, factories from field rules, a browser harness, and **derived per-model suites**. The plug slices' `suite/` part needs. | `testing-realm.md` |
 | ~~**`create-frontier`**~~ | — | **Shipped** — `npm create frontier@latest`, an entry point over `fli new`. | `ecosystem-gaps.md` § starter kits |
 
 **Why `foundry` is first.** The expensive half is built — the browser already has
 the constraint table, the relations, the gate and the validator. What is missing is
 the visible half, and nothing else on this list changes how the framework *reads* to
 a newcomer as much. It is also what makes a Slice's `resource/` part worth shipping
-at all (`slices.md`, `framework-shape.md`).
+at all (`slices.md`).
 
 ### Tier 1 — an app cannot reach production without these
 
@@ -54,7 +54,7 @@ at all (`slices.md`, `framework-shape.md`).
 | ~~**`stow`**~~ | API | **Retired as a package name 2026-08-12.** It was reserved for object-storage drivers on the belief that none existed; litestone has shipped an S3/R2/B2/MinIO provider over hand-written sigv4 signing for some time, with `File` columns and presigned URLs. What is left is not a package — it is that Junction's separate local-disk `IFileStorage` is a **second** abstraction for the same job (Invariant 4), to be delegated or retired. | `ecosystem-gaps.md` item 3 |
 | **`ledger`** | Slice | Billing — models + service + webhooks + portal route. The canonical first slice and the proof the format works. | `ecosystem-gaps.md` tier-1 item 2 |
 | ~~**`warden`**~~ | API | **Retired 2026-08-25 as a package name — `FJS-D147`.** The idea ships as seed syntax in litestone instead, which is where every other Data-boundary rule is declared. Three things argued against a package and none for it: row tenancy and value sets both shipped as a declaration plus a battery with no package of their own; `FJS-D113` refused a *declaration* for membership because the resolver varies per application, which applies unchanged to role → capability expansion; and `DECISIONS.md` § Outpost already names `warden` among the words rejected under the rule that infrastructure takes place nouns. The rulings are `FJS-D139` (a capability is a REFERENCE to something the seed declares, so there is no enum), `FJS-D140` (writes and moves by default, `@@capabilities(all)` for read), `FJS-D146` (the gate still applies, ANDed) and `FJS-D147` (the spelling, and this row) | `IDEAS/permission-sets.md` |
-| **`lantern`** | API | Observability — real spans (there is a `correlationId` and a seam list, not a tree), request-correlated logs, metrics, and the local dev dashboard unifying `project:map --as=serve` + devtools + traces + an API explorer. | `operational-edge.md` item 3, `framework-shape.md` item 4 |
+| **`lantern`** | API | Observability — real spans (there is a `correlationId` and a seam list, not a tree), request-correlated logs, metrics, and the local dev dashboard unifying `project:map --as=serve` + devtools + traces + an API explorer. | `operational-edge.md` item 3 |
 | ~~OAuth → **`auth`**~~ | API | **Shipped in `auth`**, not a new package: OAuth sign-in and TOTP. Passkeys are not built. | `ecosystem-gaps.md` tier-1 item 1 |
 
 **`warden`'s ceiling was real**: basecamp graded a `billing` role to READER(2) under
@@ -116,15 +116,12 @@ a comment the ladder could not express. It shipped as seed syntax
 
 - `IDEAS/permission-sets.md` — **`warden`'s own record**, and the reason this row is
   now a reservation rather than the argument
-- `IDEAS/framework-shape.md` — the realm-by-realm gap assessment this indexes
 - `IDEAS/ecosystem-gaps.md` — the Laravel comparison; most of tier 1 originates there
 - `IDEAS/slices.md` — several entries above are slices, not packages
 - `IDEAS/agent-surface.md`, `IDEAS/compliance-from-the-seed.md` — the two proposals
   that had no home before this file
 - `IDEAS/live-queries.md` — query-scoped subscriptions; the WS implementation is
   interim and `compass` supersedes it
-- `IDEAS/diagnostics.md` — `fli doctor`; a `fli` command rather than a package, but it
-  shares `project:map --json` with `atlas`
 - `IDEAS/command-surface.md` — **no package, and the finding is the reverse of most
   rows here.** Sized against oclif, `fli`'s authoring model is ahead and its
   *distribution* model is the gap: a package cannot ship a command, so the CLI's tree
@@ -136,12 +133,6 @@ a comment the ladder could not express. It shipped as seed syntax
   litestone, and the cheapest thing `quarry` and `assay` can both stand on
 - `IDEAS/derived-suspense.md` — a Mesa compiler change, no package; listed here so the
   register does not read as though every idea needs a name
-- `IDEAS/client-data-lifecycle.md` — **no package, and that is the finding.** Request
-  staleness, optimism and entity identity are three faces of one owner nothing in the
-  repo has: sierra's `createResource` is a hook pipeline over a pass-through client
-  and has no model of time. Whether that owner is a name of its own or a layer inside
-  `sierra/junction` is open — it is small, and it sits under `compass` rather than
-  beside it
 - `IDEAS/form-actions.md` and `IDEAS/server-only-boundary.md` — **sierra, no new
   package, and they want one design.** Both turn on the same unbuilt thing:
   module scope that runs but does not ship. Today `<script module>` is
@@ -153,9 +144,5 @@ a comment the ladder could not express. It shipped as seed syntax
   field machine (`@@transitions`) and would be built from both. If anything here
   earns a package name it is that one, and it should not be named until it has a
   design
-- `IDEAS/forms-from-the-seed.md` — the remainder of `foundry` after `<Form>` shipped
-  on 2026-08-06. What is left is the field *list* and a control table with one home,
-  which is the same table a UI plugin would contribute to — so this is where the
-  `FJS-D17` question about what a UI plugin can contribute gets its first real answer
 - `pros-and-cons.md` — `foundry` and `warden` are the two fixes it ranks first
 - `CLAUDE.md` § Packages — the authoritative state of what exists

@@ -16,7 +16,7 @@ Every claim about *another framework* was web-researched on the date above and i
 sourced in § Evidence; every claim about *this repo* was probed by reading the
 tree, and the file it was read from is named.
 
-**Relationship to `testing-and-ci.md`.** That file's gap A (automated CI) shipped as
+**Relationship to the testing-and-ci record (since deleted).** That file's gap A (automated CI) shipped as
 `scripts/ci.mjs`. Its gap B — the Suite realm — is what this file supersedes. Read
 that file for how the question was first framed; read this one for what to do about
 it. `IDEAS/overview.md` rows 3.3 and 3.4 point at the old file and should point here.
@@ -844,7 +844,7 @@ consumer is the wrong order.
 The first draft's gate was *demote Testing from realm to domain concern if Suite
 declares nothing the schema does not already imply*. That criterion contradicts the
 framework's own shape: Release is a named realm with no package and no primitives
-(`IDEAS/framework-shape.md` item 3) and nobody proposes demoting it.
+(the framework-shape assessment (since deleted) item 3) and nobody proposes demoting it.
 
 **The honest criterion is whether an FJS app's tests look different from a plain
 Vitest project's.** If, after Phases 1–3, an app developer is still hand-writing gate
@@ -965,11 +965,8 @@ all variations", which is `example/`'s ceiling named by someone who hit it first
 
 ## See also
 
-- `testing-and-ci.md` — where this was first framed; its gap A shipped, its gap B is
-  superseded here
 - `IDEAS/slices.md` — the `suite/` part and `fli slice:doctor` have nowhere to plug in
   until Phase 2 exists
-- `IDEAS/framework-shape.md` — Release as the precedent for a realm with no package
 - `example/README.md` § *Found by building this* — the defect ledger § Method is
   argued against
 - `CLAUDE.md` § *Bridge index* — the seam list Phase 5 has to triage

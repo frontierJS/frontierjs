@@ -211,7 +211,6 @@ around is worse than the current honest raw one.
 ## See also
 
 - `IDEAS/agent-surface.md` — the consumer that makes this urgent rather than nice
-- `IDEAS/diagnostics.md` — "a raw `sql` call on an auth-scoped proxy" is a check
 - `IDEAS/compliance-from-the-seed.md` — the same declarations, read for audit
 - `CLAUDE.md` invariant 6 (access declared in the schema, enforced at the Data
   boundary) and invariant 7 (protected fields never surface) — this is both of them

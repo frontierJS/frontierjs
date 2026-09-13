@@ -207,6 +207,5 @@ Recorded because a comparison that only scores the other side is worthless.
 
 - `IDEAS/prior-art.md` — the same kind of record for whole projects
 - `IDEAS/static-safety.md` — the proposal behind `build/static-safety.js`
-- `IDEAS/client-data-lifecycle.md` — where the store/draft/truth split is argued
 - `packages/sierra/CLAUDE.md` § *What bites here* — the live version of most of
   the Sierra claims above

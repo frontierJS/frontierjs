@@ -159,7 +159,7 @@ instead of aspirational.
 
 ## Ordering note
 
-This does not displace `IDEAS/framework-shape.md` item 1 (schema → UI). It
+This does not displace the framework-shape assessment (since deleted) item 1 (schema → UI). It
 sharpens it: an offline-first form must render, validate, and gate-check with no
 server reachable, which is the same seam — it just cannot be built as a
 round-trip-to-validate shortcut. Build schema→UI with the offline constraint in
@@ -168,7 +168,6 @@ rewritten.
 
 ## See also
 
-- `IDEAS/framework-shape.md` — the realm-by-realm gap assessment; Release is #3 there
 - `IDEAS/slices.md` — slices contributing to a release is the shared open question
 - `PHILOSOPHY.md` — the axioms these constraints should be reconciled against
 - `packages/jetty/` — the existing offline-shell + relay prior art

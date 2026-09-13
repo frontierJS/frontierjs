@@ -23,7 +23,7 @@ cannot. Read the tables below as the design; read `packages/sierra/CHANGES.md`
 
 ## Sibling
 
-`client-data-lifecycle.md` argues that this file's `FJS-011` is one of three faces of
+The client-data-lifecycle record (since deleted, ruled as `FJS-D138`) argued that this file's `FJS-011` is one of three faces of
 the same absence — nothing models the lifetime of client-side data — and that the
 entity keying it proposes is what makes a query-scoped subscription expressible at
 all: a query view is a filter over an entity set, and there is no entity set today.

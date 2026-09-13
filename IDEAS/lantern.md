@@ -62,7 +62,7 @@ missing is the runtime half and the join between them.
    row policy compiles into the WHERE and says nothing on any channel. `checkCreatePolicy` and
    `checkPostUpdatePolicy` throw `AccessDeniedError` with no event beside it.
    Every one of these is silent by construction — which is the same sentence
-   `IDEAS/diagnostics.md` opens with, one layer down.
+   the diagnostics record (since deleted) opened with, one layer down.
 5. **No sampling, no retention, no export.** Fine while the store is a ring
    buffer; not fine the moment there is a database behind it.
 
@@ -268,8 +268,6 @@ is not already precedented in the tree.
 ## See also
 
 - `IDEAS/operational-edge.md` § 3 — where this was first raised, as one of three
-- `IDEAS/diagnostics.md` — the same *silent failure is the recurring weakness*
-  argument, answered statically; this is the runtime half
 - `IDEAS/overview.md` 2.4 — the ranking row
 - `CLAUDE.md` § Bridge index — the seams a span tree would be built from
 - `packages/litestone/docs/access-control.md` § *Combining them* — the rules a

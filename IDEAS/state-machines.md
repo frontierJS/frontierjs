@@ -153,8 +153,6 @@ already have an answer to.
 ## See also
 
 - `IDEAS/package-map.md` — where the UI half lands (`foundry`)
-- `IDEAS/framework-shape.md` item 1 — schema → Resource; this is one of the things
-  a generated form would need to render correctly
 - `packages/litestone/docs/schema.md` § State transitions — the reference
 - `DECISIONS.md` `FJS-D150` — `@system` on a move
 - `CLAUDE.md` § Bridge index — `buildGate()` / `canAtLevel()` / `x-relations` are the

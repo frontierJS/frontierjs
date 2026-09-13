@@ -366,7 +366,7 @@ which reads like SQL's FROM and invites the read that this is a query.
 
 ## See also
 
-- [value-sets.md](value-sets.md) — the same move on a column's values, shipped
+- `FJS-D120` — value sets, the same move on a column's values, shipped
 - `packages/litestone/docs/traits.md` — `@@trait` and `extend model`, the two
   existing ways one model is described in more than one place
 - `packages/litestone/docs/reference.snapshot.md` — `view`, `valueset`

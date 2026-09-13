@@ -253,4 +253,4 @@ doctrine rather than the reverse.
 ## See also
 
 - `prior-art.md` — Ash in depth · `one-mental-model.md` — the extension-point catalog
-- `framework-shape.md` · `provable-enforcement.md` · `testing-realm.md`
+- `provable-enforcement.md` · `testing-realm.md`

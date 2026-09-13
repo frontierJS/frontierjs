@@ -239,6 +239,9 @@ const HELP = `
     ${cyan('litestone catalog --reference')}           write docs/reference.snapshot.md ${dim('(--check in CI)')}
     ${cyan('litestone advise')}                       what this schema says wrong, and what it never said
     ${dim('  --json')}                                 both lists as data
+    ${cyan('litestone assistant')}                    a chat-model schema assistant, with this schema, to paste
+    ${dim('  --bare')}                                 the instructions alone, no schema
+    ${dim('  --snapshot')}                             write assistant.snapshot.md ${dim('(--check in CI)')}
     ${cyan('litestone jsonschema')}                   generate JSON Schema from schema.lite
     ${cyan('litestone access')}                       write the access snapshot ${dim('(--check in CI)')}
     ${cyan('litestone ddl')}                          write the DDL snapshot ${dim('(--check in CI)')}
@@ -6766,6 +6769,50 @@ async function main() {
     writeFileSync(outPath, body, 'utf8')
     console.log(`  ${green('✓')}  ${rel(outPath)}`)
     console.log()
+    return
+  }
+
+  // litestone assistant
+  //
+  // Studio's guidance for somebody with a chat window instead of Studio. The
+  // default is the PASTE: the document and this schema, every imported file
+  // included, on stdout. --snapshot writes the same document with no schema
+  // beside the catalog, which is what the published URL serves, and --check
+  // is its CI half.
+  if (cmd === 'assistant') {
+    const { renderAssistant, collectSchemaFiles } = await import('./assistant.js')
+    const cmdline = 'litestone assistant --snapshot'
+    const outPath = resolve(import.meta.dirname, '../../assistant.snapshot.md')
+
+    if (flag('snapshot') || flag('check')) {
+      const body = renderAssistant({ snapshot: true })
+      if (flag('check')) {
+        checkSnapshot(outPath, body, {
+          regen: cmdline,
+          moved: `The schema assistant changed. Run \`${cmdline}\` and review the diff before committing.`,
+        })
+        console.log()
+        return
+      }
+      writeFileSync(outPath, body, 'utf8')
+      console.log(`  ${green('✓')}  ${rel(outPath)}`)
+      console.log()
+      return
+    }
+
+    let schema = null
+    if (!flag('bare')) {
+      const cfg = await loadConfig()
+      loadSchema(cfg.schema)
+      schema = collectSchemaFiles(cfg.schema)
+    }
+    const body = renderAssistant({ schema })
+    if (getFlag('out')) {
+      writeFileSync(resolve(getFlag('out')), body, 'utf8')
+      console.error(`  ${green('✓')}  ${getFlag('out')} — paste it into a chat, then say what you want to change`)
+      return
+    }
+    process.stdout.write(body)
     return
   }
 

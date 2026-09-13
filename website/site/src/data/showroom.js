@@ -303,7 +303,7 @@ await leads.create(draft)` },
 //   value  → <input type="number" min="0">
 //   create gate fails → submit disabled, no round trip
 
-// Tracked in IDEAS/framework-shape.md as the #1 gap:
+// Tracked in IDEAS/overview.md as the #1 gap:
 // derivation currently stops at the API boundary.` },
 
   { id:'offline', lang:'lite', realm:'Soon', label:'Offline-first', lines:FIELDS, soon:true,

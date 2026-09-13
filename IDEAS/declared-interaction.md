@@ -240,10 +240,6 @@ as behavior.
 
 - `html-over-the-wire.md` — the bet this file declines, argued properly there.
 - `form-actions.md` — where the no-JS baseline belongs, not here.
-- `client-data-lifecycle.md` — closed, and item 1 is the axis it did not cover:
-  it gave a load an identity, not a rule for two of them at once.
-- `forms-from-the-seed.md` — item 2's shipped half, and § *What is still
-  hand-written* is the same complaint one layer over.
 - `derived-suspense.md` — Mesa already tracks pending per derived value, which
   is a different fact from *a call is open* and does not cover item 2.
 - `prior-art.md` — a reading list; htmx belongs on it as evidence of the

@@ -44,43 +44,25 @@ them off a diff.
 
 ## What is NOT built
 
-- **A schema-driven table and filter bar are built now**: `resource.columns()`
-  / `.filters()`, `display/Cell.mesa`, `display/FilterBar.mesa` and a
-  registered display — `columnList` ranks them. Sortability (`FJS-553`) and
-  filterability (`FJS-554`) reach the client through `x-sortable` and the
-  filter equivalent, both closed. What is left is a detail-view generator,
-  which nothing here builds yet.
-- **A generated form offers an editable box for a sealed column** (`FJS-628`,
-  with `ui`) — `@immutable` under a `@seals` move is frozen at the seal and
-  nothing on this side reads it. *Since closed*: the seal reaches a form
-  through `resource.sealedFields`.
-- **Value sets have two axes held out of `FJS-D120`**: a per-caller ORDER
-  (`FJS-D121`, unruled) and a DEPENDENT set, where one field's value narrows
-  another's list — ruled `FJS-D122` and built (`FJS-953`). This package's half
-  is `options()`: it narrows by the controlling value off the draft record and
-  answers EMPTY with `awaiting` where there is none. What a form does with a
-  value the change made illegal was `FJS-D225`, now ruled and built.
-- `FJS-456` (a prerendered site's sitemap omitting dynamic pages), `FJS-520`
-  (the gate scale as a hand copy), `FJS-553`/`FJS-554` (sortability and
-  filterability reaching no client) and `FJS-D117`/`FJS-D118` (the routing
-  questions about a co-located part's name and where *back* goes) are all
-  closed or ruled now — see `ISSUES.md`/`DECISIONS.md`.
-- **`FJS-632` is closed and `record()` was not the cause.** The second read
-  arrived 25 ms after the first; what was wrong was a screen rendering *the two
-  prices agree* while it was still asking what the second one was. Worth knowing
-  because the shape recurs: two independent `record()` views compared against
-  each other need a drawn UNDECIDED state, or the comparison's two answers are
-  one branch.
+- **A detail-view generator.** The table and filter bar are generated —
+  `resource.columns()` / `.filters()`, `display/Cell.mesa`, `display/FilterBar.mesa`,
+  ranked by `columnList` — and a detail view is the one piece of that trio with no
+  generator. It would inherit the ruled control mechanism (`FJS-D17`) unchanged.
+
+Everything else this section used to list — sealed columns in a form, value-set
+order and dependent sets, sitemap dynamic pages, the gate scale, sortability and
+filterability, the co-located part's name and *back* — is closed or ruled; open
+items are `../../ISSUES.md`.
+
+**One shape worth knowing, from `FJS-632`:** two independent `record()` views
+compared against each other need a drawn UNDECIDED state, or the comparison's two
+answers are one branch.
 
 ## Picking it up next
 
-1. **Run all four commands above before changing anything.** The two drives are
-   not in `test`, so a green vitest run says nothing about the widget runtime or
-   about whether a gated read still fails a static build.
-2. **A detail-view generator is what remains of the table/filter-bar/detail
-   trio** — the table and filter bar are built; the detail view is the one
-   piece with no generator yet, and it would inherit the same ruled control
-   mechanism (`FJS-D17`) unchanged.
+**Run all four commands above before changing anything.** The two drives are not
+in `test`, so a green vitest run says nothing about the widget runtime or about
+whether a gated read still fails a static build.
 
 ## Unconfirmed
 

@@ -254,8 +254,6 @@ target builds that seam or proves it unnecessary.
 - `DECISIONS.md` `FJS-D38` — §9, ruled: `.mesa` is the authoring model for every interface
 - `IDEAS/command-surface.md` — the other half of the CLI: authoring, distribution
   and what oclif solves that `fli` does not
-- `IDEAS/diagnostics.md` — `fli doctor`, the largest future consumer of §4's
-  diagnostic renderer
 - `IDEAS/one-mental-model.md` 5, 6 — naming Mesa's target set, and one target axis in
   Sierra; a terminal target is the next question after both
 - `IDEAS/overview.md` 5.21, 5.22 — where this sits in the ranking

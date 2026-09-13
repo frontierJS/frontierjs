@@ -258,6 +258,5 @@ command is written in.
 
 - `IDEAS/agent-surface.md` — item 2 is its CLI half; the registry is already a tool catalog with the descriptions written
 - `IDEAS/slices.md` — item 1 is the command-shaped part of the same mechanism (3.1, 3.2)
-- `IDEAS/diagnostics.md` — `fli doctor` is the other half of item 3: one turns the hazard list executable, the other turns the command list honest
 - `packages/cli/CLAUDE.md` — the traps each of these is aimed at
 - `ISSUES.md` `FJS-158` — the temp-root defect found during this audit. Closed; it is not one of these five, it is what a global install does today

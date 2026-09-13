@@ -70,10 +70,9 @@ surgery on the core:
 
 ## The FJS World
 
-The packages are the application layer. The FJS World is the operational environment every application runs within — eight domains, each owning a named concern:
+The packages are the application layer. The FJS World is the operational environment every application runs within — CLI, database, config and secrets, integrations, automation, auth and command central — and its domain map is [`ARCHITECT.md` §4](./ARCHITECT.md#4-the-domain-map).
 
-| Domain                | Concern                                              | Tool                 |
-| --------------------- | ---------------------------------------------------- | -------------------- |
+--------------------- | ---------------------------------------------------- | -------------------- |
 | 01 · CLI              | Developer interface                                  | `fli`                |
 | 02 · Database         | Schema, migrations, ORM                              | Litestone            |
 | 03 · Config & Secrets | Environment config, secrets                          | per-surface `config/` |

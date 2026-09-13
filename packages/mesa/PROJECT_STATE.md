@@ -37,6 +37,5 @@ lists (RULE 34).
 ## Consumers in this repo
 
 `@frontierjs/sierra`, `@frontierjs/ui`, `@frontierjs/email-kit` and
-`@frontierjs/jetty`. In-repo consumers import mesa by relative path, never by
-package name — `bun install` copies workspace deps, so a package-name import
-serves a stale snapshot.
+`@frontierjs/jetty`. jetty's `file:../mesa` dependency installs a COPY, so an edit
+here is invisible to it until reinstall (root `CLAUDE.md` § Live hazards).

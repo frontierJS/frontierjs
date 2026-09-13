@@ -2944,6 +2944,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const { relationMap, computedSets, computedFns, tx, emitter, globalFilters } = ctx
   const plugins = ctx.plugins   // PluginRunner
   const hasFieldPolicy = Object.keys(fieldPolicy).length > 0
+  const _hasEnumFields = Object.keys(enumFields).length > 0
 
   // A @derived field is an EXPRESSION, not a column, so anywhere a bare
   // `"name"` would be emitted it has to be substituted instead — otherwise
@@ -4683,6 +4684,258 @@ function makeTable(readDb, writeDb, shape, ctx) {
     }
   }
 
+  // ─── the cold halves of writeData ─────────────────────────────────────────
+  //
+  // Every write passes through writeData, and these are the parts most writes
+  // never reach: an @@extensible model, a protected column in the payload, a
+  // refusal being worded. Inline they doubled its bytecode, and past that size
+  // JSC stopped optimizing it well enough that a one-column update ran 40%
+  // slower with the same work to do (`FJS-1108`). The conditions stay in
+  // writeData, so what these cost is a call on the rare path only.
+
+  function allocateExtSlot(data, stamped) {
+    const pool = extPoolFor(String(data.model ?? ''))
+    let slot = null
+    if (pool) {
+      // Raw, and narrowed by model, for the reason `_extDeclarations` is:
+      // this runs inside somebody's write and must not put the declaring
+      // table's own gate in front of it. Narrowed because one declaring table
+      // serves every extensible model and `t1` on a customer is not `t1` on a
+      // product.
+      const taken = new Set(readDb.query(
+        `SELECT "slot" FROM "${tableName}" WHERE "model" = ? AND "slot" IS NOT NULL`
+      ).all(String(data.model)).map(r => r.slot))
+      // First free of the matching kind, in INDEX order — so the field a
+      // tenant declares first lands leftmost, where a one-term query reaches
+      // it. A full pool answers null, which is the ordinary end of a pool and
+      // not a failure: the field still stores and still renders.
+      slot = pool.order.find(s => pool.kind[s] === String(data.type) && !taken.has(s)) ?? null
+    }
+    data    = { ...data, slot }
+    stamped = stamped ? new Set([...stamped, 'slot']) : new Set(['slot'])
+    return [data, stamped]
+  }
+
+  function mirrorExtSlots(data, stamped) {
+    const declared = _extDeclarations()
+    const blob     = data[_extensible.column]
+    const slots    = {}
+    // An unpromoted or absent key is omitted rather than written null: a
+    // missing JSON path and a null one both read NULL through json_extract,
+    // so writing it costs bytes on every row and buys nothing.
+    if (blob && typeof blob === 'object') {
+      for (const d of declared) {
+        if (!d.slot) continue
+        const v = blob[d.key]
+        if (v === undefined || v === null || v === '') continue
+        // The column's affinity is REAL or TEXT and nothing coerces on the
+        // way in, so a number arriving as a string would sort as text and
+        // compare wrong.
+        if (_extensible.kindOf(d.type) === 'number') {
+          const n = Number(v)
+          if (Number.isFinite(n)) slots[d.slot] = n
+        } else {
+          slots[d.slot] = String(v)
+        }
+      }
+    }
+    data = { ...data, [_extensible.mirror]: slots }
+    // The framework filled it, so the @system refusal below has to let it
+    // past — the same hatch `@updatedBy` and the tenancy stamp ride on.
+    stamped = stamped ? new Set([...stamped, _extensible.mirror]) : new Set([_extensible.mirror])
+    return [data, stamped]
+  }
+
+  function refuseGuardedWrite(data, stamped) {
+    const denied = Object.keys(data).filter(k => _guardedWriteKeys.has(k) && !stamped?.has(k))
+    if (denied.length) throw new AccessDeniedError(
+      `${modelName}: ${denied.map(f => `"${f}"`).join(', ')} ${denied.length > 1 ? 'are' : 'is'} @guarded — ` +
+      `a system-context column on write as well as read. Write it through asSystem(), or leave it out of the ` +
+      `payload. For a column some callers may write, @allow('write', …) is the tool; @guarded answers both ` +
+      `halves at once, which is why the two cannot sit on one field.`,
+      { model: modelName, operation: 'write' }
+    )
+  }
+
+  function refuseSystemWrite(data, system, stamped) {
+    const allowed = new Set(Array.isArray(system) ? system : system ? [system] : [])
+    // `stamped` for @guarded's reason — a @system column with a generated
+    // default is written by the application in the most literal sense.
+    const denied  = Object.keys(data).filter(k => _systemWriteKeys.has(k) && !allowed.has(k) && !stamped?.has(k))
+    if (denied.length) throw new AccessDeniedError(
+      `${modelName}: ${denied.map(f => `"${f}"`).join(', ')} ${denied.length > 1 ? 'are' : 'is'} @system — ` +
+      `readable by anyone, written by the application rather than by its caller. Name the column on the call ` +
+      `to write it and keep every other rule:\n\n` +
+      `    db.${modelName.charAt(0).toLowerCase() + modelName.slice(1)}.update({ where, data, system: [${denied.map(f => `'${f}'`).join(', ')}] })\n\n` +
+      `asSystem() writes it too, and drops the gate, the row policies and the audit actor with it.`,
+      { model: modelName, operation: 'write' }
+    )
+  }
+
+  function refuseImmutableWrite(data, stamped) {
+    const denied = Object.keys(data).filter(k => _immutableWriteKeys.has(k) && !stamped?.has(k))
+    if (denied.length) throw new ValidationError(
+      denied.map(f => ({
+        path: [f],
+        message: `${f} is @immutable — written once, when the row was created, and not again. ` +
+                 `Leave it out of the payload; to correct the value, write a new row that supersedes this one.`,
+      })),
+      { model: modelName, operation: 'write' }
+    )
+  }
+
+  function refuseMissingRequired(model, data) {
+    const missing = []
+    for (const f of model.fields) {
+      // Arrays always carry a DDL-level DEFAULT '[]' (empty array is the
+      // null state — see ddl.js), so they are never required.
+      if (f.type.optional || f.type.array || f.type.kind === 'relation' || f.type.kind === 'implicitM2M') continue
+      const attrs = f.attributes ?? []
+      if (attrs.some(a =>
+        a.kind === 'default'  || a.kind === 'updatedAt' || a.kind === 'sequence' ||
+        a.kind === 'computed' || a.kind === 'generated' || a.kind === 'funcCall' ||
+        a.kind === 'from'     || a.kind === 'edge'      || a.kind === 'derived' ||
+        // A required @transient field is required OF THE CALLER, on the wire,
+        // where the API validates it. It is lifted off the payload before the
+        // write, so demanding it here would refuse every write that obeyed it.
+        a.kind === 'transient')) continue
+      // An `@id` the SERVER assigns — an autoincrementing rowid alias, or a
+      // declared default. One owner with the create-mode JSON Schema, because
+      // the two answered it separately and disagreed: this tested the TYPE and
+      // not the key, so an `Int` member of a composite key was treated as a
+      // rowid alias, and a create that omitted it reached SQLite and came back
+      // as a raw `NOT NULL constraint failed` naming a physical table
+      // (`FJS-608`). `PRIMARY KEY (a, b)` is never a rowid alias.
+      if (isServerAssignedId(f, model)) continue
+      if (data?.[f.name] == null) missing.push(requiredFailure(f))
+    }
+    if (missing.length) throw new ValidationError(missing)
+  }
+
+  function refuseClearingRequired(data) {
+    const clearing = []
+    for (const key of Object.keys(data ?? {})) {
+      if (data[key] !== null) continue
+      const f = _fieldsByName.get(key)
+      // A virtual column is refused by name upstream (`_virtualWriteKeys`) and
+      // is not a column here either; an optional one is what `null` is for.
+      if (!f || f.type.optional || !isStoredField(f)) continue
+      clearing.push(requiredFailure(f))
+    }
+    if (clearing.length) throw new ValidationError(clearing)
+  }
+
+  function protectEncryptedFields(transformed) {
+    for (const [fieldName, policy] of Object.entries(fieldPolicy)) {
+      if (!policy.encrypted && !policy.hashed) continue
+      if (!(fieldName in transformed)) continue
+      const val = transformed[fieldName]
+      if (val == null) continue
+      // ── Is this already protected, or does it merely LOOK it? ──────────
+      //
+      // `isCiphertext(val)` read three characters and answered yes, so a
+      // caller sending `v1.` plus their own text had it stored VERBATIM in a
+      // column the app promises is encrypted — and read back as `null`, since
+      // the decrypt then failed. The same one function gated the HASH path,
+      // so a `v1.` value skipped hashing too and a `@hashed` column ended up
+      // holding something that is not a digest of anything (`FJS-715`).
+      //
+      // Three things replace it. The MODE must match the column's own
+      // protection. The value must actually VERIFY — GCM's tag is the answer
+      // and a forgery cannot produce one. And a non-system caller may not
+      // send one at all: a caller never legitimately holds ciphertext, so the
+      // shape is either an accident (a value that starts `v1.`) or an
+      // attempt, and both are better refused by name than stored in clear.
+      const wantMode = policy.hashed ? 'hash' : 'enc'
+      const env      = parseEnvelope(val)
+      if (env) {
+        if (!ctx.isSystem)
+          throw new ValidationError([{ path: [fieldName], message:
+            `${fieldName} looks like a stored ${env.mode === 'hash' ? 'digest' : 'ciphertext'} ` +
+            `(it begins '${env.prefix}'). A caller sends the value itself — this column is ` +
+            `${policy.hashed ? '@hashed' : '@encrypted'} and the encoding is the database's.` }])
+        // A system write MAY carry one: a re-save, a restore, a backfill. It
+        // is skipped only where it is genuinely that value's own encoding —
+        // otherwise it falls through and is protected like any other string,
+        // which is what makes a `v1.` in a `@hashed` column get hashed.
+        if (verifiesAs(val, ctx.enc.ring ?? ctx.enc.key, wantMode)) continue
+      }
+
+      // A Json field is serialized to text BEFORE encryption, because
+      // encryptField's String(plaintext) turns an object into
+      // '[object Object]' and encrypts that — destroying the value with
+      // nothing thrown. serializeRow() runs AFTER this block and stringifies
+      // the ciphertext again, and read() mirrors it exactly (JSON.parse then
+      // decrypt), so the round trip is symmetric and the stored column is
+      // still a JSON string as the column type says.
+      const plain = policy.json ? JSON.stringify(val) : val
+
+      transformed[fieldName] = policy.hashed                 ? hashField(plain, ctx.enc.key)
+                             : policy.encrypted.deterministic ? encryptDeterministic(plain, ctx.enc.key)
+                             :                                  encryptField(plain, ctx.enc.key)
+    }
+  }
+
+  function refuseBadEnums(transformed) {
+    for (const [field, meta] of Object.entries(enumFields)) {
+      const val = transformed[field]
+      // An enum ARRAY has no CHECK behind it — SQLite cannot read the elements
+      // of a JSON array without a subquery, and a CHECK may not contain one. So
+      // this loop IS the boundary for a set-valued enum, not a nicer message in
+      // front of one. Array-ness, @minItems and friends were checked in
+      // validate() above.
+      if (meta.array) {
+        if (!Array.isArray(val)) continue
+        const bad = val.filter(v => !meta.values.has(String(v)))
+        if (bad.length) {
+          throw new ValidationError([{
+            path:    [field],
+            message: `invalid ${meta.enumName} value${bad.length > 1 ? 's' : ''} ` +
+                     `${bad.map(v => `"${v}"`).join(', ')} — ${enumOptions(meta, bad[0])}`,
+          }])
+        }
+        continue
+      }
+      if (val == null) {
+        if (!meta.optional && field in transformed)
+          throw new ValidationError([{ path: [field], message: `must be one of: ${[...meta.values].join(', ')}` }])
+        continue
+      }
+      if (!meta.values.has(String(val))) {
+        throw new ValidationError([{
+          path:    [field],
+          message: `invalid ${meta.enumName} value "${val}" — ${enumOptions(meta, val)}`,
+        }])
+      }
+    }
+  }
+
+  function dropFieldWriteDenied(transformed) {
+    for (const [fieldName, policy] of Object.entries(fieldPolicy)) {
+      if (!policy.allow?.write?.length) continue
+      if (!(fieldName in transformed)) continue
+      const permitted = policy.allow.write.some(expr =>
+        evalJs(expr, ctx, transformed, modelName, ctx.policyMap ?? {}, ctx.relationMap, 'create')
+      )
+      if (!permitted) delete transformed[fieldName]
+    }
+  }
+
+  function refuseUnbindable(row) {
+    for (const [k, v] of Object.entries(row)) {
+      if (typeof v === 'function')
+        throw new ValidationError([{ path: [k], message: `${k} was given a function — you probably forgot to call it` }])
+      if (typeof v === 'symbol')
+        throw new ValidationError([{ path: [k], message: `${k} was given a symbol — symbols cannot be stored` }])
+      if (v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date) && !ArrayBuffer.isView(v))
+        throw new ValidationError([{ path: [k], message:
+          `${k} was given an object where a value was expected. The atomic operators — ` +
+          `increment, decrement, multiply, divide on a numeric column, push on an array one — ` +
+          `apply on update only, and only to a column whose declared type carries them; ` +
+          `anything else is a value, read it, change it and write it back` }])
+    }
+  }
+
   function writeData(data, { requireAll = false, system = null, fieldWrite = 'js', stamped = null, creating = false } = {}) {
     const model = ctx.models[modelName]
 
@@ -4748,27 +5001,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // mirror does, because the values are already in the wrong columns.
     if (creating && ctx.extDeclarers?.has(modelName)
         && data && typeof data === 'object' && !Array.isArray(data)
-        && !('slot' in data) && _fieldsByName.has('slot')) {
-      const pool = extPoolFor(String(data.model ?? ''))
-      let slot = null
-      if (pool) {
-        // Raw, and narrowed by model, for the reason `_extDeclarations` is:
-        // this runs inside somebody's write and must not put the declaring
-        // table's own gate in front of it. Narrowed because one declaring table
-        // serves every extensible model and `t1` on a customer is not `t1` on a
-        // product.
-        const taken = new Set(readDb.query(
-          `SELECT "slot" FROM "${tableName}" WHERE "model" = ? AND "slot" IS NOT NULL`
-        ).all(String(data.model)).map(r => r.slot))
-        // First free of the matching kind, in INDEX order — so the field a
-        // tenant declares first lands leftmost, where a one-term query reaches
-        // it. A full pool answers null, which is the ordinary end of a pool and
-        // not a failure: the field still stores and still renders.
-        slot = pool.order.find(s => pool.kind[s] === String(data.type) && !taken.has(s)) ?? null
-      }
-      data    = { ...data, slot }
-      stamped = stamped ? new Set([...stamped, 'slot']) : new Set(['slot'])
-    }
+        && !('slot' in data) && _fieldsByName.has('slot')) [data, stamped] = allocateExtSlot(data, stamped)
 
     // ── @@extensible — the slot mirror ────────────────────────────────────
     //
@@ -4787,34 +5020,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // longer has. Absent means leave it alone — a patch naming other columns is
     // not a statement about these — and Invariant 9's explicit null clears.
     if (_extensible && data && typeof data === 'object' && !Array.isArray(data)
-        && _extensible.column in data) {
-      const declared = _extDeclarations()
-      const blob     = data[_extensible.column]
-      const slots    = {}
-      // An unpromoted or absent key is omitted rather than written null: a
-      // missing JSON path and a null one both read NULL through json_extract,
-      // so writing it costs bytes on every row and buys nothing.
-      if (blob && typeof blob === 'object') {
-        for (const d of declared) {
-          if (!d.slot) continue
-          const v = blob[d.key]
-          if (v === undefined || v === null || v === '') continue
-          // The column's affinity is REAL or TEXT and nothing coerces on the
-          // way in, so a number arriving as a string would sort as text and
-          // compare wrong.
-          if (_extensible.kindOf(d.type) === 'number') {
-            const n = Number(v)
-            if (Number.isFinite(n)) slots[d.slot] = n
-          } else {
-            slots[d.slot] = String(v)
-          }
-        }
-      }
-      data = { ...data, [_extensible.mirror]: slots }
-      // The framework filled it, so the @system refusal below has to let it
-      // past — the same hatch `@updatedBy` and the tenancy stamp ride on.
-      stamped = stamped ? new Set([...stamped, _extensible.mirror]) : new Set([_extensible.mirror])
-    }
+        && _extensible.column in data) [data, stamped] = mirrorExtSlots(data, stamped)
 
     // ── @guarded, the write half ──────────────────────────────────────────
     // @guarded is a system-context lock in both directions. The read strips the
@@ -4839,16 +5045,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // stamps injected; every caller of writeData that stamps passes one, and an
     // entry point that forgets is refused rather than let through, which is the
     // safe direction for a fail-closed rule.
-    if (!ctx.isSystem && _guardedWriteKeys.size && data && typeof data === 'object' && !Array.isArray(data)) {
-      const denied = Object.keys(data).filter(k => _guardedWriteKeys.has(k) && !stamped?.has(k))
-      if (denied.length) throw new AccessDeniedError(
-        `${modelName}: ${denied.map(f => `"${f}"`).join(', ')} ${denied.length > 1 ? 'are' : 'is'} @guarded — ` +
-        `a system-context column on write as well as read. Write it through asSystem(), or leave it out of the ` +
-        `payload. For a column some callers may write, @allow('write', …) is the tool; @guarded answers both ` +
-        `halves at once, which is why the two cannot sit on one field.`,
-        { model: modelName, operation: 'write' }
-      )
-    }
+    if (!ctx.isSystem && _guardedWriteKeys.size && data && typeof data === 'object' && !Array.isArray(data)) refuseGuardedWrite(data, stamped)
 
     // ── @system, the write half ───────────────────────────────────────────
     // The column reads like any other and is written by the application, not by
@@ -4874,20 +5071,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // actor — where asSystem() drops all of them to write one column. Naming
     // the field IS the statement: an escape hatch may not disable a guarantee
     // silently.
-    if (!ctx.isSystem && _systemWriteKeys.size && data && typeof data === 'object' && !Array.isArray(data)) {
-      const allowed = new Set(Array.isArray(system) ? system : system ? [system] : [])
-      // `stamped` for @guarded's reason — a @system column with a generated
-      // default is written by the application in the most literal sense.
-      const denied  = Object.keys(data).filter(k => _systemWriteKeys.has(k) && !allowed.has(k) && !stamped?.has(k))
-      if (denied.length) throw new AccessDeniedError(
-        `${modelName}: ${denied.map(f => `"${f}"`).join(', ')} ${denied.length > 1 ? 'are' : 'is'} @system — ` +
-        `readable by anyone, written by the application rather than by its caller. Name the column on the call ` +
-        `to write it and keep every other rule:\n\n` +
-        `    db.${modelName.charAt(0).toLowerCase() + modelName.slice(1)}.update({ where, data, system: [${denied.map(f => `'${f}'`).join(', ')}] })\n\n` +
-        `asSystem() writes it too, and drops the gate, the row policies and the audit actor with it.`,
-        { model: modelName, operation: 'write' }
-      )
-    }
+    if (!ctx.isSystem && _systemWriteKeys.size && data && typeof data === 'object' && !Array.isArray(data)) refuseSystemWrite(data, system, stamped)
 
     // ── @immutable, the write half ────────────────────────────────────────
     // Written once, at create, and frozen after — what a DOCUMENT is
@@ -4916,17 +5100,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // the payload: `@immutable` there means *frozen at the seal*, and the row is
     // editable while it is still a draft. The refusal moves into the WHERE with
     // the other state guards; `_sealImmutable` below is where the keys go.
-    if (!creating && _immutableWriteKeys.size && !_sealSelf && data && typeof data === 'object' && !Array.isArray(data)) {
-      const denied = Object.keys(data).filter(k => _immutableWriteKeys.has(k) && !stamped?.has(k))
-      if (denied.length) throw new ValidationError(
-        denied.map(f => ({
-          path: [f],
-          message: `${f} is @immutable — written once, when the row was created, and not again. ` +
-                   `Leave it out of the payload; to correct the value, write a new row that supersedes this one.`,
-        })),
-        { model: modelName, operation: 'write' }
-      )
-    }
+    if (!creating && _immutableWriteKeys.size && !_sealSelf && data && typeof data === 'object' && !Array.isArray(data)) refuseImmutableWrite(data, stamped)
 
     // ── @capability, the column tier ──────────────────────────────────────
     // `Server.update` says a caller may write the row; `Server.hostname` says
@@ -4970,33 +5144,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // Required-field pre-flight. The schema knows requiredness; without this
     // a missing NOT NULL field surfaced as SQLite's raw "NOT NULL constraint
     // failed" instead of a ValidationError shaped like every other field rule.
-    if (model && requireAll) {
-      const missing = []
-      for (const f of model.fields) {
-        // Arrays always carry a DDL-level DEFAULT '[]' (empty array is the
-        // null state — see ddl.js), so they are never required.
-        if (f.type.optional || f.type.array || f.type.kind === 'relation' || f.type.kind === 'implicitM2M') continue
-        const attrs = f.attributes ?? []
-        if (attrs.some(a =>
-          a.kind === 'default'  || a.kind === 'updatedAt' || a.kind === 'sequence' ||
-          a.kind === 'computed' || a.kind === 'generated' || a.kind === 'funcCall' ||
-          a.kind === 'from'     || a.kind === 'edge'      || a.kind === 'derived' ||
-          // A required @transient field is required OF THE CALLER, on the wire,
-          // where the API validates it. It is lifted off the payload before the
-          // write, so demanding it here would refuse every write that obeyed it.
-          a.kind === 'transient')) continue
-        // An `@id` the SERVER assigns — an autoincrementing rowid alias, or a
-        // declared default. One owner with the create-mode JSON Schema, because
-        // the two answered it separately and disagreed: this tested the TYPE and
-        // not the key, so an `Int` member of a composite key was treated as a
-        // rowid alias, and a create that omitted it reached SQLite and came back
-        // as a raw `NOT NULL constraint failed` naming a physical table
-        // (`FJS-608`). `PRIMARY KEY (a, b)` is never a rowid alias.
-        if (isServerAssignedId(f, model)) continue
-        if (data?.[f.name] == null) missing.push(requiredFailure(f))
-      }
-      if (missing.length) throw new ValidationError(missing)
-    }
+    if (model && requireAll) refuseMissingRequired(model, data)
 
     // The OTHER thing a payload can say, and the one shape that is
     // unambiguously wrong.
@@ -5019,18 +5167,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // an undefined-valued key and reassigns `data`, so this loop cannot see one.
     // `=== null` is still what it should say — the rule is about the value, and
     // stating it here is what keeps this correct if that strip ever moves.
-    else if (model) {
-      const clearing = []
-      for (const key of Object.keys(data ?? {})) {
-        if (data[key] !== null) continue
-        const f = _fieldsByName.get(key)
-        // A virtual column is refused by name upstream (`_virtualWriteKeys`) and
-        // is not a column here either; an optional one is what `null` is for.
-        if (!f || f.type.optional || !isStoredField(f)) continue
-        clearing.push(requiredFailure(f))
-      }
-      if (clearing.length) throw new ValidationError(clearing)
-    }
+    else if (model) refuseClearingRequired(data)
 
     const transformed = model ? applyTransforms(data, model) : { ...data }
     // Array rules — shape, element type, @minItems/@maxItems/@uniqueItems —
@@ -5042,89 +5179,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (model && ctx.hasValidation[modelName]) validate(transformed, model, computedFns, ctx.typeMap, ctx.enumTypeMap)
 
     // Encrypt @encrypted / hash @hashed fields before write
-    if (ctx.enc.key && hasFieldPolicy) {
-      for (const [fieldName, policy] of Object.entries(fieldPolicy)) {
-        if (!policy.encrypted && !policy.hashed) continue
-        if (!(fieldName in transformed)) continue
-        const val = transformed[fieldName]
-        if (val == null) continue
-        // ── Is this already protected, or does it merely LOOK it? ──────────
-        //
-        // `isCiphertext(val)` read three characters and answered yes, so a
-        // caller sending `v1.` plus their own text had it stored VERBATIM in a
-        // column the app promises is encrypted — and read back as `null`, since
-        // the decrypt then failed. The same one function gated the HASH path,
-        // so a `v1.` value skipped hashing too and a `@hashed` column ended up
-        // holding something that is not a digest of anything (`FJS-715`).
-        //
-        // Three things replace it. The MODE must match the column's own
-        // protection. The value must actually VERIFY — GCM's tag is the answer
-        // and a forgery cannot produce one. And a non-system caller may not
-        // send one at all: a caller never legitimately holds ciphertext, so the
-        // shape is either an accident (a value that starts `v1.`) or an
-        // attempt, and both are better refused by name than stored in clear.
-        const wantMode = policy.hashed ? 'hash' : 'enc'
-        const env      = parseEnvelope(val)
-        if (env) {
-          if (!ctx.isSystem)
-            throw new ValidationError([{ path: [fieldName], message:
-              `${fieldName} looks like a stored ${env.mode === 'hash' ? 'digest' : 'ciphertext'} ` +
-              `(it begins '${env.prefix}'). A caller sends the value itself — this column is ` +
-              `${policy.hashed ? '@hashed' : '@encrypted'} and the encoding is the database's.` }])
-          // A system write MAY carry one: a re-save, a restore, a backfill. It
-          // is skipped only where it is genuinely that value's own encoding —
-          // otherwise it falls through and is protected like any other string,
-          // which is what makes a `v1.` in a `@hashed` column get hashed.
-          if (verifiesAs(val, ctx.enc.ring ?? ctx.enc.key, wantMode)) continue
-        }
-
-        // A Json field is serialized to text BEFORE encryption, because
-        // encryptField's String(plaintext) turns an object into
-        // '[object Object]' and encrypts that — destroying the value with
-        // nothing thrown. serializeRow() runs AFTER this block and stringifies
-        // the ciphertext again, and read() mirrors it exactly (JSON.parse then
-        // decrypt), so the round trip is symmetric and the stored column is
-        // still a JSON string as the column type says.
-        const plain = policy.json ? JSON.stringify(val) : val
-
-        transformed[fieldName] = policy.hashed                 ? hashField(plain, ctx.enc.key)
-                               : policy.encrypted.deterministic ? encryptDeterministic(plain, ctx.enc.key)
-                               :                                  encryptField(plain, ctx.enc.key)
-      }
-    }
+    if (ctx.enc.key && hasFieldPolicy) protectEncryptedFields(transformed)
 
     // Validate enum fields with friendly errors before hitting SQLite's CHECK
-    for (const [field, meta] of Object.entries(enumFields)) {
-      const val = transformed[field]
-      // An enum ARRAY has no CHECK behind it — SQLite cannot read the elements
-      // of a JSON array without a subquery, and a CHECK may not contain one. So
-      // this loop IS the boundary for a set-valued enum, not a nicer message in
-      // front of one. Array-ness, @minItems and friends were checked in
-      // validate() above.
-      if (meta.array) {
-        if (!Array.isArray(val)) continue
-        const bad = val.filter(v => !meta.values.has(String(v)))
-        if (bad.length) {
-          throw new ValidationError([{
-            path:    [field],
-            message: `invalid ${meta.enumName} value${bad.length > 1 ? 's' : ''} ` +
-                     `${bad.map(v => `"${v}"`).join(', ')} — ${enumOptions(meta, bad[0])}`,
-          }])
-        }
-        continue
-      }
-      if (val == null) {
-        if (!meta.optional && field in transformed)
-          throw new ValidationError([{ path: [field], message: `must be one of: ${[...meta.values].join(', ')}` }])
-        continue
-      }
-      if (!meta.values.has(String(val))) {
-        throw new ValidationError([{
-          path:    [field],
-          message: `invalid ${meta.enumName} value "${val}" — ${enumOptions(meta, val)}`,
-        }])
-      }
-    }
+    if (_hasEnumFields) refuseBadEnums(transformed)
     // @allow('write', expr) — silently drop restricted fields before write.
     // Dropped rather than refused because the predicate is per-caller: the same
     // payload is legitimate for an admin, so a form body reaching an ordinary
@@ -5142,16 +5200,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // that second one is fail-open). The update paths pass `fieldWrite: 'sql'`
     // and the predicate becomes the WHEN of a CASE in the SET, where it reads
     // the stored row.
-    if (!ctx.isSystem && fieldWrite === 'js') {
-      for (const [fieldName, policy] of Object.entries(fieldPolicy)) {
-        if (!policy.allow?.write?.length) continue
-        if (!(fieldName in transformed)) continue
-        const permitted = policy.allow.write.some(expr =>
-          evalJs(expr, ctx, transformed, modelName, ctx.policyMap ?? {}, ctx.relationMap, 'create')
-        )
-        if (!permitted) delete transformed[fieldName]
-      }
-    }
+    if (!ctx.isSystem && fieldWrite === 'js') dropFieldWriteDenied(transformed)
 
     const row = serializeRow(
       serializeBooleans(
@@ -5168,18 +5217,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // including the WHERE. The write silently changes nothing and `update`
     // reports it as "no such row". Json columns are already text by this point,
     // so anything still an object is genuinely unbindable.
-    for (const [k, v] of Object.entries(row)) {
-      if (typeof v === 'function')
-        throw new ValidationError([{ path: [k], message: `${k} was given a function — you probably forgot to call it` }])
-      if (typeof v === 'symbol')
-        throw new ValidationError([{ path: [k], message: `${k} was given a symbol — symbols cannot be stored` }])
-      if (v !== null && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date) && !ArrayBuffer.isView(v))
-        throw new ValidationError([{ path: [k], message:
-          `${k} was given an object where a value was expected. The atomic operators — ` +
-          `increment, decrement, multiply, divide on a numeric column, push on an array one — ` +
-          `apply on update only, and only to a column whose declared type carries them; ` +
-          `anything else is a value, read it, change it and write it back` }])
-    }
+    refuseUnbindable(row)
     return row
   }
 

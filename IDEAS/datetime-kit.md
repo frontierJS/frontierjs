@@ -335,7 +335,6 @@ describe this package as "a README and nothing else", which stopped being true o
   framework-level argument this record is the package half of
 - `IDEAS/compliance-from-the-seed.md` — `@retain`, a duration needing this settled
 - `IDEAS/testing-realm.md` — the movable clock a declared time semantics makes testable
-- `IDEAS/row-level-tenancy.md` — `applyStanding()`, the seam a viewer's zone reuses
 - `IDEAS/declared-semantics.md` §3 — bitemporality, the same observation from the audit
   direction; settle the vocabulary together or one will constrain the other
 - `packages/caravan/src/cron.ts` — the one place in the repo that already gets a zone

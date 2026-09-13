@@ -1131,10 +1131,6 @@ language stops being reviewable.
 
 ## See also
 
-- `IDEAS/membership-tenancy.md` — standing resolved per request; the seam a grant
-  claim rides
-- `IDEAS/value-sets.md` — declare the vocabulary, let a row pick from it: the same
-  move, made once already
 - `IDEAS/slices.md` — why a declaration at the Data boundary beats a check in a
   handler
 - `IDEAS/compliance-from-the-seed.md` — the audit half, which this feeds
@@ -1142,9 +1138,6 @@ language stops being reviewable.
   this whole file is downstream of
 - `IDEAS/package-map.md` § tier 1 — the `warden` row, which is this idea under a
   reserved package name, and `IDEAS/overview.md` 4.5 beside 2.19 for the same reason
-- `IDEAS/row-level-tenancy.md` § open questions — *orthogonal named roles and a
-  tenant scope are two non-ordinal axes arriving at the same boundary*, the reason
-  these two must be settled together rather than apart
 - `DECISIONS.md` § Outpost — the naming rule that rejects `warden` as a package name
 - `ISSUES.md` § `FJS-519` — `asSystem()` is all-or-nothing, which is why the standing
   table cannot be graded by capability and why per-tenant credentials cannot be

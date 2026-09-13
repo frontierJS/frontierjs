@@ -148,6 +148,6 @@ per-tenant, and **whichever is chosen, the other shape refuses rather than no-op
 
 ## See also
 
-`row-level-tenancy.md` — the other strategy, and why an app might not be on this one ·
+`FJS-D05` (row tenancy) — the other strategy, and why an app might not be on this one ·
 `deploy-plane.md` — placement and the control plane this analysis runs out into ·
 `speed-and-footprint.md` · `packages/litestone/docs/multi-tenancy.md`

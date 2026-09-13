@@ -140,5 +140,3 @@ Three reasons, in order of how much they matter to this framework:
   design.
 - `static-safety.md` / `overview.md` 4.4b — a route with actions is a route the
   build can classify.
-- `forms-from-the-seed.md` — that file is about generating the *fields*; this
-  one is about where the *submit* goes. Independent.

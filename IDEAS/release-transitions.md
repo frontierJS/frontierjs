@@ -1503,7 +1503,7 @@ Compose has no traffic layer at all and stops the old container before starting 
   environments (meets Audience at the routing table)
 - `IDEAS/app-manifest.md` — declared intent versus observed fact; the Release object is
   the same argument one realm over
-- `IDEAS/testing-realm.md`, `IDEAS/testing-and-ci.md` — where the phase-0 snapshot
+- `IDEAS/testing-realm.md` — where the phase-0 snapshot
   lands in `bun run ci`
 - `ARCHITECT.md` §2 — the Deployment-realm vocabulary these nouns are proposed into
 - `packages/basecamp/` — the deploy console's host, and the first real deploy target

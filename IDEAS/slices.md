@@ -178,7 +178,7 @@ the ecosystem does this and it is cheap for us — per-package test runners exis
 *Caveat added 2026-08-03:* cheap, but not free — there is no shared test environment
 for a `suite/` part to run *in*. Four different runners, no way to stand up a seeded
 app across realms, and no CI to run `slice:doctor` from. See
-`IDEAS/testing-and-ci.md`; this part and that idea unblock each other.
+the testing-and-ci record (since deleted); this part and that idea unblock each other.
 
 ### CLI surface
 
@@ -260,7 +260,7 @@ machine, which means the slice *demonstrates* `@@transitions` at the Data bounda
 rather than merely using the framework. A slice whose value is visible in the schema
 diff is the one to lead with.
 
-**Design it with two neighbors, not after them.** `IDEAS/row-level-tenancy.md` (4.18)
+**Design it with two neighbors, not after them.** `FJS-D05` (row tenancy, 4.18)
 is the mechanism for *which rows*; `warden` (4.5) is the mechanism for *which
 permissions*; this is the *noun* both of them are about. Settled apart, they produce
 three vocabularies for one idea — the same failure `IDEAS/release-transitions.md`
@@ -306,4 +306,3 @@ here is blocked on: bare-specifier `.lite` imports and the installer.
 - `ARCHITECT.md` §2 — the realm nouns these folders take their names from
 - `PHILOSOPHY.md` — the "growth happens outward and traces back" axiom this serves
 - `DECISIONS.md` — where a ruling on `Slice` would land
-- `IDEAS/testing-and-ci.md` — the environment the `suite/` part needs to run in

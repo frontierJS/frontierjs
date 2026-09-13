@@ -109,5 +109,5 @@ divertible at the same seam.
   resolution every reader asks
 - `IDEAS/testing-realm.md` — the template-clone mechanism, in its original context
 - `IDEAS/third-party-credentials.md` — who mints a key and what it says
-- `IDEAS/tenancy-pass.md` · `IDEAS/row-level-tenancy.md` — the declaration this
+- `packages/litestone/docs/multi-tenancy.md` — the declaration this
   hangs off

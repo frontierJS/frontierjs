@@ -26,7 +26,7 @@ than reading:
 **`fli admin:generate` exists — 595 lines.** It generates a gate-aware CRUD admin UI
 from `schema.lite`: list, detail, create and edit views per model, an index
 dashboard, and an auth-guarded layout. This is Nova / Filament territory.
-`IDEAS/framework-shape.md` item 1 claimed schema→UI derivation was entirely absent;
+The framework-shape assessment (since deleted) item 1 claimed schema→UI derivation was entirely absent;
 that was wrong as written. It is *codegen*, not derivation — files are emitted and
 then yours — but the gap is narrower than recorded.
 
@@ -177,7 +177,7 @@ API tier on, and basecamp's suite builds on it. The derived-case generators
 (`generateGateMatrix`, `generateValidationCases`) are still called only from
 litestone's own tests.
 
-See `IDEAS/testing-and-ci.md`, which treats this as the unblocking step for a
+See the testing-and-ci record (since deleted), which treats this as the unblocking step for a
 cross-realm suite.
 
 ### 6. Two-factor authentication — ~~missing~~ **TOTP shipped 2026-09-12; passkeys are the open half**
@@ -425,7 +425,7 @@ cousin — carrying a value to related rows — and is not this: this is a field
 browser, before anything is submitted. It matters more here than elsewhere because
 `<Form>` now derives labels, constraints and messages from the schema, so a
 hand-written conditional is the one part of a generated form that is not generated —
-and `IDEAS/forms-from-the-seed.md` 1.1a cannot generate a field list without an answer
+and `overview.md` 1.1a cannot generate a field list without an answer
 for the fields that are sometimes not in it. The hazard to state up front: a
 client-side condition is an affordance, so the server must still validate, which is the
 same split `x-gate` already draws.
@@ -596,8 +596,6 @@ line is true.
 
 ## See also
 
-- `IDEAS/framework-shape.md` — the realm-by-realm gap assessment (item 1 corrected above)
 - `IDEAS/slices.md` — the distribution format that lets others fill tier 2
 - `IDEAS/offline-first-and-release.md` — where the deployment story is going
-- `IDEAS/testing-and-ci.md` — automated CI, and the Suite realm items 5 and 8 belong to
 - `website/README.md` — the publication gate for the launch-voice copy

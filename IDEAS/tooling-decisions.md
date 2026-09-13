@@ -25,7 +25,7 @@ person who needs one installs something, and five years later that is the standa
 > extending its own config: `FJS-266`, a counted cleanup of ~600 findings.
 > **Items 2, 4 and 5 are untouched and still unmade.**
 
-Companion to `IDEAS/diagnostics.md`, which owns the FJS-*semantic* checks. **The
+Companion to the diagnostics record (since deleted, ruled as `FJS-D133`), which owns the FJS-*semantic* checks. **The
 boundary between the two is item 1's whole subject** and is the most important thing
 in this file.
 
@@ -151,7 +151,7 @@ means *can this machine run fli*. The boundary is unchanged.)
 
 Without that sentence, the failure is predictable: `:id` in a raw route,
 `ctx.params` in a service context and a service missing `model:` all *look* like lint
-rules, so somebody writes four of `IDEAS/diagnostics.md`'s checks as lint rules. Then
+rules, so somebody writes four of the diagnostics record's checks (since deleted) as lint rules. Then
 there are two registries, they disagree, and neither is authoritative — the shape
 Invariant 4 exists to prevent.
 
@@ -334,10 +334,7 @@ written down.
 
 ## See also
 
-- `IDEAS/diagnostics.md` — `fli doctor`, which owns every check derived from the seed,
-  and whose boundary with a linter item 1 exists to draw
 - `IDEAS/ecosystem-gaps.md` §13 — security advisories, the half above item 5
-- `IDEAS/testing-and-ci.md` — the CI mechanism any of this would run in
 - `IDEAS/command-surface.md` — `fli`'s own surface, where a `lint` command would land
 - `CLAUDE.md` § House style — the rules item 1 has to either encode or retire
 - `scripts/ci.mjs` — five phases, none of them about style

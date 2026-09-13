@@ -33,7 +33,7 @@ app's browser.
 ## Trigger
 
 `IDEAS/overview.md` 1.1's remainder. The form half shipped 2026-08-15 with a
-record behind it (`forms-from-the-seed.md`) and three feeder issues
+record behind it (the forms-from-the-seed record, since deleted) and three feeder issues
 (`FJS-077`, `FJS-078`, `FJS-079`) cleared first, which is why it landed
 cleanly. **The other three surfaces have one prose sentence in the 1.1 row and
 nothing else** — no argued record, no ids, no ruling. This file is that record.
@@ -78,7 +78,7 @@ them, exactly as `<Form>` is the layer above nine controls.
 
 ## The receipt
 
-`forms-from-the-seed.md` justified itself with a count: `orders/create.mesa` was
+The forms-from-the-seed record justified itself with a count: `orders/create.mesa` was
 ~150 lines, half of them a hand-rolled loop over `Object.entries(fields)`
 deciding control-per-type. The equivalent count for this file is in the
 generator itself.
@@ -833,10 +833,7 @@ CRUD page is, which makes it the consumer and not a peer.
 
 ## Relationship to the other files
 
-- `forms-from-the-seed.md` — the sibling that shipped, and the shape to copy
 - `IDEAS/overview.md` 1.1 — the row this file is the missing half of
-- `IDEAS/value-sets.md` — `x-values` is what gives the filter bar its control
-  for a bound column, and `FJS-D120` already crossed the boundary
 - `IDEAS/permission-sets.md` — once capabilities are built, *which actions a
   row offers* has a second input beside the gate and the transition list
 - `IDEAS/ecosystem-gaps.md` — `admin:generate`, the consumer

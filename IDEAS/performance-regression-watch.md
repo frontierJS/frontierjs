@@ -357,6 +357,18 @@ few µs, a single-row write is ~30 µs, and the round-to-round spread here is 2�
   count — the lock's cost is allocation, and the collector the count runs under is not the
   one Bun ships. Counts found and bisected an 82% step correctly; a change of a few percent
   that is mostly allocation is decided on the clock.
+- **A count cannot see the optimizer give up** ([FJS-1108](../ISSUES.md#fjs-1108)). `writeData`
+  doubled to 11,171 bytecodes, and a one-column update ran 37% slower by the clock and 15%
+  by the count. With DFG off the clock agreed with the count; with DFG on the gap was 40%.
+  A 1,000-update count under valgrind grades code the optimizing tiers have not reached, so
+  a function growing past their budget is a clock regression the count mostly misses —
+  and moving the cold half out, which took the clock back to +14%, read as +3% *worse* by
+  count, because it adds calls to the tier the count does see. **A counted gate can refuse
+  the fix to a regression it could not see.** Two instruments cover it, and neither is a
+  count: bytes allocated read off the collector (`BUN_JSC_logGC=1`, eden collections every
+  ~32 MB, deterministic to ~50 bytes an op and seconds to run — 9,155 → 7,635 on this fix),
+  and a clock A/B long enough to reach FTL. The first is gateable, as a byte count; the
+  second stays reported.
 
 ## Open
 
@@ -365,9 +377,11 @@ few µs, a single-row write is ~30 µs, and the round-to-round spread here is 2�
   ~3 µs where the fix recovered ~7.6, and that gap is unexplained — the two were measured
   an hour apart, and the bypass still awaited inside an async body the fix does not enter.
 - **`update()` was +114% behind the same wrapper** — [FJS-1107](../ISSUES.md#fjs-1107), fixed —
-  and about half of it was something else: [FJS-1108](../ISSUES.md#fjs-1108), measured on a
-  saturated machine and wanting a quiet remeasure. A counted gate in Order (2) would have
-  caught all three the day they landed.
+  and about half of it was something else: [FJS-1108](../ISSUES.md#fjs-1108), fixed down to
+  +14% on update and +8% on create by a quiet clock, a residual spread across features each
+  below either instrument's resolution. A counted gate in Order (2) would have caught
+  `FJS-1106` and `FJS-1107` the day they landed and mostly missed `FJS-1108`; Order (2)'s
+  gated byte count wants allocation per op beside instructions, for the reason above.
 
 ## Decision questions
 
@@ -415,4 +429,3 @@ Reproduce before citing.
 - `IDEAS/offline-first-and-release.md` § A byte budget — the byte half of the gated
   tier, argued before and never given a number
 - `IDEAS/scaling.md` — why the recorded tier's junction number is per process
-- `IDEAS/testing-and-ci.md` — 0.1, the same argument for correctness rather than speed
