@@ -1,5 +1,32 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-12 — `restore()` is graded as the update it is
+
+`FJS-1096`. `restore()` built its UPDATE from the caller's where and the soft-delete clause alone —
+no `beforeUpdate`, so no `@@gate` or capability, and no update policy, so no `@@allow`, no `@@deny`
+and no row tenancy. On basecamp a READER(2) restored a project behind an update gate of 4, and so did a
+member of another workspace.
+
+- **`beforeUpdate` runs with `{ deletedAt: null }`** and the update policy is ANDed into the WHERE,
+  the composition `remove()` already had.
+- **The cascade reads the rows that scope admits**, so a refused parent's children are not restored.
+- A row outside the policy answers `[]`, as an absent id does.
+- `test/restore-access.test.ts` — the grid's missing fixture. With the fix removed, 3 of 3 fail.
+
+## 2026-09-12 — a move no longer confirms a row the caller cannot read
+
+`FJS-1093`. `checkTransitions` read a row's current state with the caller's where alone, then
+graded the move — so on a row the read policy hides, the update policy, a move's `@gate` and
+`@system` each THREW, while an id that does not exist answered `null`. Over HTTP that was 403
+against 204: every id in a table, enumerable by anybody who could make a move on any of them.
+
+- **The lookup goes through `callerReadScope()`** — the global filter, the plugins' read filters
+  and the read policy, `exists()`'s composition — and a row outside it is `NOT_VISIBLE`, which
+  `update()` answers as `null` before the version, seal and refusal readers run.
+- **Only a write naming a transitions column pays for it**; `asSystem()` never does.
+- `test/transition-visibility.test.ts` pairs each hidden-row case with the same call on a readable
+  row that must still refuse by name. With the lookup unscoped, 5 of its 8 fail.
+
 ## 2026-09-12 — the S3 signer is graded by AWS, and a key with a space in it signs
 
 `FJS-1076`. `storage/sigv4.js` had no test, and it is the only path from a `File` column to a second

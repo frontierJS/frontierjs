@@ -42,6 +42,20 @@ export function createEnvironmentsService(app: BasecampApp) {
   }
 
   /**
+   * A protected environment is the production guard: a developer may deploy to
+   * it but not reshape it.
+   *
+   * One check for every writer of the row. The capability grid cannot say it —
+   * a developer holds `Environment.variables` on every environment, protected or
+   * not — so a writer that skips this lets a developer rewrite production's
+   * `DATABASE_URL` that `patch` refuses them (`FJS-1087`).
+   */
+  function refuseProtectedForDeveloper(env: Record<string, unknown>, ctx: ServiceContext) {
+    if (env.isProtected && roleOf(ctx) === 'developer')
+      throw new Forbidden('Protected environments require admin or owner role to modify')
+  }
+
+  /**
    * An environment's project must be in the caller's workspace.
    *
    * Checked on create, because `projectId` arrives from the client: without it
@@ -89,10 +103,7 @@ export function createEnvironmentsService(app: BasecampApp) {
     async patch(ctx: ServiceContext) {
       const env = await getScoped('environment', 'Environment')
 
-      // A protected environment is the production guard: a developer may deploy
-      // to it but not reshape it.
-      if (env.isProtected && roleOf(ctx) === 'developer')
-        throw new Forbidden('Protected environments require admin or owner role to modify')
+      refuseProtectedForDeveloper(env, ctx)
 
       // projectId and slug are immutable — moving an environment between
       // projects would silently reparent its apps and deployments.
@@ -115,12 +126,13 @@ export function createEnvironmentsService(app: BasecampApp) {
     // ── setVariable ───────────────────────────────────────────────────
     // `variables` is a Json column, so it arrives as an array and is written
     // back as one — no JSON.parse/stringify at this layer.
-    async setVariable() {
+    async setVariable(ctx: ServiceContext) {
       const { key, value, secret } = ($.data ?? {}) as Partial<EnvVariable>
       if (!key?.trim())        throw new BadRequest('key is required')
       if (value === undefined) throw new BadRequest('value is required')
 
       const env       = await getScoped('environment', 'Environment')
+      refuseProtectedForDeveloper(env, ctx)
       const variables = [...((env.variables ?? []) as EnvVariable[])]
       const entry: EnvVariable = { key: key.trim(), value, secret: Boolean(secret) }
       const idx       = variables.findIndex(v => v.key === entry.key)
@@ -131,11 +143,12 @@ export function createEnvironmentsService(app: BasecampApp) {
       return saveVariables(env, variables)
     },
 
-    async deleteVariable() {
+    async deleteVariable(ctx: ServiceContext) {
       const { key } = ($.data ?? {}) as { key?: string }
       if (!key) throw new BadRequest('key is required')
 
       const env = await getScoped('environment', 'Environment')
+      refuseProtectedForDeveloper(env, ctx)
       return saveVariables(env, ((env.variables ?? []) as EnvVariable[]).filter(v => v.key !== key))
     },
 

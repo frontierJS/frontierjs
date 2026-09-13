@@ -146,7 +146,10 @@ core/
                 The guard goes AHEAD of the https redirect (both are
                 rewrite-phase returns, first one wins) and sends 503 to a NAMED
                 location (a URI re-enters the rewrite phase and nginx refuses
-                the config for a redirection cycle)
+                the config for a redirection cycle). And the queue half
+                (`FJS-D262`): the script that runs Caravan's OWN bin inside the
+                serving container, and the verdict read off its JSON — it never
+                writes Caravan's tables and never names a jobs database path
   journal-runner.mjs  copied to the target and run with bun. Imports
                 `bun:sqlite` and nothing else, because a deploy target has no
                 node_modules — the build is inside Docker
@@ -524,6 +527,14 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   stopped container cannot deploy, which is the one case a pause exists for —
   and the deploy's health poll goes to `localhost:<apiPort>` directly, so a
   paused app still deploys and still passes health while the edge answers 503.
+- **Only `/db` survives a swap, and a jobs database is the one nobody binds.**
+  The main database and the audit trail have env variables the deploy docs name;
+  Caravan's path is set in the app's code or config and defaults inside the
+  container. `05b-jobs-volume` asks the RUNNING container which file it has open
+  before `06-swap` replaces it, and refuses only when a pause is in force — a
+  refusal on pending jobs would block the very deploy that fixes the binding.
+  `CONTAINER_DB_DIR` in `deploy/_module.md` is the mount point; never write `/db`
+  as a literal beside it.
 - **The journal and the file can disagree, and nothing reconciles them.**
   `driftVerdict` grades the pair and `deploy:status` prints it. Recorded but not
   in force means the pause is not happening; in force but not recorded means

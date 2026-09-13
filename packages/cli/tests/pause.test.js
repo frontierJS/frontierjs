@@ -26,7 +26,7 @@ import { readFileSync } from 'fs'
 import {
   GUARD_MARKER, nginxGuard, pausedFile, pagePath, fliDir, vhostPath,
   DEFAULT_PAGE, driftVerdict, pauseRefusals, REFUSALS,
-  queueScript, queueVerdict, queueStateLine, QUEUE_HOLDER, CARAVAN_BIN,
+  queueScript, queueVerdict, queueStateLine, jobsVolumeVerdict, QUEUE_HOLDER, CARAVAN_BIN,
 } from '../core/pause.js'
 import { execFileSync } from 'child_process'
 import { chooseTarget, transitionsSince, servingHistory } from '../core/revert.js'
@@ -372,5 +372,45 @@ describe('the queues line deploy:status prints', () => {
     const s = queueScript({ container: 'c', verb: 'state' })
     execFileSync('sh', ['-n'], { input: s })
     expect(s).not.toMatch(/--actor|--holder/)
+  })
+})
+
+describe('what a swap throws away (FJS-1095)', () => {
+  const stats = (pending = 0, running = 0) => ({ pending, running, done: 0, failed: 0, cancelled: 0, oldestRunningMs: null, pausedMs: null })
+  const state = (o) => JSON.stringify({ source: 'open', exists: true, caravan: true, liveInstances: 1, verb: 'state',
+    paused: null, queues: { default: { paused: null, stats: stats(2, 1) } }, ...o })
+  const v = (o) => jobsVolumeVerdict({ output: state(o), volume: '/db' })
+  const every = { queue: '*', holder: 'fli:deploy', actor: 'jordan' }
+
+  test('a database under the volume is silent; the same answer inside the container warns with what is lost', () => {
+    expect(v({ db: '/db/jobs.db' })).toEqual({ level: 'ok', lines: [] })
+    const inside = v({ db: '/app/db/jobs.db' })
+    expect(inside.level).toBe('warn')
+    expect(inside.lines.join('\n')).toMatch(/2 pending, 1 running/)
+  })
+
+  // The case a pause exists for. Paired with the same pause on the volume.
+  test('a pause in force on a database inside the container is REFUSED; on the volume it is silent', () => {
+    expect(v({ db: '/db/jobs.db', paused: every }).level).toBe('ok')
+    const refused = v({ db: '/app/db/jobs.db', paused: every })
+    expect(refused.level).toBe('fail')
+    expect(refused.lines.join('\n')).toMatch(/every queue[\s\S]*unpause, deploy the binding/)
+  })
+
+  test("one queue's own pause is refused too, and named", () => {
+    const one = v({ db: '/app/db/jobs.db', queues: { mail: { paused: { queue: 'mail' }, stats: stats() }, default: { paused: null, stats: stats() } } })
+    expect(one.level).toBe('fail')
+    expect(one.lines.join()).toMatch(/pause on mail/)
+  })
+
+  test('a sibling directory that merely starts with the volume name is not under it', () => {
+    expect(v({ db: '/dbx/jobs.db' }).level).toBe('warn')
+    expect(v({ db: '/db/nested/jobs.db' }).level).toBe('ok')
+  })
+
+  test('nothing to ask is silent; an answer that cannot say which database warns', () => {
+    for (const out of ['{"fli":"no-container"}', '{"fli":"no-caravan"}', '{"source":"open","exists":false,"error":"none open"}'])
+      expect(jobsVolumeVerdict({ output: out, volume: '/db' })).toEqual({ level: 'ok', lines: [] })
+    expect(jobsVolumeVerdict({ output: '{"source":"open","candidates":["/a","/b"],"error":"2 open"}', volume: '/db' }).level).toBe('warn')
   })
 })

@@ -1,13 +1,13 @@
 ---
-id: request-recognizer-run-1
+id: intent-recognizer-run-1
 status: assessment
 dated: 2026-09-12
 ---
 
-# Assessment — the request recognizer, run 1: sixty synthetic requests against `example`
+# Assessment — the intent recognizer, run 1: sixty synthetic requests against `example`
 
 **Status: ASSESSMENT.** Dated 2026-09-12. It reads the tree and proposes nothing;
-the proposal is `request-recognizer.md`, and the findings below are folded into it.
+the proposal is `intent-recognizer.md`, and the findings below are folded into it.
 Never cite this as behavior.
 
 **The input is synthetic and that bounds what it can say.** Sixty support messages

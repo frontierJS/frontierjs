@@ -740,6 +740,18 @@ group('connection state')
   state = getConnectionState()
   if (state.authenticated === true && state.user?.id === 5) ok('session message updates auth state')
 
+  // A waiting attempt is part of the cached state, and leaves it again. A page
+  // opened after the password reads this before any listener of its own exists,
+  // so a cache carrying only `authenticated` shows that page a password form.
+  port._emit('session', { user: null, authenticated: false, awaitingCode: '2030-01-01T00:00:00.000Z' })
+  state = getConnectionState()
+  if (state.awaitingCode === '2030-01-01T00:00:00.000Z' && !state.authenticated) ok('a waiting attempt reaches the cached state')
+  else bad('the cached state dropped awaitingCode', JSON.stringify(state))
+  port._emit('session', { user: { id: 5 }, authenticated: true })
+  state = getConnectionState()
+  if (state.awaitingCode === null && state.authenticated) ok('…and a session clears it')
+  else bad('awaitingCode outlived the session', JSON.stringify(state))
+
   // Simulate disconnect
   port._emitDisconnect()
   state = getConnectionState()

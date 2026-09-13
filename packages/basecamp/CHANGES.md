@@ -1,5 +1,24 @@
 # Changes — Basecamp
 
+## 2026-09-12 — the 110 ungraded custom methods, triaged
+
+`FJS-1087`. `surface.snapshot.md` listed 110 custom methods whose caller only has to be signed in.
+Each was read for a system client or a guarded write reached before anything graded the caller, and
+each suspect was run on the real app. Most are graded by what the snapshot cannot see — `sessionScope`,
+a role hook, `internalOnly`, `requireSystemAdmin`, a scoped read first. Three were not:
+
+- **`workspaces.members`** read any workspace's roster through `asSystem()`, whole `User` rows
+  included, for an account in no workspace at all. It checks membership first, and answers 404 as
+  `get` does.
+- **`/conduit-targets`** sat behind `authenticate` alone: every workspace's outpost and channel
+  targets were listable, and deletable, by any account. It is `requireSystemAdmin()`.
+- **`environments.setVariable` / `deleteVariable`** skipped the protected-environment refusal
+  `patch` makes; a developer could set production's `DATABASE_URL`. One
+  `refuseProtectedForDeveloper` is read by all three.
+
+A fourth — `restore` graded by nothing — was litestone's (`FJS-1096`). `api/test/services.test.ts`
+§ *a custom method grades its caller* pairs each refusal with the caller it must still admit.
+
 ## 2026-09-12 — the deployments list is one composed `list()`
 
 `web/src/routes/deployments/index.mesa` stops wiring its own load, its own filter state and its own

@@ -15,6 +15,9 @@ src/
   cron.ts      recurring declarations
   types.ts     job/queue types
   autoload.ts  handler discovery
+bin/
+  caravan.ts   the operator verbs from a shell — `caravan queue …`, JSON out.
+               What `fli deploy:pause` runs inside the serving container
 ```
 
 ---
@@ -135,6 +138,20 @@ src/
   queue — a pause stops execution, not intake — so a long pause accumulates one
   pending row per cron fire. `drain()` counts running rows across instances and
   leaves the queue paused.
+- **The queue `'*'` is every queue, and it is a row, not a list.**
+  `app.jobs.pause()` writes it; each claim reads `IN ($queue, '*')`. It exists
+  because a process outside the app cannot enumerate the queues — part of the set
+  is in job files — so anything that must stop ALL work pauses `'*'`. A queue's
+  own row is independent of it, and `queuesInData` excludes `'*'` or
+  `queue('*')` would stop refusing. **A `holder` on the row decides who may lift
+  it**: a resume stating one deletes only its own row, one stating none lifts
+  anything.
+- **The bin finds its database by asking `/proc`, and must not be given a
+  default quietly.** With no `--db` it keeps the open files that carry Caravan's
+  tables, and two is a refusal. On a developer's machine that search sees every
+  process, including another app's API, which is why `tests/bin.test.ts` narrows
+  with `--pid` — an unscoped search in a test is the ambiguity refusal, not a
+  result. It never calls `start()`, which would heartbeat and count itself.
 - **`pause`, `resume` and `drain` are operator verbs (`FJS-D198`).** Over HTTP
   (`POST {base}/queues/{name}/pause|resume|drain`) they need ADMINISTRATOR on top
   of `authorize`, graded by toolbelt's `gradeStanding`; a caller with no session
@@ -242,4 +259,6 @@ a sweep cancel names `system`.
 A change to the claim or to a pause is `tests/queue-operator.test.ts`, whose
 cross-instance rows use a real FILE — `:memory:` is a database per instance and
 agrees with any bug — and whose statement row asks the SQL directly, with an
-unpaused queue beside it.
+unpaused queue beside it. A change to the bin is `tests/bin.test.ts`, which
+SPAWNS it, and then `bun run ci -- --phase deploy`, whose `pauseQueueCycle` is
+the only place the bin runs inside a container with no `--pid`.

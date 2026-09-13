@@ -12,7 +12,15 @@ more read. Growing the window widens the limit instead of resuming from a cursor
 re-reads all of it anyway. The other answer — merge the push over the held row — was refused: it is free
 and goes stale in silence once a push moves a key an include was read through. `tests/resource-list.test.js`
 carries six rows, with the push paired against a store-backed control that loses the relation; every
-mutant tried reds at least one. **Nothing notices an omitted flag**, the gap `record()` already has.
+mutant tried reds at least one.
+
+**An omitted flag is named, in dev.** A `list()` or `record()` read that answered a declared RELATION key
+(an include, null included) or an object or array under a key the model does not declare (a child list)
+warns once per view, naming the keys and the call that fixes it. A bare scalar under an undeclared key is
+deliberately not flagged: `createdAt` and `updatedAt` are in no schema mode the build emits, so reading
+those as composed would warn on every list. Gated on `import.meta.env?.DEV` — measured in basecamp's
+production bundle, the warning text is absent while an ungated warning from the same file is present, and
+removing the gate puts it back. Every other mutant reds a row of `tests/resource-list.test.js`.
 
 ## 2026-09-12 — a page served from a custom scheme keeps its router
 

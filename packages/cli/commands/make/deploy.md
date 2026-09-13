@@ -108,6 +108,11 @@ COPY --from=base /app .
 # and left on its default the container writes it beside the code and the next
 # swap takes it with the rows in it. Bind AUDIT_PATH=/db/audit/ beside
 # DATABASE_URL -- fli check's log-db-unbound is what says so.
+#
+# A Caravan jobs database is the third, and its default path is inside the
+# container too: a deploy starts an empty queue and a deploy while paused starts
+# one with no pause in it. Put it beside DATABASE_URL. The deploy asks the running
+# app where its jobs database is before the swap, and says so when it is not here.
 RUN mkdir -p /db
 
 EXPOSE 3000

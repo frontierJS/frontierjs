@@ -2198,3 +2198,62 @@ describe('a bad appliance id names itself, and a refusal is not logged as a faul
     expect(said.some(l => l.data?.status === 404)).toBe(true)
   })
 })
+
+// ─── FJS-1087: custom methods whose caller the floor did not grade ───────────
+//
+// `surface.snapshot.md` lists 110 methods here that only check presence. Read
+// one by one, three reached past that: a roster read through `asSystem()` for
+// any id, conduit's cross-workspace registry behind `authenticate` alone, and
+// two writers of a protected environment that skipped the check `patch` makes.
+// Every refusal is PAIRED with the caller it must still admit.
+describe('a custom method grades its caller before a system read or a guarded write', () => {
+  test('members answers a member and refuses anyone else exactly as get does', async () => {
+    const roster = await env.as(viewer).service('workspaces').call('members', ws.id)
+    expect(roster.total).toBeGreaterThanOrEqual(3)
+
+    await expect(env.as(outsider).service('workspaces').call('members', ws.id)).rejects.toThrow(/not found/)
+    await expect(env.as(outsider).service('workspaces').get(ws.id)).rejects.toThrow(/not found/)
+  })
+
+  test('the conduit registry is the hub tier: a sysadmin lists it, a workspace owner does not', async () => {
+    await (env.app as any).conduit.register({
+      id: `outpost:fjs-1087-${Math.random().toString(36).slice(2, 8)}`, kind: 'outpost', protocol: 'http',
+      address: 'http://127.0.0.1:9', auth: { type: 'hmac', ref: 'secret:none' }, registered_at: Date.now(), last_seen_at: null,
+    })
+    const listed = await env.as(sysadmin).service('conduit-targets').find()
+    const rows   = Array.isArray(listed) ? listed : listed.data
+    expect(rows.some((t: any) => String(t.id).startsWith('outpost:fjs-1087-'))).toBe(true)
+
+    await expect(env.as(owner).service('conduit-targets').find()).rejects.toThrow()
+    await expect(env.as(owner).service('conduit-targets').remove(rows[0].id)).rejects.toThrow()
+    expect((await (env.app as any).conduit.list()).some((t: any) => t.id === rows[0].id)).toBe(true)
+  })
+
+  test('a protected environment refuses a developer on every writer, and an owner still writes it', async () => {
+    const sys  = env.system as any
+    const proj = await sys.project.create({ data: { workspaceId: ws.id, name: 'Prot', slug: `prot-${Math.random().toString(36).slice(2, 8)}` } })
+    const prod = await sys.environment.create({ data: { workspaceId: ws.id, projectId: proj.id, name: 'prod', slug: `prod-${Math.random().toString(36).slice(2, 8)}`, isProtected: true } })
+    const vars = async () => (await sys.environment.findFirst({ where: { id: prod.id } })).variables
+
+    for (const call of [
+      () => env.as(developer).service('environments').call('setVariable', prod.id, { key: 'DATABASE_URL', value: 'postgres://elsewhere', secret: false }),
+      () => env.as(developer).service('environments').call('deleteVariable', prod.id, { key: 'DATABASE_URL' }),
+    ]) await expect(call()).rejects.toThrow(/Protected environments/)
+    expect(await vars()).toEqual([])
+
+    await env.as(owner).service('environments').call('setVariable', prod.id, { key: 'DATABASE_URL', value: 'postgres://real', secret: true })
+    expect((await vars()).map((v: any) => v.key)).toEqual(['DATABASE_URL'])
+  })
+
+  test('restore is graded as an update: a viewer is refused and a developer restores', async () => {
+    const sys  = env.system as any
+    const proj = await sys.project.create({ data: { workspaceId: ws.id, name: 'Gone', slug: `gone-${Math.random().toString(36).slice(2, 8)}` } })
+    await sys.project.remove({ where: { id: proj.id } })
+    const deleted = async () => Boolean((await sys.project.findFirst({ where: { id: proj.id }, withDeleted: true })).deletedAt)
+
+    await expect(env.as(viewer).service('projects').call('restore', proj.id)).rejects.toThrow(/level 4/)
+    expect(await deleted()).toBe(true)
+    await env.as(developer).service('projects').call('restore', proj.id)
+    expect(await deleted()).toBe(false)
+  })
+})

@@ -37,6 +37,17 @@ extend model User {
   isStaff Boolean @default(false) @allow('write', auth().isAdmin)
 }
 
+// ─── Who is a sysadmin ────────────────────────────────────────────────────
+//
+// SYSADMIN(7) is the platform's own operators — the level that may reset a
+// person's lost second factor. It is a column and not a `role` value for the
+// reason `isStaff` is: `role` is written by any admin, so a level read off it is
+// a level every admin can grant. Only a sysadmin writes this one, and the first
+// is made by the seed, through `asSystem()`.
+extend model User {
+  isSystemAdmin Boolean @default(false) @allow('write', auth().isSystemAdmin)
+}
+
 // ─── Who may read the roster ──────────────────────────────────────────────
 //
 // auth ships `User` at `@@gate("4.4.4.5")` and NO read policy, which is the

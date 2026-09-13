@@ -35,7 +35,7 @@ import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts
 import { registerAllAccounts } from './providers/compute/accounts.ts'
 import { enrollTokenMatches, mintOutpostSecret, installScript } from './providers/compute/enrollment.ts'
 import { notificationsPlugin }  from '@frontierjs/notifications'
-import { basecampAuditLog, basecampAuditPreImage, requireOutpostSignature, resolveWorkspaceId } from './core/hooks.ts'
+import { basecampAuditLog, basecampAuditPreImage, requireOutpostSignature, requireSystemAdmin, resolveWorkspaceId } from './core/hooks.ts'
 import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
 import { apiKeyGuard, apiKeyUsage }       from './services/api-keys/scopes.ts'
@@ -305,7 +305,11 @@ export async function buildBasecampApp(
     // decision — GET|DELETE /conduit-targets is an operational endpoint.
     // NB: `authenticate`, not `authenticate()` — it IS the hook, not a factory.
     // Conduit's own error message suggests the calling form, which throws.
-    management: { hooks: { before: { all: [authenticate] } } },
+    //
+    // The registry spans every workspace — each outpost and channel target —
+    // so it is the hub tier. Signed in alone let any account list them all and
+    // DELETE another workspace's machine out of it (`FJS-1087`).
+    management: { hooks: { before: { all: [authenticate, requireSystemAdmin()] } } },
     // Observers: they receive and cannot act. `management.hooks` above is the
     // other word and means the other thing — a pipeline that can refuse.
     observers: {

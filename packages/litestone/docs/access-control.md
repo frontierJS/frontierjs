@@ -875,6 +875,12 @@ caller document 42 is there, which is exactly what a row policy is keeping from 
 So read, update and delete narrow the `WHERE` and answer nothing, and a wrong policy
 is an empty screen rather than an error.
 
+**A state machine throws, and only at a caller who can already see the row.** A move's
+refusals — the update policy, the move's `@gate`, `@system`, a wrong from-state — each
+name the row, so the move looks its row up through the caller's READ scope first (the
+global filter, the plugins' read filters, the read policy). A row outside it answers
+`null`, exactly as an id that does not exist; only a readable row reaches a refusal.
+
 **Create is the exception and it proves the rule.** There is no stored row to protect:
 the payload IS the row and the caller wrote it, so a refusal leaks nothing they did not
 already know. It throws.

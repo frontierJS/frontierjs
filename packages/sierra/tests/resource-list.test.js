@@ -40,6 +40,7 @@ let total = ROWS.length
 // What a service whose `find()` includes a relation answers: the row PLUS a
 // key no push carries.
 let includes = false
+let extra    = null   // keys laid over every row, for the shapes an include is not
 let delayMs  = 0
 
 const original = globalThis.fetch
@@ -52,7 +53,10 @@ globalThis.fetch = (async (url, init) => {
     failNext = false
     return new Response(JSON.stringify({ message: 'boom' }), { status: 500, headers: { 'Content-Type': 'application/json' } })
   }
-  const data = includes ? ROWS.map(r => ({ ...r, customer: { id: 9, name: 'Acme' } })) : ROWS
+  let data = includes ? ROWS.map(r => ({ ...r, customer: { id: 9, name: 'Acme' } })) : ROWS
+  if (extra) data = data.map(r => ({ ...r, ...extra }))
+  const one = u.pathname.match(/^\/invoices\/(\d+)$/)
+  if (one) return json(data.find(r => r.id === Number(one[1])))
   return json({ kind: 'list', object: 'invoices', data, errors: [], total, limit: 20, offset: 0 })
 })
 
@@ -139,6 +143,7 @@ beforeEach(() => {
   failNext = false
   total = ROWS.length
   includes = false
+  extra = null
   delayMs = 0
 })
 
@@ -543,6 +548,101 @@ describe('composed: the rows carry what a push does not', () => {
     await settle()
     expect(sent.length).toBe(before + 1)
     vi.restoreAllMocks()
+  })
+})
+
+// ─── Telling an author who forgot the flag ─────────────────────────────────
+
+describe('a read that answered more than the row, on a view that is not composed', () => {
+  // The schema reaches the browser through the build's own step, because the
+  // question is what the MODEL declares — and `createdAt` is in no mode that
+  // step emits, which is the row that keeps the check from warning on everything.
+  async function build() {
+    const dir  = mkdtempSync(join(tmpdir(), 'sierra-composed-'))
+    const file = join(dir, 'schema.lite')
+    writeFileSync(file, `
+      model Customer {
+        id    Int    @id
+        name  String
+      }
+      model Invoice {
+        id          Int       @id
+        number      String
+        status      String
+        total       Int
+        customerId  Int?
+        customer    Customer? @relation(fields: [customerId], references: [id])
+        createdAt   DateTime  @default(now())
+      }
+    `)
+    const g = await generateSchemas(file, () => {}, SIERRA_ROOT)
+    registerSchemas(g.defs, g.models, g.updatePatch, g.readPatch)
+  }
+  const warnings = () => warn.mock.calls.map(c => String(c[0])).filter(m => m.includes('composed: true'))
+  let warn
+  beforeEach(() => { warn = vi.spyOn(console, 'warn').mockImplementation(() => {}) })
+  afterEach(() => warn.mockRestore())
+
+  test('an include on a plain list is named, once, with the flag that fixes it', async () => {
+    await build()
+    await boot('/invoices/')
+    includes = true
+    const invoices = createResource('invoices', { model: 'Invoice' })
+    const list = track(invoices.list({ state: 'local' }))
+    await settle()
+    list.reload()
+    await settle()
+
+    expect(warnings()).toHaveLength(1)
+    expect(warnings()[0]).toContain("'customer'")
+    expect(warnings()[0]).toContain('list({ composed: true })')
+  })
+
+  test('the same read declared composed, and a plain read with no include, say nothing', async () => {
+    await build()
+    await boot('/invoices/')
+    includes = true
+    track(createResource('invoices', { model: 'Invoice' }).list({ state: 'local', composed: true }))
+    await settle()
+    includes = false
+    // `createdAt` is undeclared in every emitted mode and must not read as composed.
+    ROWS.forEach(r => { r.createdAt = '2026-09-12T00:00:00.000Z' })
+    try {
+      track(createResource('invoices', { model: 'Invoice' }).list({ state: 'local' }))
+      await settle()
+    } finally {
+      ROWS.forEach(r => { delete r.createdAt })
+    }
+    expect(warnings()).toEqual([])
+  })
+
+  test('both shapes are named: a relation left null, and a child list no relation declares', async () => {
+    await build()
+    await boot('/invoices/')
+    // An optional include that found nothing is still an include.
+    extra = { customer: null }
+    track(createResource('invoices', { model: 'Invoice' }).list({ state: 'local' }))
+    await settle()
+    expect(warnings().at(-1)).toContain("'customer'")
+
+    extra = { lines: [{ sku: 'A' }] }
+    track(createResource('invoices', { model: 'Invoice' }).list({ state: 'local' }))
+    await settle()
+    expect(warnings()).toHaveLength(2)
+    expect(warnings().at(-1)).toContain("'lines'")
+  })
+
+  test('record() asks the same question of its first read', async () => {
+    await build()
+    await boot('/invoices/')
+    includes = true
+    const invoices = createResource('invoices', { model: 'Invoice' })
+    await invoices.record(2).ready
+    expect(warnings()).toHaveLength(1)
+    expect(warnings()[0]).toContain('record(id, { composed: true })')
+
+    await createResource('invoices', { model: 'Invoice' }).record(3, { composed: true }).ready
+    expect(warnings()).toHaveLength(1)
   })
 })
 

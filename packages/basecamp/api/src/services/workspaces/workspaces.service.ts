@@ -207,7 +207,15 @@ export function createWorkspacesService(app: BasecampApp) {
     // ── members ───────────────────────────────────────────────────────
     // asSystem: User is auth's model. Even with gates absent today, member
     // listing is a membership question and reads as one.
+    //
+    // The read is a system one for ANY id, so membership is checked first and
+    // answers like `get` does — without it any signed-in account read another
+    // workspace's roster, whole User rows included (`FJS-1087`).
     async members() {
+      const user = sessionOf()
+      const mine = await members().findFirst({ where: { workspaceId: $.id as string, userId: user.userId } })
+      if (!mine) throw new NotFound(`Workspace '${$.id}' not found`)
+
       const rows = await members().findMany({
         where:   { workspaceId: $.id as string },
         include: { user: true },

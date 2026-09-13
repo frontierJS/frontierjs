@@ -222,6 +222,28 @@ function walkSql(dir) {
 // app gets on the next release, and the one place it may not hold is written down
 // where the next person can disagree with it.
 
+// A rule answers `{ findings: [...] }` or `{ skipped: 'why' }`, and anything else
+// THROWS naming the rule. Read leniently, a rule returning a bare array — which
+// is what a body building `findings` reads like — contributed nothing, was
+// counted as having run, and had 0 written into the baseline as its ceiling:
+// a broken rule and a satisfied one printed the same line (FJS-1049). The shape
+// is the same on every tree, so a wrong one fails the rule's first test.
+export function verdictOf(rule, out) {
+  const plain   = out !== null && typeof out === 'object' && !Array.isArray(out)
+  const skip    = plain && typeof out.skipped === 'string' && out.skipped !== ''
+  const listed  = plain && Array.isArray(out.findings)
+  if (plain && skip !== listed && (skip ? !('findings' in out) : !('skipped' in out))) return out
+
+  const got = Array.isArray(out) ? `an array of ${out.length}`
+            : plain              ? `an object with keys [${Object.keys(out).join(', ')}]`
+            :                      String(out === null ? null : typeof out)
+  throw new Error(
+    `fli check: rule \`${rule.id}\` returned ${got}. A rule answers { findings: [...] } or ` +
+    `{ skipped: 'why' } — exactly one — and any other shape would be read as a rule that ran ` +
+    `and found nothing.`
+  )
+}
+
 export function runChecks({ root, only = null, scope = 'app', allow = {} } = {}) {
   const wanted = RULES.filter(r =>
     (scope === 'both' || r.scope === scope) && (!only || only.includes(r.id)))
@@ -232,7 +254,7 @@ export function runChecks({ root, only = null, scope = 'app', allow = {} } = {})
   const skipped  = []
 
   for (const rule of wanted) {
-    const out = CHECKS[rule.id]({ root, rule })
+    const out = verdictOf(rule, CHECKS[rule.id]({ root, rule }))
     if (out.skipped) skipped.push({ rule: rule.id, why: out.skipped })
     else             ran.push(rule.id)
     for (const f of out.findings ?? []) {
@@ -729,13 +751,13 @@ const CHECKS = {
     if (!existsSync(join(root, 'db', 'schema.lite'))) return { skipped: 'not an app root' }
 
     const has = (...p) => existsSync(join(root, ...p))
-    const surfaces = ['api', 'web', 'widgets', 'site', 'extension'].filter(d => has(d))
+    const surfaces = SURFACES.filter(d => has(d))
 
     // A schema with no surface beside it is a single-realm fixture, not an app
     // that got the layout wrong. Asked before judging, because a check that
     // scolds every fixture in a repo is a check people turn off.
     if (!surfaces.length)
-      return { skipped: 'a schema with no api/, web/, widgets/, site/ or extension/ beside it — a fixture, not an app' }
+      return { skipped: `a schema with no ${SURFACES.map(s => s + '/').join(', ')} beside it — a fixture, not an app` }
 
     const findings = []
 
@@ -966,7 +988,7 @@ const CHECKS = {
     const findings = []
     let looked = 0
 
-    for (const surface of ['api', 'web', 'widgets', 'site', 'extension']) {
+    for (const surface of SURFACES) {
       const dir = join(root, surface)
       if (!existsSync(dir)) continue
 
@@ -1135,7 +1157,7 @@ const CHECKS = {
   // `db.$setAuth(u).order.create(…)` both keep the answer, and a call spanning
   // two lines is left alone rather than guessed at.
   'set-auth-discarded': ({ root }) => {
-    const files = scripts(root, 'api', 'db', 'web', 'widgets', 'site', 'extension')
+    const files = scripts(root, 'api', 'db', ...CLIENT_SURFACES)
     if (!files.length) return { skipped: 'no source' }
 
     const findings = []
@@ -1180,7 +1202,7 @@ const CHECKS = {
   // in the file they are written in.
   'call-header-declared': ({ root }) => {
     if (!existsSync(join(root, 'api'))) return { skipped: 'no api/ surface — the server is elsewhere' }
-    const client = scripts(root, 'web', 'widgets', 'site', 'extension')
+    const client = scripts(root, ...CLIENT_SURFACES)
     if (!client.length) return { skipped: 'no client surface' }
     const api = scripts(root, 'api')
 
@@ -1325,7 +1347,7 @@ const CHECKS = {
   'resource-model-miss': ({ root }) => {
     const schema = schemaFile(root)
     if (!schema) return { skipped: 'no db/schema.lite' }
-    const files = sources(root, ['.mesa', ...SCRIPT_EXT], 'web', 'widgets', 'site', 'extension')
+    const files = sources(root, ['.mesa', ...SCRIPT_EXT], ...CLIENT_SURFACES)
     if (!files.length) return { skipped: 'no client surface' }
 
     const { resolves, modelNamed } = modelResolver(schema, root)
@@ -1456,7 +1478,7 @@ const CHECKS = {
     for (const name of plain) money.delete(name)
     if (!money.size) return { skipped: 'every @money column shares its name with a plain one' }
 
-    const files = sources(root, ['.mesa'], 'web', 'widgets', 'site', 'extension')
+    const files = sources(root, ['.mesa'], ...CLIENT_SURFACES)
     if (!files.length) return { skipped: 'no client surface' }
 
     const findings = []
@@ -1507,7 +1529,7 @@ const CHECKS = {
     // still render, and only the sort is dead — `aria-sort` stuck at `none` and
     // a header that never reverses. Nothing throws and nothing looks wrong,
     // which is the failure class the rule exists for.
-    const files = sources(root, ['.mesa'], 'web', 'widgets', 'site', 'extension')
+    const files = sources(root, ['.mesa'], ...CLIENT_SURFACES)
     if (!files.length) return { skipped: 'no client surface' }
 
     // Only a file that actually renders one. `key:` is an ordinary property
@@ -1571,7 +1593,7 @@ const CHECKS = {
     // it, which is where the live defect was: an exact `publicRoutes` rule was
     // compared against a path that carried the query, so `/login/` stopped
     // matching `/login/?returnTo=…`.
-    const files = sources(root, ['.mesa', ...SCRIPT_EXT], 'web', 'widgets', 'site', 'extension')
+    const files = sources(root, ['.mesa', ...SCRIPT_EXT], ...CLIENT_SURFACES)
     if (!files.length) return { skipped: 'no client surface' }
 
     // A member access on `page` or on a navigation target, and nothing else:
@@ -1605,7 +1627,7 @@ const CHECKS = {
   },
 
   'detail-read-dead': ({ root }) => {
-    const files = sources(root, ['.mesa', ...SCRIPT_EXT], 'web', 'widgets', 'site', 'extension')
+    const files = sources(root, ['.mesa', ...SCRIPT_EXT], ...CLIENT_SURFACES)
     if (!files.length) return { skipped: 'no client surface' }
 
     const findings = []
@@ -1703,7 +1725,7 @@ const CHECKS = {
       }
     }
 
-    return looked ? { findings } : { findings, skipped: 'no service.get() on a client surface' }
+    return looked ? { findings } : { skipped: 'no service.get() on a client surface' }
   },
 
   'service-module-db': ({ root }) => {
@@ -2771,7 +2793,7 @@ const CHECKS = {
     if (!defined.size) return { skipped: 'no dependency ships CSS' }
 
     const findings = []
-    for (const surface of ['web', 'site', 'widgets', 'extension']) {
+    for (const surface of CLIENT_SURFACES) {
       walk(join(root, surface), 6, (dir) => {
         for (const name of safeRead(dir)) {
           if (!name.endsWith('.mesa') && !name.endsWith('.css')) continue
@@ -2996,6 +3018,13 @@ const CHECKS = {
 // ─── reading source ───────────────────────────────────────────────────────────
 
 const SCRIPT_EXT = new Set(['.ts', '.js', '.mjs', '.mts', '.cjs', '.cts'])
+
+// Every surface directory an app may carry beside db/ (Invariant 3). The client
+// surfaces are the ones whose source runs in a browser, a webview or an
+// extension. One list, because a surface missing from one rule's copy is source
+// that rule never reads, and nothing says so.
+const CLIENT_SURFACES = ['web', 'widgets', 'site', 'extension', 'desktop']
+const SURFACES        = ['api', ...CLIENT_SURFACES]
 
 /** Every file of the given extensions under the named directories, in tree order. */
 function sources(root, exts, ...dirs) {

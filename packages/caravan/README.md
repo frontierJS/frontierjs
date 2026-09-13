@@ -311,6 +311,38 @@ the heartbeat is a timer: a handler that **blocks** the event loop for longer
 than `lease` stalls its own heartbeat and has its work reclaimed under it — work
 that does not yield is work this queue cannot supervise.
 
+## Pausing work
+
+A pause stops CLAIMING, on every instance that shares the jobs database, and
+survives a restart. Work already running finishes; a dispatch into a paused
+queue is still queued and runs on resume.
+
+```ts
+app.jobs.queue('mail').pause({ actor: 'ops', reason: 'bounce storm' })
+await app.jobs.queue('mail').drain({ timeout: 30_000 })   // pause, then wait on running jobs
+app.jobs.queue('mail').resume({ actor: 'ops' })
+
+app.jobs.pause({ actor: 'ops' })     // every queue, including one first named later
+app.jobs.stats().queues.mail.pausedMs  // how long it has been paused, or null
+```
+
+These are operator verbs (`FJS-D198`): over HTTP they need ADMINISTRATOR, and
+`fli check` refuses them in a service or job file. `queue('mial')` refuses and
+lists the queues that exist. A pause may carry a `holder`, and a resume stating
+one lifts only that holder's pause.
+
+From a shell, with no app code:
+
+```sh
+caravan queue drain --actor ops --reason 'migration'   # every queue
+caravan queue state mail
+caravan queue resume --actor ops
+```
+
+The bin finds the jobs database a process on the machine has open, or takes
+`--db`; it never creates one, and it prints one line of JSON. `fli deploy:pause`
+runs it inside the serving container.
+
 ## Tests
 
 ```bash

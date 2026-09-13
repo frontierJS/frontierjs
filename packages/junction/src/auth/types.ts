@@ -252,6 +252,11 @@ export interface IAuth {
   /** Is it on, and how many ways back are left. What a settings screen reads. */
   totpStatus?(userId: string): Promise<{ enabled: boolean; recoveryCodesRemaining: number }>
 
+  /** An OPERATOR removes somebody else's factor and ends their sessions. No
+   *  password: who may call it is decided above the provider, and `actorId` is
+   *  who the trail names. Refuses the operator's own account. */
+  resetTotp?(userId: string, opts: { actorId: string }): Promise<{ sessionsRevoked: number }>
+
   /** Does this code verify for this user, right now. Does NOT consume the step —
    *  a re-auth check and a login are different questions. */
   verifyTotp?(userId: string, code: string): Promise<boolean>

@@ -1154,13 +1154,16 @@ here so it cannot be mistaken for part of this phase.
 `CHANGES.md`): `app.jobs.queue(name).pause()` writes a row in `jobs.db` that the
 claim statement reads, so every instance honors it and a restart does not lift it.
 A row in a file is also the answer to *a way to say so that is not a restart* — no
-signal and no route has to reach the process. **The join is ruled and not built** (`FJS-D262`): `fli deploy:pause` will drain
+signal and no route has to reach the process. **The join was built on 2026-09-12** (`FJS-D262`): `fli deploy:pause` drains
 every queue by running Caravan's own bin inside the serving container —
 `05-backup`'s shape — rather than writing `queue_pauses` through the journal's
 runner, which would have made `fli` a second writer of Caravan's schema. On by
-default with no flag, LIFO order, and a queue pause is lifted only by the
-transition that holds it. Until that lands the command still says in words that
-jobs keep running.
+default with no flag, LIFO order, one pause row over every queue, and a queue
+pause is lifted only by the deploy that holds it. The bin finds the database the
+app has open rather than being told a path. Proven against a real container by
+`pauseQueueCycle`. **So this section's title is now history**: a pause stops
+callers AND claims, and what it still does not stop is a job already running
+when the drain gives up waiting, which is reported with its count.
 
 ---
 

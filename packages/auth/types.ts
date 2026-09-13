@@ -4,6 +4,36 @@
 
 import type { RateLimitHookOptions, SessionContext } from '@frontierjs/junction'
 
+// ─── A way into an account changed ──────────────────────────────────────────────
+
+/**
+ * Every change `onCredentialChanged` is told about — each one an `operation`
+ * the audit trail already records under the same name. A value because
+ * `tests/credential-events.test.ts` reads `auth.ts` for any of these written
+ * straight to the trail, which would record the change and tell nobody.
+ */
+export const CREDENTIAL_EVENTS = [
+  'password.changed', 'password.reset',
+  'totp.enabled', 'totp.disabled', 'totp.reset',
+  'recoveryCodes.regenerated', 'recovery.used',
+  'apikey.created', 'apikey.revoked',
+  'oauth.linked', 'oauth.unlinked',
+] as const
+
+export type CredentialEvent = typeof CREDENTIAL_EVENTS[number]
+
+export interface CredentialChange {
+  event:   CredentialEvent
+  /** Whose account changed. */
+  userId:  string
+  /** Where to tell them — read from the row when the change happens. */
+  email:   string
+  /** Who made the change: the account itself, or the operator for `totp.reset`. */
+  actorId: string
+  at:      string
+  meta:    Record<string, unknown>
+}
+
 // ─── createLitestoneAuth options ────────────────────────────────────────────────
 
 export interface LitestoneAuthOptions {
@@ -121,8 +151,9 @@ export interface LitestoneAuthOptions {
   // **the hook is the gate, `db.$audit` is the record.**
   //
   // These are single handlers, not a bus: one owner per decision. A second
-  // listener that wants to observe rather than decide belongs on Junction's
-  // `app.events`, which is a different question and is not answered here.
+  // listener to one of these decisions belongs on Junction's `app.events`.
+  // `onCredentialChanged` below is not a second listener — it observes changes
+  // no hook here decides, and it is the only observer this provider holds.
 
   /** After the password verifies, BEFORE a session is issued. Throw to refuse. */
   onLogin?: (event: { user: SessionContext }) => Promise<void> | void
@@ -161,6 +192,31 @@ export interface LitestoneAuthOptions {
     email: string
     name:  string | null
   }) => Promise<void> | void
+
+  // ─── Telling the person ─────────────────────────────────────────────────
+
+  /**
+   * A way into this account changed. **Observer tier** (`FJS-D06`), which is the
+   * opposite of the four above: called AFTER the write and the audit entry,
+   * awaited, and a throw is logged and never refuses — a mail outage must not
+   * keep a factor switched on that the person asked to switch off, and by then
+   * the write has happened anyway.
+   *
+   * The place to email the account's owner. NIST SP 800-63B requires it for a
+   * factor bound or removed, and a person who did not make the change learns of
+   * it here or not at all. Optional to the type system and required in practice,
+   * the same shape as `onPasswordResetRequested`.
+   *
+   * `event` is the audit trail's own `operation` for the same change, so the
+   * record and the notification cannot name two different things. `actorId` is
+   * the account itself except for `totp.reset`, where it is the operator. `meta`
+   * carries counts and provider names and never a secret, a code or a key.
+   *
+   *   onCredentialChanged: async ({ event, email }) => {
+   *     await mailer.send({ to: email, subject: 'Your sign-in settings changed', text: … })
+   *   }
+   */
+  onCredentialChanged?: (event: CredentialChange) => Promise<void> | void
 
   // ─── OAuth ──────────────────────────────────────────────────────────────
   //
@@ -245,6 +301,13 @@ export interface AuthServicesOptions {
   apiKeys?:  string | false
   /** Which providers are attached, and detaching one. */
   connections?: string | false
+  /**
+   * An operator acting on SOMEBODY ELSE's credentials — today, resetting a lost
+   * second factor. Refused below SYSADMIN(7), graded by `level` below, which it
+   * cannot work without: absent, every call is a 403 naming that option
+   * (`FJS-D264`).
+   */
+  accountRecovery?: string | false
 
   /**
    * Grade the caller onto the app's own 0–7 ladder for `account.me`.
@@ -258,7 +321,10 @@ export interface AuthServicesOptions {
    *
    *   level: shopGateLevel
    *
-   * A UI reads the answer to decide what to offer. It is never a boundary.
+   * On `account.me` a UI reads the answer to decide what to offer, and there it
+   * is never a boundary. On `accountRecovery` it IS the boundary — the operator
+   * and the person are both graded by it — so a resolver that lets a column
+   * somebody below SYSADMIN can write reach 7 hands out the reset with it.
    */
   level?: (session: SessionContext) => number
 

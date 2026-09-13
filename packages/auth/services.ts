@@ -17,17 +17,19 @@
 //   api-keys   GET/POST /api-keys · DEL /api-keys/{id}
 //   connections GET /connections      which providers are attached
 //               DEL /connections/{id} detach one
+//   account-recovery POST /account-recovery/{userId}  X-Service-Method: resetTotp
 //
-// Three nouns rather than one grab-bag service, and each one is the caller's
-// OWN: every method here scopes to `ctx.auth.user.userId` and nothing takes a
-// user id from the caller. An operator acting on somebody else's account is a
-// different service with a different gate, and this is not it.
+// Four nouns are the caller's OWN: every method on them scopes to
+// `ctx.auth.user.userId` and nothing takes a user id from the caller.
+// `account-recovery` is the exception and is a service of its own for that
+// reason — an operator acting on somebody else's account, where the id IS the
+// person, behind a floor none of the other four have.
 //
 // A provider that implements none of the optional IAuth methods still loads:
 // each method answers 400 by name, the way the /auth routes already do for
 // password reset.
 
-import { createService, rateLimitHook, BadRequest, Unauthorized, Forbidden, NotFound } from '@frontierjs/junction'
+import { createService, rateLimitHook, BadRequest, Unauthorized, Forbidden, NotFound, LEVELS } from '@frontierjs/junction'
 import type { IAuth, SessionContext, ServiceContext, Service } from '@frontierjs/junction'
 import type { AuthServicesOptions } from './types.ts'
 import type { AuthOAuth }           from './oauth.ts'
@@ -44,6 +46,7 @@ export const DEFAULT_SERVICE_NAMES = {
   sessions: 'sessions',
   apiKeys:  'api-keys',
   connections: 'connections',
+  accountRecovery: 'account-recovery',
 } as const
 
 export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions = {}): Service[] {
@@ -73,6 +76,7 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     sessions: opts.sessions ?? DEFAULT_SERVICE_NAMES.sessions,
     apiKeys:  opts.apiKeys  ?? DEFAULT_SERVICE_NAMES.apiKeys,
     connections: opts.connections ?? DEFAULT_SERVICE_NAMES.connections,
+    accountRecovery: opts.accountRecovery ?? DEFAULT_SERVICE_NAMES.accountRecovery,
   }
 
   for (const [key, name] of Object.entries(names)) {
@@ -363,6 +367,56 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       // The caller's own id, never one from the payload — the same rule the
       // three services above hold to.
       return need('removeConnection')(user.userId, String(ctx.id))
+    },
+  }))
+
+  // ─── account-recovery ─────────────────────────────────────────────────────
+  //
+  // An operator acting on somebody else's credentials, for the person who has
+  // lost the way back themselves. Removing a second factor takes off the one
+  // thing standing between a stolen password and the account, and a help desk
+  // is how that password's owner gets talked past — so the floor is SYSADMIN(7)
+  // and it is not an option (`FJS-D264`). `startSupport` takes a guard instead
+  // because who may act AS somebody varies by app; who may strip a protection
+  // off somebody does not.
+  //
+  // Both people are graded by the app's own `level`, the resolver every request
+  // is graded by, so this states a floor and never a second role→level mapping.
+  // The person must grade BELOW the operator: a sysadmin cannot reset a peer,
+  // which is also what keeps the reset from being the way one sysadmin's
+  // compromise becomes two.
+
+  if (names.accountRecovery !== false) services.push(createService({
+    name: names.accountRecovery as string,
+    methods: ['resetTotp'],
+
+    async resetTotp(ctx: ServiceContext) {
+      const operator = caller(ctx)
+      // An episode resolves as the subject, so the operator would be graded as
+      // somebody else — and a reset outlives the episode that made it.
+      refuseInSupport(operator, "reset somebody's second factor")
+
+      if (!level) {
+        throw new Forbidden(
+          'Account recovery needs the app\'s level resolver — pass services: { level } to createAuthPlugin'
+        )
+      }
+      if (level(operator) < LEVELS.SYSADMIN) {
+        throw new Forbidden('Resetting a second factor requires SYSADMIN (7)')
+      }
+
+      const userId = String(ctx.id ?? '')
+      if (!userId || userId === 'me' || userId === operator.userId) {
+        throw new Forbidden('Resetting your own second factor is account.disableTotp, which asks for your password')
+      }
+
+      const person = await need('sessionFor')(userId)
+      if (!person) throw new NotFound(`No user '${userId}'`)
+      if (level(person) >= level(operator)) {
+        throw new Forbidden('That account stands at or above yours — it cannot be reset from here')
+      }
+
+      return need('resetTotp')(userId, { actorId: operator.userId })
     },
   }))
 

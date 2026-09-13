@@ -80,3 +80,8 @@ _tmp_slots_*/
 # output's `import '@frontierjs/mesa/runtime.js'` resolves; it unlinks them in a
 # finally, so these only survive a hard-killed run. Nine reached a commit once.
 __mesa_render_*.mjs
+
+# grumble is a standalone library incubating here; it will not live in this repo.
+# It carries no package.json on purpose: packages/* would make it a workspace
+# member and bun.lock (committed) would record it.
+packages/grumble/

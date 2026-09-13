@@ -1,5 +1,77 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-12 — `desktop/` is a surface `fli check` reads
+
+**The surface list is one constant in `core/checks.js` now, and `desktop/` is on it** (`FJS-D263`).
+Ten rules each restated which directories are surfaces, so a surface missing from one copy was
+source that rule never read with nothing saying so. `SURFACES` and `CLIENT_SURFACES` replace all ten.
+A desktop-only app — `desktop/src/` beside `db/` — is graded as an app rather than skipped as a
+fixture, and every rule reading client source reads `desktop/src` as it reads `web/src`; the three
+rows in `tests/checks.test.js` go red with `desktop` taken back out of the list.
+
+## 2026-09-12 — a rule answering the wrong shape throws instead of passing
+
+`FJS-1049`. `runChecks` read `out.findings ?? []`, so a rule returning a bare array — which is what
+a body building `findings` reads like — contributed nothing, was listed as having run, and had 0
+written into `check-baseline.json` as its ceiling. `verdictOf` now requires exactly one of
+`{ findings: [...] }` or `{ skipped: 'why' }` and throws naming the rule otherwise. Its first run
+found `detail-read-dead` answering both keys on a tree with nothing to read; the array was always
+empty there, and the rule now answers `{ skipped }` alone.
+
+## 2026-09-12 — a deploy asks where the jobs database is before it throws it away
+
+`FJS-1095`, measured: with Caravan's path left at its default, the running app
+held `/app/db/jobs.db` — inside the container — and a container swap turned one
+pending job and a pause into none of either, while the same swap with the file on
+`/db` kept both. That was every app wired by `fli outbox:install` or
+`fli backfill:install`, whose hints passed no `db`.
+
+**`_steps-docker/05b-jobs-volume` runs before `06-swap`**, against the container
+about to be replaced, and asks Caravan's own bin which database it has open. It
+is silent when the file is under the volume, when there is no container, no
+Caravan, or no open database. Outside the volume it prints what the swap will
+lose, with counts, and **refuses only when a pause is in force** — that deploy is
+a migration about to run with every queue claiming. Pending work alone warns,
+because refusing would deadlock: binding the path is itself a deploy.
+`CONTAINER_DB_DIR` is the one spelling of `/db`, read by `swapContainer`'s
+`--volume` and by the check. Both install hints now resolve the jobs database
+beside `DATABASE_URL` against the app root, and the Dockerfile template lists it
+beside the audit trail as a thing that must live under `/db`.
+
+## 2026-09-12 — a pause drains the queues, and an unpause gives back only its own
+
+`FJS-D262`. `fli deploy:pause` stopped callers and left every job, cron and
+outbox delivery running in the container it kept up, which is the half that
+matters for the migration a pause is usually taken for. Two steps join Caravan
+now: `03b-queues-pause` drains every queue once the edge answers 503, and
+`02a-queues-resume` resumes them before the guard file is removed.
+
+**Neither step writes Caravan's tables.** Each runs Caravan's own
+`caravan queue drain|resume` inside the serving container through
+`docker exec -w /app` — `05-backup`'s shape — so the code writing the pause row
+is the code the app reads it with, and nothing in `fli` knows where the jobs
+database is. `core/pause.js` gains the three pure halves: `queueScript` (the
+script, which always exits 0 and prints the bin's JSON last, since a non-zero
+exit carries a reason `capture` would throw away), `queueVerdict` (ok, note,
+warn or fail, from that JSON) and `queueStateLine`, which `deploy:status` prints
+beside the edge as `queues:` with drift named — an edge paused over claiming
+queues, or a deploy's queue pause over a serving edge. The pause is held by
+`fli:deploy`, so an operator's own pause survives the unpause and is printed.
+**Only a REFUSAL fails the transition** — two jobs databases open in one
+container, output nobody can read. No Caravan, no container and no open database
+are reported and succeed, because nothing is claiming jobs and a failed pause of
+an app that is down asks somebody to fix what is not broken. A refused pause
+leaves the edge paused and is finished by running it again; a refused unpause
+leaves the edge paused too. `03-verify`'s *jobs, crons and the outbox go on*
+warning is gone, since it stopped being true.
+
+The actor reaches the bin as one argument whatever it contains, asserted by
+running the arguments through a real shell rather than reading the text; with
+the quoting reduced to plain single quotes, two tests fail. `queue-operator-verb`
+also refuses `app.jobs.pause()` — the every-queue form — in a service or job
+file. `scripts/scaffold-build.mjs` `pauseQueueCycle` is the crossing, in CI's
+`deploy` phase.
+
 ## 2026-09-12 — the scaffolded sign-in page asks for a code
 
 `fli new`'s `routes/login/index.mesa` did `await signIn(); goto('/')`, so an account with two-step

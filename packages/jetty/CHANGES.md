@@ -9,6 +9,12 @@ so without the broadcast a popup kept showing a box that would refuse every code
 retryable refusal leaves the attempt where it was; `test/phase2.test.js` asserts the two as a pair, and
 stubbing the branch out reds the spent row alone.
 
+**`getConnectionState()` carries `awaitingCode`.** A popup opened AFTER the password asks the harbor
+for the session with `init`, and the reply can land before the page has registered a listener of its
+own — so the cached state is what that page starts from, and it copied `authenticated` and `user`
+only. `example`'s `verify:extension` found it: the popup that typed the password showed the code box
+and a second popup opened a moment later showed a password form over an attempt still waiting.
+
 ## 2026-09-12 — a toolbar sign-in that owes a code
 
 `adapter.auth.completeLogin(code)` on the wire side, `authFlow.submitCode(code)` through Harbor, and

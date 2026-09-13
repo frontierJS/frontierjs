@@ -42,11 +42,12 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/caravan`
 
-`packages/caravan` · ships `LICENSE` `README.md` `package.json` `src/`
+`packages/caravan` · ships `LICENSE` `README.md` `bin/` `package.json` `src/`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `. (import)` | `src/index.ts` | yes |
+| bin | `caravan` | `bin/caravan.ts` | yes |
 | main | `main` | `src/index.ts` | yes |
 
 - peers — `@frontierjs/junction`: `^0.1.0`

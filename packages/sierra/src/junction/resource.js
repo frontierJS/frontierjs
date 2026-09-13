@@ -1194,15 +1194,59 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    * makes the node the trigger and re-runs this read instead.
    */
   function record(id, opts = {}) {
+    const composed = opts.composed === true
     return junctionResource.record(id, {
       // The same read `service.get(id)` makes, `detailQuery` included: a
       // resource that declares the include shape a detail view needs declares
       // it once, and a record view is a detail view.
-      load: () => _call('get', id, null,
-                        opts.query      ?? detailQuery?.query      ?? {},
-                        opts.directives ?? detailQuery?.directives ?? {}),
-      composed: opts.composed === true,
+      load: async () => {
+        const row = await _call('get', id, null,
+                                opts.query      ?? detailQuery?.query      ?? {},
+                                opts.directives ?? detailQuery?.directives ?? {})
+        if (!composed && row) warnComposed('record', [row])
+        return row
+      },
+      composed,
     })
+  }
+
+  // ── A read that answered more than the row, on a view that is not composed ──
+  //
+  // Forgetting `composed: true` fails at the first push rather than at the
+  // read, and what it shows then is an id where a name was. Both shapes a push
+  // cannot carry are decidable from the row: a key that is a declared RELATION
+  // (an include), and an object or array under a key the model does not
+  // declare (a child list, anything assembled per call). A bare scalar under an
+  // undeclared key is not flagged — `createdAt` and `updatedAt` are in no
+  // schema mode the build emits, so reading those as composed would warn on
+  // every list in every app.
+  //
+  // Dev only: the mistake is in the source, so the same read answers the same
+  // keys on the author's machine.
+  const _declaredKeys = new Set([idField, ...Object.keys(fields), ...Object.keys(updateFields), ...Object.keys(readFields)])
+  const _relationKeys = new Set((modelDef?.['x-relations'] ?? []).map(r => r?.field).filter(Boolean))
+  const _composedWarned = new Set()
+
+  function composedKeysOf(rows) {
+    const keys = new Set()
+    for (const row of rows.slice(0, 20)) {
+      for (const [k, v] of Object.entries(row ?? {})) {
+        if (_relationKeys.has(k) || (!_declaredKeys.has(k) && v !== null && typeof v === 'object')) keys.add(k)
+      }
+    }
+    return [...keys]
+  }
+
+  function warnComposed(view, rows) {
+    if (!import.meta.env?.DEV || !schema || _composedWarned.has(view)) return
+    const keys = composedKeysOf(rows)
+    if (!keys.length) return
+    _composedWarned.add(view)
+    const call = view === 'list' ? 'list({ composed: true })' : 'record(id, { composed: true })'
+    console.warn(
+      `[resource:${serviceName}] a ${view} read answered ${keys.map(k => `'${k}'`).join(', ')}, ` +
+      `which ${model} does not hold as columns. A push carries the row without them, so this ${view} ` +
+      `drops them at the first announcement. Declare it: ${call}`)
   }
 
   /**
@@ -2195,6 +2239,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     return createList({
       store, load, more, hasMore: junctionResource.hasMore,
       find:     service.find,
+      loaded:   (rows) => warnComposed('list', rows),
       on:       service.on,
       onResync: (fn) => client.on('resync', fn),
     }, listQuery, opts)

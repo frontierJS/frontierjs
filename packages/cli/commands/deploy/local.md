@@ -142,7 +142,7 @@ const runCmd = [
   'docker run -d',
   `--name ${container}`,
   `-p 127.0.0.1:${port}:3000`,
-  `--volume ${resolve(context.paths.root, dbDir)}:/db`,
+  `--volume ${resolve(context.paths.root, dbDir)}:${CONTAINER_DB_DIR}`,
   envArg,
   // AFTER --env-file, so it wins. The image EXPOSEs 3000 and the port mapping
   // targets 3000, but the app binds whatever PORT says — and the scaffold's .env

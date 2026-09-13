@@ -16,6 +16,11 @@ const { apiContainerName } = await import(new URL('file://' + global.fliRoot + '
 // Nine hand-written copies is how the name came to ignore the port tier.
 const apiContainer = (appId, deployConf) => apiContainerName(appId, deployConf?.api?.port)
 
+// Where the API container sees the target's database directory. The only path
+// inside a container that outlives a swap: a database anywhere else is in the
+// container's own layer and the next deploy starts an empty one (FJS-1095).
+const CONTAINER_DB_DIR = '/db'
+
 // ─── machineFor ───────────────────────────────────────────────────────────────
 // The one way a step reaches the box. Every command a deploy runs goes through
 // `machine.run(script)`, which pipes the script to `sh -s` there — see
@@ -438,7 +443,7 @@ fi`)
     `--name ${container}`,
     '--restart unless-stopped',
     `-p 127.0.0.1:${apiPort}:3000`,
-    `--volume ${dbPath}:/db`,
+    `--volume ${dbPath}:${CONTAINER_DB_DIR}`,
     `--env-file ${envFile}`,
     // AFTER --env-file so it wins: the mapping above targets 3000 inside the
     // container, and the app binds whatever PORT says. A PORT in .env.production

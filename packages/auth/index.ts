@@ -37,5 +37,7 @@ export {
 } from './errors.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────
-export type { LitestoneAuthOptions, AuthPluginOptions, AuthServicesOptions } from './types.ts'
+export type { LitestoneAuthOptions, AuthPluginOptions, AuthServicesOptions, CredentialEvent, CredentialChange } from './types.ts'
+// A value, so an app can check a `switch` over the events covers every one.
+export { CREDENTIAL_EVENTS } from './types.ts'
 export type { AuthCleanupHandle }                    from './cleanup.ts'

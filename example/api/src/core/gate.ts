@@ -41,11 +41,15 @@ import { sessionGateLevel } from '@frontierjs/junction'
 import { LEVELS }           from '@frontierjs/litestone'
 
 /** A SessionContext, or null for an unauthenticated caller. */
-type Gradable = { role?: string } | null | undefined
+type Gradable = { role?: string, isSystemAdmin?: boolean } | null | undefined
 
+// SYSADMIN comes from a COLUMN only a sysadmin may write, never from `role`:
+// `role` is writable by any admin (auth's `@allow('write', auth().isAdmin)`),
+// so a role string graded 7 is a level an admin can hand to anybody with one
+// PATCH — measured, a stranger's unverified account went from 1 to 7 (FJS-1097).
 export function shopGateLevel(user: Gradable): number {
-  if (user?.role === 'system') return LEVELS.SYSADMIN        // 7 — see SYSTEM below
-  if (user?.role === 'admin')  return LEVELS.ADMINISTRATOR   // 5
+  if (user?.isSystemAdmin === true) return LEVELS.SYSADMIN        // 7
+  if (user?.role === 'admin')       return LEVELS.ADMINISTRATOR   // 5
   return sessionGateLevel(user)
 }
 
@@ -64,14 +68,15 @@ export function shopGateLevel(user: Gradable): number {
  * to pass `{ auth: { user: SYSTEM } }` by hand instead, which quietly gave a
  * customer's checkout the authority of the shop.
  *
- * Graded in this file like every other principal — `role: 'system'` is SYSADMIN
- * above. It is NOT a row in the users table and cannot log in: nothing issues a
- * session with this role, so it is unreachable from the wire.
+ * Graded in this file like every other principal — `isSystemAdmin` is SYSADMIN
+ * above. It is NOT a row in the users table and cannot log in; `role: 'system'`
+ * is a label, and grades nothing.
  */
 export const SYSTEM = {
   userId:     'system',
   userType:   'service',
   role:       'system',
+  isSystemAdmin: true,
   email:      'system@shop.test',
   authMethod: 'created' as const,
 

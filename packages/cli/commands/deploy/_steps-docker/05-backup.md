@@ -31,8 +31,8 @@ const container = apiContainer(appId, deployConf)
 // point: this is the state to return to, taken while it is still serving.
 const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
 const destHost  = `${backupDir}/pre-deploy-${timestamp}`
-// The container mounts dbPath at /db, so writing there lands on the host.
-const destInner = `/db/backups/pre-deploy-${timestamp}`
+// The container mounts dbPath at CONTAINER_DB_DIR, so writing there lands on the host.
+const destInner = `${CONTAINER_DB_DIR}/backups/pre-deploy-${timestamp}`
 
 // ─── First deploy has nothing to back up ─────────────────────────────────────
 const machine = machineFor(context, host)

@@ -8480,14 +8480,25 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
     // ── restore ─────────────────────────────────────────────────────────────
     // Soft-delete tables only — sets deletedAt = NULL.
+    //
+    // Un-deleting is an UPDATE of `deletedAt` and is graded as one: the update
+    // gate through `beforeUpdate`, and the update policy ANDed into the WHERE,
+    // which is also where a row tenancy's `@@deny` arrives. A row outside it is
+    // not restored and not reported — § Rule one. The cascade walks from the
+    // rows that scope admits, never from the caller's where alone, or a refused
+    // parent's children come back without it (`FJS-1096`).
     async restore({ where } = {}) {
       if (!softDelete) throw new CapabilityNotDeclaredError(modelName, 'restore()', '@@softDelete',
         'A row here is either present or gone — delete() is the only removal, and it has no way back.')
+      if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data: { deletedAt: null } }, ctx)
       const params   = []
       // Restore targets deleted rows
       const effectiveWhere = injectSoftDeleteFilter(where, 'onlyDeleted')
-      const whereSql = buildWhereWithEncryption(effectiveWhere, params)
-      if (!whereSql) throw new Error(`restore on "${tableName}" requires a where clause`)
+      const baseWhereSql = buildWhereWithEncryption(effectiveWhere, params)
+      if (!baseWhereSql) throw new Error(`restore on "${tableName}" requires a where clause`)
+      const restorePolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'update', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
+      const whereSql = restorePolicy ? `(${baseWhereSql}) AND (${restorePolicy.sql})` : baseWhereSql
+      if (restorePolicy) params.push(...restorePolicy.params)
       // The children and the parent come back together, or neither does — the
       // walk below is many statements and used to be that many auto-commits
       // (`FJS-638`).
@@ -8497,9 +8508,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (softDeleteCascade) {
         const cascadeTargets = _cascadeTargets()
         if (cascadeTargets.length > 0) {
-          const params2 = []
-          const whereSql2 = buildWhereWithEncryption(effectiveWhere, params2)
-          const deletedRows = readDb.query(`SELECT * FROM "${tableName}" WHERE ${whereSql2}`).all(...params2)
+          const deletedRows = readDb.query(`SELECT * FROM "${tableName}" WHERE ${whereSql}`).all(...params)
           const firstTarget = cascadeTargets[0]
           const rootPKCol = firstTarget ? firstTarget.referencedKey : 'id'
           const affectedPKs = new Map([[modelName, deletedRows.map(r => r[rootPKCol])]])

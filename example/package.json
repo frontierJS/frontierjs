@@ -50,6 +50,8 @@
     "build:extension": "bunx jetty-build-ext --root=extension --browser=chrome",
     "audit:extension": "bunx jetty-audit --root=extension",
     "verify:extension": "node extension/test/verify.mjs",
+    "build:desktop": "bun desktop/deploy/build.mjs",
+    "verify:desktop": "bun desktop/test/verify.mjs",
     "verify:account": "bun site/test/verify-account.mjs",
     "verify:revisions": "node web/test/verify-revisions.mjs",
     "verify:shop": "bun site/test/verify-shop.mjs",

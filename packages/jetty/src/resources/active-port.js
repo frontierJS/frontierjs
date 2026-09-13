@@ -22,6 +22,11 @@ let _connection = {
   reconnecting: null,  // null when stable, { attempt, delay } when reconnecting
   authenticated: false,
   user:         null,
+  // A password accepted and a code still owed — the expiry, or null. Here and
+  // not only on the broadcast, because a popup opened after the password gets
+  // its session in reply to `init`, which can land before the page has a
+  // listener of its own; this cache is what such a page starts from.
+  awaitingCode: null,
   schema:       null,
 }
 
@@ -62,6 +67,7 @@ export function _registerActivePort(port) {
       ..._connection,
       authenticated: !!payload?.authenticated,
       user:          payload?.user ?? null,
+      awaitingCode:  payload?.awaitingCode ?? null,
     }
     _notifyConnection()
   })

@@ -87,9 +87,11 @@ const authOptions = {
   // column (`extend model User` in db/schema.lite) and is what separates a
   // member of staff from a shopper — both of whom grade USER(4), because a
   // level answers what KIND of caller and not WHICH person.
-  sessionFields: (user: { role?: string, isStaff?: boolean }) => ({
+  sessionFields: (user: { role?: string, isStaff?: boolean, isSystemAdmin?: boolean }) => ({
     isAdmin: user.role === 'admin',
     isStaff: user.isStaff === true || user.role === 'admin',
+    // What api/src/core/gate.ts grades SYSADMIN from, and the only thing.
+    isSystemAdmin: user.isSystemAdmin === true,
   }),
 
   // ── Where a minted token becomes an email ──────────────────────────────
@@ -114,6 +116,42 @@ const authOptions = {
       subject: 'Set your password',
       text:    `Somebody asked to set a password for this address at the shop.\n\n${link}\n\n`
              + `If that was not you, ignore this — nothing has changed.`,
+    })
+  },
+
+  // ── Telling the person a way in changed ────────────────────────────────
+  //
+  // An Observer: auth calls it after the change is written and a throw here is
+  // logged, never raised, so a mailer being down cannot keep a factor on. The
+  // wording names what changed and never how to undo it with a link — a
+  // message somebody can forge that carries a working link is the phish.
+  //
+  // `verify:users` reads these out of the outbox: the notification is the only
+  // trace a person who did NOT make the change will ever see.
+  onCredentialChanged: async ({ event, email, actorId, userId }: CredentialChange) => {
+    if (!app?.mail) {
+      console.warn(`[shop] no mailer configured — ${event} was not reported to ${email}`)
+      return
+    }
+    const what: Record<CredentialChange['event'], string> = {
+      'password.changed':          'Your password was changed.',
+      'password.reset':            'Your password was reset with an emailed link.',
+      'totp.enabled':              'Two-step sign-in was turned on.',
+      'totp.disabled':             'Two-step sign-in was turned off.',
+      'totp.reset':                'Two-step sign-in was removed by the shop\'s support team. You can sign in with your password and set it up again.',
+      'recoveryCodes.regenerated': 'New recovery codes were made. The old ones no longer work.',
+      'recovery.used':             'A recovery code was used to sign in.',
+      'apikey.created':            'A new API key was created.',
+      'apikey.revoked':            'An API key was revoked.',
+      'oauth.linked':              'A sign-in provider was connected.',
+      'oauth.unlinked':            'A sign-in provider was disconnected.',
+    }
+    await app.mail.send({
+      to:      email,
+      subject: 'Your sign-in settings changed',
+      text:    `${what[event]}\n\n`
+             + (actorId !== userId ? '' : 'If this was you, there is nothing to do. ')
+             + `If it was not, sign in and change your password, or contact the shop.\n`,
     })
   },
 
@@ -357,10 +395,14 @@ app.configure(createAuthPlugin(auth, {
   // The subject is read through `asSystem()`: `User` reads at USER(4) and its
   // row policy is *your own row or staff*, so grading a subject with the
   // operator's own client would answer about the operator.
+  //
+  // A sysadmin is refused by the COLUMN and not by their role: an admin can set
+  // anybody's role to 'user', so a check on role alone would let an admin demote
+  // a sysadmin and then stand in for them at 7.
   canStartSupport: async (operator: { isAdmin?: boolean }, subjectId: string) => {
     if (operator?.isAdmin !== true) return false
     const subject = await db.asSystem().user.findUnique({ where: { id: subjectId } })
-    return subject != null && subject.role !== 'admin'
+    return subject != null && subject.role !== 'admin' && subject.isSystemAdmin !== true
   },
   // Only when the session can come back. The plugin refuses the pair outright
   // otherwise — a flow that completes and signs nobody in is the failure it

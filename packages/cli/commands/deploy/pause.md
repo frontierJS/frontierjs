@@ -93,6 +93,13 @@ moves the web symlink; neither touches the guard file, so the app stays paused
 across a deploy and the health check still passes — it polls the API port
 directly and never goes through nginx.
 
+**The queue half survives a deploy only if the jobs database is on the volume.**
+A pause is a row in that file, and a file inside the container is replaced by an
+empty one at the swap — so the migration the pause was for would run with every
+queue claiming. `05b-jobs-volume` asks the running app where the file is before
+the swap and refuses the deploy in exactly that case; the way out is to unpause,
+deploy with the jobs database beside `DATABASE_URL`, and pause again.
+
 `fli deploy:unpause` lifts it. `fli deploy:status` prints what the journal says
 and what the edge is actually doing, which is the pair worth reading: they can
 disagree, and neither is repaired behind your back.

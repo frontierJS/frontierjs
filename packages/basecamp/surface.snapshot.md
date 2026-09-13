@@ -364,7 +364,7 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `authenticate` |
+| before | `all` | `authenticate` → `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |

@@ -17,7 +17,7 @@ import {
   expiresAt,
   API_KEY_PREFIX,
 } from './crypto.ts'
-import type { LitestoneAuthOptions } from './types.ts'
+import type { LitestoneAuthOptions, CredentialEvent } from './types.ts'
 import {
   beginFlow, exchangeCode, fetchIdentity, stateMatches, isAllowedReturnTo, OAuthError,
 } from './oauth.ts'
@@ -71,6 +71,7 @@ export function createLitestoneAuth(
     onLoginFailed,
     onLogout,
     onRegister,
+    onCredentialChanged,
     oauthProviders       = {},
     oauthFlowTtl         = '10 minutes',
     oauthReturnToAllow   = [],
@@ -122,6 +123,39 @@ export function createLitestoneAuth(
       await sys.$audit({ operation, ...entry })
     } catch (err) {
       console.warn(`[auth] could not record '${operation}' in the audit trail:`, (err as Error)?.message)
+    }
+  }
+
+  // ─── A way into an account changed ────────────────────────────────────────
+  //
+  // The trail and `onCredentialChanged` are written through this one function,
+  // so the two cannot name different events and a new credential write cannot
+  // reach one without the other. `tests/credential-events.test.ts` fails on an
+  // `audit()` of one of these operations anywhere else in this file.
+  //
+  // Not gated on `hasAuditLog`: an app with no logger database still owes the
+  // person the email. The address is read here rather than passed by each
+  // caller, and only when somebody is listening.
+  async function credentialChanged(
+    event:  CredentialEvent,
+    userId: string,
+    entry:  Record<string, unknown> = {},
+  ): Promise<void> {
+    await audit(event, entry)
+    if (!onCredentialChanged) return
+    try {
+      const user = await sys.user.findUnique({ where: { id: userId } })
+      if (!user) return
+      await onCredentialChanged({
+        event,
+        userId:  String(userId),
+        email:   user.email,
+        actorId: String(entry.actorId ?? userId),
+        at:      new Date().toISOString(),
+        meta:    (entry.meta ?? {}) as Record<string, unknown>,
+      })
+    } catch (err) {
+      console.warn(`[auth] onCredentialChanged failed for '${event}':`, (err as Error)?.message)
     }
   }
 
@@ -730,7 +764,7 @@ export function createLitestoneAuth(
         await sys.loginChallenge.deleteMany({ where: { id: row.id } })
 
         const left = await countRecoveryCodes(row.userId)
-        await audit('recovery.used', {
+        await credentialChanged('recovery.used', String(row.userId), {
           model:   'Credential',
           records: [String(recovery.id)],
           actorId: String(row.userId),
@@ -793,7 +827,7 @@ export function createLitestoneAuth(
 
       const recoveryCodes = await issueRecoveryCodes(userId)
 
-      await audit('totp.enabled', {
+      await credentialChanged('totp.enabled', userId, {
         model: 'Credential', records: [String(pending.id)],
         actorId: userId, actorType: 'user',
         meta: { recoveryCodes: recoveryCodes.length },
@@ -815,7 +849,7 @@ export function createLitestoneAuth(
       await sys.credential.deleteMany({ where: { userId, type: RECOVERY } })
       await sys.loginChallenge.deleteMany({ where: { userId } })
 
-      await audit('totp.disabled', {
+      await credentialChanged('totp.disabled', userId, {
         model: 'Credential', records: [String(cred.id)],
         actorId: userId, actorType: 'user',
       })
@@ -827,12 +861,49 @@ export function createLitestoneAuth(
       if (!await liveTotp(userId)) throw new NotFoundError('Two-factor authentication is not enabled')
 
       const recoveryCodes = await issueRecoveryCodes(userId)
-      await audit('recoveryCodes.regenerated', {
+      await credentialChanged('recoveryCodes.regenerated', userId, {
         model: 'Credential', records: [],
         actorId: userId, actorType: 'user',
         meta: { count: recoveryCodes.length },
       })
       return { recoveryCodes }
+    },
+
+    // ── resetTotp: an operator removes somebody else's factor ────────────
+    //
+    // WHO MAY is the service's to decide (`FJS-D264`); this is what a reset IS,
+    // whoever asked. Every way the old factor answers goes — the secret, an
+    // enrollment in flight, the recovery codes, a half-finished login — and so
+    // does every session, because the device that was lost usually holds one.
+    // API keys stay: a lost phone is not a leaked key.
+    //
+    // The two refusals here are the ones no caller may opt out of. Resetting
+    // your own is `disableTotp`, which asks for the password this skips.
+
+    async resetTotp(userId: string, opts: { actorId: string }): Promise<{ sessionsRevoked: number }> {
+      if (!opts?.actorId) throw new AuthConfigError('resetTotp requires the operator it is recorded against')
+      if (String(opts.actorId) === String(userId)) {
+        throw new ReauthenticationFailedError('Resetting your own second factor is disableTotp, which asks for your password')
+      }
+
+      const user = await sys.user.findUnique({ where: { id: userId } })
+      if (!user) throw new UserNotFoundError(`No user '${userId}'`)
+
+      const cred = await liveTotp(userId)
+      if (!cred) throw new NotFoundError('Two-factor authentication is not enabled for this account')
+
+      await sys.credential.deleteMany({ where: { userId, type: TOTP_LIVE } })
+      await sys.credential.deleteMany({ where: { userId, type: TOTP_PENDING } })
+      await sys.credential.deleteMany({ where: { userId, type: RECOVERY } })
+      await sys.loginChallenge.deleteMany({ where: { userId } })
+      const { count } = await sys.session.deleteMany({ where: { userId } })
+
+      await credentialChanged('totp.reset', userId, {
+        model: 'Credential', records: [String(cred.id)],
+        actorId: String(opts.actorId), actorType: 'user',
+        meta: { subjectId: String(userId), sessionsRevoked: count },
+      })
+      return { sessionsRevoked: count }
     },
 
     async totpStatus(userId: string): Promise<{ enabled: boolean; recoveryCodesRemaining: number }> {
@@ -1095,7 +1166,7 @@ export function createLitestoneAuth(
       }
 
       await sys.credential.create({ data: { userId: existing.id, type, value: identity.providerId } })
-      await audit('oauth.linked', {
+      await credentialChanged('oauth.linked', existing.id, {
         model: 'User', records: [existing.id], actorId: existing.id,
         meta:  { provider: providerName },
       })
@@ -1160,7 +1231,7 @@ export function createLitestoneAuth(
         data:  { emailVerified: true },
       })
 
-      await audit('oauth.linked', {
+      await credentialChanged('oauth.linked', user.id, {
         model: 'User', records: [user.id], actorId: user.id,
         meta:  { provider: pending.provider, viaProof: true, evictedPriorCredentials: wasUnverified },
       })
@@ -1222,7 +1293,7 @@ export function createLitestoneAuth(
       }
 
       await sys.credential.delete({ where: { id: row.id } })
-      await audit('oauth.unlinked', {
+      await credentialChanged('oauth.unlinked', userId, {
         model: 'User', records: [userId], actorId: userId,
         meta:  { provider: String(row.type).slice('oauth:'.length) },
       })
@@ -1385,7 +1456,15 @@ export function createLitestoneAuth(
       await sys.verification.delete({ where: { id: verification.id } })
 
       // Revoke all sessions — force re-login after password change
-      await sys.session.deleteMany({ where: { userId: user.id } })
+      const { count } = await sys.session.deleteMany({ where: { userId: user.id } })
+
+      // The change a person most needs to hear about and the one that recorded
+      // nothing: whoever holds the inbox holds the account, and a reset nobody
+      // asked for is how they find out.
+      await credentialChanged('password.reset', user.id, {
+        model: 'Credential', records: [String(existing.id)], actorId: user.id, actorType: 'user',
+        meta:  { sessionsRevoked: count },
+      })
     },
 
     // ── requestEmailVerification ─────────────────────────────────────────
@@ -1467,7 +1546,7 @@ export function createLitestoneAuth(
       // recording as ending one browser session (FJS-991). The key material is
       // never in the entry — `records` is the credential id, and Invariant 7
       // would redact the column regardless.
-      await audit('apikey.created', {
+      await credentialChanged('apikey.created', userId, {
         model: 'Credential', records: [String(cred.id)],
         actorId: userId, actorType: 'user',
       })
@@ -1524,7 +1603,7 @@ export function createLitestoneAuth(
       // Every other credential mutation here writes one, and this pair is the
       // one that most needs it: an API key outlives a session, carries its own
       // scopes, and is spent by a machine nobody is watching (FJS-991).
-      await audit('apikey.revoked', {
+      await credentialChanged('apikey.revoked', opts.userId, {
         model: 'Credential', records: [String(keyId)],
         actorId: opts.userId, actorType: 'user',
       })
@@ -1548,7 +1627,7 @@ export function createLitestoneAuth(
         data:  { value: await hashPassword(newPassword) },
       })
 
-      await audit('password.changed', {
+      await credentialChanged('password.changed', userId, {
         model: 'Credential', records: [String(cred.id)], actorId: userId, actorType: 'user',
       })
     },

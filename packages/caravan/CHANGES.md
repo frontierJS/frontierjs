@@ -1,5 +1,43 @@
 # Changes — @frontierjs/caravan
 
+## 2026-09-12 — every queue at once, a holder, and a bin a deploy runs
+
+`FJS-D262`: `fli deploy:pause` drains the queues, and does it by running
+Caravan rather than by writing Caravan's tables. Three things here make that
+possible and each is useful without the deploy.
+
+**`app.jobs.pause()`, `resume()` and `drain()` act on every queue**, including
+one first named after the pause. They write ONE row under the queue `'*'`, which
+every claim reads beside its own row — `WHERE queue IN ($queue, '*')` inside the
+same statement, so the guarantee the per-queue pause has is the one this has. A
+list of queues would not do: part of the set lives in job files only the app
+imports, so a pause issued from outside the app would miss a cron whose queue had
+never held a row. `queue(name).state()` reports the pause that actually stops the
+queue, its own or `'*'`, and `stats()` applies `'*'` to every queue's `pausedMs`.
+`queue('*')` refuses — it is not a queue.
+
+**A pause carries a `holder`, and a resume stating one lifts only its own row.**
+A deploy lifting its pause must not lift the one an operator put on a queue
+before it. A resume stating no holder is an operator's and lifts anything, and a
+resume that lifted nothing now answers with the pause still in force, so it says
+why. With the holder clause removed, the test that asks for another holder's row
+to survive fails.
+
+**`caravan queue pause|resume|drain|state` is a bin** (`bin/caravan.ts`, shipped
+in `files:`). It answers one line of JSON and an exit code, and never creates a
+database — the file and its tables are checked on a readonly connection before
+Caravan's own open, which would. With no `--db` it finds the database a process
+on the machine has OPEN, from `/proc`, keeping only files carrying Caravan's
+tables: one is used, two is a refusal naming both. The path is the app's to
+choose, in configuration (`example`) or in code (`basecamp`), and the default
+matches neither; asking the running process is the only answer that cannot be
+out of date. It reports `liveInstances`, so a pause written where nobody
+heartbeats says so, and `--actor` is required on a write because a shell has no
+principal. 11 tests spawn it rather than import it. `scripts/scaffold-build.mjs`
+`pauseQueueCycle` runs it inside a real container against a worker that opened
+`/data/jobs.db`; with the `'*'` guard removed that cycle fails at *a job
+dispatched while every queue was paused ran anyway*.
+
 ## 2026-09-12 — a queue can be paused, resumed and drained, by an operator
 
 `FJS-D198`'s first operator verbs, and the half of `IDEAS/release-transitions.md`

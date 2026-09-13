@@ -1,18 +1,18 @@
 ---
-id: request-recognizer
+id: intent-recognizer
 status: proposed
 dated: 2026-09-12
 ---
 
-# Idea — the request recognizer: a customer's words, resolved against the app's own seed
+# Idea — the intent recognizer: a customer's words, resolved against the app's own seed
 
 **Status: PROPOSED. Nothing here is built.** Dated 2026-09-12. There is no request
-model, no resolver module and no command. Do not cite this file as describing
+model, no resolver module and no command — § *Home* says where each would go. Do not cite this file as describing
 behavior — see `VERIFYING.md`. The nine questions were answered before the first
 edit and are § *The nine*, below.
 
 **Run 1 has been made and amended this record** — sixty synthetic requests against
-`example`, resolved by hand (`request-recognizer-run-1.md`). Committed artefacts
+`example`, resolved by hand (`intent-recognizer-run-1.md`). Committed artefacts
 alone answered 31; with the UI realm indexed, 45. Seventy-two percent never
 reached the Data realm. The verdicts grew from four to six, the Data rung split in
 two, and the subtype question closed.
@@ -25,6 +25,20 @@ and which arrives in whatever words that person has.
 **Both reduce to one operation: take prose, and find where the fact it contains
 already lives.** If it lives somewhere, the answer is a citation. If it lives
 nowhere, the answer is a ticket, and the shape of the fact is the estimate.
+
+**What is recognized is the INTENT, not the request.** The request is the input — the
+words a person typed. The intent is what they resolve to: a realm, a shape, a target
+that exists or does not, and a verdict. Most inputs are not requests at all (a
+question, an incident, something already built), which is why this record was renamed
+from *request recognizer*. It is `PHILOSOPHY.md` § V's test — *shorten the path from a
+stated intent to a running truth* — pointed at the person who does not know the model
+names.
+
+**Not the chatbot sense of the word.** Intent recognition in Dialogflow or Rasa is a
+hand-written list of intents with slots. Here nothing is hand-written: the set of
+things a person can mean is derived from the seed and the registers, so a model added
+to the schema is a target the next question can resolve to. And `example`'s payment
+*intents* are a vendor's noun, unrelated.
 
 ## The principles
 
@@ -306,6 +320,33 @@ a gap in FrontierJS.
 **No framework noun is coined here.** V1 is a verdict and the verdict is enough; what
 the customer-facing thing is called is a decision for the app that ships it.
 
+## Home
+
+**Not a package.** V1 is a verdict, and a verdict is a lookup over artefacts the
+repo already produces — the seed, the committed snapshots, `describeAppModel`. A
+package earns a directory when its configuration, its tests and its release are all
+different answers (Invariant 3's test for a surface), and a lookup has none of that.
+The half that would — a model dependency, a conversation, *send to developers* — is
+not designed, and a boundary drawn before it is designed is a guess.
+
+**V1 lives beside the index, in the CLI, as a module with a command over it.** The
+resolution and the verdict are one module (`packages/cli/core/intent.js`, say); `fli
+intent "<text>"` is its first caller and prints what it answers. The same shape as
+`fli proves`, which also reads committed files and answers a question about them.
+**The logic is never in the command**, because the command is not the last caller: a
+customer asks a running app, not a terminal, and a second surface re-deriving the
+verdict is two answers to one question. The first audience is the developer, and the
+first job is run 2 — the sixty requests through a real resolver instead of by hand.
+
+**If it becomes its own thing, it is Oracle's first piece.** The moment a customer
+surface exists the module moves to it, the CLI keeps calling it, and that surface is
+an app built on the framework — `packages/oracle`, under `FJS-D14`, which rules
+nothing is owed there until core leaves alpha. § *Two moments* is why it belongs
+there rather than beside it: Oracle is the birth moment and this is the life moment of
+one recognizer. **No further name is coined** until there is a thing to name.
+
+## What it is not
+
 **No hours, ever.** A cost class is derived and defensible. A number of hours is a
 promise made by a machine on somebody else's behalf, and the `needs us` verdict is
 marked unapproved for the same reason.
@@ -380,7 +421,7 @@ the customer-facing word can be loose while the verdict stays precise.
 **The falsification run was set a bar before it ran**: seven in ten answered by
 lookup alone keeps the shape, four in ten changes it. **Run 1 landed at 5.2 — 31 of
 60 — and 7.5 with the UI realm indexed**, so the design survives on a condition, and
-the condition is an index of what each screen shows (`request-recognizer-run-1.md`).
+the condition is an index of what each screen shows (`intent-recognizer-run-1.md`).
 
 **Run 1 was synthetic and resolved by a person who had just read the seed.** It can
 disprove the design and cannot confirm it. The next run that counts is real mail
@@ -431,7 +472,7 @@ is.
 
 ## See also
 
-`request-recognizer-run-1.md` (sixty synthetic requests, resolved by hand) ·
+`intent-recognizer-run-1.md` (sixty synthetic requests, resolved by hand) ·
 `oracle-reasoning.md` (the birth moment, and rules 1–3 used throughout) ·
 `app-atlas.md` (shipped — the API-realm index) · `lexicon.md` (the string catalog,
 a neighbor rather than the index this needs) · `polymorphic-relations.md` (the one Data shape the language cannot

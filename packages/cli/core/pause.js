@@ -324,3 +324,49 @@ export function queueStateLine({ output, edgePaused }) {
   const text = own.length ? `${own.length} of ${Object.keys(a.queues).length} paused (${own.join(', ')})` : 'claiming'
   return { text, drift: edgePaused }
 }
+
+// ─── what a swap throws away (FJS-1095) ──────────────────────────────────────
+
+const under = (path, dir) => path === dir || path.startsWith(dir.replace(/\/$/, '') + '/')
+
+/**
+ * Does the jobs database the running app has open survive a container swap?
+ *
+ * Read off `queueScript({ verb: 'state' })` run against the container being
+ * REPLACED, before it is. Only a file under the volume outlives the swap; any
+ * other path is the container's own layer, and the new container opens an empty
+ * one — every pending job, every stated dispatch id and every pause gone, with
+ * nothing said.
+ *
+ * `fail` only when a PAUSE is in force: a deploy while paused is the case a pause
+ * exists for, and the new container would run its migration with every queue
+ * claiming. Pending work alone is a warning, because refusing it would deadlock —
+ * binding the path is itself a deploy. The way out of the refusal is to unpause,
+ * deploy the binding, and pause again.
+ */
+export function jobsVolumeVerdict({ output, volume }) {
+  const line = String(output ?? '').trim().split('\n').reverse().find(l => l.trim().startsWith('{'))
+  let a
+  try { a = line ? JSON.parse(line) : null } catch { a = null }
+  if (!a || a.fli || (a.error && a.exists === false)) return { level: 'ok', lines: [] }
+  if (a.error)
+    return { level: 'warn', lines: [`could not tell which jobs database this app uses — ${a.error}`] }
+  if (under(a.db, volume)) return { level: 'ok', lines: [] }
+
+  const queues  = Object.entries(a.queues ?? {})
+  const sum     = (k) => queues.reduce((n, [, q]) => n + (q.stats?.[k] ?? 0), 0)
+  const pending = sum('pending')
+  const running = sum('running')
+  const paused  = [...(a.paused ? ['every queue'] : []), ...queues.filter(([, q]) => q.paused?.queue && q.paused.queue !== '*').map(([n]) => n)]
+
+  const lines = [
+    `the jobs database is ${a.db}, which is inside the container and not under ${volume} — this swap starts an empty one`,
+    `  lost with it: ${pending} pending, ${running} running, every stated dispatch id and unique lock` +
+      (paused.length ? `, and the pause on ${paused.join(', ')}` : ''),
+    `  bind it under ${volume}: createCaravan({ db }) beside the main database, which DATABASE_URL already puts there`,
+  ]
+  if (paused.length)
+    return { level: 'fail', lines: [...lines,
+      `  refused because the new container would migrate with every queue claiming — unpause, deploy the binding, then pause again`] }
+  return { level: 'warn', lines }
+}

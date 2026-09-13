@@ -4748,35 +4748,49 @@ the dependency graph.
 2. **`fli` runs it by path, never `bunx caravan`.** `bunx` resolves a bin it cannot
    find locally by fetching whatever npm publishes under that name. An image with
    no Caravan bin is an app with no queues, and the pause says so in words.
-3. **The file is graded, not assumed.** The bin resolves the path the way the
-   plugin does (junction config's `caravan.db`, then the default) and refuses a
-   file that does not exist or holds no Caravan tables — it never creates one,
-   though `openDb` would. A path passed in CODE rather than config is invisible to
-   it, and this refusal is what makes that visible. A file whose `job_owners` has
-   no fresh heartbeat is not refused: an app that is down still takes a pause,
-   honored at its next start, and the answer says which of the two it was.
-4. **Order is LIFO.** Pause stops the edge, then drains every queue Caravan knows
-   (the derived set — `FJS-D198`, never a list the deploy keeps). A drain that
+3. **The database is the one the app has OPEN.** With no `--db`, the bin reads
+   `/proc` for the SQLite files a process in the container holds and keeps those
+   carrying Caravan's tables: one is the answer, two is a refusal naming both, none
+   is *nothing is claiming jobs*. Nothing is read from configuration, because the
+   path is set in config by one app here and derived in CODE by the other, and a
+   default guessed from outside matches neither. The bin never creates a file,
+   though Caravan's own open would, and it reports `liveInstances` — how many
+   instances heartbeated on the file within a lease — so a pause written where
+   nobody claims says so.
+4. **Order is LIFO, and the pause names no queue.** Pause stops the edge, then
+   drains EVERY queue through one row stored under the queue `'*'`, which each
+   claim reads beside its own. A process outside the app cannot enumerate the set
+   — some queues exist only in job files that only the app imports — so a pause
+   that listed them would let a cron whose queue had never held a row go on
+   running. A queue's own row and the `'*'` row are independent. A drain that
    times out is reported with its running count and does not fail the pause,
    because a long job is the operator's judgment and not a reason maintenance
    cannot start. Unpause resumes the queues, then lifts the edge.
-5. **A queue pause is lifted by whoever made it.** The pause row names its holder,
-   the transition's id, and unpause resumes only rows that name it. A queue an
-   operator paused before the deploy is still paused after it. The holder is READ
-   off the row rather than copied into `deploy.db`, so a resumed pause step —
-   whose second attempt finds its own rows and reports `changed: false` — loses
-   nothing. Which column carries the holder is Caravan's call at build time. **The
-   limit is named, not solved**: a pause is one row per queue, not a stack, so an
-   operator pausing a queue the deploy already holds is a no-op that the unpause
-   then lifts. The bin's answer names the holder, which is what tells them.
+5. **A queue pause is lifted by whoever made it.** The row carries a `holder` — a
+   deploy's is `fli:deploy` — and a resume that states a holder deletes only a row
+   carrying it; one that states none is an operator's and lifts anything. A queue
+   an operator paused before the deploy is still paused after it. The holder is
+   READ off the row rather than copied into `deploy.db`, so a re-run pause that
+   finds its own row reports `changed: false` and loses nothing. It names the
+   deploy rather than a transition, because the unpause is a different transition
+   from the pause it lifts. **The limit is named, not solved**: a pause is one row
+   per queue, not a stack, so an operator pausing every queue while the deploy
+   already holds that row is a no-op that the unpause then lifts. The bin's answer
+   names the holder, which is what tells them.
 6. **On by default, with no flag.** *Ergonomics vs. strictness* is decided by what
    a mistake destroys: a queue left running through a migration writes through a
    half-changed schema, where a queue paused needlessly delays mail by the length
    of the pause and loses nothing, since dispatch still queues. And *paved road
    vs. the workaround* refuses `--edge-only` before anyone has asked for it.
-7. **Half a pause is a failure, and it stays paused.** If the queue half cannot
-   run, the edge pause stands, the transition ends failed naming the queue half,
-   and `--resume` re-runs the step — more paused is the safe direction. Drift
+7. **Half a pause is a failure, and it stays paused.** If the bin REFUSES, the
+   edge pause stands, the transition ends failed naming the queue half, and
+   running the pause again finishes it — the failed transition plus the guard
+   file reads as *paused by hand*, which a pause is accepted over. An unpause
+   whose resume is refused leaves the edge paused. More paused is the safe
+   direction. **Nothing to pause is not a refusal**: an app with no Caravan, no
+   container running, or no process with a jobs database open is reported and
+   the transition succeeds, since no work is being claimed and a failed
+   transition would ask somebody to fix what is not broken. Drift
    between the journal and a queue someone resumed from a console is reported by
    `deploy:status` beside the edge's, and not reconciled, which is the rule the
    edge drift table already follows.
@@ -4791,25 +4805,40 @@ the dependency graph.
   packages, and a bin is the smallest crossing that keeps one writer.
 - *Predictability?* Up. `deploy:pause` now means the app stops doing things, which
   is how the word was already being read.
-- *Derived?* The queue set is Caravan's own, the path is the plugin's own
-  resolution, and the holder comes off the row.
+- *Derived?* No queue is named, the path is the file the running process
+  holds, and the holder comes off the row.
 - *One owner?* Caravan writes; `fli` invokes.
 - *Boundary explicit?* The bin's argv and JSON answer, tested in Caravan. The
-  crossing is `deployJournalCycle`'s, since `pauseEdgeCycle` builds no image and
-  has no Caravan in it.
+  crossing is `pauseQueueCycle` in CI's `deploy` phase: `deployJournalCycle`'s
+  target has no guard to pause and `pauseEdgeCycle` has no Caravan.
 - *Failure proportional?* Default on, because the omission destroys data. A drain
   timeout is reported, because a long job destroys nothing.
 - *Wrong without saying?* Three silent shapes, each with a refusal: `bunx`
   fetching a stranger, a file nobody reads, and a path stated in code.
+
+**Four rules moved when the build met the code, the same day, before anything
+shipped**, and they are rewritten in place above rather than struck, since
+nothing had been built on the first text. Rule 3 said the bin would read
+junction's config: junction's config location is itself settable in code, and
+basecamp derives its jobs path in code, so the rule restated a lookup that is not
+one. Rule 4 said *every queue Caravan knows*: caravan knows its set by importing
+job files, which a bin outside the app cannot do. Rule 5 said the holder was the
+transition's id: an unpause is a different transition. In those three the ruling's
+own § V answer — *derived?* — was what the first text got wrong. Rule 7 failed
+the transition whenever the queue half could not run, which would have failed
+every pause of an app that is down; it now fails only on a refusal.
 
 **Adjudications named:** *batteries vs. smallness* (the refused direct write),
 *ergonomics vs. strictness* and *paved road vs. the workaround* (the default).
 This ruling amends nothing in `FJS-D198`: a bin is not a service file, and the
 shell is above the gate it asks for.
 
-*Lives in:* `IDEAS/release-transitions.md` § Phase 3b *What a pause does not do* ·
-`packages/caravan` (the bin, not built) · `packages/cli/commands/deploy/_steps-pause/`
-(the join, not built) · `FJS-D198` · `FJS-D36` · [`FJS-711`](ISSUES.md#fjs-711)
+*Lives in:* `packages/caravan/bin/caravan.ts` · `packages/caravan/src/db.ts`
+(`queue_pauses`, the claim) · `packages/cli/core/pause.js` (`queueScript`,
+`queueVerdict`, `queueStateLine`) · `packages/cli/commands/deploy/_steps-pause/`
+(`02a-queues-resume`, `03b-queues-pause`) · `scripts/scaffold-build.mjs`
+`pauseQueueCycle` · `IDEAS/release-transitions.md` § Phase 3b · `FJS-D198` ·
+`FJS-D36` · [`FJS-711`](ISSUES.md#fjs-711)
 
 ### <a id="fjs-d261"></a>2026-09-12 · `FJS-D261` — TOTP is a second STEP of login, not a second standing. The half-finished login is its own row, `login()` answers a union, and the gate ladder does not move.
 
@@ -9242,6 +9271,63 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d263"></a>2026-09-12 · `FJS-D263` — a desktop app is `desktop/`, a surface whose screens are BUNDLED into a native shell. It owns its `src/` like every surface, or names another surface's with `wraps`, and either way the config, the tests, the release and the output are its own.
+
+**Two products hide under one word, and the directory follows from which.** A
+desktop app that loads the deployed site is the web app with a window in front of
+it — the same screens, the same origin, the same build — and it is a release of
+`web/`, not a surface. A desktop app that carries its screens inside the binary is
+different on every axis `FJS-D107` and `FJS-D127` test: its config names a shell
+and an API origin, its tests cannot drive it the way any browser drive here
+drives a page, its release is a signed binary, and its build writes a `dist/` of
+its own with a different API URL inlined — which inside `web/` is `FJS-D127`'s
+defect exactly, since `vite build` empties `outDir` and the two builds delete each
+other. The bundled shape is the one wanted — it is the one that can work offline
+and the one a store distributes — so it is the one ruled. A PWA manifest is the
+floor under both and is a property of `web/`'s own build, not of this surface.
+
+**A surface owns its `src/`, and `wraps` is the one exception, stated rather than
+inferred.** A desktop-only app keeps its screens in `desktop/src/`, as a site-only
+app keeps them in `site/src/`. An app whose desktop screens ARE its web screens
+writes `wraps: 'web'` in `desktop/config/desktop.config.js`, and the build compiles
+`web/src` with `web/`'s own Vite config into `desktop/dist`. The fact is never read
+off which directories exist — Invariant 3's *probe, or be told* — and screens that
+drift apart later are a `src/` added and a line deleted. `wraps` is `desktop/`'s
+alone for now: `site/` and `extension/` have different screens by construction, so
+nothing yet needs it, and a surface that does extends this ruling rather than
+copying the key.
+
+**The API is always another origin, so a wrapped build refuses without one.** The
+page is served from `tauri://localhost` (`http://tauri.localhost` on Windows and
+Android), so the wrapped surface's same-origin `junction.url` would call the shell.
+`api` in the config reads `VITE_API_URL`, the name every surface's build reads, and
+`deploy/build.mjs` refuses a wrapped build with no `api` and a finished bundle that
+does not carry it — both of which otherwise build clean and ship a desktop app
+pointed at nothing. The API's CORS list naming those origins is `FJS-1090`.
+
+**Measured before it was ruled.** A spike and then `example/desktop/` wrapped the
+seller's console in Tauri 2.11.5 on Linux (WebKitGTK 2.50): `verify:desktop` passes
+12 of 12 — the bundle carries the API, the page is `tauri://localhost`, sign-in,
+a routed list, the live socket, and a URL loaded cold with the session intact. The
+spike found `FJS-1085` on the way, a router that turned every click into a full
+page load under a non-http scheme. **Three consequences are part of the shape
+rather than of one run.** The screens are compiled INTO the binary, so a build
+rebuilds both halves or it runs the previous bundle. No drive here can reach into
+the page — WebKitGTK and WKWebView speak no CDP — so a probe runs inside it and
+reports through a command only a DEBUG shell registers; a release build neither
+reads `FJS_DESKTOP_PROBE` nor registers the commands. And the Rust half lives in
+`desktop/shell/` rather than Tauri's conventional `src-tauri/` beside `src/`,
+because this layout already has a meaning for `src/` and a surface keeps one
+(*coherence vs. convention*).
+
+**What is not settled here.** `fli make:desktop` does not exist; `example/desktop/`
+is the shape it will generate. Installers, signing and updates are off
+(`bundle.active: false`). Windows and macOS are unrun, which is also the unproven
+half of `FJS-1090`. Mobile stays where `IDEAS/overview.md` row 5.18 put it — a
+different problem wearing the same word. `fli check` reads `desktop/src` with every
+other client surface's source, through one `SURFACES` list in `core/checks.js`
+where there had been ten copies.
 
 ### <a id="fjs-d255"></a>2026-09-09 · `FJS-D255` — `fli ci` ships as an alias over `scripts/ci.mjs`, overriding *does it introduce another origin of truth*. It forwards argv and grades nothing, and the help it reaches is derived from the phase table.
 

@@ -14,6 +14,91 @@ finished.
 
 ---
 
+# Handoff — 2026-09-12 (a list is one call, and a flake that was never the drawer)
+
+> **The session started as a review of somebody's list-controller proposal and
+> ended with every list page in the repo's generator on it.** The review turned
+> into a fresh record, `IDEAS/list-controller.md`, and the record said three seams
+> had to move before the controller could be honest: `<Table>` columns keyed
+> `name` rather than `key`, the `orderBy` pair read through
+> `@frontierjs/toolbelt/directives`, and the router owning the URL's round-trip
+> — `page.pathname` and `page.search`, borrowed from `window.location`, with
+> `page.path` retired because it was `pathname + search` under a name that reads
+> like the first. Only then `resource.list()`, eleven names where the proposal
+> guessed seven. Fixing the public-routes guard for the new names found
+> [`FJS-1083`](ISSUES.md#fjs-1083): an exact rule stopped matching the moment the
+> URL carried a query.
+
+> **Two findings are in the controller's design rather than its tests, and both
+> were measured before they were argued.** The router commits `query` BEFORE
+> `route`, so a list answering every change to `page.query` re-asked the server
+> with the NEXT page's filters on the way out. And `<FilterBar>` hands back its
+> whole bag and clears a value by leaving the key out, so `apply` has to REPLACE
+> each half — the first draft merged, and an emptied search box went on
+> searching. A killed process mid-mutation left a mutant in `list.js` once; a diff
+> against a scratch copy found it, which is the only reason to keep one.
+
+> **The user asked whether a resource file could say something about its
+> lists, and whether the old idea of a function taking page details belonged
+> there.** The answer split three ways and is in the record: static `listQuery`
+> and `columns:` in the file, `hooks.before.find` for scope computed from the
+> principal, and `list({ where })` for scope computed from the page. A function
+> of the page in the resource file was refused — the file is imported once and
+> runs before any page exists. Building `columns:` found that the default also
+> narrowed `summary()`, which would have dropped columns from detail screens with
+> nothing said; `rankColumns` is the split.
+
+> **[`FJS-1084`](ISSUES.md#fjs-1084) was filed with the wrong cause, by this
+> session.** The row blamed a drawer step, on the strength of *61/61 against 4/4*
+> — which compared two TIMINGS, not two drives. The old drive from `b7a412c`
+> failed too, and so did the new one with the drawer deleted. The cause is that
+> headless Chrome starts its component extensions about thirty seconds after
+> launch, the window blurs, and `el.focus()` then moves `activeElement` and
+> fires no `focus` event — so the failure landed on whichever step the drive had
+> reached at that second. `Emulation.setFocusEmulationEnabled` in both `verify`
+> and `verify:ui`: 5/5 failed without it, 63/63 twice with it.
+> [`FJS-1075`](ISSUES.md#fjs-1075), the *first run fails* picker flake, was the
+> same thing and closed with it. **The transferable part is the method**: a flake
+> that moves between steps is about wall-clock time, and a bisection over drive
+> versions cannot see that.
+
+> **Proving it was contaminated by the other session, which is
+> [`FJS-1086`](ISSUES.md#fjs-1086).** Every save under `sierra/src/router/` or
+> junction's client made Vite full-reload the page mid-drive, and the drive's
+> error named an unrelated screen. Runs were only trusted once `web.log` showed
+> no `page reload` line inside them. Two drive defects came out on the way:
+> `moves.user` read page one of an unfiltered orders list that grows by one per
+> run, so ORD-1001 fell off on the 21st, and residue from a CDP run
+> failed `combobox.filters` because the seed does not wipe products.
+
+> **Three adopters were chosen to disagree, and the third one stopped the
+> session for a ruling.** `example`'s invoices took URL state and moved its six
+> columns and `-issuedAt` into `Invoice.mesa`, with three `verify` rows that MOVE
+> the list (default order, a header click, Back). `basecamp`'s project page took
+> local state with a `where`. The generated CRUD page in `core/crud-templates.js`
+> became one `list()` and a *Load more* — the first generated page that can reach
+> row 21. Deployments could not adopt: its `find` includes the app and the
+> environment, a push carries the row alone, and the store's `upsert` replaces
+> what it held. The user chose **re-read over merge**, so `list({ composed:
+> true })` is `record(id, { composed: true })` for a list — rows held outside the
+> store, any announcement or reconnect a trigger, a burst one more read, the
+> window a limit. `verify` patches a release from the list page and asserts the
+> row moves while the app cell keeps the name; `composed: false` shows the raw
+> id there.
+
+> **An author who omits `composed` is told, in dev** — for `record()` too,
+> which had the gap first. The check is a declared relation key, or an object
+> under an undeclared key; a bare scalar is not flagged, because `createdAt` is
+> in no schema mode the build emits and would warn on every list. The gate was
+> graded in a real production bundle, since vitest runs with `DEV` true and
+> cannot see it. **Left open:** a bare-number count still passes unwarned, the
+> environments list's re-read after a create was never mutated, and
+> `scanner-plugin.test.js`'s *companion that throws on import* failed once in
+> four full runs, untouched by this session and unfiled. Nothing from this session is committed, and the tree carries the other
+> session's work beside it.
+
+---
+
 # Handoff — 2026-09-08 (reading a real legacy app onto FJS, and what it graded here)
 
 > **The session was an audit of an application this framework did not build** —
@@ -81,82 +166,6 @@ finished.
 > Struck in place per `PHILOSOPHY.md` §VII rather than left as two answers. It
 > is the cheapest possible instance of the thing that file warns about, and it
 > survived four days in the register nobody re-reads.
-
----
-
-# Handoff — 2026-09-06/07 (the last two value-set axes, and what building them found)
-
-> **The session was a walk down `IDEAS/value-sets.md`'s open questions, and it
-> ended with the file marked shipped.** `FJS-D122` (dependent sets, built as
-> `FJS-953`) came first, then `FJS-D121` (order) in two halves — `FJS-963` for
-> the authored and default ones, `FJS-964` for the learned head. Each ruling
-> made the next one cheaper, and the third could not have been built at all
-> without a verb that did not exist when the session started.
-
-> **The aggregate verb is the middle of that chain and it was not the plan.**
-> `FJS-D121`(iii) had been framed for months as *where do we KEEP the recency* —
-> a `Recent` model, a JSON column, localStorage. Measured against the tree, the
-> blocker was upstream of storage: `resource.options()` reads the source
-> service, junction's auto surface is exactly find · get · create · update ·
-> patch · remove · restore, so a rank — a `groupBy` over the binding's own model
-> — **could not be asked from a browser at all**, whatever held the numbers. So
-> the question stopped being where to put a counter and became whether the
-> surface gains a verb. `FJS-D226` ruled that it does, `FJS-957` built it, and
-> the recency then needed no storage at all.
-
-> **Grading the surface that verb would expose found two live holes in it**,
-> which is the argument for ruling an allow-list rather than passing a spec
-> through. `FJS-954`: `having` and an aggregate `orderBy` recovered a `@guarded`
-> column in eighteen requests. `FJS-955`: the `sql`` ` brand was a plain JSON
-> key, so a request could forge one and break out through `FILTER (WHERE …)`.
-> Both were reachable before the verb existed, through app code; the verb would
-> have put them on the wire for every app.
-
-> **`FJS-963` measured what the tree was already doing and found it doing it
-> twice, unstated.** A literal set travels in declaration order (a side effect of
-> `values.map()`); a table-backed one arrives alphabetical from a literal written
-> at two call sites. And an app could change neither: `optionsQuery` reads like
-> the place to state a picker's order and does not reach one, because
-> `options(field)` asks the SOURCE model through a resource `relatedResource`
-> mints. Sierra's suite asserted `getOptions()` — what an app calls directly —
-> and never the `options()` crossing, so the gap was untested rather than known.
-
-> **The drive found `FJS-962` on its first real run**, which is the whole reason
-> `verify:values` exists: `directiveParams` sent `$orderBy` as a JSON string
-> whenever it was not one, and the reader takes it as-is — so every structured
-> `orderBy` from the browser client was a 400, on both transports, for as long as
-> the client has had directives. `FJS-D125`'s inverse-pair rule broken at one
-> line, with the encoder and the parser already agreeing on bracket notation.
-
-> **`FJS-965` is the session's own tooling lying**, and it cost a wrong report to
-> the user before it was caught. `scripts/typecheck.mjs` checks the package it is
-> run FROM and has no `--only` flag, so at the workspace root it prints `clean`
-> and exits 0 having checked nothing — three times, over a junction carrying ten
-> real errors from `FJS-957`. `bun run ci --fast` found them. The rule that
-> catches this class is `proof-target`'s: advice that fails when taken is worse
-> than none.
-
-> **`FJS-964` departed from its own ruling in one respect and the ruling records
-> it.** `FJS-D121` sketched `recent(Model.field)`; the build is
-> `recent(Model.column, clock)`, because ranking by the wrong clock draws an
-> order that looks perfectly reasonable, which is this axis's entire failure
-> mode. The head is a PREFIX rather than a re-sort for a related reason: a
-> picker's list is capped, so re-sorting it by recency changes which rows are
-> offered, and *an order is not membership* is exactly what this axis was
-> separated from strength to protect.
-
-> **Two things about the drive are worth carrying.** Its sharpest row moves a
-> colorway onto the shop's newest variant and asserts the picker's head moves —
-> a stored rank passes every other row and fails that one. And it MOVES a row
-> rather than creating one, because a soft-deleted variant keeps its `@@unique`
-> tuple (`FJS-204`), so a create-then-remove drive 409s against itself on the
-> second run; that was found by running it twice rather than by reading the rule.
-
-> **`example`'s dev database could not migrate for the whole session** — a
-> blocked `order_line.userId` drop, pre-existing — so the drives ran against a
-> stale schema and `db:seed` failed outright. It was rebuilt at the end. Worth
-> knowing because the blockage is silent from inside a drive: the API serves
-> anyway and says so in one line nobody reads.
 
 ---
 

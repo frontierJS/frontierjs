@@ -91,7 +91,7 @@ docker start  ${container}`, { dry: flag.dry })
     `--name ${container}`,
     '--restart unless-stopped',
     `-p 127.0.0.1:${apiPort}:3000`,
-    `--volume ${dbPath}:/db`,
+    `--volume ${dbPath}:${CONTAINER_DB_DIR}`,
     `--env-file ${envFile}`,
     // Same contract as 06-swap: the mapping targets 3000, so the app is told to
     // bind 3000 whatever the env file says.

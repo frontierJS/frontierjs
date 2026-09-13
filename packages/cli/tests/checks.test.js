@@ -10,7 +10,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs'
 import { join }   from 'path'
 import { tmpdir } from 'os'
 
-import { RULES, runChecks, findApps, applyFixes,
+import { RULES, runChecks, findApps, applyFixes, verdictOf,
          BASELINE_FILE, readBaseline, gradeBaseline, writeBaseline } from '../core/checks.js'
 
 let ROOT
@@ -1014,6 +1014,34 @@ describe('what the runner reports about itself', () => {
   })
 })
 
+describe('the desktop surface (FJS-D263)', () => {
+  test('a desktop-only project is an app, not a fixture', () => {
+    const root = tree('d-only', {
+      'db/schema.lite':                     SCHEMA,
+      'desktop/config/desktop.config.js':   'export default {}\n',
+      'desktop/src/routes/index.mesa':      '<h1>hi</h1>\n',
+    })
+    const r = only(root, 'app-layout')
+    expect(r.skipped).toEqual([])
+    expect(r.findings).toEqual([])
+  })
+
+  // The control for the row above: the same schema with nothing beside it is
+  // the fixture case, so a rule that never skipped would not pass both.
+  test('the same schema with no surface beside it is still skipped', () => {
+    const root = tree('d-none', { 'db/schema.lite': SCHEMA })
+    expect(only(root, 'app-layout').skipped[0]?.why).toMatch(/desktop\//)
+  })
+
+  // A rule that reads client source must reach a desktop app's own src/, or a
+  // desktop-only app is a surface every source rule is blind to.
+  test('a source rule reads desktop/src as it reads web/src', () => {
+    const body = `<script>\n  import { page, goto } from '@frontierjs/sierra/router'\n  const p = page.path\n</script>\n`
+    expect(only(tree('d-src', { 'desktop/src/routes/a.mesa': body }), 'page-path-retired').findings.length).toBe(1)
+    expect(only(tree('w-src', { 'web/src/routes/a.mesa': body }),     'page-path-retired').findings.length).toBe(1)
+  })
+})
+
 describe('the widget surface', () => {
   test('a widgets-only project is a whole project, not a broken one', () => {
     // No api/, no web/. The product is the embeddable scripts; a rule that
@@ -1263,6 +1291,53 @@ describe('drive-preamble', () => {
     const root = tree('dp-none', { 'package.json': '{"name":"ws"}' })
     const { skipped } = only(root, 'drive-preamble', { scope: 'repo' })
     expect(skipped.map(s => s.rule)).toContain('drive-preamble')
+  })
+
+})
+
+
+describe('a rule\'s verdict', () => {
+
+  // runChecks read `out.findings ?? []`, so a rule returning a bare array — what
+  // a body building `findings` reads like — contributed nothing, counted as RAN,
+  // and wrote 0 into the baseline as its ceiling (FJS-1049). Every refusal here
+  // is paired with the legitimate shapes, or a guard refusing everything passes.
+
+  const rule = { id: 'some-rule' }
+
+  test('the two legitimate shapes pass through untouched', () => {
+    const found = { findings: [{ file: '/x', line: 1, message: 'm' }] }
+    expect(verdictOf(rule, found)).toBe(found)
+    expect(verdictOf(rule, { findings: [] })).toEqual({ findings: [] })
+    expect(verdictOf(rule, { skipped: 'no web/' })).toEqual({ skipped: 'no web/' })
+  })
+
+  test('a bare array throws naming the rule, rather than reading as a clean run', () => {
+    expect(() => verdictOf(rule, [{ file: '/x', line: 1, message: 'm' }]))
+      .toThrow(/rule `some-rule` returned an array of 1/)
+  })
+
+  test('both keys, neither key, an empty reason and no object at all each throw', () => {
+    expect(() => verdictOf(rule, { findings: [], skipped: 'why' })).toThrow(/keys \[findings, skipped\]/)
+    expect(() => verdictOf(rule, {})).toThrow(/keys \[\]/)
+    expect(() => verdictOf(rule, { skipped: '' })).toThrow(/some-rule/)
+    expect(() => verdictOf(rule, { findings: 'none' })).toThrow(/some-rule/)
+    expect(() => verdictOf(rule, undefined)).toThrow(/returned undefined/)
+    expect(() => verdictOf(rule, null)).toThrow(/returned null/)
+  })
+
+  test('every rule in the table answers a legitimate shape over the clean tree', () => {
+    // runChecks calls verdictOf on every rule it runs, so a rule answering a bad
+    // shape on this tree throws here rather than reporting nothing.
+    const root = tree('verdict-shapes', CLEAN)
+    const res  = runChecks({ root, scope: 'both' })
+    expect(res.ran.length + res.skipped.length).toBe(RULES.length)
+
+    // No rule here answers a bad shape, so nothing above can see runChecks
+    // stop asking. The call is the seam, and it is read off the source.
+    const src  = readFileSync(new URL('../core/checks.js', import.meta.url), 'utf8')
+    const body = src.slice(src.indexOf('export function runChecks('), src.indexOf('// ─── the baseline'))
+    expect(body).toMatch(/verdictOf\(rule, CHECKS\[rule\.id\]\(/)
   })
 
 })

@@ -186,8 +186,9 @@ export function createList(resource, listQuery, opts = {}) {
         setRows(data)
         setMore(res?.hasMore === true || (typeof res?.total === 'number' && res.total > data.length))
       } else {
-        await resource.load(query, currentDirectives())
+        const loaded = await resource.load(query, currentDirectives())
         if (stamp !== issued) return
+        resource.loaded?.(loaded)
         setMore(resource.hasMore())
       }
     } catch (err) {

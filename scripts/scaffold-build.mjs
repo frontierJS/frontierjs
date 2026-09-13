@@ -59,7 +59,7 @@ import { vendorWorkspacePackages }                     from '../packages/cli/cor
 import { pickWorkBase, daemonCanRead }                 from '../packages/cli/core/docker-context.js'
 import { apiContainerName }                            from '../packages/cli/core/ports.js'
 import { pointAtLocalServer }                          from '../packages/cli/core/tutor.js'
-import { nginxGuard, DEFAULT_PAGE, queueScript, queueVerdict, queueStateLine } from '../packages/cli/core/pause.js'
+import { nginxGuard, DEFAULT_PAGE, queueScript, queueVerdict, queueStateLine, jobsVolumeVerdict } from '../packages/cli/core/pause.js'
 import { reapTempDirs }                                from '../packages/litestone/src/tmp-dirs.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -1506,6 +1506,19 @@ await jobs.stop()
     if (edgeView.drift || !/every queue paused/.test(edgeView.text))
       return fail(`deploy:status would print "${edgeView.text}" for a drained app`, edgeView.text)
     log('  ✓ a job dispatched while paused waits, and the status line says why')
+
+    // ── what a swap would throw away (FJS-1095) ───────────
+    // The worker's database is mounted at /data. Graded as if the deploy's volume
+    // were /db it is a paused queue inside the container, which 05b refuses; graded
+    // against /data it is on the volume and silent. The pair, on one real answer.
+    const stateOut = sh(queueScript({ container: name, verb: 'state' }))
+    const offVol   = jobsVolumeVerdict({ output: stateOut, volume: '/db' })
+    const onVol    = jobsVolumeVerdict({ output: stateOut, volume: '/data' })
+    if (offVol.level !== 'fail')
+      return fail(`a paused jobs database outside the volume reads as ${offVol.level}, not a refusal`, stateOut)
+    if (onVol.level !== 'ok')
+      return fail(`a paused jobs database ON the volume reads as ${onVol.level}: ${onVol.lines.join(' · ')}`, stateOut)
+    log('  ✓ a pause on a jobs database outside the volume refuses the swap; on the volume it does not')
 
     // ── the unpause ───────────────────────────────────────
     const resumeOut = sh(queueScript({ container: name, verb: 'resume', actor: 'ci' }))

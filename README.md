@@ -269,7 +269,7 @@ schema because the UI sits one level down in `web/`.
 Three directories at the app root, one per realm, all orbiting the shared schema —
 and beside them a surface for each of the other shapes a UI takes: `site/` for a
 public prerendered site, `widgets/` for embeddable scripts, `extension/` for a
-browser extension:
+browser extension, `desktop/` for a native app with its screens bundled in:
 
 ```
 my-app/
@@ -348,13 +348,23 @@ my-app/
     deploy/                  ← packaging for the two web stores
     dist/chrome/ dist/firefox/
 
+  desktop/                   ← UI realm — a native app, screens bundled in (optional)
+    config/
+      desktop.config.js      ← wraps: 'web' borrows web/src; omit it to own src/
+                               here · api: the API origin, required when wrapping
+    src/                     ← only when it does not wrap another surface
+    shell/                   ← the Tauri crate — the native window
+    test/                    ← a probe inside the webview; there is no CDP
+    deploy/build.mjs         ← builds the screens, then the shell
+    dist/                    ← the bundled screens, compiled into the binary
+
   deploy/                    ← everything about shipping — Dockerfile, deploy steps
   tests/                     ← cross-project integration tests
   wiki/                      ← project documentation
 ```
 
 **The database lives at the root** — shared by all sub-projects, owned by none of them.
-`api/`, `web/`, `site/`, `widgets/` and `extension/` are peers; none contains another,
+`api/`, `web/`, `site/`, `widgets/`, `extension/` and `desktop/` are peers; none contains another,
 and none contains `db/`.
 
 **Which surfaces an app has is the app's business.** `fli new --template api-only`
@@ -367,15 +377,21 @@ inherits the SPA's build, its port and its release, and the first symptom is it
 shipping when the app does.
 
 A surface is its own sub-project when its **config**, its **tests** and its **release**
-are a different set of answers from the SPA's. The three optional ones are:
+are a different set of answers from the SPA's. The four optional ones are:
 
-| | `site/` | `widgets/` | `extension/` |
-| --- | --- | --- | --- |
-| Config | `target: 'static'` — the bundle, then one prerendered file per route | `target: 'widget'` — N self-contained IIFEs, not one app | `jetty.config.js` — emits a *manifest*; one source, two browsers |
-| Tests | the BUILD's files, and the islands that come alive in them | a host page it does not own, with hostile CSS | loaded unpacked into a browser profile; no URL to point at |
-| Release | a bucket and a CDN, with no application server behind it | static files on an origin a stranger's page links to | signed upload to two web stores, review in days |
-| Ports | 8600 dev · 8700 served | 8200 dev · 8300 served | 8400 dev (the reload channel; nothing is served) |
-| Create it | `fli make:site` | `fli make:widget <Name>` | `fli make:extension` |
+| | `site/` | `widgets/` | `extension/` | `desktop/` |
+| --- | --- | --- | --- | --- |
+| Config | `target: 'static'` — the bundle, then one prerendered file per route | `target: 'widget'` — N self-contained IIFEs, not one app | `jetty.config.js` — emits a *manifest*; one source, two browsers | `desktop.config.js` — which screens, and the API origin the bundle inlines |
+| Tests | the BUILD's files, and the islands that come alive in them | a host page it does not own, with hostile CSS | loaded unpacked into a browser profile; no URL to point at | a probe inside the shell's webview, which speaks no CDP |
+| Release | a bucket and a CDN, with no application server behind it | static files on an origin a stranger's page links to | signed upload to two web stores, review in days | a native binary; installers and signing are not built yet |
+| Ports | 8600 dev · 8700 served | 8200 dev · 8300 served | 8400 dev (the reload channel; nothing is served) | none — the page is `tauri://localhost` |
+| Create it | `fli make:site` | `fli make:widget <Name>` | `fli make:extension` | no generator yet — `example/desktop/` is the shape |
+
+**`desktop/` is the one surface that may borrow another's screens** (`FJS-D263`).
+`wraps: 'web'` builds `web/src` with `web/`'s own Vite config into `desktop/dist`, so a
+desktop app that IS the console needs no second copy of it; the build still writes its
+own `dist/`, because it inlines a different API origin and `vite build` empties
+`outDir`. Omit `wraps` and `desktop/src/` is the screens, which is a desktop-only app.
 
 Each generator creates the surface the first time and tops it up after, so the app a
 scaffold wrote is the app the next command extends.

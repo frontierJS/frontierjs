@@ -14,6 +14,9 @@
 
   export let harbor = null
 
+  // The cached state first, because the reply to this popup's `init` can arrive
+  // before the listener below exists — which is how a popup opened after the
+  // password would draw a password form over an attempt still waiting.
   let session  = getConnectionState()
   let orders   = []
   let status   = harbor ? 'connecting' : 'no harbor'
