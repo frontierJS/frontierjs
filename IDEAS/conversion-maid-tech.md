@@ -255,18 +255,19 @@ bar over one model.
 
 *Added 2026-09-12. Nothing here has been started.*
 
-### Before anything: the converted schema is not in either repository
+### The schema is a command, not a file
 
-The `.lite` conversion this reading took as done — 840 lines, beside a
-`discovery/` directory — was never committed to `my.maid.tech`. On 2026-09-12 it
-existed only in a Claude session scratchpad:
+The `.lite` conversion this reading took as done is the unedited output of
+`litestone import`, committed nowhere. Re-running it on 2026-09-13 reproduced
+the scratchpad copy and its report byte for byte, so the command is what is kept:
 
 ```
-/tmp/claude-1000/-home-j-code-FRONTIER-frontierjs/3563cce0-769b-417f-a069-95004955af44/scratchpad/maid/
+litestone import my.maid.tech/db/prisma/schema.prisma --from=prisma --out=db/schema.lite --report=import.json
 ```
 
-`/tmp` is cleared on reboot. If that path is gone, the conversion is redone from
-`my.maid.tech/db/prisma/` and this section's first step costs a day more.
+That makes it the Data realm's STARTING point and nothing more — none of the
+decisions above has been applied to it, and every one of its 26 `noted` rows
+(20 `sti-candidate`, 6 `composite-unique-over-nullable`) is still a question.
 
 ### The repository
 
