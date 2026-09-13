@@ -46,10 +46,17 @@ if (!resolved) {
 }
 const { server, user, path } = resolved
 const appId      = deployConf.app_id ?? path.split('/').pop()
-const domain     = deployConf.web?.domain ?? null
-const sslCert    = deployConf.web?.ssl?.cert ?? null
-const sslKey     = deployConf.web?.ssl?.key  ?? null
 const apiPort    = deployConf.api?.port ?? 3000
+
+const { edgeNames, EdgeError } = await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+let edge
+try { edge = edgeNames(deployConf) }
+catch (e) {
+  if (!(e instanceof EdgeError)) throw e
+  log.error(e.message)
+  context.config.abort = true
+  return
+}
 
 const host = `${user}@${server}`
 
@@ -61,9 +68,8 @@ context.config.server     = server
 context.config.serverPath = path
 context.config.target     = target
 context.config.appId      = appId
-context.config.domain     = domain
-context.config.sslCert    = sslCert
-context.config.sslKey     = sslKey
+context.config.edge       = edge
+context.config.domain     = edge.web.domain
 context.config.apiPort    = apiPort
 context.config.deployConf = deployConf
 ```

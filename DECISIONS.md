@@ -783,6 +783,77 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d265"></a>2026-09-12 · `FJS-D265` — a reset link sets the FIRST password of an account that has no way in at all. An OAuth-only account is still refused.
+
+**Ruled by the owner on `FJS-1099`**, which found that every account an operator
+creates was locked out: the invitation is a password-reset link, and
+`confirmPasswordReset` refused any account with no password credential.
+
+**It amends `FJS-987` rather than reversing it.** That refusal was argued for one
+account — one whose only way in is an OAuth provider, which was never secured by
+its mailbox, so minting a password from an emailed token would make mailbox
+access enough to take it over. The argument holds and the refusal stays for that
+account. It was applied to a second account the argument does not describe: one
+with NO credential, which nothing but its mailbox has ever vouched for, so
+proving the mailbox takes away nothing it had. § IV *doctrine vs. discovery* —
+the rule was broader than its reason, and the narrower rule is the one written
+down.
+
+**Three accounts, three answers**, decided by the credentials the account holds
+and nothing else: a password is replaced, no credential gets its first one, an
+`oauth:*` credential with no password is refused (409, nothing burned).
+
+**The hazard this leaves**: *no credential* is decided by the absence of a
+password and of any `oauth:` type. A future credential that is a way in and is
+neither — a passkey, say — would read as *no way in* and let a mailbox add a
+password beside it. Adding a sign-in credential type means adding it to that
+test.
+
+*Lives in:* [auth.ts `confirmPasswordReset`](packages/auth/auth.ts) ·
+[tests/flows.test.ts](packages/auth/tests/flows.test.ts) · `example`: `verify:users` ·
+`FJS-987` · `FJS-1099`
+
+### <a id="fjs-d264"></a>2026-09-12 · `FJS-D264` — resetting somebody else's second factor is SYSADMIN(7), stated by auth rather than asked of a guard. The level is the framework's floor; the grading stays the app's.
+
+**The act**: an operator removes a person's lost TOTP factor, their recovery
+codes, any half-finished login and every session, so the person signs in with
+their password and enrolls again. It lives on `account-recovery.resetTotp`, a
+service of its own because every other auth service answers for the CALLER and
+this one takes the person's id.
+
+**Who may is not a guard, and that departs from `startSupport` on purpose.**
+Support mode hard-codes no level and asks `canStartSupport`, with the stated
+reason that a level in auth would be a second answer to a question the app
+answers once. That reason holds for support — who may act AS somebody varies by
+app, and an app may want a capability rather than a rung. It does not hold here:
+removing a factor takes off the one thing between a stolen password and the
+account, a help desk is exactly how the password's thief gets past it, and no
+app is served by that being reachable below the top human rung. § IV
+*ergonomics vs. strictness* — strictness follows what a mistake destroys. It is
+the same shape `FJS-D198` gave caravan's operator verbs: a framework floor on a
+verb whose failure mode is not proportional to a lower one.
+
+**What is NOT restated is the mapping.** Both the operator and the person are
+graded by the app's own `services.level`, the resolver every request is graded
+by; auth states the threshold and nothing about roles. With no resolver every
+call is a 403 naming the option, because the alternative is auth guessing a
+standing. The person must grade BELOW the operator, so a sysadmin cannot reset a
+peer — which is also what keeps one compromised sysadmin from becoming two — and
+nobody resets their own, which is `disableTotp` and asks for the password.
+
+**What it costs an app is honesty about 7.** A resolver that lets a column
+somebody below SYSADMIN can write reach 7 hands the reset out with it. `example`
+did exactly that (`FJS-1097`), and fixing it is part of this ruling rather than a
+footnote: the floor is only as real as the grading under it.
+
+**Not an option.** No `minimumLevel`: a knob to lower it would be the shoulder
+§ IV's *paved road* says records nothing, and there is no rung above 7 a person
+can hold to raise it to.
+
+*Lives in:* [services.ts](packages/auth/services.ts) · [auth.ts `resetTotp`](packages/auth/auth.ts) ·
+[tests/account-recovery.test.ts](packages/auth/tests/account-recovery.test.ts) · `example`: `verify:users` ·
+`FJS-D198` · `FJS-D06`
+
 ### <a id="fjs-d221"></a>2026-09-05 · `FJS-D221` — a row policy may name a column ONE relation away, written as a path. Two hops is a parse error.
 
 `@@allow('read', order.userId == auth().id)` is `Expected RPAREN, got '.'`. A
@@ -9321,8 +9392,9 @@ reads `FJS_DESKTOP_PROBE` nor registers the commands. And the Rust half lives in
 because this layout already has a meaning for `src/` and a surface keeps one
 (*coherence vs. convention*).
 
-**What is not settled here.** `fli make:desktop` does not exist; `example/desktop/`
-is the shape it will generate. Installers, signing and updates are off
+**What is not settled here.** ~~`fli make:desktop` does not exist; `example/desktop/`
+is the shape it will generate.~~ Built the same day; `example/desktop/` is its output,
+held byte for byte (`packages/cli/CHANGES.md`). Installers, signing and updates are off
 (`bundle.active: false`). Windows and macOS are unrun, which is also the unproven
 half of `FJS-1090`. Mobile stays where `IDEAS/overview.md` row 5.18 put it — a
 different problem wearing the same word. `fli check` reads `desktop/src` with every

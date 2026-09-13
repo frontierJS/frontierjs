@@ -253,6 +253,58 @@ describe('runPostBuild — what counts as a page', () => {
   })
 })
 
+// ─── installability ──────────────────────────────────────────────────────────
+//
+// The rules themselves are held against Chrome in tests/browser/installable.mjs.
+// What only this can ask is that the pipeline reaches the grader and says what
+// it found: a verdict nothing prints is the silence the step exists to end.
+
+describe('runPostBuild — can a browser install this build', () => {
+  const table = { all: ['/'], indexed: ['/'], redirects: [] }
+  const linked = '<!DOCTYPE html><html><head><link rel="manifest" href="/manifest.webmanifest"></head><body></body></html>'
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"/>'
+
+  test('an installable manifest is a result line', async () => {
+    const outDir = await setup('manifest-ok', {
+      'index.html': linked,
+      'icon.svg':   svg,
+      'manifest.webmanifest': JSON.stringify({
+        name: 'Shop', start_url: '/', display: 'standalone',
+        icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }],
+      }),
+    })
+    const results = await runPostBuild({ llms: false }, table, outDir, outDir)
+    expect(results).toContain('manifest.webmanifest — installable')
+  })
+
+  test('one that is not says why, and is not a result line', async () => {
+    const outDir = await setup('manifest-browser', {
+      'index.html': linked,
+      'icon.svg':   svg,
+      'manifest.webmanifest': JSON.stringify({
+        name: 'Shop', start_url: '/', display: 'browser',
+        icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }],
+      }),
+    })
+    const warned = []
+    const warn = console.warn
+    console.warn = (m) => warned.push(m)
+    try {
+      const results = await runPostBuild({ llms: false }, table, outDir, outDir)
+      expect(results.some(r => r.includes('installable'))).toBe(false)
+    } finally {
+      console.warn = warn
+    }
+    expect(warned.join('\n')).toMatch(/manifest\.webmanifest will not install: .*"browser".*\(manifest-display-not-supported\)/)
+  })
+
+  test('no manifest anywhere says nothing at all', async () => {
+    const outDir = await setup('manifest-none', { 'index.html': '<!DOCTYPE html><html><body></body></html>' })
+    const results = await runPostBuild({ llms: false }, table, outDir, outDir)
+    expect(results.some(r => r.includes('manifest'))).toBe(false)
+  })
+})
+
 // ─── move404 ─────────────────────────────────────────────────────────────────
 
 describe('move404', () => {

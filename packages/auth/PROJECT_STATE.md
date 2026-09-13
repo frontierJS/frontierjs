@@ -37,6 +37,8 @@ tests/flows.test.ts            the IAuth methods, failure paths, gate enforcemen
 tests/routes.test.ts           /auth/* against a real Junction app
 tests/totp.test.ts             RFC 4648 and RFC 6238 published vectors
 tests/totp-login.test.ts       enrollment, the two-step login, recovery, the ceiling
+tests/credential-events.test.ts every change told to onCredentialChanged, from its real verb
+tests/account-recovery.test.ts  resetTotp over HTTP: the SYSADMIN floor, peers, self, support
 ```
 
 The file list above is the core; `tests/` also holds the OAuth, support-mode,
@@ -47,7 +49,7 @@ services and cleanup suites.
 | | |
 |---|---|
 | Version | **1.0.0** — the only package here above 0.x; CLAUDE.md says it has run in production |
-| Tests | **360 pass, 0 fail**, 15 files (`bun run test`, 2026-09-12) — was 7 in 1 file |
+| Tests | **384 pass, 0 fail**, 17 files (`bun run test`, 2026-09-12) — was 7 in 1 file |
 | Typecheck | **4 errors**, baseline 4, all pre-existing in `schema-accessors.test.ts` |
 | Published? | **No — `npm view @frontierjs/auth` 404s.** Junction 404s too; only litestone (1.1.0) is on npm |
 

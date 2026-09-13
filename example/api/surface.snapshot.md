@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-38 services · 44 routes · 12 plugins · prefix /api
+39 services · 44 routes · 12 plugins · prefix /api
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -31,6 +31,7 @@ or wants `methods: [{ method, gate }]`.
 | `account.confirmTotp` | **nothing at the API boundary** — the model declares no `@@gate` |
 | `account.disableTotp` | **nothing at the API boundary** — the model declares no `@@gate` |
 | `account.regenerateRecoveryCodes` | **nothing at the API boundary** — the model declares no `@@gate` |
+| `account-recovery.resetTotp` | **nothing at the API boundary** — the model declares no `@@gate` |
 | `customers.restore` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `customers.segment` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `customFields.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
@@ -89,6 +90,23 @@ name when it declares none.
   - `confirmTotp` — **nothing at the API boundary** — the model declares no `@@gate`
   - `disableTotp` — **nothing at the API boundary** — the model declares no `@@gate`
   - `regenerateRecoveryCodes` — **nothing at the API boundary** — the model declares no `@@gate`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `account-recovery` · model `account-recovery`
+
+- **methods** — `resetTotp`
+- **custom methods** — `resetTotp`
+- **who may call** —
+  - `resetTotp` — **nothing at the API boundary** — the model declares no `@@gate`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

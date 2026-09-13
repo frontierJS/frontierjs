@@ -76,7 +76,8 @@ src/
     schema-registry.js   modelNameFor / schemaFor
 
   islands/loader.js      — find island markers in prerendered HTML and mount
-  postbuild/             — sitemap, redirects, llms.txt, 404, theme, defer, markdown
+  postbuild/             — sitemap, redirects, llms.txt, 404, theme, defer, markdown,
+                           and manifest.js: can a browser INSTALL the build
   devtools/  presence/  theme/  analytics/  fetch/  virtual/
   components/            — RouterView.mesa, ChainRenderer.mesa
 ```
@@ -631,4 +632,6 @@ prerender, islands or static-safety. **`bun run test:widgets` for anything
 touching `src/widget/` or `build/widget-build.js`** — it builds the fixture and
 drives a plain host page in Chrome, which is the only place shadow isolation,
 custom element upgrade and a delegated click inside a shadow root are decidable.
+**`bun run test:installable` for `postbuild/manifest.js`** — the grader restates
+Chrome's install rules, and only Chrome can say whether it still restates them.
 Root `CLAUDE.md` §Running things has the full map.

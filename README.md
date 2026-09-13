@@ -384,8 +384,8 @@ are a different set of answers from the SPA's. The four optional ones are:
 | Config | `target: 'static'` — the bundle, then one prerendered file per route | `target: 'widget'` — N self-contained IIFEs, not one app | `jetty.config.js` — emits a *manifest*; one source, two browsers | `desktop.config.js` — which screens, and the API origin the bundle inlines |
 | Tests | the BUILD's files, and the islands that come alive in them | a host page it does not own, with hostile CSS | loaded unpacked into a browser profile; no URL to point at | a probe inside the shell's webview, which speaks no CDP |
 | Release | a bucket and a CDN, with no application server behind it | static files on an origin a stranger's page links to | signed upload to two web stores, review in days | a native binary; installers and signing are not built yet |
-| Ports | 8600 dev · 8700 served | 8200 dev · 8300 served | 8400 dev (the reload channel; nothing is served) | none — the page is `tauri://localhost` |
-| Create it | `fli make:site` | `fli make:widget <Name>` | `fli make:extension` | no generator yet — `example/desktop/` is the shape |
+| Ports | 8600 dev · 8700 served | 8200 dev · 8300 served | 8400 dev (the reload channel; nothing is served) | 8800 dev when it owns its screens; the shell's page is `tauri://localhost` |
+| Create it | `fli make:site` | `fli make:widget <Name>` | `fli make:extension` | `fli make:desktop` · `--wraps web` |
 
 **`desktop/` is the one surface that may borrow another's screens** (`FJS-D263`).
 `wraps: 'web'` builds `web/src` with `web/`'s own Vite config into `desktop/dist`, so a

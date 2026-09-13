@@ -16,6 +16,7 @@ import {
 } from '@frontierjs/junction'
 
 import { createLitestoneAuth, createAuthPlugin, defineProvider } from '@frontierjs/auth'
+import type { CredentialChange }                 from '@frontierjs/auth'
 import { createCaravan }                        from '@frontierjs/caravan'
 import { conduit }                              from '@frontierjs/conduit'
 import { notificationsPlugin }                  from '@frontierjs/notifications'
@@ -363,9 +364,10 @@ if (process.env.DEVTOOLS === '1')
 
 // Mounts POST /api/auth/register, /api/auth/login, /api/auth/logout and the
 // password-reset + email-verify routes — deliberately NOT services, because
-// login cannot be gated by login — plus the three services for what the caller
-// does to their own credentials afterwards: /api/account, /api/sessions,
-// /api/api-keys.
+// login cannot be gated by login — plus the services for what the caller does
+// to their own credentials afterwards: /api/account, /api/sessions,
+// /api/api-keys — and /api/account-recovery, where a SYSADMIN(7) resets
+// somebody else's lost second factor, graded by the same `level` below.
 //
 // `level` is what makes GET /api/account/me answer this app's own grading. It
 // is opt-in for a reason: the ladder is `api/gate.ts`, the same function

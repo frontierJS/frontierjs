@@ -8,10 +8,10 @@
 // rebuilding this crate runs the previous bundle.
 //
 // A debug build injects a probe when FJS_DESKTOP_PROBE names a script.
-// WebKitGTK and WKWebView speak no CDP, so the drive cannot reach into the page
-// the way every browser drive here does; the probe runs inside it and reports
-// through the two commands below. A release build neither reads the variable
-// nor registers the commands, so a shipped app cannot be scripted from its
+// WebKitGTK and WKWebView speak no CDP, so a drive cannot reach into the page
+// the way a browser drive does; the probe runs inside it and reports through
+// the two commands below. A release build neither reads the variable nor
+// registers the commands, so a shipped app cannot be scripted from its
 // environment.
 
 use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -53,7 +53,7 @@ fn main() {
     builder
         .setup(move |app| {
             let mut window = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("Kitchen sink")
+                .title("example")
                 .inner_size(1280.0, 900.0);
             if let Some(script) = &probe {
                 window = window.initialization_script(script);

@@ -125,7 +125,7 @@ describe('login', () => {
     h.cleanup()
   })
 
-  test('reset: an account with no password credential is refused, and loses nothing', async () => {
+  test('reset: an OAuth-only account is refused, and loses nothing', async () => {
     const h = await makeAuth()
     // OAuth-only: a User row and one oauth credential, no password one.
     const u = await h.sys.user.create({ data: { email: 'oauth@x.test', emailVerified: true } })
@@ -149,6 +149,32 @@ describe('login', () => {
     const still = await h.sys.session.findFirst({ where: { id: sess.id } })
     expect(still).toBeTruthy()
 
+    h.cleanup()
+  })
+
+  test('reset: an account with NO credential at all gets its first password — the invitation it was sent', async () => {
+    // What an operator's `users.create` makes: a User row and nothing else, so
+    // the emailed link is the only way in there will ever be (FJS-1099). Paired
+    // with the OAuth-only refusal above, which is one credential away and must
+    // stay refused, or this row passes against a reset that creates for anybody.
+    const h = await makeAuth()
+    const u = await h.sys.user.create({ data: { email: 'invited@x.test', emailVerified: true } })
+
+    await h.auth.login('invited@x.test', 'FirstPassw0rd!').then(
+      () => { throw new Error('an account with no credential signed in') },
+      () => {},
+    )
+
+    await h.auth.requestPasswordReset!('invited@x.test')
+    const token = h.resetToken()
+    await h.auth.confirmPasswordReset!(token, 'FirstPassw0rd!')
+
+    const creds = await h.sys.credential.findMany({ where: { userId: u.id } })
+    expect(creds.map((c: any) => c.type)).toEqual(['password'])
+    expect('token' in (await h.auth.login('invited@x.test', 'FirstPassw0rd!') as any)).toBe(true)
+
+    // Spent, like any reset: the same link cannot set a second password.
+    await expect(h.auth.confirmPasswordReset!(token, 'SecondPassw0rd!')).rejects.toThrow(/invalid or expired/i)
     h.cleanup()
   })
 

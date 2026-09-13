@@ -13,7 +13,9 @@
  *   5. llms          — generate llms.txt (if config.llms !== false)
  *   6. speculation   — inject Speculation Rules into index.html
  *   7. deferJS       — defer script tags in index.html
- *   8. plugins       — run user-supplied post-build plugin functions
+ *   8. theme         — the pre-paint theme script (if config.theme)
+ *   9. manifest      — can a browser install this build (if it links a manifest)
+ *  10. plugins       — run user-supplied post-build plugin functions
  */
 
 import { move404, NOT_FOUND_URL } from './move-404.js'
@@ -25,6 +27,7 @@ import { injectSpeculationRules } from './speculation.js'
 import { deferJsLoading } from './defer-js.js'
 import { injectThemeScript } from './inject-theme.js'
 import { generateMarkdownPages } from './markdown-pages.js'
+import { gradeManifest } from './manifest.js'
 
 /**
  * Run the full post-build pipeline.
@@ -137,7 +140,15 @@ export async function runPostBuild(config, routeTable, outDir, root, prerendered
     if (rTheme) results.push(rTheme)
   }
 
-  // 10. User plugins
+  // 10. Installability. A warning and not a failure: the build is a working
+  // site either way, and a manifest may be partial on purpose.
+  const manifest = gradeManifest(outDir, root)
+  if (manifest && !manifest.problems.length) results.push(`${manifest.file} — installable`)
+  for (const p of manifest?.problems ?? []) {
+    console.warn(`\n  [Sierra] ${manifest.file} will not install: ${p.message} (${p.code})`)
+  }
+
+  // 11. User plugins
   for (const plugin of config.plugins ?? []) {
     if (typeof plugin.closeBundle === 'function') {
       await plugin.closeBundle({ outDir, root, config, routeTable })

@@ -57,6 +57,10 @@ const scaled = (n: number) => Math.round(n * 100)
 const DEMO = {
   user:  { email: 'sam@shop.test',  password: 'correct-horse-battery', name: 'Sam',  role: 'user'  },
   admin: { email: 'alex@shop.test', password: 'correct-horse-battery', name: 'Alex', role: 'admin' },
+  // The platform's operator, and the only person at SYSADMIN(7). An admin as
+  // well — so the shop's support mode refuses to stand in for them — with the
+  // column that grades 7 stamped below, which no request below 7 can write.
+  ops:   { email: 'kit@shop.test',  password: 'correct-horse-battery', name: 'Kit',  role: 'admin' },
   // A SHOPPER, not staff. Same role as Sam — auth defaults it to "user" and
   // nothing about registering makes a person one of ours — which is exactly why
   // `isStaff` exists and why this one does not get it.
@@ -502,7 +506,7 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
   // harder: `createUser` throws EmailTakenError (409), so without the check a
   // second boot does not merely skip the users — it kills the whole process
   // before the server ever listens.
-  for (const who of [DEMO.user, DEMO.admin]) {
+  for (const who of [DEMO.user, DEMO.admin, DEMO.ops]) {
     if (!await sys.user.findFirst({ where: { email: who.email } })) await auth.createUser(who)
 
     // Stamped on every run and not only on creation, which is not tidiness: a
@@ -517,7 +521,7 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
     // every shopper the storefront registers arrives with the role Sam has.
     await sys.user.updateMany({
       where: { email: who.email },
-      data:  { emailVerified: true, isStaff: true },
+      data:  { emailVerified: true, isStaff: true, isSystemAdmin: who === DEMO.ops },
     })
   }
 
@@ -971,5 +975,6 @@ console.log(`
 
   sign in as  ${DEMO.user.email}  / ${DEMO.user.password}   → level 4
               ${DEMO.admin.email} / ${DEMO.admin.password}  → level 5
+              ${DEMO.ops.email}   / ${DEMO.ops.password}  → level 7, resets a lost second factor
   shop as     ${DEMO.buyer.email} / ${DEMO.buyer.password}  → a customer, not staff
 `)

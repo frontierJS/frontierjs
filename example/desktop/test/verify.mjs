@@ -94,7 +94,10 @@ try {
   const probe = join(scratch, 'probe.js')
   writeFileSync(probe, readFileSync(join(DESKTOP, 'test', 'probe.js'), 'utf8').replaceAll('__API__', API))
 
-  const binary = join(DESKTOP, 'shell', 'target', 'debug', 'kitchen-sink-desktop')
+  // Named for the crate, which make:desktop derives from the app's name.
+  const crate  = readFileSync(join(DESKTOP, 'shell', 'Cargo.toml'), 'utf8').split('\n')
+    .find(l => l.startsWith('name'))?.split('"')[1]
+  const binary = join(DESKTOP, 'shell', 'target', 'debug', crate)
   if (!existsSync(binary)) throw new Error(`no shell at ${binary}`)
 
   const env = {

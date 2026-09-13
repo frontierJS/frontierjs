@@ -32,9 +32,11 @@
   //
   // The two origins are props with defaults rather than constants, because a
   // widget is built once and embedded by pages that point at staging, at
-  // production, and at a developer's laptop.
+  // production, and at a developer's laptop. The API's default is the build's
+  // VITE_API_URL, the name every surface reads, so a production build does not
+  // ship pointing at this app's dev port.
   export let sku   = ''
-  export let api   = 'http://localhost:8110'
+  export let api   = import.meta.env?.VITE_API_URL ?? 'http://localhost:8110'
   export let shop  = 'http://localhost:8010'
   export let label = 'Add to basket'
 

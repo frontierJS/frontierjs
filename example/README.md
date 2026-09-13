@@ -81,7 +81,9 @@ safe, and an API started against an empty database says so rather than serving
 empty lists that read as a broken query.
 
 Sign in as **`sam@shop.test`** (level 4) or **`alex@shop.test`** (level 5), both
-with password `correct-horse-battery`. The buttons in the header do it for you.
+with password `correct-horse-battery`. **`kit@shop.test`** is the same password at
+level 7 — the platform's operator, and the only person who may reset somebody's
+lost second factor. The buttons in the header do it for you.
 
 ---
 

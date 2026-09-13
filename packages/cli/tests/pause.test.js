@@ -32,6 +32,7 @@ import { execFileSync } from 'child_process'
 import { chooseTarget, transitionsSince, servingHistory } from '../core/revert.js'
 
 const NGINX_STEP = readFileSync(new URL('../commands/deploy/_steps-setup/05-nginx.md', import.meta.url).pathname, 'utf8')
+const EDGE_SRC   = readFileSync(new URL('../core/edge.js', import.meta.url).pathname, 'utf8')
 
 // ─── the guard ───────────────────────────────────────────────────────────────
 
@@ -79,7 +80,8 @@ describe('the nginx guard', () => {
 
 describe('the vhost the setup step writes', () => {
   test('gets the guard from this module rather than carrying its own', () => {
-    expect(NGINX_STEP).toContain('nginxGuard(serverPath)')
+    expect(EDGE_SRC).toContain('nginxGuard(serverPath)')
+    expect(EDGE_SRC).not.toContain('fli:pause-guard')
     expect(NGINX_STEP).not.toContain('fli:pause-guard')
   })
 
@@ -93,7 +95,7 @@ describe('the vhost the setup step writes', () => {
   // Both are rewrite-phase returns and the first one wins. After the redirect,
   // a paused app answers 301 to every plain-http caller and looks up.
   test('puts the guard ahead of the http→https redirect', () => {
-    expect(NGINX_STEP.indexOf('nginxGuard(serverPath)')).toBeLessThan(NGINX_STEP.indexOf('${sslBlock}'))
+    expect(EDGE_SRC.indexOf('nginxGuard(serverPath)')).toBeLessThan(EDGE_SRC.indexOf('${listen}'))
   })
 
   test('writes the default page beside the guard, not on first pause', () => {

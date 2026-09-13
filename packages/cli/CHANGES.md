@@ -1,5 +1,66 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-12 — the API on a domain of its own
+
+`FJS-1089`. **`deploy.api.domain` puts the API at its own origin** — `api.example.com` beside
+`deploy.web.domain` — and `core/edge.js` is the one reader of both: `deploy:setup` writes a web block
+that serves the SPA and proxies nothing plus an API block that proxies every path, the web build runs
+with `VITE_API_URL=https://<api domain>`, the SSL step checks each side's certificate, and the report
+names both. The build refuses a bundle that does not contain the origin, since a `sierra.config.js`
+that never reads the variable builds clean and calls its own origin. A domain that is not a hostname is
+refused by key. Unset is one origin, as before. `make:deploy` writes the key commented out.
+
+**Every API call through the one-origin vhost had been a 404** (`FJS-1100`): `proxy_pass` carried a
+URI, which makes nginx replace the `/api/` prefix, and a scaffolded app registers its routes under it.
+The vhost moved out of `_steps-setup/05-nginx.md` into `core/edge.js` so a real nginx can load what
+setup writes: `pauseEdgeCycle` now runs the generated file in both shapes against an upstream that
+echoes the path it received, beside a control copy with the URI put back that answers the stripped
+path.
+
+## 2026-09-12 — a scaffolded app is one a browser offers to install
+
+`fli new` writes `web/public/manifest.webmanifest`, `web/public/icon.svg` and the two `<link>`s, and
+sierra's build grades the manifest. The `scaffold` phase asserts the build prints
+`manifest.webmanifest — installable`, because the grade is a warning and a template change that
+broke it would otherwise exit 0. Its first run found that `fli new` had never created `web/public/`.
+
+## 2026-09-12 — `fli intent`: a candidate resolved against the app's own seed
+
+The middle of `IDEAS/intent-recognizer.md`, and the part no model is allowed to do. `core/intent.js`
+takes a candidate — a claim (`question`, `change`, `broken`) and facts in plain words with a kind — and
+answers one of six verdicts per fact, the deepest cost class, a citation into a committed artefact, and
+the resolved identity requests dedupe by. It reads the parsed `db/schema.lite` and the text of the
+`surface`, `routes` and `notifications` snapshots, and nothing else.
+
+- **A candidate carrying an identifier is refused.** `Customer.notes` from a translator is a fact it
+  invented; the identifier in an answer is always one this module produced.
+- **Words matching two things resolve to nothing** and name both. A foreign key and the relation it
+  backs are indexed as one fact, which the first run against `example` needed.
+- **A `@system` move is checked against the surface before it is declined**, which is run 1's one
+  wrong answer (A24, `invoices.settle`) — asserted, and red with the surface lookup removed.
+- **What a screen shows is not indexed**, so a UI fact resolves its data half and reports the screen
+  as `unverified`.
+
+`fli intent` loads the app's OWN litestone through its `exports` map, so this package still depends
+on no database. `tests/intent.test.js` asserts fourteen run 1 rows against `example`'s real artefacts.
+
+## 2026-09-12 — `fli make:desktop`
+
+**`core/desktop-surface.js` owns the `desktop/` surface** (`FJS-D263`), and `example/desktop/` is now
+its output rather than a hand-written shape: `tests/desktop-surface.test.js` regenerates it and
+compares every file byte for byte, so `verify:desktop` — the only thing that builds a shell — proves
+what the generator writes. `--wraps web` writes the config, `deploy/build.mjs` and the Tauri crate
+under `shell/`; without it the surface also owns `src/`, a Vite root and a dev server on the new
+`desktopDev` port category (8800 for a scaffold). The crate, product name and identifier derive from
+the app's name, and the scaffold warns that the identifier is where the OS keeps the app's session.
+
+Three things moved with it. `build.mjs` refuses any config with no `api`, not only a wrapped one —
+a desktop app owning its screens had the same same-origin trap — and `api: null` is how an app with
+no API says so; it builds the screens from their own directory, since a scaffolded `web/` leaves its
+Vite root to the working directory. The binary's name is read from `Cargo.toml` rather than
+restated. And `surface-config` names `desktop.config.js`, so a config left at the surface root is
+reported as it is for every other surface.
+
 ## 2026-09-12 — `desktop/` is a surface `fli check` reads
 
 **The surface list is one constant in `core/checks.js` now, and `desktop/` is on it** (`FJS-D263`).

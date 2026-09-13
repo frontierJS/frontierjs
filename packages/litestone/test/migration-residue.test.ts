@@ -141,6 +141,78 @@ describe('normalizeDdl', () => {
   })
 })
 
+describe('a column added anywhere but last — FJS-1092', () => {
+  // `ALTER TABLE ADD COLUMN` can only append, so a field declared in the middle of
+  // a model lands at the END of the live table and the declared table has it in
+  // the middle. The two differ by position and nothing else, and the tripwire read
+  // that as residue on every boot of every app that upgraded the model — which
+  // is how a tripwire trains its readers to skip the line that is a real one.
+  const v1 = `
+model Credential {
+  id        String   @id
+  type      String
+  createdAt DateTime @default(now())
+}
+`
+  const v2 = `
+model Credential {
+  id           String   @id
+  type         String
+  lastStep     Int?
+  createdAt    DateTime @default(now())
+}
+`
+  const migrate = (a: string, b: string) => {
+    const dir  = tempDir('litestone-position-')
+    const live = new Database(join(dir, 'live.db'))
+    autoMigrate({ $rawDbs: { main: live } } as any, parse(a, { path: '/x/db/schema.lite' }))
+    const out  = autoMigrate({ $rawDbs: { main: live } } as any, parse(b, { path: '/x/db/schema.lite' }))
+    return { out: out.main, live, parsed: parse(b, { path: '/x/db/schema.lite' }) }
+  }
+
+  it('a field declared mid-model migrates and leaves NO residue behind', () => {
+    const { live, parsed } = migrate(v1, v2)
+    const sql = (live.query(`SELECT sql FROM sqlite_master WHERE name='credential'`).get() as { sql: string }).sql
+    // The premise, asserted rather than assumed: the live column really is last.
+    expect(sql.trimEnd().replace(/\)\s*STRICT$/i, '').trimEnd().endsWith('"lastStep" INTEGER')).toBe(true)
+
+    const dir  = tempDir('litestone-position-p-')
+    const pris = new Database(join(dir, 'pristine.db'))
+    buildPristine(pris, parsed)
+    expect(diffSchemas(introspect(pris), introspect(live), parsed, 'main', {}).residue).toEqual([])
+  })
+
+  it('…and the same table with a column that REALLY differs is still named', () => {
+    const { diff } = against(SCHEMA, [
+      `CREATE TABLE "account" ("email" TEXT NOT NULL UNIQUE COLLATE NOCASE, "id" TEXT NOT NULL PRIMARY KEY) STRICT`,
+    ])
+    expect(diff.residue.map((r: any) => r.name)).toEqual(['account'])
+  })
+
+  it('a residue an older reading RECORDED goes quiet on the fast path — the collation one below still re-announces', () => {
+    // The fast path replays what the last full diff stored while the schema hash
+    // holds still, so without a re-grade every database that heard the position
+    // verdict once would go on hearing it on every boot.
+    const { live, parsed } = migrate(v1, v2)
+    const shim   = { $rawDbs: { main: live } } as any
+    const pSql   = `CREATE TABLE "credential"("id" TEXT NOT NULL PRIMARY KEY,"lastStep" INTEGER,"createdAt" TEXT)STRICT`
+    const lSql   = `CREATE TABLE "credential"("id" TEXT NOT NULL PRIMARY KEY,"createdAt" TEXT,"lastStep" INTEGER)STRICT`
+    live.run(`INSERT INTO "_litestone_meta" (key, value) VALUES ('autoMigrate.residue', ?)
+              ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+             JSON.stringify([{ type: 'table', name: 'credential', table: 'credential', pristine: pSql, live: lSql }]))
+
+    expect(autoMigrate(shim, parsed).main.residue).toBeUndefined()
+    expect(live.query(`SELECT value FROM "_litestone_meta" WHERE key = 'autoMigrate.residue'`).get()).toBeNull()
+  })
+
+  it('…and the declared columns in another ORDER are not', () => {
+    const { diff } = against(SCHEMA, [
+      `CREATE TABLE "account" ("email" TEXT NOT NULL UNIQUE, "id" TEXT NOT NULL PRIMARY KEY) STRICT`,
+    ])
+    expect(diff.residue).toEqual([])
+  })
+})
+
 describe('a foreign key\'s ON UPDATE — the seventh missed dimension', () => {
   const migrateAcross = (v1: string | null, v2: string | null) => {
     const p1  = parse(rel(v1), { path: '/x/db/schema.lite' })

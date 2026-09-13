@@ -1,5 +1,5 @@
 [package]
-name    = "kitchen-sink-desktop"
+name    = "example-desktop"
 version = "0.0.0"
 edition = "2021"
 

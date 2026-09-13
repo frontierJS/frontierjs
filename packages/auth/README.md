@@ -123,15 +123,16 @@ relative to `apiPrefix` for the same reason.
 | `POST` | `/auth/login` | Login, returns token |
 | `POST` | `/auth/logout` | Revoke current session |
 | `POST` | `/auth/password-reset/request` | Send reset email |
-| `POST` | `/auth/password-reset/confirm` | Confirm reset with token |
+| `POST` | `/auth/password-reset/confirm` | Confirm reset with token. On an account with no credential — one an operator created — this sets the first password, which is what makes an invitation a reset link. An account whose only way in is an OAuth provider is refused (409) |
 | `POST` | `/auth/email/verify/request` | Re-send verification email |
 | `GET`  | `/auth/email/verify?token=` | Verify email with token |
 
 ## Services
 
 Registered by the same plugin, at the app's own service root. Every method is
-scoped to the CALLER — nothing here takes a user id, because acting on somebody
-else's account is a different service with a different gate.
+scoped to the CALLER — nothing here takes a user id — except `account-recovery`,
+which is an operator acting on somebody else's account and has a floor of its
+own (§ *When a factor is lost*, below).
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -242,6 +243,52 @@ The methods that check the password again share a rate limit per account,
 The four that change what the account requires are refused inside a support
 episode. `totpStatus` is not — seeing what somebody sees is what an episode is
 for, and it answers about the subject.
+
+### When a factor is lost
+
+A person without their phone or their recovery codes cannot get back in alone.
+A **SYSADMIN(7)** can take the factor off for them:
+
+```
+POST /account-recovery/{userId}   X-Service-Method: resetTotp   → { sessionsRevoked }
+```
+
+The factor, any enrollment in flight, the recovery codes, a half-finished login
+and **every session** go — the lost device usually holds one. API keys stay. The
+person signs in with their password and enrolls again.
+
+The floor is not configurable (`FJS-D264`): removing a factor is the one thing
+between a stolen password and the account, and a help desk is how the thief gets
+past it. Both people are graded by YOUR `services: { level }` resolver, so it must
+be passed — without it every call is a 403 naming the option — and it must not
+let a column somebody below 7 can write reach 7. The person must grade below the
+operator, so a sysadmin cannot reset a peer, and nobody resets their own
+(`disableTotp` does that, with the password). Refused inside a support episode.
+
+## Telling the person
+
+Every change to how an account signs in reaches `onCredentialChanged`, after it
+is written. Wire it to mail, because the person who did NOT make a change learns
+of it here or nowhere:
+
+```typescript
+createLitestoneAuth(db, {
+  onCredentialChanged: async ({ event, email, actorId, userId }) => {
+    await mailer.send({ to: email, subject: 'Your sign-in settings changed', text: describe(event) })
+  },
+})
+```
+
+`event` is one of `CREDENTIAL_EVENTS` — `password.changed`, `password.reset`,
+`totp.enabled`, `totp.disabled`, `totp.reset`, `recoveryCodes.regenerated`,
+`recovery.used`, `apikey.created`, `apikey.revoked`, `oauth.linked`,
+`oauth.unlinked` — and is the audit trail's own name for the same change.
+`actorId` differs from `userId` only for `totp.reset`, where it is the operator.
+Nothing secret is in it.
+
+It is an **observer**, unlike `onLogin` and the other three: a throw is logged
+and refuses nothing, so a mail outage cannot keep a factor on that somebody
+switched off. Optional to the type system, required in practice.
 
 ## Escape hatch
 

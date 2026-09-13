@@ -938,6 +938,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `role` | `string` = `"user"` | — | — | `x-litestone-write-policy` | — |
 | `accountId` | `string`? | — | — | — | — |
 | `isStaff` | `boolean` = `false` | — | — | `x-litestone-write-policy` | — |
+| `isSystemAdmin` | `boolean` = `false` | — | — | `x-litestone-write-policy` | — |
 
 **On create**: required — `email` · not accepted — `id`
 

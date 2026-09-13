@@ -1,13 +1,15 @@
 ---
 id: intent-recognizer
-status: proposed
+status: partial
 dated: 2026-09-12
 ---
 
 # Idea — the intent recognizer: a customer's words, resolved against the app's own seed
 
-**Status: PROPOSED. Nothing here is built.** Dated 2026-09-12. There is no request
-model, no resolver module and no command — § *Home* says where each would go. Do not cite this file as describing
+**Status: PARTIAL.** Dated 2026-09-12. **The resolver is built**: the candidate
+shape, the index and the verdicts are `packages/cli/core/intent.js`, and `fli intent`
+prints one — no model runs anywhere. Not built: the translator in front of it, the
+phraser behind it, a screen index, and run 2. § *Home* says where each would go. Do not cite this file as describing
 behavior — see `VERIFYING.md`. The nine questions were answered before the first
 edit and are § *The nine*, below.
 
@@ -330,8 +332,10 @@ The half that would — a model dependency, a conversation, *send to developers*
 not designed, and a boundary drawn before it is designed is a guess.
 
 **V1 lives beside the index, in the CLI, as a module with a command over it.** The
-resolution and the verdict are one module (`packages/cli/core/intent.js`, say); `fli
-intent "<text>"` is its first caller and prints what it answers. The same shape as
+resolution and the verdict are one module, `packages/cli/core/intent.js`; `fli intent
+--candidate <json>` is its first caller and prints what it answers. It takes a
+CANDIDATE today rather than prose, because the translator is not built — and because a
+resolver graded on hand-written candidates is graded alone. The same shape as
 `fli proves`, which also reads committed files and answers a question about them.
 **The logic is never in the command**, because the command is not the last caller: a
 customer asks a running app, not a terminal, and a second surface re-deriving the

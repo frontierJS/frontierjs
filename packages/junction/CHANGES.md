@@ -1,5 +1,13 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-12 — `IAuth.resetTotp`, the operator's half of a lost factor
+
+**`resetTotp?(userId, { actorId })`** joins the optional TOTP methods. It is the one method there
+that takes somebody ELSE's id and no password, because who may call it is decided above the
+provider — `@frontierjs/auth`'s `account-recovery` service, at SYSADMIN(7) (`FJS-D264`) — and
+`actorId` is who the trail names. Declared on the interface so a third-party provider can say it
+has none by leaving it out, which the service answers as a 400 by name.
+
 ## 2026-09-12 — `client.auth` gains the second factor, and a sign-in's 401 is not a dead session
 
 **Five account methods on `client.auth`** — `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp`,

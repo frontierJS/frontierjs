@@ -300,6 +300,37 @@ export function normalizeDdl(sql) {
     .trim()
 }
 
+// A TABLE's definition with its top-level members sorted, for the residue
+// comparison only (`FJS-1092`). `ALTER TABLE ADD COLUMN` can only append, so a
+// field declared in the middle of a model sits last in the live table and in
+// the middle of the declared one — the same table, reported as residue on every
+// boot for ever. Nothing litestone reads or writes depends on position: every
+// statement it emits names its columns, and a rebuild copies by name.
+//
+// Members are split on TOP-LEVEL commas outside quotes, so a `CHECK (a, b)` or a
+// `DEFAULT 'a,b'` stays one member. Anything that is not a `CREATE TABLE … (…)`
+// comes back as `normalizeDdl` left it.
+export function normalizeTableDdl(sql) {
+  const flat = normalizeDdl(sql)
+  const open = flat.indexOf('(')
+  if (open < 0 || !/^CREATE\s+TABLE\b/i.test(flat)) return flat
+
+  const members = []
+  let depth = 0, quote = null, start = open + 1, end = -1
+  for (let i = open; i < flat.length; i++) {
+    const ch = flat[i]
+    if (quote) { if (ch === quote) quote = null; continue }
+    if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue }
+    if (ch === '(') depth++
+    else if (ch === ')') { if (--depth === 0) { end = i; break } }
+    else if (ch === ',' && depth === 1) { members.push(flat.slice(start, i)); start = i + 1 }
+  }
+  if (end < 0) return flat
+  members.push(flat.slice(start, end))
+
+  return `${flat.slice(0, open)}(${members.sort().join(',')})${flat.slice(end + 1)}`
+}
+
 // Two trigger definitions are the same trigger when SQLite would build the same
 // thing from them. `IF NOT EXISTS` is stripped because buildPristine strips it
 // on the way in, so the pristine side never carries it and the live side does.
@@ -1087,6 +1118,7 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     const pn = p ? normalizeDdl(p.sql) : null
     const ln = l ? normalizeDdl(l.sql) : null
     if (pn === ln) continue
+    if (type === 'table' && p && l && normalizeTableDdl(p.sql) === normalizeTableDdl(l.sql)) continue
     residue.push({ type, name, table, pristine: pn, live: ln })
   }
 

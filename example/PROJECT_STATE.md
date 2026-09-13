@@ -340,7 +340,8 @@ site/                       ← the PUBLIC storefront. Its own surface (FJS-D127
 `bun run build` · `bun run verify:build` · `bun run build:site` ·
 `bun run verify:site` · `bun run reset`
 
-Sign in: `sam@shop.test` (level 4) or `alex@shop.test` (level 5), password
+Sign in: `sam@shop.test` (level 4), `alex@shop.test` (level 5) or `kit@shop.test`
+(level 7, the only one who may reset somebody's lost second factor), password
 `correct-horse-battery`. The header buttons do it.
 
 ---

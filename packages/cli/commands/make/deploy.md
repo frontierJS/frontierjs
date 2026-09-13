@@ -186,6 +186,16 @@ ${serverLine}
 
       // Set to true to validate server env against .env.example before deploying
       envCheck: true,
+
+      // The API on a domain of its own (api.your-app.com beside the web domain).
+      // Unset, the web domain proxies /api/ and /ws and the page and the API are
+      // one origin. Set, setup writes a second server block and the web build is
+      // run with VITE_API_URL=https://<this domain>.
+      // domain: 'api.your-app.com',
+      // ssl: {
+      //   cert: '/etc/ssl/certs/${appId}-api.pem',
+      //   key:  '/etc/ssl/private/${appId}-api.key',
+      // },
     },
 
     web: {

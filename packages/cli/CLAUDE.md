@@ -44,6 +44,13 @@ core/
   proofs.js     which drive proves a change — the parse of `CLAUDE.md`'s own
                 table and the resolution of both its columns. A PARSE and never
                 a second table; not a build graph, and it must not become one
+  intent.js     what a person asked, resolved against the app's seed — a
+                CANDIDATE (a claim, facts in plain words) in, a verdict with a
+                citation out; `fli intent` is its first caller. Pure over the
+                parsed schema and three snapshot TEXTS, so the command loads the
+                APP's litestone and this package still depends on none. It
+                refuses a candidate carrying an identifier, and words matching
+                two things resolve to nothing — `IDEAS/intent-recognizer.md`
   server.js     also the control surface's own endpoints — `/api/runnables`,
                 `/api/state`, `/api/proves`, `/api/health/:id`, `/api/page/:id`
                 (a committed page, served because a `file://` link from an http
@@ -75,6 +82,9 @@ core/
   widget-surface.js     what a `widgets/` surface IS — shared by `new` and `make:widget`
   site-surface.js       what a `site/` surface IS — ditto, `make:site`
   extension-surface.js  what an `extension/` surface IS — ditto, `make:extension`
+  desktop-surface.js    what a `desktop/` surface IS — `make:desktop`. `example/desktop/`
+                        is its output, compared byte for byte in the suite, because
+                        only `verify:desktop` can build a shell and it runs the example
   shortcuts.js  what a SHORTCUT is — a project-local name for a command line,
                 written as an ordinary command file rather than held in a
                 table, so discovery, help, completion and `fli edit` already
@@ -141,6 +151,11 @@ core/
                 is the shape now and a migration is the shape at one format —
                 and it is held honest by an oracle that migrates a fixture and
                 compares it to a fresh database
+  edge.js       the nginx server blocks in front of a deployed app and the origin
+                its web build names for the API — one origin, or `deploy.api.domain`
+                as a second. The one reader of both domains, because a vhost and a
+                bundle that read them separately name two different hosts. The
+                file `deploy:setup` writes, loaded verbatim by `pauseEdgeCycle`
   pause.js      taking an app down on purpose: the nginx guard, the file it
                 stats, the page, the drift verdict and the refusals. All pure.
                 The guard goes AHEAD of the https redirect (both are

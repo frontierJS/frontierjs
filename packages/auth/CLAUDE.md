@@ -151,6 +151,16 @@ index.ts     public API
   and re-read the user** — that is a third query on the hottest path in that
   app, forever, for a row `toContext()` already holds, and it is the thing this
   option exists to remove.
+- **`onCredentialChanged` is the one OBSERVER, and it is written through one
+  helper.** `credentialChanged()` in `auth.ts` writes the audit entry and tells
+  the app, so a new credential write that calls `audit()` directly records the
+  change and tells nobody — `tests/credential-events.test.ts` fails on it. A new
+  kind of change is a name in `CREDENTIAL_EVENTS` and a call through the helper.
+- **`account-recovery` is the one service that takes somebody else's id, and its
+  floor is SYSADMIN(7) with no option** (`FJS-D264`). It grades both people with
+  the app's `services.level` and refuses without one. Every refusal is asserted
+  with the person's factor re-read afterwards, since answering 403 after the
+  delete is the worst thing it can do.
 - **Four awaited callbacks, and A THROW REFUSES** — `onLogin`, `onLoginFailed`,
   `onLogout`, `onRegister` (`FJS-042`). The same shape `onPasswordResetRequested`
   already had, so no new vocabulary; single handlers, not a bus, because each is
@@ -258,5 +268,6 @@ index.ts     public API
 `bun run test`, then `example`: `verify` (sign-in, gate ladder) and `basecamp`:
 `verify` (first-run setup, login, the navigation guard). A change to the second
 factor — `totp.ts`, `completeLogin`, the challenge route, the `account` TOTP
-methods — also runs `example`: `verify:users`, the only place the two-step
-login crosses a real app.
+methods, `account-recovery`, `onCredentialChanged` — also runs `example`:
+`verify:users`, the only place the two-step login crosses a real app and the
+only place a notification is read back out of an outbox.

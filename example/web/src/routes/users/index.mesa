@@ -75,6 +75,8 @@ title: Users
   let note    = null
   let loading = false
   let busy    = null
+  let more    = false
+  let growing = false
 
   // Who may act. `can` is the model's own gate read off the schema the browser
   // was handed; `isAdmin` is the field policy's subject, which x-gate cannot
@@ -83,12 +85,46 @@ title: Users
   $: canEdit = users.can('update', session.level)
   $: isAdmin = session.user?.isAdmin === true
 
-  const reload = () => {
+  // ── The window ───────────────────────────────────────────────────────────
+  //
+  // The roster is a WINDOW (`FJS-D145`), not everything. `load()` with no limit
+  // takes junction's default page of 20, and this screen used to render that
+  // with nothing saying it had stopped — an admin looking for the 21st person
+  // found nobody and no hint (`FJS-1098`). `more()` grows it from the far edge
+  // by the sort key, and `hasMore()` is what the button is drawn from, because
+  // the count on screen is what the window holds and never a total.
+  //
+  // A reload keeps what the person had grown: a switch toggled on row 30 reloads
+  // the list, and snapping back to the first 20 would take the row they just
+  // changed off the screen.
+  const PAGE = 20
+
+  async function reload() {
     loading = true
-    return users.load({}, { orderBy: 'email' })
-      .catch(e => { error = e.message })
-      .finally(() => { loading = false })
+    const had = rows().length
+    try {
+      await users.load({}, { orderBy: 'email', limit: PAGE })
+      while (rows().length < had && users.hasMore()) await users.more()
+      more = users.hasMore()
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
   }
+
+  async function grow() {
+    growing = true
+    try {
+      await users.more()
+      more = users.hasMore()
+    } catch (e) {
+      error = e.message
+    } finally {
+      growing = false
+    }
+  }
+
   reload()
 
   const columns = [
@@ -232,6 +268,17 @@ title: Users
     </tr>
   {/snippet}
 </Table>
+
+<div class="cluster" id="u-window" style="align-items: center; gap: .5rem">
+  <span class="text-sm text-muted" data-shown>{rows().length} shown</span>
+  {#if more}
+    <Button id="u-more" variant="outlined" disabled={growing} onclick={grow}>
+      {growing ? 'Loading…' : 'Load more'}
+    </Button>
+  {:else}
+    <span class="text-sm text-muted" id="u-end">— everyone</span>
+  {/if}
+</div>
 
 <Drawer open={adding !== null} title="Add someone" side="right" onclose={closeAdd}>
   {#if adding}

@@ -1,8 +1,20 @@
 {
-  "productName": "Kitchen sink",
+  "productName": "example",
   "version": "0.0.0",
-  "identifier": "dev.frontierjs.example.desktop",
-  "build": { "frontendDist": "../dist" },
-  "app": { "windows": [], "security": { "csp": null } },
-  "bundle": { "active": false, "icon": ["icons/icon.png"] }
+  "identifier": "dev.example.desktop",
+  "build": {
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "icon": [
+      "icons/icon.png"
+    ]
+  }
 }

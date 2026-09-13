@@ -1182,7 +1182,17 @@ Runs automatically after `vite build`:
 | Speculation Rules | `speculationRules !== false` and static routes exist |
 | `defer` on script tags | `build.deferJS` |
 | theme flash-prevention inline script | `theme` configured |
+| whether a browser will install the app | `index.html` links a manifest, or `public/manifest.webmanifest` exists |
 | user plugin `closeBundle` hooks | `plugins` |
+
+**A manifest is graded, never written.** The app owns `public/manifest.webmanifest` and the
+`<link rel="manifest">`; the build prints `manifest.webmanifest — installable`, or a warning naming
+the rule it fails, because a browser that will not install an app does not say so — the install
+button just never appears. The rules are Chrome's, measured: a `name` or `short_name`, a `start_url`
+on this origin, `display` of `standalone`, `fullscreen` or `minimal-ui`, and one icon with purpose
+`any` whose file is in the build and whose declared and real size are both at least 144px (an SVG
+with `sizes: "any"` counts). No service worker and no 512px icon are required. `bun run
+test:installable` holds the grader against Chrome's own `Page.getInstallabilityErrors`.
 
 ---
 

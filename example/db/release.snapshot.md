@@ -1013,6 +1013,7 @@ table `user` · db `main` · gate `4.4.4.5`
 | `emailVerified` | `Boolean` | no | `0` | `@allow(write: auth().isAdmin)` |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `isStaff` | `Boolean` | no | `0` | `@allow(write: auth().isAdmin)` |
+| `isSystemAdmin` | `Boolean` | no | `0` | `@allow(write: auth().isSystemAdmin)` |
 | `name` | `String` | yes | — | — |
 | `role` | `String` | no | `'user'` | `@allow(write: auth().isAdmin)` |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |

@@ -12,7 +12,7 @@ import { slug } from '@frontierjs/toolbelt/inflect'
 import { Database } from 'bun:sqlite'
 import {
   introspect, buildPristine, buildPristineForDatabase, diffSchemas,
-  generateMigrationSQL, summarizeDiff, checksum, splitStatements,
+  generateMigrationSQL, summarizeDiff, checksum, splitStatements, normalizeTableDdl,
 } from './migrate.js'
 import { generateDDLForDatabase, detectM2MPairs, generateJoinTableDDL, planEdgeStorage, generateEdgeSideTableDDL } from './ddl.js'
 
@@ -857,10 +857,16 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
     // (e.g. after out-of-band DDL changes to the live DB).
     const ddlHash = checksum(generateDDLForDatabase(parseResult.schema, dbName, { foreignKeys: true, pluralize }) + `|pluralize=${pluralize}`)
     if (!force && readAutoHash(rawDb) === ddlHash) {
-      const held = acceptResidue ? null : readAutoResidue(rawDb)
-      if (acceptResidue) writeAutoResidue(rawDb, null)
-      if (held) announceResidue(dbName, held)
-      results[dbName] = held ? { state: 'in-sync', applied: 0, residue: held } : { state: 'in-sync', applied: 0 }
+      // Re-graded, not replayed. A residue recorded by an older reading stays
+      // recorded while the schema hash holds still, so a comparison that learned
+      // better (`FJS-1092`: column POSITION) would go on announcing the old
+      // verdict on every boot of every database that heard it once.
+      const stored = acceptResidue ? null : readAutoResidue(rawDb)
+      const held   = (stored ?? []).filter(r => !(r.type === 'table' && r.pristine && r.live &&
+                                                  normalizeTableDdl(r.pristine) === normalizeTableDdl(r.live)))
+      if (acceptResidue || (stored && held.length !== stored.length)) writeAutoResidue(rawDb, held)
+      if (held.length) announceResidue(dbName, held)
+      results[dbName] = held.length ? { state: 'in-sync', applied: 0, residue: held } : { state: 'in-sync', applied: 0 }
       continue
     }
 

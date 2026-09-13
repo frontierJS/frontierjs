@@ -44,8 +44,39 @@ machine.run('bun install --frozen-lockfile', { cwd: serverPath })
 if (!/^[0-9a-fA-F]{7,64}$/.test(String(commit)))
   throw new Error(`refusing to build: the commit "${commit}" is not a sha`)
 
-log.info('Building web on server...')
-machine.run(`VITE_FJS_BUILD=${commit} bun run build`, { cwd: `${serverPath}/web` })
+// ─── Where the API is ─────────────────────────────────────────────────────────
+//
+// Under `deploy.api.domain` the page and the API are two origins, and the only
+// way the bundle learns the second is at build time: `VITE_API_URL`, which the
+// web surface's sierra.config.js reads for junction.url. Taken from the same
+// declaration the vhost is written from, so the two cannot name different
+// hosts. Graded as a hostname before it reaches the target's shell.
+const { edgeNames, apiOrigin, EdgeError } =
+  await import(new URL('file://' + global.fliRoot + '/core/edge.js'))
+let origin
+try { origin = apiOrigin(edgeNames(deployConf)) }
+catch (e) {
+  if (!(e instanceof EdgeError)) throw e
+  log.error(e.message)
+  context.config.abort = true
+  return
+}
+
+log.info(origin ? `Building web on server, calling the API at ${origin}...` : 'Building web on server...')
+machine.run(`VITE_FJS_BUILD=${commit}${origin ? ` VITE_API_URL=${origin}` : ''} bun run build`, { cwd: `${serverPath}/web` })
+
+// A sierra.config.js that does not read VITE_API_URL builds clean and ships a
+// bundle calling its own origin, where nothing proxies /api/ any more. Asked
+// of the output, because the config is the app's and may spell it any way.
+if (origin) {
+  const carried = machine.capture(`grep -rl --include='*.js' -F '${origin}' ${serverPath}/web/dist 2>/dev/null | head -1 || true`)
+  if (!String(carried ?? '').trim()) {
+    log.error(`The web build does not contain ${origin}. Its sierra.config.js has to read VITE_API_URL for junction.url:`)
+    log.error(`  url: import.meta.env?.VITE_API_URL ?? (typeof location !== 'undefined' ? location.origin : '')`)
+    context.config.abort = true
+    return
+  }
+}
 
 // ─── Copy dist/ into versioned release dir ────────────────────────────────────
 // cp -a preserves timestamps and handles symlinks correctly.

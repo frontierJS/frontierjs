@@ -970,12 +970,39 @@ function makeIndexHtml(appName) {
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>${appName}</title>
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   </head>
   <body>
     <div id="app"></div>
     <script type="module" src="/src/main.js">${sc}
   </body>
 </html>
+`
+}
+
+// What makes the built app one a browser offers to install, and the build
+// grades it: `sierra` prints `manifest.webmanifest — installable` or names
+// the rule a change broke, since an install button that stops appearing says
+// so nowhere else. An SVG counts as an icon of any size.
+function makeWebManifest(appName) {
+  return `${JSON.stringify({
+    name:             appName,
+    short_name:       appName,
+    start_url:        '/',
+    display:          'standalone',
+    background_color: '#ffffff',
+    icons:            [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml' }],
+  }, null, 2)}
+`
+}
+
+function makeIconSvg(appName) {
+  const letter = (appName.replace(/[^a-z0-9]/gi, '')[0] ?? 'a').toUpperCase()
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#2b4c7e"/>
+  <text x="32" y="44" font-family="system-ui, sans-serif" font-size="34" font-weight="700" fill="#ffffff" text-anchor="middle">${letter}</text>
+</svg>
 `
 }
 
@@ -1804,7 +1831,7 @@ if (useApi) dirs.push('api', 'api/config', 'api/src', 'api/src/core', 'api/src/s
 if (useDeploy && useApi) dirs.push('deploy')
 if (flag.ci !== false) dirs.push('.github/workflows')
 if (useWeb) {
-  dirs.push('web', 'web/config', 'web/src', 'web/src/routes', 'web/src/resources', 'web/src/components')
+  dirs.push('web', 'web/config', 'web/src', 'web/src/routes', 'web/src/resources', 'web/src/components', 'web/public')
   if (useAuth) dirs.push('web/src/routes/login', 'web/src/routes/register')
 }
 
@@ -1844,6 +1871,8 @@ if (useAuth) {
 if (useWeb) {
   filesToWrite.push(
     ['web/index.html',                      makeIndexHtml(appName)],
+    ['web/public/manifest.webmanifest',     makeWebManifest(appName)],
+    ['web/public/icon.svg',                 makeIconSvg(appName)],
     ['web/config/vite.config.js',           makeViteConfig()],
     ['web/config/sierra.config.js',         makeSierraConfig(appName)],
     ['web/src/App.mesa',                    makeAppMesa()],

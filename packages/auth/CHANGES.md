@@ -1,5 +1,41 @@
 # Changes — @frontierjs/auth
 
+## 2026-09-12 — an invitation sets the first password
+
+`FJS-1099`. `confirmPasswordReset` refused every account with no password credential, which included
+every account an operator creates — so the invitation such an account is sent (a reset link) answered
+409 and the person could never sign in. **An account with no credential at all now gets its first
+password from the link** (`FJS-D265`), and `password.reset` carries `firstPassword: true`. An account
+whose way in is an OAuth provider is still refused, for `FJS-987`'s reason. `tests/flows.test.ts`
+holds the two one credential apart, and each control reds its own row.
+
+## 2026-09-12 — a lost factor can be reset, and the person is told when anything changes
+
+**`onCredentialChanged`** is called for every change to how an account signs in: a password changed
+or reset, the factor on, off or reset, recovery codes regenerated or one used, an API key made or
+revoked, a provider linked or unlinked. `event` IS the audit operation, and both are written by one
+helper in `auth.ts`, so the trail and the notification cannot disagree about what happened. It is
+the first observer this provider holds: called after the write, awaited, and a throw is logged
+rather than raised. `tests/credential-events.test.ts` fires every event from its real verb, pairs
+each with the same verb refused telling nobody, and scans `auth.ts` for any credential operation
+written straight to the trail. Stubbing the observer out reds 12 of its 14 rows; the two still green
+are the rows asserting silence.
+
+**A successful password reset recorded nothing.** `confirmPasswordReset` wrote the password and
+revoked every session and left no audit entry, on the change a person most needs to hear about. It
+records `password.reset` now.
+
+**`account-recovery.resetTotp`**: a SYSADMIN(7) removes somebody else's lost second factor and ends
+their sessions (`FJS-D264`). The floor is auth's and the grading is the app's `services.level`,
+which the service refuses to run without. `tests/account-recovery.test.ts` pairs the reset with an
+admin refused, a peer refused, yourself refused, and a support episode refused — the episode's
+subject is a sysadmin there, because a subject at 4 is refused by the floor and that row would pass
+with the support refusal deleted. Measured with each stubbed: the floor, the peer rule and the
+support refusal each red their own row. Removing the service's own self check reds nothing, because
+the provider refuses the operator's own id too and the peer rule covers it a third time.
+
+`IAuth` gains `resetTotp?(userId, { actorId })` in junction.
+
 ## 2026-09-12 — the password asked again is rate-limited per account
 
 `changePassword`, `setupTotp`, `disableTotp` and `regenerateRecoveryCodes` verify the current password

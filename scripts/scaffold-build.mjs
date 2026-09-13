@@ -60,6 +60,7 @@ import { pickWorkBase, daemonCanRead }                 from '../packages/cli/cor
 import { apiContainerName }                            from '../packages/cli/core/ports.js'
 import { pointAtLocalServer }                          from '../packages/cli/core/tutor.js'
 import { nginxGuard, DEFAULT_PAGE, queueScript, queueVerdict, queueStateLine, jobsVolumeVerdict } from '../packages/cli/core/pause.js'
+import { edgeVhost } from '../packages/cli/core/edge.js'
 import { reapTempDirs }                                from '../packages/litestone/src/tmp-dirs.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -281,6 +282,14 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
       return fail('dist/client/index.html loads no built script — the page would be blank', html.slice(0, 2000))
 
     log('  ✓ built, and the page loads its script')
+
+    // The scaffold gives web/ a manifest, and the build's grade is a warning
+    // rather than a failure, so a template change that stops a browser offering
+    // to install the app exits 0. The line is the assertion.
+    if (!b.output.includes('manifest.webmanifest — installable'))
+      return fail('the scaffolded app built without its manifest graded installable', b.output)
+
+    log('  ✓ a browser would offer to install it')
 
     // ── 5b · run the gate the app was given ──────────────────
     // The generated package.json IS the framework's opinion about tooling, and
@@ -1236,10 +1245,11 @@ function indent(text) {
 // a redirection cycle; a guard placed after the http→https redirect reads
 // perfectly well and answers 301 to every plain-http caller of a paused app.
 //
-// It uses `core/pause.js`'s own `nginxGuard`, which is the only part of that
-// vhost this phase owns — that the STEP emits it, and emits it ahead of the
-// redirect, is asserted in `packages/cli/tests/pause.test.js`. Two halves, and
-// neither claims the other's.
+// The guard half uses `core/pause.js`'s own `nginxGuard` inside hand-written
+// blocks, because the ordering claim needs a redirect on a port with no
+// certificate. The edge half loads `core/edge.js`'s output VERBATIM — the file
+// `deploy:setup` writes — in both shapes, one origin and two, against an
+// upstream that answers with the path it received (`FJS-1089`, `FJS-1100`).
 //
 // No app and no deploy: the upstream is deliberately a port nothing is on, so
 // *serving* answers 502 through the proxy and *paused* answers 503. A guard
@@ -1284,6 +1294,10 @@ export function pauseEdgeCycle({ keep = false, verbose = false, log = console.lo
     ['-s', '-D-', '-o', '/dev/null', '--max-time', '10', `http://127.0.0.1:${port}${path}`], { verbose: false }).output
 
   const stop = () => exec('docker', ['rm', '-f', name], { verbose: false })
+  const at   = (host, path) => exec('curl',
+    ['-s', '--max-time', '10', '-H', `Host: ${host}`, `http://127.0.0.1:${PORT}${path}`], { verbose: false }).output
+  const code = (host, path) => exec('curl',
+    ['-s', '-o', '/dev/null', '-w', '%{http_code}', '--max-time', '10', '-H', `Host: ${host}`, `http://127.0.0.1:${PORT}${path}`], { verbose: false }).output.trim()
 
   try {
     mkdirSync(join(srv, '.fli'),    { recursive: true })
@@ -1291,6 +1305,26 @@ export function pauseEdgeCycle({ keep = false, verbose = false, log = console.lo
     mkdirSync(conf, { recursive: true })
     writeFileSync(join(srv, 'current', 'index.html'), '<h1>the app</h1>\n')
     writeFileSync(join(srv, '.fli', 'maintenance.html'), DEFAULT_PAGE)
+
+    // The generated file, both shapes, beside the hand blocks. They answer by
+    // Host, so the hand block on :80 stays the default for every other name.
+    // The upstream is this same nginx on :8080 saying which path reached it.
+    const UPSTREAM = 8080
+    const generated = (appId, web, api) => edgeVhost({
+      appId, serverPath: SERVER_PATH, apiPort: UPSTREAM,
+      web: { domain: web, sslCert: null, sslKey: null },
+      api: { domain: api, sslCert: null, sslKey: null },
+    })
+    writeFileSync(join(conf, 'upstream.conf'),
+      `server {\n  listen ${UPSTREAM};\n  location / {\n    return 200 "upstream:$request_uri";\n  }\n}\n`)
+    writeFileSync(join(conf, 'zz-one.conf'), generated('one', 'one.test', null))
+    writeFileSync(join(conf, 'zz-two.conf'), generated('two', 'app.test', 'api.test'))
+    // The control for the path assertion: the same file with the URI put back
+    // on proxy_pass, which is what the vhost carried before. Unless this one
+    // strips, the assertion below cannot tell a fix from a test that reads
+    // nothing.
+    writeFileSync(join(conf, 'zz-strip.conf'),
+      generated('strip', 'strip.test', null).replaceAll(`proxy_pass http://127.0.0.1:${UPSTREAM};`, `proxy_pass http://127.0.0.1:${UPSTREAM}/;`))
 
     // Two vhosts on one nginx. The first is a target with no TLS configured; the
     // second is one with it, which the real `05-nginx` writes as a rewrite-phase
@@ -1351,6 +1385,28 @@ ${surface()}`)
       return fail(`with no guard file the dead upstream answers ${curl('/api/health')} and not 502`, headers('/api/health'))
     log('  ✓ with no guard file the edge serves, and the proxy reaches for the upstream')
 
+    // ── the generated vhost, one origin ───────────────────
+    if (at('strip.test', '/api/orders') !== 'upstream:/orders')
+      return fail(`the control did not strip — a URI on proxy_pass answered ${JSON.stringify(at('strip.test', '/api/orders'))}, so the path row below proves nothing`, '')
+    if (at('one.test', '/api/orders?page=2') !== 'upstream:/api/orders?page=2')
+      return fail(`under one origin the app receives ${JSON.stringify(at('one.test', '/api/orders?page=2'))} for /api/orders?page=2 — its routes are registered under apiPrefix /api`, '')
+    if (at('one.test', '/ws') !== 'upstream:/ws')
+      return fail(`under one origin /ws reaches the app as ${JSON.stringify(at('one.test', '/ws'))}`, '')
+    if (!/the app/.test(at('one.test', '/orders/7')))
+      return fail('under one origin a deep URL is not the SPA', at('one.test', '/orders/7'))
+    log('  ✓ one origin: the SPA, and /api/ and /ws reach the app with the path unchanged')
+
+    // ── the generated vhost, two origins ──────────────────
+    // Asked as a pair on one path: the web name must NOT proxy it and the API
+    // name must, or a block that proxied everything would pass either half.
+    if (!/the app/.test(at('app.test', '/api/orders')))
+      return fail(`under two origins the web name proxies /api/orders — it answered ${JSON.stringify(at('app.test', '/api/orders'))}`, '')
+    if (at('api.test', '/api/orders') !== 'upstream:/api/orders')
+      return fail(`under two origins the API name answers ${JSON.stringify(at('api.test', '/api/orders'))} for /api/orders`, '')
+    if (at('api.test', '/ws') !== 'upstream:/ws')
+      return fail(`under two origins /ws on the API name reaches ${JSON.stringify(at('api.test', '/ws'))}`, '')
+    log('  ✓ two origins: the web name serves the SPA and proxies nothing, the API name proxies every path')
+
     // ── paused ────────────────────────────────────────────
     writeFileSync(join(srv, '.fli', 'paused'), '')
 
@@ -1363,7 +1419,9 @@ ${surface()}`)
     // short-circuits before the proxy rather than beside it.
     if (curl('/api/health') !== '503')
       return fail(`a paused app answers ${curl('/api/health')} through the proxy and not 503`, headers('/api/health'))
-    log('  ✓ a paused app refuses the site, a deep URL and the API')
+    if (code('app.test', '/') !== '503' || code('api.test', '/api/orders') !== '503')
+      return fail(`under two origins a paused app answers ${code('app.test', '/')} on the web name and ${code('api.test', '/api/orders')} on the API name, not 503 on both`, '')
+    log('  ✓ a paused app refuses the site, a deep URL and the API — on both names of a split app')
 
     // ── the ordering, on the vhost that redirects ─────────
     // The guard and the https redirect are both rewrite-phase returns and the
@@ -1395,6 +1453,8 @@ ${surface()}`)
       return fail(`after the guard file is gone the site answers ${curl('/')} and not 200`, headers('/'))
     if (curl('/api/health') !== '502')
       return fail(`after the guard file is gone the proxy answers ${curl('/api/health')} and not 502`, headers('/api/health'))
+    if (at('api.test', '/api/orders') !== 'upstream:/api/orders')
+      return fail(`after the guard file is gone the API name answers ${JSON.stringify(at('api.test', '/api/orders'))}`, '')
     log('  ✓ removing the file serves again, with no reload')
 
     return { findings, skipped: null }

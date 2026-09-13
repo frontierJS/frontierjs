@@ -459,7 +459,8 @@ CREATE TABLE IF NOT EXISTS "user" (
   "accountId" TEXT,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "isStaff" INTEGER NOT NULL DEFAULT 0
+  "isStaff" INTEGER NOT NULL DEFAULT 0,
+  "isSystemAdmin" INTEGER NOT NULL DEFAULT 0
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS "metric_point" (

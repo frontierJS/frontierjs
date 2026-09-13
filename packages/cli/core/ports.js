@@ -5,7 +5,7 @@
  *
  *   ENV      7=test  8=dev  9=prod
  *   CATEGORY 0=fe  1=be  2=widgetDev  3=widgetServe  4=ext  5=tooling
- *            6=siteDev  7=siteServe
+ *            6=siteDev  7=siteServe  8=desktopDev
  *   PROJECT  0-9  (assigned dynamically by lock manager)
  *   SERVICE  0-9  (per-project slot within a category)
  *
@@ -53,6 +53,9 @@ export const CAT = {
   tooling:     5,
   siteDev:     6,
   siteServe:   7,
+  // A desktop surface that owns its screens writes them in a browser. It has
+  // no served half: the build is compiled into the shell (FJS-D263).
+  desktopDev:  8,
 }
 
 export const GLOBAL = {
@@ -179,6 +182,7 @@ const SURFACE_PORTS = [
   { dir: 'widgets',   category: 'widgetDev', scripts: ['dev:widgets', 'widgets'],     label: 'widgets' },
   { dir: 'site',      category: 'siteDev',   scripts: ['dev:site', 'site'],           label: 'site' },
   { dir: 'extension', category: 'ext',       scripts: ['dev:extension', 'extension'], label: 'extension' },
+  { dir: 'desktop',   category: 'desktopDev', scripts: ['dev:desktop', 'desktop'],    label: 'desktop' },
 ]
 
 /**

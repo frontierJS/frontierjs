@@ -106,12 +106,13 @@ export class LastCredentialError extends AuthError {
 }
 
 /**
- * A reset was redeemed against an account that has no password to reset.
+ * A reset was redeemed against an account whose only way in is an OAuth
+ * provider.
  *
- * Refused rather than turned into a create, deliberately: an account whose only
- * credential is an OAuth one was never secured by its mailbox, and minting a
- * password from an emailed token would make mailbox access enough to take it
- * over. The person adds a provider instead (FJS-987).
+ * Refused rather than turned into a create: that account was never secured by
+ * its mailbox, and minting a password from an emailed token would make mailbox
+ * access enough to take it over (FJS-987). An account with NO credential at all
+ * is not refused — its mailbox is all that ever vouched for it (FJS-D265).
  *
  * Safe to be specific about — the caller reaching this presented a live reset
  * token, so they already hold the address, and `requestPasswordReset` stays

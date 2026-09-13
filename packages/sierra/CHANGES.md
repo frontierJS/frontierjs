@@ -1,5 +1,17 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-12 — the build says whether a browser will install the app
+
+**`postbuild/manifest.js` grades the manifest `index.html` links** (`FJS-D263`'s floor under a
+desktop surface). The app writes the file; the build prints `manifest.webmanifest — installable` or
+a warning naming the rule and Chrome's own error id, since an app a browser will not install says so
+nowhere — the page loads and the install button never appears. A `public/manifest.webmanifest`
+nothing links is reported too. The rules were measured against Chrome 150 rather than taken from
+memory, which corrected two: no service worker and no 512px icon are required, and an icon's REAL
+size is read, so a 32px file declaring `512x512` is refused. `tests/browser/installable.mjs`
+(`bun run test:installable`) grades 26 cases against `Page.getInstallabilityErrors` and fails on
+any disagreement; with the icon floor dropped to 100px it reds exactly the 143px case.
+
 ## 2026-09-12 — a composed list
 
 **`list({ composed: true })` is `record(id, { composed: true })` for a list.** Where a service's

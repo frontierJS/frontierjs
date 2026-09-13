@@ -1074,6 +1074,22 @@ export default {
 }
 ```
 
+### The API on a domain of its own
+
+`api.domain` gives the API its own origin — `api.myapp.com` beside `web.domain`. Unset, the
+web domain proxies `/api/` and `/ws` and the page and the API share an origin.
+
+```
+    web: { domain: 'app.myapp.com', ssl: { cert: '/etc/ssl/app.pem', key: '/etc/ssl/app.key' } },
+    api: { domain: 'api.myapp.com', ssl: { cert: '/etc/ssl/api.pem', key: '/etc/ssl/api.key' }, port: 3000 },
+```
+
+`fli deploy:setup` writes two server blocks, each with the pause guard, and `fli deploy`
+builds the web surface with `VITE_API_URL=https://api.myapp.com` — refusing when the bundle
+does not contain it, which is what a `sierra.config.js` that never reads the variable
+produces. Sign-in with a Bearer token works across the two names with the scaffold's CORS
+default; a cookie session across them is `FJS-1090`.
+
 ### Splitting the API and the web onto different machines
 
 `api` and `web` may each carry their own `server` / `user` / `path`. A side that

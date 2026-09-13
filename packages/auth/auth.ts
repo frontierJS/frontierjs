@@ -1258,10 +1258,10 @@ export function createLitestoneAuth(
     // ── OAuth: detach one ────────────────────────────────────────────────
     //
     // Refuses to remove the last way in. Not politeness — there is no way back
-    // from it: `confirmPasswordReset` updates a password credential and does
-    // not create one, and now refuses outright for an account with none, so no
-    // account can gain a password by asking for a reset. Unlinking to zero is a
-    // permanent lockout that looks like a button.
+    // from it: `confirmPasswordReset` refuses an account whose way in is an
+    // OAuth credential, so an account holding one cannot gain a password by
+    // asking for a reset. Unlinking to zero is a permanent lockout that looks
+    // like a button.
     //
     // Which is why the refusal below names ONE remedy and not two. This guard
     // fires only when the single remaining way in is the OAuth credential being
@@ -1426,16 +1426,25 @@ export function createLitestoneAuth(
       const user  = await sys.user.findFirst({ where: { email } })
       if (!user) throw new UserNotFoundError()
 
-      // BEFORE the hash and before anything destructive. `updateMany` matches
-      // nothing on an account whose only credential is an OAuth one, so this
-      // used to succeed having written no password — consuming the token and
-      // revoking every session on the way, leaving the person told their
-      // password was reset, unable to sign in with it, and signed out
-      // everywhere (FJS-987). Refusing here costs them neither.
-      const existing = await sys.credential.findFirst({
-        where: { userId: user.id, type: 'password' }
-      })
-      if (!existing) {
+      // BEFORE the hash and before anything destructive, so a refusal burns no
+      // token and revokes no session.
+      //
+      // Three accounts reach here and they are answered differently:
+      //   · a password to replace — the ordinary reset.
+      //   · NO way in at all — an account an operator made, whose invitation IS
+      //     this link. The mailbox is the only thing that has ever vouched for
+      //     it, so proving the mailbox is what sets the first password
+      //     (`FJS-1099`, `FJS-D265`). Refusing left every invited person
+      //     locked out of an account that answered 201.
+      //   · an OAuth credential and no password — REFUSED. That account was
+      //     secured by its provider and never by its mailbox, and a password
+      //     minted from an emailed token would make mailbox access enough to
+      //     take it over (`FJS-987`).
+      const creds    = await sys.credential.findMany({ where: { userId: user.id } })
+      const existing = creds.find((c: any) => c.type === 'password')
+      const viaOAuth = creds.some((c: any) => String(c.type).startsWith('oauth:'))
+
+      if (!existing && viaOAuth) {
         await audit('password.reset.refused', {
           model: 'User', records: [user.id], actorId: user.id,
           meta:  { reason: 'no-password-credential' },
@@ -1447,10 +1456,9 @@ export function createLitestoneAuth(
 
       const hash = await hashPassword(newPassword)
 
-      await sys.credential.update({
-        where: { id: existing.id },
-        data:  { value: hash },
-      })
+      const written = existing
+        ? await sys.credential.update({ where: { id: existing.id }, data: { value: hash } })
+        : await sys.credential.create({ data: { userId: user.id, type: 'password', value: hash } })
 
       // Token consumed — delete it
       await sys.verification.delete({ where: { id: verification.id } })
@@ -1462,8 +1470,8 @@ export function createLitestoneAuth(
       // nothing: whoever holds the inbox holds the account, and a reset nobody
       // asked for is how they find out.
       await credentialChanged('password.reset', user.id, {
-        model: 'Credential', records: [String(existing.id)], actorId: user.id, actorType: 'user',
-        meta:  { sessionsRevoked: count },
+        model: 'Credential', records: [String(written.id)], actorId: user.id, actorType: 'user',
+        meta:  { sessionsRevoked: count, firstPassword: !existing },
       })
     },
 

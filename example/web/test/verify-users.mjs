@@ -66,7 +66,7 @@ import { spawn, execFileSync } from 'node:child_process'
 import { dirname, join }       from 'node:path'
 import { fileURLToPath }       from 'node:url'
 
-import { authenticator, wrongCode } from './lib/authenticator.mjs'
+import { authenticator, wrongCode, enrolledAccount } from './lib/authenticator.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
@@ -77,7 +77,7 @@ const MAIL   = process.env.MAIL_SINK_URL ?? 'http://localhost:8111'
 const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 const PASSWORD = 'correct-horse-battery'
-const ADMIN = 'alex@shop.test', STAFF = 'sam@shop.test', SHOPPER = 'robin@buyer.test'
+const ADMIN = 'alex@shop.test', STAFF = 'sam@shop.test', SHOPPER = 'robin@buyer.test', OPS = 'kit@shop.test'
 
 // ─── Servers ───────────────────────────────────────────────────────────────
 
@@ -302,6 +302,23 @@ const invites = (Array.isArray(outbox) ? outbox : []).filter(m => JSON.stringify
 check('an invitation reached the outbox', invites.length, 1)
 check('…and it is the set-a-password one', invites[0]?.subject, 'Set your password')
 
+// And that the invitation WORKS. For as long as the two rows above were green,
+// redeeming it answered 409 *this account has no password* — the reset refused
+// any account without one, and a created account has no credential at all — so
+// every person an admin added was locked out of an account that answered 201
+// (FJS-1099). The link is read out of the mail, the way the person reads it.
+const inviteToken = decodeURIComponent(JSON.stringify(invites[0] ?? {}).match(/token=([A-Za-z0-9_%\-]+)/)?.[1] ?? '')
+const redeemed = await fetch(`${BASE}/auth/password-reset/confirm`, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ token: inviteToken, password: 'Invited-Passw0rd' }),
+})
+check('the invitation link sets the first password', [Boolean(inviteToken), redeemed.status], [true, 200])
+const firstIn = await fetch(`${BASE}/auth/login`, {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify({ email: addr('c'), password: 'Invited-Passw0rd' }),
+})
+check('…and the invited person signs in with it', [firstIn.status, typeof (await firstIn.json()).token], [200, 'string'])
+
 // ─── A second factor ───────────────────────────────────────────────────────
 //
 // Signing in as TWO requests. Every test of it in the package runs a harness
@@ -416,6 +433,71 @@ check('the status is back to nothing, recovery codes included', (await account(t
       { enabled: false, recoveryCodesRemaining: 0 })
 check('a password alone answers a token again', typeof (await password(twoStep)).body?.token, 'string')
 
+// ─── Who stands at SYSADMIN ────────────────────────────────────────────────
+//
+// SYSADMIN(7) used to be read off `role === 'system'`, and `role` is written by
+// any admin — so one PATCH from Alex took a stranger's unverified account from 1
+// to 7 (FJS-1097). It is a column now that only a sysadmin writes. Asked as the
+// same payload from two people one rung apart, because a column NOBODY could
+// write would pass the refusal on its own.
+
+console.log('\n  users — who stands at SYSADMIN')
+
+const levelOf = async (tok) => (await (await fetch(`${BASE}/account/me`, { headers: { authorization: `Bearer ${tok}` } })).json())?.level
+const asOps = await login(OPS)
+check('the seeded operator grades SYSADMIN', await levelOf(asOps), 7)
+check('…and the admin one rung below does not', await levelOf(asAdmin), 5)
+
+const climber = await post('/auth/register', { email: addr('s'), password: PASSWORD, name: 'Climber' })
+const climberId = climber.body?.user?.userId
+check('an admin may still set somebody\'s role — that column is theirs to write',
+      (await patch(asAdmin, climberId, { role: 'system' })).row?.role, 'system')
+check('…and it no longer grades anything: the next session is not SYSADMIN',
+      await levelOf((await password(addr('s'))).body?.token) !== 7, true)
+
+check('an admin sending isSystemAdmin is answered 200 with the column unchanged',
+      await patch(asAdmin, climberId, { isSystemAdmin: true }).then(r => [r.status, r.row?.isSystemAdmin]), [200, false])
+check('…where the sysadmin sending the identical payload sets it',
+      (await patch(asOps, climberId, { isSystemAdmin: true })).row?.isSystemAdmin, true)
+check('…and takes it back', (await patch(asOps, climberId, { isSystemAdmin: false })).row?.isSystemAdmin, false)
+
+// ─── A lost second factor, and telling the person ──────────────────────────
+//
+// Two things a person who did NOT make a change must be able to rely on. The
+// reset is SYSADMIN's alone and the refusal one rung below is its pair; the
+// notification is read out of the OUTBOX, because a callback that is never
+// wired and one that mails nobody both answer 200 (`onPasswordResetRequested`
+// was that for a year, one section up).
+
+console.log('\n  users — a lost second factor, reset by an operator')
+
+await fetch(`${MAIL}/outbox`, { method: 'DELETE' })
+const lost   = await enrolledAccount(API, addr('r'), PASSWORD)
+const lostId = (await (await fetch(`${BASE}/account/me`, { headers: { authorization: `Bearer ${lost.token}` } })).json())?.userId
+const resetFor = (tok) => post(`/account-recovery/${encodeURIComponent(lostId)}`, {}, tok, 'resetTotp')
+
+check('an admin (5) resetting somebody\'s factor is refused', (await resetFor(asAdmin)).status, 403)
+check('…and the factor is still owed at sign-in', typeof (await password(addr('r'))).body?.challenge, 'string')
+
+const reset = await resetFor(asOps)
+check('the sysadmin resets it, ending the person\'s sessions', [reset.status, reset.body?.sessionsRevoked >= 1], [200, true])
+check('…so the session on the lost phone is gone', await whoami(lost.token), 401)
+check('…and the password alone signs them in to set it up again',
+      typeof (await password(addr('r'))).body?.token, 'string')
+check('a sysadmin resetting their own is refused — that is disableTotp, with a password',
+      (await post(`/account-recovery/me`, {}, asOps, 'resetTotp')).status, 403)
+
+await new Promise(r => setTimeout(r, 800))
+const told = ((await (await fetch(`${MAIL}/outbox`)).json().catch(() => [])) ?? [])
+  .filter(m => JSON.stringify(m).includes(addr('r')))
+const bodies = told.map(m => JSON.stringify(m))
+check('the person was told twice — when it went on, and when support took it off',
+      [told.length, bodies.some(b => b.includes('turned on')), bodies.some(b => b.includes('removed by the shop'))],
+      [2, true, true])
+check('…and the refused reset told them nothing: the count is the two changes that happened', told.length, 2)
+check('…with no secret and no recovery code in any of it',
+      [lost.secret, ...lost.recoveryCodes].some(s => bodies.some(b => b.includes(s))), false)
+
 // ─── Chrome over CDP ───────────────────────────────────────────────────────
 
 const chrome = start(CHROME, [
@@ -481,11 +563,38 @@ console.log('\n  users — the screen')
 // Re-read rather than comparing against `all`, which was taken before this
 // drive created an account — a stale count here fails on the drive's own work
 // and reads as a screen that lost a row.
-const nowRows = (await roster(asAdmin)).rows
+//
+// The roster is a WINDOW (FJS-1098). It used to render junction's default page
+// of 20 and say nothing, and this drive leaves accounts behind every run, so the
+// count crossed 21 and six people were silently missing. The first render is
+// asked as a PAIR with the API's count — the button is there exactly when the
+// API holds more than the window — so it holds on a fresh seed of four people
+// and on a database this drive has run against a hundred times.
+// Paged here too: this drive leaves accounts behind, so a single `$limit=100`
+// read is the same cliff one number further out.
+const nowRows = []
+for (let offset = 0; ; offset += 100) {
+  const r = await fetch(`${API}/api/users?$limit=100&$offset=${offset}&$orderBy=email`, { headers: { authorization: `Bearer ${asAdmin}` } })
+  const page = (await r.json())?.data ?? []
+  nowRows.push(...page)
+  if (page.length < 100) break
+}
 await open('/users/', asAdmin, 'tr[data-user]', 2)
-const onScreen = await evaluate(`document.querySelectorAll('tr[data-user]').length`)
-check('the roster renders every row the API answered', onScreen, nowRows.length)
-check('…including the one this run made', nowRows.some(u => u.email === addr('c')), true)
+const shown   = () => evaluate(`document.querySelectorAll('tr[data-user]').length`)
+const firstWindow = await shown()
+check('the first window is one page at most', firstWindow <= 20, true)
+check('…and offers more exactly when the API holds more than it shows',
+      await evaluate(`!!document.querySelector('#u-more')`), nowRows.length > firstWindow)
+
+for (let i = 0; i < 20 && await evaluate(`!!document.querySelector('#u-more')`); i++) {
+  const before = await shown()
+  await evaluate(`(document.querySelector('#u-more').click(), true)`)
+  for (let t = 0; t < 60 && await shown() === before; t++) await new Promise(r => setTimeout(r, 150))
+}
+check('growing it renders every row the API answered', await shown(), nowRows.length)
+check('…and the end is said rather than implied', await evaluate(`!!document.querySelector('#u-end')`), true)
+check('…including the one this run made, on the screen',
+      await evaluate(`document.body.textContent.includes(${JSON.stringify(addr('c'))})`), true)
 check('the standing column is derived from isStaff and role, not from the level',
       await evaluate(`[...new Set([...document.querySelectorAll('[data-standing]')].map(e => e.textContent.trim()))].sort()`),
       (v) => v.includes('shopper') && (v.includes('staff') || v.includes('admin')))

@@ -900,6 +900,7 @@ const CHECKS = {
       widgets:   ['sierra.config.js', 'vite.config.js'],
       site:      ['sierra.config.js', 'vite.config.js'],
       extension: ['jetty.config.js', 'vite.config.js'],
+      desktop:   ['desktop.config.js', 'sierra.config.js', 'vite.config.js'],
     }
 
     const findings = []
@@ -983,7 +984,7 @@ const CHECKS = {
     // question here is where the file sits, not whether something runs it.
     const isEntry = f => basename(f, extname(f)) === 'index'
     // surface-config's own list, restated only to be EXCLUDED.
-    const CONFIG  = /^(junction|sierra|vite|jetty)\.config\.[cm]?[jt]s$/
+    const CONFIG  = /^(junction|sierra|vite|jetty|desktop)\.config\.[cm]?[jt]s$/
 
     const findings = []
     let looked = 0

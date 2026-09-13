@@ -6,7 +6,7 @@ description: Final setup health report and next steps
 ```js
 if (context.config.abort) return
 
-const { host, serverPath, appId, domain, nginxWritten, deployConf } = context.config
+const { host, serverPath, appId, edge, nginxWritten, deployConf } = context.config
 
 log.success(`\nSetup complete for ${appId}`)
 echo('')
@@ -38,8 +38,12 @@ if (nginxWritten) {
 echo(`   fli deploy${context.config.target !== 'dev' ? ` --${context.config.target}` : ''}`)
 echo('')
 
-if (domain) {
-  echo(`   App will be live at: https://${domain}`)
+if (edge.web.domain) {
+  echo(`   App will be live at: https://${edge.web.domain}`)
+}
+if (edge.api.domain) {
+  echo(`   API will be live at: https://${edge.api.domain} — the web build names it. If the API`)
+  echo(`   narrows its CORS origins, they must include https://${edge.web.domain ?? '<the web domain>'}`)
 }
 
 echo('─────────────────────────────────────────────────────────────────────')

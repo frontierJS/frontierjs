@@ -9,6 +9,21 @@
 // browser profile rather than served, its permissions live in a manifest, and
 // it ships to two web stores on a review cadence that is nobody else's.
 
+// Where the API is: VITE_API_URL, the name every surface's build reads, or this
+// app's dev API. Read once, because it lands in TWO places — the connection and
+// the host permission the manifest declares for it — and a permission naming a
+// different host from the connection is a refusal the browser words as CORS.
+//
+// This file is read in two runtimes. jetty imports it in Node to write the
+// manifest, and the harbor bundles it into the service worker, where there is
+// no `process` — so Vite's inlined value is asked first and `process` only
+// where it exists.
+const API = new URL(
+  import.meta.env?.VITE_API_URL ??
+  (typeof process !== 'undefined' ? process.env.VITE_API_URL : undefined) ??
+  'http://localhost:8110'
+).origin
+
 export default {
   name:        'Shop Desk',
   description: 'The shop, in the toolbar: what is paid and waiting to ship.',
@@ -27,7 +42,7 @@ export default {
   // is refused by the browser with a CORS-shaped error that is not a CORS
   // problem, so both origins the island and the harbor touch are named.
   hostPermissions: [
-    'http://localhost:8110/*',
+    `${API}/*`,
     'http://localhost:7710/*',
     'http://localhost:8710/*',
   ],
@@ -63,7 +78,7 @@ export default {
     // `wss://` and Junction's client derives the socket from an http origin, so
     // the adapter takes either — `wss://` handed straight to the client builds
     // `wsss://` and a socket that never opens.
-    url:       'http://localhost:8110',
+    url:       API,
     tokenKey:  'shop_desk_token',
     // Junction mounts every route the app registers under its prefix, auth's
     // /auth/login included, so the two compose rather than standing alone.
