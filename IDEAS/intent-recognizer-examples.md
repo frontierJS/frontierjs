@@ -1,3 +1,15 @@
+---
+id: intent-recognizer-examples
+status: assessment
+dated: 2026-09-12
+---
+
+# Examples — synthetic support requests for the intent recognizer
+
+**Status: ASSESSMENT.** Dated 2026-09-12. A corpus of invented messages — who sent
+it, over which channel, and what they wrote — for the intent recognizer to resolve
+(`intent-recognizer.md`). Input to a run, never cited as behavior.
+
 1
 
 Person: 1 — Owner of a two-person knife-sharpening shop

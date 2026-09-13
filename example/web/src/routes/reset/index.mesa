@@ -1,0 +1,83 @@
+---
+title: Set a password
+---
+<script>
+  // Where the emailed link lands — a password reset, and an invitation, which is
+  // the same link. For its whole life the link pointed at `/reset` on the API's
+  // own port, where nothing answers, so every reset and every invitation this
+  // app sent led to a 404 in the person's browser.
+  //
+  // The token is read off the URL and handed to `/auth/password-reset/confirm`
+  // untouched. It is `String()`ed because the query reader turns a value that
+  // round-trips as a number into one, and a token of digits would otherwise
+  // arrive as a number the route refuses.
+  //
+  // Nothing here signs the person in. Confirming a reset ends every session the
+  // account holds, so the next step is the sign-in page with the new password —
+  // the same place a person who was invited goes next.
+  import { page }      from '@frontierjs/sierra/router'
+  import { getClient } from '@frontierjs/sierra/junction'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout       from '@frontierjs/ui/components/display/Callout.mesa'
+  import Field         from '@frontierjs/ui/components/forms/Field.mesa'
+  import Input         from '@frontierjs/ui/components/forms/Input.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+
+  $: page.query
+
+  let password = ''
+  let again    = ''
+  let busy     = false
+  let error    = null
+  let done     = false
+
+  const token = () => String(page.query?.token ?? '')
+
+  async function submit() {
+    error = null
+    // Checked here because the server has one box and cannot see the second: a
+    // typo in a password nobody can see is a password nobody can use.
+    if (password !== again) { error = 'The two passwords are not the same.'; return }
+    busy = true
+    try {
+      await getClient().auth.confirmPasswordReset(token(), password)
+      done = true
+      password = ''; again = ''
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = false
+    }
+  }
+</script>
+
+<SectionHeader title="Set a password" level={1} sub="from the link in your email" />
+
+{#if done}
+  <Callout tone="success" id="rp-done">
+    Your password is set, and any other place you were signed in has been signed out.
+    <a href="/sign-in/">Sign in</a>
+  </Callout>
+{:else if !token()}
+  <Callout tone="info" id="rp-no-token">
+    This page opens from the link in a password email. <a href="/sign-in/">Ask for a new one</a>
+  </Callout>
+{:else}
+  {#if error}
+    <Alert tone="danger" id="rp-error">
+      {error}
+      <a href="/sign-in/">Ask for a new link</a>
+    </Alert>
+  {/if}
+  <form class="card stack" style="max-width: 28rem" onsubmit={e => { e.preventDefault(); submit() }}>
+    <Field label="New password">
+      <Input id="rp-password" type="password" bind:value={password} autocomplete="new-password" required />
+    </Field>
+    <Field label="The same again">
+      <Input id="rp-again" type="password" bind:value={again} autocomplete="new-password" required />
+    </Field>
+    <Button type="submit" id="rp-submit" disabled={busy}>Set password</Button>
+  </form>
+{/if}

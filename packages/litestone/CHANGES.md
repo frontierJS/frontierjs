@@ -1,5 +1,15 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-12 — a column added mid-model is not residue
+
+`FJS-1092`. `ALTER TABLE ADD COLUMN` can only append, so a field declared anywhere but last sits in a
+different POSITION in the live table than in the declared one, and the residue tripwire compared the
+two statements as text — every boot of every app that upgraded such a model announced a difference
+nothing could migrate. A table's top-level members now compare as a set (`normalizeTableDdl`);
+litestone names every column it reads and writes, so position carries nothing. The stored residue the
+fast path replays is re-graded on read and cleared where it no longer holds, because otherwise a
+database that recorded the false verdict repeats it until its schema hash next moves.
+
 ## 2026-09-12 — `restore()` is graded as the update it is
 
 `FJS-1096`. `restore()` built its UPDATE from the caller's where and the soft-delete clause alone —

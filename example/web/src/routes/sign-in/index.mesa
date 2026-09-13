@@ -11,7 +11,9 @@ title: Sign in
   // account owes one, is the shell's box: `signIn` resolves with no session and
   // `session.awaitingCode` set, and the layout renders from that.
   import { session, signIn } from '@/session.js'
+  import { getClient }       from '@frontierjs/sierra/junction'
 
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout       from '@frontierjs/ui/components/display/Callout.mesa'
   import Field         from '@frontierjs/ui/components/forms/Field.mesa'
@@ -28,6 +30,29 @@ title: Sign in
     busy = true
     // The refusal is on session.error and the shell renders it.
     try { await signIn(email.trim(), password); password = '' } catch {} finally { busy = false }
+  }
+
+  // ── Forgot the password ──────────────────────────────────────────────────
+  //
+  // One sentence whatever the address. The route answers 200 whether or not an
+  // account uses it, against enumeration, and a screen that said *no account
+  // found* would hand back exactly what the route withholds. The one refusal
+  // shown is the limiter's, which says nothing about the address.
+  let forgot     = false
+  let resetEmail = ''
+  let sent       = false
+  let resetError = null
+
+  async function requestReset() {
+    busy = true; resetError = null
+    try {
+      await getClient().auth.requestPasswordReset(resetEmail.trim())
+      sent = true
+    } catch (e) {
+      resetError = e.message
+    } finally {
+      busy = false
+    }
   }
 </script>
 
@@ -48,5 +73,24 @@ title: Sign in
       <Input id="si-password" type="password" bind:value={password} autocomplete="current-password" required />
     </Field>
     <Button type="submit" id="si-submit" disabled={busy}>Sign in</Button>
+    <Button variant="ghost" type="button" id="si-forgot" onclick={() => { forgot = true; resetEmail = email }}>
+      Forgot your password?
+    </Button>
   </form>
+
+  {#if forgot}
+    <form class="card stack" style="max-width: 28rem" id="forgot" onsubmit={e => { e.preventDefault(); requestReset() }}>
+      {#if sent}
+        <Callout tone="info" id="fp-sent">
+          If an account uses {resetEmail}, a link to set a new password is on its way.
+        </Callout>
+      {:else}
+        {#if resetError}<Alert tone="danger" id="fp-error">{resetError}</Alert>{/if}
+        <Field label="Email">
+          <Input id="fp-email" type="email" bind:value={resetEmail} autocomplete="username" required />
+        </Field>
+        <Button type="submit" id="fp-submit" disabled={busy}>Email me a link</Button>
+      {/if}
+    </form>
+  {/if}
 {/if}

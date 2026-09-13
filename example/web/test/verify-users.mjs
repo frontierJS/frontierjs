@@ -705,6 +705,76 @@ check('…and now a token is stored, which the account service accepts',
 // factor left on is a thing a later reader of the database has to explain.
 await account(signedToken, 'disableTotp', { currentPassword: PASSWORD })
 
+// ─── A forgotten password, on screen ───────────────────────────────────────
+//
+// The emailed link is followed the way a person follows it — read out of the
+// mail and opened — because for its whole life it pointed at `/reset` on the
+// API's port, where nothing answers, and every assertion about the reset over
+// HTTP stayed green beside a link that was a 404. The link's ORIGIN is asserted
+// before anything is typed into the page it opens.
+//
+// The request is asked as a pair: an address with an account and one without
+// get the SAME sentence, since the route answers alike on purpose and a screen
+// that told them apart would be the enumeration the route refuses.
+
+console.log('\n  users — a forgotten password, on screen')
+
+const forgetful = addr('p')
+await post('/auth/register', { email: forgetful, password: PASSWORD, name: 'Forgetful' })
+await fetch(`${MAIL}/outbox`, { method: 'DELETE' })
+
+const askForLink = async (email) => {
+  await evaluate(`(localStorage.removeItem('shop_token'), true)`)
+  await send('Page.navigate', { url: UI + '/sign-in/' }, sessionId)
+  await until(has('#si-forgot'))
+  await click('#si-forgot')
+  await until(has('#fp-email'))
+  await fill('#fp-email', email)
+  await click('#fp-submit')
+  await until(has('#fp-sent'))
+  return evaluate(`document.querySelector('#fp-sent')?.textContent.replace(${JSON.stringify(email)}, '<address>').trim() ?? null`)
+}
+const saidForAccount = await askForLink(forgetful)
+const saidForNobody  = await askForLink(`nobody-${tag}@shop.test`)
+check('asking for a link says one sentence', typeof saidForAccount, 'string')
+check('…and the same sentence for an address with no account', saidForNobody, saidForAccount)
+
+await new Promise(r => setTimeout(r, 800))
+const resetMail = ((await (await fetch(`${MAIL}/outbox`)).json().catch(() => [])) ?? [])
+  .filter(m => JSON.stringify(m).includes(forgetful) && JSON.stringify(m).includes('token='))
+const link = JSON.stringify(resetMail[0] ?? {}).match(/https?:\/\/[^\s"\\]+token=[A-Za-z0-9_%\-]+/)?.[0] ?? null
+check('one link reached that address, and none reached the address with no account',
+      [resetMail.length, ((await (await fetch(`${MAIL}/outbox`)).json().catch(() => [])) ?? [])
+        .some(m => JSON.stringify(m).includes(`nobody-${tag}`))], [1, false])
+check('…and it opens THIS console\'s reset page, not a path on the API', link?.startsWith(`${UI}/reset/?token=`), true)
+
+await send('Page.navigate', { url: link }, sessionId)
+await until(has('#rp-password'))
+await fill('#rp-password', 'Forgot-Passw0rd')
+await fill('#rp-again', 'Forgot-Passw0rX')
+await click('#rp-submit')
+await until(has('#rp-error'))
+check('two passwords that differ are refused on the page', await evaluate(has('#rp-done')), false)
+check('…and nothing was sent: the old password still signs in', typeof (await password(forgetful)).body?.token, 'string')
+
+await fill('#rp-again', 'Forgot-Passw0rd')
+await click('#rp-submit')
+await until(has('#rp-done'))
+check('the matching pair sets the password', await evaluate(has('#rp-done')), true)
+const newIn = await post('/auth/login', { email: forgetful, password: 'Forgot-Passw0rd' })
+check('…the new one signs in and the old one does not',
+      [typeof newIn.body?.token, (await password(forgetful)).status], ['string', 401])
+
+await send('Page.navigate', { url: link }, sessionId)
+await until(has('#rp-password'))
+await fill('#rp-password', 'Second-Passw0rd')
+await fill('#rp-again', 'Second-Passw0rd')
+await click('#rp-submit')
+await until(has('#rp-error'))
+check('the same link a second time is refused in words, and sets nothing',
+      [await evaluate(has('#rp-error')), typeof (await post('/auth/login', { email: forgetful, password: 'Forgot-Passw0rd' })).body?.token],
+      [true, 'string'])
+
 console.log('')
 console.log(`  ${pass} passed, ${fail} failed`)
 stopAll()
