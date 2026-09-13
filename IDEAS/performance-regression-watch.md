@@ -156,8 +156,9 @@ costs.
 
 ### Gated — a count or a byte
 
-A claim whose answer is identical on every machine. Two homes, split by whether the
-number is a design fact or a quantity:
+A claim whose answer is identical on every machine — or, for an instruction count,
+identical enough within one job that §Spike's 0.2% spread cannot pass for a 2% change.
+Three homes, split by what the number is:
 
 - **A design fact is a test** in the package's own suite, the shape `scale.test.ts`
   already has: *one statement per `upsert()`*, *no `TEMP B-TREE`*, *zero `getLevel`
@@ -166,6 +167,9 @@ number is a design fact or a quantity:
   — Invariant 14's mechanism, not a new one: `--update` writes an improvement back and
   cannot raise; `--adopt` is the separate verb that can, so a raise is a visible line in
   a diff with a reason beside it.
+- **CPU work in-process is an instruction count against the base ref** — both sides
+  counted under valgrind in one job, failed past a stated percentage. Never a committed
+  count, which is a statement about one toolchain on one CPU (§Spike).
 
 What each package can count:
 
@@ -193,7 +197,9 @@ process**, and the case file is where that number lives:
 - junction request ≤ a stated factor over a raw `Bun.serve` handler
 - mesa's js-framework-benchmark operations ≤ a stated factor over vanilla
 
-The first two are starting points read off one measurement, not ratified numbers. A
+The first two are starting points read off one measurement, not ratified numbers.
+A ratio whose both sides run in-process on `:memory:` can be asked as an instruction
+count instead, and then it gates (§Spike); the timing stays for what a count cannot see. A
 case with no declared ceiling is refused by the runner rather than run unjudged.
 
 The CI phase **reports and does not fail**, the shape `access` already uses for the
@@ -236,18 +242,71 @@ reason, since *nothing moved* and *nothing was measured* are otherwise one answe
    ~35 s and 31 s of it is `autocommit-vs-tx`.
 4. **The first recorded entry**, at the alpha release.
 
+Instruction counting for the CPU-bound cases lands with (3), since it is the same
+runner with valgrind in front of it (§Spike).
+
 Deferred, each on a named trigger: change-point detection once a series exists to run
 it over; a dedicated runner once the reported tier's noise is shown to hide a real
-regression; CodSpeed once its Bun support is known (§Open).
+regression; CodSpeed once its Bun support is known — its simulation mode is this spike's
+instrument, hosted.
+
+## Spike — instruction counts on Bun
+
+**Measured 2026-09-12**, x64, bun 1.3.11, valgrind 3.18.1 (`cachegrind --cache-sim=no`,
+unpacked from the jammy `.deb` without root). The question was whether SQLite's and
+rustc-perf's gate — a count of instructions rather than a time — survives a JIT runtime
+with a concurrent GC. The workload is litestone on `:memory:`: 2,000 `create()` and 200
+`findMany({ limit: 20 })` on a three-column model, in three variants — `bare`, `gate`
+(the same with `@@gate` and a `GatePlugin`, a known cost) and `extra` (bare plus one
+`JSON.stringify` of a small object per create, a regression of about 0.3%).
+
+**With bun's defaults the count does not repeat.** Five runs of `bare`, six in parallel:
+
+| configuration | `bare`, instructions | spread | `gate` separates? |
+| --- | --- | --- | --- |
+| defaults | 1.105 – 1.355 B | 20% | no — overlaps |
+| `BUN_JSC_useJIT=0` | 1.161 – 1.272 B | 9%, bimodal | — |
+| determinism options, 6-way load | 1.2696 – 1.2796 B | 0.8% | **yes**, +7.6%, no overlap |
+| determinism options + `--fair-sched=yes`, 6-way load | 1.2741 – 1.2768 B | **0.21%**, five of six within 0.06% | — |
+| startup alone (`N=0`), determinism options | 495.34 – 495.51 M | 0.03% | — |
+
+The determinism options are `BUN_JSC_useConcurrentGC=0 useConcurrentJIT=0
+numberOfGCMarkers=1 useParallelMarkingConstraintSolver=0 forceWeakRandomSeed=1
+collectionTimerMaxPercentCPU=0`. **Disabling the JIT is the wrong lever**: it is slower,
+no steadier, and splits into two modes nine percent apart. The variance was the GC's
+threads and timers, not tiering — the JIT stays on, so the code counted is the code
+that ships.
+
+**Against the clock, on the same workload:** ten interleaved rounds of plain bun on a
+quiet machine read `bare` 217–311 ms and `gate` 252–312 ms — the `@@gate` cost is
+invisible in wall time and unambiguous as a count.
+
+What it establishes, and what it does not:
+
+- **Resolution is about 1% of a case, not SQLite's seven digits.** A +7.6% declaration
+  and the +17–20% drift above are unmistakable; the 0.3% injection is not resolved. A
+  case therefore needs enough work that the change it guards is ≥ 2% of it.
+- **A count cannot see I/O.** A WAL commit, an fsync and a cache miss cost nothing in
+  instructions, so `speed-and-footprint.md`'s 26× batching finding is invisible to this
+  instrument by construction — file-backed and network cases stay *reported*.
+- **The GC counted is not the GC shipped.** Allocation pressure still shows, through a
+  single-threaded collector; a regression in concurrent marking would not.
+- **Absolute counts are not portable.** They move with bun and valgrind versions, and
+  bun selects code paths by CPU feature, so a committed count is a statement about one
+  toolchain on one CPU — the same A/B-in-one-job rule as the timings, with both sides
+  counted.
+- **It costs ~55×**: 15 s under valgrind against 0.26 s plain. Cases have to be small
+  and the phase has to be a filter, as Order (3) already says of the full bench.
+- **valgrind 3.18 does not know syscall 441** (`epoll_pwait2`) and warns; bun falls back
+  and the run completes. A newer valgrind is untested.
+
+**So the gated tier gains a third kind of claim**: a CPU-bound case in litestone or mesa
+counted on both the base ref and the branch in one job, under the options above, failed
+past a stated percentage with at least three runs a side. What stays *reported* is
+anything where time is spent outside the process.
 
 ## Open
 
-- **Does instruction counting work on Bun?** SQLite's and rustc-perf's gate is a
-  cycle count, which would move litestone and mesa timings from *reported* to *gated*.
-  JSC tiers code up on background threads and GC timing varies, so a count under
-  cachegrind may not repeat; `BUN_JSC_useJIT=0` would repeat and measures an interpreter
-  nobody ships. **Unmeasured — the spike is the next step.** If it fails, the gated
-  tier stays counts and bytes, which is still sound.
 - **Is a measured 15–20% drift a defect?** It has no `FJS-###` and per `ISSUES.md`'s own
   rule that means it is not open. Filing it needs a diagnosis, which needs Order (1).
 

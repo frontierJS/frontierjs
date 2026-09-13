@@ -6,8 +6,9 @@ dated: 2026-09-08
 
 # Assessment — Converting a live Feathers/Prisma/Svelte application onto FrontierJS
 
-**Status: ASSESSMENT. It reads two trees and proposes nothing.** Dated
-2026-09-08. Every count below was produced by running a command against
+**Status: ASSESSMENT. It reads two trees and proposes nothing for the
+framework.** Dated 2026-09-08; § *Running the port* was added 2026-09-12 and is a
+working plan for the APPLICATION, not a framework proposal. Every count below was produced by running a command against
 `/home/j/code/KOBAMI/my.maid.tech` or against this tree on that date; where a
 number came from the application's database it is the **development database,
 which carries production data** (148 real accounts, 113,632 clients, 109,632 form
@@ -247,6 +248,89 @@ the web is the larger number (51k) and the more mechanical. The decision that
 moves the estimate most is whether `tables-from-the-seed.md` lands before the web
 port starts, because 292 of those route files are a list, a detail and a filter
 bar over one model.
+
+---
+
+## Running the port
+
+*Added 2026-09-12. Nothing here has been started.*
+
+### Before anything: the converted schema is not in either repository
+
+The `.lite` conversion this reading took as done — 840 lines, beside a
+`discovery/` directory — was never committed to `my.maid.tech`. On 2026-09-12 it
+existed only in a Claude session scratchpad:
+
+```
+/tmp/claude-1000/-home-j-code-FRONTIER-frontierjs/3563cce0-769b-417f-a069-95004955af44/scratchpad/maid/
+```
+
+`/tmp` is cleared on reboot. If that path is gone, the conversion is redone from
+`my.maid.tech/db/prisma/` and this section's first step costs a day more.
+
+### The repository
+
+**A fresh repository, scaffolded, never assembled by hand.** It sits outside both
+trees (`~/code/KOBAMI/maid-fjs`), so the framework repo carries no client code
+and the running application's history is left alone. Scaffold with THIS
+workspace's `fli` and local sources, so a framework fix reaches the app with no
+publish in between:
+
+```
+bun ~/code/FRONTIER/frontierjs/packages/cli/bin/fli.js new maid-fjs --source local
+```
+
+A globally installed `fli` is a different build of the command (see
+`packages/cli/CLAUDE.md`). `--source local` symlinks `@frontierjs/*` to
+`packages/`; `core/vendor.js` is what makes that containerizable when it is time
+to deploy.
+
+### The session
+
+**Start Claude in the new repository and add the other two as directories:**
+
+```
+claude --add-dir ~/code/FRONTIER/frontierjs --add-dir ~/code/KOBAMI/my.maid.tech
+```
+
+The framework's hazard skills live in `frontierjs/.claude/skills/`. Whether an
+added directory's skills load is unverified; symlinking that directory into the
+new repo's `.claude/skills` does not depend on the answer.
+
+The new repo's `CLAUDE.md` carries five lines and no more:
+
+- the specs are frontierjs's root `CLAUDE.md` and each package's `CLAUDE.md`
+- the reference is `my.maid.tech`, and it is **read-only**
+- the plan is this file — read it rather than re-auditing
+- `my.maid.tech/db/development.db` is **production data**: query a copy, write to nothing
+- a framework defect is fixed in frontierjs or filed in its `ISSUES.md`, never
+  worked around in the app — being the second independent consumer is the value
+  recorded below, and a workaround spends it
+
+### The order
+
+**Data, then API, then UI — the realm order — with three corrections.**
+
+1. **The schema is not finished until decisions 1, 2 and 5 above are made.**
+   Roles-to-capabilities sets every `@@gate` and `@@capabilities`; the report
+   catalog decides which `view`s exist; the settings split decides which models
+   exist. The existing conversion predates all three, so it is a starting point
+   rather than the Data realm done.
+2. **One thin slice before going wide.** One model — `Client` is the weight —
+   through schema, service and one screen, deployed. That proves the scaffold,
+   the tests and `fli deploy` against this app before 25 models and 42 services
+   are built on an unproven pipeline. Then realm by realm.
+3. **The web port waits on `tables-from-the-seed.md`.** See the sequencing note
+   above; hand-porting the list routes first ports work that record would delete.
+
+**Moving the data is a track of its own.** Production rows go from Prisma's
+tables into Litestone's, rehearsed on a copy, and the litestream question under
+§ Infrastructure is answered before the cutover rather than during it. The first
+milestone that track owns: the new API boots against a copy of production and
+answers the same reads the old one does.
+
+**The two items under § Two security items do not wait for any of this.** They
+are live in the running application.
 
 ---
 
