@@ -59,7 +59,7 @@ The 28 break down, and the breakdown is more useful than the number:
 | Kind | Count | What it is |
 | --- | --- | --- |
 | **Link rot** | 17 | The path is written from the repo root inside a nested document, so it resolves to `IDEAS/packages/litestone/…`. The file exists; the link is dead in every browser and editor that follows it. Sixteen are one file, `IDEAS/shared-pure-functions.md` |
-| **Genuinely gone** | 2 | `example/web/test/verify-public.mjs` and `packages/junction/tests/service-actions.test.ts`, both cited from `ISSUES_ARCHIVE.md`. Arguably acceptable in an archive, which is itself a rule the tool would need to be told |
+| **Genuinely gone** | 2 | a retired public-site drive and a retired junction service-actions test, both cited from `ISSUES_ARCHIVE.md`. Arguably acceptable in an archive, which is itself a rule the tool would need to be told |
 | **False positive** | 9 | Regex literals in prose that happen to match link syntax. Stripping fenced code blocks removed ten more; the rest need a real parser |
 
 **No false claims in this class.** Every path that a reader would go looking for

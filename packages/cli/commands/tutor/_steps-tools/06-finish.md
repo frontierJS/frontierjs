@@ -34,7 +34,7 @@ log.info(`  ${app}`)
 log.info('')
 
 if (context.config.__devtoolsAdded) {
-  log.info('  api/src/app.ts now configures devtools() — it is left in place on purpose.')
+  log.info('  api/config/junction.config.js now declares devtools — it is left in place.')
   log.info('  It binds to loopback and refuses to bind anywhere else without an auth')
   log.info('  gate, so it costs nothing to leave configured and is there when you need it.')
   log.info('')

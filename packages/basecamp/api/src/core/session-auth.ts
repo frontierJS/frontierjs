@@ -131,7 +131,7 @@ export function refuseSuspendedLogin(auth: IAuth & { _sessionTtl: string }, db: 
  * turn every public 401 into a 403.
  */
 export function refuseSuspended(): Hook {
-  return (ctx: ServiceContext): void => {
+  return function refuseSuspended(ctx: ServiceContext): void {
     const user = ctx.auth?.user as BasecampSession | undefined
     if (!user) return
     if (user.status === 'suspended')

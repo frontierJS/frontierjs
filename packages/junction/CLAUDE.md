@@ -1131,8 +1131,8 @@ src/
   All three suites came home and stayed green, which is what proves the mock was
   the only cause. **Their assertions are real `expect`s now, not stdout
   matching** (`FJS-909`): an `ok <name>` line a parent greps for cannot fail when
-  it is not reached, so a renamed row or a probe that exits early read as a pass
-  — 2 greps became 42 assertions. For a double at the interface,
+  it is not reached, so a renamed row or a probe that exits early read as a pass.
+  For a double at the interface,
   `createTestMailer()` in `@frontierjs/testing` — it refuses exactly what the
   real mailer refuses.
 - **`ctx.result` must be `null`, not absent**, when hand-building a context in a

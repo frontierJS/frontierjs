@@ -242,6 +242,63 @@ const staffSees = await (await fetch(`${API}/api/orders`, {
   headers: { authorization: `Bearer ${staffToken}` } })).json()
 check('staff at the same level sees the whole book', staffSees.total > 1, true)
 
+// ─── a custom method, on somebody else's row ──────────────────────────────
+//
+// A custom method's gate floor is the model's read gate and only a PRESENCE
+// check, and no row policy runs before its body — so a body that writes through
+// `asSystem()` before reading as the caller is reachable by every account that
+// can sign in. `settle` and `changePlan` were exactly that: a shopper marked
+// another customer's invoice paid, and repriced another customer's subscription
+// and issued them the invoice (`FJS-1087`). Every refusal here is PAIRED with
+// staff making the same call on the same row, because a method refusing
+// everybody satisfies any assertion about the refusal.
+const callAs = (token, path, method, body = {}) => fetch(`${API}/api${path}`, {
+  method:  'POST',
+  headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json',
+             'x-service-method': method },
+  body:    JSON.stringify(body),
+})
+
+const otherBill = await sys.invoice.findFirst({ where: { number: OTHER_INV } })
+const settleTheirs = await callAs(buyerToken, `/invoices/${otherBill.id}`, 'settle')
+const settleMine   = await callAs(buyerToken, `/invoices/${ownBill.id}`, 'settle')
+// Read before staff settles it, so the row's state is the shopper's doing alone.
+const afterShopper = await sys.invoice.findFirst({ where: { id: otherBill.id } })
+check('a shopper settling somebody else\'s invoice is told it does not exist, and it stays issued',
+      [settleTheirs.status, afterShopper.status, afterShopper.paidAt], [404, 'issued', null])
+check('…and settling their own is refused — marking yourself paid is staff\'s move',
+      [settleMine.status, (await sys.invoice.findFirst({ where: { id: ownBill.id } })).status],
+      [403, 'issued'])
+
+const settleStaff = await callAs(staffToken, `/invoices/${otherBill.id}`, 'settle')
+const afterStaff  = await sys.invoice.findFirst({ where: { id: otherBill.id } })
+check('staff settling the same invoice moves it, and stamps when',
+      [settleStaff.status, afterStaff.status, typeof afterStaff.paidAt], [200, 'paid', 'string'])
+
+// A subscription of somebody else's, minted for this run: repricing the seeded
+// one would leave every later drive reading a different quantity.
+const OTHER_SUB = `SUB-OTH${RUN}`
+const paidVersion = await sys.planVersion.findFirst({ where: { effectiveTo: null, price: { gt: 0 } } })
+const otherSub = await sys.subscription.create({ data: {
+  reference: OTHER_SUB, customerId: someoneElse.id, planVersionId: paidVersion.id,
+  status: 'active', quantity: 1, userId: someoneElse.userId,
+  currentPeriodStart: new Date().toISOString(),
+  currentPeriodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString(),
+} })
+const documentsFor = async () => (await sys.invoice.findMany({ where: { subscriptionId: otherSub.id } })).length
+
+const repriceTheirs = await callAs(buyerToken, `/subscriptions/${otherSub.id}`, 'changePlan', { quantity: 7 })
+const subAfterShopper = await sys.subscription.findFirst({ where: { id: otherSub.id } })
+check('a shopper changing somebody else\'s plan is told it does not exist, and nothing moves or is issued',
+      [repriceTheirs.status, subAfterShopper.quantity, await documentsFor()], [404, 1, 0])
+
+const repriceStaff = await callAs(staffToken, `/subscriptions/${otherSub.id}`, 'changePlan', { quantity: 3 })
+const staffChange  = repriceStaff.ok ? await repriceStaff.json() : null
+check('staff changing the same plan moves the quantity and issues the invoice for the rest of the period',
+      [repriceStaff.status, (await sys.subscription.findFirst({ where: { id: otherSub.id } })).quantity,
+       staffChange?.data?.kind ?? staffChange?.kind, await documentsFor()],
+      [200, 3, 'invoice', 1])
+
 // ─── the browser ──────────────────────────────────────────────────────────
 
 const profile = mkdtempSync(join(tmpdir(), 'fjs-account-'))
@@ -549,7 +606,11 @@ try {
   // schema's answer rather than a trick.
   await sys.invoice.delete({ where: { number: OWN_INV } })
   await sys.subscription.delete({ where: { reference: OWN_SUB } })
-} catch (e) { console.error(`\n!! could not clear up ${OTHER_INV} / ${OWN_SUB}: ${e.message}`) }
+  // The proration invoice staff's change issued goes before the subscription it
+  // names.
+  await sys.invoice.deleteMany({ where: { subscriptionId: otherSub.id } })
+  await sys.subscription.delete({ where: { reference: OTHER_SUB } })
+} catch (e) { console.error(`\n!! could not clear up ${OTHER_INV} / ${OWN_SUB} / ${OTHER_SUB}: ${e.message}`) }
 
 const noisy = pageErrors.filter(t => t && !/favicon|ERR_FILE_NOT_FOUND/.test(t))
 check('no console errors anywhere in it', noisy, [])

@@ -170,7 +170,7 @@ const NOT_SCHEMA_WORDS = new Set([
   '@rule',   // CSS's own noun for `@media` and its kind — an at-rule
 ])
 
-const OTHER_ORMS = /\b(Prisma|Rails|ActiveRecord|Django|Ecto|Laravel|Eloquent|Sequelize|TypeORM|Drizzle|Hibernate|SQLAlchemy|Doctrine|Mongoose|Feathers|Svelte|Vue|Angular)\b/
+const OTHER_ORMS = /\b(Prisma|Rails|ActiveRecord|Django|Ecto|Laravel|Eloquent|Sequelize|TypeORM|Drizzle|ZenStack|Hibernate|SQLAlchemy|Doctrine|Mongoose|Feathers|Svelte|Vue|Angular)\b/
 
 // A sentence saying the word is absent is not a use of it. The narrow spellings
 // only — a general negation guard would suppress the findings this rule is for.
@@ -460,8 +460,9 @@ export function docCitesDead({ root }) {
       })
     }
 
-    // (c) a register id
-    if (ids) for (const m of doc.text.matchAll(/\bFJS-(D?\d+)\b/g)) {
+    // (c) a register id — read off the fence-masked text like (b), because a
+    // fenced block is a format example and `FJS-D00` there names no ruling
+    if (ids) for (const m of prose.matchAll(/\bFJS-(D?\d+)\b/g)) {
       if (ids.has(m[0].toLowerCase())) continue
       findings.push({
         file: doc.path, line: lineOf(doc.text, m.index),

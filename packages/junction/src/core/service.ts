@@ -2288,7 +2288,8 @@ export function createService(def: ServiceDefinition): Service {
   //
   // A service with no model at all (custom methods only) is unaffected: the
   // derived hooks no-op when the accessor resolves to nothing (gateAuth reads
-  // null levels, autoValidate finds no definition), and calling the unused CRUD
+  // null levels and grades only a declared `gate:`, autoValidate finds no
+  // definition), and calling the unused CRUD
   // methods now fails with the base's diagnostic — which names the spellings
   // tried and what the client actually has — instead of a bare sentence.
   const declaredGates = collectMethodGates(def.methods, (def.name as string) ?? '(unnamed)')

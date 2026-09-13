@@ -23,7 +23,7 @@ Here it is three numbers that already exist, enforced in the database layer:
 | --- | --- |
 | the tool list | `describe().methods`, after the service's method policy |
 | input schema per tool | `generateJsonSchema(schema)` — the document the browser already gets |
-| **what the caller may do** | **`@@gate` on the model, `@gate` on a declared move, `@system`** |
+| **what the caller may do** | **`@@gate` on the model, `@gate` on a declared move** |
 
 ## Using it
 
@@ -62,16 +62,15 @@ Each tool also carries its argument schema and where that came from:
 
 `input.schema` is **`null`** rather than `{}` where the source is null. An empty
 object schema accepts anything, which is a claim; null is the absence of one, and
-an agent handed `{}` will send something and be refused. Over `example`: 157 of
-203 tools carry a schema and 46 do not.
+an agent handed `{}` will send something and be refused. Over `example`: 162 of
+209 tools carry a schema and 47 do not.
 
 Every answer carries what decided it:
 
 | `verdict` | Meaning |
 | --- | --- |
 | `model-gate` | the model's `@@gate` position for this operation |
-| `move-floor` | `max(model update, the move's own @gate)` |
-| `move-system` | a `@system` move — no caller, at any standing |
+| `move-floor` | `max(model update, the move's own @gate)` — a `@system` move included, since `@system` says whose decision it is and not how senior the caller must be (`FJS-D150`) |
 | `ungraded` | nothing in the seed says; permissive, and labelled |
 
 **`ungraded` is not grouped with the two that cleared a number.** *Nothing

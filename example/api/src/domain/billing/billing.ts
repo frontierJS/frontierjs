@@ -333,6 +333,14 @@ export async function settleInvoice(client: Client, id: number, at?: string): Pr
  * A change worth nothing writes nothing. Issuing a zero invoice would put a
  * document in a customer's ledger recording that they were charged nothing,
  * which is a different claim from having made no charge.
+ *
+ * **A change of interval is a new period, not a slice of the old one.**
+ * Prorating a yearly price over what is left of a month charges half a year for
+ * half a month, and the renewal at the old period end then charges the year
+ * again (`FJS-1103`). So monthly → yearly credits the unused month and starts a
+ * whole year at `at`. Yearly → monthly is refused until renewal: the credit is
+ * most of a year, and whether one credit note may carry that against the last
+ * invoice is a rule nobody has made.
  */
 export async function changePlan(
   sys: Client,
@@ -352,27 +360,48 @@ export async function changePlan(
   if (!from || !to) throw new Error(`changePlan: no such plan version`)
 
   const plan     = await sys.plan.findFirst({ where: { id: to.planId } })
+  const fromPlan = from.planId === to.planId ? plan : await sys.plan.findFirst({ where: { id: from.planId } })
+  if (!plan || !fromPlan) throw new Error(`changePlan: no plan for version ${plan ? from.id : to.id}`)
   const quantity = change.quantity ?? sub.quantity
 
-  const p = prorate({
-    periodStart: sub.currentPeriodStart,
-    periodEnd:   sub.currentPeriodEnd,
-    at,
-    name:        plan?.name ?? 'Plan',
-    from: { unitAmount: from.price, quantity: sub.quantity },
-    to:   { unitAmount: to.price,   quantity },
-  })
+  const reanchor = fromPlan.interval !== plan.interval
+  if (reanchor && plan.interval === 'monthly')
+    throw Object.assign(new Error(
+      `${sub.reference} is paid for the year to ${describeSpan(sub.currentPeriodStart, sub.currentPeriodEnd)} — ` +
+      `a move to a monthly plan takes effect at renewal`), { status: 409 })
 
-  // The arrangement moves whatever the money does. A change that is worth
-  // nothing is still a change.
-  await sys.subscription.update({
-    where: { id: sub.id },
-    data:  { planVersionId: to.id, quantity },
-  })
+  let periodStart = sub.currentPeriodStart
+  let periodEnd   = sub.currentPeriodEnd
+  let p: Pick<Proration, 'net' | 'lines'>
 
-  if (p.net === 0) return { kind: 'none', net: 0 }
+  if (reanchor) {
+    // The credit is `prorate`'s with nothing charged against it; the charge is
+    // an ordinary whole period, which is what renewal would have written.
+    const credit = prorate({
+      periodStart, periodEnd, at,
+      name: plan.name,
+      from: { unitAmount: from.price, quantity: sub.quantity },
+      to:   { unitAmount: 0,          quantity },
+    })
+    periodStart = at
+    periodEnd   = advancePeriod(at, plan.interval).toISOString()
+    const lines = [...credit.lines, ...periodLines({
+      name: plan.name, quantity, unitAmount: to.price, periodStart, periodEnd,
+    })]
+    p = { lines, net: lines.reduce((n, l) => n + l.amount, 0) }
+  } else {
+    p = prorate({
+      periodStart, periodEnd, at,
+      name: plan.name,
+      from: { unitAmount: from.price, quantity: sub.quantity },
+      to:   { unitAmount: to.price,   quantity },
+    })
+  }
 
-  if (p.net > 0) {
+  let result: { kind: 'invoice' | 'credit-note' | 'none', number?: string, net: number }
+
+  if (p.net === 0) result = { kind: 'none', net: 0 }
+  else if (p.net > 0) {
     const invoice = await issueInvoice(sys, {
       number:         await nextInvoiceNumber(sys),
       customerId:     sub.customerId,
@@ -380,30 +409,40 @@ export async function changePlan(
       userId:         sub.userId,
       issuedAt:       at,
       periodStart:    at,
-      periodEnd:      sub.currentPeriodEnd,
+      periodEnd,
       lines:          p.lines,
     })
-    return { kind: 'invoice', number: invoice.number, net: p.net }
+    result = { kind: 'invoice', number: invoice.number, net: p.net }
+  } else {
+    // Owed back. Against the most recent invoice for this subscription, because a
+    // credit note is a correction OF a document and has to name one — and if
+    // there is none, there is nothing to correct and the change is simply
+    // cheaper from here on.
+    const last = await sys.invoice.findFirst({
+      where: { subscriptionId: sub.id }, orderBy: { id: 'desc' },
+    })
+    const note = last && await sys.creditNote.create({ data: {
+      number:    `CN-${3000 + (await sys.creditNote.count()) + 1}`,
+      invoiceId: last.id,
+      amount:    -p.net,
+      reason:    `Downgrade on ${describeSpan(at, periodEnd)} — unused time credited`,
+      issuedAt:  at,
+      userId:    sub.userId,
+    } })
+    result = note ? { kind: 'credit-note', number: note.number, net: p.net } : { kind: 'none', net: p.net }
   }
 
-  // Owed back. Against the most recent invoice for this subscription, because a
-  // credit note is a correction OF a document and has to name one — and if
-  // there is none, there is nothing to correct and the change is simply
-  // cheaper from here on.
-  const last = await sys.invoice.findFirst({
-    where: { subscriptionId: sub.id }, orderBy: { id: 'desc' },
+  // The arrangement moves whatever the money does, and after the document
+  // rather than before it — the renewal job's order, since a crash between a
+  // moved window and its invoice reads as billed and is not.
+  await sys.subscription.update({
+    where: { id: sub.id },
+    data:  reanchor
+      ? { planVersionId: to.id, quantity, currentPeriodStart: periodStart, currentPeriodEnd: periodEnd }
+      : { planVersionId: to.id, quantity },
+    ...(reanchor && { system: ['currentPeriodStart', 'currentPeriodEnd'] }),
   })
-  if (!last) return { kind: 'none', net: p.net }
-
-  const note = await sys.creditNote.create({ data: {
-    number:    `CN-${3000 + (await sys.creditNote.count()) + 1}`,
-    invoiceId: last.id,
-    amount:    -p.net,
-    reason:    `Downgrade on ${describeSpan(at, sub.currentPeriodEnd)} — unused time credited`,
-    issuedAt:  at,
-    userId:    sub.userId,
-  } })
-  return { kind: 'credit-note', number: note.number, net: p.net }
+  return result
 }
 
 // ─── Collection ───────────────────────────────────────────────────────────

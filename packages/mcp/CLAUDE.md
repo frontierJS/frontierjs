@@ -19,7 +19,8 @@ tests/projection.test.ts
 
 *Which tools does this standing see, and what decided each.* Three inputs and no
 others: the service's method policy (`describe().methods`, already applied), the
-model's `@@gate`, and a declared move's `gate`/`system` from `x-transitions`.
+model's `@@gate`, and a declared move's `gate` from `x-transitions`. `@system` is not an input: it
+says whose decision a move is, and the method lifting it keeps the gate (`FJS-D150`).
 
 It reads a NARROWED view of the generated schema on purpose — `ModelDef` declares
 two keywords. Taking the whole `$def` would leave the projection free to start

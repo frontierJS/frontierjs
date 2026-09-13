@@ -38,8 +38,9 @@ existence one. The answer comes from the app's own router via `GET /manifest`,
 which means it reports where a route *landed*, `apiPrefix` included, rather than
 where something meant to put it.
 
-`manifestPlugin()` must be configured (it is in the scaffold, and skipped in
-production by default). Start the API first — `fli api:dev`.
+The manifest plugin must be declared — `plugins: { manifest: true }` in
+`api/config/junction.config.js`, which the scaffold writes — and it is skipped
+in production by default. Start the API first — `fli api:dev`.
 
 ```js
 const base = (flag.url || process.env.API_URL ||
@@ -63,7 +64,7 @@ for (const path of ['/manifest', '/api/manifest']) {
 
 if (!manifest) {
   log.error(`No manifest at ${base}/manifest or ${base}/api/manifest`)
-  log.info('manifestPlugin() must be configured — app.configure(manifestPlugin({ db })).')
+  log.info('the manifest plugin must be declared — plugins: { manifest: true } in api/config/junction.config.js.')
   log.info('It is devOnly by default, so a production build answers 404 here on purpose.')
   log.info(`An apiPrefix other than '/api' needs it spelled out: --url ${base}/<prefix>`)
   return

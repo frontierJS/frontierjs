@@ -93,6 +93,14 @@ async function shop() {
     methods: ['find', 'availability'],
     async availability() { ran.push('availability'); return { ok: true } },
   }))
+  // Over no model at all — `revenue`, `shopfront` — so there is no gate to take
+  // a floor from, and a declaration is the only thing that can grade a caller.
+  app.services.register(createService({
+    name: 'reports',
+    methods: [{ method: 'payroll', gate: 5 }, 'ping'],
+    async payroll() { ran.push('payroll'); return { ok: true } },
+    async ping()    { ran.push('ping');    return { ok: true } },
+  }))
 
   app.setAuth({ verifySession: async (t: string) => AS[t] ?? null })
   await app.start()
@@ -191,6 +199,34 @@ describe('a method may declare a level above the floor', () => {
     expect((await s.call('shopper', 'orders', 'settle')).status).toBe(403)
     await s.close()
   })
+
+  test('a declaration is graded on a service over no model, where there is no floor', async () => {
+    // The declaration used to be read only once a model had answered with a
+    // gate, so `gate: 5` here parsed, reached the surface, and a stranger ran
+    // the body (`FJS-1087`). The undeclared `ping` beside it is the control:
+    // with no model there is still no floor, so it stays open to everyone.
+    const s = await shop()
+
+    const stranger = await s.call('nobody', 'reports', 'payroll')
+    expect(stranger.status).toBe(401)
+    expect(stranger.ran).toEqual([])
+
+    const junior = await s.call('shopper', 'reports', 'payroll')
+    expect(junior.status).toBe(403)
+    expect(junior.ran).toEqual([])
+
+    const entitled = await s.call('staff', 'reports', 'payroll')
+    expect(entitled.status).toBe(200)
+    expect(entitled.ran).toEqual(['payroll'])
+
+    for (const who of ['nobody', 'shopper', 'staff']) {
+      const out = await s.call(who, 'reports', 'ping')
+      expect(`${who}: ${out.status}`).toBe(`${who}: 200`)
+      expect(out.ran).toEqual(['ping'])
+    }
+
+    await s.close()
+  })
 })
 
 // ─── what a declaration may say ───────────────────────────────────────────────
@@ -250,6 +286,13 @@ describe('the surface reports the grade the gate enforces', () => {
     expect(grades.variants.availability).toEqual({ source: 'floor', level: 0, graded: false })
     expect((await s.call('nobody', 'variants', 'availability')).status).toBe(200)
 
+    // No model: a declaration is graded, and the undeclared method beside it is
+    // checked by nothing.
+    expect(grades.reports.payroll).toEqual({ source: 'declared', level: 5, graded: true })
+    expect((await s.call('shopper', 'reports', 'payroll')).status).toBe(403)
+    expect(grades.reports.ping).toEqual({ source: 'unchecked', level: null, graded: false })
+    expect((await s.call('nobody', 'reports', 'ping')).status).toBe(200)
+
     // CRUD verbs are graded by operation and are not a custom method's row.
     expect('find' in grades.orders).toBe(false)
 
@@ -267,11 +310,9 @@ describe('customMethodGrade', () => {
     expect(customMethodGrade('refund', {},            levels)).toEqual({ source: 'floor',    level: 1, graded: false })
   })
 
-  test('no @@gate means nothing is checked — a declared level included', async () => {
-    // Pinned as it is: the gate reads levels off the model, and a model that
-    // declares none gives it nothing to compare a declaration against.
+  test('no @@gate leaves no floor, and a declared level is still graded', async () => {
     const { customMethodGrade } = await import('../src/core/litestone.ts')
-    expect(customMethodGrade('graph', { graph: 5 }, null)).toEqual({ source: 'unchecked', level: 5, graded: false })
+    expect(customMethodGrade('graph', { graph: 5 }, null)).toEqual({ source: 'declared',  level: 5,    graded: true })
     expect(customMethodGrade('graph', {},           null)).toEqual({ source: 'unchecked', level: null, graded: false })
   })
 

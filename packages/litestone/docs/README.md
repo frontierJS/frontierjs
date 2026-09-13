@@ -14,6 +14,7 @@
 - [jsonschema.md](jsonschema.md) — generateJsonSchema: every key it emits, modes, audience, who reads each
 - [exact-numbers.md](exact-numbers.md) — `Int @scale(n)` and `Int @money(USD)`: an exact quantity and an amount of money, stored as whole minor units. **There is no `Decimal` and that is a ruling, not a gap** ([`FJS-D142`](../../../DECISIONS.md#fjs-d142))
 - [json-types.md](json-types.md) — `type T { }` in the seed and `Json @type(T)`: a declared shape for a Json column, validated on write
+- [extensible-columns.md](extensible-columns.md) — `@@extensible`: a field the tenant declares at runtime, stored in a pooled column and still filterable
 - [traits.md](traits.md) — `@@trait` and `extend model X { }`: what a package contributes into a seed, and what the installing app says back about a model it did not write
 
 ## Querying
@@ -30,6 +31,7 @@
 
 ## Features
 - [soft-delete.md](soft-delete.md) — @@softDelete, cascade, @hardDelete, restore
+- [export.md](export.md) — `@@export`: a governed bulk extract, a paginated scoped read that cannot contain what the principal could not read a row at a time
 - [full-text-search.md](full-text-search.md) — @@fts, search(), highlight/snippet, optimizeFts
 - [file-storage.md](file-storage.md) — FileStorage plugin, S3/R2/local, autoResolve, fileUrl, ExternalRefPlugin
 - [audit-logging.md](audit-logging.md) — @log, @@log, logger driver, onLog callback

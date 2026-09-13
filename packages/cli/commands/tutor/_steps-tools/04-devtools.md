@@ -6,10 +6,10 @@ description: The API console — what happened to that call
 ## Junction's console — why did that call fail?
 
 This one is not a command, because it runs **inside your app**. One line in
-`api/src/app.ts`:
+the `plugins:` block of `api/config/junction.config.js`:
 
 ```text
-app.configure(devtools())
+devtools: true,
 ```
 
 and the app serves a second, separate console on {{devtoolsPort}} alongside
@@ -34,34 +34,34 @@ context.config.__step = 4
 
 if (!needs(context, ['appDir'], { from: '01-app' })) return
 
-const app   = context.config.appDir
-const appTs = join(app, 'api', 'src', 'app.ts')
-const src   = readFileSync(appTs, 'utf8')
+const app      = context.config.appDir
+const configJs = join(app, 'api', 'config', 'junction.config.js')
+const appTs    = join(app, 'api', 'src', 'app.ts')
+const src      = readFileSync(configJs, 'utf8')
 
-if (!src.includes('devtools(')) {
-  // The import line and the configure line. Anchored on manifestPlugin, which
-  // every scaffolded app registers, rather than on a line number.
-  // The port is written into the file ONLY when it is not the console's own
-  // default. A lesson that baked a number in would leave every later lesson's
-  // app binding that number too, and a person reading api/src/app.ts afterwards
-  // would find a port where the documented line has none.
-  const call = context.config.devtoolsPort === 8503
-    ? 'devtools()'
-    : `devtools({ port: ${context.config.devtoolsPort} })`
+// Configured by hand in app.ts is the other legal owner; declaring it here as
+// well is two owners for one plugin and start() refuses the app by name.
+if (!/\bdevtools\s*:/.test(src) && !readFileSync(appTs, 'utf8').includes('devtools(')) {
+  // Anchored on the plugins block every scaffolded config declares, rather
+  // than on a line number. The port is written ONLY when it is not the
+  // console's own default: a lesson that baked a number in would leave every
+  // later lesson's app binding that number too, and a person reading the
+  // config afterwards would find a port where the documented line has none.
+  const entry = context.config.devtoolsPort === 8503
+    ? 'devtools: true,'
+    : `devtools: { port: ${context.config.devtoolsPort} },`
 
-  const wired = src
-    .replace(/(\bmanifestPlugin\b)(,?)([^\n]*from '@frontierjs\/junction')/, '$1, devtools$2$3')
-    .replace(/app\.configure\(manifestPlugin\(\)\)/, `app.configure(manifestPlugin())\napp.configure(${call})`)
+  const wired = src.replace(/^([ \t]*)plugins:\s*\{[ \t]*\n/m, (m, indent) => `${m}${indent}  ${entry}\n`)
 
   if (wired === src) {
-    log.error('could not find where to add devtools() in api/src/app.ts — add it by hand:')
-    log.info('  app.configure(devtools())')
+    log.error('could not find the plugins: block in api/config/junction.config.js — add it by hand:')
+    log.info('  plugins: { devtools: true }')
     context.config.abort = true
     return
   }
-  writeFileSync(appTs, wired, 'utf8')
+  writeFileSync(configJs, wired, 'utf8')
   context.config.__devtoolsAdded = true
-  log.info('added app.configure(devtools()) to api/src/app.ts')
+  log.info('added devtools to plugins: in api/config/junction.config.js')
 }
 
 // The app reads its plugin list once, at boot.

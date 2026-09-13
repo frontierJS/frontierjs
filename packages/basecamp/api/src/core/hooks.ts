@@ -73,7 +73,7 @@ export function resolveWorkspaceId(ctx: ServiceContext): string | undefined {
 export const WORKSPACE_QUERY = ['workspace_id'] as const
 
 export function requireWorkspace(): Hook {
-  return (ctx: ServiceContext): void => {
+  return function requireWorkspace(ctx: ServiceContext): void {
     const workspaceId = resolveWorkspaceId(ctx)
 
     if (!workspaceId)
@@ -166,7 +166,7 @@ export async function restandingFor(
 // resolved it once for this request and parked it.
 
 export function scopeToWorkspace(app: BasecampApp): Hook {
-  return async (ctx: ServiceContext): Promise<void> => {
+  return async function scopeToWorkspace(ctx: ServiceContext): Promise<void> {
     const userId      = userOf(ctx)?.userId
     const workspaceId = ctx.locals.workspaceId as string | undefined
 
@@ -209,7 +209,7 @@ const ROLE_LEVEL: Record<string, number> = {
 export function requireWorkspaceRole(app: BasecampApp, ...roles: string[]): Hook {
   const minLevel = Math.min(...roles.map(r => ROLE_LEVEL[r] ?? 99))
 
-  return async (ctx: ServiceContext): Promise<void> => {
+  return async function requireWorkspaceRole(ctx: ServiceContext): Promise<void> {
     const userId      = userOf(ctx)?.userId
     const workspaceId = ctx.locals.workspaceId as string | undefined
 
@@ -276,7 +276,7 @@ export function requireWorkspaceRole(app: BasecampApp, ...roles: string[]): Hook
 // the key would refuse a fleet write for holding the wrong kind of role.
 
 export function refuseGrantAboveOwn(): Hook {
-  return (ctx: ServiceContext): void => {
+  return function refuseGrantAboveOwn(ctx: ServiceContext): void {
     const data = (ctx.data ?? {}) as Record<string, unknown>
 
     // No membership is `requireWorkspaceRole`'s refusal, and `asSystem()` paths
@@ -355,7 +355,7 @@ export function refuseGrantAboveOwn(): Hook {
 // otherwise — measured, not assumed.
 
 export function internalOnly(): Hook {
-  return (ctx: ServiceContext): void => {
+  return function internalOnly(ctx: ServiceContext): void {
     if (ctx.transport !== 'internal') throw new NotFound('Not found')
   }
 }
@@ -374,7 +374,7 @@ export function internalOnly(): Hook {
 // workspaces service answers 404 for a workspace you are not in.
 
 export function requireSystemAdmin(): Hook {
-  return (ctx: ServiceContext): void => {
+  return function requireSystemAdmin(ctx: ServiceContext): void {
     authenticate(ctx)
     if (userOf(ctx)?.isSystemAdmin !== true) throw new NotFound('Not found')
   }
@@ -395,7 +395,7 @@ export function sessionScope(app: BasecampApp, opts: { except?: string[] } = {})
   const workspace = requireWorkspace()
   const scope     = scopeToWorkspace(app)
 
-  return async (ctx: ServiceContext): Promise<void> => {
+  return async function sessionScope(ctx: ServiceContext): Promise<void> {
     if (except.has(ctx.method)) return
     authenticate(ctx)
     workspace(ctx)
@@ -594,7 +594,7 @@ export function requireOutpostSignature(app: BasecampApp, { only = [] }: { only?
   // The reason is logged and never returned.
   const REFUSED = 'This endpoint requires a signed outpost request'
 
-  return async (ctx: ServiceContext): Promise<void> => {
+  return async function requireOutpostSignature(ctx: ServiceContext): Promise<void> {
     if (!guarded.has(`${ctx.service}.${ctx.method}`)) return
 
     // WHICH machine, then WHICH key — see `outpostSecretFor` above. A null is a
@@ -762,7 +762,7 @@ function diffRows(
 export function basecampAuditPreImage(app: BasecampApp, { except = [] }: { except?: string[] } = {}): Hook {
   const skip = new Set(except)
 
-  return async (ctx: ServiceContext): Promise<void> => {
+  return async function basecampAuditPreImage(ctx: ServiceContext): Promise<void> {
     if (!recordable(ctx, skip)) return
     // No id is `create` and the bulk paths: there is nothing there yet to read.
     if (ctx.id === undefined || ctx.id === null) return
@@ -784,7 +784,7 @@ export function basecampAuditPreImage(app: BasecampApp, { except = [] }: { excep
 export function basecampAuditLog(app: BasecampApp, { except = [] }: { except?: string[] } = {}): Hook {
   const skip = new Set(except)
 
-  return async (ctx: ServiceContext): Promise<void> => {
+  return async function basecampAuditLog(ctx: ServiceContext): Promise<void> {
     if (!recordable(ctx, skip)) return
 
     // Two result shapes reach here. CRUD answers the envelope, so the row is

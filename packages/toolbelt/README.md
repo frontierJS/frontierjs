@@ -110,8 +110,8 @@ day and `jan` is a month, and each is refused in the other's field rather than
 becoming a number (`FJS-1009`). Any prefix of two letters or more naming exactly
 one entry, so `jun` resolves and `ju` is refused naming what it could be.
 
-`cronMatches` throws where `parts` is missing one of the five keys. It used to
-answer `false` — every minute, for ever.
+`cronMatches` throws where `parts` is missing one of the five keys, because
+`false` there is a schedule that never fires and never says so.
 
 Sunday is 0 and 7. A term may combine a list, a range and a step (`0,2-4,9-15/3`).
 

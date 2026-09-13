@@ -23,6 +23,11 @@ in, whatever the row policies say, because the Data boundary never sees who
 asked. Each row below is either meant — a read-shaped method, a scoped write —
 or wants `methods: [{ method, gate }]`.
 
+### Nothing in front of the body but the floor (11)
+
+The list to read first: only the method body stands between a signed-in caller
+and what it does.
+
 | Method | Who may call it |
 | --- | --- |
 | `account.changePassword` | **any signed-in caller** — floor, read gate 6; standing not graded |
@@ -32,110 +37,119 @@ or wants `methods: [{ method, gate }]`.
 | `account.disableTotp` | **any signed-in caller** — floor, read gate 6; standing not graded |
 | `account.regenerateRecoveryCodes` | **any signed-in caller** — floor, read gate 6; standing not graded |
 | `account-recovery.resetTotp` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `alerts.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `alerts.events` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `alerts.attachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `alerts.detachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `alerts.acknowledge` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `alerts.resolve` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `api-keys.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `api-keys.revoke` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `api-keys.scopes` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `apps.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `apps.logs` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `apps.place` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `apps.unplace` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `blueprints.categories` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `blueprints.setParams` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `channels.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `channels.rules` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `channels.test` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `cleanup.usage` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `cleanup.targets` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `cleanup.run` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `cleanup.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `cleanup.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `conduit-targets.restore` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `dashboards.kinds` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `dashboards.addWidget` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `dashboards.updateWidget` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `dashboards.removeWidget` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `dashboards.reorder` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `deployments.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `deployments.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `deployments.stepStatus` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `deployments.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `domains.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `domains.uploadCert` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `domains.makePrimary` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `environments.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `environments.setVariable` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `environments.deleteVariable` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `flags.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `flags.setOverride` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `flags.clearOverride` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `flags.resolve` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `hub.overview` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `hub.workspaces` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `hub.users` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `hub.flags` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `hub.setWorkspaceStatus` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `hub.setUserStatus` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `hub.setSystemAdmin` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `hub.createBot` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `hub.setFlag` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `hub-config.current` | **any signed-in caller** — floor, read gate 7; standing not graded |
-| `hub-config.save` | **any signed-in caller** — floor, read gate 7; standing not graded |
-| `infra.graph` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `infra.onboarding` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `invitations.resend` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `jobs.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `jobs.trigger` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `jobs.cancel` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `jobs.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `jobs.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `metrics-store.read` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `networks.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `networks.members` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `networks.attach` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `networks.detach` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `notification-preferences.save` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `portal.restore` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `projects.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `recipes.run` | **any signed-in caller** — floor, read gate 4; standing not graded |
-| `recipes.runs` | **any signed-in caller** — floor, read gate 4; standing not graded |
-| `recipes.startRun` | **any signed-in caller** — floor, read gate 4; standing not graded |
-| `recipes.finishRun` | **any signed-in caller** — floor, read gate 4; standing not graded |
-| `registry.repositories` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `secrets.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `secrets.verify` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `servers.restore` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.events` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.feed` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.sync` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.logEvent` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.reboot` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.drain` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.undrain` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.catalog` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.providers` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.provision` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.provisionStep` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.destroy` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.destroyStep` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.reconcile` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `servers.issueEnrollment` | **any signed-in caller** — floor, read gate 2; standing not graded |
 | `sessions.revokeOthers` | **any signed-in caller** — floor, read gate 8; standing not graded |
-| `volumes.usage` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `volumes.prune` | **any signed-in caller** — floor, read gate 2; standing not graded |
-| `workspaces.restore` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `workspaces.members` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `workspaces.addMember` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `workspaces.setMemberRole` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `workspaces.removeMember` | **any signed-in caller** — floor, read gate 1; standing not graded |
+
+### A service hook runs in front of the body (100)
+
+Whether a hook grades the caller is in its source, which this file does not
+read. A named hook says what it is; `anonymous` is a function the app did not
+name, and is as unread as the body.
+
+| Method | Who may call it | Hooks in front |
+| --- | --- | --- |
+| `alerts.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `alerts.events` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `alerts.attachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `alerts.detachChannel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `alerts.acknowledge` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `alerts.resolve` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `api-keys.restore` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
+| `api-keys.revoke` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` → `requireWorkspaceRole` |
+| `api-keys.scopes` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `noKeyManagementByKey` |
+| `apps.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `apps.logs` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `apps.place` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `apps.unplace` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `blueprints.setParams` | **any signed-in caller** — floor, read gate 1; standing not graded | `requireSystemAdmin` |
+| `channels.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `channels.rules` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `channels.test` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `cleanup.usage` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `cleanup.targets` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `cleanup.run` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `cleanup.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
+| `cleanup.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
+| `conduit-targets.restore` | **nothing at the API boundary** — the model declares no `@@gate` | `authenticate` → `requireSystemAdmin` |
+| `dashboards.kinds` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `dashboards.addWidget` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `dashboards.updateWidget` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `dashboards.removeWidget` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `dashboards.reorder` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `deployments.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `deployments.rollback` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `deployments.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
+| `deployments.stepStatus` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
+| `deployments.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
+| `domains.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `domains.uploadCert` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `domains.makePrimary` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `environments.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `environments.setVariable` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `environments.deleteVariable` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `flags.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `flags.setOverride` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `flags.clearOverride` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `flags.resolve` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `hub.overview` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
+| `hub.workspaces` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
+| `hub.users` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
+| `hub.flags` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
+| `hub.setWorkspaceStatus` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
+| `hub.setUserStatus` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
+| `hub.setSystemAdmin` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
+| `hub.createBot` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
+| `hub.setFlag` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
+| `hub-config.current` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
+| `hub-config.save` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
+| `infra.graph` | **nothing at the API boundary** — the model declares no `@@gate` | `sessionScope` |
+| `infra.onboarding` | **nothing at the API boundary** — the model declares no `@@gate` | `sessionScope` |
+| `invitations.resend` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `jobs.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `jobs.trigger` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `jobs.cancel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `jobs.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
+| `jobs.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
+| `metrics-store.read` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
+| `networks.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `networks.members` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `networks.attach` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `networks.detach` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `portal.restore` | **nothing at the API boundary** — the model declares no `@@gate` | `sessionScope` → `anonymous` |
+| `projects.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `recipes.run` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `recipes.runs` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` |
+| `recipes.startRun` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` → `internalOnly` |
+| `recipes.finishRun` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` → `internalOnly` |
+| `registry.repositories` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `secrets.restore` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` |
+| `secrets.verify` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `servers.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `servers.events` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `servers.feed` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `servers.sync` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `servers.logEvent` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
+| `servers.metrics` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `servers.reboot` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `servers.drain` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `servers.undrain` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `servers.catalog` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `servers.providers` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `servers.provision` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `servers.provisionStep` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
+| `servers.destroy` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `servers.destroyStep` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
+| `servers.reconcile` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `servers.issueEnrollment` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `volumes.usage` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
+| `volumes.prune` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
+| `workspaces.restore` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` |
+| `workspaces.members` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` |
+| `workspaces.addMember` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn` |
+| `workspaces.setMemberRole` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn` |
+| `workspaces.removeMember` | **any signed-in caller** — floor, read gate 1; standing not graded | `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` |
 
 ## App hooks
 
@@ -145,8 +159,8 @@ a method — it applies to each one.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `anonymous` → `anonymous` → `anonymous` |
-| before | `all` | `tenantClaimGuard` → `anonymous` → `anonymous` → `anonymous` → `anonymous` |
-| after | `all` | `anonymous` → `anonymous` |
+| before | `all` | `tenantClaimGuard` → `apiKeyGuard` → `refuseSuspended` → `requireOutpostSignature` → `basecampAuditPreImage` |
+| after | `all` | `basecampAuditLog` → `apiKeyUsage` |
 | error | `all` | `anonymous` |
 
 ## Services
@@ -201,25 +215,25 @@ name when it declares none.
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `attachChannel`, `detachChannel`, `acknowledge`, `resolve`
 - **custom methods** — `events`, `attachChannel`, `detachChannel`, `acknowledge`, `resolve`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `events` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `attachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `detachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `acknowledge` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `resolve` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `events` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `attachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `detachChannel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `acknowledge` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `resolve` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `autoValidate` |
-| before | `patch` | `anonymous` → `autoValidate` |
-| before | `remove` | `anonymous` |
-| before | `attachChannel` | `anonymous` |
-| before | `detachChannel` | `anonymous` |
-| before | `acknowledge` | `anonymous` |
-| before | `resolve` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `create` | `requireWorkspaceRole` → `autoValidate` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `attachChannel` | `requireWorkspaceRole` |
+| before | `detachChannel` | `requireWorkspaceRole` |
+| before | `acknowledge` | `requireWorkspaceRole` |
+| before | `resolve` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -230,20 +244,20 @@ name when it declares none.
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `revoke`, `scopes`
 - **custom methods** — `revoke`, `scopes`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 5; standing not graded
-  - `revoke` — **any signed-in caller** — floor, read gate 5; standing not graded
-  - `scopes` — **any signed-in caller** — floor, read gate 5; standing not graded
+  - `restore` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey`
+  - `revoke` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey` → `requireWorkspaceRole`
+  - `scopes` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `noKeyManagementByKey`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` → `noKeyManagementByKey` |
+| before | `all` | `sessionScope` → `noKeyManagementByKey` |
 | before | `find` | `captureStatus` → `autoFilter` → `autoSort` |
-| before | `create` | `anonymous` → `stampKey` → `autoValidate` |
-| before | `patch` | `anonymous` → `autoValidate` |
-| before | `remove` | `anonymous` |
-| before | `revoke` | `anonymous` |
+| before | `create` | `requireWorkspaceRole` → `stampKey` → `autoValidate` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `revoke` | `requireWorkspaceRole` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
 | before | `update` | `autoValidate` |
@@ -253,21 +267,21 @@ name when it declares none.
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `logs`, `place`, `unplace`
 - **custom methods** — `logs`, `place`, `unplace`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `logs` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `place` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `unplace` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `logs` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `place` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `unplace` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `deriveSlug` → `autoValidate` |
-| before | `patch` | `anonymous` → `autoValidate` |
-| before | `remove` | `anonymous` |
-| before | `place` | `anonymous` |
-| before | `unplace` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `create` | `requireWorkspaceRole` → `deriveSlug` → `autoValidate` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `place` | `requireWorkspaceRole` |
+| before | `unplace` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -280,7 +294,7 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` → `anonymous` |
+| before | `all` | `sessionScope` → `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -295,7 +309,7 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
+| before | `all` | `requireSystemAdmin` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -309,15 +323,15 @@ name when it declares none.
 - **custom methods** — `categories`, `setParams`
 - **who may call** —
   - `categories` — **any signed-in caller** — floor, read gate 1; standing not graded
-  - `setParams` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `setParams` — **any signed-in caller** — floor, read gate 1; standing not graded; then `requireSystemAdmin`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `create` | `anonymous` → `refuseInlineParams` → `autoValidate` |
-| before | `patch` | `anonymous` → `refuseInlineParams` → `autoValidate` |
-| before | `remove` | `anonymous` |
-| before | `setParams` | `anonymous` |
+| before | `create` | `requireSystemAdmin` → `refuseInlineParams` → `autoValidate` |
+| before | `patch` | `requireSystemAdmin` → `refuseInlineParams` → `autoValidate` |
+| before | `remove` | `requireSystemAdmin` |
+| before | `setParams` | `requireSystemAdmin` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -328,19 +342,19 @@ name when it declares none.
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `rules`, `test`
 - **custom methods** — `rules`, `test`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `rules` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `test` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `rules` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `test` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `stampChannel` → `autoValidate` |
-| before | `patch` | `anonymous` → `autoValidate` |
-| before | `remove` | `anonymous` |
-| before | `test` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `create` | `requireWorkspaceRole` → `stampChannel` → `autoValidate` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `test` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -351,21 +365,21 @@ name when it declares none.
 - **methods** — `find`, `get`, `usage`, `targets`, `run`, `startRun`, `finishRun`, `report`
 - **custom methods** — `usage`, `targets`, `run`, `startRun`, `finishRun`, `report`
 - **who may call** —
-  - `usage` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `targets` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `run` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `finishRun` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `usage` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `targets` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `run` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
+  - `finishRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
   - `report` — anyone, a stranger included — declared `gate: 0`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `run` | `anonymous` |
-| before | `startRun` | `anonymous` |
-| before | `finishRun` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `run` | `requireWorkspaceRole` |
+| before | `startRun` | `internalOnly` |
+| before | `finishRun` | `internalOnly` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -377,12 +391,12 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **who may call** —
-  - `restore` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `restore` — **nothing at the API boundary** — the model declares no `@@gate`; then `authenticate` → `requireSystemAdmin`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `authenticate` → `anonymous` |
+| before | `all` | `authenticate` → `requireSystemAdmin` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -409,24 +423,24 @@ name when it declares none.
 - **methods** — `find`, `get`, `create`, `patch`, `remove`, `kinds`, `addWidget`, `updateWidget`, `removeWidget`, `reorder`
 - **custom methods** — `kinds`, `addWidget`, `updateWidget`, `removeWidget`, `reorder`
 - **who may call** —
-  - `kinds` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `addWidget` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `updateWidget` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `removeWidget` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `reorder` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `kinds` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `addWidget` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `updateWidget` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `removeWidget` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `reorder` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `stampDashboard` → `autoValidate` |
-| before | `patch` | `anonymous` → `autoValidate` |
-| before | `remove` | `anonymous` |
-| before | `addWidget` | `anonymous` |
-| before | `updateWidget` | `anonymous` |
-| before | `removeWidget` | `anonymous` |
-| before | `reorder` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `create` | `requireWorkspaceRole` → `stampDashboard` → `autoValidate` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `addWidget` | `requireWorkspaceRole` |
+| before | `updateWidget` | `requireWorkspaceRole` |
+| before | `removeWidget` | `requireWorkspaceRole` |
+| before | `reorder` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -437,23 +451,23 @@ name when it declares none.
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `rollback`, `startRun`, `stepStatus`, `finishRun`
 - **custom methods** — `rollback`, `startRun`, `stepStatus`, `finishRun`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `rollback` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `stepStatus` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `finishRun` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `rollback` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
+  - `stepStatus` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
+  - `finishRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `autoValidate` |
-| before | `patch` | `anonymous` → `autoValidate` |
-| before | `remove` | `anonymous` |
-| before | `startRun` | `anonymous` |
-| before | `stepStatus` | `anonymous` |
-| before | `finishRun` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `create` | `requireWorkspaceRole` → `autoValidate` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `startRun` | `internalOnly` |
+| before | `stepStatus` | `internalOnly` |
+| before | `finishRun` | `internalOnly` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -464,20 +478,20 @@ name when it declares none.
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `uploadCert`, `makePrimary`
 - **custom methods** — `uploadCert`, `makePrimary`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `uploadCert` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `makePrimary` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `uploadCert` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `makePrimary` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `autoValidate` |
-| before | `patch` | `anonymous` → `autoValidate` |
-| before | `remove` | `anonymous` |
-| before | `uploadCert` | `anonymous` |
-| before | `makePrimary` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `create` | `requireWorkspaceRole` → `autoValidate` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `uploadCert` | `requireWorkspaceRole` |
+| before | `makePrimary` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -488,20 +502,20 @@ name when it declares none.
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `setVariable`, `deleteVariable`
 - **custom methods** — `setVariable`, `deleteVariable`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `setVariable` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `deleteVariable` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `setVariable` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `deleteVariable` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `deriveSlug` → `autoValidate` |
-| before | `patch` | `anonymous` → `autoValidate` |
-| before | `remove` | `anonymous` |
-| before | `setVariable` | `anonymous` |
-| before | `deleteVariable` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `create` | `requireWorkspaceRole` → `deriveSlug` → `autoValidate` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `setVariable` | `requireWorkspaceRole` |
+| before | `deleteVariable` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -512,21 +526,21 @@ name when it declares none.
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `setOverride`, `clearOverride`, `resolve`
 - **custom methods** — `setOverride`, `clearOverride`, `resolve`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `setOverride` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `clearOverride` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `resolve` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `setOverride` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `clearOverride` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `resolve` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `stampFlag` → `autoValidate` |
-| before | `patch` | `anonymous` → `autoValidate` |
-| before | `remove` | `anonymous` |
-| before | `setOverride` | `anonymous` |
-| before | `clearOverride` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `create` | `requireWorkspaceRole` → `stampFlag` → `autoValidate` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `setOverride` | `requireWorkspaceRole` |
+| before | `clearOverride` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -539,7 +553,7 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
+| before | `all` | `sessionScope` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -552,20 +566,20 @@ name when it declares none.
 - **methods** — `overview`, `workspaces`, `users`, `flags`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
 - **custom methods** — `overview`, `workspaces`, `users`, `flags`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
 - **who may call** —
-  - `overview` — **nothing at the API boundary** — the model declares no `@@gate`
-  - `workspaces` — **nothing at the API boundary** — the model declares no `@@gate`
-  - `users` — **nothing at the API boundary** — the model declares no `@@gate`
-  - `flags` — **nothing at the API boundary** — the model declares no `@@gate`
-  - `setWorkspaceStatus` — **nothing at the API boundary** — the model declares no `@@gate`
-  - `setUserStatus` — **nothing at the API boundary** — the model declares no `@@gate`
-  - `setSystemAdmin` — **nothing at the API boundary** — the model declares no `@@gate`
-  - `createBot` — **nothing at the API boundary** — the model declares no `@@gate`
-  - `setFlag` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `overview` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
+  - `workspaces` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
+  - `users` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
+  - `flags` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
+  - `setWorkspaceStatus` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
+  - `setUserStatus` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
+  - `setSystemAdmin` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
+  - `createBot` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
+  - `setFlag` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
+| before | `all` | `requireSystemAdmin` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -578,13 +592,13 @@ name when it declares none.
 - **methods** — `current`, `save`
 - **custom methods** — `current`, `save`
 - **who may call** —
-  - `current` — **any signed-in caller** — floor, read gate 7; standing not graded
-  - `save` — **any signed-in caller** — floor, read gate 7; standing not graded
+  - `current` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`
+  - `save` — **any signed-in caller** — floor, read gate 7; standing not graded; then `requireSystemAdmin`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
+| before | `all` | `requireSystemAdmin` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -597,13 +611,13 @@ name when it declares none.
 - **methods** — `graph`, `onboarding`
 - **custom methods** — `graph`, `onboarding`
 - **who may call** —
-  - `graph` — **nothing at the API boundary** — the model declares no `@@gate`
-  - `onboarding` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `graph` — **nothing at the API boundary** — the model declares no `@@gate`; then `sessionScope`
+  - `onboarding` — **nothing at the API boundary** — the model declares no `@@gate`; then `sessionScope`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
+| before | `all` | `sessionScope` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -616,7 +630,7 @@ name when it declares none.
 - **methods** — `find`, `create`, `remove`, `resend`, `preview`, `accept`
 - **custom methods** — `resend`, `preview`, `accept`
 - **who may call** —
-  - `resend` — **any signed-in caller** — floor, read gate 5; standing not graded
+  - `resend` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `requireWorkspaceRole`
   - `preview` — anyone, a stranger included — declared `gate: 0`
   - `accept` — anyone, a stranger included — declared `gate: 0`
 - **broadcasts on** — `(computed)`
@@ -624,10 +638,10 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `stampInvitation` → `anonymous` → `autoValidate` |
-| before | `resend` | `anonymous` |
-| before | `remove` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `create` | `requireWorkspaceRole` → `stampInvitation` → `refuseGrantAboveOwn` → `autoValidate` |
+| before | `resend` | `requireWorkspaceRole` |
+| before | `remove` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -639,24 +653,24 @@ name when it declares none.
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `trigger`, `cancel`, `startRun`, `finishRun`
 - **custom methods** — `trigger`, `cancel`, `startRun`, `finishRun`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `trigger` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `cancel` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `finishRun` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `trigger` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `cancel` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `startRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
+  - `finishRun` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `autoValidate` |
-| before | `patch` | `anonymous` → `autoValidate` |
-| before | `remove` | `anonymous` |
-| before | `trigger` | `anonymous` |
-| before | `startRun` | `anonymous` |
-| before | `finishRun` | `anonymous` |
-| before | `cancel` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `create` | `requireWorkspaceRole` → `autoValidate` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `trigger` | `requireWorkspaceRole` |
+| before | `startRun` | `internalOnly` |
+| before | `finishRun` | `internalOnly` |
+| before | `cancel` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -668,12 +682,12 @@ name when it declares none.
 - **custom methods** — `read`
 - **also answers to** — `metrics`
 - **who may call** —
-  - `read` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `read` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
+| before | `all` | `requireSystemAdmin` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -686,21 +700,21 @@ name when it declares none.
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `members`, `attach`, `detach`
 - **custom methods** — `members`, `attach`, `detach`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `members` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `attach` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `detach` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `members` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `attach` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `detach` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `deriveSlug` → `autoValidate` |
-| before | `patch` | `anonymous` → `autoValidate` |
-| before | `remove` | `anonymous` |
-| before | `attach` | `anonymous` |
-| before | `detach` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `create` | `requireWorkspaceRole` → `deriveSlug` → `autoValidate` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `attach` | `requireWorkspaceRole` |
+| before | `detach` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -728,12 +742,12 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **who may call** —
-  - `restore` — **nothing at the API boundary** — the model declares no `@@gate`
+  - `restore` — **nothing at the API boundary** — the model declares no `@@gate`; then `sessionScope` → `anonymous`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` → `anonymous` |
+| before | `all` | `sessionScope` → `anonymous` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -745,16 +759,16 @@ name when it declares none.
 
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `deriveSlug` → `autoValidate` |
-| before | `patch` | `anonymous` → `autoValidate` |
-| before | `remove` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `create` | `requireWorkspaceRole` → `deriveSlug` → `autoValidate` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -765,22 +779,22 @@ name when it declares none.
 - **methods** — `find`, `get`, `create`, `patch`, `remove`, `run`, `runs`, `startRun`, `finishRun`
 - **custom methods** — `run`, `runs`, `startRun`, `finishRun`
 - **who may call** —
-  - `run` — **any signed-in caller** — floor, read gate 4; standing not graded
-  - `runs` — **any signed-in caller** — floor, read gate 4; standing not graded
-  - `startRun` — **any signed-in caller** — floor, read gate 4; standing not graded
-  - `finishRun` — **any signed-in caller** — floor, read gate 4; standing not graded
+  - `run` — **any signed-in caller** — floor, read gate 4; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `runs` — **any signed-in caller** — floor, read gate 4; standing not graded; then `sessionScope`
+  - `startRun` — **any signed-in caller** — floor, read gate 4; standing not graded; then `sessionScope` → `internalOnly`
+  - `finishRun` — **any signed-in caller** — floor, read gate 4; standing not graded; then `sessionScope` → `internalOnly`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `stampRecipe` → `autoValidate` |
-| before | `patch` | `anonymous` → `autoValidate` |
-| before | `remove` | `anonymous` |
-| before | `run` | `anonymous` |
-| before | `startRun` | `anonymous` |
-| before | `finishRun` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `create` | `requireWorkspaceRole` → `stampRecipe` → `autoValidate` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `run` | `requireWorkspaceRole` |
+| before | `startRun` | `internalOnly` |
+| before | `finishRun` | `internalOnly` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -791,12 +805,12 @@ name when it declares none.
 - **methods** — `find`, `get`, `repositories`
 - **custom methods** — `repositories`
 - **who may call** —
-  - `repositories` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `repositories` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
+| before | `all` | `sessionScope` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -809,18 +823,18 @@ name when it declares none.
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `verify`
 - **custom methods** — `verify`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 5; standing not graded
-  - `verify` — **any signed-in caller** — floor, read gate 5; standing not graded
+  - `restore` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope`
+  - `verify` — **any signed-in caller** — floor, read gate 5; standing not graded; then `sessionScope` → `requireWorkspaceRole`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `stampSecret` → `autoValidate` |
-| before | `patch` | `anonymous` → `autoValidate` |
-| before | `remove` | `anonymous` |
-| before | `verify` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `create` | `requireWorkspaceRole` → `stampSecret` → `autoValidate` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `verify` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -831,40 +845,40 @@ name when it declares none.
 - **methods** — `find`, `get`, `create`, `update`, `patch`, `remove`, `restore`, `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `heartbeat`
 - **custom methods** — `events`, `feed`, `sync`, `logEvent`, `metrics`, `reboot`, `drain`, `undrain`, `catalog`, `providers`, `provision`, `provisionStep`, `destroy`, `destroyStep`, `reconcile`, `issueEnrollment`, `heartbeat`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `events` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `feed` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `sync` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `logEvent` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `metrics` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `reboot` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `drain` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `undrain` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `catalog` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `providers` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `provision` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `provisionStep` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `destroy` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `destroyStep` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `reconcile` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `issueEnrollment` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `restore` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `events` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `feed` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `sync` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `logEvent` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
+  - `metrics` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `reboot` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `drain` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `undrain` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `catalog` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `providers` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `provision` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `provisionStep` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
+  - `destroy` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `destroyStep` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `internalOnly`
+  - `reconcile` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
+  - `issueEnrollment` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
   - `heartbeat` — anyone, a stranger included — declared `gate: 0`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `create` | `anonymous` → `deriveSlug` → `autoValidate` |
-| before | `patch` | `anonymous` → `autoValidate` |
-| before | `remove` | `anonymous` |
-| before | `sync` | `anonymous` |
-| before | `catalog` | `anonymous` |
-| before | `logEvent` | `anonymous` |
-| before | `provisionStep` | `anonymous` |
-| before | `destroyStep` | `anonymous` |
-| before | `reconcile` | `anonymous` |
-| before | `issueEnrollment` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `create` | `requireWorkspaceRole` → `deriveSlug` → `autoValidate` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `sync` | `requireWorkspaceRole` |
+| before | `catalog` | `requireWorkspaceRole` |
+| before | `logEvent` | `internalOnly` |
+| before | `provisionStep` | `internalOnly` |
+| before | `destroyStep` | `internalOnly` |
+| before | `reconcile` | `requireWorkspaceRole` |
+| before | `issueEnrollment` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -892,17 +906,17 @@ name when it declares none.
 - **methods** — `find`, `get`, `remove`, `usage`, `prune`, `report`
 - **custom methods** — `usage`, `prune`, `report`
 - **who may call** —
-  - `usage` — **any signed-in caller** — floor, read gate 2; standing not graded
-  - `prune` — **any signed-in caller** — floor, read gate 2; standing not graded
+  - `usage` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope`
+  - `prune` — **any signed-in caller** — floor, read gate 2; standing not graded; then `sessionScope` → `requireWorkspaceRole`
   - `report` — anyone, a stranger included — declared `gate: 0`
 - **broadcasts on** — `(computed)`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `anonymous` |
-| before | `remove` | `anonymous` |
-| before | `prune` | `anonymous` |
+| before | `all` | `sessionScope` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `prune` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -915,22 +929,22 @@ name when it declares none.
 - **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`, `members`, `addMember`, `setMemberRole`, `removeMember`
 - **custom methods** — `members`, `addMember`, `setMemberRole`, `removeMember`
 - **who may call** —
-  - `restore` — **any signed-in caller** — floor, read gate 1; standing not graded
-  - `members` — **any signed-in caller** — floor, read gate 1; standing not graded
-  - `addMember` — **any signed-in caller** — floor, read gate 1; standing not graded
-  - `setMemberRole` — **any signed-in caller** — floor, read gate 1; standing not graded
-  - `removeMember` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `restore` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`
+  - `members` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace`
+  - `addMember` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn`
+  - `setMemberRole` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole` → `refuseGrantAboveOwn`
+  - `removeMember` — **any signed-in caller** — floor, read gate 1; standing not graded; then `authenticate` → `stampSelfAsWorkspace` → `requireWorkspaceRole`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
 | before | `all` | `authenticate` → `stampSelfAsWorkspace` |
 | before | `create` | `stampOwnership` → `autoValidate` |
-| before | `patch` | `anonymous` → `autoValidate` |
-| before | `remove` | `anonymous` |
-| before | `addMember` | `anonymous` → `anonymous` |
-| before | `setMemberRole` | `anonymous` → `anonymous` |
-| before | `removeMember` | `anonymous` |
+| before | `patch` | `requireWorkspaceRole` → `autoValidate` |
+| before | `remove` | `requireWorkspaceRole` |
+| before | `addMember` | `requireWorkspaceRole` → `refuseGrantAboveOwn` |
+| before | `setMemberRole` | `requireWorkspaceRole` → `refuseGrantAboveOwn` |
+| before | `removeMember` | `requireWorkspaceRole` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |

@@ -60,7 +60,7 @@ trait <Name> {
 }
 ```
 
-Inside a trait you can put almost anything you'd put in a model: scalar fields with attributes, optional fields, arrays, relations, validators, transforms, encrypted fields, computed fields, `@from` derived fields, model-level policies (`@@allow` / `@@deny`), `@@gate`, `@@softDelete`, `@@log`, `@@index`, `@@unique`, `@@strict` / `@@noStrict`, even other traits.
+Inside a trait you can put almost anything you'd put in a model: scalar fields with attributes, optional fields, arrays, relations, validators, transforms, encrypted fields, computed fields, `@from` derived fields, model-level policies (`@@allow` / `@@deny`), `@@gate`, `@@softDelete`, `@@log`, `@@index`, `@@unique`, `@@noStrict`, even other traits.
 
 What you **can't** put in a trait:
 

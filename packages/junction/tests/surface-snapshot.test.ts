@@ -41,15 +41,16 @@ async function buildApp() {
     name:    'orders',
     model:   'Order',
     channel: 'orders',
-    methods: ['find', 'get', 'create', 'pay'],
+    methods: ['find', 'get', 'create', 'pay', 'ship'],
     async find()   { return { data: [], total: 0, limit: 10, skip: 0 } },
     async get()    { return {} },
     async create() { return {} },
     async pay()    { return {} },
+    async ship()   { return {} },
   })
 
   orders.hooks({
-    before: { create: [requireAuth, stampOwner] },
+    before: { create: [requireAuth, stampOwner], ship: [requireAuth] },
     after:  { all: [audit] },
   })
 
@@ -66,7 +67,7 @@ describe('junction surface', () => {
 
     // `pay` is a function key beside `find`/`get`/`create`. Nothing in the file
     // says which of them is CRUD; `collectCustomMethods` is what knows.
-    expect(svc.customMethods).toEqual(['pay'])
+    expect(svc.customMethods).toEqual(['pay', 'ship'])
     expect(svc.methods).toContain('pay')
     expect(svc.channel).toEqual(['orders'])
     expect(svc.model).toBe('Order')
@@ -141,6 +142,18 @@ describe('junction surface', () => {
     expect(section).toContain('| `orders.pay` | **presence only**')
     // The per-service line carries the same sentence, so the two cannot disagree.
     expect(out).toContain('  - `pay` — **presence only**')
+
+    // Split by what stands in front of the body. `ship` has an app hook there
+    // and `pay` has only the floor, so the two land in different tables — and a
+    // derived hook (`gateAuth`, on both) counts for neither, or every method
+    // would read as hooked.
+    const bare   = section.slice(section.indexOf('### Nothing in front'), section.indexOf('### A service hook'))
+    const hooked = section.slice(section.indexOf('### A service hook'))
+    expect(bare).toContain('| `orders.pay` |')
+    expect(bare).not.toContain('`orders.ship`')
+    expect(hooked).toContain('| `orders.ship` | **presence only** — floor, the model\'s read gate; standing not graded | `requireAuth` |')
+    expect(hooked).not.toContain('`orders.pay`')
+    expect(out).toContain('  - `ship` — **presence only** — floor, the model\'s read gate; standing not graded; then `requireAuth`')
 
     await app.stop()
   })

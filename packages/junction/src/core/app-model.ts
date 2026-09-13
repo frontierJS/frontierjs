@@ -124,7 +124,9 @@ function gradeCustomMethods(
   const out: Record<string, CustomMethodGrade> = {}
   for (const method of d.methods) {
     if (isCrudGatedMethod(method)) continue
-    out[method] = customMethodGrade(method, declared, levels)
+    // A declaration with no hook to enforce it is not a grade.
+    out[method] = gated ? customMethodGrade(method, declared, levels)
+                        : { source: 'unchecked', level: null, graded: false }
   }
   return out
 }

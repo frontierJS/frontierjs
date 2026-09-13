@@ -65,7 +65,7 @@ export function scopeFor(service: string, method: string): string {
 // what it was issued with.
 
 export function apiKeyGuard(app: BasecampApp): Hook {
-  return async (ctx: ServiceContext): Promise<void> => {
+  return async function apiKeyGuard(ctx: ServiceContext): Promise<void> {
     const user = $.auth?.user as
       { authMethod?: string; scopes?: string[]; credentialId?: string } | undefined
 
@@ -116,7 +116,7 @@ export function apiKeyGuard(app: BasecampApp): Hook {
 // is the same signal read from the other end.
 
 export function apiKeyUsage(app: BasecampApp): Hook {
-  return async (): Promise<void> => {
+  return async function apiKeyUsage(): Promise<void> {
     const id = $.locals.apiKeyId as string | undefined
     if (!id) return
 

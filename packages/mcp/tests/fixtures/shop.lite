@@ -33,7 +33,10 @@ model Order {
     pay:    pending         -> paid,
     ship:   paid            -> shipped,
     refund: paid            -> refunded @gate(5),
-    cancel: [pending, paid] -> cancelled
+    cancel: [pending, paid] -> cancelled,
+    // The application's decision on a person's request — `example`'s
+    // `invoices.settle` shape: @system on a model a person updates.
+    lapse:  pending         -> cancelled @system
   )
 }
 

@@ -54,7 +54,6 @@ export interface DeclaredMove {
   from:    string[]
   to:      string
   gate:    number | null
-  system:  boolean
 }
 
 /**
@@ -91,8 +90,7 @@ export interface ServiceShape {
  */
 export type Verdict =
   | 'model-gate'    // the model's @@gate position for this operation
-  | 'move-floor'    // max(model update, the move's own @gate)
-  | 'move-system'   // a @system move — no caller, at any standing
+  | 'move-floor'    // max(model update, the move's own @gate), @system or not
   | 'ungraded'      // nothing in the seed says; permissive by Invariant 6
 
 export interface Tool {
@@ -131,7 +129,6 @@ export interface ToolInput {
 }
 
 export interface Withheld extends Tool {
-  /** `move-system` is absent from every standing; the rest are level-dependent. */
   verdict: Exclude<Verdict, 'ungraded'>
   needs:   number | null
 }
@@ -425,14 +422,11 @@ export function projectTools(
         continue
       }
 
-      if (move.system) {
-        // A `@system` move is the verb half of LOCKED: `getLevel` is clamped to
-        // 7, so no caller passes and only `asSystem()` bypasses. Withheld from
-        // every standing, which is the largest subtraction available here.
-        withheld.push({ ...base, kind: 'move', verdict: 'move-system', needs: null })
-        continue
-      }
-
+      // `@system` is not part of the grade. It says whose DECISION a move is,
+      // and the method that lifts it does so on the caller's client with
+      // `{ system: true }`, which keeps the gate and every row policy
+      // (`FJS-D150`) — so the floor is the move's, as for any other. Withholding
+      // it from every standing hid `invoices.settle` from the staff who press it.
       const need = moveFloor(gate, move)
       const ok   = need === null ? true : levelPasses(need, level)
       const row  = { ...base, kind: 'move' as const, verdict: 'move-floor' as const, needs: need }

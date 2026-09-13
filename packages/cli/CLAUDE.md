@@ -562,8 +562,8 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   day it matters, so `_steps-revert` calls the same functions `_steps-docker`
   does rather than a copy of them.
 - **`project:map` is one reading presented three ways, and `project:view` is
-  gone.** They were two commands over one tree and they DISAGREED — 54 models
-  against 42, because one counted `$defs` by shape and the fix landed in the
+  gone.** They were two commands over one tree and they DISAGREED on the model
+  count, because one counted `$defs` by shape and the fix landed in the
   other (`FJS-1016`) — and they collected different fields, so *what does this
   project contain* had two answers depending on which you asked. `FJS-D223` one
   scope down, applied rather than re-argued: **one axis, so one flag**, and

@@ -138,10 +138,19 @@ const notesFor    = async () => {
   return await sys.creditNote.findMany({ where: { invoiceId: { in: ids } } })
 }
 
+const periodOf = async (id) => {
+  const s = await sys.subscription.findFirst({ where: { id } })
+  return [Date.parse(s.currentPeriodStart), Date.parse(s.currentPeriodEnd)]
+}
+
 // UPGRADE — more seats, dearer plan. Owes money, so it is an invoice.
 {
   const before = (await invoicesFor()).length
+  const window = await periodOf(sub.id)
   const r = await changePlan(sys, sub.id, { planVersionId: dear.id, quantity: 5 })
+  // The control for `interval.*` below: a same-interval change is a slice of the
+  // period it happens in and must leave that period where it was.
+  t('upgrade.periodDoesNotMove', String(await periodOf(sub.id)) === String(window))
   const after = await invoicesFor()
   const doc   = after[after.length - 1]
   const lines = await sys.invoiceLine.findMany({ where: { invoiceId: doc.id } })
@@ -191,6 +200,74 @@ const notesFor    = async () => {
   t('noop.writesNoDocument', r.kind === 'none' && (await invoicesFor()).length + (await notesFor()).length === before)
 }
 
+// INTERVAL — monthly to yearly, mid-period (`FJS-1103`). Prorating the yearly
+// price over the rest of the month charges half a year for half a month, and
+// renewal at the old end charges the year again. A change of interval is a new
+// period: credit the unused month, charge one whole year from the change.
+const yearlyPlan = await sys.plan.findFirst({ where: { code: 'PROYEAR' } })
+const yearly     = await sys.planVersion.findFirst({ where: { planId: yearlyPlan.id } })
+
+const annual = await sys.subscription.create({ data: {
+  reference:  `SUB-P${RUN}Y`,
+  customerId: customer.id,
+  planVersionId: cheap.id,
+  status:     'active',
+  quantity:   2,
+  currentPeriodStart: periodStart,
+  currentPeriodEnd:   periodEnd,
+  userId:     customer.userId,
+} })
+await issueInvoice(sys, {
+  number:         `INV-P${RUN}Y`,
+  customerId:     customer.id,
+  subscriptionId: annual.id,
+  userId:         customer.userId,
+  periodStart, periodEnd,
+  lines: periodLines({ name: plan.name, quantity: 2, unitAmount: cheap.price, periodStart, periodEnd }),
+})
+const annualInvoices = () => sys.invoice.findMany({ where: { subscriptionId: annual.id }, orderBy: { id: 'asc' } })
+
+{
+  const at = new Date().toISOString()
+  const r  = await changePlan(sys, annual.id, { planVersionId: yearly.id, at })
+  const docs  = await annualInvoices()
+  const doc   = docs[docs.length - 1]
+  const lines = await sys.invoiceLine.findMany({ where: { invoiceId: doc.id } })
+
+  // The oracle for the credit is the pure function over the SAME slice, with
+  // nothing charged against it — so this row is about which slice, not rounding.
+  const unused = prorate({ periodStart, periodEnd, at, name: plan.name,
+    from: { unitAmount: cheap.price, quantity: 2 }, to: { unitAmount: 0, quantity: 2 } }).credit
+  const end = new Date(at); end.setUTCFullYear(end.getUTCFullYear() + 1)
+
+  t('interval.issuesAnInvoice', r.kind === 'invoice' && docs.length === 2)
+  t('interval.linesSumToSubtotal', lines.reduce((n, l) => n + l.amount, 0) === doc.subtotal)
+  t('interval.creditsTheUnusedMonth', lines.filter(l => l.amount < 0).reduce((n, l) => n + l.amount, 0) === -unused)
+  // The bug charged `yearly.price × 2 × fraction` here — a fraction of a YEAR's
+  // price over what was left of a MONTH.
+  t('interval.chargesOneWholeYear', lines.filter(l => l.amount > 0).reduce((n, l) => n + l.amount, 0) === yearly.price * 2)
+  t('interval.periodIsReanchored', String(await periodOf(annual.id)) === String([Date.parse(at), end.getTime()]))
+  t('interval.documentCoversTheYear', Date.parse(doc.periodEnd) === end.getTime())
+}
+
+// And back again is refused until renewal, and refused BEFORE anything is
+// written — paired with a same-interval change on the same yearly subscription,
+// which must still go through, or a refusal of everything would pass.
+{
+  const before = (await annualInvoices()).length
+  let refusal = null
+  try { await changePlan(sys, annual.id, { planVersionId: cheap.id }) }
+  catch (e) { refusal = e }
+  const s = await sys.subscription.findFirst({ where: { id: annual.id } })
+
+  t('interval.yearlyToMonthlyRefused', refusal?.status === 409)
+  t('interval.refusalWritesNothing', s.planVersionId === yearly.id && (await annualInvoices()).length === before)
+
+  const r = await changePlan(sys, annual.id, { quantity: 3 })
+  t('interval.yearlySeatChangeStillAllowed', r.kind === 'invoice'
+    && (await sys.subscription.findFirst({ where: { id: annual.id } })).quantity === 3)
+}
+
 // ─── Report ───────────────────────────────────────────────────────────────
 
 
@@ -235,6 +312,7 @@ const expected = {
   'proration.beforeTheStartIsAWholePeriod': true,
   'proration.afterTheEndIsNothing': true,
   'proration.allocateNeverLosesAUnit': true,
+  'upgrade.periodDoesNotMove': true,
   'upgrade.issuesAnInvoice': true,
   'upgrade.linesSumToSubtotal': true,
   'upgrade.subtotalIsTheNet': true,
@@ -246,6 +324,15 @@ const expected = {
   'downgrade.stillMovedTheArrangement': true,
   'document.negativeSubtotalRefused': true,
   'noop.writesNoDocument': true,
+  'interval.issuesAnInvoice': true,
+  'interval.linesSumToSubtotal': true,
+  'interval.creditsTheUnusedMonth': true,
+  'interval.chargesOneWholeYear': true,
+  'interval.periodIsReanchored': true,
+  'interval.documentCoversTheYear': true,
+  'interval.yearlyToMonthlyRefused': true,
+  'interval.refusalWritesNothing': true,
+  'interval.yearlySeatChangeStillAllowed': true,
 }
 
 process.exit(report(got, expected))

@@ -2472,9 +2472,14 @@ function customGateFloor(levels: Record<GateOp, number>): number {
  *              A method writing through `asSystem()` from here is reachable by
  *              every caller who can sign in, row policies included, because the
  *              Data boundary never sees who asked
- *   unchecked  the service's model declares no `@@gate`, or its accessor names
- *              no model — nothing is checked at the API boundary, a declared
- *              level included
+ *   unchecked  no declaration, and the service's model declares no `@@gate` or
+ *              its accessor names no model — there is no floor to derive, so
+ *              nothing is checked at the API boundary
+ *
+ * A declaration is read before the model, because it needs nothing from one:
+ * the caller's standing is graded against the number the author wrote. Reading
+ * the model first made `gate: 5` on a modelless service a typed, reported,
+ * inert declaration (`FJS-1087`).
  *
  * `levels` is what `_gateLevels` answered: a record, or `null` for no gate.
  * `undefined` is a describer that holds no schema — `strategy database` has no
@@ -2494,8 +2499,8 @@ export function customMethodGrade(
   declared: Record<string, number>,
   levels:   Record<GateOp, number> | null | undefined,
 ): CustomMethodGrade {
-  if (levels === null) return { source: 'unchecked', level: declared[method] ?? null, graded: false }
   if (declared[method] !== undefined) return { source: 'declared', level: declared[method], graded: true }
+  if (levels === null) return { source: 'unchecked', level: null, graded: false }
   return { source: 'floor', level: levels ? customGateFloor(levels) : null, graded: false }
 }
 
@@ -2581,7 +2586,7 @@ export function gateAuthAround(
             // by something that is NOT a session — a signed machine-to-machine
             // call, an outpost heartbeat — has no principal by design and takes
             // the floor for a reason that does not apply to it.
-            warnFloorRefusal(ctx.service, method, need)
+            if (grade.source === 'floor') warnFloorRefusal(ctx.service, method, need)
             throw new Unauthorized('Authentication required')
           }
           // The LEVEL is only graded where it was declared. The floor is a

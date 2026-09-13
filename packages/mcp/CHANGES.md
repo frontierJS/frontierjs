@@ -1,5 +1,17 @@
 # Changes — @frontierjs/mcp
 
+## 2026-09-12 — `@system` on a move is not a grade
+
+`FJS-1087`. `move-system` withheld every `@system` move from every standing, reading the
+attribute as *no caller*. `FJS-D150` rules the opposite: `@system` says whose DECISION a move
+is, `@gate` how senior a caller must be, and the method that lifts it does so on the caller's
+client with `{ system: true }`, which keeps the gate and every row policy. So a `@system` move
+is `move-floor` like any other and the verdict is gone. Over `example` the tools withheld from
+everybody went from 4 — `invoices.settle`, `payRuns.calculate`, `payRuns.pay`,
+`subscriptions.cancel` — to none; staff (5) see 207 of 209, a user (4) 122. The fixture gains
+`Order.lapse`, `@system` on a model updated at 4, offered at 4 and withheld at 3, with
+`invoices.issue` on a model written at 8 as the control. Restoring the withhold reds that row.
+
 ## 2026-09-12 — a tool says what to send, and the audience is not a parameter
 
 `projectTools` takes `SchemaViews` rather than a `$defs` map, and every tool

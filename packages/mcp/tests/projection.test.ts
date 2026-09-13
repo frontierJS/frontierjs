@@ -36,7 +36,7 @@ const VIEWS = schemaViews(parsed.schema, generateJsonSchema as never)
 const DEFS  = VIEWS.full
 
 const SERVICES: ServiceShape[] = [
-  { name: 'orders',   model: 'Order',   methods: ['find', 'get', 'create', 'patch', 'remove', 'pay', 'ship', 'refund'] },
+  { name: 'orders',   model: 'Order',   methods: ['find', 'get', 'create', 'patch', 'remove', 'pay', 'ship', 'refund', 'lapse'] },
   { name: 'invoices', model: 'Invoice', methods: ['find', 'get', 'issue', 'void'] },
   { name: 'ledger',   model: 'Ledger',  methods: ['find', 'get', 'create', 'patch', 'remove'] },
   { name: 'carts',    model: 'Cart',    methods: ['find', 'get', 'open', 'checkout'] },
@@ -157,15 +157,20 @@ describe('a declared move grades the verb that drives it', () => {
     expect(at(naive).has('invoices.void')).toBe(false)
   })
 
-  test('a @system move is withheld from every standing', () => {
-    for (const level of [0, 4, 5, 6, 7, 8]) {
-      expect(at(level).hid('invoices.issue'), `issue at ${level}`).toBe(true)
-    }
-    expect(at(8).why('invoices.issue')?.verdict).toBe('move-system')
+  test('a @system move takes the same floor as any move — @system is whose decision, not how senior', () => {
+    // `FJS-D150`: the method lifts @system on the CALLER's client, which keeps
+    // the gate. Withheld from every standing, `example`'s `invoices.settle`
+    // was hidden from the staff who press it.
+    expect(at(3).hid('orders.lapse')).toBe(true)
+    expect(at(4).has('orders.lapse')).toBe(true)
+    expect(at(4).why('orders.lapse')?.verdict).toBe('move-floor')
+    expect(at(4).why('orders.lapse')?.needs).toBe(4)
 
-    // The pair: the same service still offers what it should at that standing.
-    expect(at(8).has('invoices.void')).toBe(true)
-    expect(at(1).has('invoices.find')).toBe(true)
+    // The control: on a model written at 8 the same attribute still leaves the
+    // move to the application alone, because the FLOOR says so.
+    expect(at(7).hid('invoices.issue')).toBe(true)
+    expect(at(8).has('invoices.issue')).toBe(true)
+    expect(at(8).why('invoices.issue')?.needs).toBe(8)
   })
 })
 

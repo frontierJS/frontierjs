@@ -23,6 +23,11 @@ in, whatever the row policies say, because the Data boundary never sees who
 asked. Each row below is either meant — a read-shaped method, a scoped write —
 or wants `methods: [{ method, gate }]`.
 
+### Nothing in front of the body but the floor (19)
+
+The list to read first: only the method body stands between a signed-in caller
+and what it does.
+
 | Method | Who may call it |
 | --- | --- |
 | `account.changePassword` | **nothing at the API boundary** — the model declares no `@@gate` |
@@ -36,31 +41,40 @@ or wants `methods: [{ method, gate }]`.
 | `customers.segment` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `customFields.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
 | `discounts.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `employees.setPay` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `employees.payOn` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `inventory.levels` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `inventory.receive` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `inventory.adjust` | **any signed-in caller** — floor, read gate 5; standing not graded |
 | `invoices.settle` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `invoices.void` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `orders.pay` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `orders.ship` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `orders.refund` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `orders.cancel` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `orders.paymentCode` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `orders.recordTracking` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `paymentMethods.startSetup` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `payments.refund` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `payments.record` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `payRuns.calculate` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `payRuns.calculateNow` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `payRuns.revert` | **any signed-in caller** — floor, read gate 5; standing not graded |
-| `payRuns.pay` | **any signed-in caller** — floor, read gate 5; standing not graded |
 | `sessions.revokeOthers` | **any signed-in caller** — floor, read gate 8; standing not graded |
 | `shopfront.settings` | **nothing at the API boundary** — the model declares no `@@gate` |
 | `subscriptions.cancel` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `subscriptions.resume` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `subscriptions.changePlan` | **any signed-in caller** — floor, read gate 1; standing not graded |
+
+### A service hook runs in front of the body (17)
+
+Whether a hook grades the caller is in its source, which this file does not
+read. A named hook says what it is; `anonymous` is a function the app did not
+name, and is as unread as the body.
+
+| Method | Who may call it | Hooks in front |
+| --- | --- | --- |
+| `employees.setPay` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
+| `employees.payOn` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
+| `inventory.levels` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
+| `inventory.receive` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
+| `inventory.adjust` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
+| `orders.pay` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
+| `orders.ship` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
+| `orders.refund` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
+| `orders.cancel` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
+| `orders.paymentCode` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
+| `orders.recordTracking` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
+| `payments.refund` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
+| `payments.record` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
+| `payRuns.calculate` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
+| `payRuns.calculateNow` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
+| `payRuns.revert` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
+| `payRuns.pay` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
 
 ## App hooks
 
@@ -276,8 +290,8 @@ name when it declares none.
 - **input** — `payOn` takes `AsAtQuery`
 - **input** — `setPay` takes `EmploymentPay`
 - **who may call** —
-  - `setPay` — **any signed-in caller** — floor, read gate 5; standing not graded
-  - `payOn` — **any signed-in caller** — floor, read gate 5; standing not graded
+  - `setPay` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`
+  - `payOn` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`
 - **broadcasts on** — `employees`
 - **transactional** — `setPay`
 
@@ -300,9 +314,9 @@ name when it declares none.
 - **input** — `adjust` takes `StockAdjustment`
 - **input** — `receive` takes `StockReceipt`
 - **who may call** —
-  - `levels` — **any signed-in caller** — floor, read gate 5; standing not graded
-  - `receive` — **any signed-in caller** — floor, read gate 5; standing not graded
-  - `adjust` — **any signed-in caller** — floor, read gate 5; standing not graded
+  - `levels` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`
+  - `receive` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`
+  - `adjust` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`
 - **transactional** — `receive`, `adjust`
 
 | Phase | Method | Chain |
@@ -420,12 +434,12 @@ name when it declares none.
 - **custom methods** — `pay`, `ship`, `refund`, `cancel`, `paymentCode`, `recordTracking`
 - **input** — `recordTracking` takes `TrackingUpdate`
 - **who may call** —
-  - `pay` — **any signed-in caller** — floor, read gate 1; standing not graded
-  - `ship` — **any signed-in caller** — floor, read gate 1; standing not graded
-  - `refund` — **any signed-in caller** — floor, read gate 1; standing not graded
-  - `cancel` — **any signed-in caller** — floor, read gate 1; standing not graded
-  - `paymentCode` — **any signed-in caller** — floor, read gate 1; standing not graded
-  - `recordTracking` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `pay` — **any signed-in caller** — floor, read gate 1; standing not graded; then `transactionScope`
+  - `ship` — **any signed-in caller** — floor, read gate 1; standing not graded; then `transactionScope`
+  - `refund` — **any signed-in caller** — floor, read gate 1; standing not graded; then `transactionScope`
+  - `cancel` — **any signed-in caller** — floor, read gate 1; standing not graded; then `transactionScope`
+  - `paymentCode` — **any signed-in caller** — floor, read gate 1; standing not graded; then `transactionScope`
+  - `recordTracking` — **any signed-in caller** — floor, read gate 1; standing not graded; then `transactionScope`
 - **broadcasts on** — `orders`
 - **transactional** — `pay`, `refund`
 
@@ -480,8 +494,8 @@ name when it declares none.
 - **custom methods** — `start`, `refund`, `record`
 - **who may call** —
   - `start` — anyone, a stranger included — declared `gate: 0`
-  - `refund` — **any signed-in caller** — floor, read gate 1; standing not graded
-  - `record` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `refund` — **any signed-in caller** — floor, read gate 1; standing not graded; then `transactionScope`
+  - `record` — **any signed-in caller** — floor, read gate 1; standing not graded; then `transactionScope`
 - **broadcasts on** — `payments`
 - **transactional** — `record`
 
@@ -517,10 +531,10 @@ name when it declares none.
 - **custom methods** — `calculate`, `calculateNow`, `revert`, `pay`
 - **also answers to** — `pay-runs`
 - **who may call** —
-  - `calculate` — **any signed-in caller** — floor, read gate 5; standing not graded
-  - `calculateNow` — **any signed-in caller** — floor, read gate 5; standing not graded
-  - `revert` — **any signed-in caller** — floor, read gate 5; standing not graded
-  - `pay` — **any signed-in caller** — floor, read gate 5; standing not graded
+  - `calculate` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`
+  - `calculateNow` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`
+  - `revert` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`
+  - `pay` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`
 - **broadcasts on** — `pay-runs`
 - **transactional** — `calculateNow`, `revert`, `pay`
 

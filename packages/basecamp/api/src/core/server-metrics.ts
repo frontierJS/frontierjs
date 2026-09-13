@@ -145,7 +145,7 @@ export async function recordHealth(
 
 /** The DiskUsage columns these series are computed from. Narrower than the row
  *  on purpose — a reading that needed a column not named here would be reading
- *  the disk report rather than summarising it. */
+ *  the disk report rather than summarizing it. */
 export interface DiskFigures {
   imageBytes:                 number
   buildCacheBytes:            number

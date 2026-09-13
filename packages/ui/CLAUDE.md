@@ -1,7 +1,7 @@
 # ui — package map
 
-**`@frontierjs/ui`** — a Mesa component kit over `@frontierjs/css`. 70
-components, no build step, no utility classes (Invariant 13: style with a tone
+**`@frontierjs/ui`** — a Mesa component kit over `@frontierjs/css`. No
+build step, no utility classes (Invariant 13: style with a tone
 and a treatment, never a color).
 
 `bun run test` runs four node harnesses in order — compile-all → render →
@@ -511,9 +511,8 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   fires `onchange` with the VALUE. `FormField.mesa`'s table adapts per control
   and `FilterBar.mesa` has to do the same. Forwarding the name straight through
   is SILENT — mesa lands an unknown prop as an attribute, so every control draws,
-  every placeholder reads correctly, and nothing writes (`FJS-1046`). It shipped
-  green: the compile test compiled it, the render test rendered it, and the drive
-  had never opened the component.
+  every placeholder reads correctly, and nothing writes (`FJS-1046`). The compile and
+  render tests both pass with it broken; only the drive opens the component.
 - Errors arrive through `toFieldErrors()` (sierra's `field-rules.js`), which is
   the one owner of "a thrown value → per-field messages". `<Form>` calls it and
   knows nothing else about error shapes.

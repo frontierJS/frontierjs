@@ -1,5 +1,15 @@
 # Changes — Basecamp
 
+## 2026-09-12 — every hook factory returns a named function
+
+The thirteen factories in `core/hooks.ts`, `core/session-auth.ts` and `api-keys/scopes.ts` returned
+arrows, so `surface.snapshot.md` printed `sessionScope`, `requireWorkspaceRole` and
+`requireSystemAdmin` as `anonymous` — and with the snapshot now listing the hooks in front of each
+ungraded custom method (`FJS-1087`), an unnamed hook is a row nobody can triage from the file. Each
+returns a function named for its factory: 132 `anonymous` in the snapshot became 6, all app-level or
+inline in `portal`. Of the 111 custom methods on a floor, 11 have nothing in front of the body and
+100 have a named hook. No behavior moved; 406 tests pass.
+
 ## 2026-09-12 — the 110 ungraded custom methods, triaged
 
 `FJS-1087`. `surface.snapshot.md` listed 110 custom methods whose caller only has to be signed in.

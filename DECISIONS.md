@@ -1030,7 +1030,7 @@ that gets quietly reversed, and this one took an audit to find.
 *Lives in:* Invariant 6 · `packages/sierra/src/build/schema-plugin.js`
 (`stripProse`, `emittedSize`) · `packages/sierra/tests/schema-prose.test.js` ·
 [`FJS-785`](ISSUES.md#fjs-785) · [`FJS-553`](ISSUES.md#fjs-553) ·
-[`FJS-554`](ISSUES.md#fjs-554) · [`FJS-264`](ISSUES.md#fjs-264)
+[`FJS-554`](ISSUES.md#fjs-554) · [`FJS-264`](ISSUES_ARCHIVE.md)
 
 ### <a id="fjs-d197"></a>2026-09-04 · `FJS-D197` — the ladder is one kit. The scale, the comparison AND the grader, because the grader is the half that drifted.
 
@@ -7634,7 +7634,7 @@ Graded under *paved road vs. the workaround* with the count stated honestly:
 one app is not yet a measurement of the road, and what carried it was the two
 STRUCTURAL defects rather than the instance count. Under *batteries vs.
 smallness* it is severable — one prop, one timer, one bindable. Under
-*preservation vs. evolution*, `example/web/src/autosave.js` was deleted in the
+*preservation vs. evolution*, example's own autosave module was deleted in the
 same commit: no second name for one thing.
 
 Lives in `packages/ui/components/forms/Form.mesa`, proven by
@@ -10439,7 +10439,7 @@ the `ProductVariant.colour` column → `color`, `colours.service.ts` →
 every camelCase compound the word-boundary pass cannot reach on its own
 (`pickColour`, `colourOf`, `seedColours`, `colourOnly` — a bare `\bcolour\b`
 never matches inside them, since there is no boundary between two word
-characters). `example/db/migrations/main/20260823021906_initial.sql` stays
+characters). The initial migration on disk at the time stays
 untouched regardless — it is the historical record of DDL actually run, and
 editing a migration that already ran misstates what happened, machine-local
 database or not. The five generated snapshots under `example/db/` and

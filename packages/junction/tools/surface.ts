@@ -36,6 +36,7 @@ import { flag, getFlag, rel, fatal, loadApp, checkSnapshot } from './app-module.
 import { describeSurface }              from '../src/core/app-model.ts'
 import type { Surface }                 from '../src/core/app-model.ts'
 import type { CustomMethodGrade }       from '../src/core/litestone.ts'
+import { DERIVED_HOOKS }                from '../src/core/service.ts'
 
 
 // ─── rendering ────────────────────────────────────────────────────────────────
@@ -54,8 +55,7 @@ const PHASES = ['around', 'before', 'validated', 'after', 'error'] as const
 // through `asSystem()` — the Data boundary never sees who asked.
 function gradeSentence(g: CustomMethodGrade): string {
   if (g.source === 'unchecked')
-    return '**nothing at the API boundary** — the model declares no `@@gate`' +
-      (g.level !== null ? `, so the declared \`gate: ${g.level}\` is not enforced` : '')
+    return '**nothing at the API boundary** — the model declares no `@@gate`'
   if (g.source === 'declared')
     return g.level === 0 ? 'anyone, a stranger included — declared `gate: 0`'
                          : `standing ${g.level} or above — declared \`gate: ${g.level}\``
@@ -63,6 +63,23 @@ function gradeSentence(g: CustomMethodGrade): string {
   if (g.level === null) return '**presence only** — floor, the model\'s read gate; standing not graded'
   return `**any signed-in caller** — floor, read gate ${g.level}; standing not graded`
 }
+
+// The app's own hooks that run before a method's body, in run order. The
+// framework's derived hooks are left out: `gateAuth` is the grade already
+// stated, and the rest shape a payload rather than grade a caller. Whether one
+// of these grades the caller is the hook's business and nothing here can read
+// it — which is why a row names them rather than calling the method graded.
+type ServiceRow = Surface['services'][number]
+function hooksInFront(svc: ServiceRow, method: string): string[] {
+  const out: string[] = []
+  for (const phase of ['around', 'before', 'validated'])
+    for (const key of ['all', method])
+      for (const name of svc.hooks[phase]?.[key] ?? [])
+        if (!DERIVED_HOOKS.has(name) && !out.includes(name)) out.push(name)
+  return out
+}
+
+const chain = (names: string[]): string => names.map(n => `\`${n}\``).join(' → ')
 
 const ungraded = (g: CustomMethodGrade): boolean =>
   g.source === 'unchecked' || (g.source === 'floor' && g.level !== 0)
@@ -104,7 +121,8 @@ export function renderSurfaceSnapshot(surface: Surface, opts: { source?: string;
 
   // ── Custom methods nobody grades ──
   const loose = surface.services.flatMap(svc =>
-    Object.entries(svc.methodGrades).filter(([, g]) => ungraded(g)).map(([m, g]) => ({ svc: svc.name, m, g })))
+    Object.entries(svc.methodGrades).filter(([, g]) => ungraded(g))
+      .map(([m, g]) => ({ svc: svc.name, m, g, hooks: hooksInFront(svc, m) })))
   out.push('## Custom methods whose caller\'s standing is not graded')
   out.push('')
   out.push('A custom method with no `gate:` in `methods:` takes the model\'s read gate as a')
@@ -114,14 +132,43 @@ export function renderSurfaceSnapshot(surface: Surface, opts: { source?: string;
   out.push('asked. Each row below is either meant — a read-shaped method, a scoped write —')
   out.push('or wants `methods: [{ method, gate }]`.')
   out.push('')
-  if (loose.length) {
-    out.push('| Method | Who may call it |')
-    out.push('| --- | --- |')
-    for (const { svc, m, g } of loose) out.push(`| \`${svc}.${m}\` | ${gradeSentence(g)} |`)
-  } else {
+  if (!loose.length) {
     out.push('None — every custom method declares its level or is open by a read gate of 0.')
+    out.push('')
+  } else {
+    const bare   = loose.filter(r => !r.hooks.length)
+    const hooked = loose.filter(r =>  r.hooks.length)
+
+    out.push(`### Nothing in front of the body but the floor (${bare.length})`)
+    out.push('')
+    out.push('The list to read first: only the method body stands between a signed-in caller')
+    out.push('and what it does.')
+    out.push('')
+    if (bare.length) {
+      out.push('| Method | Who may call it |')
+      out.push('| --- | --- |')
+      for (const { svc, m, g } of bare) out.push(`| \`${svc}.${m}\` | ${gradeSentence(g)} |`)
+    } else {
+      out.push('None.')
+    }
+    out.push('')
+
+    out.push(`### A service hook runs in front of the body (${hooked.length})`)
+    out.push('')
+    out.push('Whether a hook grades the caller is in its source, which this file does not')
+    out.push('read. A named hook says what it is; `anonymous` is a function the app did not')
+    out.push('name, and is as unread as the body.')
+    out.push('')
+    if (hooked.length) {
+      out.push('| Method | Who may call it | Hooks in front |')
+      out.push('| --- | --- | --- |')
+      for (const { svc, m, g, hooks } of hooked)
+        out.push(`| \`${svc}.${m}\` | ${gradeSentence(g)} | ${chain(hooks)} |`)
+    } else {
+      out.push('None.')
+    }
+    out.push('')
   }
-  out.push('')
 
   // ── App hooks ──
   const appRows = hookRows(surface.appHooks)
@@ -162,7 +209,10 @@ export function renderSurfaceSnapshot(surface: Surface, opts: { source?: string;
     const grades = Object.entries(svc.methodGrades)
     if (grades.length) {
       out.push('- **who may call** —')
-      for (const [method, g] of grades) out.push(`  - \`${method}\` — ${gradeSentence(g)}`)
+      for (const [method, g] of grades) {
+        const hooks = ungraded(g) ? hooksInFront(svc, method) : []
+        out.push(`  - \`${method}\` — ${gradeSentence(g)}` + (hooks.length ? `; then ${chain(hooks)}` : ''))
+      }
     }
     if (svc.channel.length)       out.push(`- **broadcasts on** — ${svc.channel.map(c => `\`${c}\``).join(', ')}`)
     if (svc.transactional.length) out.push(`- **transactional** — ${svc.transactional.map(m => `\`${m}\``).join(', ')}`)

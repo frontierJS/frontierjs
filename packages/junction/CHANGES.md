@@ -1,5 +1,30 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-12 — the ungraded list says what runs in front of the body
+
+`FJS-1087`. `surface.snapshot.md` listed every custom method on a floor as *any signed-in caller*,
+which was true at the API boundary and overstated the surface about fifteen to one: most of those
+methods sit behind an app hook that grades the caller, and the snapshot can read neither a hook nor
+a body. The list is two tables now — **nothing in front of the body but the floor**, and **a service
+hook runs in front**, with the hooks named in run order — and the per-service *who may call* line
+carries the same hooks. The derived hooks are not counted, or every method would read as hooked.
+It still calls nothing graded that it cannot read: a named hook says what it is, and `anonymous` is
+as unread as the body. `tests/surface-snapshot.test.ts` puts `pay` and a hooked `ship` in the two
+tables; counting the derived hooks reds it. Over `example`, 19 bare and 17 hooked.
+
+## 2026-09-12 — a declared `gate:` is graded on a service over no model
+
+`FJS-1087`. `customMethodGrade` asked the model before the declaration, so a service whose
+model declares no `@@gate` — or that has no model at all — answered `unchecked` for every
+custom method and `gateAuthAround` checked nothing: `methods: [{ method, gate: 5 }]` parsed,
+reached `surface.snapshot.md` as *not enforced*, and a stranger ran the body. The declaration
+is read first now, because it needs nothing from a model; with no declaration and no gate
+there is still no floor, so an undeclared method there stays open. The floor-refusal warning
+fires only for a floor, since its advice (*declare `gate: 0`*) is wrong about a declaration.
+`tests/custom-method-gate.test.ts` drives a modelless `reports` service — a stranger 401, a
+user 403, staff through, and the undeclared `ping` beside it open to all three. With the old
+order restored, 3 of 18 fail. Neither app declared a gate there, so no snapshot moved.
+
 ## 2026-09-12 — `IAuth.resetTotp`, the operator's half of a lost factor
 
 **`resetTotp?(userId, { actorId })`** joins the optional TOTP methods. It is the one method there

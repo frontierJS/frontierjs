@@ -3,7 +3,7 @@
 **`@frontierjs/email-kit`** — table-based email components compiled by Mesa with
 `target: 'email'`. An MJML replacement, in the framework's own language.
 
-`bun run test` — the runner is **vitest**. 102 tests.
+`bun run test` — the runner is **vitest**.
 
 ---
 

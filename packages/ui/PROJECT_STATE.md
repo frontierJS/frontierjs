@@ -10,17 +10,16 @@ State as of **2026-08-06**.
 
 ## What works
 
-- **69/70 components compile and emit parseable JavaScript** —
+- **Every component compiles and emits parseable JavaScript** —
   `node test/compile-all.mjs`.
-- **27/27 render cases carry the css vocabulary** — `node test/render.mjs`,
+- **Every render case carries the css vocabulary** — `node test/render.mjs`,
   which renders through `renderComponent` and asserts both that the expected
   `@frontierjs/css` classes reach the DOM and that no utility class has
   returned.
-- **17/17 form cases** — `node test/form.mjs`, added 2026-08-06 with `Form`.
+- **Every form case passes** — `node test/form.mjs`, added 2026-08-06 with `Form`.
 - **Zero Tailwind/Uno utility classes remain** in any component.
-- Mesa's own suite is green with every fix this package has driven:
-  **975 passed**. Sierra, the other big Mesa consumer, is unaffected:
-  **742 passed**.
+- Mesa's own suite is green with every fix this package has driven, and
+  Sierra, the other big Mesa consumer, is unaffected.
 
 ## What is verified in a browser
 
@@ -30,8 +29,7 @@ runs as part of `bun run test`, reports its own coverage, and reaches modes no
 screen uses. `example`'s drives put the same components in an app with a real
 service behind them.
 
-**All 65 by the kit's own drive, as of 2026-08-16** — 24 specs, 617
-assertions. `FJS-028` is closed: every component in the kit has been mounted in
+**Every component, by the kit's own drive.** `FJS-028` is closed: every component in the kit has been mounted in
 a real browser and asked something only a browser can answer. **Twenty-two
 defects came out of it, in four packages, and the rate did not fall as the
 cheap components arrived** — `FJS-297`–`FJS-302` on the first run, `FJS-305`,
@@ -87,10 +85,6 @@ a component is otherwise invisible to the app testing it.
   through the track click path only), `Popover` placement FLIPPING against a
   viewport edge — the placement itself is asserted — and `Combobox`'s type-ahead
   outside `example`'s screens.
-- **`{...$attributes}` is applied to 8 components** — Button, Pill, Badge,
-  Alert, Card, SectionHeader, Progress, Slider. The other 55 still cannot take
-  an `id` or an `aria-label`. One line each, and worth doing in a sweep with a
-  render assertion behind it.
 - **No visual check against the real stylesheet.** The render tests assert
   that `class="btn danger"` is present, not that it looks right — and the
   browser work found the limit of that: `Field` set its error tone on the
@@ -187,8 +181,8 @@ decides which item is last.
 composing `.dialog` + `.field` + `.items`. Its `Btn`/`Button` clause is closed —
 `Btn` was deleted — and its `themeStore` clause with `FJS-308`.
 
-Three Mesa defects were found by rendering all 64
-components for the first time and are **fixed the same day** — `FJS-146` an
+Three Mesa defects were found by rendering every
+component for the first time and are **fixed the same day** — `FJS-146` an
 `{@attach}` ran under SSR where `el.animate` does not exist, `FJS-147`
 `{#each { length: n }}` was not iterable so **`DatePicker` had never rendered
 at all**, `FJS-148` a null `style:` directive emitted the string `null`.

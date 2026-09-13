@@ -1,6 +1,6 @@
 # Basecamp docs
 
-Five pages, and they are read in different situations rather than in order.
+These pages are read in different situations rather than in order.
 
 - [VISION.md](VISION.md) — what Basecamp is for: developer command central for
   the FJS world. Read it first if you have not worked in this package before
@@ -13,6 +13,8 @@ Five pages, and they are read in different situations rather than in order.
   this is what wiring one costs — the decisions already made, and which drive
   assertions go red the day you do. **Start here if you are picking up a
   third party**
+- [PROVISIONING.md](PROVISIONING.md) — buying a machine at a cloud: the compute
+  connector boundary, the spend guard, cloud-init and enrollment, phase by phase
 - [UI_HANDOFF.md](UI_HANDOFF.md) — the API contract a session working in `web/`
   needs: what each service answers, and in what shape
 - [UI_PLAN.md](UI_PLAN.md) — the phased build plan for `web/`. Companion to the
