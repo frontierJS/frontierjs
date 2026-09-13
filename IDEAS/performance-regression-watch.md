@@ -1,14 +1,15 @@
 ---
 id: performance-regression-watch
 status: proposed
-dated: 2026-08-21
+dated: 2026-09-12
 ---
 
-# Idea — Nothing watches the numbers
+# Idea — Nothing watches the numbers, and what a performance claim should be
 
-**Status: IDEA, with a measurement attached. Measured 2026-08-18** on x64 / bun,
-against the tree at `4f46e5b`. The measurement is real and reproducible by the method
-in §Method; what to *do* about it is the idea.
+**Status: PROPOSAL, with a measurement attached.** The drift below was measured
+2026-08-18 on x64 / bun against `4f46e5b` and is reproducible by §Method. The
+three-tier shape in §What a performance claim is was added 2026-09-12 from the prior
+art in §What the field does, ahead of alpha; nothing in it is built.
 
 `packages/litestone/bench/audit-bench.mjs` exists, covers eleven cases, and is run by
 hand. It has been run twice: at the audit that produced it (`docs/PERFORMANCE_AUDIT.md`,
@@ -70,32 +71,202 @@ declares them:
   tables have.
 
 `@version` is measured, but only as a prose note in the audit header (+7% create /
-+35% update); there is no case, so it cannot regress visibly.
++35% update); there is no case, so it cannot regress visibly. And the whole READ side
+of access control is unmeasured — [FJS-621](../ISSUES.md#fjs-621): a policy compiling
+the target's own policy into a subquery, `@from` as a correlated subquery per row,
+`@computed` forcing filter and sort into JS.
+
+**Outside litestone there is nothing at all.** Junction, sierra and css carry no bench;
+`packages/mesa/mesa-bench` is a js-framework-benchmark harness excluded from CI by
+name. The one byte finding on record, [FJS-904](../ISSUES.md#fjs-904) — 65% of a
+static build's JavaScript unreachable from any page — was found by reading a bundle,
+not by anything that would have failed.
 
 ---
 
-## What to build
+## The repo already has the right half, unnamed
 
-1. **Cases for the declarations added since July**, in the ablation shape
-   `speed-and-footprint.md` §Method already defines — one declaration on an otherwise
-   identical schema, delta against the bare run in the same process. Tenancy, `@@allow`
-   with a non-trivial predicate, `@@transitions`, `$audit`, `@version`, and the
-   softDelete×unique crossing. This is the larger half of the value and it is `S`.
-2. **An A/B runner** — `bench/ab.mjs <ref>`, which does the worktree dance this
-   investigation did by hand: check out the ref, run both sides alternating N rounds,
-   report min and per-round win counts rather than a mean. Mins, because the noise here
-   is one-sided. Nothing to commit but the script.
-3. **A CI phase, carefully.** A threshold gate on a shared runner is the wrong shape —
-   rounds 4–6 of this measurement had spread wider than the effect. What *is* sound on a
-   noisy runner is the same comparison against the **base ref**, both sides on the same
-   machine in the same run, reported and not failed — the shape `access` already uses,
-   for the same reason. Cost is the run time: the full bench takes ~35 s, of which 31 s
-   is the `autocommit-vs-tx` case alone, so a CI phase wants `bench:core` or a new
-   filter rather than the whole file.
+Several suites assert **why** something is fast rather than how long it took, and none
+of them is called a performance test:
 
-The register question this raises and does not answer: **is a measured 15–20% drift a
-defect?** It has no `FJS-###` and per `ISSUES.md`'s own rule that means it is not open.
-Filing it needs a diagnosis first, which needs (1).
+- `packages/caravan/tests/scale.test.ts` asserts a QUERY PLAN — no `TEMP B-TREE` — and
+  its header says why: a millisecond threshold in CI is a coin flip on a loaded machine.
+- The audit's H4 counts `getLevel` resolutions (0 across 200 gated reads) and M1 counts
+  statements through `$tapQuery` (one per `upsert()`).
+- `packages/litestone/test/policy-paths.test.ts` asserts EXPLAIN names no `AUTOMATIC`
+  index for a relation hop.
+
+These answer identically on every machine, which is the property a CI gate needs and a
+wall-clock number does not have. The proposal below makes that half deliberate and adds
+the two halves it cannot carry.
+
+---
+
+## What the field does
+
+Surveyed 2026-09-12. Six patterns recur across mature projects, and each has a
+documented failure behind it.
+
+**Gate on a count, not a time.** SQLite's CPU claim per release is `speedtest1` under
+cachegrind, repeatable to seven significant digits where wall time repeats to one — the
+precision that lets it accept a 0.05% optimization ([sqlite.org/cpu.html](https://sqlite.org/cpu.html)).
+rustc-perf defaults to `instructions:u` for the same reason: measured outliers ±1.3%
+against ±9% for wall time ([internals](https://internals.rust-lang.org/t/what-is-perf-rust-lang-org-measuring-and-why-is-instructions-u-the-default/9815)).
+Django gates on `assertNumQueries`; Vue and size-limit gate on bytes. Every one of them
+states where its proxy lies — I/O, parallelism, cache effects.
+
+**Compare in the same job, interleaved.** Shared CI runners differ by up to 3× in level
+between builds ([aakinshin](https://aakinshin.net/posts/github-actions-perf-stability/)),
+and a 2% wall-time gate on GitHub-hosted runners measured a 45% false-positive rate
+([CodSpeed](https://codspeed.io/blog/benchmarks-in-ci-without-noise)). tachometer
+round-robins A and B and samples until a 95% CI clears a declared horizon
+([google/tachometer](https://github.com/google/tachometer)); benchstat wants ≥10
+interleaved runs and uses Mann-Whitney ([benchstat](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat)).
+
+**State the claim as a ratio to a floor.** js-framework-benchmark reports a factor
+against vanillajs rather than milliseconds, and rolls up with a weighted geometric mean.
+
+**A threshold per case, never one global percentage.** MongoDB started with a flat 10%
+and measured false positives up to 99%, then moved to change-point detection over the
+series ([arXiv 2003.00584](https://arxiv.org/abs/2003.00584)). Node's own docs warn
+that twenty benchmarks at α=0.05 will show one significant result by chance.
+
+**A person triages.** Rust's weekly triager, MongoDB's Build Baron, Chromium's sheriffs
+with Pinpoint bisection. The tooling nominates; accepting a regression is a written
+answer.
+
+**Latency is a tail, measured at a constant rate.** A closed-loop load generator stops
+sending during a stall and under-samples exactly the tail it should record — coordinated
+omission ([wrk2](https://github.com/giltene/wrk2)). SLOs are stated as percentiles
+("99% < 400 ms"), never a mean ([SRE book](https://sre.google/sre-book/service-level-objectives/)).
+
+The anti-patterns the same sources name are the mirror: a static global threshold,
+absolute wall time across CI builds, a mean, a closed-loop generator, a synthetic
+benchmark tuned to (V8 retired Octane for it), and a detector whose alerts come and go
+between runs.
+
+---
+
+## What a performance claim is
+
+**Three tiers, named by what they do to a build.** The tier a claim belongs to follows
+from how much noise its measurement carries, and only a measurement that repeats may
+fail anything — *ergonomics vs. strictness*, where strictness follows what a false red
+costs.
+
+### Gated — a count or a byte
+
+A claim whose answer is identical on every machine. Two homes, split by whether the
+number is a design fact or a quantity:
+
+- **A design fact is a test** in the package's own suite, the shape `scale.test.ts`
+  already has: *one statement per `upsert()`*, *no `TEMP B-TREE`*, *zero `getLevel`
+  per gated read*. It changes only when the design does, and a change is a code review.
+- **A quantity that features legitimately move is a baseline** that ratchets down only
+  — Invariant 14's mechanism, not a new one: `--update` writes an improvement back and
+  cannot raise; `--adopt` is the separate verb that can, so a raise is a visible line in
+  a diff with a reason beside it.
+
+What each package can count:
+
+| package | design facts (tests) | quantities (baselines) |
+| --- | --- | --- |
+| litestone | statements per verb, plan shape per policy hop, `getLevel` resolutions | prepared-statement shapes per request, statement-cache evictions over `example` |
+| junction | DB reads per request, frames per publish, no body read before the length check | modules loaded at boot |
+| mesa | DOM operations per update, recomputations per signal write | compiled output bytes per fixture — reproducible by Invariant 12 |
+| sierra | nothing reachable from no emitted page ships | gzip bytes per surface (spa · static · widget), runtime floor bytes |
+| css · ui | — | stylesheet bytes |
+
+### Reported — a ratio against the base ref
+
+A timing, compared in the same job and never across jobs. One runner does the worktree
+dance §Method describes by hand: check out the base ref, alternate the two sides N
+rounds, report the min, the per-round win count and a significance mark, and roll each
+package up as a geomean.
+
+**Each case declares its ceiling as a ratio to a floor it measures in the same
+process**, and the case file is where that number lives:
+
+- litestone read ≤ 1.25× raw `bun:sqlite` (measured 1.13× in `speed-and-footprint.md`)
+- litestone bare write ≤ 3× raw (measured 2.6×)
+- each declaration in the ablation ≤ a stated µs delta over the bare schema
+- junction request ≤ a stated factor over a raw `Bun.serve` handler
+- mesa's js-framework-benchmark operations ≤ a stated factor over vanilla
+
+The first two are starting points read off one measurement, not ratified numbers. A
+case with no declared ceiling is refused by the runner rather than run unjudged.
+
+The CI phase **reports and does not fail**, the shape `access` already uses for the
+same reason: a timing red on a shared runner trains everyone to skip the phase. What it
+reports is read by a person, and a regression kept on purpose gets a line in the
+package's `CHANGES.md` saying what it bought.
+
+### Recorded — an absolute, on named hardware, per release
+
+The numbers a device or an operator actually asks about, which no ratio answers:
+RSS and `heapUsed` under `--smol`, survival under a `MemoryMax` cgroup, cold start, the
+write ceiling on a real file with fsync, and junction's p99 at a constant request rate.
+
+**These go in the release's `CHANGES.md` entry, stamped with machine and bun version** —
+a register, because an absolute number is history the day after it is taken, and never
+a snapshot, because a `--check` over a timing would fail on noise. Any speed claim the
+website or a README makes cites one of these or is not made.
+`packages/litestone/docs/performance.md`, untouched since the initial commit and
+describing a tree months gone, is retired when the first entry lands.
+
+### The failure this can still hide
+
+**A case that throws, or a filter that matches nothing, reads as a quiet run.** That is
+not hypothetical: `gate-getlevel` died on a wrong accessor and was skipped for three
+weeks. The runner fails on any case that throws and prints the count of cases it ran
+against the count declared — the control the `scaffold` phase keeps for the same
+reason, since *nothing moved* and *nothing was measured* are otherwise one answer.
+
+---
+
+## Order
+
+1. **Coverage before any ceiling.** Ablation cases for tenancy, `@@allow` with a
+   non-trivial predicate, `@@transitions`, `$audit`, `@version` and the
+   softDelete×unique crossing, plus FJS-621's read path — a ceiling written today sits
+   on numbers that do not exist. `S`.
+2. **The gated tier.** Promote the counts already asserted into named cases, add the
+   byte baselines per surface. The only tier that can fail a build, and the cheapest.
+3. **The runner and the reported phase.** `bench:core`-sized, since the full file is
+   ~35 s and 31 s of it is `autocommit-vs-tx`.
+4. **The first recorded entry**, at the alpha release.
+
+Deferred, each on a named trigger: change-point detection once a series exists to run
+it over; a dedicated runner once the reported tier's noise is shown to hide a real
+regression; CodSpeed once its Bun support is known (§Open).
+
+## Open
+
+- **Does instruction counting work on Bun?** SQLite's and rustc-perf's gate is a
+  cycle count, which would move litestone and mesa timings from *reported* to *gated*.
+  JSC tiers code up on background threads and GC timing varies, so a count under
+  cachegrind may not repeat; `BUN_JSC_useJIT=0` would repeat and measures an interpreter
+  nobody ships. **Unmeasured — the spike is the next step.** If it fails, the gated
+  tier stays counts and bytes, which is still sound.
+- **Is a measured 15–20% drift a defect?** It has no `FJS-###` and per `ISSUES.md`'s own
+  rule that means it is not open. Filing it needs a diagnosis, which needs Order (1).
+
+## Decision questions
+
+- *Another origin?* No. Ceilings live in the case, baselines in their file, absolutes
+  in `CHANGES.md`; this record carries the shape and no number of authority.
+- *Concept budget?* Unchanged. *Baseline* and its ratchet are Invariant 14's; *reports
+  rather than judges* is the `access` phase's. The tiers are named by verdict. *Budget*
+  is refused as a name — it already means the concept budget.
+- *The problem's complexity?* Yes: three noise levels, three tiers.
+- *Predictability?* Improves — a red is always real, because only a repeating answer
+  can produce one.
+- *Derived?* Baselines are written by `--update`, recorded entries by the runner.
+- *One owner?* One runner, one baselines file; a design fact stays a test.
+- *Boundary explicit?* A case declares its tier and ceiling or is refused.
+- *Failure proportional?* Only the tier with a near-zero false-positive rate gates.
+- *Wrong without anything saying so?* Yes, by a case that silently stops running — the
+  declared-count control above is the artefact.
 
 ---
 
@@ -119,11 +290,11 @@ Reproduce before citing.
 ## See also
 
 - `IDEAS/speed-and-footprint.md` — where the time goes, measured 2026-08-13. Its
-  §Method is the ablation shape (1) should follow, and its closing line already says
-  the durable harnesses belong next to `audit-bench.mjs`
+  §Method is the ablation shape Order (1) follows, and its dead ends are why memory is
+  a recorded number rather than a gated one
 - `packages/litestone/docs/PERFORMANCE_AUDIT.md` — the audit and its one
   re-verification; the source of every "before" number quoted here
-- `packages/litestone/docs/performance.md` — untouched since litestone's initial
-  commit (2026-04-25) and describing a tree three months gone. Repair or retire it
-  alongside (1)
+- `IDEAS/offline-first-and-release.md` § A byte budget — the byte half of the gated
+  tier, argued before and never given a number
+- `IDEAS/scaling.md` — why the recorded tier's junction number is per process
 - `IDEAS/testing-and-ci.md` — 0.1, the same argument for correctness rather than speed
