@@ -170,6 +170,9 @@ genuinely good at.
 
 ### 4. The kernel is one package; realms are projections
 
+**Settled by `FJS-D267`:** the kernel is litestone, the pipeline ends at execute,
+and announcing stays junction's as an observer on `$tapEvents`. No package moves.
+
 Schema IR + pipeline + evaluator is the kernel. API transport, UI resources,
 studio, export, MCP are projections reading it. Mesa already works this way for
 surfaces (`FJS-D38`); this applies the same rule to the Data realm. Invariant 1's
@@ -239,8 +242,8 @@ doctrine rather than the reverse.
 
 ## Open questions
 
-- **Does `.lite` survive Wasp's lesson?** The case for: policy expressions, `@@transitions` and `valueset` read better as a language than as nested TS objects, and the LLM-familiarity argument is weaker for a small, regular grammar. The case against: `frontierjs-vscode`, the parser and import readers are a standing bill. A measurable question: what would `example/db/schema.lite` look like as a TS SDK, and what does it lose?
-- **Does `.mesa` need to be a language** rather than a compiler over TSX/HTML-with-directives? Same test, applied to one component.
+- ~~**Does `.lite` survive Wasp's lesson?**~~ **Closed by `FJS-D266`** — both stay languages.
+- ~~**Does `.mesa` need to be a language?**~~ **Closed by `FJS-D266`.**
 - **Is `example/` the right home for framework proof**, or should capability fixtures move beside the packages and `example/` stop being load-bearing?
 
 ---

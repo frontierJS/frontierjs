@@ -27,6 +27,61 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d266"></a>2026-09-12 · `FJS-D266` — `.lite` and `.mesa` stay LANGUAGES. Neither is replaced by a TypeScript SDK or a compiler over TSX, and the alpha is locked on both.
+
+[`IDEAS/kernel-and-projections.md`](IDEAS/kernel-and-projections.md) left two open
+questions that are one question — *does a custom input language survive Wasp's
+lesson* — and recorded the evidence against without a verdict. Wasp spent five
+years on a DSL and replaced it with a TypeScript SDK in May 2026, naming adoption
+friction, no ecosystem, and IDE support that stalled short of where it had to be.
+**The verdict is keep, and it is owed now rather than later**, because it is the one
+structural question in that record that an alpha user pays for: once an app's
+`db/schema.lite` and its `.mesa` screens exist outside this repo, changing the
+input surface is exactly the bill Wasp describes.
+
+**What Wasp kept is what this framework already is.** Their postmortem keeps the
+compiler's whole-app understanding and changes only the syntax that feeds it. A
+`.lite` file is not syntax over a config object; it is the seed every realm is
+derived from, and the part a TS SDK spells worst is the part this one is made of —
+policy expressions (`@@allow`, `auth().x`, a one-hop path), `@@transitions`,
+`valueset`, `@@check` over two columns. Those are expressions the framework
+COMPILES, twice, to SQL and to JS; as nested objects they become strings inside a
+host language, which is a language with none of the tooling and all of the bill.
+
+**`.mesa` is already ruled for every interface** ([`FJS-D38`](#fjs-d38)), and a
+compiler over TSX would be a second component model with the first one's name on
+it — the refusal that ruling makes by name. Its scope ids being content-addressed
+(Invariant 12) and its compiler owning the file extension are properties of a
+language the framework controls, and neither survives handing the grammar to a
+host.
+
+**The bill is real and is named rather than argued away.** Two parsers, two
+compilers and an editor extension are a standing cost Wasp's list describes
+accurately, and the answer here is not that the cost is small. It is that the cost
+buys the one thing the framework's thesis rests on — one origin that every
+projection can read with certainty — and that the MDE failure the kernel record
+cites, generated code with no evolution story, is avoided by runtime derivation
+rather than by giving up the origin.
+
+**§ V, answered before the edit.** *Another origin of truth* — no; a TS SDK
+beside `.lite` would be the second one. *Concept budget* — unchanged. *The
+problem's complexity or ours* — the problem's: access, state machines and value
+sets are the domain, and a host language would restate them as strings.
+*Predictability* — kept; one grammar, one reader per realm. *Derived instead of
+restated* — the languages are the origin the derivation starts from. *One owner* —
+litestone's parser for `.lite`, mesa's compiler for `.mesa`. *Boundary explicit* —
+the file extension decides the language. *Failure proportional* — the risk is
+adoption friction, and it is paid in tooling, not correctness. *Wrong without
+anything saying so* — yes, in the one way Wasp found: an editor that lags the
+grammar fails quietly for the person typing, which is what `frontierjs-vscode`'s
+`verify:package` and the LSP suite exist to make visible.
+
+**Adjudication.** *Familiarity vs. precision* — the ecosystem's shape here is a
+TypeScript config object, and the word it half-fits is *policy*; this framework
+keeps the precise form and owes the loud, helpful failure instead (an unknown
+attribute named, the equivalent suggested). **Tier:** Register. The kernel record's
+two open questions are closed by this and it keeps its other proposals.
+
 ### <a id="fjs-d258"></a>2026-09-10 · `FJS-D258` — the agent surface is `@frontierjs/mcp` and `herald` is withdrawn. A metaphor names an organ that owns a realm; a battery over one takes the plain word.
 
 `IDEAS/agent-surface.md` and `IDEAS/package-map.md` both carried **`herald`** for
@@ -2339,6 +2394,66 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d267"></a>2026-09-12 · `FJS-D267` — litestone IS the kernel, and its operation pipeline ends at EXECUTE. Announcing a mutation stays junction's, as an observer on `$tapEvents`; the phase order under the verbs is private through alpha, and the `Plugin` contract is the public surface over it.
+
+[`IDEAS/kernel-and-projections.md`](IDEAS/kernel-and-projections.md) proposes one
+operation pipeline under every table verb (§1), one policy evaluator (§2), and a
+kernel package that the realms project from (§4). It drew the pipeline as
+*resolve principal → gate → row policy → field protection → validate → transition
+→ execute → announce* and never said which package owns the last arrow. **That
+arrow decides whether §4 is a new package or a sentence**, and it is the only part
+of the record an installed app would see.
+
+**A pipeline that runs through announce crosses a package line in the wrong
+direction.** Invariant 4 gives announcing a mutation exactly one owner, and it is
+junction — channels, recipients and grading are the API realm's. Pulling that into
+the pipeline means either a kernel package above litestone and below junction,
+which renames the thing every app imports, or litestone reaching into junction,
+which Invariant 1 forbids. Both are expensive once alpha is locked.
+
+**The seam that makes the other answer free already exists.** `$tapEvents` in
+`packages/litestone/src/core/client.js` hands a finished client's write events to
+a layer that subscribes after construction, and junction's `announceDataWrites`
+is that layer. So the pipeline ends at execute and emits a `WriteEvent`; the
+announcement is an OBSERVER on it (`FJS-D06` §1 — it receives and cannot act).
+**Litestone is therefore the kernel** — schema IR, pipeline and evaluator in one
+package — junction, sierra, studio, export and `@frontierjs/mcp` are projections
+over it, and Invariant 1 stands with no amendment. §4 of the record needs no
+package move.
+
+**What this settles for §1 and §2.** Both become refactors inside litestone that
+change no import, no package name and no verb signature, so neither is owed before
+alpha and either may land after it, graded by `verbs-rules.test.ts`,
+`policy-interpreters.test.ts` and the drives that already exist.
+
+**The phase order is private, and the `Plugin` contract is not.** Litestone
+already ships `Plugin` (`src/core/plugin.js`, exported from `index.d.ts`) with
+`onBeforeRead` / `onBeforeCreate` / `onBeforeUpdate` / `onBeforeDelete` /
+`onAfterRead` / `onAfterWrite` / `buildReadFilter`, and `GatePlugin` runs
+through it. That contract is the public extension surface for alpha, and the
+pipeline must keep calling each hook at a point that means what its name says.
+**The sequence of phases beneath those hooks is not exposed** — no phase is
+nameable, orderable or insertable by an app — because a phase list published
+before the refactor has run is an order frozen before anyone knows it is right,
+and the refactor is exactly what would move it.
+
+**§ V, answered before the edit.** *Another origin of truth* — no; it names the
+owner the tree already has. *Concept budget* — shrinks: *kernel* becomes a word
+for an existing package rather than a new one. *The problem's complexity or ours*
+— ours; the crossing was a drawing, not a need. *Predictability* — up: an app's
+imports are settled for alpha. *Derived instead of restated* — the announcement is
+derived from the write event rather than a second call site. *One owner* — the
+pipeline litestone's, the announcement junction's. *Boundary explicit* — the
+boundary is `$tapEvents` and `WriteEvent`, typed in the generated client.
+*Failure proportional* — a pipeline defect is wide, which is why it lands behind
+the tripwires rather than instead of them. *Wrong without anything saying so* —
+yes: a write path that skips the event emission leaves a second tab stale and
+fails nothing locally; `example`'s `verify:live` and
+`packages/junction/tests/data-write-announcement.test.ts` are what see it.
+
+**Adjudication.** *Batteries vs. smallness* — the core is admitted as litestone,
+and the realms above it stay severable projections. **Tier:** Register.
 
 ### <a id="fjs-d259"></a>2026-09-10 · `FJS-D259` — a conditional required is `@required(where: …)`, one attribute, and its predicate reads THIS ROW's own columns only. That restriction is what buys the CHECK, and the CHECK is what makes the rule true against a migration.
 
