@@ -24,6 +24,17 @@ sierra's build grades the manifest. The `scaffold` phase asserts the build print
 `manifest.webmanifest — installable`, because the grade is a warning and a template change that
 broke it would otherwise exit 0. Its first run found that `fli new` had never created `web/public/`.
 
+## 2026-09-12 — `intent.js`: a miss is unhomed, and a fact may pick off the menu
+
+Run 2 (`IDEAS/intent-recognizer-run-2.md`) put a hundred messages through the resolver against a blind
+key and 21 of its 41 wrong answers were built on words that found nothing — *private note* missed
+`Customer.notes` and answered *you can do this* off the `@@extensible` pool. **A miss now answers
+`unhomed`** for every kind; `needs us` comes only from a positive fact (no state machine, two known
+states with no edge, a declaration the model lacks), and the pool is a note rather than a verdict.
+**`menu(index)`** lists every entry with its label and schema comment, and a fact may carry **`pick`** —
+one id off it, refused otherwise — so a translator matches meaning and the verdict is still decided here.
+Each fix is paired in `tests/intent.test.js` with the words that must still hit.
+
 ## 2026-09-12 — `fli intent`: a candidate resolved against the app's own seed
 
 The middle of `IDEAS/intent-recognizer.md`, and the part no model is allowed to do. `core/intent.js`

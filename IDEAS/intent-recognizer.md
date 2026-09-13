@@ -13,6 +13,16 @@ phraser behind it, a screen index, and run 2. § *Home* says where each would go
 behavior — see `VERIFYING.md`. The nine questions were answered before the first
 edit and are § *The nine*, below.
 
+**Run 2 has been made and it turned the record** (`intent-recognizer-run-2.md`) — a
+hundred messages through the built resolver against a blind key. Words alone answered
+18% once a miss stopped counting as an absence; a translator picking off the index's
+own menu, 43%; and a right verdict made a sendable reply three times in fifteen. **A
+candidate may now carry `pick`** — one id off `menu(index)`, refused otherwise — which
+amends *a candidate names nothing* below. **Recognition is a model's job and a verdict
+is triage.** What the resolver is still for is a check on a model's draft, and the
+next measurement is an agent grounded in the app, graded on whether every claim it
+makes is true.
+
 **Run 1 has been made and amended this record** — sixty synthetic requests against
 `example`, resolved by hand (`intent-recognizer-run-1.md`). Committed artefacts
 alone answered 31; with the UI realm indexed, 45. Seventy-two percent never
@@ -339,8 +349,9 @@ resolver graded on hand-written candidates is graded alone. The same shape as
 `fli proves`, which also reads committed files and answers a question about them.
 **The logic is never in the command**, because the command is not the last caller: a
 customer asks a running app, not a terminal, and a second surface re-deriving the
-verdict is two answers to one question. The first audience is the developer, and the
-first job is run 2 — the sixty requests through a real resolver instead of by hand.
+verdict is two answers to one question. The first audience is the developer. Run 2 moved the
+module's job from recognizing to CHECKING: a model reads the message and the app, and
+`intent.js` holds a draft's claims to the seed.
 
 **If it becomes its own thing, it is Oracle's first piece.** The moment a customer
 surface exists the module moves to it, the CLI keeps calling it, and that surface is
