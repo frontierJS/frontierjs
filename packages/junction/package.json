@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/junction",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "A pragmatic, batteries-included Bun framework",
   "type": "module",
   "main": "./index.ts",

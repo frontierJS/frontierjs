@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/mcp",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "An MCP surface for a FrontierJS app, derived from db/schema.lite — the gate is the permission model",
   "type": "module",
   "license": "MIT",

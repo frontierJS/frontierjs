@@ -1,6 +1,6 @@
 {
   "name": "create-frontier",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "npm create frontier@latest — scaffold a FrontierJS application",
   "type": "module",
   "bin": {

@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/config",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "The tooling opinion a FrontierJS app extends in one line — tsconfig and Biome, no source of its own",
   "type": "module",
   "scripts": {
