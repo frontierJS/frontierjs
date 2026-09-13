@@ -1,5 +1,15 @@
 # Changes
 
+## 2026-09-13 — `Code`, a code block with a copy button
+
+`<Code text="…" />` draws `<pre class="code">` with `CopyButton` in its top corner; `language`
+highlights through glow. `text` is the one value, so what is shown and what is copied cannot
+disagree. The block reserves the button's width, because a `.btn.square` is wider than `.code`'s
+padding and the end of a line that fits the box otherwise sits under it —
+`test/browser/specs/code.spec.js` asserts that against a shrink-wrapped block, and reds with the
+reserve removed. `Json`'s `mode="raw"` is now a `<Code language="json">`, so the corner has one
+owner. `fli new`'s sign-in page is the first caller.
+
 ## 2026-09-13 — `AGENTS.md` ships
 
 A choosing guide for an agent building screens in an installed app (`FJS-D163`): which component for

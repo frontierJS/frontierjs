@@ -72,6 +72,40 @@ test('code: inside a <pre> the container owns the type', function () {
   assert.equal(style(box.querySelector('code[language]'), 'font-size'), '29px');
 });
 
+test('code: a block inside an alert scrolls inside the alert', function () {
+  /*
+   * A <pre> that does not wrap is as wide as its longest line, and a flex
+   * item's automatic minimum size is its content — so `.alert-content`
+   * without `min-inline-size: 0` grows to the line and the alert's own text
+   * and the block run past the card. A first-run hint with a command in it
+   * is exactly this shape.
+   *
+   * Measured on `.alert-content` rather than the alert: the alert is a
+   * block child and takes its container's width whichever way the content
+   * went. The line has to be longer than the box or the question does not
+   * exist, which the first assertion checks.
+   */
+  var box = el(
+    '<div style="width: 240px">' +
+      '<div class="alert info"><div class="alert-content">' +
+      '<pre class="code"><code>fli auth:create-user you@example.com --role admin</code></pre>' +
+      '</div></div>' +
+      '</div>'
+  );
+  var alert   = box.querySelector('.alert').getBoundingClientRect();
+  var content = box.querySelector('.alert-content').getBoundingClientRect();
+  var pre     = box.querySelector('pre');
+  var overflows = pre.scrollWidth > pre.clientWidth;
+
+  cleanup();
+  assert.ok(overflows, 'the line fits the box, so this proves nothing');
+  assert.ok(
+    content.right <= alert.right,
+    '.alert-content ends at ' + Math.round(content.right) + 'px, past the alert at ' +
+      Math.round(alert.right) + 'px — a code block widened it (min-inline-size)'
+  );
+});
+
 /* ── Neutralization ────────────────────────────────────────────────── */
 
 test('code: token elements carry color, not emphasis', function () {

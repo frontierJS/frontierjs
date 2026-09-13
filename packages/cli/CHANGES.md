@@ -1,5 +1,12 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-13 — the first-run command has a copy button
+
+The sign-in page's first-run hint put `fli auth:create-user you@example.com --role admin` in an
+inline `<code>`, which wraps mid-command in a 24rem card and has to be selected by hand. It is a
+`@frontierjs/ui` `<Code>` now. A scaffold against npm needs a `@frontierjs/ui` published with
+`components/display/Code.mesa`, or the page fails to build.
+
 ## 2026-09-13 — a scaffolded app tells an agent how to write it
 
 `fli new` writes `AGENTS.md` and `CLAUDE.md`. An agent asked to write code in a fresh app arrived

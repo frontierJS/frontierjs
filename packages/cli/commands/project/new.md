@@ -1631,6 +1631,7 @@ title: Sign in
 <script>
   import { goto }                                    from '@frontierjs/sierra/router'
   import { session, signIn, submitCode, signOut }    from '@frontierjs/sierra/junction'
+  import Code                                        from '@frontierjs/ui/components/display/Code.mesa'
 
   let email    = ''
   let password = ''
@@ -1718,9 +1719,9 @@ ${sc}
        gives everybody role "user", and db/schema.lite gates delete at 5. -->
   {#if import.meta.env.DEV}
     <div class="alert info">
-      <div class="alert-content text-sm">
-        First run? No user exists yet. Either register above, or from the app root:
-        <code>fli auth:create-user you@example.com --role admin</code>
+      <div class="alert-content text-sm stack gap-xs">
+        <p>First run? No user exists yet. Either register above, or from the app root:</p>
+        <Code text="fli auth:create-user you@example.com --role admin" />
       </div>
     </div>
   {/if}

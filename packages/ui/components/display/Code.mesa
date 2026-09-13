@@ -1,0 +1,65 @@
+<script>
+  // Code.mesa
+  // A code block with a copy button in its corner — the command a page tells a
+  // person to paste into a terminal, a config snippet, a token's usage line.
+  //
+  // `text` is the one value: what is drawn and what is copied are the same
+  // string, so the two cannot disagree the way a block and a hand-written
+  // `<CopyButton text=…>` beside it can after one of them is edited.
+  //
+  // Usage:
+  //   <Code text="fli auth:create-user you@example.com --role admin" />
+  //   <Code text={snippet} language="js" />
+  //   <Code text={output} copy={false} />
+  //
+  // `language` highlights through glow and themes from @frontierjs/css's code
+  // palette; without it the text is rendered as text, never as markup.
+
+  import { glow }   from '@frontierjs/toolbelt/glow'
+  import CopyButton from './CopyButton.mesa'
+
+  export let text     = ''    // what is shown and what is copied
+  export let language = ''    // glow language — 'bash', 'js', 'json', 'css', …
+  export let copy     = true  // false for a block nobody should paste
+
+  // prefix: false — glow strips a leading `+`, `-` or `>` as a diff marker, and
+  // a command or a CSS selector may start with any of them, so the copied text
+  // would carry a character the block did not show. mark: false for the same
+  // reason with `•`.
+  $: highlighted = language && text ? glow(text, { language, prefix: false, mark: false }) : ''
+</script>
+
+<div class="fjs-code" {class} {...$attributes}>
+  {#if highlighted}
+    <!-- glow escapes every slice of the source it emits, so this is not a hole.
+         Never hand {@html} a string that has not been through glow. -->
+    <pre class="code">{@html highlighted}</pre>
+  {:else}
+    <pre class="code"><code>{text}</code></pre>
+  {/if}
+  {#if copy && text}
+    <div class="fjs-code-actions"><CopyButton {text} /></div>
+  {/if}
+</div>
+
+<style>
+  .fjs-code { position: relative; }
+
+  /*
+   * The button sits over the block's own padding, and a `.btn.square` is wider
+   * than that padding — so the end of a line that fits the box ends up under
+   * the button, present, selectable and unreadable. Reserving the button's
+   * width keeps the line clear at rest; a line long enough to scroll still
+   * passes under it, which is the price of the block scrolling in its own box.
+   */
+  .fjs-code:has(> .fjs-code-actions) > pre {
+    padding-inline-end: calc(var(--space-2xl) + 2.25rem);
+  }
+
+  .fjs-code-actions {
+    position:          absolute;
+    inset-block-start: var(--space-2xs);
+    inset-inline-end:  var(--space-2xs);
+    z-index:           1;
+  }
+</style>

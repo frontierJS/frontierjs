@@ -26,9 +26,13 @@
   line-height: 1.4;
 }
 
+/* `min-inline-size: 0`, or a `.code` block inside an alert widens the alert
+   past its card — a flex item's automatic minimum is its content, and a
+   <pre> that does not wrap has the width of its longest line. */
 .alert-content {
-  flex:        1;
-  line-height: 1.5;
+  flex:            1;
+  min-inline-size: 0;
+  line-height:     1.5;
 }
 .alert-content > strong { display: block; margin-bottom: 2px; }
 /* `pretty` avoids a one-word last line; an alert is short enough that

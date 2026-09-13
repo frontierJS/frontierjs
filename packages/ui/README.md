@@ -100,7 +100,7 @@ The old six-value `variant` conflated the two, which is why `outline` and
 `MultiSelect` `DatePicker` `DateTimeInput` `JsonInput` `FileUpload`
 
 **display** — `Badge` `Pill` `Tag` `Dot` `Kbd` `Mono` `Divider` `Breadcrumbs`
-`Pagination` `Steps` `SectionHeader` `Callout` `EmptyState` `CopyButton`
+`Pagination` `Steps` `SectionHeader` `Callout` `EmptyState` `CopyButton` `Code`
 `Avatar` `AvatarGroup` `Stat` `StatCard` `Table` `Bar` `Sparkline`
 `AccountStatus` `Json` (read, or `editable`)
 

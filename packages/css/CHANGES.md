@@ -1,5 +1,13 @@
 # Changes — @frontierjs/css
 
+## 2026-09-13 — `.alert-content` can shrink
+
+A `.code` block inside an alert widened the alert past its card: `.alert-content` is `flex: 1`
+with no `min-inline-size: 0`, and a flex item's automatic minimum is its content, which for a
+`<pre>` is its longest line. The alert's own text ran out with it. Found putting a command into
+`fli new`'s first-run hint; `code: a block inside an alert scrolls inside the alert` holds it and
+reds with the declaration removed.
+
 ## 2026-09-09 — `vocabulary.json` no longer carries the package version
 
 **Every release left this file one version behind and the working tree dirty.**

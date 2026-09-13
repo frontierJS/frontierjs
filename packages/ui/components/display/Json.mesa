@@ -30,8 +30,8 @@
     preview as previewOf, removeIn, renameKey, sameValue, searchDoc, setIn,
     treeRows, tryParse,
   } from '@frontierjs/toolbelt/json'
-  import { glow } from '@frontierjs/toolbelt/glow'
   import CopyButton, { copyText } from './CopyButton.mesa'
+  import Code                     from './Code.mesa'
 
   export let value  = undefined
   // 'tree' folds; 'raw' is the highlighted document, which is what you want
@@ -177,11 +177,6 @@
   // `format` answers '' for a value JSON cannot carry, which is also what an
   // absent document looks like — both are "nothing to show" here.
   const text = format(shown)
-
-  // prefix: false — glow strips a leading `+`, `-` or `>` as a diff marker, and
-  // a JSON document can legitimately begin a line with `-` (a negative number
-  // at the head of an array). The character would vanish with nothing saying so.
-  const highlighted = text ? glow(text, { language: 'json', prefix: false, mark: false }) : ''
 
   const isEmpty = shown === undefined || shown === null || text === ''
 
@@ -591,18 +586,7 @@
 {#if isEmpty}
   <p class="fjs-json-empty" {class} {...$attributes}>{empty}</p>
 {:else if mode === 'raw'}
-  <div class="fjs-json-frame" {class} {...$attributes}>
-    {#if copy}
-      <div class="fjs-json-actions"><CopyButton text={text} /></div>
-    {/if}
-    <!--
-      glow escapes everything it emits — every slice of the source goes through
-      its own encode(), tokens and the gaps between them alike — so this is the
-      one place in the kit where {@html} is not a hole. Never hand it a string
-      that has not been through glow.
-    -->
-    <pre class="code">{@html highlighted}</pre>
-  </div>
+  <Code {text} language="json" {copy} {class} {...$attributes} />
 {:else}
   <!-- The shortcut is bound HERE rather than on the document: a page may have
        an undo of its own, and taking ⌘Z off it from inside a component is the
@@ -1018,8 +1002,6 @@
     position:              relative;
   }
 
-  /* Both frames hold an absolutely positioned copy button. */
-  .fjs-json-frame { position: relative; }
 
   /*
    * The actions sit in `.code`'s own top padding, and a `.btn.square` is taller
@@ -1028,8 +1010,7 @@
    * else, and looks completely fine. Measured on the fixture: the first row's
    * copy-path button was unclickable.
    */
-  .fjs-json-tree:has(> .fjs-json-actions),
-  .fjs-json-frame:has(> .fjs-json-actions) {
+  .fjs-json-tree:has(> .fjs-json-actions) {
     padding-block-start: calc(var(--space-xl) + var(--space-md));
   }
 

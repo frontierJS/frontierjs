@@ -87,6 +87,7 @@ the package has no root entry.
 | wayfinding · a multi-step flow | `@frontierjs/ui/components/display/Breadcrumbs.mesa` · `@frontierjs/ui/components/display/Steps.mesa` |
 | a person · a stack of people · an account's state | `@frontierjs/ui/components/display/Avatar.mesa` · `@frontierjs/ui/components/display/AvatarGroup.mesa` · `@frontierjs/ui/components/display/AccountStatus.mesa` |
 | a JSON document, read, diffed or `editable` | `@frontierjs/ui/components/display/Json.mesa` |
+| a command or snippet somebody pastes — a block with a copy button in its corner | `@frontierjs/ui/components/display/Code.mesa` |
 | copy to clipboard · a shortcut · a token or id · a rule | `@frontierjs/ui/components/display/CopyButton.mesa` · `@frontierjs/ui/components/display/Kbd.mesa` · `@frontierjs/ui/components/display/Mono.mesa` · `@frontierjs/ui/components/display/Divider.mesa` |
 
 **Layout, overlay, feedback**

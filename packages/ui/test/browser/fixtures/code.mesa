@@ -1,0 +1,28 @@
+<script>
+  // code.mesa — the fixture for Code.
+  //
+  // `#fit` is shrink-wrapped, so the block is exactly as wide as its line plus
+  // padding: the only arrangement where a copy button that reserves no room
+  // lands on the text. In a wide box the line ends long before the corner and
+  // the overlap assertion passes with the reserve removed.
+  import Code from '../../../components/display/Code.mesa'
+
+  // The harness has no clipboard permission, so the write is captured here and
+  // `copyText`'s own fallback is never reached.
+  Object.defineProperty(navigator, 'clipboard', {
+    configurable: true,
+    value: { writeText: async (text) => { window.__copied = text } },
+  })
+</script>
+
+<div id="fit" style="display: inline-block">
+  <Code text="fli auth:create-user you@example.com --role admin" />
+</div>
+
+<Code id="markup" text={'<b>not bold</b>'} />
+
+<Code id="css" text={'> .child { color: red }'} language="css" />
+
+<div id="fit-bare" style="display: inline-block">
+  <Code text="fli auth:create-user you@example.com --role admin" copy={false} />
+</div>
