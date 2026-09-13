@@ -16,9 +16,8 @@ watched `record(id)`; the filter bar is `filterOpFor`, `resource.filters()`,
 Four defects were found underneath and are closed: `FJS-1035`, `FJS-1036`,
 `FJS-1037`, `FJS-1043`.
 
-**One gap is open and it is an emit, not a design**: `FJS-1040` — `@@fts` does
-not reach the browser, so a generated bar cannot know whether a search box would
-answer.
+**One gap was an emit, not a design, and it is closed**: `FJS-1040` — `@@fts`
+now reaches the browser as `x-search`, naming the columns `@@fts` covers.
 
 Claims about current behavior were read off the source on 2026-08-26 and re-read
 2026-09-08 with the files named. See `VERIFYING.md`.

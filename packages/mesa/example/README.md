@@ -2,8 +2,8 @@
 
 A browser playground for the Mesa language: write `.mesa` (or `.md`) source on
 the left, see it compiled and **running** on the right. It is also Mesa's
-working documentation — 66 examples across 22 groups, and a test that fails if a
-documented language feature has no example.
+working documentation — examples grouped by language feature, and a test that
+fails if a documented language feature has no example.
 
 Two files, no build step:
 
@@ -112,7 +112,7 @@ enforces it.
 - every name `index.html` imports from a local module actually **exists** — a
   missing export is an ESM *link* error, so the whole script module never runs
   and the page is blank with one console error
-- all 66 examples compile with no errors or warnings, and their output **parses**
+- every example compiles with no errors or warnings, and its output **parses**
   as JavaScript (a clean compile is not proof of valid JS)
 - all 37 tracked language features appear in at least one example — the ratchet
 - the preview mounts via `mount()` so delegated events fire, and disposing an

@@ -15,7 +15,7 @@ Every document and every pointer spends one of two budgets, and naming which one
 
 Material behind a pointer escapes context load and pays the pointer's own line instead. **A skill is still a document**: `.claude/skills` is in `doc-audit`'s corpus, so a path, an id or an Invariant it cites is graded like one cited anywhere else, and `fli check`'s `skill-pointer` resolves every skill name the root `CLAUDE.md` gives to a `SKILL.md` whose frontmatter agrees. Material with no pointer at all rides entirely on cognitive load, which is how a document nobody remembers quietly stops being true.
 
-**Measured: the root `CLAUDE.md` was 254 KB**, about 63k tokens on every turn of every session. § Live hazards and § Bridge index were 57% of it and neither is read by anything but a person; both are skills now and the file is 119 KB.
+**Measured: the root `CLAUDE.md` was 254 KB**, about 63k tokens on every turn of every session. § Live hazards and § Bridge index were 57% of it and neither is read by anything but a person; both are skills now. The file has grown again since (new drives, new packages) — check its current size rather than trust a number here.
 
 ## The ladder
 
@@ -35,7 +35,7 @@ Where the ladder decides how far down a piece sits, **co-location decides what s
 
 **A section a program parses is a source of truth and stays where the parser looks.** Six modules read the root `CLAUDE.md` by path — `preflight.js` the drives table's *Start first* column, `invariants.js` the numbered list, `repo-map.js` and `repo-atlas.js` the package table, `checks.js` the proof rows (through `proofs.js`), `doc-audit.js` the invariant count. Moving one of those is editing a parser, and doing it by accident is a green build over a table nothing reads any more.
 
-That is also the case the cache rule below gets wrong on first look. The drives table restates 31 `verify:*` scripts that are already in `example/package.json`, so it reads as a copy of the environment. It is not one: `preflight.js` parses the column beside them, and there is nowhere else that column lives.
+That is also the case the cache rule below gets wrong on first look. The drives table restates every `verify:*` script that is already in `example/package.json`, so it reads as a copy of the environment. It is not one: `preflight.js` parses the column beside them, and there is nowhere else that column lives.
 
 ## The four cuts
 

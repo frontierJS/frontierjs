@@ -121,7 +121,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/jetty`
 
-`packages/jetty` · ships `LICENSE` `README.md` `bin/` `docs/` `package.json` `src/`
+`packages/jetty` · ships `LICENSE` `README.md` `bin/` `package.json` `src/`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -143,7 +143,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/junction`
 
-`packages/junction` · ships `LICENSE` `README.md` `db/` `index.ts` `package.json` `src/` `tools/`
+`packages/junction` · ships `AGENTS.md` `LICENSE` `README.md` `db/` `index.ts` `package.json` `src/` `tools/`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -223,7 +223,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/mesa`
 
-`packages/mesa` · ships `LICENSE` `README.md` `mesa-vite/` `package.json` `src/`
+`packages/mesa` · ships `AGENTS.md` `LICENSE` `README.md` `mesa-vite/` `package.json` `src/`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -272,7 +272,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/sierra`
 
-`packages/sierra` · ships `LICENSE` `README.md` `package.json` `src/`
+`packages/sierra` · ships `AGENTS.md` `LICENSE` `README.md` `package.json` `src/`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
@@ -338,7 +338,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/ui`
 
-`packages/ui` · ships `LICENSE` `README.md` `components/` `controls.js` `package.json` `stores/` `tokens.css` `utils.js`
+`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.js` `package.json` `stores/` `tokens.css` `utils.js`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |

@@ -50,7 +50,7 @@ easy second connector wastes it.
 | #   | Package                                 | What is actually hard                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | --- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 1   | `conduit-stripe`                        | Written, live, driven. `Idempotency-Key` on the calls where a retry costs real money; minor units, where JPY has no decimals and every hand-rolled `toFixed(2)` invents one; a decline that is a **domain answer** rather than a retry; a webhook secret **rotation**, where two `v1=` values ride one header; the 3DS hand-back, which is a redirect in the middle of a server-to-server flow.                                                                                                                                                                                                                                                        |
-| 2   | `conduit-s3`                            | **The argument, and the reason to build it second.** SigV4 signs a canonical request over a *binary* body. Stripe is a bearer key over form-encoded. `psp.ts` is this project's own HMAC over JSON. Three dialects against one `serialize()` is the only thing that shows whether the boundary is generic. It also poses the question no other connector poses: **a presigned URL never crosses conduit at all** — the connector mints a URL the browser uses directly, so a connector is not always a caller of `send()`. One connector serves R2, B2, MinIO, Spaces and AWS, and litestone's `File` columns want a real backend under `FileStorage`. |
+| 2   | `conduit-s3`                            | **The argument, and the reason to build it second — and litestone already has a signer.** SigV4 signs a canonical request over a *binary* body. Stripe is a bearer key over form-encoded. `providers/psp/index.ts` is this project's own HMAC over JSON. Three dialects against one `serialize()` is the only thing that shows whether the boundary is generic. It also poses the question no other connector poses: **a presigned URL never crosses conduit at all** — the connector mints a URL the browser uses directly, so a connector is not always a caller of `send()`. One connector serves R2, B2, MinIO, Spaces and AWS, and litestone's `File` columns want a real backend under `FileStorage` — which already signs S3 through `storage/sigv4.js`, so a `conduit-s3` connector would be a SECOND owner of SigV4 rather than the first, and the two would need reconciling before either is built out further. |
 | 3   | `conduit-resend` (or Postmark)          | Sending is easy; **not being blocked is not.** A bounce or complaint webhook must write a suppression list or the domain's reputation goes, DKIM/SPF/DMARC have to align, a dedicated IP needs warming, and *accepted* is three states away from *delivered*. `@frontierjs/notifications` has an email driver with no real sender under it.                                                                                                                                                                                                                                                                                                            |
 | 4   | `conduit-push` (APNs + FCM)             | The missing notification transport — `packages/notifications/drivers/` holds `email.ts` and `inapp.ts` and nothing else. APNs signs its own ES256 JWT from a `.p8`, rotates it about hourly, caps the payload at 4KB, and answers `BadDeviceToken`, which means **delete the row**, not retry. FCM has different auth, a different error taxonomy, and its own idea of a topic. Device-token lifecycle is state the app must own and nothing tells you that up front.                                                                                                                                                                                  |
 | 5   | `conduit-twilio`                        | The other missing transport, and the most rule-dense thing on this list. E.164 normalization, `STOP`/`HELP` keyword handling that is **legally required** and only half-handled by the vendor, 10DLC/A2P registration gating US traffic at all, and a delivery receipt that arrives on a separate webhook minutes later — so *sent* and *delivered* are two columns, not one.                                                                                                                                                                                                                                                                          |
@@ -61,7 +61,9 @@ easy second connector wastes it.
 | 10  | `conduit-cloudflare`                    | What makes `deploy-plane.md` real. DNS records, TLS, and cache purge for a fleet that basecamp and the Outpost already command. Scoped API tokens, a proxy toggle that changes the certificate story, and a purge endpoint that is rate-limited hard enough to matter. **It has a caller waiting since 2026-08-30**: basecamp declares `IEdge` with a stub behind it and `/dns/` renders a skeleton where the zone's records go, so the shape a connector has to answer is written down rather than guessed — `packages/basecamp/docs/ADAPTERS.md`. Its sibling there, `ICloudSpend`, is a vendor billing read and is on nobody's list here, which is the honest answer: it is one app's screen, not every app's need.                                                                                                                                                                                                                                                                                                                                                                                 |
 
 **Just under the line, and worth naming so they are not re-argued:** Slack (signing
-secret and Block Kit are real, but the audience is ops rather than every app), a
+secret and Block Kit are real, but the audience is ops rather than every app),
+Basecamp (a vertical, argued in full in § *Basecamp* below, and worth reading for
+what it pressed on the mechanism), a
 CAPTCHA/Turnstile connector (small, but every signup form wants one), Sentry (an SDK
 rather than a connector), PostHog, and identity verification (Persona, Stripe
 Identity — enormous rule surface, wrong denominator).
@@ -99,9 +101,9 @@ a connector and the answer is a different shape.
 9. anthropic  10. cloudflare
 ```
 
-The stop is the whole plan. `example/` currently holds `psp.ts` (this project's own
-HMAC scheme over JSON) and `stripe.ts` (a real vendor's, form-encoded, bearer key,
-its own webhook signature). Adding S3 puts a third dialect in the fight — binary
+The stop is the whole plan. `example/` currently holds `providers/psp/` (this
+project's own HMAC scheme over JSON) and `providers/stripe/` (a real vendor's,
+form-encoded, bearer key, its own webhook signature). Adding S3 puts a third dialect in the fight — binary
 bodies, canonical-request signing, and a call that does not go through `send()` at
 all. **Then** the three questions `FJS-D153` explicitly left open have three data
 points instead of one:
@@ -159,6 +161,70 @@ teaching a shop's arithmetic with numbers nobody charges.
 
 ---
 
+## Basecamp — a vertical that pressed the mechanism
+
+Argued 2026-09-02 for 37signals' Basecamp API (`basecamp/bc-api`), not this repo's
+`packages/basecamp`, which shares only a word. **Verdict: not a maintained package**
+— project management is a vertical, and it fails test one for Slack's reason. It
+passes two, three and four, and the fourth is why it was worth researching.
+
+### What it asks that Stripe never did
+
+| | |
+| --- | --- |
+| Base URL | `https://3.basecampapi.com/{account_id}/` — **discovered** per user from `launchpad.37signals.com/authorization.json`, where a `TargetDescriptor.address` is declared once |
+| Auth | OAuth 2; the token lives **14 days** and refreshes, long enough to work through development and fail in production |
+| User-Agent | **Required**, app name and a URL or email; traffic without it is blocked |
+| Rate limit | 50 requests per 10 s per IP, `429` with `Retry-After` |
+| Pagination | `Link rel="next"` plus `X-Total-Count`, geared — 15, 30, 50, then 100 per page |
+| Caching | `ETag`/`Last-Modified` → **304** |
+| Attachments | raw binary body |
+| Webhooks | per project, up to 10 attempts, and **no signature of any kind** |
+
+Measured against conduit's transport that day, five were gaps in the mechanism
+that any well-behaved REST API exposes, and all five were fixed the same day:
+response headers unreachable (`FJS-648`), a 304 reported as an error (`FJS-649`),
+a 429 opening the circuit breaker and `Retry-After` ignored (`FJS-650`, now its own
+`rate_limited` kind), a binary body serialized as a JSON object of byte indices
+(`FJS-651`), and no home for a constant per-target header (`FJS-652`). Fixing them
+found `FJS-656` — a caller could displace a target's credential by spelling the
+header differently — and `FJS-657`, the SQLite registry dropping `encoding`.
+
+So Basecamp argues on axes nothing else here reaches: **response metadata as a
+result**, **304 as a success**, and **a credential that expires and rewrites
+itself** — the last one visible from S3 too, the first two from nothing else.
+
+### The inbound half, where there is nothing to verify
+
+`IConduit` receives nothing by design; the inbound leg is a junction raw route and a
+verifier the connector owns (`verify:pay` proves it with no conduit in it). Basecamp
+signs nothing, so the honest design says so rather than inventing a check:
+
+- **A secret path** — `/webhooks/basecamp/{token}`, compared constant-time. It
+  authenticates the URL, not the request.
+- **Idempotency on `payload.id`**, since redelivery is ordinary.
+- **Treat the payload as a hint and re-read the recording** with the app's own
+  token. That read is the only step that establishes anything; acting on the body
+  is the hole, and a forged POST to a leaked URL is indistinguishable from a real one.
+
+A hook is per project, so the app installs one per bucket, installs another when a
+project appears, and reconciles hooks deleted on Basecamp's side.
+
+### What is still unbuilt
+
+Mechanism is done. What an app would still need: **the credential leg** —
+`CredentialResolver.get(ref)` takes no principal and returns no expiry, and
+`TargetAuth` has no OAuth variant (`third-party-credentials.md` legs one and three,
+refresh under a lock so two sends do not both spend the refresh token); **the
+connector** in `example/api/src/providers/basecamp/`, following the Stripe shape,
+whose `translate()` treats 404 as *you may not see this* because visibility is per
+project; and **a sink and a drive** that can move the clock rather than wait a
+fortnight — a 304 served from cache, a `Link` walk to page two, a 429 that does not
+open the breaker, bytes arriving as bytes, a webhook re-read before it is acted on,
+and one refresh with two sends in flight.
+
+---
+
 ## See also
 
 - [`DECISIONS.md` `FJS-D153`](../DECISIONS.md#fjs-d153) — where a connector lives, and why not in conduit
@@ -167,5 +233,5 @@ teaching a shop's arithmetic with numbers nobody charges.
 - `deploy-plane.md` — what item 10 unblocks
 - `ecosystem-gaps.md` — the comparison against Laravel's batteries
 - `packages/conduit/README.md` · `packages/conduit/CLAUDE.md` — the mechanism as it ships
-- `example/api/src/providers/stripe/index.ts` · `psp.ts` — the two dialects that exist today
+- `example/api/src/providers/stripe/index.ts` · `providers/psp/index.ts` — the two dialects that exist today
 - `packages/basecamp/docs/ADAPTERS.md` — the app-side of item 10, and the test this list's rule three sets: four declared boundaries with nothing behind them, and which of the four is every app's problem rather than one app's

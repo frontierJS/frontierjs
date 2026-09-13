@@ -31,7 +31,7 @@ Count what a person in this workspace can start:
 | Apps with ports assigned | 8 | `core/ports.js` § PROJECTS |
 | Browser drives | 25 | `verify*` scripts in 5 `package.json` files |
 | Package suites | 20 | `test` scripts, one runner each and they differ |
-| CI phases | 12 | `scripts/ci.mjs`'s `main()` |
+| CI phases | 14 | `scripts/ci.mjs`'s `main()` |
 | `fli` commands | 236 | the command tree |
 
 Every one of those is derived from a file that already exists. None of them is in
@@ -56,8 +56,9 @@ reads drives out of `package.json`, ports out of `ports.js`'s registry, CI phase
 of `ci.mjs`'s own `main()`, snapshots out of `snapshots.js`'s walker, and commands out
 of the command tree. Its header states the rule this proposal inherits without
 changing a word: *nothing here is typed twice — every row comes from a file that
-would break something else if it were wrong.* The output is `repo-map.snapshot.html`,
-gated by the `snapshots` CI phase.
+would break something else if it were wrong.* The output is
+`repo-report.snapshot.html` and `repo-atlas.snapshot.html` — one model, two
+presentations (`FJS-D223`) — both gated by the `snapshots` CI phase.
 
 **Liveness is already answerable.** `core/ports.js` exports `isPortInUse(p)` and
 `busyPorts(ports)`, and `appPorts(appRoot, { exists })` already answers *which
@@ -288,9 +289,10 @@ one identical page over one tree, 62,246 characters each.
 
 **Two corrections the build made to this section.** The tools list matches a command
 to a reserved slot by that command's own `port` flag default rather than by a table —
-which is what found `FJS-557`, studio reserving 8502 and defaulting to 5001. And **CI
-phases are not rows**: `scripts/ci.mjs` has no per-phase flag, so a phase tile could
-only run all twelve; the runnable is `bun run ci`, a task. `kind` is therefore
+which is what found `FJS-557`, studio reserving 8502 and defaulting to 5001. And
+**`ci.mjs` has since grown a `--phase` flag**, repeatable, run in the phase table's
+own order — so a phase tile can now run one phase rather than only all of them
+through `bun run ci`. `kind` is therefore
 `surface · tool · drive · suite · task · snapshot`, with commands left to the sidebar
 that already answers them.
 
@@ -384,17 +386,17 @@ the command it picks may be the suite.
 
 ### 6 — ~~the tools become tiles~~ — shipped 2026-08-27
 
-`fli project:view`, `db studio` and junction's `devtools` are rows in the **tools**
+`fli project:map`, `db studio` and junction's `devtools` are rows in the **tools**
 group, read from `ports.js` § GLOBAL. Their commands are unchanged.
 
-**And `project:view` grows a live badge**: it maps one app's chain of responsibility
+**And `project:map` grows a live badge**: it maps one app's chain of responsibility
 and says nothing about whether that app is up, which is a fact its own reader wants
 and which `/health` already answers. It reads state; this page starts things. Neither
 becomes the other.
 
 **Proved by** a test that adds a slot to `GLOBAL` and asserts a tile appears with
 nothing edited in `runnables.js` — mutation-checked by hardcoding the four current
-tools, which turns it red. Plus `tests/pview-state.test.js`, which boots the real
+tools, which turns it red. Plus `tests/pmap-state.test.js`, which boots the real
 command, because the thing under test is the WIRING and that is fine in isolation
 while being absent from the command file.
 
@@ -402,7 +404,7 @@ while being absent from the command file.
 `GLOBAL` since the inventory shipped. What the step actually cost was `probeState`
 getting ONE owner: it moved into `core/runnables.js` and both servers call it, so
 *is it answering* has one answer rather than two that can disagree. It takes rows
-rather than a root and its child lookup is injected, because `project:view` starts
+rather than a root and its child lookup is injected, because `project:map` starts
 nothing and must not import a table of processes to ask whether an app is up.
 
 **And the badge is the app's own surfaces, not the tooling block**: `fli gui` being
@@ -411,7 +413,7 @@ up is not a fact about the app this page maps.
 ## 9. Open questions
 
 - **Whose project?** This workspace has eight apps with assigned ports; a client app
-  has one. `project:view` takes `--project`. Does the dashboard show one app or the
+  has one. `project:map` takes `--project`. Does the dashboard show one app or the
   workspace? Probably: one app by default, the workspace when `fli` is run from its
   root, which is a distinction `context.wsRoot()` already makes.
 - **Does a started server outlive the GUI?** A child of the GUI process dies with it,
@@ -421,7 +423,7 @@ up is not a fact about the app this page maps.
   thing the tile names — this is exactly the failure `strictPort` exists for. A probe
   of `/health` or `/manifest` narrows it for an API and answers nothing for a static
   origin.
-- **Is `repo-map.snapshot.html` then redundant?** No, and the split is worth stating:
+- **Are `repo-report.snapshot.html`/`repo-atlas.snapshot.html` then redundant?** No, and the split is worth stating:
   the snapshot is a **committed artefact reviewable in a diff**, the dashboard is
   **live and never committed**, the same split `fli ws:atlas` and `ws:atlas --live`
   already make.
@@ -470,7 +472,7 @@ local URLs, Docker Desktop for state. Ranked by value × fit, not by novelty.
    `CLAUDE.md` already carried the map — *sierra router → `verify` +
    `verify:build`* — as a table nothing read and nothing checked. It is the one
    idea here that no other framework's dashboard could copy, because no other
-   framework wrote the table. **It is its own paper** (`IDEAS/proof-map.md`) and
+   framework wrote the table. **It shipped on its own** (`fli proves`, `packages/cli/core/proofs.js`) and
    only ends up on this page because this page is where the answer is pressed:
    `GET /api/proves` resolves both columns and the panel above the tiles renders
    each answer as the same start button the tiles carry. *Tilt's graph, `nx

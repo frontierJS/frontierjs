@@ -4,7 +4,7 @@ State as of **2026-08-06**.
 
 ## What this is
 
-69 Mesa components over `@frontierjs/css`. Promoted out of
+Mesa components over `@frontierjs/css`. Promoted out of
 `packages/mesa/ui-v2/` on 2026-08-03 and restyled; the older 4-component
 `packages/mesa/ui/` was deleted in the same move.
 
@@ -54,8 +54,7 @@ under them (`FJS-321`) — **the third depth pass in four to find a framework
 defect rather than a component one**, which is the argument for doing the rest
 of the kit this way rather than declaring breadth enough.
 
-**29 of the 64 by `example`, as of 2026-08-06.** `Form` joined them the same
-day.
+**Driven in `example`, as of 2026-08-06** — `Form` joined them the same day.
 
 - *Carrying every route* — Alert, Badge, Button, Card, Checkbox, Field, Form,
   Input, Label, Pill, SectionHeader, Select, Table. `example/`'s `bun run verify`
@@ -160,7 +159,7 @@ decides which item is last.
   `node_modules/.bun/`, not a symlink.** An edit to `packages/mesa/src/compiler.js`
   is invisible to anything importing `@frontierjs/mesa` until you reinstall —
   a test suite will report green against a stale snapshot. `test/compile-all.mjs`
-  imports `../../mesa/compiler.js` by relative path for exactly this reason,
+  imports `../../mesa/src/compiler.js` by relative path for exactly this reason,
   and `node_modules/@frontierjs/mesa` here has been replaced with a symlink to
   the workspace so the bare specifier resolves live too. **If you re-run
   `bun install`, check that symlink survived.**
@@ -174,12 +173,11 @@ decides which item is last.
   should use the term instead — the whole point of the restyle was to stop
   the package carrying a second design system.
 
-## Open — see `ISSUES.md`
+## Closed — see `ISSUES.md`
 
-**`FJS-055`** a kit control's real `required` needs `novalidate` ·
-**`FJS-056`** `CommandPalette` draws its own panel and input rather than
-composing `.dialog` + `.field` + `.items`. Its `Btn`/`Button` clause is closed —
-`Btn` was deleted — and its `themeStore` clause with `FJS-308`.
+**`FJS-055`** (a kit control's real `required` needing `novalidate` on `<Form>`)
+and **`FJS-056`** (`CommandPalette` drawing its own surface instead of
+composing `.dialog` + `.field` + `.items`) are both closed.
 
 Three Mesa defects were found by rendering every
 component for the first time and are **fixed the same day** — `FJS-146` an
@@ -195,7 +193,9 @@ bubble, so **no Modal or Drawer could be reopened after Escape**; `FJS-298` a
 `DatePicker` threw on a month change into a shorter month; `FJS-301` its
 `disabledDates` disabled the wrong day west of Greenwich; `FJS-302` `.avatars`
 overlapped and ringed nothing, because this kit wraps its avatars. Two mesa
-questions the drive raised are open — `FJS-303`, `FJS-304`.
+questions the drive raised are closed — `FJS-303` (a memo inside `{#if}`
+recomputing before the guard tore it down), `FJS-304` (an attribute on
+`<slot>` silently ignored).
 `Toast` and `DatePicker` are in the attribute sweep as a result, and `Toast` is
 a render case.
 

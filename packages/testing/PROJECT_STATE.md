@@ -11,7 +11,7 @@ reproduced; anything else is labelled as unconfirmed._
 
 ## What it is
 
-`@frontierjs/testing` v0.1.4 — the Testing realm's API tier. One `createTestEnv`
+`@frontierjs/testing` v0.1.6 — the Testing realm's API tier. One `createTestEnv`
 across Data and API: litestone's version owns the Data half, this owns the half
 that needs a mounted Junction app, which litestone may not import (Invariant 1).
 

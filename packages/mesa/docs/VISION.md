@@ -804,7 +804,7 @@ A component with no `<style>` block emits no scope class at all.
 RULE 51 is unchanged by this. Reactive *logic* still does not belong in a `.js` module;
 `createRoot` is for owning a lifetime, not for doing reactive work outside a component.
 
-> **RULE 9** — Store files cannot import from component files — compiler enforced.
+> **RULE 9** — Store files cannot import from component files. The compiler does not check it.
 
 > **RULE 10** — Circular reactive store imports are a compiler error.
 
@@ -1996,7 +1996,7 @@ The rest — `props`, `slots`, `attributes`, `emit`, `context`, `mounted`,
 when the component reaches for them.
 
 `$.onMount` and `$.onDestroy` are also exported from `@frontierjs/mesa/runtime.js`
-as `$onMount` and `$onDestroy`, for a composable helper written outside component
+as `onMount` and `onDestroy`, for a composable helper written outside component
 scope — where there is no instance and therefore no `$`. Those are module
 exports and keep the bare spelling; the door is what a component writes.
 
@@ -2169,7 +2169,7 @@ client         →  identical to the direct call — no markers, no extra DOM
 > omitting the flag produces the direct call.
 
 Markers are comment-delimited, not a `<mesa-island>` element. An element is
-easier to query and is what `SSR_SPEC.md` first sketched, but it fails in two
+easier to query and is what the first sketch used, but it fails in two
 ways that produce no error: the HTML parser foster-parents a non-table element
 out of `<tbody>`, relocating the marker away from the island it identifies, and
 a wrapper element joins `>` selectors and flex/grid layout, so a page would
@@ -2197,8 +2197,8 @@ resolving a component *name* to a module to import — which is what the
 ### 18.7 Compilation API
 
 ```js
-import { compile, compileSource, compileFile } from '@mesa/compiler'
-import { compileMd, parseFrontmatter } from '@mesa/compiler-md'
+import { compile, compileSource, compileFile } from '@frontierjs/mesa'
+import { compileMd, parseFrontmatter } from '@frontierjs/mesa/compiler-md'
 
 // Explicit .mesa compilation (unchanged)
 const ctx = await compile(source, config)
@@ -2211,7 +2211,7 @@ const ctx = await compileFile('./pages/about.md')
 //   ctx.result       — compiled JS module string
 //   ctx.analysis     — reactive graph analysis
 //   ctx.isStatic     — true if component has no JS at runtime
-//   ctx.frontmatter  — parsed frontmatter (undefined for .mesa files)
+//   ctx.frontmatter  — parsed frontmatter, for .md and .mesa alike
 //   ctx.layout       — frontmatter.layout value (null if not set)
 ```
 
@@ -2262,7 +2262,7 @@ Static components can be rendered to HTML at build time with no JavaScript shipp
 ### 19.2 `renderToHTML`
 
 ```js
-import { initRenderer, renderToHTML, wrapPage } from '@mesa/render'
+import { initRenderer, renderToHTML, wrapPage } from '@frontierjs/mesa/render'
 
 // Call once before importing any compiled components
 initRenderer()
@@ -2439,7 +2439,7 @@ components hydrate to their initial render and serialize cleanly.
 | 6 | `$:` path watching uses optional chaining semantics — `?.` for soft, none for hard |
 | 7 | Watch+handler: handler is always last, always outside parentheses |
 | 8 | Shared state is plain JavaScript — `$:` path declaration makes it reactive per-component |
-| 9 | Store files cannot import from component files — compiler enforced |
+| 9 | Store files cannot import from component files — not compiler-checked |
 | 10 | Circular reactive store imports are a compiler error |
 | 11 | Static paths → targeted accessors; dynamic paths → runtime effects |
 | 12 | Template path references always safe — compiler wraps with `?.` and `?? ''` |

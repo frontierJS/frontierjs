@@ -1,6 +1,6 @@
 ---
 id: declared-field-state
-status: proposed
+status: shipped
 dated: 2026-09-10
 ---
 

@@ -2,9 +2,7 @@
 //
 // `website/packages.js` is the single source of truth for what every package
 // is and what it replaces, and its own header says so: a feature is written
-// once. It is a CLASSIC script that assigns `window.FJS`, deliberately — the
-// legacy hand-written pages open straight from the repo, and a browser blocks
-// a module import over file://.
+// once. It is a CLASSIC script that assigns `window.FJS`.
 //
 // So this evaluates it rather than importing it, and rather than keeping a
 // second copy in module syntax. A copy would be the failure the original file

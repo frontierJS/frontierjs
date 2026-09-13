@@ -1,15 +1,16 @@
 ---
 id: performance-regression-watch
-status: proposed
-dated: 2026-09-12
+status: partial
+dated: 2026-09-13
 ---
 
 # Idea — Nothing watches the numbers, and what a performance claim should be
 
-**Status: PROPOSAL, with a measurement attached.** The drift below was measured
-2026-08-18 on x64 / bun against `4f46e5b` and is reproducible by §Method. The
-three-tier shape in §What a performance claim is was added 2026-09-12 from the prior
-art in §What the field does, ahead of alpha; nothing in it is built.
+**Status: PARTIAL.** The drift below was measured 2026-08-18 on x64 / bun against
+`4f46e5b` and is reproducible by §Method. The three-tier shape in §What a performance
+claim is was added 2026-09-12 from the prior art in §What the field does, ahead of alpha.
+Order (1) was built 2026-09-13 and §What Order (1) found is its result; the tiers,
+the runner and the phase are not built.
 
 `packages/litestone/bench/audit-bench.mjs` exists, covers eleven cases, and is run by
 hand. It has been run twice: at the audit that produced it (`docs/PERFORMANCE_AUDIT.md`,
@@ -44,8 +45,9 @@ declaration or two would cost per `speed-and-footprint.md`'s ablation table — 
 the point: it is small enough that only a comparison finds it, and no comparison was
 being made.
 
-**The drift is undiagnosed.** It is not attributed to a commit or a code path here, and
-`policy.js` growing 593 lines is a suspicion rather than a finding.
+**Diagnosed 2026-09-13, and it was the small half**: instruction counts put it at +13% on
+`create()` and +3% on `findMany`, and a larger step landed after it — §What Order (1)
+found.
 
 ## The useful negative result
 
@@ -72,9 +74,8 @@ declares them:
 
 `@version` is measured, but only as a prose note in the audit header (+7% create /
 +35% update); there is no case, so it cannot regress visibly. And the whole READ side
-of access control is unmeasured — [FJS-621](../ISSUES.md#fjs-621): a policy compiling
-the target's own policy into a subquery, `@from` as a correlated subquery per row,
-`@computed` forcing filter and sort into JS.
+of access control was unmeasured — [FJS-621](../ISSUES.md#fjs-621), closed 2026-09-13 by
+§What Order (1) found.
 
 **Outside litestone there is nothing at all.** Junction, sierra and css carry no bench;
 `packages/mesa/mesa-bench` is a js-framework-benchmark harness excluded from CI by
@@ -232,10 +233,8 @@ reason, since *nothing moved* and *nothing was measured* are otherwise one answe
 
 ## Order
 
-1. **Coverage before any ceiling.** Ablation cases for tenancy, `@@allow` with a
-   non-trivial predicate, `@@transitions`, `$audit`, `@version` and the
-   softDelete×unique crossing, plus FJS-621's read path — a ceiling written today sits
-   on numbers that do not exist. `S`.
+1. **Coverage before any ceiling.** *Built 2026-09-13* — `bench/ablation.mjs`, results in
+   §What Order (1) found. The write half needs counts to resolve.
 2. **The gated tier.** Promote the counts already asserted into named cases, add the
    byte baselines per surface. The only tier that can fail a build, and the cheapest.
 3. **The runner and the reported phase.** `bench:core`-sized, since the full file is
@@ -272,7 +271,8 @@ with a concurrent GC. The workload is litestone on `:memory:`: 2,000 `create()` 
 
 The determinism options are `BUN_JSC_useConcurrentGC=0 useConcurrentJIT=0
 numberOfGCMarkers=1 useParallelMarkingConstraintSolver=0 forceWeakRandomSeed=1
-collectionTimerMaxPercentCPU=0`. **Disabling the JIT is the wrong lever**: it is slower,
+collectionTimerMaxPercentCPU=0`, **plus `BUN_GC_TIMER_DISABLE=1`**, which this table
+predates and §What Order (1) found is required once the heap is larger. **Disabling the JIT is the wrong lever**: it is slower,
 no steadier, and splits into two modes nine percent apart. The variance was the GC's
 threads and timers, not tiering — the JIT stays on, so the code counted is the code
 that ships.
@@ -305,10 +305,69 @@ counted on both the base ref and the branch in one job, under the options above,
 past a stated percentage with at least three runs a side. What stays *reported* is
 anything where time is spent outside the process.
 
+## What Order (1) found
+
+**Measured 2026-09-13.** `packages/litestone/bench/ablation.mjs` (`bun run bench:ablation`):
+one schema per declaration beside the same schema without it, `:memory:`, five interleaved
+rounds, min reported, each case's spread printed and a delta inside the two spreads marked.
+
+**The read half is unambiguous** ([FJS-621](../ISSUES.md#fjs-621), closed with these):
+
+| declaration, 100 of 5,000 rows per read | Δ µs | Δ % |
+| --- | --- | --- |
+| `@@allow('read', ownerId == auth().id \|\| status == 'published')` | +21 | +42 |
+| row tenancy | +10 | +19 |
+| `check()` chain, 1 · 2 · 3 hops | +26 · +41 · +55 | +62 · +94 · +121 |
+| `@from(count)`, child FK indexed | +72 | +131 |
+| `@from(count)`, child FK **not** indexed | +20,035 | 400× |
+| `@computed` with `needs` | +26 | +52 |
+
+**The write half is not resolvable by a clock on this machine.** Every single-row write delta
+— tenancy, `@@allow`, `@version`, `@unique`, the softDelete×unique pre-check, `@@transitions`
+on update — came back inside the spread of its two cases, and two of them negative. That is
+§Spike's argument arriving from the other side: the cost of a declaration on a write is a
+few µs, a single-row write is ~30 µs, and the round-to-round spread here is 2–12 µs.
+
+**Two numbers on record were wrong.**
+
+- **`@@log(audit)` is ~140 µs a write, not +3.1.** The logger defers to `setImmediate` and
+  a timed loop that only awaits resolved promises never yields to it, so
+  `speed-and-footprint.md` measured the enqueue. The same probe at `fef1f2f`, that file's own
+  tree, reads **~10 ms** a write with the flush and +7 µs without — so the write got ~70×
+  faster since, and the table said it had always been free. Struck in place there.
+- **The August drift was the small half.** Instruction counts put it at +13% on `create()`,
+  +3% on `findMany` and flat on a gated read between `762cb76` and `4f46e5b`. Since then a
+  single-row `create()` went **10.95 → 19.91 µs (+82%)**, bisected by instruction count to
+  `3f38d4b` — every create now takes the transaction lock and an uncached
+  `BEGIN IMMEDIATE`/`COMMIT` pair, one-statement creates included
+  ([FJS-1106](../ISSUES.md#fjs-1106)), fixed the same day). Nothing ran a comparison for four weeks, which is the
+  file's title arriving as a measurement.
+
+**What the bisect taught about the instrument**, both folded into §Spike's rule:
+
+- **Bun's own GC timer is a second clock.** With the JSC options alone, HEAD's `create`
+  case split into two modes 16% apart, and every tree past `4f46e5b` read up to 30% apart
+  under parallel load. `BUN_GC_TIMER_DISABLE=1` closed both: four sequential runs within
+  0.025%, and all three trees within 0.06% under six-way load. The older trees were stable
+  without it, because their heap was small enough never to reach the timer — so a counted
+  case can become non-deterministic because the PRODUCT grew, and the runner has to repeat
+  a count and refuse one whose repeats disagree.
+- **A count and a clock can disagree in sign on a few µs.** Bypassing the transaction lock
+  in a worktree took ~3 µs off a create by the clock and added 8.5K instructions by the
+  count — the lock's cost is allocation, and the collector the count runs under is not the
+  one Bun ships. Counts found and bisected an 82% step correctly; a change of a few percent
+  that is mostly allocation is decided on the clock.
+
 ## Open
 
-- **Is a measured 15–20% drift a defect?** It has no `FJS-###` and per `ISSUES.md`'s own
-  rule that means it is not open. Filing it needs a diagnosis, which needs Order (1).
+- **`FJS-1106` is fixed and the attribution above was wrong.** The transaction path was nearly
+  all of it: 19.49 → 11.92 µs against 11.26 at `4f46e5b`. The worktree bypass above read
+  ~3 µs where the fix recovered ~7.6, and that gap is unexplained — the two were measured
+  an hour apart, and the bypass still awaited inside an async body the fix does not enter.
+- **`update()` was +114% behind the same wrapper** — [FJS-1107](../ISSUES.md#fjs-1107), fixed —
+  and about half of it was something else: [FJS-1108](../ISSUES.md#fjs-1108), measured on a
+  saturated machine and wanting a quiet remeasure. A counted gate in Order (2) would have
+  caught all three the day they landed.
 
 ## Decision questions
 

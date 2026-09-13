@@ -1,7 +1,9 @@
 # Orion
 
-> **Status: V2, deferred.** Folder claimed, nothing implemented, and nothing is owed here **until FrontierJS core
-> leaves alpha** (`FJS-D14` — `DECISIONS.md` § Repo conventions). Orion is an app built ON the
+> **Status: V2, deferred.** Folder claimed; a tracked `mockup/api-engine` exists
+> (a DAG executor, event layer, plugin system and worker pool) but nothing here
+> is owed **until FrontierJS core leaves alpha** (`FJS-D14` — `DECISIONS.md` §
+> Repo conventions). Orion is an app built ON the
 > framework, so building it now spends alpha time on a consumer of seams that are still moving. Its primary
 > trigger is a Junction subscriber for litestone's write tap, which `announceDataWrites` now provides.
 > This file is the intent, not a description of behavior — and the thing to reopen when core is out of alpha.
@@ -46,7 +48,7 @@ D7 / app — like basecamp. Orion is expected to *consume* the framework across 
 | Outbound          | conduit — the single boundary for any call leaving the app                                 |
 | Notify            | notifications — flow failure, approval requests                                            |
 
-If Orion needs something the framework cannot express, that is a finding against the framework and belongs in `HANDOFF.md` — not a local workaround.
+If Orion needs something the framework cannot express, that is a finding against the framework and belongs in `ISSUES.md` — not a local workaround.
 
 ---
 
@@ -83,7 +85,7 @@ the deferral is not also a loss of the thinking.
 - **Who owns scheduling** — Caravan's cron, or an Orion scheduler over it? Caravan, unless something concrete says otherwise.
 - **Durable waits.** A step that sleeps three days cannot hold a worker. Continuation state has to live in the Data realm, which makes resume a query, not a memory read.
 - **Which principal does a flow run as?** Its author, a service account, or the triggering user? This decides what gates see, so it is a Data-realm question, not a config toggle.
-- **Trigger source for model events.** litestone `onEvent` currently has no Junction subscriber (`CLAUDE.md` § Bridge index) — Orion is the use case that would force that seam to exist.
+- **Trigger source for model events.** `announceDataWrites` is the Junction subscriber for litestone's write tap now — Orion is the use case that would put it to work.
 - **Blast radius.** A flow that patches every row on every write is one edit away. Rate limits, dry runs, and a kill switch are day-one features, not hardening.
 
 ---

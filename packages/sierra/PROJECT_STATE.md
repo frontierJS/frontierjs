@@ -44,30 +44,27 @@ them off a diff.
 
 ## What is NOT built
 
-- **No generator over a schema-driven table, detail view or filter bar.** The
-  control mechanism is ruled and shipped (`FJS-D17`) and all three would inherit
-  it unchanged; nothing consumes it, which is why no registry ships for them.
-  Two halves are missing underneath: sortability (`FJS-553`) and filterability
-  (`FJS-554`) are answered by `db.$checkOrderBy`/`$checkWhere` on the server and
-  reach no client, so a generated header would offer a sort the Data boundary
-  throws on. Root `../../CLAUDE.md` § Open questions.
-- **A prerendered site's `sitemap.xml` omits every dynamic page** (`FJS-456`) —
-  `generateSitemap` is handed the indexed routes, which exclude dynamic ones, so
-  a storefront's sitemap lists no product.
+- **A schema-driven table and filter bar are built now**: `resource.columns()`
+  / `.filters()`, `display/Cell.mesa`, `display/FilterBar.mesa` and a
+  registered display — `columnList` ranks them. Sortability (`FJS-553`) and
+  filterability (`FJS-554`) reach the client through `x-sortable` and the
+  filter equivalent, both closed. What is left is a detail-view generator,
+  which nothing here builds yet.
 - **A generated form offers an editable box for a sealed column** (`FJS-628`,
   with `ui`) — `@immutable` under a `@seals` move is frozen at the seal and
-  nothing on this side reads it.
-- **The gate scale is a hand copy** (`FJS-520`, decision `FJS-D184` open) — this
-  package holds one of the four, across a boundary that forbids the import.
-- **Value sets have two axes held out of `FJS-D120` and both are wanted**: a
-  per-caller ORDER (`FJS-D121`), unruled, and a DEPENDENT set, where one field's
-  value narrows another's list — ruled `FJS-D122` and built (`FJS-953`). This
-  package's half is `options()`: it narrows by the controlling value off the
-  draft record and answers EMPTY with `awaiting` where there is none. What a
-  form does with a value the change made illegal is `FJS-D225`, unruled.
-- **`FJS-D117` and `FJS-D118` are unruled routing questions** — whether a
-  co-located route part carries its folder in its name, and whether a page can
-  state where *back* goes.
+  nothing on this side reads it. *Since closed*: the seal reaches a form
+  through `resource.sealedFields`.
+- **Value sets have two axes held out of `FJS-D120`**: a per-caller ORDER
+  (`FJS-D121`, unruled) and a DEPENDENT set, where one field's value narrows
+  another's list — ruled `FJS-D122` and built (`FJS-953`). This package's half
+  is `options()`: it narrows by the controlling value off the draft record and
+  answers EMPTY with `awaiting` where there is none. What a form does with a
+  value the change made illegal was `FJS-D225`, now ruled and built.
+- `FJS-456` (a prerendered site's sitemap omitting dynamic pages), `FJS-520`
+  (the gate scale as a hand copy), `FJS-553`/`FJS-554` (sortability and
+  filterability reaching no client) and `FJS-D117`/`FJS-D118` (the routing
+  questions about a co-located part's name and where *back* goes) are all
+  closed or ruled now — see `ISSUES.md`/`DECISIONS.md`.
 - **`FJS-632` is closed and `record()` was not the cause.** The second read
   arrived 25 ms after the first; what was wrong was a screen rendering *the two
   prices agree* while it was still asking what the second one was. Worth knowing
@@ -80,14 +77,10 @@ them off a diff.
 1. **Run all four commands above before changing anything.** The two drives are
    not in `test`, so a green vitest run says nothing about the widget runtime or
    about whether a gated read still fails a static build.
-2. **`FJS-456` is the cheapest real defect here** — one filtered list handed to
-   the wrong step, and `postbuild.test.js` is already the place to pin it.
-3. **`FJS-553`/`FJS-554` are the pair that unblocks the open question.** They are
-   one shape: a fact the Data boundary already answers and that the client cannot
-   ask for. Doing them together is what makes a generated table decidable.
-4. **`FJS-553`/`FJS-554`'s neighbour is `FJS-628`, now closed** — the seal
-   reaches a form through `resource.sealedFields`, which is the same shape those
-   two want: a fact the Data boundary answers, asked through the resource.
+2. **A detail-view generator is what remains of the table/filter-bar/detail
+   trio** — the table and filter bar are built; the detail view is the one
+   piece with no generator yet, and it would inherit the same ruled control
+   mechanism (`FJS-D17`) unchanged.
 
 ## Unconfirmed
 

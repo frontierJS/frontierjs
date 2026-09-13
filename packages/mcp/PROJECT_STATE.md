@@ -26,7 +26,8 @@ agent today: there is no transport, so no MCP client can reach it.
    `bridge.toContext()`, which is HTTP-shaped. One execution path or the boundary
    duplicates itself.
 2. ~~**Input schemas on the tools.**~~ Done 2026-09-12 — see `CHANGES.md`. What
-   it left behind is the 46: tools with no argument schema, which is `aggregate`
+   it left behind is the 47: tools with no argument schema (162 of 209 carry
+   one, per the root `CLAUDE.md`'s package table), which is `aggregate`
    plus every custom method the seed does not describe.
 3. **A read-only mode and a dry-run mode.** Not derivable — an explicit choice.
 4. **A drive over `example`**, which is what would make the hand measurements in
@@ -36,9 +37,9 @@ agent today: there is no transport, so no MCP client can reach it.
 5. **The hold** — a protected call becomes a proposal a human approves by name.
    Depends on the durable-workflow noun rather than defining one here.
 
-## The 31
+## The 37
 
-`example` leaves 31 custom methods ungraded — `carts.checkout`,
+`example` leaves 37 custom methods ungraded — `carts.checkout`,
 `payments.start`, `inventory.adjust` and the rest. Nothing in the seed says what
 standing they need, so the projection labels them rather than guessing. Whether
 that number should fall by declaring more moves, or by the hold covering them, is

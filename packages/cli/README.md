@@ -7,7 +7,7 @@ result to a server.
 
 ```bash
 fli new my-app          # the whole application — db/ api/ web/, deploy, CI
-fli check               # the arch tests: twelve rules over the file tree
+fli check               # the arch tests: `fli check --list` names every rule
 fli dev                 # both servers, after a port preflight
 fli deploy              # to a machine you own
 ```
@@ -49,14 +49,14 @@ Commands are markdown files under `commands/`, one namespace per directory —
 | | |
 | --- | --- |
 | `fli new` · `fli make:*` | Scaffold — an app, a model, a service, a resource, a route, a widget, an extension, a deploy config |
-| `fli check` | **The arch tests.** Eleven rules over the file tree — see below |
+| `fli check` | **The arch tests.** `fli check --list` names every rule over the file tree — see below |
 | `fli dev` · `fli api:dev` · `fli web:dev` | Run the realms. `dev` refuses a port already answering, and warns about an empty database |
-| `fli db:*` | The Data realm — `push`, `pull`, `migrate`, `seed`, `studio`, `tinker`, `reset`, `schema`, `tables` |
+| `fli db:*` | The Data realm — `push`, `pull`, `migrate`, `seed`, `studio`, `tinker`, `reset`, `tables` |
 | `fli test:*` | `access`, `ddl`, `snapshots`, `mutate`, `types` — the Testing realm's committed-artefact half |
 | `fli release:check` | Can the release still serving and the release starting share one database? |
 | `fli auth:*` | Install the schema fragments, create a user, revoke sessions, rotate the key |
 | `fli deploy` · `deploy:*` | Setup a server, build, swap, health-check, roll back. `deploy:local` is the same pipeline against Docker on this machine |
-| `fli ws:*` | The workspace — version, publish, tag, push, map, atlas, exports, graph |
+| `fli ws:*` | The workspace — version, status, add, install, link, npm, exec, run, changed, clean, graph, exports, invariants, atlas, init; `fli list` names the rest |
 | `fli ports:claim` | Take a session's ports out of the scheme rather than guessing |
 | `fli project:map` | What this application IS — one reading, three presentations (`--as=report\|serve\|json`) |
 
@@ -78,7 +78,7 @@ linter reads `.mesa` or `.lite`, and the questions worth asking here are
 cross-file. *Does this resource name resolve to a model?* cannot be answered
 from the file it appears in.
 
-Eleven rules, and a rule earns its place by being **silent when broken**:
+A rule earns its place by being **silent when broken**:
 
 | Rule | Invariant | What it catches |
 | --- | --- | --- |
@@ -375,7 +375,7 @@ outside it: `fli project:map --project packages/basecamp`.
 **`core/ports.js` is the scheme, and it is the whole of it** —
 `port = env*1000 + category*100 + project*10 + service`. env: 7 test · 8 dev ·
 9 prod. category: 0 fe · 1 be · 2 widgets-dev · 3 widgets-served · 4 extension ·
-5 tooling.
+5 tooling · 6 site-dev · 7 site-served · 8 desktop-dev.
 
 A scaffolded app is project 0 — web on `8000`, API on `8100`. Global fli tooling
 is reserved — the whole of **8500–8509**, of which **8500 is the GUI, 8501 `project:map --as=serve`, 8502 db studio and 8503 junction's devtools console** — and the
@@ -394,7 +394,8 @@ fli gui --open         # and open a browser
 ```
 
 The GUI builds a form for every command out of its frontmatter — the same file,
-no second definition — and streams output live, colored by log level.
+no second definition — and streams output live, colored by log level. A sample
+of its routes, `core/server.js` for the rest:
 
 | Method | Path | |
 |---|---|---|
@@ -402,6 +403,9 @@ no second definition — and streams output live, colored by log level.
 | `GET` | `/api/commands` | All command metadata |
 | `GET` | `/api/commands/:name` | One command, with its source blocks |
 | `POST` | `/api/run/:name` | Run it; answers an SSE stream |
+| `GET` | `/api/proves` | Which drive proves the change you just made |
+| `GET` | `/api/check` | The arch-test rules over this project |
+| `GET` | `/api/release` | The Release realm's pivot verdict |
 
 ```json
 { "args": ["value1"], "flags": { "shout": true, "times": 3 } }
@@ -430,7 +434,7 @@ fli deploy:logs <TAB>      # --production, --stage, --follow, --tail …
 ```
 
 The script calls `fli completion:query` on every Tab press, against a disk cache
-at `~/.fli/completion-cache.json` that rebuilds when any command file changes.
+at `~/.fli/cache/registry-<key>.json` that rebuilds when any command file changes.
 `completion:generate` prints the script; `completion:refresh` forces a rebuild.
 
 ---
@@ -488,7 +492,8 @@ bun run test
 Two batches, and the split is load-bearing: the `_steps/` tests must run in a
 separate process, because bun's shared module cache carries state between them.
 
-There is **no browser drive for `fli`**. A change to a scaffold is proved by
+`bun run test:browser` is the GUI's own drive — one spec per panel of `fli
+gui`'s front page, over mesa's harness. A change to a scaffold is proved by
 scaffolding into a temp directory and running what comes out —
 `node scripts/scaffold-build.mjs` from the repo root does exactly that, and the
 `scaffold` CI phase runs it against packed tarballs. A change to

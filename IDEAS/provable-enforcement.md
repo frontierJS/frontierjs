@@ -1,13 +1,14 @@
 ---
 id: provable-enforcement
-status: proposed
+status: partial
 dated: 2026-09-01
 ---
 
 # Idea — provable enforcement: the promise no other ORM can copy
 
-**Status: IDEA. Nothing here is built**, though roughly 70% of the mechanism already
-ships under other names. Dated 2026-09-01. Written out of the six-pass litestone
+**Status: PARTIAL.** The grid tests exist and roughly 70% of the mechanism
+already ships under other names; a unified `prove` command is not built. Dated
+2026-09-01. Written out of the six-pass litestone
 design audit of the same date, whose findings are the evidence for §2 — the audit
 itself is a published artefact and the register entries it produced are in
 `ISSUES.md`. See `VERIFYING.md`.

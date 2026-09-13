@@ -90,7 +90,7 @@ Each declaration added alone to an otherwise bare schema, 20,000 inserts:
 | `@@gate("0.4.4.5")` | **+0.5** |
 | `@@allow('all', …)` policy | **+0.7** |
 | `@default(now())` DateTime | +1.9 |
-| `@@log(audit)` | +3.1 |
+| `@@log(audit)` | ~~+3.1~~ — the enqueue; the write is ~140 µs, see below |
 | `@unique` | +3.7 |
 
 **Gates and policies together cost 1.2 µs — about 4% of an `example`-schema write — and
@@ -101,7 +101,11 @@ question; it does not need re-opening.
 The two worth attention are both unglamorous:
 
 - **`@@log(audit)` +3.1 µs** is a second write per mutation, and that is with the cheap
-  `logger` driver. Point audit at a SQLite `database` and it costs more. A sampling or
+  `logger` driver. *Struck 2026-09-13: the write is deferred to `setImmediate`, and a timed loop
+  that only awaits resolved promises never yields to it — so +3.1 µs is the cost of queuing the
+  entry. Measured with one macrotask awaited inside the timer, the write itself is ~140 µs per
+  mutation at `73a2a6d` and was ~10 ms at `fef1f2f`, this file's own tree
+  (`performance-regression-watch.md` § What Order (1) found).* Point audit at a SQLite `database` and it costs more. A sampling or
   batching knob on the audit stream is the lever.
 - **`@default(now())` +1.9 µs** is constructing a `Date` and formatting ISO-8601 **per
   row**, because litestone stores `DateTime` as ISO TEXT. In a `createMany()` of 5,000

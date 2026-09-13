@@ -1,33 +1,24 @@
 ---
 id: state-machines
-status: partial
+status: shipped
 dated: 2026-08-04
 ---
 
 # Idea — State machines belong in the schema
 
-**Status: SHIPPED, with a remainder.** Dated 2026-08-04; **header corrected
-2026-08-06**, when it still read *"Nothing here is built. No `@@transitions`
-attribute exists in the `.lite` grammar"* — which had been false since the day
-this file was written. `@@transitions` parses, is enforced at the Data boundary
-(`litestone/src/core/parser.js`, `client.js`, `jsonschema.js`), reaches the
-client as `x-transitions` (`sierra/src/junction/field-rules.js`) and drives
-`example`'s order screen, which asserts an illegal move returns 409.
-`IDEAS/overview.md` row 4.1 has said *shipped* since 2026-08-04; this file did
-not, and a status header that contradicts the index is the drift `VERIFYING.md`
-exists to catch.
+**Status: SHIPPED, with a remainder.** Dated 2026-08-04. `@@transitions` parses, is
+enforced at the Data boundary, reaches the client as `x-transitions` and drives
+`example`'s order screen. **The reference is `packages/litestone/docs/schema.md`
+§ State transitions**; this file keeps the argument for putting a state machine in
+the schema, and what it resolved.
 
-**What remains unbuilt** is the full DSL (litestone backlog 5 — `transitionMap`
-is the partial form), and one thing this file never claimed:
+**What remains unbuilt** is one thing this file never claimed:
 
 > `@@transitions` is a **field** machine. A **process** — checkout, onboarding,
 > an approval chain: multi-step, spanning requests, resumable after a
 > disconnect — is a different noun, and `ARCHITECT.md` §2 has no word for it.
 > Argued in `IDEAS/declared-semantics.md` § 4, which is also where the case for
 > building it out of this plus Caravan is made.
-
-Read the design below as the argument that was made, not as a description of
-what shipped.
 
 ---
 
@@ -45,7 +36,7 @@ may write. A transition says *what write is legal from here*. Both are constrain
 on a mutation, both are currently scattered across handlers everywhere else, and
 both are knowable from the seed.
 
-## Shape
+## Shape, as shipped
 
 ```
 enum OrderStatus { pending paid shipped refunded cancelled }
@@ -55,29 +46,30 @@ model Order {
   status  OrderStatus @default(pending)
 
   @@transitions(status,
-    pending  -> paid,
-    pending  -> cancelled,
-    paid     -> shipped,
-    paid     -> refunded @gate(5),
-    shipped  -> refunded @gate(6))
+    pay:    pending         -> paid,
+    ship:   paid            -> shipped,
+    refund: paid            -> refunded @gate(5),
+    cancel: [pending, paid] -> cancelled)
 }
 ```
 
 Three things fall out, one per realm — which is the test for whether something
 belongs in the seed at all:
 
-**Data.** Litestone rejects an illegal transition the way it rejects a failed gate —
-at the boundary, on every path, including `asSystem()` unless explicitly bypassed.
-A row cannot reach an unreachable state, whatever wrote it.
+**Data.** Litestone refuses an illegal move at the boundary, on every path, with a
+compare-and-swap `WHERE` narrowed to the from-state, so two concurrent writers
+cannot both win.
 
-**API.** The rejection is a `ValidationError`, which the error boundary already maps
-to a 400 by name (`packages/junction/src/core/errors.ts`). Nothing new is needed at
-the transport.
+**API.** Each refusal carries its own status, so junction needs no mapper: an
+undeclared move is `TransitionViolationError` (409), a caller below a move's gate
+`TransitionGateError` (403), a lost race `TransitionConflictError` (409, with
+`retryable` separating *already made* from *moved under you*), and a `@system` move
+asked for by a caller `TransitionSystemError` (403).
 
-**UI.** `order.transitions()` returns the legal next states **for this record at this
-user's level** — so a detail page renders exactly the right buttons with no logic in
-the component. This is the same shape as `resource.can()`, and it reuses
-`canAtLevel()` for the per-transition gate.
+**UI.** `db.order.transitions(row)` and sierra's `resource.transitions(row, level)`
+return the moves for this record at this caller's level, refused ones included
+with `refusedBy` — so a detail page renders exactly the right buttons with no
+logic in the component.
 
 ## Why this fits FJS specifically
 
@@ -96,42 +88,23 @@ the component. This is the same shape as `resource.can()`, and it reuses
   `$defs` and renders a `<select>`; this is the thing that makes an enum *mean*
   something.
 
-## What would have to be built
+## What the open questions became
 
-1. **Grammar + AST** for `@@transitions`, including the optional per-transition
-   `@gate(n)`. Validation at parse time: every named state must be a member of the
-   referenced enum, and the field must be an enum field.
-2. **Enforcement in the write path.** Requires reading the current value before an
-   update, which `@@gate` does not — so this is the one genuinely new mechanism, and
-   the cost (an extra read, or a conditional `UPDATE ... WHERE status = ?`) should be
-   settled deliberately. The conditional-update form is atomic and cheaper and should
-   probably win.
-3. **Emission into JSON Schema** as an `x-transitions` key, alongside `x-gate` and
-   `x-relations` — the established pattern for schema facts with no wire
-   representation.
-4. **`resource.transitions()`** in `packages/sierra/src/junction/field-rules.js`,
-   which is where `buildGate` and `canAtLevel` already live and which is deliberately
-   a leaf module.
-
-## Open questions
-
-- **Are transitions events or destinations?** `pending -> paid` is a destination;
-  `order.pay()` is an event. Events read better and are what the gem ecosystem
-  offers, but they invent a second name for every edge and collide with the custom
-  actions question (`ARCHITECT.md` §5). Destinations are the smaller change and can
-  grow names later; do not do both at once.
-- **Initial state and creation.** Is a create subject to the transition table, or is
-  `@default(pending)` the only legal entry? The latter is simpler and probably right,
-  but it must be stated or every implementation guesses differently.
-- **Side effects.** The moment transitions exist, someone wants "on `paid`, send a
-  receipt." That is a hook, and it should stay a hook — a state machine that also
-  runs jobs is how this feature becomes a framework inside the framework.
-- **Does `asSystem()` bypass transitions?** It bypasses gates. Transitions are an
-  integrity constraint rather than an authorization one, so the honest answer is
-  probably **no** — which makes them the first schema rule `asSystem()` does not
-  clear, and that asymmetry needs a `DECISIONS.md` ruling.
-- **Terminal states, and reopening.** `cancelled` with no outgoing edges is a
-  one-way door; that is usually intended and occasionally catastrophic.
+- **Events or destinations?** Both, without a second name for every edge: a move's
+  name is optional on an enum (`pending -> paid` names itself after its target)
+  and required where the target says nothing about what a person did, which is a
+  `Boolean` column. `db.order.transition(id, 'pay')` calls one by name.
+- **Initial state and creation.** A create has no from-state and is not graded;
+  `@default` is the entry.
+- **Side effects** stayed hooks. The machine runs no jobs.
+- **Does `asSystem()` bypass transitions?** Yes, and it says so — except a
+  `@gate(9)` move, which nothing makes. The honest way for the application to make a move a
+  caller may not is a `@system` move (`FJS-D150`), which keeps the model gate, the
+  row policies and the audit actor that `asSystem()` drops.
+- **Terminal states.** Still a one-way door by design. Studio's Access panel shows
+  them (`verify:studio:access` asserts a terminal state beside a non-terminal one).
+- **The full DSL** arrived as a per-enum `transitions { … }` block that desugars
+  into `@@transitions` on each model using it; a gate needs the model form.
 
 ## Prior art — FSL, and the two things worth taking from it
 
@@ -169,24 +142,20 @@ Two mechanisms in it are worth stealing outright, and neither requires the packa
    moves* is a smaller rule than either. Junction's outbox owns the outbound side
    of exactly this problem already (`transport/send-queue.ts`), so there is a
    precedent for where it would live.
-2. **`toMermaid()` — a machine that draws itself.** `@@transitions` is the only
-   declared surface in the repo with **no committed snapshot**: routes, access,
-   release, DDL, JSON Schema, surface and exports all have one, and a state
-   machine is the most diagram-shaped of the lot. A `db/transitions.snapshot.md`
-   with a Mermaid graph per model, gated by the `snapshots` CI phase, is cheap,
-   buildable today, and turns a moved edge into a diff. Costs a generator and no
-   CI edit, per the snapshot contract.
+2. **`toMermaid()` — a machine that draws itself.** A moved edge is already a diff
+   — `access.snapshot.md` § State transitions lists every move — but as a table.
+   A Mermaid graph per model beside it would be cheap and is not built.
 
-Both are notes, not commitments. The full DSL (litestone backlog 5) is still the
-remainder this file is open for; FSL is the argument that the *process* half of it
-has demand, and the pending queue is the one design decision in it that FJS does
-not already have an answer to.
+Both are notes, not commitments. FSL is the argument that the *process* half has
+demand, and the pending queue is the one design decision in it that FJS does not
+already have an answer to.
 
 ## See also
 
 - `IDEAS/package-map.md` — where the UI half lands (`foundry`)
 - `IDEAS/framework-shape.md` item 1 — schema → Resource; this is one of the things
   a generated form would need to render correctly
-- `DECISIONS.md` — where the `asSystem()` and events-vs-destinations rulings belong
+- `packages/litestone/docs/schema.md` § State transitions — the reference
+- `DECISIONS.md` `FJS-D150` — `@system` on a move
 - `CLAUDE.md` § Bridge index — `buildGate()` / `canAtLevel()` / `x-relations` are the
   precedents this follows exactly

@@ -6,7 +6,7 @@ dated: 2026-08-24
 
 # Idea — Permission sets: the grid the ladder cannot express
 
-**Status: RULED, and being built.** Seven rulings settle the shape. **Step 1 shipped
+**Status: RULED, and BUILT.** Seven rulings settle the shape. **Step 1 shipped
 2026-08-26** — `@@capabilities` and `@capability` are declared syntax, and the set they
 imply derives from them (`litestone/src/core/capabilities.js`). **Steps 3 through 6 shipped the
 same day**: all three tiers refuse at the Data boundary, `Capability[]` is the declared

@@ -228,14 +228,12 @@ after: {
   ]
 }
 
-// From a Caravan job
-export const sendInvoiceJob = job({
-  name: 'send-invoice',
-  perform: async ({ userId, invoiceId }, { app }) => {
-    const user    = await db.asSystem().user.findUnique({ where: { id: userId } })
-    const invoice = await db.asSystem().invoice.findUnique({ where: { id: invoiceId } })
-    await app.notify(user, new InvoiceSent(invoice))
-  }
+// From a Caravan job — jobs/send-invoice.job.ts
+export default defineJob('send-invoice', async ({ data, app }) => {
+  const { userId, invoiceId } = data as { userId: string; invoiceId: string }
+  const user    = await db.asSystem().user.findUnique({ where: { id: userId } })
+  const invoice = await db.asSystem().invoice.findUnique({ where: { id: invoiceId } })
+  await app!.notify(user, invoiceSent(invoice))
 })
 
 // From a route handler
@@ -246,14 +244,14 @@ app.post('/orders/{id}/complete', async (ctx) => {
   const order = await completeOrder(ctx.route.id)
 
   // ctx.user is a SessionContext — `userId`, not `id`. A Recipient wants `id`.
-  await app.notify({ id: ctx.user.userId, email: ctx.user.email }, new OrderCompleted(order))
+  await app.notify({ id: ctx.user.userId, email: ctx.user.email }, orderCompleted(order))
   return ctx.json(order)
 })
 
 // To somebody with no account — a shop customer, a mailing-list address.
 // No `id`: email is the only transport that can address them, and notify()
 // enforces that rather than writing a row nobody could read.
-await app.notify({ email: customer.email, name: customer.name }, new OrderConfirmation(order))
+await app.notify({ email: customer.email, name: customer.name }, orderConfirmation(order))
 ```
 
 ---
@@ -337,7 +335,7 @@ Addressing a customer used to mean passing them as a `User` with an invented id 
 
 ## inApp transport
 
-Persists a record to the `notifications` table via `db.asSystem()` (bypasses gate and policy — create is locked at gate level). Then publishes a WS event on junction's `app.channel()` — the broadcast sense of the word — if the `channels()` plugin is configured.
+Persists a record to the `notifications` table via `db.asSystem()` (bypasses gate and policy — create is gated at SYSTEM, 8). Then publishes a WS event on junction's `app.channel()` — the broadcast sense of the word — if the `channels()` plugin is configured.
 
 Degrades gracefully when `channels()` is absent — DB record still persists, WS push is skipped without error.
 

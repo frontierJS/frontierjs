@@ -1,12 +1,13 @@
 ---
 id: proving-grounds
-status: proposed
+status: partial
 dated: 2026-08-29
 ---
 
 # Idea — the proving grounds: what to build next to find what is missing
 
-**Status: IDEA. Nothing here is built.** Dated 2026-08-29. Every claim about *this
+**Status: PARTIAL.** Billing, payroll, the fixture corpus and `litestone import`
+have since shipped. Dated 2026-08-29. Every claim about *this
 repo* below was read off `CLAUDE.md` and the tree rather than run, so a gap named
 here is a gap **as far as reading goes** — the whole point of the exercise is to make
 each one fail at a terminal instead of on a page. See `VERIFYING.md`.
@@ -171,8 +172,9 @@ saying where in the application they live. Ruled as `FJS-D154`: a pure
 zero and overridable, with no value object and nothing handed out by the seed.
 The function shipped with the ruling —
 `allocate(amount, ratios)` and `roundMinor(value, { mode })` in
-`@frontierjs/toolbelt/units` — and has no caller yet; proration is the one that
-arrives. **The sequencing is `billing.md`**, eight phases from where it lives to
+`@frontierjs/toolbelt/units` — and now has callers: `domain/billing/billing.ts`
+(splitting a charge across seats) and `domain/payroll/payslip.ts` (splitting a
+year across periods). **The sequencing is `billing.md`**, eight phases from where it lives to
 the slice.
 
 **Risk is low and bounded.** Roughly ten models. No regulator. Getting it wrong costs a
@@ -431,7 +433,7 @@ having a person in front of it.
 - `IDEAS/testing-realm.md` — the executed checks candidate B would extend
 - `example/PROJECT_STATE.md` and its README's *Found by building this* — the ledger
   this record is arguing to extend
-- `ISSUES.md` `FJS-561` (no composite `@@id`) — the gap § The corpus found on the day
+- `ISSUES.md` `FJS-561` (composite `@@id`, now closed) — the gap § The corpus found on the day
   this record was written, invisible to every rule `fli check` could carry. Its sibling
   `FJS-560` was filed the same hour as *no `Decimal`* and was a misread of shipped
   behavior; what it is now is the migration `example` still owes

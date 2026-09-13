@@ -9,7 +9,7 @@ dated: 2026-08-06
 **Status: THE CHECK IS BUILT (2026-08-06). The classifier is not.** `FJS-081` is
 closed — `packages/sierra/src/build/static-safety.js`, wired into
 `build/prerender.js`, 39 tests plus `bun run test:safety` against a real
-Litestone client, exercised in `example/` (`bun run build:public`). See
+Litestone client, exercised in `example/` (`bun run build:site`). See
 `packages/sierra/CHANGES.md`.
 
 **One premise in this file was wrong, and it mattered.** §What would have to be

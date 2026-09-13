@@ -72,7 +72,9 @@ src/
     errors.ts       named HTTP error classes + `retryable`
     schema.ts       request validation from the generated JSON Schema
     loader.ts       auto-discovers *.service.ts (factory must be create*Service)
-    config.ts, env.ts, logger.ts
+    rate-limit.ts, idempotency.ts, metrics.ts, sort.ts, diagnostics.ts,
+    field-errors.ts, config-scope.ts, services-dir.ts, env.ts, logger.ts
+  config/index.ts   loadConfig — junction.config.js onto AppConfig
 
   transport/
     bridge.ts       the formal transport↔service handoff. Nothing above it touches
@@ -113,8 +115,15 @@ src/
                     not become one. A notification that stops being registered
                     THROWS when somebody was owed a message, where a schedule
                     that stops being registered is silence
+  ../tools/jobs-snapshot.ts  `junction jobs` — the committed jobs.snapshot.md: what
+                    this app runs when nobody asked. Read off a BUILT app, like
+                    `junction surface`, because a schedule that stops being
+                    registered is silence rather than a 404 (`FJS-327`, `FJS-328`)
+  ../tools/cli.ts   the package bin entry — `bunx @frontierjs/junction <command>`
+                    (`init`, `setup`, `repl`). Re-spawns the named tool as its own
+                    process rather than importing it in-process
   auth/             IAuth types (implemented by @frontierjs/auth) + providers
-  plugins/          manifest, openapi, webhooks, email, devtools, outbox, backfill, export, metrics, shims
+  plugins/          manifest, openapi, webhooks, email, devtools, outbox, backfill, export, metrics
                     webhooks is OUTBOUND ONLY — register(url, events) registers a
                     SUBSCRIBER and the engine delivers to them. Nothing here receives;
                     the mirror half is IDEAS/inbound-integrations.md § A.
@@ -934,7 +943,8 @@ src/
   caller, because minting a principal out of claims turns *nobody* into
   *someone*, an object satisfying `auth() != null` while carrying no identity.
   **It does not run for work with no request behind it either**, which is ruled
-  and is the reason `FJS-384` is open.
+  and deferred work reaches a tenant through `app.runAs(userId, { tenant })`
+  instead, where `membershipClaim` re-reads the membership (`FJS-384`).
 - **`membershipClaim()` is the battery, and its whole safety is one line: no row
   is no claim.** The hand-written version that forgets the membership check
   emits the claim anyway and every read answers 200 over somebody else's rows —

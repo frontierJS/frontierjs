@@ -13,7 +13,10 @@ prototype audited below is parked at `packages/toolbelt/mockup/datetime/`
 (`DECISIONS.md` § Repo conventions). Read every `datetime-kit` below as that subpath. Two
 decisions are taken and the rest is proposal: the API mirrors a **reduced Temporal**
 (five types), and the package ships **with a schema declaration**, not as a standalone
-library. Everything else below is argued, not settled.
+library. Everything else below is argued, not settled — except that the seed
+declaration question is now ruled (`FJS-D143`): the seed declares what KIND of
+time a column holds, as an attribute, and `DateTime` keeps its name. Read
+§ The declaration below against that ruling rather than as still-open.
 
 This is the package-level answer to the question `IDEAS/time-and-recurrence.md` leaves
 open — *"Is `datetime-kit` this, or something else?"* It is this. That record states the

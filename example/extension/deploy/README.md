@@ -5,8 +5,8 @@ holds packaging; nothing is containerized.
 
 ```sh
 fli extension:build --browser both      # dist/chrome/ and dist/firefox/
-cd extension/dist/chrome  && zip -r ../../deploy/chrome.zip .
-cd extension/dist/firefox && zip -r ../../deploy/firefox.zip .
+(cd extension/dist/chrome  && zip -r ../../deploy/chrome.zip .)
+(cd extension/dist/firefox && zip -r ../../deploy/firefox.zip .)
 ```
 
 - **Chrome Web Store** — upload the zip at the developer dashboard. Review is

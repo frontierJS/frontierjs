@@ -203,7 +203,7 @@ declaration can hide them.
 
 - `IDEAS/row-level-tenancy.md` — the record this extends; **built**, `FJS-D05`
 - `packages/litestone/docs/multi-tenancy.md` — what ships today
-- `ISSUES.md` `FJS-D113` (this question), `FJS-095` (the stamp it closes),
+- `DECISIONS.md` `FJS-D113` (this question), `ISSUES.md` `FJS-095` (the stamp it closes),
   `FJS-282` (`@@tenant(via:)`, the delegation precedent)
 - `packages/basecamp/api/src/core/hooks.ts` § Standing — the hand-built version, with the
   three constraints documented in place

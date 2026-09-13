@@ -1,6 +1,6 @@
 # @frontierjs/auth
 
-FJS native authentication. One import. Four schema models. Everything derived.
+FJS native authentication. One import, a schema that ships with the package, everything derived.
 
 ## Install
 
@@ -120,12 +120,17 @@ relative to `apiPrefix` for the same reason.
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/auth/register` | Create account + issue session |
-| `POST` | `/auth/login` | Login, returns token |
+| `POST` | `/auth/login` | Login, returns a token — or a challenge ticket when the account has a second factor |
+| `POST` | `/auth/login/challenge` | The second step: the ticket plus a TOTP or recovery code, returns a token |
 | `POST` | `/auth/logout` | Revoke current session |
 | `POST` | `/auth/password-reset/request` | Send reset email |
 | `POST` | `/auth/password-reset/confirm` | Confirm reset with token. On an account with no credential — one an operator created — this sets the first password, which is what makes an invitation a reset link. An account whose only way in is an OAuth provider is refused (409) |
 | `POST` | `/auth/email/verify/request` | Re-send verification email |
 | `GET`  | `/auth/email/verify?token=` | Verify email with token |
+| `POST` | `/auth/support/start` · `/auth/support/end` | Begin and end acting as another account — bounded by that account's standing, and recorded under the operator |
+| `GET`  | `/auth/oauth` | Which OAuth providers this app offers |
+| `GET`  | `/auth/oauth/{provider}` · `/auth/oauth/{provider}/callback` | The redirect flow — browser navigations, not `fetch` calls |
+| `GET`  | `/auth/oauth/link/confirm?token=` | Attach a provider to an existing account from the emailed link |
 
 ## Services
 
@@ -144,13 +149,19 @@ own (§ *When a factor is lost*, below).
 | `GET`  | `/api-keys` | The caller's keys — never the key itself |
 | `POST` | `/api-keys` | Issue one. **The raw key is in this response and nowhere else** |
 | `DELETE` | `/api-keys/{id}` | Revoke one |
+| `GET`  | `/connections` | Which OAuth providers are attached to the caller |
+| `DELETE` | `/connections/{id}` | Detach one |
+| `POST` | `/account-recovery/{userId}` + `X-Service-Method: resetTotp` | An operator resetting somebody else's lost second factor — SYSADMIN(7) |
+
+`account` also answers `totpStatus`, `setupTotp`, `confirmTotp`, `disableTotp` and
+`regenerateRecoveryCodes` (§ *Two-factor authentication*).
 
 In a browser they are `client.auth.me()`, `.changePassword()`, `.sessions()`,
 `.revokeSession(id)`, `.revokeOtherSessions()`, `.apiKeys()`, `.createApiKey()`
 and `.revokeApiKey(id)` — and a Sierra app gets a reactive `session` object over
 the top (`@frontierjs/sierra/junction`).
 
-Rename or drop any of the three with `services`, and add a `level` resolver to
+Rename or drop any of them with `services`, and add a `level` resolver to
 have `account.me` answer the caller's gate level:
 
 ```ts
@@ -165,7 +176,9 @@ the other depending on which registered last.
 
 ## Schema models
 
-Injected into `db/schema.lite` by `fli auth:install`:
+`fli auth:install` appends `User` to `db/schema.lite` — it is yours to extend —
+and imports the rest with `import "@frontierjs/auth/schema.lite"`, so an upgrade
+reaches them:
 
 - `User` — identity. `@@gate("4.4.4.5")` — read, create and update USER(4),
   delete ADMINISTRATOR(5) — bounded by `@@allow('update', id == auth().id ||
@@ -176,6 +189,8 @@ Injected into `db/schema.lite` by `fli auth:install`:
 - `Credential` — passwords + API keys (`@@gate("8")` — SYSTEM)
 - `Session` — active sessions (`@@gate("8")`, `@@log(audit)`)
 - `Verification` — reset + verify tokens (`@@gate("8")`)
+- `LoginChallenge` — a password accepted, a second factor owed (`@@gate("8")`)
+- `OauthFlow` — one in-flight OAuth redirect (`@@gate("8")`)
 
 `8` is for a model nothing outside `asSystem()` has anything to say to. That is
 true of credential material and false of the table an app's own screens list —
@@ -292,7 +307,8 @@ switched off. Optional to the type system, required in practice.
 
 ## Escape hatch
 
-Need SSO or magic links? Swap to Better Auth:
+OAuth sign-in is native — `oauthProviders` built with `defineProvider` (`oauth.ts`).
+For anything this package does not do, magic links among them, swap to Better Auth:
 
 ```typescript
 import { createBetterAuthAdapter, createBetterAuthPlugin } from '@frontierjs/junction'

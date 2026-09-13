@@ -493,7 +493,7 @@ export async function prerenderRoutes(opts) {
           // Temp modules land in the app's tree, not Mesa's package root, so a
           // rendered layout's bare imports resolve from the app's node_modules.
           // Without this, `import { page } from '@frontierjs/sierra/router'` in
-          // a layout dies with "Cannot find package" (Mesa SSR_SPEC W1).
+          // a layout dies with "Cannot find package" (mesa's docs/STATIC_RENDERING.md § tmpDir).
           ...(tmpDir ? { tmpDir } : {}),
         }))
       } catch (err) {

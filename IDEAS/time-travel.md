@@ -237,7 +237,7 @@ A vendor knows none of that about your app.
   doctors it, then never installs it. Wants a pinned release fetched with its checksum
   verified, a per-platform table, and a digest pin in the Dockerfile `make:deploy`
   writes.
-- **Restore is asymmetric** (`ISSUES.md` `FJS-540`). `replicate` is schema-driven and
+- **Restore is asymmetric** (`ISSUES.md` `FJS-552`). `replicate` is schema-driven and
   multi-database; coming back is `litestream restore -o ./main.db s3://…` typed by
   hand, once per database, off a comment in `replicate.js` — with the jsonl and logger
   databases restored by a third route, and nothing reading the same `dbs:` list on the

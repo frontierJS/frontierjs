@@ -175,23 +175,20 @@ events.
 
 ### Standalone `mesaDevtools()` — for nested plugins
 
-Some upstream plugins (notably `@frontierjs/sierra`) wrap `mesa-vite`'s
-`transform()` internally but **do not forward Vite's server lifecycle
-hooks** (`configureServer`, `transformIndexHtml`). The transform still
-runs, but the DevTools route and the relay-client injection both depend
-on those hooks and get silently dropped.
+A plugin that compiles `.mesa` itself — `@frontierjs/sierra` does — never
+registers mesa-vite's server lifecycle hooks (`configureServer`,
+`transformIndexHtml`). The transform still runs, but the DevTools route and the
+relay-client injection both depend on those hooks and are silently absent.
 
 Add `mesaDevtools()` as a separate top-level plugin to restore them:
 
 ```js
-import sierra from '@frontierjs/sierra'
+// web/config/sierra.config.js
 import { mesaDevtools } from '@frontierjs/mesa/vite'
 
 export default {
-  plugins: [
-    sierra(),
-    mesaDevtools(),   // adds /__mesa/devtools route + client injection
-  ],
+  target:  'spa',
+  plugins: [mesaDevtools()],   // adds /__mesa/devtools route + client injection
 }
 ```
 

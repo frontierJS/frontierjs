@@ -3307,8 +3307,21 @@ Refused by name beyond the operations above: a column that is not `Json`, an
 `@encrypted`/`@secret` column (the stored text is ciphertext, so a patch of it
 is neither), a patch that is not an object, and `$merge` mixed with any other
 key. `validateTypedJson` grew a `mode` defaulting to `full`, so every existing
-caller is unchanged. Full argument and the measurements:
-`IDEAS/json-document-writes.md`.
+caller is unchanged.
+
+**An operator-shaped object on a `Json` column is NOT refused, and that fails two
+of the nine.** `{ doc: { increment: 1 } }` still stores `{"increment":1}` and `{
+doc: { push: 'x' } }` stores `{"push":"x"}` — `FJS-D54` working as ruled, since a
+`Json` column carries objects. Reserving the five bare operator names at the top
+level of a document and refusing them with *did you mean `$merge`* was weighed
+and declined (2026-09-07). It fails *can it be derived instead of restated* — the
+engine could refuse, and a note in `docs/querying.md` is the restated branch —
+and *is the failure proportional to the cost of being wrong*, since the cost is a
+document silently replaced. The adjudication is **ergonomics vs. strictness**,
+and what carries it is that a refusal would be the framework deciding what a
+document may contain, which nothing else in the language does. The trap is pinned
+by the test *a document key spelled like an operator is untouched*. Reopen it if
+the doc note is not enough; the fix is small.
 
 ### <a id="fjs-d171"></a>2026-09-01 · `FJS-D171` — *somebody moved this under me* is earned by a declared PRECONDITION, never inferred from who won a footrace.
 
@@ -8238,8 +8251,8 @@ on every page of a Sierra prerender — hundreds — which is how a console stop
 being read at all. The failure this would catch is real and rare; the noise
 would be constant.
 
-**What was actually missing is a position.** `SSR_SPEC.md` is the server-render
-contract and took none, so an author had nowhere to learn the trap before
+**What was actually missing is a position.** Mesa's server-render contract
+(now `docs/STATIC_RENDERING.md`) took none, so an author had nowhere to learn the trap before
 hitting it. It now states which globals answer and what they answer, which is
 the artefact the ninth question asks for: this ruling knowingly leaves a defect
 invisible at runtime, so it may not also be undocumented.
@@ -11850,7 +11863,7 @@ test and the package's suite is already red for an unrelated reason, so it would
 be untested surgery on the one thing jetty's dev loop depends on.
 
 **jetty's copy of sierra's `resources/` → the pure half to the substrate, and
-NOT a new package.** `docs/future-refactors.md` plans
+NOT a new package.** jetty's future-refactors plan (since deleted) proposed
 `@frontierjs/resources-core`; that is refused. A fifth published package costs a
 release cadence, a peer range, an install entry and a `files:` field, for ~190
 lines that are pure and zero-dependency — which is the definition the substrate

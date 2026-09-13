@@ -1,12 +1,14 @@
 ---
 id: bulk-data
-status: proposed
+status: partial
 dated: 2026-08-12
 ---
 
 # Idea — Bulk data: the import screen every application builds by hand
 
-**Status: IDEA. Nothing here is built for the user-facing case.** Dated 2026-08-12,
+**Status: PARTIAL.** The export half now ships (`litestone export`, `@@export`,
+junction's export endpoint) — the import/bulk-write half described below is
+still unbuilt. Dated 2026-08-12,
 from the same sweep as `IDEAS/time-and-recurrence.md` — *what hard part of ordinary web
 development does a developer still wire up by hand here.* Probed against the tree, and
 the probe changed the record: **more of this exists than expected, aimed at the wrong

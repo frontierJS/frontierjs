@@ -1,6 +1,6 @@
 ---
 id: payroll
-status: partial
+status: shipped
 dated: 2026-08-30
 ---
 
@@ -28,7 +28,7 @@ half**, and the difference is the whole reason this file exists.
 | Wall | State after billing |
 | --- | --- |
 | **Immutable document** | **Standing.** `@immutable` is a column at the constraint tier, so `asSystem()` cannot drop it (`FJS-D162`). A payslip is an invoice's shape with a different noun on it. |
-| **Cross-row invariant** | **Argued, no grammar.** `FJS-D162` ruled *where* it is checked — at the transition, and the freeze is what makes once enough — and its own *not ruled* list still holds what **spells** it. `example` enforces `subtotal = Σ lines` in `api/src/billing.ts`. Application code. |
+| **Cross-row invariant** | **Argued, no grammar.** `FJS-D162` ruled *where* it is checked — at the transition, and the freeze is what makes once enough — and its own *not ruled* list still holds what **spells** it. `example` enforces `subtotal = Σ lines` in `api/src/domain/billing/billing.ts`. Application code. |
 | **Effective dating** | **Half.** The pattern is built and ruled (`FJS-D164` — a row with a window, and the consumer names the version rather than the parent). There is no `@@effective`, and `FJS-603` means *one open window per parent* cannot be declared at all. |
 | **Bitemporality** | **Untouched.** Billing never asked *as we knew it then*. |
 | **Retroactive correction** | **Untouched.** A mid-cycle plan change is forward. Nothing declares *this row was derived from those rows*. |
@@ -163,7 +163,7 @@ travel, expenses, shifts and onboarding — every one a domain § Out of scope
 already names. Eight models is measured against that 38.
 
 **Two stale claims fell out of doing it**, both in files somebody reads before
-running anything: `fixtures/corpus/README.md` said only `triggerdev` was
+running anything: `packages/litestone/test/fixtures/corpus/README.md` said only `triggerdev` was
 committed when six fixtures were, and closed by describing `litestone import` as
 something "which does not exist" three sentences after crediting it with
 producing every file in the directory; and `corpus.test.ts`'s `COMMITTED` /
@@ -474,7 +474,7 @@ balanced journal, with the approval refused at the wrong standing.
 ### It landed, and what it cost
 
 **Shipped 2026-08-30.** Three models (`PayRun`, `Payslip`, `PayslipLine`), two
-enums, five new ledger accounts, `api/src/payroll.ts`, three services, and the
+enums, five new ledger accounts, `api/src/domain/payroll/payroll.ts`, three services, and the
 journal becoming an **`@@arc`** — this application's second, after `Payment`.
 `example` is 31 models / 34 services. **`verify:payrun`, 41 assertions**, green
 three times without a reseed; `verify:employment` 58, billing 23, proration 21
@@ -910,7 +910,7 @@ suspected, worth executing.
 - **`FJS-610`** — a soft-declined invoice is never re-presented, so the
   distinction `declineKind` draws buys nothing. Billing's one substantive
   functional gap.
-- **`FJS-607`** — a `slot=` child wrapped in `{#if}` turns `<Form>` generation
+- ~~**`FJS-607`**~~ — **closed.** A `slot=` child wrapped in `{#if}` turns `<Form>` generation
   off. Phase 7 wrote six resource files and avoided it by writing both buttons
   unconditionally, with the reason in each file. **No longer silent as of
   2026-08-30**: the form warns when it generated nothing and holds no control
@@ -1037,7 +1037,7 @@ each ruling was stronger for naming the alternative the code had already rejecte
    end column at all (Frappe), and a closed interval. The third makes `FJS-603`
    moot rather than harder — there is no open column to be unique over.
 3. ~~**`FJS-603` — a partial unique.**~~ **Ruled and built 2026-08-31:
-   `@@unique([cols], where: <expr>)`**, argued in `IDEAS/partial-unique.md`. Not
+   `@@unique([cols], where: <expr>)`**, argued in `IDEAS/partial-indexes.md` § The unique half. Not
    `@@index(unique: true)`, for four reasons that compound — the sharpest being
    that the fix has to be reachable from the refusal that sends people wrong, and
    nobody reads a `@@unique` refusal and then goes to read about `@@index`.

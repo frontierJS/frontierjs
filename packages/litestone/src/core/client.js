@@ -126,9 +126,13 @@ function wrapDb(rawDb, { maxCacheSize = 500, label = 'sqlite' } = {}) {
   // reasonably complex schema's full hot set without unbounded growth in
   // long-lived processes that build many distinct WHERE shapes.
   const cache = new Map()
-  // Statements that must NOT be cached — they carry session state and
-  // Bun/SQLite will throw on reuse across transaction boundaries.
-  const NO_CACHE = /^\s*(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|PRAGMA|VACUUM|ATTACH|DETACH)/i
+  // Statements kept out of the cache. A SAVEPOINT, a RELEASE and a ROLLBACK TO
+  // carry a name that counts up, so each is new text and would push the hot set
+  // out; a PRAGMA can carry a value. BEGIN, COMMIT and ROLLBACK are fixed text
+  // and are cached — every create in a transaction pays a prepare otherwise,
+  // and a prepared one is reused across commits, rollbacks and a failed
+  // statement without complaint (measured, `FJS-1106`).
+  const NO_CACHE = /^\s*(SAVEPOINT|RELEASE|ROLLBACK\s+TO|PRAGMA|VACUUM|ATTACH|DETACH)/i
   let closed = false
   function stmt(sql) {
     if (closed) throw new ClientClosedError(label)
@@ -1381,6 +1385,8 @@ function withArgValidation(table, model, ctx) {
   }
 
   const checkOrderBy = (args, method) => {
+    // Every call passes through here, and one naming no order has nothing to grade.
+    if (!args?.orderBy) return
     // `_depth` is a column only a tree read has, so it is sortable only there.
     const sortableHere = args?.recursive ? new Set([...sortable, '_depth']) : sortable
     // Read HERE and not where the table is built: one table serves every flavor
@@ -1498,6 +1504,7 @@ function withArgValidation(table, model, ctx) {
 
   const checkSelect = (args, method, isWrite) => {
     const sel = args?.select
+    if (sel == null && args?.distinct == null && !args?.include) return
     if (sel != null && (typeof sel !== 'object' || Array.isArray(sel))) {
       if (!(isWrite && sel === false)) throw selectContainerRefusal(sel, method, isWrite)
     }
@@ -1513,7 +1520,7 @@ function withArgValidation(table, model, ctx) {
   }
 
   const checkTakeSkip = (args, method) => {
-    if (!args || typeof args !== 'object') return
+    if (!args || typeof args !== 'object' || !('take' in args || 'skip' in args)) return
     for (const bad of ['take', 'skip']) {
       if (bad in args) throw new ValidationError([{
         path:    [bad],
@@ -4554,6 +4561,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
 
   function setFragment(field, value, setParams) {
+    if (!_hasFieldWrite) { setParams.push(value ?? null); return `"${col(field)}" = ?` }
     return setFragmentExpr(field, '?', [value ?? null], setParams)
   }
 
@@ -5636,7 +5644,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // first (FJS-531). One writer, no trigger, no window.
   const _stampCols = updatedAtFields(ctx.models[modelName] ?? {}).map(f => f.name)
 
-  // `named` is the columns this statement already sets, which is what the
+  // `named` is the list of columns this statement already sets, which is what the
   // trigger's `WHEN NEW.c IS OLD.c` guard means: a write naming the stamp keeps
   // its own value. Write ops (`increment`, `push`) cannot reach a stamp column
   // — extractWriteOps refuses a non-numeric, non-array target — so the columns
@@ -5649,7 +5657,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // text is machine-generated, never caller-supplied — but `now` IS the
     // caller's function, so its answer is escaped rather than trusted.
     const _at = nowISO(ctx.now).replace(/'/g, "''")
-    return _stampCols.filter(c => !named.has(c)).map(c => `"${col(c)}" = '${_at}'`)
+    return _stampCols.filter(c => !named.includes(c)).map(c => `"${col(c)}" = '${_at}'`)
   }
 
   // Pre-compute base SELECT — reused by every buildSQL call
@@ -7256,19 +7264,11 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // is what stops the first. `exclusive` rather than `wrapExclusive` because
       // the nested writes are themselves table calls and therefore async; a
       // genuine nesting takes a SAVEPOINT and never waits on its own caller.
-      const _crOut = await tx.exclusive(async () => {
-        // Apply @sequence fields — inject per-scope auto-incremented values.
-        // Ahead of the split, because the split is what the INSERT is built
-        // from: injecting a sequence into `data` after it has been taken apart
-        // writes the row without the column.
-        data = applySequences(data, modelName, ctx.sequenceMap, writeDb, stamped)
-        // Split nested write ops from scalar fields
-        const { scalar, nested, hasNested } = extractNestedWrites(data)
-        const { data: _scalarNoEdge, edgeWrites } = extractEdgeWrites(scalar)
-        // belongsTo ops first — injects FK values before insert
-        const extraFKs = await processBelongsToNested(nested)
-        data = { ..._scalarNoEdge, ...extraFKs }
-
+      //
+      // The INSERT and what it reads back, synchronously: no await may sit
+      // between the decision below and the statement, or a transaction can open
+      // in the gap and the insert joins it.
+      function insertRow(hasNested, edgeWrites) {
         if (ctx.selfRelationMap?.[modelName])
           assertNoParentCycle([data?.[ctx.selfRelationMap[modelName][0].referencedField]], data)
         const row   = writeData(data, { requireAll: true, system, stamped, creating: true })
@@ -7323,12 +7323,45 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           if (refusal) throw refusal
           return { done: true, row: null }
         }
-        // hasMany ops after — children need parent PK + parent row (for co-FK propagation)
-        const pkField = ctx.models[modelName]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
-        await processHasManyNested(nested, created[pkField], created)
-        applyEdgeWrites(edgeWrites, created[pkField], scopedBy)
         return { done: false, row: created }
-      })
+      }
+
+      // One INSERT with no transaction open on this connection is already its
+      // own unit — SQLite's autocommit — and nothing can open one before it
+      // runs, because nothing between here and the statement yields. Taking the
+      // lock, the async scope and a BEGIN/COMMIT for it cost a single-row create
+      // 82% (`FJS-1106`). A @sequence bump, a nested write and an edge write are
+      // further statements, so they keep the transaction.
+      let _crOut
+      const _crSplit = ctx.sequenceMap?.[modelName]?.length ? null : extractNestedWrites(data)
+      const _crEdges = _crSplit && !_crSplit.hasNested ? extractEdgeWrites(_crSplit.scalar) : null
+      if (_crEdges && !_crEdges.edgeWrites.length && tx.state.depth === 0) {
+        data   = _crEdges.data
+        _crOut = insertRow(false, _crEdges.edgeWrites)
+      } else {
+        _crOut = await tx.exclusive(async () => {
+          // Apply @sequence fields — inject per-scope auto-incremented values.
+          // Ahead of the split, because the split is what the INSERT is built
+          // from: injecting a sequence into `data` after it has been taken apart
+          // writes the row without the column.
+          data = applySequences(data, modelName, ctx.sequenceMap, writeDb, stamped)
+          // Split nested write ops from scalar fields
+          const { scalar, nested, hasNested } = extractNestedWrites(data)
+          const { data: _scalarNoEdge, edgeWrites } = extractEdgeWrites(scalar)
+          // belongsTo ops first — injects FK values before insert
+          const extraFKs = await processBelongsToNested(nested)
+          data = { ..._scalarNoEdge, ...extraFKs }
+
+          const inserted = insertRow(hasNested, edgeWrites)
+          if (inserted.done) return inserted
+          const created = inserted.row
+          // hasMany ops after — children need parent PK + parent row (for co-FK propagation)
+          const pkField = ctx.models[modelName]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+          await processHasManyNested(nested, created[pkField], created)
+          applyEdgeWrites(edgeWrites, created[pkField], scopedBy)
+          return inserted
+        })
+      }
       // ── Committed from here ──────────────────────────────────────────────
       if (_crOut.done) {
         if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'create', _crOut.row, ctx)
@@ -7514,10 +7547,22 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // after it, because what a write with nothing to say must NOT do is decided
       // out here: announce, and file an audit entry (`FJS-368`).
       let _wroteNothing = false
-      const _upDone = await tx.exclusive(async () => {
-        const { scalar, nested, hasNested } = extractNestedWrites(data)
-        const { data: _scalarNoEdge, edgeWrites } = extractEdgeWrites(scalar)
-        const extraFKs = await processBelongsToNested(nested)
+      // Pure — the split reads the payload and nothing else, so it can decide
+      // below whether this update needs a transaction at all.
+      const { scalar, nested, hasNested } = extractNestedWrites(data)
+      const { data: _scalarNoEdge, edgeWrites } = extractEdgeWrites(scalar)
+      const _postUpdatePolicy = Boolean(ctx.hasPolicies && ctx.policyMap?.[modelName]?.['post-update'])
+      // One UPDATE with no transaction open is its own unit, as a one-statement
+      // create is (`FJS-1106`). What keeps the transaction: a nested or edge
+      // write (more statements), a post-update policy (its refusal IS the
+      // rollback), and @@transitions (the move is graded across an await, and a
+      // transaction could open in that gap). On this path the body reaches its
+      // statement without yielding — `_upJoined` below is what says so if an
+      // edit ever adds an await ahead of it (`FJS-1107`).
+      const _upOwnUnit = !hasNested && !edgeWrites.length && !_postUpdatePolicy
+        && !_tableTransitions && tx.state.depth === 0
+      const _upBody = async () => {
+        const extraFKs = hasNested ? await processBelongsToNested(nested) : {}
         data = { ..._scalarNoEdge, ...extraFKs }
 
         const { data: _upValues, ops: _upOps } = extractWriteOps(data)
@@ -7563,7 +7608,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // ── Transition enforcement ────────────────────────────────────────────
         // Check before SQL: validates from-state, throws TransitionViolationError if invalid.
         // Note: uses whereParams (original, no policy filter) for the current-value SELECT.
-        _transResult = await checkTransitions(row, whereParams, whereSql, system, _move)
+        _transResult = _tableTransitions ? await checkTransitions(row, whereParams, whereSql, system, _move) : null
         // Every no-match reader below reads the row UNSCOPED to name why — the
         // version, the seal, the move's refusal — so a row outside the caller's
         // read scope leaves before any of them can describe it.
@@ -7611,7 +7656,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // naming no column issues no statement at all below, and the trigger it
         // used to lean on never fired for one either.
         const _setColsV     = _setColsBase
-          ? [_setColsBase, ...stampSets(new Set(Object.keys(row)))].join(', ')
+          ? [_setColsBase, ...stampSets(Object.keys(row))].join(', ')
           : _setColsBase
 
         // No rows changed can mean three different things. Not-found and
@@ -7653,6 +7698,14 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           throw new TransitionConflictError(tableName, _transResult.field, _transResult.from, _transResult.to,
             { actual: cur ? cur.v : undefined, move: _transResult.transitionName })
         }
+
+        // Nothing below yields before the statement. An update that chose to run
+        // without a transaction and finds one open now would join it and go
+        // with its rollback, which is the defect `FJS-638` closed — so it says
+        // so rather than writing.
+        if (_upOwnUnit && tx.state.depth !== 0) throw new Error(
+          `[litestone] update on "${modelName}" decided to run as its own statement and a transaction opened ` +
+          `before it wrote — something in update() now yields ahead of the write. This is a defect in litestone (FJS-1107).`)
 
         updated = null
         if (_setColsV) {
@@ -7731,7 +7784,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         await processHasManyNested(nested, updated[pkField], updated)
         applyEdgeWrites(edgeWrites, updated[pkField], scopedBy)
         return false
-      })
+      }
+      const _upDone = _upOwnUnit ? await _upBody() : await tx.exclusive(_upBody)
       // ── Committed from here ──────────────────────────────────────────────
       if (_upDone) return null
       const ps = parseArgs(select === false ? null : select, include)
@@ -7820,7 +7874,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const params = [...setParams, ..._umWhereP]
       // Stamped after the empty-payload return above, for the same reason
       // update() stamps only a statement that had something else to say.
-      const _umSetCols = [setCols, ...stampSets(new Set(Object.keys(row)))].join(', ')
+      const _umSetCols = [setCols, ...stampSets(Object.keys(row))].join(', ')
       // A logged model takes RETURNING so the trail can name the rows it changed.
       // Still one statement — bulk ops record WHICH rows and WHAT operation, never
       // their contents (same shape as createMany; see emitLogs).
@@ -7939,7 +7993,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
         // Only the DO UPDATE branch needs the stamp — an INSERT takes the
         // column DEFAULT, which is the same expression.
-        const _fpSets = [...updCols.map(c => `"${col(c)}" = ?`), ...stampSets(new Set(updCols))]
+        const _fpSets = [...updCols.map(c => `"${col(c)}" = ?`), ...stampSets(updCols)]
         const _fpSql =
           `INSERT INTO "${tableName}" (${insCols.map(c => `"${col(c)}"`).join(', ')}) ` +
           `VALUES (${insCols.map(() => '?').join(', ')}) ` +
@@ -8188,7 +8242,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           // A conflict is an update, so it stamps. `setPairs.length` is what
           // decides whether this row updates at all, so the stamp is added
           // after that test and never turns a DO NOTHING into a DO UPDATE.
-          if (setPairs.length) setPairs.push(...stampSets(new Set(updateCols)))
+          if (setPairs.length) setPairs.push(...stampSets(updateCols))
 
           if (setPairs.length) {
             const conflictSql = target.map(c => `"${c}"`).join(', ')
@@ -8290,7 +8344,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
       if (softDelete) {
         const ts = nowISO(ctx.now)
-        const _rmSets = [`"${col('deletedAt')}" = ?`, ...stampSets(new Set(['deletedAt']))].join(', ')
+        const _rmSets = [`"${col('deletedAt')}" = ?`, ...stampSets(['deletedAt'])].join(', ')
         const _rmSql = `UPDATE "${tableName}" SET ${_rmSets} WHERE ${removeFinalSql} RETURNING *`
         const _nt = needsTiming()
         const _rmT0 = _nt ? performance.now() : 0
@@ -8417,7 +8471,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         }
 
         // RETURNING only on a logged model — see updateMany.
-        const _rmsSets = [`"${col('deletedAt')}" = ?`, ...stampSets(new Set(['deletedAt']))].join(', ')
+        const _rmsSets = [`"${col('deletedAt')}" = ?`, ...stampSets(['deletedAt'])].join(', ')
         const _rmsSql = `UPDATE "${tableName}" SET ${_rmsSets}${rmFinalSql ? ` WHERE ${rmFinalSql}` : ''}`
                       + (_rmNeedRows ? ` RETURNING *` : '')
         let _rmsRows, softCount
@@ -8526,7 +8580,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         }
       }
 
-      const _rsSets = [`"${col('deletedAt')}" = NULL`, ...stampSets(new Set(['deletedAt']))].join(', ')
+      const _rsSets = [`"${col('deletedAt')}" = NULL`, ...stampSets(['deletedAt'])].join(', ')
       const _rsSql = `UPDATE "${tableName}" SET ${_rsSets} WHERE ${whereSql} RETURNING *`
       const _nt = needsTiming()
       const _rsT0 = _nt ? performance.now() : 0

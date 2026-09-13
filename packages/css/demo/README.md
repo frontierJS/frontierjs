@@ -3,7 +3,7 @@
 The first thing in the repo to consume `@frontierjs/css`.
 
 ```bash
-bun run demo          # → http://localhost:5173
+bun run demo          # → http://localhost:8040
 ```
 
 It also opens straight from the filesystem — `demo/index.html` — because the

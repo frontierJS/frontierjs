@@ -16,7 +16,7 @@
 // the required keys of that type are not optional after all. Measured as 2
 // counterexamples in 68 before the rule was repaired; the repaired rule is
 // sound over 90 (stored × patch) pairs at three levels of nesting, and the
-// proof is `IDEAS/json-document-writes.md` § The claim, verified.
+// proof is FJS-D176.
 
 import { describe, test, expect, beforeEach } from 'bun:test'
 import { createClient } from '../src/index.js'

@@ -1412,8 +1412,7 @@ the one screen whose whole audience is somebody who has just arrived.
 
 - `docs/ADAPTERS.md` — the debt § Phase 14 left: what each of the four adapters
   costs to wire, the decisions already made, and what goes red when one is
-- `docs/UI_PLAN.md` — how the first screens got built, and what each phase found
-- `docs/UI_HANDOFF.md` — the API contract the screens are written against
+- `surface.snapshot.md` — the API contract the screens are written against
 - `docs/VISION.md` — what Basecamp is meant to be
 - `../../ISSUES.md` — `FJS-031`, `FJS-032`, `FJS-085` (`FJS-007`, the missing
   `@@gate`, closed 2026-08-10)

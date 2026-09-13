@@ -13,8 +13,11 @@ needs a Junction app, which Litestone may not import (Invariant 1).
 ```
 src/index.ts          createTestEnv, session, the principal binding, the `listen` port
 src/parity.ts         verifyTransportParity — HTTP vs WS, over a real socket
+src/doubles.ts         createTestMailer — the one stand-in this realm was actually
+                       missing; cache and storage already have one apiece elsewhere
 test/testing.test.ts  the vertical, against a real client and a real app
 test/parity.test.ts   the runner, and the ways it can be worthless
+test/doubles.test.ts  the mailer double, held to the real send path's own guards
 test/fixtures/schema.lite
 ```
 

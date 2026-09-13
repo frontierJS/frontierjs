@@ -271,7 +271,7 @@ export function applyTransforms(data, model) {
 // a patch aimed at an OPTIONAL nested field is a create however partial it
 // looks, and the required keys of that type are not optional after all —
 // measured, and it was the counterexample that falsified the first design of
-// this (IDEAS/json-document-writes.md § The claim, verified).
+// this (FJS-D176).
 //
 // The child's mode therefore follows the child's own optionality, and it is
 // decidable here with no read of the stored row: a REQUIRED field is present

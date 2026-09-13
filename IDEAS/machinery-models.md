@@ -49,7 +49,7 @@ different question about **who owns the columns**.
 
 | Shape | Owner | Example | How the app gets it |
 | --- | --- | --- | --- |
-| **Imported model** | the package, columns *and* gate | `Credential`, `Session`, `Verification`, `OauthFlow`, `OutboxMessage` | `import "@frontierjs/auth/db/auth.lite"`, then `extend model` for what the package cannot know |
+| **Imported model** | the package, columns *and* gate | `Credential`, `Session`, `Verification`, `LoginChallenge`, `OauthFlow`, `OutboxMessage` | `import "@frontierjs/auth/schema.lite"`, then `extend model` for what the package cannot know |
 | **Appended model** | the app, seeded by the package | `User` | `fli auth:install` writes it into the app's own `schema.lite`; the app grows it |
 | **Package-owned database** | the package, entirely | caravan's job tables | nothing in the app's schema at all — a separate file, opened on first use |
 | **Declared database block** | the app declares, litestone writes | the audit trail | `database audit { retention 90d }`, routed to by `@@log(audit)` |
@@ -120,9 +120,12 @@ whether some app has one.
 | Model | Package | Shape |
 | --- | --- | --- |
 | `User` | auth | appended |
-| `Credential` · `Session` · `Verification` · `OauthFlow` | auth | imported, `@@gate("8")` |
+| `Credential` · `Session` · `Verification` · `LoginChallenge` · `OauthFlow` | auth | imported, `@@gate("8")` |
 | `OutboxMessage` | junction | imported, `@@gate("8")` |
+| `BackfillRun` | junction | imported, `db/backfill.lite` |
+| `MetricSeries` · `MetricPoint` · `MetricHour` | junction | imported, `db/metrics.lite`, `@@tenant(none)` |
 | job + owner tables | caravan | package-owned database |
+| the deploy journal | cli | `db/deploy.lite`, opened not installed |
 | the audit trail | litestone | declared database block |
 
 ### Built — `Notification`, and it landed APPENDED rather than imported
@@ -152,7 +155,7 @@ not.
 | Group | Models | Note |
 | --- | --- | --- |
 | COMMUNICATION | `Message`, `Template` | conduit and notifications both want a rendered template; a template is a row in every app that has one |
-| INTEGRATION | `Webhook`, `Integration`, `Listener` | junction has the transport and the signature (`@frontierjs/toolbelt/signature`); nothing holds the registration |
+| INTEGRATION | `Webhook`, `Integration`, `Listener` | junction's webhooks plugin now holds the transport, the signature (`@frontierjs/toolbelt/signature`) AND the registration itself, through its own `IWebhookStore` — a plugin-owned store rather than an app-declared model |
 | IDENTITY & ACCESS | `Organization`, `Group`, `Role` — the membership tier | `membershipClaim()` ships and basecamp's `WorkspaceMember` is hand-written. Under tenancy the capability grid lives on the membership row (`FJS-D149`), so this one is closer to shipped than it looks |
 | CAPTURE | `Form`, `Submission` | the schema already describes a form; what is missing is a row for one somebody authored |
 | READ SURFACES | `Report`, `Dashboard`, `View` | a saved query is machinery; what it queries is not |

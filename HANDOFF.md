@@ -94,8 +94,7 @@ finished.
 > cannot see it. **Left open:** a bare-number count still passes unwarned, the
 > environments list's re-read after a create was never mutated, and
 > `scanner-plugin.test.js`'s *companion that throws on import* failed once in
-> four full runs, untouched by this session and unfiled. Nothing from this session is committed, and the tree carries the other
-> session's work beside it.
+> four full runs, untouched by this session ([`FJS-1132`](ISSUES.md#fjs-1132)).
 
 ---
 

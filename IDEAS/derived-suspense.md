@@ -17,17 +17,18 @@ derivation, which is unbuilt. See `VERIFYING.md`.
 
 Mesa already generates per-value async state. A script-level `await` on a derived
 `const` produces a `$$async_<name>` state object, collected into a `$async` container
-(`packages/mesa/src/compiler.js:5480-5571`), and `<mesa:boundary>` renders a
+(`packages/mesa/src/compiler.js`, `boundaryWatchSet` — line numbers have moved
+since this was written, search the function name), and `<mesa:boundary>` renders a
 `pending` snippet while any watched state is in flight, `failed` on throw
-(`docs/VISION.md` §12.5).
+(`docs/VISION.md` §12.6).
 
 So the framework already knows, per value, whether it is pending — which is the input
 a suspense system needs and the thing React had to invent a protocol for.
 
 ## The defect that started this — fixed 2026-08-05
 
-**Kept in the past tense; the code below is what it used to do.** `compiler.js:3079`
-collected the watch set, with the comment stating the behavior plainly:
+**Kept in the past tense; the code below is what it used to do.** `boundaryWatchSet`
+in `compiler.js` collected the watch set, with the comment stating the behavior plainly:
 
 ```js
 // Get all async-derived vars — boundary watches all $async state objects
@@ -53,11 +54,11 @@ The `<select>` is held behind `reports`, which it does not use. A value that nev
 resolves — a rejected fetch on an unrelated feature, a slow report — leaves an
 unrelated part of the page showing *Loading cities…* forever. With two boundaries in
 one component both watch the same union, so they always show and hide together, which
-makes the multiple-boundaries-per-component capability that §12.5 advertises
+makes the multiple-boundaries-per-component capability that §12.6 advertises
 functionally single.
 
 It failed in the direction that reads as a framework bug and debugs as an application
-one. Closed as `ISSUES.md` **FJS-073**.
+one. Closed as `ISSUES_ARCHIVE.md` **FJS-073**.
 
 **The fix was a narrowing, not a mechanism** — `boundaryWatchSet()` scans the body's
 expression sources (interpolations, block headers, attributes, component props,
@@ -183,10 +184,10 @@ Open, and the reason this is a note rather than a proposal:
 
 ## See also
 
-- `packages/mesa/src/compiler.js` — `boundaryWatchSet()` / `templateSource()`, and
-  `:5480-5571` for `$async`
-- `packages/mesa/docs/VISION.md` §12.5 — `<mesa:boundary>` / `<mesa:mounted>`
-- `ISSUES.md` § Closed `FJS-073` — the over-watch defect
+- `packages/mesa/src/compiler.js` — `boundaryWatchSet()` / `templateSource()`
+  for `$async`
+- `packages/mesa/docs/VISION.md` §12.6 — `<mesa:boundary>` / `<mesa:mounted>`
+- `ISSUES_ARCHIVE.md` `FJS-073` — the over-watch defect
 - `IDEAS/static-safety.md` — the other build-time classification over the same graph
 - `IDEAS/one-mental-model.md` § *The target set's missing member* — the same
   compile-time-known-dependencies property, applied to hydration

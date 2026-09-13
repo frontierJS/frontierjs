@@ -80,8 +80,8 @@ src/jsonschema/      the CONSUMER half of what litestone emits — follow a
                      Same two callers
 docs/glow/           the Svelte editor and SCSS theme glow arrived with.
                      Reference only — not shipped, not FrontierJS code
-docs/datetime.md     the /datetime kit's intent — no code yet
-mockup/datetime/     the prototype /datetime is being rebuilt from. Parked,
+mockup/datetime/     the prototype /datetime is being rebuilt from, and its
+                     intent (README.md). Parked,
                      below the packages/* glob, allowance-named in CI
 test/run.js          the harness
 test/specs/          one .spec.js per export

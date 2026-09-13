@@ -155,7 +155,7 @@ export function audit(opts): Plugin {
   const instance = createAuditor(opts)
   return {
     name: 'audit',
-    register(app) { app.provide('audit', instance) },   // sync, at configure()
+    register(app) { app.claim('audit', instance) },   // sync, at configure()
     async boot(app)     { await instance.init() },      // async, at start()
     ready(app)          {},                             // after listening
     async shutdown(app) { await instance.close() },     // at stop()
@@ -306,7 +306,7 @@ frameworks — comments explain *why*, not *what*. Specific issues:
   half-works (acknowledged in a comment). Since `register` is guaranteed
   synchronous, instance creation could move *into* `register` and make reuse
   actually correct.
-- **`app.provide()` already exists** — `app.ts:659`, throws on collision, and
+- **`app.claim()` already exists** — `app.ts:1364`, throws on collision, and
   Caravan already uses it (`packages/caravan/src/index.ts:285`). Conduit's raw
   `app.conduit = instance` is the outlier and should adopt it.
 - **Stale landmine:** `CLAUDE.md` says junction and conduit declare `app.conduit`
@@ -339,7 +339,7 @@ vision. This is the highest ratio of vision-value to effort in the repo.
 it. There is no hydration in Mesa at all — `render.js:113` says so in a comment,
 `runtime.js:4411` carries a `pop()` no-op reserved for the day there is, and Sierra's
 islands **replace** the prerendered range rather than adopting it
-(`mesa/docs/SSR_SPEC.md`, `sierra/src/build/island-bundle.js`). That is the right v1
+(`mesa/docs/STATIC_RENDERING.md` § Island markers, `sierra/src/build/island-bundle.js`). That is the right v1
 and it is why a static page's interactive parts visibly re-render on mount.
 
 It is worth writing down what the substrate would already support, because it is
@@ -421,29 +421,26 @@ belongs in `DECISIONS.md`; an unwritten maybe is the thing to remove.
 
 ## Ranked improvements
 
-1. **Give Litestone's Plugin a `name`, and rename the concept** (§5). The one place
-   a repeated word teaches the wrong thing; the missing identity also blocks
-   introspection, ordering, and `/metrics`. Mostly naming over machinery.
+1. ~~**Give Litestone's Plugin a `name`, and rename the concept**~~ (§5) — **done**:
+   the Plugin protocol is `{name, register, boot, ready, shutdown, requires}`.
 2. **One frontmatter parser.** Zero-dep leaf package, three call sites. Smallest
    change, and it is the concept users touch most often.
 3. **Rule the Context shape.** Adopt Junction's split as the base; give fli,
    Caravan, and Litestone conforming subsets. Needs a `DECISIONS.md` entry more
    than it needs code. Note that Sierra's resource Context *already* conforms
    deliberately — it is the proof the ruling is workable, not a new idea.
-4. **`Plugin.requires?: string[]`** (§5q) — resolves the undeclared-ordering
-   problem in all three places it has surfaced, including `IDEAS/slices.md`'s
-   `after:`.
+4. ~~**`Plugin.requires?: string[]`**~~ (§5q) — **done**, `app.ts:106`.
 5. **Name Mesa's target set publicly.** Documentation and a public API over code
    that already works. Highest vision-value per unit of effort.
 6. **One target axis in Sierra; jetty becomes `extension`.** The structural move —
    it de-forks the hand-copies and makes desktop/mobile cheap later.
 7. **Rename Mesa's compiler `ctx`.** Trivial; removes a mandatory-vocabulary
    collision.
-8. **Settle the four extension concepts** — Declaration / Hook / Plugin / Provider
-   (§5), plus convention files. Decide which distinctions are real (see
-   `ARCHITECT.md` §2 "under review": Hook / Guard / Observer / Delegate, and
-   Provider). Items 1 and 4 are the first two moves of this.
-9. **Narrow Junction's `register` to `() => void`; name the start phases** (§5q).
+8. ~~**Settle the four extension concepts**~~ — Declaration / Hook / Plugin / Provider
+   (§5) — **ruled**, `FJS-D06`: three hook tiers rather than five, Provider is a
+   third party, Slice waits for a second author.
+9. ~~**Narrow Junction's `register` to `() => void`; name the start phases**~~ (§5q)
+   — **done**: `runStartPhases(bindHost)`.
 
 ---
 

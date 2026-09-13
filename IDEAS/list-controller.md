@@ -1,6 +1,6 @@
 ---
 id: list-controller
-status: proposed
+status: shipped
 dated: 2026-09-12
 ---
 

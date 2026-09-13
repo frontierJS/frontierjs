@@ -91,7 +91,7 @@ or, for DevTools and a phone on the same network:
 
 ```sh
 bun run demo        # serves the WORKSPACE root, not the package
-# → http://localhost:5173/packages/css/guide/
+# → http://localhost:8040/packages/css/guide/
 ```
 
 ## What is here

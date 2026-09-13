@@ -3,7 +3,7 @@
 **Status: settled by option 5, 2026-08-10.** Sierra exports no module-level
 signal and passes Mesa no `externalSignals` map at all — its state is the plain
 objects `page`, `status` and `theme`, made reactive per component with a `$:`
-path watch (`PLAIN_OBJECT_STATE.md`, `FJS-060`). Options 2–4 below are therefore
+path watch (`FJS-060`; § *Writing to a plain object* below). Options 2–4 below are therefore
 **not open questions any more, they are alternatives that were not taken**; they
 are kept because the reasoning is what makes the choice legible, and because
 `externalSignals` still exists as an app-facing escape hatch for a third-party
@@ -147,7 +147,7 @@ Measured at **0 false positives across 36 real components** in the two smoke
 tests; without the event-handler exclusion it fired on `on:click={toggleTheme}`,
 which would have been enough noise to justify turning it off.
 
-`mesa/external-reactivity.test.js` — 16 tests.
+`mesa/test/external-reactivity.test.js` — 26 tests.
 
 **2. Provider-declared signals.** Move the declaration from the consumer's build
 config to the producing package — a `package.json` field, or a marker export the
@@ -201,3 +201,31 @@ a signal, and `externalSignals` is still the answer for it.
 The drift test that guarded the map is gone with the map.
 `sierra/tests/no-module-signals.test.js` replaced it and asserts the stronger
 thing: `src/` exports none, and the plugin declares none.
+
+---
+
+## Writing to a plain object
+
+What the migration settled about the producing side, measured against the runtime.
+
+**A write must go through the proxy, and a raw write does nothing.** `watchProxy`
+caches by root object, so every component and the writer share one proxy, and a
+write through it fires exactly the paths that are watched. Exporting the raw
+object and exporting the proxy both work — `watchProxy` is idempotent and
+`watchPath` normalizes a proxy argument to its root. A module that mutates the raw
+object fires nothing, silently; the failure is confined to the one module that
+owns the writes.
+
+**A watch declared anywhere applies to everyone** (RULE 47). The registry is keyed
+by the watched object, so one component's `$: page` covers every other
+component's reads of `page.*`, and they re-render on any write to it. It is
+fail-safe — an extra render, never a stale one — and it cuts against *reactivity
+is visible at the use site*. Scoping the registry per component instance is the
+fix if over-rendering ever shows up.
+
+**Path watching is a no-op on the server.** `watchProxy` returns the object
+unchanged when not in a browser (RULE 19).
+
+**A top-level value cannot be null-able.** It has to be a field on a container,
+which is why Sierra exports one `page` rather than loose values.
+

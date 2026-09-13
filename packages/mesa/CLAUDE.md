@@ -2,7 +2,7 @@
 
 **UI substrate.** A `.mesa` component compiler and the signal runtime its output
 runs on. A true leaf: **no framework-package dependency, ever** — the one thing
-it may import is `@frontierjs/utils`, which is substrate below the graph rather
+it may import is `@frontierjs/toolbelt`, which is substrate below the graph rather
 than a member of it (`FJS-D26`). Sierra, jetty, ui and email-kit all sit on top
 of it.
 
@@ -46,7 +46,7 @@ mesa-vite/
   devtools.html        — the /__mesa/devtools panel it serves
 
 docs/VISION.md         — the language: rules 1–40ish, numbered. Cite by rule
-docs/SSR_SPEC.md       — server-render contract. No open items
+docs/STATIC_RENDERING.md — server rendering: what runs, islands, tmpDir, globals
 
 test/browser/
   drive.mjs            — Chrome over CDP + the spec runner. SHARED: @frontierjs/ui

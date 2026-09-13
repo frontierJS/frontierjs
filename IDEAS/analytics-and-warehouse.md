@@ -146,8 +146,8 @@ a hole under every possible answer to the scope question, and therefore unblocke
 - **Coin no noun yet.** The product needs a name and the name is a decision of its own;
   every category above is describable without one today.
 - **Do not let `database analytics` become the answer by default.** It parses, which
-  makes it the path of least resistance, and [FJS-958](../ISSUES.md#fjs-958) is open
-  underneath it.
+  makes it the path of least resistance, and [FJS-958](../ISSUES.md#fjs-958) is closed
+  now — re-check what it covers before leaning on it here.
 - **Do not absorb the three neighbors.** `metric-store.md` is readings over time,
   `traffic-analysis.md` is request telemetry, `bulk-data.md` is the import screen a
   person uses. Each is argued elsewhere and each has its own owner.

@@ -11,7 +11,7 @@ Read them in this order.
 | [`elegant.ts`](./elegant.ts) | 3200 | **Start here.** The 80% path in the current idiom: schema-derived 400s, `@@gate` 401s, declared `channel:`, one custom action. |
 | [`fullstack/app.ts`](./fullstack/app.ts) | 3400 | The whole road: `db/schema.lite` → service → HTTP + WS → a browser page that renders it. |
 | [`single-file.ts`](./single-file.ts) | 3000 | Kitchen sink in one file — auth, hooks, mail, OpenAPI, channels. |
-| [`app.ts`](./app.ts) | 3000 | The demo API `bun run dev` starts. Broadest feature surface; autoloads [`services/`](./services). |
+| [`app.ts`](./app.ts) | 3000 | The demo API `bun run dev` starts. Broadest feature surface; registers the services in [`services/`](./services) by hand (`autoload: false`). |
 | [`server.ts`](./server.ts) | 3000 | Litestone-backed smoke server: login, seeded leads, every lead route behind a token. |
 | [`email-system.ts`](./email-system.ts) | 3000 | Tier-1 native SMTP — no third-party dependency. |
 | [`file-upload.ts`](./file-upload.ts) | 3000 | `File` fields: multipart in, stored refs expanded to URLs on the way out. Runs offline. |

@@ -6,8 +6,8 @@ Last verified by running: **2026-08-29**.
 
 | | |
 | --- | --- |
-| Version | 0.1.0 — **published to npm 2026-08-10**, tag `latest`, public. Bun-only by construction: Node will not strip types inside `node_modules`, and compiling would only move the failure later (`Bun.serve`, `Bun.file`, `bun:sqlite`) |
-| Tests | **1597 pass / 0 fail**, 82 files, 3,067 assertions (`bun run test`, 15s) |
+| Version | published to npm, tag `latest` — `package.json` holds the number. Bun-only by construction: Node will not strip types inside `node_modules`, and compiling would only move the failure later (`Bun.serve`, `Bun.file`, `bun:sqlite`) |
+| Tests | `bun run test` |
 | Typecheck | **clean — 0 errors**, and junction is absent from `scripts/typecheck-baselines.json`, where absent means 0 (`FJS-034`). It was 212, then 138, then gone; clearing the last of it found eleven defects in the shipped types, because `tests/` and `example/` are the only code here that uses junction the way an app does |
 | Realm | API / D8 |
 
@@ -89,40 +89,15 @@ accounts are in `CHANGES.md`.
 Packages in this monorepo import each other's raw `.ts` source, so a bare
 `tsc --noEmit` reports the *dependency's* diagnostics alongside your own —
 conduit saw 78 of Junction's. `scripts/typecheck.mjs` reports only the package's
-own diagnostics and takes a `--baseline N` ratchet.
-
-**Lower a baseline when you improve it; never raise one.** The runner tells you
-when to: it prints `below the baseline of N. Lower the baseline in package.json
-to lock the improvement in.`
-
-Junction's 212 is the highest in the repo and it is almost entirely in `tests/`
-(implicit `any` in test callbacks, `App` cast to `Record<string, unknown>`, a
-few genuinely wrong service-definition literals). It dropped to this number when
-`app.conduit` stopped being redeclared — older notes quoting 214/216/224/226
-predate that.
+own diagnostics. Baselines live in `scripts/typecheck-baselines.json` and only
+ever go down (Invariant 14); junction has none, which means 0.
 
 ## Open — see `ISSUES.md`
 
-Open items for this package are in the repo-wide register, not here, and **no
-defect is currently open against junction**. What is:
-
-**`FJS-D30`** — should login work over the WebSocket? Today it cannot: `/auth/*`
-deliberately is not a service and the socket dispatches one frame type. The
-recorded rationale for the split is that auth must be UNGATED, which is not the
-same as HTTP-only. The hard part is not the frame: channels key off
-`ctx.auth.user`, so a socket that logs in mid-life keeps its anonymous
-subscription set and silently misses its own events.
-
-Two rows owned elsewhere are half junction's: **`FJS-268`** (an app compiles the
-whole framework on every `tsc` run because the `exports` map points at `.ts` and
-nothing emits `.d.ts` — a cost question now that the output is clean) and
-**`FJS-279`** (nothing in jetty can talk to a real Junction; the browser client
-exposes no channel-subscription API, so a conforming adapter cannot be written
-against it as it stands).
-
-The ten issues and four decisions this section used to list are all closed. An
-id that is no longer here resolves in `ISSUES.md` § Closed, in
-`ISSUES_ARCHIVE.md`, or as a ruling in `DECISIONS.md`.
+Open items for this package are in the repo-wide register, not here — the rows
+above `## Closed` that name junction. `FJS-268` is the one owned elsewhere that is
+half junction's: an app compiles the whole framework on every `tsc` run, because
+the `exports` map points at `.ts` and nothing emits `.d.ts`.
 
 Add a new one to `../../ISSUES.md`, not to this file.
 

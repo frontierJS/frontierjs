@@ -172,14 +172,24 @@ export function appBiomeJson() {
 // app's own program. A freshly scaffolded app gets several hundred diagnostics
 // from inside node_modules and none of its own. `core/typecheck.js` reports the
 // ones that belong to the app and counts the rest.
+//
+// `test` runs last, because it is the slowest and a type error explains a
+// failing test better than the other way round. It exists only where a test
+// was written: `bun test` over a directory holding none exits non-zero, so a
+// `check` naming it would fail every app scaffolded without one.
 
-export function appCheckScripts() {
-  return {
+export function appCheckScripts({ tests = false } = {}) {
+  const scripts = {
     lint:       'biome check --error-on-warnings .',
     'lint:fix': 'biome check --write .',
     typecheck:  'fli typecheck',
     check:      'fli check && bun run lint && bun run typecheck',
   }
+  if (tests) {
+    scripts.test   = 'bun test api/test'
+    scripts.check += ' && bun run test'
+  }
+  return scripts
 }
 
 // ─── .github/workflows/ci.yml ─────────────────────────────────────────────────
@@ -214,5 +224,149 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - run: bun run check
+`
+}
+
+// ─── AGENTS.md and CLAUDE.md ──────────────────────────────────────────────────
+// Much of an app is now written by a program somebody asked, and that program
+// arrives knowing the ecosystem and not this framework: a role check in a hook,
+// `Decimal(10,2)`, a resource file named for its service. Each is a legal
+// spelling of something wrong, and nothing in a fresh scaffold says otherwise.
+//
+// `AGENTS.md` is the framework's half and `CLAUDE.md` is the app's. The second
+// imports the first, so what the developer writes about their own app is never
+// mixed into text the framework owns — and `AGENTS.md` is the name every other
+// agent tool converged on, which is why the framework's half is not CLAUDE.md.
+//
+// It restates no package's reference (`FJS-D163`). Every line either points at
+// a file the installed tarball carries or names the `fli check` rule that grades
+// it, and `tests/app-config.test.js` holds both to their source: the pointers
+// to `exports.snapshot.md`, the rule ids to `RULES`, the commands to the
+// registry. The `scaffold` CI phase asks the installed app whether each pointer
+// resolves, which is the only place the published bytes are read.
+
+// The packages whose TARBALL carries an AGENTS.md, and what else it ships that
+// the file tells a reader to open. Asserted against the packer's own listing in
+// both directions — a package that starts shipping one and is missing here is a
+// reference no app is pointed at.
+export const AGENT_DOCS = {
+  '@frontierjs/litestone': { covers: '`db/schema.lite` and every query',                beside: ['catalog.snapshot.md'] },
+  '@frontierjs/junction':  { covers: 'services, hooks, `$` and raw routes',              beside: [] },
+  '@frontierjs/sierra':    { covers: 'routes, resources, forms and prerendered pages', beside: [] },
+  '@frontierjs/mesa':      { covers: 'the `.mesa` component language',                  beside: [] },
+  '@frontierjs/ui':        { covers: 'the component kit — forms, tables, overlays',     beside: [] },
+  '@frontierjs/css':       { covers: 'markup and styling',                              beside: ['vocabulary.json'] },
+}
+
+// A rule is written here only when a generic habit breaks it. `needs` is the
+// package whose presence makes it true of this app; `rules` are the `fli check`
+// ids that grade it, and an empty list says so on the line rather than implying
+// a gate that is not there.
+const AGENT_RULES = [
+  { needs: null, rules: ['app-layout', 'surface-config', 'surface-src'],
+    text: '`db/` sits at the app root and each surface — `api/`, `web/`, `site/`, `widgets/`, `extension/`, `desktop/` — '
+        + 'is a directory beside it with its own `config/` and `src/`. A surface folded into another inherits '
+        + 'that one\'s build, and a `site/` inside `web/` is deleted by the next SPA build.' },
+  { needs: '@frontierjs/litestone', rules: ['model-name-case', 'model-name-plural'],
+    text: 'Model names are PascalCase singular. `model Lead` is `db.lead` and the `leads` service, each derived '
+        + 'from the other, so `model Leads` disconnects the API and the UI from the table.' },
+  { needs: '@frontierjs/litestone', rules: [],
+    text: 'Access is declared in the schema — `@@gate`, `@@allow`, `@guarded`, `@@transitions` — and never '
+        + 'checked in a service hook. A hook guards the callers that pass through it; the schema guards every '
+        + 'one, including a job, a seed and a migration.' },
+  { needs: '@frontierjs/junction', rules: ['service-module-db'],
+    text: 'A service reads the request-scoped client, `$.db` (`import { $ } from \'@frontierjs/junction\'`). '
+        + 'The app\'s own imported client carries no principal, so every row policy sees `auth()` as null.' },
+  { needs: '@frontierjs/litestone', rules: ['set-auth-discarded'],
+    text: '`db.$setAuth(user)` returns a scoped client and changes nothing: `const userDb = db.$setAuth(user)`.' },
+  { needs: '@frontierjs/litestone', rules: ['migration-history'],
+    text: 'A schema change ships as a migration file, `fli db:migrate`. `fli db:push` changes the local tables '
+        + 'and writes no file, and a deploy replays only files.' },
+  { needs: '@frontierjs/sierra', rules: ['resource-dir-mesa', 'resource-script', 'resource-file-name', 'resource-one-per-file'],
+    text: 'A Resource is a `.mesa` file in `src/resources/`, one per file and named for its model (`Lead.mesa`). '
+        + 'Its `<script module>` calls `createResource`; its markup, when present, is the model\'s default form.' },
+  { needs: '@frontierjs/css', rules: ['css-token-undefined'],
+    text: 'Style with what a thing is and what is true about it — `class="btn outlined danger"` — never with a '
+        + 'color, a size or a spacing value.' },
+]
+
+// Generators before hand-writing, because each one writes the file every rule
+// above expects. `needs` as above.
+const AGENT_GENERATORS = [
+  { needs: '@frontierjs/sierra',    what: 'a model with its service, resource and pages', run: 'fli scaffold Lead --fields "name:string email:email"' },
+  { needs: '@frontierjs/litestone', what: 'a model alone',                                run: 'fli make:model Lead' },
+  { needs: '@frontierjs/sierra',    what: 'a Resource',                                   run: 'fli make:resource Lead' },
+  { needs: '@frontierjs/sierra',    what: 'a page, wired to a Resource',                  run: 'fli make:route leads --resource Lead' },
+  { needs: '@frontierjs/sierra',    what: 'a component',                                  run: 'fli make:component LeadCard' },
+]
+
+/** The framework's guidance for an agent writing code in this app.
+ *  @param {{ name: string, packages: string[] }} o  every package the manifest names, dev half included */
+export function appAgentsMd({ name, packages }) {
+  const has   = new Set(packages)
+  const wants = (row) => row.needs === null || has.has(row.needs)
+
+  const docs = Object.entries(AGENT_DOCS).filter(([pkg]) => has.has(pkg))
+  const docLines = docs.flatMap(([pkg, { covers, beside }]) => [
+    `- \`node_modules/${pkg}/AGENTS.md\` — ${covers}`,
+    ...beside.map(f => `  - \`node_modules/${pkg}/${f}\` beside it`),
+  ])
+
+  const ruleLines = AGENT_RULES.filter(wants).map(r =>
+    `- ${r.text} ${r.rules.length ? `[${r.rules.map(id => `\`${id}\``).join(', ')}]` : '[not graded]'}`)
+
+  const genLines = AGENT_GENERATORS.filter(wants).map(g => `| ${g.what} | \`${g.run}\` |`)
+
+  return `# ${name} — for agents
+
+A FrontierJS app. \`fli new\` wrote this file for a program writing code here;
+\`README.md\` is the same app for a person, and \`CLAUDE.md\` is the app's own.
+
+## The model
+
+Everything derives from \`db/schema.lite\`: **Data (Model) → API (Service) → UI
+(Resource)**. A rule declared in the schema reaches the API, the validators, the
+forms and the migrations at once; the same rule written in code reaches one
+caller. Change the schema first, then let a generator write what follows from it.
+
+## Read before writing
+${docLines.length ? `
+${docLines.join('\n')}
+` : ''}
+A framework package added later ships its own at \`node_modules/<package>/AGENTS.md\`
+when it has one. Never guess a schema word — \`fli db:explain @guarded\` answers
+one live off the parser.
+${genLines.length ? `
+## Generate before hand-writing
+
+| To add | Run |
+| --- | --- |
+${genLines.join('\n')}
+` : ''}
+## What a generic habit gets wrong here
+
+The rule id in brackets is the \`fli check\` rule that reports a violation.
+
+${ruleLines.join('\n')}
+
+## After every change
+
+\`\`\`bash
+bun run check     # fli check, then lint, then typecheck — the same gate CI runs
+\`\`\`
+
+Fix what it reports before moving on. \`fli check --list\` prints every rule, and
+\`fli check --fix\` applies the ones whose rewrite is the whole fix.
+`
+}
+
+/** The app's own agent file. It imports the framework's and holds nothing else yet. */
+export function appClaudeMd({ name }) {
+  return `# ${name}
+
+@AGENTS.md
+
+\`AGENTS.md\` is the framework's guidance. This file is the app's: what it is for,
+who uses it, and the decisions the schema does not hold.
 `
 }

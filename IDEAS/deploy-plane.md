@@ -1,12 +1,14 @@
 ---
 id: deploy-plane
-status: proposed
+status: partial
 dated: 2026-08-13
 ---
 
 # Idea — The deploy plane: build once, promote a digest, and how the plane itself arrives
 
-**Status: IDEA / ARCHITECTURE. Nothing here is built.** Dated 2026-08-13. Produced by
+**Status: PARTIAL.** The journal and the content-addressed digest have shipped,
+and `@frontierjs/outpost` exists — the build-once-promote-a-digest half below
+is still unbuilt. Dated 2026-08-13. Produced by
 grading the shipped `fli deploy` pipeline against the twelve-factor build/release/run
 split, then following the one failure that is *not* forced by an architectural choice
 FJS has already made deliberately.
@@ -77,7 +79,7 @@ installs docker, nginx, git, bun, rsync and sqlite3 and **not litestream**, so e
 one of those checks grades a binary the plane never put there (`ISSUES.md`
 `FJS-243`); and there is no `litestone restore`, so the way back is one
 `litestream restore` per database typed by hand plus a directory copy for the
-jsonl/logger ones (`FJS-540`). An operator restoring under pressure is the worst
+jsonl/logger ones (`FJS-552`). An operator restoring under pressure is the worst
 possible audience for a step nothing derives.
 
 **The image tag is not unique, and Docker will believe it.** `02-pull` sets

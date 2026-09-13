@@ -6,7 +6,8 @@ dated: 2026-08-02
 
 # Idea — Ecosystem gaps: what is missing to compete with Laravel and the likes
 
-**Status: ASSESSMENT + FUTURE WORK.** Dated 2026-08-02. Claims were probed against
+**Status: ASSESSMENT + FUTURE WORK.** Dated 2026-08-02; the headings carry what has
+shipped since, struck where a gap closed. Claims were probed against
 the tree (`VERIFYING.md`); evidence is named inline. Each gap below is written so it
 can become a stub or a tracked issue — proposed home, what it attaches to, and why
 it matters are stated per item.
@@ -64,31 +65,20 @@ Tier-2 item 5 below was written as "factories do not exist"; they do, in
 
 These block a typical SaaS outright. They are the reason an evaluator stops.
 
-### 1. OAuth / social login
+### 1. OAuth / social login — ~~missing~~ **shipped in `@frontierjs/auth`**
 
-**Missing entirely.** `packages/auth/auth.ts` implements `verifySession`, `login`,
-`logout`, `createUser`, `deleteUser`, password reset, email verification and API
-keys. There is no OAuth of any kind — no provider flow, no token exchange, no
-account linking.
+Provider flows, token exchange and account linking ship in `packages/auth/oauth.ts`;
+a callback is a browser redirect, so it runs in `cookieAuth` mode, and `example`'s
+`verify:oauth` is the end-to-end proof. Laravel's equivalent is Socialite.
 
-- **Laravel equivalent:** Socialite
-- **Proposed home:** `@frontierjs/auth` (provider flows) — the `Credential` model
-  already has `type`, `accessToken`, `refreshToken`, `tokenExpiresAt` and `scope`
-  columns, so the schema anticipated this
-- **Why first:** "Sign in with Google" is table stakes. This is the most likely
-  single reason someone evaluates FJS and leaves.
+### 2. Billing and subscriptions — **built in `example`, not as a package**
 
-### 2. Billing and subscriptions
-
-**Missing entirely.** No payment provider integration, no subscription lifecycle,
-no invoicing, no billing webhooks, no proration or trials.
-
-- **Laravel equivalent:** Cashier
-- **Proposed home:** a Slice (`IDEAS/slices.md`) — this is the canonical case for
-  the slice format: models + service + webhook endpoints + optional UI
-- **Substrate already present:** Conduit is the right outbound boundary for a
-  payment provider, and Junction's webhooks plugin is the right inbound one. Nothing
-  is built on either.
+**No package — and `example` builds the whole shape as app code.** A subscription
+lifecycle, invoices, proration, dunning and a card processor's webhooks live in
+`example/api/src/domain/billing/` and a Stripe connector in `providers/stripe/`,
+driven by `verify:billing`, `verify:proration`, `verify:collect` and `verify:stripe`.
+What is still open is whether it becomes a Slice (`IDEAS/slices.md`), which is the
+canonical case for that format. Laravel's equivalent is Cashier.
 
 ### 3. Object storage driver — ~~missing~~ **shipped in the wrong package; the gap is a duplicate abstraction**
 
@@ -182,11 +172,10 @@ factory's shape from field types and rules:
 - `generateGateMatrix` / `generateValidationCases` — the same derivation pointed at
   test *cases* rather than test *data*, which Laravel has no equivalent of.
 
-**What is actually left is adoption.** Grep the monorepo: the only caller is
-Litestone's own `test/litestone.test.ts`. Junction's test kit, basecamp's suite and
-`example/` all still hand-roll rows, so the payoff this item was written for — a
-good test kit that is under-used because making data for it is manual — has not
-been collected. That is the tracked work, not the building.
+**Adoption has started.** `createTestEnv` is what `@frontierjs/testing` layers the
+API tier on, and basecamp's suite builds on it. The derived-case generators
+(`generateGateMatrix`, `generateValidationCases`) are still called only from
+litestone's own tests.
 
 See `IDEAS/testing-and-ci.md`, which treats this as the unblocking step for a
 cross-realm suite.
@@ -223,18 +212,14 @@ signature check.
 No equivalent to Laravel Pennant. Natural fit as a small slice over a Litestone
 model plus a Junction plugin exposing `app.features`.
 
-### 8. Browser / end-to-end testing
+### 8. Browser / end-to-end testing — **in the repo, not offered to an app**
 
-No Playwright, Puppeteer or equivalent harness. Laravel has Dusk. Notably, this
-site's own pages are already verified with headless Chrome — the technique exists in
-the repo, it is just not a package.
-
-**Broader than it looks** (2026-08-03): the technique now exists in the repo *three*
-times as one-off harnesses — `packages/sierra/tests/fixtures/island-site/verify.mjs`,
-`packages/css/test/run.js`, `packages/ui/test/render.mjs` — and none is reusable.
-Paired with item 5, this is the UI half of the Suite realm, which has no package at
-all. And nothing runs on commit: there is no `.github/` directory in this repo. See
-`IDEAS/testing-and-ci.md`.
+No Playwright or Puppeteer, and none wanted: mesa's CDP harness (`test/browser/`) is
+shared by mesa, `@frontierjs/ui`, junction's devtools drive and `fli gui`'s, and the
+cli ships a small page driver of its own (`core/browser.js`) for the tutor. CI runs
+on every push (`bun run ci`, `.github/workflows/ci.yml`). What is still missing is
+the Dusk half: a browser harness an APP's own suite can import, since mesa's is a
+spec runner and is not published.
 
 ### 9. Media processing
 
@@ -281,14 +266,15 @@ shipping.
 miniature, which argues for an upgrade contribution in the slice format — see the
 open question added to `IDEAS/slices.md`.
 
-### 11. Rate limiting
+### 11. Rate limiting — ~~missing~~ **shipped in junction**
 
 **Added 2026-08-04. Tier-1 severity, filed here to avoid renumbering** — several
 files cite `ecosystem-gaps.md` tier-1 item numbers.
 
-**Missing entirely.** No limiter, no throttle, no quota, nothing in
-`packages/junction/src/transport/`. A public API cannot ship without one, and the
-absence is not survivable by convention the way some tier-2 items are.
+**Built since.** `packages/junction/src/core/rate-limit.ts` is the one definition,
+read by a transport middleware, a pipeline hook and `@frontierjs/auth`'s login
+limiter, which were three drifted copies until `FJS-017`. What follows is the
+argument it was filed with.
 
 - **Laravel equivalent:** the `throttle` middleware and `RateLimiter` facade
 - **Proposed home:** a Junction plugin, so it composes like the others and can be
@@ -301,12 +287,12 @@ absence is not survivable by convention the way some tier-2 items are.
   calls `find` in a loop by default, so an unbounded API plus an MCP endpoint is a
   self-inflicted denial of service.
 
-### 12. Streaming responses
+### 12. Streaming responses — ~~missing~~ **shipped, outside the envelope**
 
-**Added 2026-08-04.**
-
-**Missing entirely.** No SSE, no chunked transfer, no streaming body anywhere in the
-transport. Every response is buffered and returned whole.
+**Added 2026-08-04.** Built since: a raw route has `ctx.sse()`, the export endpoint
+streams its file, and conduit has `stream()`. The design question below was ruled
+`FJS-D13` — a stream is not a result and `wrapResult` refuses one by name; each frame
+is a result and the stream is not.
 
 - **Laravel equivalent:** `StreamedResponse` / `response()->stream()`
 - **Why it is not merely nice:** it is a hard prerequisite for
@@ -324,7 +310,7 @@ transport. Every response is buffered and returned whole.
 - **Interaction:** pairs with item 11 — a stream that cannot be rate-limited is worse
   than no stream.
 
-### 13. Security advisories and dependency posture
+### 13. Security advisories and dependency posture — **the audit half shipped**
 
 Added 2026-08-12, from an ecosystem sweep of the app lifecycle. The words *CVE* and
 *vulnerability* occur nowhere in `IDEAS/`, and nothing in `fli` answers **am I
@@ -336,7 +322,10 @@ for any of them — it is the floor, and an evaluator finds its absence in about
 seconds. It matters more here than for a hosted framework, because FJS asks people to
 run the thing themselves.
 
-Mostly not code:
+`bun run ci`'s `advisories` phase now answers *am I affected* for this framework's
+published packages, as a comparison against what a published package's runtime
+dependencies reach rather than a scan. The support policy and the channel are
+still unwritten. Mostly not code:
 
 - **A stated support policy.** Which versions get fixes, for how long. Pre-alpha is an
   answer, as long as it is written down.
@@ -352,10 +341,14 @@ advisory channel has to cover slices too, and a registry (item 3.6 in the overvi
 without one is a supply chain with no way to say *stop using this*. Better to have the
 format before the registry than after.
 
-### 14. Inbound integrations — everything points outward
+### 14. Inbound integrations — **direction ruled (`FJS-D177`), mechanism unbuilt**
 
-Added 2026-08-12, from the same sweep as item 13. Probed, and the direction is
-consistent everywhere:
+Added 2026-08-12, from the same sweep as item 13. **`IDEAS/inbound-integrations.md`
+supersedes the framing below**: conduit holds the relationship with both ends, and
+receiving is two features with two owners. An app receives today through a raw
+route and a verifier it owns — `example`'s Stripe and payment-provider webhooks,
+`verify:pay` and `verify:stripe` — which is what the paragraph below calls
+nothing. As probed then:
 
 - **Conduit is outbound** — declared targets, `app.conduit.send()`. Its own one-liner in
   `CLAUDE.md` says *outbound boundary*.
@@ -422,7 +415,9 @@ case. It is a field type with a comparison rule, which puts it in the same famil
 `IDEAS/declared-semantics.md`. Wants `$checkOrderBy` to know the column is a rank
 rather than a number, so the client sorts by it without being told.
 
-**Conditional fields in a form.** *Show the VAT number only when the country is in the
+**Conditional fields in a form.** **The rule half shipped as `@required(where: …)`
+(`FJS-D259`)**, answered in the browser through `@frontierjs/toolbelt/predicate`;
+visibility is still the page's. *Show the VAT number only when the country is in the
 EU; require it when shown.* Every form in every business application has one and it is
 always imperative code in the page. `IDEAS/cascading-fields.md` is the Data-realm
 cousin — carrying a value to related rows — and is not this: this is a field's
@@ -435,10 +430,13 @@ for the fields that are sometimes not in it. The hazard to state up front: a
 client-side condition is an affordance, so the server must still validate, which is the
 same split `x-gate` already draws.
 
-**`@@softDelete` and `@unique` do not agree.** A soft-deleted row still occupies its
-unique index, so deleting a user and re-registering the same email fails with a
-constraint violation that names nothing the user did. Both features ship, the
-interaction is undefined, and every application discovers it in production. The
+**`@@softDelete` and `@unique` do not agree.** **Ruled since** — `FJS-204` keeps the
+slot (a soft-deleted row answers `SoftDeletedUniqueError`, which names it), and an
+author who wants uniqueness among live rows declares
+`@@unique([email], where: deletedAt == null)` (`IDEAS/partial-indexes.md`). As
+filed: a soft-deleted row still occupies its unique index, so deleting a user and
+re-registering the same email fails with a constraint violation that names nothing
+the user did. The
 answers are known and none is free — a partial index, a nulled column, or a tombstone
 suffix — and the point of recording it here is that **this is a ruling the framework
 should make once**, not a trap each app finds. It also lands on
@@ -592,12 +590,9 @@ So the sequencing that follows from that:
 
 ## Note on the website's claims
 
-`website/packages.js` currently describes auth as *"Sessions · passwords · API keys ·
-OAuth · TOTP"*. OAuth and TOTP do not exist. This is consistent with the
-finished-state voice the site was deliberately written in, and
-`website/README.md` already gates publication on the packages actually shipping —
-but auth is the first thing a technical evaluator tests, so it should be true before
-the site is public rather than eventually.
+`website/packages.js` describes auth as *"Sessions · passwords · API keys · OAuth ·
+TOTP"*. When this file was written OAuth and TOTP did not exist; both ship now, so the
+line is true.
 
 ## See also
 

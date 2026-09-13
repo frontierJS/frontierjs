@@ -61,7 +61,7 @@ under Bun, the command runs under node, and only Bun 1.3 closed both directions 
 `writeText()`, which is the one owner of a hand-written answer on that side.
 **Proves it:** `packages/cli`: `bun run test`, and it is worth running the file
 under node once by hand, because that is the runtime the defect lives in.
-**This one deserves an `FJS-###` whether or not the upgrade happens.**
+Filed as [`FJS-1129`](../ISSUES.md#fjs-1129), whether or not the upgrade happens.
 
 ## 2. litestone's REPL prompts a closed readline
 

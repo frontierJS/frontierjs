@@ -42,9 +42,8 @@ bun add @frontierjs/sierra @frontierjs/mesa
 bun add -d vite
 ```
 
-Sierra imports `@frontierjs/mesa`, `@frontierjs/junction` and `@frontierjs/litestone`
-but **declares none of them** as dependencies — it resolves them itself through a
-hand-rolled exports-map resolver (`src/virtual/virtual-sierra.js`). Install what you use:
+Sierra declares `@frontierjs/mesa` as a required peer and `@frontierjs/junction` and
+`@frontierjs/litestone` as optional ones. Install what you use:
 
 | Package | Needed for |
 | --- | --- |
@@ -120,7 +119,8 @@ export default {
   trailingSlash: 'always',
 
   junction: {
-    url:       `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}`,
+    // Vite also loads this file in Node, which has neither import.meta.env nor location
+    url:       import.meta.env?.VITE_API_URL ?? (typeof location !== 'undefined' ? location.origin : 'http://localhost:8000'),
     apiPrefix: '/api',       // must match the API's config.apiPrefix
     tokenKey:  'myapp_token',
   },
@@ -461,7 +461,7 @@ export async function getStaticPaths() {        // static builds only
 
 ```js
 import {
-  status, login, logout, getClient, whenReady,
+  status, session, signIn, signOut, getClient, whenReady,
   createResource, createStore, useStore,
 } from '@frontierjs/sierra/junction'
 ```
@@ -776,9 +776,9 @@ Unknown answers are permissive — no gate declared, no level supplied, an
 operation the gate does not mention. Hiding a control the user could have used is
 a worse and much quieter failure than showing one that errors.
 
-Levels are Litestone's 0–9 scale (`STRANGER` 0 … `USER` 4 … `OWNER` 6, `SYSTEM`
-8). Pass a number: mapping names to numbers here would be a copy of Litestone's
-`LEVELS` and exactly the kind of duplicate that drifts.
+Levels are the 0–9 ladder (`STRANGER` 0 … `USER` 4 … `OWNER` 6, `SYSTEM` 8), owned by
+`@frontierjs/toolbelt/gate`. Pass a number, or read a name off that kit rather than
+writing a mapping here.
 
 ### Coercion
 
@@ -918,6 +918,10 @@ Everything in `sierra.config.js`:
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `target` | `'spa'` | `'spa'` \| `'static'` \| `'widget'` |
+| `widgets` | — | `widget` target only — `{ dir, outDir, prefix, minify }`: where the widgets are (`src/Embeds`), where their scripts go (`dist/embeds`), the tag prefix |
+| `dev.staticData` | `true` | run a `render: static` route's `load()` on the dev server, so dev shows the page with its data |
+| `islands` | `true` | `static` only — the island marker pass; `false` turns it off |
+| `db` | — | `static` only — a module exporting a Litestone client, used to grade what a prerendered route reads against `@@gate` |
 | `routesDir` | `'src/routes'` | scanned directory |
 | `outDir` | `'dist/client'` | build output |
 | `base` | `'/'` | public base path |
@@ -926,7 +930,7 @@ Everything in `sierra.config.js`:
 | `routeTable.output` | `'config/routes.js'` | where the generated route table is written |
 | `schema` | auto-detect | path to the `.lite` file, or `false` |
 | `junction` | — | `{ url, apiPrefix, authPrefix, tokenKey, cookieAuth, auth, services, debug, onConnect, … }` |
-| `theme` | — | `{ default, persist, attribute, key }` |
+| `theme` | — | `{ themes, default, system, persist, key, apply, attribute }` — `attribute` only with `apply: 'attribute'` |
 | `analytics` | — | `{ provider }` — `'plausible'`, `'gtm'`, or a custom `{ init, pageview, track }` |
 | `devtools` | — | `{ port, position, n1Threshold }` |
 | `autoImport.components` | `[]` | directories, scanned recursively, whose PascalCase components need no import |
@@ -1242,8 +1246,8 @@ test:installable` holds the grader against Chrome's own `Page.getInstallabilityE
 import { theme, setTheme, toggleTheme } from '@frontierjs/sierra'
 ```
 
-`theme` is a plain object — `{ value: 'light' | 'dark' }`, never `'system'` — like `page`
-and `status`. Watch it to make it reactive:
+`theme` is a plain object — `{ value: 'theme-dark' }`, the resolved class name, never
+`'system'` — like `page` and `status`. Watch it to make it reactive:
 
 ```html
 <script>
@@ -1302,6 +1306,9 @@ import { tree, components, loaders, layouts, published, indexed, redirects } fro
 | `.../site/serve` | `serveSite` — the prerendered-site origin |
 | `.../widget/serve` | `serveWidgets` — the widget origin |
 | `.../components/RouterView` | the router outlet component |
+| `.../components/ChainRenderer` | the layout-chain renderer `RouterView` uses |
+| `.../islands` | `findIslands`, `mountIsland` — the island loader a prerendered page runs |
+| `.../widget` | `embed` — mounting one component as a custom element in a shadow root |
 
 ---
 
@@ -1322,13 +1329,8 @@ runner reports failures that are runner artifacts rather than bugs.
 - `sierra.config.js` is found by probing four locations relative to `vite.config.js` and
   the Vite root — see the [Quick start](#quick-start) note. Somewhere else entirely still
   needs `_configPath`.
-- Mesa, Junction and Litestone are imported but not declared as dependencies. Resolution
-  is hand-rolled against each package's `exports` map.
 - Every named layout slot emits a duplicate-declaration warning from the Mesa compiler.
   Cosmetic — the build and the slot both work.
-- `src/resources/` in `@frontierjs/jetty` is a hand-copy of Sierra's and has already
-  diverged. Fix one, audit the other.
-- The Mesa HMR algorithm is hand-copied from `mesa-vite/` into two files here.
 
 See [`CHANGES.md`](CHANGES.md) for the detailed history of what was fixed and why, and the
 repo's `DECISIONS.md` before relitigating any semantics.

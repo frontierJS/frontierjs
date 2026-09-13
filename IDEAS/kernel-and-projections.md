@@ -138,9 +138,11 @@ tarballs. [Versioning strategies](https://gitmodules.com/versioning-strategies-i
 ### 1. One operation pipeline under every verb
 
 Every read and write passes one ordered sequence — resolve principal → gate →
-row policy → field protection → validate → transition → execute → announce.
-A verb is a *configuration* of the pipeline, not a method body restating it.
-This is Ash's lifecycle and ZenStack's interception point.
+row policy → field protection → validate → transition → execute. (Not
+`→ announce`: `FJS-D267` settles that announcing stays junction's, as an
+observer on `$tapEvents`, rather than a pipeline stage.) A verb is a
+*configuration* of the pipeline, not a method body restating it. This is
+Ash's lifecycle and ZenStack's interception point.
 
 **What it retires:** the fifteen insertion sites, and `verbs-rules.test.ts` as a
 tripwire (it stays as a smaller assertion that every verb is registered).
@@ -251,4 +253,4 @@ doctrine rather than the reverse.
 ## See also
 
 - `prior-art.md` — Ash in depth · `one-mental-model.md` — the extension-point catalog
-- `framework-shape.md` · `provable-enforcement.md` · `testing-realm.md` · `proof-map.md`
+- `framework-shape.md` · `provable-enforcement.md` · `testing-realm.md`

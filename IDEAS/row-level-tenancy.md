@@ -1,12 +1,13 @@
 ---
 id: row-level-tenancy
-status: proposed
+status: shipped
 dated: 2026-08-12
 ---
 
 # Idea — Row-level tenancy: the primitive basecamp has paid for 37 times
 
-**Status: IDEA. Nothing here is built.** Dated 2026-08-12, from a sweep asking what
+**Status: SHIPPED** (`FJS-D05`) — row tenancy is a declared `tenancy { }` block,
+built and in use by basecamp. Dated 2026-08-12, from a sweep asking what
 whole *categories* the framework has no answer for, as distinct from features it is
 missing. Every claim below was probed against the tree.
 

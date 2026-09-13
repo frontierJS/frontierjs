@@ -1,12 +1,13 @@
 ---
 id: time-and-recurrence
-status: proposed
+status: partial
 dated: 2026-08-12
 ---
 
 # Idea — Time: the hardest thing in the job, and the seed says nothing about it
 
-**Status: IDEA, PARTLY RULED (`FJS-D143`, 2026-08-25). Nothing here is built.**
+**Status: PARTIAL, PARTLY RULED (`FJS-D143`, 2026-08-25).** DST handling and a
+test clock (`env.clock`) have since shipped.
 The ruling settles the axis this record deliberately left open — the kind is
 declared by an ATTRIBUTE, `DateTime` keeps its name, and a zoned comparison is a
 window the framework binds rather than a predicate SQLite evaluates — and
@@ -43,7 +44,7 @@ This is the answer that came back first and by the widest margin.
   index — so the gap is filed, not addressed.
 - **There is no date/time code in the tree.** `packages/datetime-kit/` was a
   `README.md` and nothing else; 2026-08-15 it folded into `@frontierjs/toolbelt` as the
-  `/datetime` kit — intent in `packages/toolbelt/docs/datetime.md`, prototype parked at
+  `/datetime` kit — intent in `packages/toolbelt/mockup/datetime/README.md`, prototype parked at
   `packages/toolbelt/mockup/datetime/` (nine source files, a non-member of the
   workspace glob, run by nothing). **Still true on 2026-08-25**: toolbelt exports
   eleven subpaths and `./datetime` is not one of them. `FJS-411` — three copies of a
@@ -413,4 +414,4 @@ is which subset earns a name.
   viewer's zone would reuse
 - `packages/caravan/src/cron.ts` — the one place in the repo that already gets a
   timezone right
-- `packages/toolbelt/docs/datetime.md` — the claim, now a kit inside toolbelt (`FJS-D14`, ruled)
+- `packages/toolbelt/mockup/datetime/README.md` — the claim, now a kit inside toolbelt (`FJS-D14`, ruled)

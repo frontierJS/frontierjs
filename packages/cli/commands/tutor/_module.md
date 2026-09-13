@@ -8,8 +8,8 @@ description: Learn FrontierJS by building an app that really runs, one lesson at
 //
 // A lesson is a command with steps. Each step narrates its own prose, runs the
 // real command, and then ASKS THE WORLD whether it worked — a port, a row, a
-// container. That last part is the whole design: `docs/QUICKSTART.md` §7 exited
-// 0 on every command it named and had never once put an app on a server.
+// container. That last part is the whole design: the hand-typed quickstart it
+// replaced exited 0 on every command it named and had never once put an app on a server.
 //
 // Three modules do the work and none of them live here: `core/tutor.js` (where
 // the app lives, and what a previous run finished), `core/probe.js` (the
@@ -390,8 +390,8 @@ const signInPage = async (context, page, email, password) => {
   // `Authentication required` to somebody the app said was welcome.
   const shell = await probe.pageEval({
     page,
-    ask:      `(document.querySelector('.nav') || {}).innerText || ''`,
-    // Length first: `.nav` missing answers '' and would pass the negation on
+    ask:      `(document.querySelector('.topbar') || {}).innerText || ''`,
+    // Length first: `.topbar` missing answers '' and would pass the negation on
     // its own, so a page that rendered nothing would grade as a correct
     // signed-out shell.
     expect:   (t) => t.length > 0 && !/Sign out/i.test(t),
@@ -402,7 +402,7 @@ const signInPage = async (context, page, email, password) => {
 
   await page.eval(fill('input[type=email]', email))
   await page.eval(fill('input[type=password]', password))
-  await page.eval(clickText('Sign in', '.login'))
+  await page.eval(clickText('Sign in', '.auth-card'))
   const io = await probe.pageEval({
     page,
     ask:      `Object.keys(localStorage).some(k => k.endsWith('_token'))`,
@@ -417,7 +417,7 @@ const signInPage = async (context, page, email, password) => {
   // nothing at all would pass that.
   return probe.pageEval({
     page,
-    ask:      `(document.querySelector('.nav') || {}).innerText || ''`,
+    ask:      `(document.querySelector('.topbar') || {}).innerText || ''`,
     expect:   (t) => t.includes(email),
     describe: `a shell that names ${email}`,
     name:     'the nav says who is signed in',

@@ -119,7 +119,7 @@ async function run({ root, db, json }, { wireDb = true, warnings = null } = {}) 
     // used to wave through (`FJS-782`).
     db: wireDb ? db : null,
     ...(warnings ? { warn: m => warnings.push(m) } : {}),
-    // Mesa SSR_SPEC W1: renderComponent writes a temp module and resolves that
+    // mesa's tmpDir: renderComponent writes a temp module and resolves that
     // module's bare imports from wherever it sits. The scaffolded app is a bare
     // mkdtemp with no node_modules, so point at this package's — the real build
     // uses `resolve(root, 'node_modules/.sierra/render')` for the same reason.

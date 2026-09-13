@@ -10,6 +10,9 @@ and the `/auth/*` route plugin. `bun run test` (bun).
 
 ```
 auth.ts      the IAuth implementation — sessions, login, verification
+oauth.ts     the OAuth flow engine — the URL, the code-for-token trade, the
+             normalized identity. No HTTP, no database, no session — plugin.ts
+             owns the routes and auth.ts decides who the identity is
 plugin.ts    createAuthPlugin() — mounts /auth/*, declares the cookie mode,
              and registers the three services at boot()
 services.ts  account / sessions / api-keys — the half that is NOT a route
@@ -180,9 +183,12 @@ index.ts     public API
   429 cannot also erase the attempt from the trail. `onLogin` throwing records
   `reason: 'refused-by-app'` with the message: a veto that leaves no trace is
   the class of defect `FJS-277` was.
-- **Auth records four events through `db.$audit`, beside the `@@log(audit)` rows
-  rather than instead of them.** `login.succeeded`, `login.failed`, `logout` —
-  `@@log` covers writes, so it covered the sign-in (`create:session`, with
+- **Auth records events through `db.$audit`, beside the `@@log(audit)` rows
+  rather than instead of them.** `login.succeeded`, `login.failed`,
+  `login.challenged`, `logout`, `session.revoked`, `password.reset.refused`,
+  the `oauth.*` events (`oauth.signin`, `oauth.registered`, `oauth.refused`,
+  `oauth.link.refused`) and the `support.*` pair (`support.started`,
+  `support.ended`) — `@@log` covers writes, so it covered the sign-in (`create:session`, with
   `actorId: null`, because an `asSystem()` write names no principal) and missed
   the failed attempt entirely, which is the one an app rate-limits on
   (`FJS-276`, `FJS-277`). The `create:session` row records the WRITE and cannot
@@ -256,11 +262,11 @@ index.ts     public API
 - **Junction is imported by SPECIFIER — `@frontierjs/junction`, never a relative
   path.** `../junction/index.ts` resolves inside the workspace and nowhere else,
   so the tarball imported nothing and said so only on install. `files` in
-  `package.json` is `["*.ts", "README.md"]`: a new source file at the package
-  root ships, a new directory does not.
+  `package.json` is `["*.ts", "db", "README.md", "LICENSE"]`: a new source file
+  at the package root ships, a new directory besides `db` does not.
 - **It is shippable — its peer is published.** A `bun add` of the
   auth tarball into an empty project resolves `@frontierjs/junction@^0.1.0` from
-  the registry and imports. Still no OAuth, and its typecheck baseline is
+  the registry and imports. Its typecheck baseline is
   non-zero; see `scripts/typecheck-baselines.json`.
 
 ## Proving a change

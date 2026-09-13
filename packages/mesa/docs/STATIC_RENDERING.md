@@ -212,14 +212,91 @@ Covered by `render-ssr.test.js` (25 tests) and `render-component.test.js` (29).
 children by both protocols (see above), so layouts written either way prerender
 correctly.
 
-**Not built:** hydration, island markers in SSR output and the loader that would
-consume them (`SSR_SPEC.md` W3), per-worker windows. `renderComponent` also
-resolves bare imports from Mesa's own package root, which breaks layouts that
-import anything by package name (`SSR_SPEC.md` W1).
+**Not built:** hydration, per-worker windows. Islands are REPLACED rather than
+hydrated: mesa writes the markers (§ *Island markers*) and sierra's
+`src/islands/loader.js` mounts each one, which `site/` does in its built output.
 
 `renderToHTML` was broken for months before this was written — it called a
 calling convention the compiler had stopped emitting, and nothing imported or
 tested it, so nobody found out. The suite exists so that cannot recur silently.
+
+---
+
+## Island markers
+
+`{ islands: true }` on the renderer writes a `client:*` component as a
+comment-delimited range. Omitting the option is byte-identical output (RULE 26).
+
+```
+<!--mesa-island {"component":"Counter","directive":"load","props":{"start":3}}-->
+<button>3</button>
+<!--/mesa-island-->
+```
+
+**A comment, not a `<mesa-island>` element**, and both reasons are silent: the HTML
+parser foster-parents a non-table element out of `<tbody>`, so an island rendering
+rows loses its marker before any loader runs; and a wrapper element takes part in
+`>` selectors and flex/grid layout, so the prerendered page would style differently.
+
+**The marker carries the props as RENDERED.** `ctx.islands` (flattened onto
+`renderComponent`'s result as `.islands`, each entry tagged with its file) is the
+compile-time list a bundler maps names to modules with, and it sees only literal
+attributes; the marker is written during the render, so `start={2 + 3}` arrives as
+`{"start":5}`.
+
+**Two guards.** The flag switches emission; the environment decides whether a
+marker is written, so a live client DOM carries none even with the flag on.
+
+**Mounting is replacement.** Clear the range, then `mount(openComment, Comp, { props })`
+— it must be `mount`, because calling the component directly renders the right
+markup and registers no delegation root, so the island comes back inert. The
+payload escapes every `-` and `>` out of the JSON so one string is safe for both
+parsers. `render-ssr.test.js` § *islands* pins it; sierra's loader is the consumer.
+
+## `tmpDir` — where a render's temp modules land
+
+`renderComponent` compiles to disk and imports, so bare specifiers resolve from
+wherever the temp module is written. `options.tmpDir` states it per call and is
+threaded through the recursive compile so one import graph cannot be split across
+two directories. The default stays Mesa's own package root, because a temp module
+imports `@frontierjs/mesa/runtime.js`; sierra's build passes
+`node_modules/.sierra/render`, which is what lets a prerendered layout import
+`@frontierjs/sierra/router`. `render-component.test.js` carries the negative case —
+the same import still fails under the default.
+
+## What a browser global answers, and why nothing says so
+
+A server render runs inside happy-dom, so the browser globals are **present and
+answering** rather than absent. Measured under happy-dom 20:
+
+| Read | Answer on the server |
+| --- | --- |
+| `window.innerWidth` / `innerHeight` | `1280` / `1024` |
+| `navigator.userAgent` | `Node.js/22` (not a browser UA) |
+| `matchMedia('(min-width: 900px)').matches` | `false` — every query, regardless |
+| `window.devicePixelRatio` | `1` |
+| `localStorage` | **absent** — a read throws `localStorage is not defined` |
+
+So a component that branches on viewport width bakes the desktop branch into the
+page, and a component that branches on a media query bakes the false one. Both
+are plausible pages. Neither reports.
+
+**That silence is deliberate** (`FJS-D214`). Every neighbouring rule here is
+silent by design — `{@attach}` does not run on the server, `$.onMount` is inert,
+`watchProxy` is off (`FJS-146`, RULE 19) — and a diagnostic on a global read
+would fire on every page of a prerender of hundreds, which is how a console
+stops being read. The failure is real and rare; the noise would be constant.
+
+**Write the branch so the server answer is the safe one**, or move it behind
+`$.onMount`, or make the component an island. The mobile-first shape is not a
+style preference here: the server always answers with the wide viewport, so a
+layout that starts narrow and widens is correct in the baked page and a layout
+that starts wide and narrows is not.
+
+`localStorage` is the one that fails loudly rather than quietly, and the error
+now names the component and the `.mesa` file it came from (`FJS-872`). Guard it
+with `typeof localStorage !== 'undefined'`, which works — the global is genuinely
+undefined rather than a throwing accessor.
 
 ---
 

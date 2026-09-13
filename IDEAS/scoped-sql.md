@@ -1,6 +1,6 @@
 ---
 id: scoped-sql
-status: partial
+status: proposed
 dated: 2026-08-06
 ---
 

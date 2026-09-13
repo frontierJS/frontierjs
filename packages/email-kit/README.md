@@ -16,7 +16,9 @@ bun add @frontierjs/email-kit @frontierjs/mesa
 
 ```mesa
 <script module>
-  export const subject = `Welcome, ${firstName}!`
+  // <script module> runs once, outside any instance — a subject naming the
+  // recipient is a function of the data, applied by the caller
+  export const subject = (d) => `Welcome, ${d.firstName}!`
 </script>
 
 <script>
@@ -71,24 +73,19 @@ bun add @frontierjs/email-kit @frontierjs/mesa
 ```js
 import { renderEmailFile } from '@frontierjs/email-kit/render'
 
-const result = await renderEmailFile('./emails/WelcomeEmail.mesa', {
-  data: {
-    firstName: 'Alice',
-    planName:  'Pro',
-    amount:    '$49.00',
-  }
-})
+const data   = { firstName: 'Alice', planName: 'Pro', amount: '$49.00' }
+const result = await renderEmailFile('./emails/WelcomeEmail.mesa', { data })
 
 // result.html     — complete <!DOCTYPE html> with all CSS inlined
 // result.text     — plain-text fallback
-// result.subject  — from export const subject in <script module>
+// result.subject  — export const subject from <script module>, exactly as exported
 // result.css      — collected CSS (pre-inlining, for debugging)
 
 // Send via your email provider:
 await sendgrid.send({
   to:      'alice@example.com',
   from:    'hello@example.com',
-  subject: result.subject,
+  subject: typeof result.subject === 'function' ? result.subject(data) : result.subject,
   html:    result.html,
   text:    result.text,
 })

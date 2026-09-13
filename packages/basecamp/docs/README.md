@@ -15,10 +15,6 @@ These pages are read in different situations rather than in order.
   third party**
 - [PROVISIONING.md](PROVISIONING.md) — buying a machine at a cloud: the compute
   connector boundary, the spend guard, cloud-init and enrollment, phase by phase
-- [UI_HANDOFF.md](UI_HANDOFF.md) — the API contract a session working in `web/`
-  needs: what each service answers, and in what shape
-- [UI_PLAN.md](UI_PLAN.md) — the phased build plan for `web/`. Companion to the
-  handoff, which is the contract where this is the order
 
 `mock/` beside them is the design mock the inventory is counted against.
 

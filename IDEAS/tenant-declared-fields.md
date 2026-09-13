@@ -1,14 +1,15 @@
 ---
 id: tenant-declared-fields
-status: proposed
+status: shipped
 dated: 2026-09-01
 ---
 
 # Idea — A column the TENANT declares, at runtime, that is still segmentable
 
-**Status: PARTIAL — the fast design is buildable TODAY and was built, in
-`scratchpad/demo`, against a real Litestone client. What is missing is
-ergonomics, not capability.** Dated 2026-09-01, revised the same day after
+**Status: SHIPPED as `@@extensible`** — Design A below, built into the Data
+boundary rather than left in `scratchpad/demo`: the pool, the slot each
+declaration takes, the mirror and the query rewrite are litestone's own, in
+use by `example`'s `Customer` and `Product` models. Dated 2026-09-01, revised the same day after
 running it: the first draft of this file said the migrator forbade the design.
 It does not. `@generated("sql expr")` already emits
 `GENERATED ALWAYS AS (…) VIRTUAL`, so a POOL of promoted columns can be declared
@@ -20,16 +21,10 @@ was neither a missing feature nor an engineering trade, but a direct collision
 with the thing the framework is for. Every number below was measured on this
 tree, not reasoned about.
 
-**In progress as of 2026-09-08, in a separate session.** The ergonomics half is
-being taken there. A second consumer arrived the same day:
-`conversion-maid-tech.md` reads an application where tenant-declared fields are
-in production use — a free-JSON `custom` column on **six** models (`Account`,
-`User`, `Client`, `Task`, `Asset`, `Group` — counted off `db/prisma/schema.prisma`),
-with the field list, its default and its visibility stored per account. There is
-no segment predicate: a `client_segment` is a hand-picked membership list
-(`api/src/models/group.model.js`), so nothing there filters on a declared key at
-all. It is the same shape this file designs, built the way this
-file argues against, so it is worth reading as the negative control.
+**The reference is `packages/litestone/docs/extensible-columns.md`.** This file
+keeps the measurements and the argument behind it. `conversion-maid-tech.md` is
+the negative control: a production app with a free-JSON `custom` column on six
+models, the field list stored per account, and no segment predicate at all.
 
 ## The shape
 
@@ -53,15 +48,15 @@ generated form control and a `$checkWhere` answer. *Segmentable* is the short
 word for that list, and it is the whole of the difference between a feature and
 a blob.
 
-## Where the language stops today
+## Where the language stopped before `@@extensible`
 
-Litestone's query builder emits **no `json_extract` anywhere** — grepped across
-`src/`, zero hits outside tests. A `Json` column is filtered as a whole value:
+Litestone's query builder emitted **no `json_extract` anywhere** — grepped across
+`src/`, zero hits outside tests. A `Json` column was filtered as a whole value:
 `{ addr: { city: 'x' } }` on a `Json @type(Addr)` compares the object
 (`packages/litestone/docs/querying.md` § operators). There is no path syntax, so
-there is no `where` a segment could compile to, so `$checkWhere` refuses the key,
-so Junction's `autoFilter` answers 400 — correctly, at every step. Nothing here
-is broken. The language simply has no way to say the thing.
+there was no `where` a segment could compile to, so `$checkWhere` refused the key,
+so Junction's `autoFilter` answered 400 — correctly, at every step. The language
+had no way to say the thing.
 
 ## What was measured
 
@@ -326,52 +321,6 @@ the cap, which is the thing an app hits second. **The honest sequence is the poo
 now and the connection hook next**, because the hook is small, is useful for more
 than this, and turns the cap from a wall into a choice.
 
-## What `@@extensible` would add
-
-**Revised by Phase 1 below, which measured it.** The sketch here names three
-copy-pasted pieces and a `max:` that is always present; both turned out to be
-wrong in the same direction — the pool is the OPTIONAL half, and the piece that
-actually needs owning is not in the list. Read this for the argument and Phase 1
-for the shape.
-
-The pool above needs no framework change, and it costs an app three hand-written
-pieces that every app with this feature will write identically: the allocator,
-the slot projector, and the segment compiler. That is the case for a
-declaration — not because the feature is impossible, but because it is
-copy-pasted:
-
-```lite
-model Subscriber {
-  id     Int    @id
-  email  String @unique
-  fields Json
-
-  // The seed says: this app has tenant-declared columns, they come out of
-  // `fields`, a row of `Field` is what declares one, and here is the ceiling.
-  @@extensible(fields, declaredBy: Field, max: 40)
-}
-
-model Field {
-  key      String
-  type     FieldType
-  indexed  Boolean @default(false)
-}
-```
-
-`@@extensible` would generate the pool, own the allocation, project the mirror on
-every write, and rewrite a `where` naming `company_size` into one naming `n2` —
-so the tenant's own key is what crosses the wire and the slot never leaves the
-Data boundary. It would also let the migrator grow the pool safely, which is the
-one thing the hand-built version cannot do without a deploy.
-
-The rest falls out rather than being designed: `$checkWhere` answers on a
-promoted key, so `autoFilter` stops refusing it and a segment is an ordinary
-`where` that keeps its gate and every row policy; `jsonschema` emits the key so a
-generated form offers a control; `access.snapshot.md` has a shape to report. A
-segment then needs no new query mechanism at all — it is a stored `where` clause
-replayed through the ORM, which [scoped-sql.md](scoped-sql.md) already argues is
-the right refusal to keep.
-
 ## What it must not become
 
 **Not a per-tenant schema file.** The moment a tenant can declare a *model*, or a
@@ -394,18 +343,6 @@ inverted.
 
 ## Footguns already visible
 
-**The promotion is a fact about a file, and `ddl.snapshot.sql` is a fact about a
-schema.** Two tenants with different promoted sets have different DDL and the
-same snapshot, so the committed artefact stops describing any particular
-database. Either the snapshot grows a section saying *plus N tenant-declared
-columns of this shape*, or the guarantee it currently makes quietly weakens.
-
-**SQLite's `ALTER TABLE ADD COLUMN` refuses an expression default**, which
-`CLAUDE.md` already records as a live hazard: a generated column is fine, a
-promoted column with a computed default is a table rebuild, and a rebuild is
-refused where the app made its own index over that table. The promotion path has
-to stay inside the subset that is a cheap `ADD COLUMN`.
-
 **A cap is not optional, and the number is a write-rate decision rather than a
 round one** — measured above at 0.25 µs per row per declared column, so the pool
 is sized from how often that model is written and nothing else. Salesforce's
@@ -422,22 +359,12 @@ test passes with the promotion silently not happening. The assertion is the
 
 ## Open
 
-- Whether the promoted column is `GENERATED … VIRTUAL` off the blob or a real
-  stored column the writer maintains. Virtual measured well and needs no write
-  path at all, which is most of the appeal; stored is what you want if the value
-  is ever computed from more than the blob.
-- What `release:check` classifies a promotion as. It is not expand and not
-  contract — the running release does not know the column exists and does not
-  need to, which may make it the first change that is genuinely neither.
-- Whether `@@extensible` should be able to say *and these keys are promoted for
-  every tenant*, which is the ordinary case of a field the platform ships and
-  every customer has.
 - Whether a tenant-declared key can carry a `@@unique`, which is the second thing
   Salesforce needed a whole second pivot table for.
 - **`createClient({ onConnect })`, which Design B needs and nothing else offers.**
   Two handles per database and a hardcoded pragma list mean an app cannot attach a
-  file, set `mmap_size` for its own hardware, or register a custom function. It is
-  the smallest item on this page and the one that unblocks the most.
+  file, set `mmap_size` for its own hardware, or register a custom function. Not
+  built.
 
 ## Phase 0 — the two rulings, settled 2026-09-01
 
@@ -489,33 +416,8 @@ produce the same rule object, label aside. If those had differed, the two tiers
 would be two features and would need two names.
 
 So the pool is not the feature. **The feature is *a key a tenant declares*, and a
-pool is an optimization some of those keys get** — which inverts the sketch
-above, where `max:` is always present.
-
-### The draft
-
-```lite
-model Customer {
-  id     Int  @id
-  fields Json @default("{}")
-
-  // Segmentable: 12 slots and the composite index that serves them.
-  @@extensible(fields, declaredBy: CustomField, max: { text: 8, number: 4 })
-}
-
-model Product {
-  id     Int  @id
-  fields Json @default("{}")
-
-  // The ordinary case. Keys store, render and edit; a segment naming one is
-  // reported `unindexed`. No pool, no mirror, no index, no tax on every write.
-  @@extensible(fields, declaredBy: CustomField)
-}
-```
-
-`max:` absent is the common declaration and `max:` present is the one that costs
-something — measured above at ~0.25 µs per row per declared column, paid by
-every write to that table forever, including by tenants who declared nothing.
+pool is an optimization some of those keys get** — which inverted the first
+sketch of `@@extensible`, where `max:` was always present.
 
 ### What it must own, ranked by how silently the hand-written version fails
 
@@ -651,40 +553,22 @@ cannot, and the reason is worth carrying: that wrapper is exactly the depth at
 which type validation stops running (`FJS-1030`), so the column would look
 declared, generate a TypeScript interface, emit a JSON Schema with every
 constraint intact — and validate nothing. Strictly worse than an honest blob,
-which at least does not read as guarded. Two more holes were found in the same
-sitting: an enum member inside a type is never validated (`FJS-1031`), and a
-`@default` its own `@type` would refuse is accepted with no word from the parser
-(`FJS-1032`).
+which at least does not read as guarded. (Since fixed; the argument for two
+columns stands, and the parser refuses `@type` beside `@@extensible` by name.) Two more holes were found in the same
+sitting: an enum member inside a type was never validated (`FJS-1031`), and a
+`@default` its own `@type` would refuse was accepted with no word from the parser
+(`FJS-1032`). All three are closed now.
 
-**All three survived because nothing in this repo declares one.** Eleven `type`s
+**All three survived because nothing in this repo declared one.** Eleven `type`s
 across `example` and the packages, zero nested, and zero used as `Json @type(T)`
 on a column — they are all service `input:` contracts. Shipped complete, never
 run: the shape of `FJS-970` and `FJS-972` one realm over.
 
-### Still open after Phase 1 — every one of these is answered in Phase 2 below
-
-- **What `max:` says about index ORDER, which is a bet and not a fact.** Measured
-  at 20,000 rows on the two orders a generated pool could pick: four text terms
-  reach four columns under text-first and one under interleaved (0.03 ms against
-  0.94), and the trade runs the other way on a mixed pair (0.21 ms against 0.06).
-  Neither is right for both mixes, so a generator has to choose one and say so.
-  `max: { text: 8, number: 4 }` states the shape; it does not yet state the order.
-- **How `declaredBy` finds the key columns.** The declaring model needs a column
-  holding the model name, one holding the key and one holding the slot. Convention
-  (`model` / `key` / `slot`) or named arguments — unresolved, and it is the
-  difference between an attribute that reads a model and one that dictates it.
-- Whether one `@@extensible` model may serve several extensible models, which is
-  what `example` now does and what makes the scoping rule load-bearing.
-- **Whether `shape:` is an alternative to `declaredBy:` at all**, given the three
-  defects above. Naming a `type` to say what one declaration LOOKS like is the
-  cleanest answer to the column-guessing question, and it is only worth having
-  once `FJS-1030` and `FJS-1031` are closed — a shape whose constraints do not
-  run is a comment with syntax.
-
 ## Phase 2 — built, and `example` is the first user (2026-09-08)
 
 `@@extensible(column, declaredBy: Model[, max: { kind: N }])` ships. What closed
-each of Phase 1's four open questions was building the thing, and three of the
+each of Phase 1's open questions — index order, how `declaredBy` finds its
+columns, one declaring model for several, and `shape:` — was building the thing, and three of the
 four were answered by MEASUREMENT rather than by argument.
 
 **The order.** Three orderings × six field mixes at 20,000 rows scored **13

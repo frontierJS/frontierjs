@@ -10,8 +10,7 @@ dated: 2026-09-07
 reason is in § Why it is deferred: the declaration it depends on has no users
 yet, so whoever builds this is also the first person to bind `@type` to a
 column, and two design questions have to be answered before either is worth
-doing. Raised as question B of `IDEAS/json-document-writes.md`, which shipped
-`$merge` — the write half this would sit on top of.
+doing. Raised while shipping `$merge` (`FJS-D176`) — the write half this would sit on top of.
 
 Measurements below were taken on 2026-09-02 and are reproduced from that
 record rather than restated from memory. See `VERIFYING.md`.
@@ -111,7 +110,7 @@ becomes answerable the moment one of them has a screen.
 
 ## See also
 
-- `IDEAS/json-document-writes.md` — the DX matrix and the `$merge` ruling this sits on. Question B there is this record.
+- `FJS-D176` — the `$merge` ruling this sits on.
 - `FJS-D176` (`DECISIONS.md`) — `$merge`, the write half
 - `packages/litestone/docs/json-types.md` — `Json @type(T)`
 - `packages/sierra/src/junction/field-rules.js` — `controlFor`, and the one table a control comes from

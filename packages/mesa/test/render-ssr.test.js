@@ -603,7 +603,7 @@ describe('component children — protocols, and the cost of mixing them', () => 
 })
 
 /**
- * Islands — `client:*` markers in SSR output (SSR_SPEC W3).
+ * Islands — `client:*` markers in SSR output (docs/STATIC_RENDERING.md § Island markers).
  *
  * The compiler has always collected `ctx.islands`, and nothing ever consumed
  * it: SSR emitted an island's markup inline with nothing to identify it, so a

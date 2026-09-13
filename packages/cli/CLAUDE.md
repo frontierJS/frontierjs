@@ -76,7 +76,10 @@ core/
                 Reading the prose beat declaring it beside the script and beat
                 asking the drive, because the answer was already written down
   typecheck.js  tsc's output, filtered to your files — shared with scripts/typecheck.mjs
-  app-config.js what a scaffolded app is GIVEN — deps, scripts, configs, workflow
+  app-config.js what a scaffolded app is GIVEN — deps, scripts, configs, workflow,
+                and AGENTS.md: `AGENT_DOCS` is the packages whose TARBALL carries one,
+                held to `exports.snapshot.md` in both directions, so a package that
+                starts shipping one is a red test until it is listed here
   crud-templates.js     what a GENERATED CRUD page IS — shared by `make:scaffold`
                         and `admin:generate`. Built on @frontierjs/ui
   widget-surface.js     what a `widgets/` surface IS — shared by `new` and `make:widget`
@@ -179,11 +182,9 @@ core/
                 the bindings, which is what makes a digest promotable
   vendor.js     pack the workspace into an app's build context
   config.js · bootstrap.js · ports.js · utils.js · server.js
-commands/  one directory per namespace — db, auth, api, web, widgets, site, extension,
-           deploy, git, github, npm, env, make, project, ports, browser, crypto,
-           fetch, ai, cloudflare, caprover, completion, admin, literate, utils,
-           fli, release, test, ksite (NOT FrontierJS — a separate static-site
-           toolchain that used to hold the `site:` namespace)
+commands/  one directory per namespace — `fli list` prints them all (ksite is
+           NOT FrontierJS — a separate static-site toolchain that used to hold
+           the `site:` namespace)
 db/        deploy.lite + ddl.snapshot.sql — the deploy journal's models, and the
            DDL derived from them. The snapshot is what ships: nothing on a target
            can emit DDL, so the fragment stays the single source and the
@@ -193,27 +194,26 @@ db/        deploy.lite + ddl.snapshot.sql — the deploy journal's models, and t
            does not parse
 cli/src/   the CLI's own source tree
 web/       the browser-facing side
-tests/     compiler · checks · runtime · registry · server · deploy · project-root · steps
-           · deploy-journal (a real Litestone client over a real file)
-           · release-mint (what does and does not move a Release id)
-           · image-identity (registry digest vs image id vs tag)
-           · plan (the rows a transition would write) · journal (the rows it does
-             write — through the REAL runner, against a real SQLite file)
-           · revert (the seven refusals, and what each one's way out is)
-           · machine (the argv, and — executed — that a script reaches a shell
-             untouched; plus the nine shapes that shipped broken, as scripts)
-           · deploy-scripts (every script the pipeline can send to a machine,
-             parsed with `sh -n` — the check nothing was running)
+tests/     one file per module under core/, plus the deploy pipeline's own
+           layer: plan (the rows a transition would write), journal (the rows
+           it does write, through the REAL runner against a real SQLite file),
+           revert (the seven refusals, and what each one's way out is), machine
+           (the argv, and — executed — that a script reaches a shell untouched),
+           and deploy-scripts (every script the pipeline can send to a machine,
+           parsed with `sh -n`)
 ```
 
 ---
 
 ## What bites here
 
-- **Assigning `process.env.X` does not reach a child.** `fli` runs on Bun, and
-  Bun's `child_process` hands a child the environment the process STARTED with,
-  where node passes the mutation on. So the assignment compiles, reads as a fix
-  and does nothing — measured with
+- **Assigning `process.env.X` does not reach a child.** The shipped shebang is
+  node, but `fli` re-invokes itself with `process.execPath`, so it runs under
+  whichever runtime started the parent — bun for every test and CI invocation
+  here. Bun's `child_process` hands a child the environment the process
+  STARTED with, where node passes the mutation on, so the bug bites exactly
+  where this repo's own scripts run it. So the assignment compiles, reads as a
+  fix and does nothing — measured with
   `bun -e "process.env.FOO='x'; execSync('printenv FOO')"`, which prints nothing.
   Pass `env:` on the `context.exec` call instead. This is what made `fli new
   --auth` unable to finish (`FJS-343`), and the assignment that failed had been
@@ -251,7 +251,7 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   package if the app lacks it and then reads those bytes, resolving the subpaths
   through auth's own `exports` (`createRequire().resolve` from the app's
   `package.json`) rather than guessing at a path inside it. `User` is appended to
-  `schema.lite`, the three `@@gate("8")` models are written to `db/auth.lite` and
+  `schema.lite`, the `@@gate("8")` models are written to `db/auth.lite` and
   imported. One rule is still restated — the `@@db(main)` swap — and auth's suite
   lifts this file's arrow out of the markdown and runs it (`FJS-038`).
 - **A git question asked from a package directory answers repo-wide.** In this
@@ -290,8 +290,9 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   why the read-only fallback symlinks `node_modules` beside the shim. The
   workspace copy is always writable, so nothing here can see the install shape
   that is not (`FJS-166`).
-- The port broker implements the FJS port scheme; the scheme itself is documented
-  in `packages/jetty/src/dev/fjs-ports.js`.
+- `core/ports.js` is the scheme itself — the formula, the category map and the
+  `PROJECTS` registry. `packages/jetty/src/dev/fjs-ports.js` owns only the
+  extension slice within it (8400–8499 dev, 7400–7499 test).
 - **`ws:exports` writes the published-surface snapshot, and it asks the packer.**
   `bun pm pack --dry-run` per publishable package, then every `exports` subpath,
   `bin`, `main` and `types` target is looked for in that listing. Two things it
@@ -399,8 +400,8 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   the SECOND slash because one section title is `Design system (@frontierjs/css)`.
   **The workspace plate crosses the invariants with `checks.js`** — the root
   `CLAUDE.md` numbers 19, the rule table names the invariant each rule comes
-  from, and nothing else puts the two together: 5 enforced, 14 held up by
-  attention. A plate also carries its typecheck ceiling (absent = 0 = clean),
+  from, and nothing else puts the two together — see `invariants.snapshot.md`
+  for which are enforced and which are held up by attention. A plate also carries its typecheck ceiling (absent = 0 = clean),
   its ports, and **the files its open rows link** — the Detail column is the one
   place the register says where a defect lives, counted per file and scoped to
   the card's own home, since half the register links the root `CLAUDE.md`.
@@ -561,21 +562,13 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   two callers each.** The going-back path is the one nobody exercises until the
   day it matters, so `_steps-revert` calls the same functions `_steps-docker`
   does rather than a copy of them.
-- **`project:map` is one reading presented three ways, and `project:view` is
-  gone.** They were two commands over one tree and they DISAGREED on the model
-  count, because one counted `$defs` by shape and the fix landed in the
-  other (`FJS-1016`) — and they collected different fields, so *what does this
-  project contain* had two answers depending on which you asked. `FJS-D223` one
-  scope down, applied rather than re-argued: **one axis, so one flag**, and
-  `--as` absorbs `--json`. `buildProjectMap` in `_module.md` is the one reader;
+- **`project:map` is one reading presented three ways** (`FJS-D223` one scope
+  down, `FJS-1016`): **one axis, so one flag**, and `--as` absorbs `--json`. `buildProjectMap` in `_module.md` is the one reader;
   `--layer` narrows what is COLLECTED, `--out` is a destination on its own axis.
   **`--as=serve` does not exit**, which is the one asymmetry — every other `--as`
   value anywhere answers and stops — so the flag description says so rather than
-  leaving somebody to find it.
-  **`fli project:map --json | jq` was broken for the life of the flag**: one
-  `Reading schema...` line went to stdout above the object, while the flag's own
-  prose said to pipe it. Every progress note is suppressed when stdout is the
-  document.
+  leaving somebody to find it. **Every progress note is suppressed when stdout
+  is the document**, or `| jq` reads a `Reading schema...` line first.
 - **A `<script>` block in a `_module.md` is MODULE scope and does not see `log`,
   `flag`, `echo` or `arg`.** The compiler puts it above `run()`, where those are
   destructured from `context`, so `log` there resolves to zx's global — a
@@ -589,7 +582,7 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   it.** What a service answers is decided at CONSTRUCTION — `collectCustomMethods`,
   read back through `svc.describe()` — so a regex over `*.service.ts` cannot
   agree with it in the general case, and the viewer it fed had no way to be
-  contradicted (`FJS-254`). `readApiSurface()` in `commands/project/_module.md`
+  contradicted (`FJS-254`). `readApiSurface()` in `core/app-entry.js`
   parses the committed `surface.snapshot.md`; **no snapshot means no services**
   and a warning naming `junction surface`, because falling back to a scan is how
   the picture gets to be confidently wrong again. `extractResourceMeta` beside it
@@ -727,15 +720,16 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   unless the move is unnamed (`pending -> paid` names itself `paid`). Both
   directions are pinned in `tests/checks.test.js`, and writing one of them the
   wrong way round is what found it.
-- **A rule that OVER-fires costs more than one that is missing, and neither
-  caller can see it.** `ci.mjs` runs `runChecks` over the four APPS, so this
-  repo's own tree is checked by nobody — two errors sat under a bare `fli check`
-  at the root until someone ran one (`FJS-329`). One of them was a false
-  positive: `body-tag-in-comment` flagged any `<body` in any comment, where the
-  hazard is only a mention BEFORE the real tag, because Vite injects at the
-  first textual match. A check nobody trusts is the failure this engine exists
-  to prevent. **Run `fli check` at the repo root after touching a rule** — it is
-  the only caller that sees this package's own neighbors.
+- **A rule that OVER-fires costs more than one that is missing.** `ci.mjs`'s
+  `structure` phase now runs `runChecks` over the apps AND over this repo's own
+  tree (`scope: 'repo'`), but that repo-scope run was itself added after two
+  errors sat under a bare `fli check` at the root for a while with nobody
+  running one (`FJS-329`). One of them was a false positive:
+  `body-tag-in-comment` flagged any `<body` in any comment, where the hazard is
+  only a mention BEFORE the real tag, because Vite injects at the first textual
+  match. A check nobody trusts is the failure this engine exists to prevent —
+  **`fli check` at the repo root** is still the fastest way to see a new rule
+  fire against this package's own neighbors before CI does.
 - **`fli dev` runs two preflights and they disagree on purpose: the port check
   REFUSES, the database check warns.** An empty database is the correct state
   for a first run; a port that is already answering is not correct in any
@@ -884,7 +878,7 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   `@id` in every `model` block), and a heading carrying `~~`, `SHIPS` or
   `SHIPPED` has already answered — an entry may legitimately propose the unbuilt
   HALF of something that ships, which is what `@slug`'s collision handling is.
-- **Twelve of the rules read source rather than the tree, and `readCode` is why
+- **Some of the rules read source rather than the tree, and `readCode` is why
   they are usable.** `raw-route-param`, `ctx-params`, `set-auth-discarded`,
   `call-header-declared`, `service-model`, `resource-model-miss`,
   `service-module-db`, `scheduler-dispatch`, `gate-unreachable`,
@@ -944,16 +938,9 @@ tests/     compiler · checks · runtime · registry · server · deploy · proj
   case down locks in a number no later run can meet. `allow` answers the other
   question — *this one is fine, and here is why*, keyed by path and carrying a
   reason — and neither replaces the other.
-- **Three proposed rules were killed by measuring them, and that is the cheaper
-  half of the work.** `IDEAS/diagnostics.md` listed `@encrypted` on a `Json`
-  column (it round-trips correctly now — `Int`, `Float` and an array THROW at the
-  write, loudly, which is somebody else's job), a directive key in a `find()`
-  filter (`autoFilter` answers a 400 naming the key and saying paging is a
-  directive), and a model service with no `channel:` (ruled the intended state
-  in `DECISIONS.md` § API design — a report on it "would fire on nearly every
-  service in every app, which is how a warning gets trained out"). **A rule
-  proposed off a hazard paragraph is a lead, not a spec**: two of those three
-  were fixed after the paragraph was written, and the third was ruled against.
+- **A rule proposed off a hazard paragraph is a lead, not a spec.** Measure it
+  before writing it: of three proposed from one catalog, two had been fixed after
+  the paragraph was written and the third was ruled against (`CHANGES.md`).
 
 ## The context in this package
 

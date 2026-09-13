@@ -227,7 +227,7 @@ out/                  build output, not source
 
 ## Proving a change
 
-**`npm test`** — three suites over the built output. It builds
+**`npm test`** — four suites over the built output. It builds
 first on purpose: a stale `out/` tests the previous fix and reads as "the change
 did not work".
 
@@ -295,7 +295,7 @@ uninstall the older `mesa-language-support` copies first.
 unpacks the `.vsix` somewhere with no `node_modules` above it, checks every icon
 and grammar `package.json` names is inside, that neither bundle bare-requires
 something unshipped, and that the Mesa providers and the opaque dynamic import
-survived bundling — then runs three suites against the UNPACKED copies
+survived bundling — then runs four suites against the UNPACKED copies
 (`FJS_LSP_SERVER`, `FJS_MESA_CLIENT` and `FJS_SYNTAXES` point them at any copy).
 Run it after touching `package.json`, the bundle, the icons or a grammar — a `.vsix` that builds is not an
 extension that runs, and the marketplace is where that difference shows up.

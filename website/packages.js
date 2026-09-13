@@ -1,12 +1,11 @@
 /*
  * packages.js — the single source of truth for package features.
  *
- * Every page that describes a package reads from here: the overview
- * (showroom5.html) and the eight dedicated pages. A feature is stated once.
+ * Every page that describes a package reads from here, at build time, through
+ * site/src/data/packages.js. A feature is stated once.
  *
- * Deliberately a classic script, not an ES module: these pages are meant to
- * open straight from the repo, and a browser blocks module imports over
- * file:// as a cross-origin request.
+ * A classic script that assigns window.FJS, not an ES module: the reader
+ * evaluates it rather than importing it, so the two stay one copy.
  *
  * Wrapped in an IIFE so it exposes exactly one name. Classic scripts share a
  * single top-level lexical scope, so a bare `const PKGS` here would collide

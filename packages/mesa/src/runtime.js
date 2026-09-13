@@ -4978,7 +4978,7 @@ export function pushProps(anchor, newProps) {
 // These markers are that missing identity.
 //
 // Why comments and not a `<mesa-island>` element. An element wrapper is easier
-// to query, and it is what SSR_SPEC W3 originally sketched, but it is wrong in
+// to query, and it is what the first sketch used, but it is wrong in
 // two ways that fail silently:
 //
 //   - HTML parsing. An element between `<table>` and `<td>` is foster-parented

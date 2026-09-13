@@ -1,5 +1,16 @@
 # Changes
 
+## 2026-09-13 — `AGENTS.md` ships
+
+A choosing guide for an agent building screens in an installed app (`FJS-D163`): which component for
+which need, `<Form>` generation and the hand-written shape that actually writes the record, the
+callback each control fires and what it carries, `autosave`, contributed controls, where forwarded
+attributes land, the silent failures and the accessibility the caller still owns. The kit has no
+generated catalog, so the file names every component by its import path and `test/agents-md.mjs`
+resolves each one through `exports` and `files:` — a component moved or renamed fails `bun run
+test` rather than sending an agent to an import that does not build. The pass found `FJS-1135`
+through `FJS-1141`, and a sierra AGENTS.md sample with no `row` snippet, fixed there.
+
 ## 2026-09-12 — `<Table>` takes the ordering, not a pair
 
 `FJS-1077`. `sortKey` and `sortDir` are replaced by one `orderBy` — the

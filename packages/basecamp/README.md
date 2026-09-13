@@ -12,7 +12,7 @@ is a finding about FrontierJS.
 
 > **Alpha, and honest about it.** All three realms work and are verified by
 > running them — `bun run verify` drives the UI in a real browser. What is
-> missing is listed under [Known gaps](#known-gaps), and gates are the big one.
+> missing is listed under [Known gaps](#known-gaps).
 
 ---
 
@@ -91,7 +91,7 @@ Everything is environment variables, declared and validated in
 | var | default | |
 |---|---|---|
 | `PORT` | `8120` | |
-| `DATABASE_URL` | `./db/basecamp.db` | CWD-relative — start from the package root. The path is declared in `db/schema.lite` as `database main { path env("DATABASE_URL", …) }`, so the schema is what decides it and this variable steers that declaration |
+| `DATABASE_URL` | `./db/basecamp.db` | Resolved against the schema file's own location (`resolveFrom: 'schema'` in `core/db.ts`), not the process CWD — the same database whichever directory you start from. The path is declared in `db/schema.lite` as `database main { path env("DATABASE_URL", …) }`, so the schema is what decides it and this variable steers that declaration |
 | `ENCRYPTION_KEY` | dev placeholder | 64 hex chars — `Secret.data` is encrypted at rest |
 
 ```bash
@@ -143,7 +143,7 @@ is generated from it; editing that SQL by hand is how the two drift apart, and
 | Realm | | |
 |---|---|---|
 | **Data** | ✅ Done | `database main` declared. **Every model declares a `@@gate`**, and tenancy is one declared block — `tenancy { strategy row  column workspaceId  claim workspaceId }`, with every `@@tenant(none)` declared by name and every other model scoped through a parent by inference rather than by a second declaration. Migration generated and verified against a fresh database. |
-| **API** | ✅ Done | 27 services + 5 job files on Litestone accessors, zero raw SQL. Auth via `@frontierjs/auth`. `/hub/` is the cross-workspace tier — a separate service behind one `requireSystemAdmin` hook. Verified over HTTP end to end. |
+| **API** | ✅ Done | Services and jobs on Litestone accessors, zero raw SQL. Auth via `@frontierjs/auth`. `/hub/` is the cross-workspace tier — a separate service behind one `requireSystemAdmin` hook. Verified over HTTP end to end. |
 | **UI** | ✅ Built | Sierra SPA covering every service: setup, login, guard, workspace switcher, Projects → Environments → Apps, deployments with a live step timeline, the server fleet (drain/reboot/sync, event trail, outpost heartbeats), jobs with run history, and an admin zone (members, audit trail, adapters). `bun run verify` drives all of it in a real browser, including an accessibility pass on every screen. `docs/UI_PLAN.md` has what building it found. |
 
 What works today, checked by running it: first-run setup, password login,
@@ -174,14 +174,15 @@ An unknown role grades VISITOR rather than defaulting upward: an enum value
 added to the schema and forgotten here must lose access, not gain it.
 
 The same read answers *which tenant*, which is why it is one seam and not two.
-The fourteen models with no `workspaceId` of their own are scoped through a
+The models with no `workspaceId` of their own are scoped through a
 parent, and that is INFERRED rather than declared — litestone walks the
-belongs-to relations and reports the fourteen by name in a standing warning.
-`@@tenant(via: rel)` exists and is the wrong answer for seven of them: a model
-with two scoped parents gets one deny per parent and they are AND'd, so naming
+belongs-to relations and reports each by name in a standing warning.
+`@@tenant(via: rel)` exists and is the wrong answer for a model with two
+scoped parents: it gets one deny per parent and they are AND'd, so naming
 one relation drops the other. `Workspace`, `WorkspaceMember` (standing is read
-from it), `AuditEvent` (nullable workspace) and the five auth models declare
-`@@tenant(none)` by name.
+from it) and the auth models declare `@@tenant(none)` by name — `AuditEvent`
+does NOT (a nullable workspace takes the ordinary desugar). `db/access.snapshot.md`
+is the generated, checkable list of which model is which.
 
 ### Known gaps
 
@@ -198,8 +199,6 @@ from it), `AuditEvent` (nullable workspace) and the five auth models declare
 
 | | |
 |---|---|
-| `docs/UI_HANDOFF.md` | **Building the UI? Start here.** API contract, what to build with, what not to port from the mock |
-| `docs/UI_PLAN.md` | The phased UI build, with the checkpoint each phase met and what it found |
 | `docs/SCREENS.md` | The mock inventory — 41 of 41 built, and what each phase decided |
 | `docs/ADAPTERS.md` | **Picking the adapters back up? Start here.** Every boundary is declared and nothing is behind any of them; what each one costs, and what wiring it will break |
 | `CHANGES.md` | History, newest first |
@@ -220,8 +219,8 @@ the only prefixed paths in the app and breaks the browser client's
 `needsSetup()`, which asks for `` `${apiPrefix}/setup/probe` ``.
 
 **The wire contract is the schema's field names, in camelCase.** `ipAddress`,
-not `ip_address`. A wrong key does not error — validation strips it, the write
-succeeds, and the column comes back `null`.
+not `ip_address`. A wrong key is now a 400 naming it and pointing at
+`@transient` (`FJS-889`), rather than stripped in silence.
 
 ---
 

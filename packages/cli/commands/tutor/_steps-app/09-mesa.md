@@ -50,7 +50,7 @@ $: plenty = n >= 5
 and its markup half:
 
 ```mesa
-<button on:click={() => n++}>{label}: {n}</button>
+<button class="btn" on:click={() => n++}>{label}: {n}</button>
 {#if plenty}<em>that is plenty</em>{/if}
 ```
 
@@ -91,12 +91,8 @@ writeFileSync(comp, [
   '  $: plenty = n >= 5',
   '</' + 'script>',
   '',
-  '<button on:click={() => n++}>{label}: {n}</button>',
+  '<button class="btn" on:click={() => n++}>{label}: {n}</button>',
   '{#if plenty}<em>that is plenty</em>{/if}',
-  '',
-  '<style>',
-  '  button { padding: 6px 12px; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; cursor: pointer }',
-  '</style>',
   '',
 ].join('\n'), 'utf8')
 
@@ -104,7 +100,7 @@ writeFileSync(comp, [
 // silently missed its anchor leaves the probe below asserting the scaffold's
 // own page and reporting the lesson green.
 const IMPORT = "  import { status } from '@frontierjs/sierra/junction'"
-const MOUNT  = '<section class="tour">'
+const MOUNT  = '<section class="tour stack gap-md">'
 const TAG    = '<Tally label="notes read" />'
 
 let src = readFileSync(home, 'utf8')

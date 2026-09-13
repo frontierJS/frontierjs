@@ -16,24 +16,28 @@ before it.
 | file | lines that matter | what it establishes |
 |---|---|---|
 | [`db/schema.lite`](db/schema.lite) | 8 | the table, the gate, the field rules |
-| [`services/posts.service.ts`](services/posts.service.ts) | 3 | the service |
+| [`services/posts.service.ts`](services/posts.service.ts) | 6 | the service |
 | [`public/index.html`](public/index.html) | ~20 | the Resource |
 
 The service is the whole point:
 
 ```ts
 export function createPostsService() {
-  return createBaseService({})
+  return createBaseService({
+    channel:   'posts',
+    allowBulk: true,
+  })
 }
 ```
 
-Nothing in it restates the schema. Its name comes from the filename
+Nothing in it restates the schema — it declares where writes are announced and
+that bulk writes are allowed, and nothing else. Its name comes from the filename
 (`posts.service.ts` → `posts` → `/api/posts`), its model from the name
 (`posts` → `db.post`), its db from `app.db` scoped to the caller, its CRUD from
 the model, its 401s from `@@gate`, its 400s from the field rules.
 
 The browser file names the service and nothing else — no field list, no URL, no
-event wiring:
+subscription code:
 
 ```js
 const { service, store, load } = client.resource('posts')
@@ -119,10 +123,7 @@ against `@@gate("0.4.4.5")`. Everything else follows from having authenticated.
 
 - The client is bundled on boot by `Bun.build` and served at `/client.js`.
   Sierra's build does this for you in a real app.
-- This example imports the **workspace** Litestone (1.1.0) by relative path.
-  Junction's `package.json` now resolves there too (`workspace:*` dev-dep,
-  `^1.1.0` peer), so the relative import and the package resolution finally
-  agree. Previously the package pinned `"latest"` and got the published 1.0.3,
-  which is what made this example the only place the two were exercised
-  together — and what caused Junction's 7 long-standing test failures.
+- This example imports the **workspace** Litestone by relative path, and
+  Junction's `package.json` resolves there too (`workspace:*` dev-dep), so the
+  two agree.
 - The database is `:memory:`, so every restart reseeds.

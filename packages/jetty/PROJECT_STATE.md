@@ -26,7 +26,7 @@ Sierra's**.
 | Tests | **445 pass, 0 fail** across **eleven** phase files (`bun run test`, which runs plain node over them in order) — verified. Per phase: 33 · 57 · 50 · 41 · 74 · 54 · 50 · 33 · 40 · 6 · 7 |
 | Typecheck | **clean, 0 errors, no baseline** (`bun run typecheck`) — verified. jetty is absent from `scripts/typecheck-baselines.json`, which means 0 |
 | Published | **0.0.3 on npm, matching the tree** (`npm view @frontierjs/jetty version`) — verified. Seven export subpaths and five `jetty-*` binaries, all shipped by `files:` per `exports.snapshot.md` |
-| Open defects | **none.** No row in `../../ISSUES.md` is open against this package; the only unclosed row touching it is `FJS-D119`, the node/bun runner split, which is a decision rather than a defect |
+| Open defects | **none.** No row in `../../ISSUES.md` is open against this package; `FJS-D119`, the node/bun runner split, is ruled now too (`FJS-D222` in `../../DECISIONS.md` — the split is by role, not by package) |
 | The fixture builds | `bun run build:fixture` runs inside the suite (phase 6 and phase 8 both drive a real Vite build) and phase 8 parses each artefact for its load mode — verified by the suite passing |
 
 Reproduce: `cd packages/jetty && bun run test && bun run typecheck`.
@@ -52,12 +52,11 @@ stale prose rather than a hole in coverage.
 - **The UnoCSS pair predates Invariant 13.** `src/build/uno-plugin.js` and
   `src/island/unocss-mirror.js` are reached from four more files under `src/`;
   removing them is in scope and nobody has.
-- **Two HMR harnesses are dead and kept on purpose.** `docs/dead/` holds
-  `hmr-fullflow.mjs` and `hmr-integration.mjs` with a README saying why — they
-  import mesa by an absolute path from another machine (`FJS-481`). `phase9`
-  covers the wrapper's output alone; the full flow through jsdom is unrepaired.
-- **`docs/future-refactors.md` is one refused option** (`resources-core`, superseded
-  by `FJS-D16`) kept for its argument. There is no forward plan document here.
+- **The full HMR flow through jsdom is untested.** `phase9` covers the
+  wrapper's output alone; the two harnesses that tried the whole flow never ran
+  here and were deleted (`FJS-481`).
+- **There is no forward plan document here.** The one refused option, a
+  `resources-core` package, is argued in `FJS-D16`.
 
 ## Picking it up next
 

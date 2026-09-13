@@ -246,7 +246,7 @@ in both directions, and a vendor still does not live inside conduit.
 
 - [`overview.md`](overview.md) 2.13 — *Inbound integrations*, the row this splits in two
 - [`third-party-credentials.md`](third-party-credentials.md) — *auth mints, conduit spends*; step 1 above
-- [`conduit-basecamp.md`](conduit-basecamp.md) — the counterparty that signs nothing, and why a receiver's guarantee is sometimes *re-read the record*
+- [`conduit-connectors.md` § Basecamp](conduit-connectors.md) — the counterparty that signs nothing, and why a receiver's guarantee is sometimes *re-read the record*
 - [`conduit-connectors.md`](conduit-connectors.md) — which connectors FrontierJS maintains
 - [`DECISIONS.md` `FJS-D177`](../DECISIONS.md#fjs-d177) — **the ruling this file argues for**: conduit holds the relationship, the axis is who dials
 - [`DECISIONS.md` `FJS-D153`](../DECISIONS.md#fjs-d153) — the mechanism/vendor line, which holds unchanged in the new direction

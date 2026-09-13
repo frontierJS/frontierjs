@@ -21,6 +21,13 @@ The user-facing history of the FrontierJS VS Code extension. Engineering detail
   rendered as plain text. `<style global>` and `<script lang="js">` are fixed
   with it, and `module` is now colored as the keyword it is.
 
+## 0.1.1 — unreleased
+
+- **Real icons.** Mesa had no icon in the manifest for its whole life, and
+  Litestone's was a placeholder. Both languages now ship artwork — a sun
+  behind a butte for `.mesa`, a feather for `.lite`/`.litestone` — and the
+  marketplace icon is the frontiersman rather than three lines at 128px.
+
 ## 0.1.0 — unreleased
 
 First release. Litestone gets a language server; Mesa gets editor support.

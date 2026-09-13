@@ -25,7 +25,7 @@ import '@frontierjs/css'
 The system is **two halves, equally weighted**.
 
 **Structure** — what the HTML actually *is*: which element, what ARIA, how the
-pieces nest. A vocabulary of 55 terms fixes one answer per concept, so "card"
+pieces nest. A fixed vocabulary of terms fixes one answer per concept, so "card"
 means the same thing on Monday and Thursday.
 
 **Style** — utility-first, but **one level above Tailwind**. Tailwind utilities
@@ -69,7 +69,7 @@ Chaining is for Treatments. Anatomy nests:
 ```
 
 There is a fourth group worth knowing about: **scoped modifiers** that read like
-Treatments and aren't. `icon` only works on `btn`, `striped` only on `table`,
+Treatments and aren't. `square` only works on `btn`, `striped` only on `table`,
 `divided` only on `rows`.
 
 ---
@@ -161,13 +161,13 @@ layer**. So your own stylesheet wins by default:
 ```css
 /* your app.css — plain and unlayered, so it wins */
 .btn { border-radius: 2px; }
-td    { background: var(--zebra); }
+td    { background: var(--surface-sunken); }
 ```
 
 No `!important`, no specificity ladder. Layer order:
 
 ```
-tokens → themes → tones → base → layout → components → patterns → utilities → a11y
+reset → tokens → themes → tones → base → layout → components → patterns → utilities → a11y
 ```
 
 ---
@@ -356,7 +356,7 @@ Plus `--code-ins` `--code-del` `--code-note` for whole-line callouts,
 ### Why "clamped"
 
 A tone is tuned as a **fill behind white text**. As text on a surface it is a
-different job and mostly fails it — measured across the eight shipped themes,
+different job and mostly fails it — measured across the shipped themes,
 the raw tones came in as low as 1.65:1, and only one theme had all six
 roles above AA. So a tone used as text passes through a lightness window in
 oklch, hue and chroma untouched:
@@ -551,7 +551,7 @@ ruler first.
 ## Demo
 
 ```bash
-bun run demo          # → http://localhost:5173
+bun run demo          # → http://localhost:8040
 ```
 
 A five-route SaaS admin — dashboard, table, detail, list, settings — built

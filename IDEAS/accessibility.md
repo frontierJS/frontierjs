@@ -122,6 +122,6 @@ and pretending otherwise would be a check that fails open.
 - `packages/css/vocabulary.js` — `VOCAB` and `ANATOMY`, the reader for the
   markup kind
 - `packages/css/src/a11y/` — the tokens kind, already owned
-- [`FJS-299`](../ISSUES.md#fjs-299) · [`FJS-164`](../ISSUES.md#fjs-164) — the two
-  open defects that are a11y facts held in one component each, which is what the
+- [`FJS-299`](../ISSUES.md#fjs-299) · [`FJS-164`](../ISSUES.md#fjs-164) — both now
+  closed, but were a11y facts held in one component each, which is what the
   absence of a declaration site produces

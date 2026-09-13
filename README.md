@@ -97,8 +97,7 @@ bun run dev
 is the same scaffold from the CLI directly. API runs on `:8100`, web on `:8000` —
 the FJS port scheme, `packages/cli/core/ports.js`.
 
-> **Alpha.** Every publishable package except `@frontierjs/mcp` and
-> `@frontierjs/outpost` is on npm and the registry matches this tree — see [Publishing status](#publishing-status) — but the surface still
+> **Alpha.** Every publishable package is on npm — see [Publishing status](#publishing-status) — but the surface still
 > moves between releases, so pin a version rather than taking `latest` or `*`.
 
 **`fli tutor` is the whole path, and it runs.** Every step runs the real
@@ -417,8 +416,7 @@ Sierra locates `sierra.config.js` by looking beside `vite.config.js` first, so t
 
 ## Publishing status
 
-**Every publishable package is on npm, except `@frontierjs/mcp` and
-`@frontierjs/outpost`.** The badges below are the answer — a version written here
+**Every publishable package is on npm.** The badges below are the answer — a version written here
 as text is a second origin that goes stale the next release. `fli ws:npm` compares this tree against the
 registry and names any package that has drifted; the `registry` CI phase fails a
 package `fli new` writes into an app that the registry has never heard of.
@@ -437,6 +435,8 @@ package `fli new` writes into an app that the registry has never heard of.
 | `@frontierjs/notifications` | slice | [![npm](https://img.shields.io/npm/v/@frontierjs/notifications)](https://www.npmjs.com/package/@frontierjs/notifications) |
 | `@frontierjs/caravan`       | jobs | [![npm](https://img.shields.io/npm/v/@frontierjs/caravan)](https://www.npmjs.com/package/@frontierjs/caravan) |
 | `@frontierjs/conduit`       | outbound | [![npm](https://img.shields.io/npm/v/@frontierjs/conduit)](https://www.npmjs.com/package/@frontierjs/conduit) |
+| `@frontierjs/mcp`           | API · agent | [![npm](https://img.shields.io/npm/v/@frontierjs/mcp)](https://www.npmjs.com/package/@frontierjs/mcp) |
+| `@frontierjs/outpost`       | fleet | [![npm](https://img.shields.io/npm/v/@frontierjs/outpost)](https://www.npmjs.com/package/@frontierjs/outpost) |
 | `@frontierjs/testing`       | Testing | [![npm](https://img.shields.io/npm/v/@frontierjs/testing)](https://www.npmjs.com/package/@frontierjs/testing) |
 | `@frontierjs/cli`           | tooling | [![npm](https://img.shields.io/npm/v/@frontierjs/cli)](https://www.npmjs.com/package/@frontierjs/cli) |
 | `create-frontier`           | tooling | [![npm](https://img.shields.io/npm/v/create-frontier)](https://www.npmjs.com/package/create-frontier) |

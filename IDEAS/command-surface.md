@@ -1,12 +1,13 @@
 ---
 id: command-surface
-status: proposed
+status: partial
 dated: 2026-08-10
 ---
 
 # Idea — the command surface: what `fli` should learn from oclif
 
-**Status: IDEA. Nothing here is built.** Dated 2026-08-10. Written after sizing
+**Status: PARTIAL.** `fli tinker`, the drift check (`litestone migrate dev`) and
+`fli ws:exports`'s manifest have since shipped. Dated 2026-08-10. Written after sizing
 `packages/cli` against oclif, Salesforce's CLI framework. Do not cite this file as
 describing behavior — see `VERIFYING.md`.
 

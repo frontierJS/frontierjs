@@ -8,11 +8,11 @@ All three realms are real.
 fli dev              # preflights the ports and the database, then runs `dev`
 bun run dev          # API + web together, no preflight
 bun run test         # bun — the db tests
-bun run verify       # 271 checks in a real browser; starts and stops both servers
+bun run verify       # browser checks across all three realms; starts and stops both servers
 bun run verify:build # builds, then probes the PRODUCTION output (FJS-085)
 bun run db:types     # regenerate db/schema.d.ts — the client's types
 bun run db:seed      # an example fleet
-bun run verify:screens # 61 checks — the Phase 13 and 14 screens + the audit window,
+bun run verify:screens # the Phase 13 and 14 screens + the audit window,
                        # in a browser, on a database it seeds in a temp directory
 bun run db:reset     # stops the servers, deletes the databases
 DEVTOOLS=1 bun run api   # …and junction's console on 8503 beside it
@@ -59,9 +59,8 @@ talked to an API holding a database `--reset` had already deleted.
 `verify` needs an **empty** database (`bun run verify --reset` does it for you)
 and both ports free: API **8120**, web **8020**. That web port is the same one
 `example/` uses — they cannot serve at once, and only this side is strict about
-it (`strictPort`, plus `fli dev`'s port preflight — which reads the surfaces
-that exist and derives their ports from `packages/cli/core/ports.js`, so this
-app no longer keeps a `packages/cli/core/preflight.js` of its own).
+it (`strictPort`, plus `fli dev`'s port preflight, which reads the surfaces
+that exist and derives their ports from `packages/cli/core/ports.js`).
 
 ---
 
@@ -72,10 +71,10 @@ db/       schema.lite (43 models declared, 50 with the two imported fragments;
           32 enums declared, 34 resolved) · generate.js · migrations/ · seed.js ·
           litestone.config.js · test/ · README.md (the depth doc)
 api/      index.ts (the entry — start() and nothing else) · config/
-api/src/  app.ts (builds the app, never starts it) · services/ (29) ·
-          jobs/ (8 *.job.ts) · notifications/ (7) · providers/ · core/
+api/src/  app.ts (builds the app, never starts it) · services/ ·
+          jobs/ (*.job.ts) · notifications/ · providers/ · core/
           notifications/ is one file per NotificationKind and the FILE NAME is
-          the persisted type — so the seven files, the enum and kinds.ts are
+          the persisted type — so the directory, the enum and kinds.ts are
           three spellings of one vocabulary, held together by api/test/notify.test.ts
           core/notify.ts is the one owner of *does this person want it*
           core/server-metrics.ts decides WHICH of a check-in is kept and what
@@ -123,7 +122,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
           ADAPTERS.md — that debt, per adapter: every boundary declared,
           nothing behind any of them, what wiring one costs and which drive
           assertions flip when you do
-          UI_PLAN.md · UI_HANDOFF.md · VISION.md · mock/
+          VISION.md · mock/
 ```
 
 ---
@@ -206,19 +205,19 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
 - **Tenancy is DECLARED, and it is one block at the top of the schema** —
   `tenancy { strategy row  column workspaceId  claim workspaceId }`, which
   desugars into a `@@deny` per model plus a `@default(auth().workspaceId)` stamp.
-  Eight models say `@@tenant(none)` by name: the five auth models, `Workspace`
+  Some models say `@@tenant(none)` by name — the auth models, `Workspace`
   itself, `WorkspaceMember` (what standing is READ from, before there is a
-  workspace on the principal to compare against) and `AuditEvent` (nullable
-  workspace — a hub action belongs to none, and a null comparison would hide the
-  rows the trail exists for). The other fourteen are scoped through a parent
+  workspace on the principal to compare against), and a handful of others that
+  span workspaces or belong to the installation rather than to one; `AuditEvent`
+  is NOT among them (a nullable `workspaceId` takes the ordinary row-scoping
+  desugar instead). The rest are scoped through a parent
   and NOTHING DECLARES IT: a `DeploymentStep`, a `JobRun`, a `Volume` carry no
   `workspaceId` of their own, so litestone walks the belongs-to relations and
-  reports all fourteen by name in a standing warning. Do not reach for
-  `@@tenant(via: rel)` to silence it — seven of the fourteen have two scoped
+  reports each by name in a standing warning. Do not reach for
+  `@@tenant(via: rel)` to silence it — several of them have two scoped
   parents, which get one deny EACH and are AND'd, so naming one relation drops
-  the other (measured: nine rules across seven models). Before the tenancy
-  block they carried no rule either — **declaring it roughly doubled the
-  models carrying a row policy**. Nothing in a service restates the column: `deriveSlug`
+  the other. `db/access.snapshot.md` is the generated, checkable list of which
+  model is which. Nothing in a service restates the column: `deriveSlug`
   does not stamp it and `findScoped`/`getScoped` do not filter on it.
   `Deployment`/`Job`/`Domain`
   brought a shape the hierarchy did not have — a read filtered on `appId` alone
@@ -258,30 +257,23 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   `scopeToWorkspace`, the one hook every scoped service already runs. Neither is
   a delete: `@@softDelete(cascade)` stamps every child, a status change stamps
   nothing.
-- **A `find` that answers one object reaches the browser as an EMPTY list.** The
-  Junction client normalizes anything that is not a list — or `{ total, data:
-  [] }` — into `list(name, [])`: 200, no warning, and the screen then renders
-  nothing while the API is answering correctly. `GET /hub` was written this way
-  and could only be seen in a browser. **`find` means a list**; a service
-  answering one thing uses a named action (`FJS-144`). Same family as the
-  `{ data, total, …extra }` trap below, from the other end.
 - **`autoValidate` deletes every key the model does not declare — unless the
   schema declares it `@transient`.** The plaintext `secret` a channel is created
   with is not a column and now says so (`FJS-D23`): it is validated with the
   model's own rules and lifted onto **`ctx.transients`**, so `create` and `patch`
-  read `ctx.transients.secret` and the write carries columns only. An UNDECLARED
-  wire-only key is still deleted in silence, which is the whole reason to declare
-  one — the channels service used to report *Slack needs a credential — send it
-  as `secret`* about a request that carried exactly that. Same shape as
-  `ip_address` on the servers service, where the write succeeds and the column
-  comes back null.
+  read `ctx.transients.secret` and the write carries columns only. An
+  UNDECLARED wire-only key is now a 400 naming it and pointing at `@transient`
+  (`FJS-889`) rather than dropped in silence — which is how four services here
+  were caught wiring `deriveSlug` onto a model with no `slug` column at all.
 - **`ctx.params` does not exist in Junction at all** — on either context, since
-  `FJS-D03`. This app's services read `ctx.params.user.user_id` and
-  `ctx.params.headers` throughout, every one `undefined`, so role checks silently
-  passed for everyone. Fixing an occurrence means `ctx.auth.user` /
-  `ctx.client.headers` / `ctx.route` — and `ctx.route` is the answer on a raw
-  route too, which is what changed: the word used to mean path captures there and
-  nothing here, and that asymmetry is what kept the idiom arriving.
+  `FJS-D03`. Services used to read `ctx.params.user.user_id` and
+  `ctx.params.headers`, every one `undefined`, so role checks silently
+  passed for everyone; both are fixed now, and the idiom survives only in two
+  comments (`app.ts`, `core/hooks.ts`) warning against it. Fixing an occurrence
+  means `ctx.auth.user` / `ctx.client.headers` / `ctx.route` — and `ctx.route`
+  is the answer on a raw route too, which is what changed: the word used to
+  mean path captures there and nothing here, and that asymmetry is what kept
+  the idiom arriving.
 - **`before: { all: [...] }` hits every method**, outpost endpoints included.
 - **Leaving a method out does not remove it.** `createService({ model })` brings
   Junction's Litestone base, which answers every CRUD verb the service does not
@@ -356,11 +348,16 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   the rule for any new `sys().<model>.create` on a scoped model: the tenant
   comes from `ws()`, never from the payload.
 - **A model whose required columns are server-written cannot be created from the
-  browser.** `createResource` validates by default, so `ApiKey` — `required:
-  ["userId","name","tokenHint"]`, two of three server-side — is refused before
-  the request is made, naming fields the caller was never meant to send.
-  (`workspaceId` was a fourth until the tenancy stamp became `readOnly`.) The symptom is the button doing nothing. `{ validate: false }` is the
-  only escape today (`FJS-095`, ruling `FJS-D22`).
+  browser.** `createResource` validates by default, and `ApiKey`'s create-mode
+  `required` used to be `["userId","name","tokenHint"]`, two of three
+  server-side. `workspaceId` stopped being a fourth once the tenancy stamp
+  defaulted it from the principal, and `tokenHint` is `@system` now
+  (`FJS-095`, ruling `FJS-D22`) — out of `required` entirely, not just
+  `readOnly`. What is left is `userId`: genuinely caller-supplied (a key may go
+  to a bot rather than the asker), so it stays required with no owner control
+  on the form, and `web/src/resources/ApiKey.mesa` still sets
+  `validate: false` for that one column — `autoValidate` on the server is what
+  actually enforces the schema.
 - **The audit trail must cover custom methods.** It recorded `create`/`patch`/
   `remove` only, so drain, deploy, cancel and trigger were in no trail at all. It
   now runs on `all` minus reads, with `servers.heartbeat` excluded by name.
@@ -485,10 +482,6 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
 - **Zero raw SQL, on purpose** — everything goes through accessors, which is what
   keeps policies enforceable. `db.asSystem().sql` is the only bypass and it
   enforces nothing.
-- **No invitation flow yet.** Setup → login → guard is the whole entry path.
-- Building this found three Junction bugs that no unit test could: the WebSocket
-  dropped `X-Workspace-Id`, channels never delivered (wrong session field, and
-  `channel.publish()` does not exist), and `POST /workspaces` was unreachable.
 
 ## Proving a change
 

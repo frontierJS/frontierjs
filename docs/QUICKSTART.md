@@ -1,12 +1,6 @@
 # Quickstart — a new app, from empty directory to a deployed server
 
-**This guide is a command now.** It used to be a sequence you typed by hand, and
-its own header admitted that half of it had never been executed: §7 *Deploy* was
-"documented from the pipeline, not from a live deployment", while the root
-README said every command in it had been run. One document, disagreeing with
-itself about whether it had ever worked.
-
-So it was made to execute. `fli tutor` is the same path, running: each step
+**This guide is a command.** `fli tutor` is the whole path, running: each step
 prints its prose, runs the real command, and then **asks the running world
 whether it worked** — a port that answers, a table in `sqlite_master`, a row
 read back out of the file the app wrote, a container serving the image it
@@ -16,13 +10,13 @@ phase, so a command renamed out from under a step is a red build rather than a
 stale paragraph.
 
 ```bash
-fli tutor            # the thirteen lessons, and how far through them you are
+fli tutor --workspace ~/frontier-tutorial   # the thirteen lessons, and how far through them you are
 fli tutor:app        # lesson 1 — an app that runs
 ```
 
 Every step says what it is about to do and waits — press enter to go on, `n` to
-stop. The step you stopped at is the one the next run starts from, so stopping
-costs nothing. `--yes` runs a lesson straight through, and `--step N` runs one
+stop. With `--workspace`, the step you stopped at is the one the next run starts
+from; a throwaway run starts over. `--yes` runs a lesson straight through, and `--step N` runs one
 step on its own.
 
 ## The thirteen lessons
@@ -30,8 +24,8 @@ step on its own.
 | | | Needs |
 | --- | --- | --- |
 | `fli tutor:app` | An empty directory to a running app with a model of your own in it, and a row read back out of the database | — |
-| `fli tutor:tools` | The four tools that show you what the app is doing — the GUI as the front door, the database as it really is, the call feed with a refusal in it, and the chain that handled the request | — |
 | `fli tutor:ui` | The form nobody wrote: every control read off the schema, then one attribute added to one column and the same form refusing before it makes a request | Chrome |
+| `fli tutor:tools` | The four tools that show you what the app is doing — the GUI as the front door, the database as it really is, the call feed with a refusal in it, and the chain that handled the request | — |
 | `fli tutor:access` | The gate, the row policy and the field policy, each watched refusing somebody — and every refusal paired with an identical call that is allowed | — |
 | `fli tutor:live` | A write reaching a client that asked for nothing — then two sockets against one publish, and the gate deciding which of them is told | — |
 | `fli tutor:jobs` | Work that outlives the request: a queue that is a SQLite file, a job named by its own filename, and a response that comes back before the work is done | — |
@@ -46,9 +40,8 @@ step on its own.
 They run in a throwaway directory by default. `--workspace ~/somewhere` keeps
 what they build, which is the point if you want to read it afterwards.
 
-The framework is pre-alpha and only some packages are on npm — see the root
-[README](../README.md) §Publishing status — so `--source local` (the default
-inside a checkout) is the reliable way to run current code.
+`--source local` (the default inside a checkout) runs the working tree rather
+than the registry — see the root [README](../README.md) §Publishing status.
 
 ---
 
@@ -75,15 +68,13 @@ for everyone. The request-scoped database client is `ctx.locals.db`.
 
 ## What the lessons do not cover
 
-Real-time channels beyond the connection itself, background jobs
-(`@frontierjs/caravan`), outbound mail (`@frontierjs/conduit`), notifications,
-prerendered public sites (Sierra's `static` target), and multi-tenancy. Each has
+Multi-tenancy, and real-time channels beyond what `tutor:live` shows. Each has
 a package README, and [`example/`](../example/) exercises all of them in one app
 with drives you can run.
 
 ## Where to go next
 
-- [`example/`](../example/) — the kitchen sink: a fleet of shops across five
+- [`example/`](../example/) — the kitchen sink: a fleet of shops across six
   surfaces, with real auth, a gate ladder, an order state machine, a public
   prerendered storefront and a payment provider. The place to see a finished
   version of what you just built.
@@ -92,5 +83,5 @@ with drives you can run.
   in full: relations, transitions, policies, migrations.
 - [`packages/junction/README.md`](../packages/junction/README.md) — services,
   hooks, actions, channels.
-- [`packages/css/guide/`](../packages/css/guide/) — the design system's 53-page
+- [`packages/css/guide/`](../packages/css/guide/) — the design system's
   reference. Start at *Pick a term*.

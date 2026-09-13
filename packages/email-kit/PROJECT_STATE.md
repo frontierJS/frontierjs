@@ -38,48 +38,10 @@ and removing it took Mesa from 27 skipped tests to zero.
 
 ## Fixed on arrival
 
-Both were live defects in the rendered output, and both were silent — the HTML
-stayed well-formed.
-
-### The bulletproof button was not bulletproof
-
-`<!--[if mso]>` was being serialized as `<!--[if mso]-->`. The comment closed,
-and the VML after it became live markup: `<v:roundrect …>` parsed as
-`<v :roundrect="" …>`, an unknown element with a stray attribute. **The
-Outlook-only fallback shipped to every client, so every recipient saw the
-button twice.**
-
-Root cause is happy-dom, which the static renderer runs in: it ends a
-conditional comment early when certain tags appear inside it. Two independent
-triggers found — a namespaced attribute (`xmlns:v="…"`) and some `style`
-values; a multi-line opening tag also does it. `{@html}` was the previous
-mitigation and cannot work, because `{@html}` sets `innerHTML` — that *is* the
-DOM.
-
-Fix: the VML never enters the DOM. `Button.mesa` emits it percent-encoded in a
-`data-mso` attribute, and `expandMsoPlaceholders()` in `render.js` splices it
-back once the HTML is a string again. Percent-encoding rather than raw text
-because happy-dom does not escape `"` in a serialized attribute value either.
-
-**Consequence to know:** rendering a kit component through Mesa's
-`renderComponent` *directly* leaves the placeholder in place and drops the
-Outlook fallback. Use `renderEmail` / `renderEmailFile` from
-`@frontierjs/email-kit/render`. Pinned by a test that asserts exactly that.
-
-### The plain-text alternative was full of markup artefacts
-
-Fixed in Mesa's `htmlToText` (`packages/mesa/src/render-component.js`):
-
-- `<style>` / `<script>` / `<head>` contents were read as prose.
-- Conditional comments were not handled, so the Outlook fallback text sat
-  beside the real anchor and every CTA appeared twice. The two shapes need
-  opposite treatment — downlevel-*hidden* blocks go, downlevel-*revealed*
-  markers go but their content stays. Removing anything matching
-  `<!--[if … <![endif]-->` deletes the real anchor and the text loses every
-  link it has.
-- Entity decoding was a fixed list of six, so `&#847;` — the zero-width
-  spacer every preheader is padded with — printed literally.
-- The hidden preheader was included, duplicating the opening line.
+Two silent defects in the rendered output — the Outlook button fallback shipping
+to every client, and markup in the plain-text alternative — are in `CHANGES.md`;
+the traps behind them, and the one consequence to know (render through
+`renderEmail`, never `renderComponent` directly), are `docs/HTML_EMAIL_TRAPS.md`.
 
 ## What is NOT verified
 
@@ -96,10 +58,9 @@ Fixed in Mesa's `htmlToText` (`packages/mesa/src/render-component.js`):
 
 ## Open — see `ISSUES.md`
 
-**`FJS-051`** package name does not match the directory (ruling: **`FJS-D15`**) ·
-**`FJS-052`** `import.meta.url.pathname` is wrong on Windows, and the documented
-`autoImport` option is unimplemented · **`FJS-053`** never opened in a real mail
-client.
+**`FJS-053`** never opened in a real mail client. `FJS-051` (package name vs
+directory, ruled `FJS-D15`) and `FJS-052` (`import.meta.url.pathname` on
+Windows, `autoImport`) are both closed now.
 
 No integration with `@frontierjs/ui` or `@frontierjs/css`, and there should not
 be: email needs inlined table markup and the css package ships a stylesheet. The

@@ -6,8 +6,9 @@ dated: 2026-08-04
 
 # Idea — The package map: what exists, and what should
 
-**Status: ASSESSMENT + PROPOSAL.** Dated 2026-08-04. The "exists today" column was
-read off the tree; everything under *Proposed* is unbuilt and the names are
+**Status: ASSESSMENT + PROPOSAL.** Dated 2026-08-04. What exists is not restated
+here — root `CLAUDE.md` § Packages is the state and `exports.snapshot.md` is what
+publishes. Everything under *Proposed* is unbuilt unless struck, and the names are
 suggestions, not rulings. Do not cite the proposed section as describing behavior —
 see `VERIFYING.md`.
 
@@ -24,33 +25,8 @@ sierra, mesa, caravan, conduit, jetty, basecamp, orion**. Proposals below stay i
 it, on the argument that a consistent naming register is worth more than each name
 being individually self-describing — the framework already accepts that trade.
 
-**`packages/orion/` is an empty directory.** It is inside the `packages/*` workspace
-glob, contains no files at all, and appears in no document in the repo. Either it is
-a reservation that should be named for what it is, or it should be removed before
-someone reads it as a package that failed to install.
-
----
-
-## Exists today
-
-| Package | Realm | Note |
-| --- | --- | --- |
-| `litestone` | Data | published, 1.1.0 |
-| `junction` | API | the largest surface |
-| `sierra` | UI meta | routing + build |
-| `mesa` | UI substrate | true leaf — keep it that way |
-| `css` | UI | design system |
-| `ui` | UI | component kit over `css` |
-| `email-kit` | UI / email | ships as `@frontierjs/email-kit` |
-| `auth` | D6 | native provider; no OAuth |
-| `caravan` | D5 | jobs + cron |
-| `conduit` | D4 | outbound boundary |
-| `notifications` | slice | the closest thing to a vertical slice today |
-| `cli` (`fli`) | D1 | markdown-native runtime |
-| `jetty` | UI container | browser-extension shell |
-| `frontierjs-vscode` | D1 | editor support |
-| `basecamp` | app | **not a library** — the dogfooding surface |
-| `orion` | — | **empty directory** (see above) |
+**`orion` and `oracle` are claimed folders, not packages** — V2 applications built
+on the framework, ruled `FJS-D14`.
 
 ---
 
@@ -63,7 +39,7 @@ someone reads it as a package that failed to install.
 | **`foundry`** | UI | **Schema → UI.** `<AutoForm resource={posts}>`, `<AutoTable>`, `<AutoFilter>`, and a gate-aware generated admin. Absorbs and replaces `fli admin:generate`, which emits `.svelte` and is drifted past usefulness. | `framework-shape.md` item 1; `pros-and-cons.md` con 6 |
 | **`depot`** | Release | The realm with no package. Artifact kinds first-class (single binary / container / static+API / PWA), preview environments, provisioning from declarations — degrading to nothing for the one-file path. | `offline-first-and-release.md`, `operational-edge.md`, `framework-shape.md` item 3 |
 | **`assay`** | Testing | The Suite noun. Junction's test kit extracted, `createTestEnv`, factories from field rules, a browser harness, and **derived per-model suites**. The plug slices' `suite/` part needs. | `testing-and-ci.md` |
-| **`create-frontier`** | — | `npm create frontier@latest`. Unglamorous and the highest-leverage adoption surface any framework has; today there is no path from the website to a running app that does not involve cloning a monorepo. | `ecosystem-gaps.md` § starter kits |
+| ~~**`create-frontier`**~~ | — | **Shipped** — `npm create frontier@latest`, an entry point over `fli new`. | `ecosystem-gaps.md` § starter kits |
 
 **Why `foundry` is first.** The expensive half is built — the browser already has
 the constraint table, the relations, the gate and the validator. What is missing is
@@ -79,15 +55,11 @@ at all (`slices.md`, `framework-shape.md`).
 | **`ledger`** | Slice | Billing — models + service + webhooks + portal route. The canonical first slice and the proof the format works. | `ecosystem-gaps.md` tier-1 item 2 |
 | ~~**`warden`**~~ | API | **Retired 2026-08-25 as a package name — `FJS-D147`.** The idea ships as seed syntax in litestone instead, which is where every other Data-boundary rule is declared. Three things argued against a package and none for it: row tenancy and value sets both shipped as a declaration plus a battery with no package of their own; `FJS-D113` refused a *declaration* for membership because the resolver varies per application, which applies unchanged to role → capability expansion; and `DECISIONS.md` § Outpost already names `warden` among the words rejected under the rule that infrastructure takes place nouns. The rulings are `FJS-D139` (a capability is a REFERENCE to something the seed declares, so there is no enum), `FJS-D140` (writes and moves by default, `@@capabilities(all)` for read), `FJS-D146` (the gate still applies, ANDed) and `FJS-D147` (the spelling, and this row) | `IDEAS/permission-sets.md` |
 | **`lantern`** | API | Observability — real spans (there is a `correlationId` and a seam list, not a tree), request-correlated logs, metrics, and the local dev dashboard unifying `project:map --as=serve` + devtools + traces + an API explorer. | `operational-edge.md` item 3, `framework-shape.md` item 4 |
-| OAuth → **`auth`** | API | Not a new package. The `Credential` model already carries `type` / `accessToken` / `refreshToken` / `scope`. Plus TOTP and passkeys. | `ecosystem-gaps.md` tier-1 item 1 |
+| ~~OAuth → **`auth`**~~ | API | **Shipped in `auth`**, not a new package: OAuth sign-in and TOTP. Passkeys are not built. | `ecosystem-gaps.md` tier-1 item 1 |
 
-**`warden` is the one with a ceiling behind it.** Without it, the framework's best
-feature caps out the moment an app needs two permissions that are not comparable —
-which is most apps, fairly early. **The ceiling is not hypothetical and this repo is
-already against it**: `packages/basecamp/api/src/core/gate.ts` grades the `billing`
-role to READER(2) beside `viewer`, under a comment saying *reads everything, writes
-only billing* — which the ladder cannot express and nothing enforces — and the role
-ladder beside it is written out four separate times across `core/` and two services.
+**`warden`'s ceiling was real**: basecamp graded a `billing` role to READER(2) under
+a comment the ladder could not express. It shipped as seed syntax
+(`@@capabilities`, `IDEAS/permission-sets.md`) rather than a package.
 
 ### Tier 2 — the differentiators
 
@@ -106,7 +78,7 @@ ladder beside it is written out four separate times across `core/` and two servi
 | --- | --- |
 | **`charts`** | Dataviz over the `css` tokens. `foundry` will want it immediately; every admin needs it. |
 | **`media`** | Image resizing and transforms. Paired with litestone's `FileStorage` plugin, which is where the bytes already are. |
-| **`chronos`** | Time semantics from the seed — instant vs zoned wall-clock vs plain date, whose zone resolves a value, and the small useful subset of recurrence. Named here mostly to ask whether it is a package at all: it is probably a litestone declaration plus an `Intl` reader, and the thing to avoid is writing a date library. Note the collision — `packages/datetime-kit/` is a README with no package under it and may be this, or may be a component kit that should not share the name. | `time-and-recurrence.md` |
+| **`chronos`** | Time semantics from the seed — instant vs zoned wall-clock vs plain date, whose zone resolves a value, and the small useful subset of recurrence. Named here mostly to ask whether it is a package at all: it is probably a litestone declaration plus an `Intl` reader, and the thing to avoid is writing a date library. The `/datetime` prototype is parked at `packages/toolbelt/mockup/datetime/`, a non-member. | `time-and-recurrence.md` |
 | **`porter`** | Bulk data — the derived import template, the per-row report, and an export that is a `find` rather than a table scan. Named provisionally and probably wrongly: the template and validator belong beside `foundry`'s generator, the parser already lives in litestone's seeder, and what is genuinely new is a screen. A candidate for *not a package*. | `bulk-data.md` |
 | **`flags`** | Feature flags — one model plus a plugin exposing `app.features`. A good early test that the slice format is real, precisely because it is small. |
 | **`shift`** | The upgrade codemod tool. Deferred not for low value but because it needs a stable surface to move between; worth reserving the name. |
@@ -118,30 +90,20 @@ ladder beside it is written out four separate times across `core/` and two servi
 
 1. **`foundry`** — makes the thesis visible. Everything else is easier to explain
    once someone has watched a form build itself from a schema.
-2. **`create-frontier` + `quarry`** — a demo nobody can run is a demo nobody sees.
+2. **`quarry`** — a demo nobody can run is a demo nobody sees (`create-frontier` shipped).
 3. **`depot`** — the Release hole, found independently by three separate analyzes.
 4. **`@frontierjs/mcp` and `marshal`** — the two that make FJS *unlike* anything else, and
    both cheap, because the decisions that make them possible are already made.
 
-`warden` interleaves: it is not urgent until an app hits the ladder's ceiling, and
-it is very urgent the moment one does. Its cost estimate has moved down since this
-list was written — most of what it needs is already compiled — so it is cheaper to
-interleave than the `L` beside it suggests.
+`warden` shipped as seed syntax (`FJS-D147`), so it no longer interleaves.
 
 ## Open questions
 
-- **Does everything need to be a package?** `warden`, `quarry` and `flags` are all
-  arguably features of `auth`, `litestone` and a slice respectively. The register
-  errs toward naming things separately so they can be *discussed* separately; the
-  packaging decision is downstream. **`warden` now has an answer leaning against**:
-  row tenancy and value sets each shipped as a seed declaration plus a battery with
-  no package at all, and `FJS-D113` refused a declaration for membership because the
-  resolver varies per application — which applies unchanged to role → permission
-  expansion. The name has a second problem regardless. `DECISIONS.md` § Outpost rules
-  that infrastructure takes place nouns and AI takes personified nouns, and lists
-  `warden` among the words rejected on exactly that ground; this row's claim predates
-  that ruling. Seed syntax rather than a package retires both questions at once.
-- **What is `orion` for?**
+- **Does everything need to be a package?** `quarry` and `flags` are arguably
+  features of `litestone` and a slice. The register errs toward naming things
+  separately so they can be *discussed* separately; the packaging decision is
+  downstream. `warden` answered it once already — seed syntax, no package
+  (`FJS-D147`).
 - **Which of these are slices rather than packages?** `ledger` and `flags` clearly.
   `marshal` probably is a package with a slice-shaped install. The distinction
   matters once `slices.md` gets a ruling in `DECISIONS.md`.

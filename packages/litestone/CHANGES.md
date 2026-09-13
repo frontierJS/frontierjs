@@ -1,5 +1,53 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-13 — a one-statement update is its own transaction too
+
+`FJS-1107`. `update()` ran every call inside `tx.exclusive`, the same wrapper `FJS-1106` took off
+`create()`. An update with no nested or edge write, no `post-update` policy, no `@@transitions` and no
+transaction open now runs without it. The three exclusions are three reasons: more statements, a
+refusal whose rollback is the whole mechanism, and a move graded across an await.
+
+- **The update checks, before it writes, that it did not run alone into an open transaction**, and
+  throws naming `FJS-1107` if it did — an await added ahead of the statement later is then a loud
+  defect rather than a write lost to somebody else's rollback.
+- `test/create-autocommit.test.ts` became `test/write-autocommit.test.ts`, and its probe changed:
+  whether BEGIN was prepared stops meaning anything once one transaction has cached it, so the file
+  now reads the raw connection's `inTransaction` as each statement runs.
+- Not all of the regression: 28.48 → 20.86 µs against 14.33 on `4f46e5b`. The rest is `FJS-1108`.
+
+## 2026-09-13 — a one-statement create is its own transaction again
+
+`FJS-1106`. Since `3f38d4b` every `create()` took the transaction lock, an AsyncLocalStorage scope and
+a `BEGIN IMMEDIATE`/`COMMIT` pair, so a single-row create cost 19.49 µs against 11.26 on `4f46e5b`.
+A create with no `@sequence`, no nested write, no edge write and no transaction open on the connection
+now runs its INSERT as SQLite's autocommit — 11.92 µs. The decision and the statement are separated by
+nothing that yields, which is what keeps `FJS-638`'s second half: a create arriving while another
+context holds a transaction still waits for it.
+
+- **`wrapDb` caches `BEGIN`, `COMMIT` and `ROLLBACK`.** Its comment said a reused one throws across
+  transaction boundaries; measured, it does not — across commits, rollbacks, a failed statement and a
+  thrown COMMIT, on `:memory:` and a WAL file. `SAVEPOINT`, `RELEASE` and `ROLLBACK TO` stay out,
+  because their names count up.
+- `test/write-autocommit.test.ts` — which creates take a transaction, read off the raw connection's
+  `inTransaction` as the statement runs since `$tapQuery` reports neither BEGIN nor COMMIT, and the
+  concurrent case paired with its control. With the depth check removed, the concurrent case fails.
+- `update()` regressed the same way and does not take the same fix — `FJS-1107`.
+
+## 2026-09-13 — `bench/ablation.mjs`: what one declaration costs, reads included
+
+`FJS-621` closed, `FJS-1106` filed. `bun run bench:ablation` runs one schema per declaration beside the
+same schema without it, interleaved, and reports the min, the delta, the spread and statements per
+operation — a delta inside the two cases' spread is marked, and on this machine every single-row write
+delta is, so the write half wants instruction counts rather than a clock. The read half is not close:
+a row policy +42%, a `check()` chain +62/+94/+121% for one to three hops, `@from(count)` +131% with an
+index on the foreign key and 400× without. A case that throws fails the run and the case count is
+printed, because the audit bench skipped a broken case for three weeks.
+
+Two numbers this corrects. `@@log(audit)`'s +3.1 µs in `IDEAS/speed-and-footprint.md` was the
+`setImmediate` enqueue; the write is ~140 µs. And the 15–20% drift `performance-regression-watch.md`
+recorded in August is superseded by a larger one: a single-row `create()` is +82% since `4f46e5b`,
+bisected to `3f38d4b` (`FJS-1106`).
+
 ## 2026-09-12 — a column added mid-model is not residue
 
 `FJS-1092`. `ALTER TABLE ADD COLUMN` can only append, so a field declared anywhere but last sits in a

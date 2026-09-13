@@ -14,16 +14,21 @@ import { glow } from '@frontierjs/toolbelt/glow'
 | `/cron` | what a five-field cron expression admits | shipping |
 | `/inflect` | how a name is spelled — number and shape | shipping |
 | `/directives` | the `$` convention — filters vs directives | shipping |
+| `/gate` | the access ladder — levels, `levelPasses`, `gradeStanding`, `canAtLevel` | shipping |
 | `/history` | the key naming one occurrence of change | shipping |
 | `/hooks` | the four-phase resource pipeline | shipping |
 | `/json` | reading and editing a JSON document nothing describes | shipping |
 | `/jsonschema` | follow a `$ref`; what a blank record looks like | shipping |
 | `/match` | does this record belong in that query's results | shipping |
+| `/predicate` | does this record satisfy a declared `.lite` expression | shipping |
 | `/query` | what a query string MEANS — types, structure, both directions | shipping |
+| `/redact` | is this key a credential, and redacting a value by that answer | shipping |
 | `/search` | ranking a corpus nobody indexed | shipping |
 | `/signature` | what a signed machine-to-machine request is | shipping |
 | `/units` | a magnitude with a unit, as a person reads it | shipping |
-| `/datetime` | date, time and timezone formatting | [`docs/datetime.md`](docs/datetime.md) is the intent; the prototype is parked in `mockup/datetime/` |
+
+Date, time and timezone formatting is not a kit: the prototype is parked in
+`mockup/datetime/`, which ships nowhere.
 
 The whole package holds to one rule:
 
@@ -229,14 +234,13 @@ should ever see one.
 **Two boundaries read it, not one** — Junction's bridge, off an HTTP query
 string or a WebSocket frame, and Sierra's router, off a URL's search string.
 Same grammar, two realms, which is why the table is here rather than in either.
-A directive one of them does not name does not fail: it falls through as a
-filter, and the Data boundary reports a column nobody declared, three layers
-from the cause.
+A `$` key the table does not name never reaches the filters: `splitParams`
+drops every `$` key, and `unknownDirectives(params)` names the ones it did not
+recognize, so a boundary can refuse them by name (`FJS-D237`).
 
-The read direction only. Junction's browser client writes `$` names on the way
-out from a typed `QueryDirectives`, through one table, on two paths that share nothing —
-its own suite asserts every name it emits is one this table strips, which is the
-property that matters and is not the same as sharing a function.
+Both directions: `parseDirectives` reads the `$` names into the structured
+form, and `directiveParams` writes that form back out as `$` names, so a
+client building a URL uses the same table the boundary reads it with.
 
 Value shapes are deliberately not fixed: over HTTP everything is a string, and a
 caller that has already parsed a URL passes numbers and booleans. Both are read,

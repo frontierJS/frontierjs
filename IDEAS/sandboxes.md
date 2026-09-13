@@ -53,7 +53,7 @@ fli tenant create --sandbox-of acct_7f2   # copies the file, registers the paren
 - The registry row gains `parent` and, if wanted, `expiresAt`.
 - The key prefix says which: a `_test_` credential resolves to the sandbox tenant,
   a live one to its parent. That keeps the rule *the identity belongs to the
-  upgrade* intact (`CLAUDE.md` § API) — the mode is a property of the credential,
+  upgrade* intact (the `api-hazards` skill) — the mode is a property of the credential,
   never a header a caller can name.
 - `fli tenant reset <id>` re-copies from the parent. That is the operation people
   actually want and the one no application gets right by hand.

@@ -326,11 +326,12 @@ It is the one open question in this phase and the one that governs the schema.
 
 Two readers, and they are not one screen.
 
-**`GET /logs` on the Outpost.** It has `/health`, `/exec` and `/volumes/…` and
-nothing for logs, which is why `basecamp/web/src/routes/apps/[id]/index.mesa`
-carries a comment saying the logs tab is absent because *nothing stores or
-streams a log line*. `docker logs --tail --since` behind a signed route is that
-whole tab: level filter, search, download. Signed like every other Outpost route
+**Built now, end to end.** `POST /logs` on the Outpost — `{ app_id, tail, since }`
+→ `{ running, tail, since, stdout, stderr }`, `docker logs --tail --since`
+behind a signed route — and `basecamp/web/src/routes/apps/[id]/index.mesa`
+calls it (a `logs` custom method, `tail`/`since` params) where it used to carry
+a comment saying the logs tab was absent because *nothing stores or streams a
+log line*. Signed like every other Outpost route
 — it is co-resident with `/exec`, and an unsigned log route on a box that has one
 is a credential leak with extra steps.
 

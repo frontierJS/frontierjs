@@ -49,7 +49,7 @@ place this is written down.
 
 ---
 
-## Terms — 55, in 8 tiers
+## Terms — in 8 tiers, `vocabulary.js` is the count
 
 The class is the lowercased term unless stated. `(element)` means the term is
 carried by an HTML element and has no class of its own.
@@ -64,7 +64,7 @@ carried by an HTML element and has no class of its own.
 `screen`<sup>main</sup> · `pane`<sup>section aria-labelledby</sup> · `view`<sup>article role=tabpanel</sup> · `tabs`
 
 **Region** — grouping and wayfinding
-Section (element) · Group (element) · `prose` · `bar` · `toolbar` · `divider`<sup>hr</sup> · `navlist`<sup>Nav</sup> · `breadcrumb` · `pagination`
+Section (element) · Group (element) · `prose` · `bar` · `toolbar` · `kicker` · `divider`<sup>hr</sup> · `navlist`<sup>Nav</sup> · `breadcrumb` · `pagination`
 
 **Block** — the main content citizens
 `card` · `tile` · `item` · `list-row`<sup>Row</sup> · `feed` · `alert` · `steps` · `facts`<sup>dl</sup> · `code`<sup>pre</sup> · `table` · `disclosure`<sup>details</sup> · `empty`
@@ -218,7 +218,7 @@ Your own stylesheet wins with no `!important` and no specificity ladder:
 .btn { border-radius: 2px; }
 ```
 
-Layer order: `tokens → themes → tones → base → layout → components → patterns → utilities → a11y`
+Layer order: `reset → tokens → themes → tones → base → layout → components → patterns → utilities → a11y`
 
 For one-off spacing, either write the unlayered rule above or run UnoCSS
 alongside (supported — see README §Using it with UnoCSS for the layer position,
@@ -234,7 +234,7 @@ will look almost right.
 
 One class on any ancestor; they nest, because it is all custom-property
 inheritance. `theme-default` `theme-sunset` `theme-forest` `theme-midnight`
-`theme-dark` `theme-elite` `theme-basecamp`
+`theme-dark` `theme-elite` `theme-basecamp` `theme-press` `theme-notebook`
 
 A theme overrides tokens, not just colors — Elite changes radii, weights,
 tracking and font family.
@@ -255,7 +255,7 @@ tracking and font family.
 
 ## Source of truth
 
-`vocabulary.js` — `VOCAB` (55 terms, 8 tiers), `ANATOMY` (26 terms, named parts,
+`vocabulary.js` — `VOCAB` (terms in 8 tiers), `ANATOMY` (terms with named parts,
 canonical markup), `NOT_ANATOMY` and `NOT_A_TERM` (every shipped class that is
 deliberately not vocabulary, grouped by what it is instead).
 
@@ -287,5 +287,6 @@ lowercased term, and the JSON keeps the two apart.
 The JSON is generated (`bun run build:vocabulary`) and the suite fails if it
 drifts from the source, so the two cannot disagree.
 
-The guide (`bun run demo`, :5173) is the human reference: 53 pages, ⌘K search,
-and a *Pick a term* wizard that routes a description to one of the 55 terms.
+The guide (`bun run demo`, :8040) is the human reference: one page per term
+plus concept pages, ⌘K search, and a *Pick a term* wizard that routes a
+description to one of the vocabulary's terms.

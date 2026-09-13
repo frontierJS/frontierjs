@@ -32,6 +32,13 @@ src/
     hashed-asset.js      is this filename content-addressed? The only answer
                          both servers give the same way — every other cache
                          answer they give is deliberately different
+    http-answers.js      what HTTP itself requires of any origin handing back
+                         bytes — a wrong verb, a range, an encoding — shared by
+                         site/serve.js and widget/serve.js, which answer almost
+                         everything else differently on purpose
+    served-path.js       what file a URL names, and whether it is inside the
+                         root — one question, two servers, written twice with a
+                         hole in each copy before this
 
   site/                  — the `site/` surface's origin
     serve.js             the static server that surface deploys with — a
@@ -52,6 +59,12 @@ src/
   build/                 — the Vite side
     index.js             createSierraViteConfig — start here
     app-alias-plugin.js  `@` → the surface's own src/, based on the VITE ROOT
+    auto-import-plugin.js  components and named bindings available in every
+                         .mesa file with no import statement, from configured
+                         directories and packages
+    app-import.js        importing the app's own modules at BUILD time — the
+                         Litestone client `config.db` names, and a route's
+                         `.meta.js` companion (`FJS-551`)
     static-data-plugin.js  dev only — a prerendered route's load(), run in Node
     mesa-plugin.js       Mesa compilation + reactivity hints
     scanner-plugin.js    runs the scanner

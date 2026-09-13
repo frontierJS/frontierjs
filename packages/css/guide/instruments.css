@@ -17,8 +17,8 @@
  * these are two files: in one file, "the guide needs 286 classes" is a fact
  * nobody can act on. Split, the debt is a number that goes down.
  *
- * guide/AUDIT.md is the register — every .sg-* class, its verdict, and the
- * shipped term that replaces it where one exists.
+ * test/specs/guide.spec.js holds the split: a guide class that duplicates a
+ * shipped term fails it.
  *
  * ── Why these specifically ───────────────────────────────────────────
  *

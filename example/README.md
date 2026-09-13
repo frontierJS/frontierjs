@@ -37,9 +37,6 @@ request is answered by the ghost.
 
 | | |
 | --- | --- |
-| **A `@money` column rendered by the kit's own cell was a hundred times too large, in the component written to end exactly that.** | `@money` holds MINOR units and `formatMoney` takes MAJOR ones, so the stored integer went in unconverted and `1299` came out `$1,299.00` — wrong in the way that looks RIGHT, which is worse than the raw integer it replaced: an integer reads as unformatted and a currency symbol reads as correct. The drive's existing predicate agreed with the bug — *formatted, an integer, and they differ* is true of both scales — so the assertion is arithmetic now: the rendered string times a hundred against the stored cents (`FJS-1051`) |
-| **The column ranking's tier called *money and time* caught the money and almost none of the time.** | `tierOf` tested `x-time`, which is the `@time` ATTRIBUTE — an ordinary `DateTime` carries `format: 'date-time'` and none of it — so every date column fell to the bottom tier and this app's invoice ledger ranked the tax it was charged above the day it was due. A second reader of a question `defaultDisplayFor` already owned, disagreeing with it in silence, and only visible on a model with several of both (`FJS-1055`) |
-| **The registry an app uses to say how a column RENDERS was never exported, so nothing could reach it.** | `FJS-D242` ruled a display into being the mirror of a control, and `src/junction/index.js` forwarded the control half and stopped. The shape of the evidence is the finding: across this app and basecamp, `registerFormControl` had one caller and `registerDisplayComponent` had zero — which reads as *nobody needed it* and was actually *nobody could*. This app now claims two, and both are things no schema can state: which currency a reader wants to see, and whether `void` is bad news (`FJS-1057`) |
 | `fli dev` | both realms, after the port and database preflights |
 | `bun run dev` | both realms, no preflight |
 | `bun run stop` | stop whichever of them is running |
@@ -102,14 +99,18 @@ example/
 │   ├── config/                 ← junction.config.js, incl. where the services are
 │   └── src/
 │       ├── app.ts              ← the construction site. Exported unstarted
-│       ├── inventory.ts        ← the ONE owner of the shelf: holds, availability, the ledger
+│       ├── domain/shop/
+│       │   ├── inventory.ts    ← the ONE owner of the shelf: holds, availability, the ledger
+│       │   ├── cart-claim.ts   ← a header → a claim a stranger holds
+│       │   └── settle.ts       ← the ONE owner of "this order has been paid for"
+│       ├── domain/billing/     ← the renewal and dunning jobs, a subscription's transitions
+│       ├── domain/payroll/     ← pay runs, arrears, banded rates, effective dating
 │       ├── core/
 │       │   ├── db.ts           ← the client, the gate plugin, autoMigrate
-│       │   ├── gate.ts         ← the ONE place a session becomes a number
-│       │   ├── cart-claim.ts   ← a header → a claim a stranger holds
-│       │   ├── settle.ts       ← the ONE owner of "this order has been paid for"
-│       │   ├── psp.ts          ← the payment provider: the target out, the verifier in
-│       │   └── psp-sink.ts     ← that provider, standing in for a real one. :8112
+│       │   └── gate.ts         ← the ONE place a session becomes a number
+│       ├── providers/psp/
+│       │   ├── index.ts        ← the payment provider: the target out, the verifier in
+│       │   └── sink.ts         ← that provider, standing in for a real one. :8112
 │       └── services/
 └── web/                        ← UI realm — Sierra + Mesa. The Vite root
     ├── index.html
@@ -126,14 +127,22 @@ example/
 │   ├── src/Embeds/BuyButton.mesa  one .mesa → one self-contained IIFE
 │   ├── test/                     a host page per widget, with hostile CSS
 │   └── deploy/                   serve.js + Dockerfile — the widget origin
-└── extension/                  ← a FIFTH surface — a browser extension. Not a
-    ├── config/jetty.config.js    Vite config at all: the build emits a MANIFEST,
-    │                             and `--browser=both` makes one source two builds
-    ├── src/harbor/index.js       the service worker — the only connection here
-    ├── src/dock/App.mesa         the popup
-    ├── src/islands/              content scripts, FLAT — a subfolder throws
-    ├── test/verify.mjs           loads it into a browser profile
-    └── deploy/                   two web stores, two review queues
+├── extension/                  ← a FOURTH surface — a browser extension. Not a
+│   ├── config/jetty.config.js    Vite config at all: the build emits a MANIFEST,
+│   │                             and `--browser=both` makes one source two builds
+│   ├── src/harbor/index.js       the service worker — the only connection here
+│   ├── src/dock/App.mesa         the popup
+│   ├── src/islands/              content scripts, FLAT — a subfolder throws
+│   ├── test/verify.mjs           loads it into a browser profile
+│   └── deploy/                   two web stores, two review queues
+├── site/                       ← a FIFTH surface — the public prerendered
+│   ├── src/routes/               storefront. Its own Vite root and prerender
+│   ├── src/islands/               pass, none of which the SPA build reaches
+│   └── test/verify.mjs           drives the built output in a browser
+└── desktop/                    ← a SIXTH surface — the seller's console bundled
+    ├── config/desktop.config.js  into a Tauri shell. `wraps: 'web'` builds
+    ├── shell/                    web/src into this surface's own dist
+    └── test/verify.mjs           starts the real shell and probes it
 ```
 
 Nothing points the UI at the schema: `web/`'s Vite root is one level below the
@@ -371,7 +380,7 @@ Three things fall out of that, and each is a way to break this silently:
   stock by putting a number back means a queue outage quietly stops the shop
   selling.
 
-`api/inventory.ts` is the one module that reads any of the three or writes the
+`api/src/domain/shop/inventory.ts` is the one module that reads any of the three or writes the
 first, and every write to `stock` is paired with an `InventoryMovement` in the
 same transaction — signed, with both ends of the shelf on the row. The ledger is
 `@@gate("5.5.9.9")`: an administrator reads it and files a receipt, and update
@@ -737,12 +746,15 @@ Three smaller ones worth knowing while playing:
   those straight to the element. I assumed the trap and wrote `focusout`; both
   work.
 
-- **Login is rate-limited to 10 per 15 minutes** by `createAuthPlugin`'s
-  defaults. Run `bun run verify` eleven times in a quarter hour and sign-in
-  starts answering 429. That is the limiter working, not a bug.
-- **`bun install` resolves `workspace:*` to a copy**, not a symlink, so edits to
-  a package's source are invisible here until you reinstall. If you are changing
-  the framework and watching this app, that is the thing that will fool you.
+- **Login is rate-limited** by `createAuthPlugin`'s defaults (10 per 15
+  minutes); `api/src/app.ts` raises it to 100 here so a burst of drives doesn't
+  read as "broken app". Run `bun run verify` often enough in a quarter hour and
+  sign-in still starts answering 429 — that is the limiter working, not a bug.
+- **`bun install` resolves `workspace:*` to a symlink**, so an edit to a
+  package's source is visible here immediately — no reinstall needed. The
+  exception is a `file:` dependency (jetty's `file:../mesa`), which installs a
+  COPY under `node_modules/.bun/`, and that is the one that will fool you if
+  you are changing the framework and watching a jetty-based surface.
 
 ---
 
@@ -754,7 +766,6 @@ gates, end to end, verified. Deliberately absent:
 | | |
 | --- | --- |
 | **A real mail client** | The confirmation email is rendered by `@frontierjs/email-kit` now, asserted to be a table document, and readable in a browser at <http://localhost:8111/> — but a browser is not a mail client, and nobody has opened one in Outlook, Gmail or Apple Mail. `bun run email:preview` writes it to a file; `curl localhost:8111/outbox/<id>/html` gets the delivered copy to forward to yourself. |
-| **`static` / islands** | `site/src/routes/` prerenders a catalog. What is unproven is an island rehydrating in the built output. |
 | **Live availability across shoppers** | A hold another shopper takes does not move the number on your product page until you act; the page re-asks after each of your own actions. It is a decision, not an omission: a hold would have to travel on a channel to get there, a broadcast does not re-check the gate, and `StockReservation` is `@@gate("5.…")` for reads — so publishing them would hand every open browser exactly the rows the Data boundary refuses it. The buy box can be one hold stale; the server refuses regardless and says which of *sold out* and *in other baskets* it is. |
 | **`@frontierjs/ui`'s remaining 35 components** | 29 of 64 are now driven in a browser. `DatePicker` (1200 lines), `Drawer`, `Popover`, `ConfirmationPopover` and `FileUpload` are compile-only. The way in is a screen that genuinely needs one, not a gallery. |
 | **`static` / islands target, email previews** | Build-mode wings off this same app rather than separate projects. |

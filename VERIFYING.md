@@ -52,8 +52,8 @@ tries fifteen wrong things in thirty lines is the highest-yield tool available
 here — see `elegance-fixes` / `migrations-fixes` in
 `packages/litestone/test/` for probes that graduated into tests.
 
-**Capture the baseline before you touch anything.** Several packages carry
-pre-existing test failures. Record the failing set first, so "regressions I
+**Capture the baseline before you touch anything.** A suite can go red for
+reasons that are not yours — another session, a stale install. Record the failing set first, so "regressions I
 caused" and "breakage I inherited" are separable — otherwise a green-to-red
 diff gets misread in both directions.
 

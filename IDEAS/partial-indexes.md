@@ -4,13 +4,13 @@ status: partial
 dated: 2026-08-29
 ---
 
-# Idea — partial indexes: `where:` on `@@index`, and the `@@unique` half deferred
+# Idea — partial indexes: `where:` on `@@index` and on `@@unique`
 
-**The unique half is argued separately and is BUILT** — `IDEAS/partial-unique.md`
-(argued 2026-08-30, shipped 2026-08-31), which answers § *The split* and
-§ *Option C* below. The short of it: this record's refusal is about a predicate
-the FRAMEWORK derives, and `FJS-603` asks for one the AUTHOR declares. Read the
-two together; where they disagree the later one is the reconciliation.
+**The unique half is BUILT too** — § *The unique half* at the end (argued
+2026-08-30, shipped 2026-08-31, `FJS-603`), which answers § *The split* and
+§ *Option C*. The short of it: this record's refusal is about a predicate the
+FRAMEWORK derives, and `FJS-603` asks for one the AUTHOR declares. Where the two
+halves disagree, the later one is the reconciliation.
 
 **Status: PARTIAL — Option A is built (2026-08-29).** `@@index([col], where:
 <expr>)` parses, validates by asking the compiler, and emits; `FJS-576` and
@@ -82,8 +82,8 @@ soft-delete shape? That number is already covered. The remainder is the feature.
 
 ## The split — `@@index` yes, `@@unique` deferred
 
-**Reconciled 2026-08-30 by `IDEAS/partial-unique.md`, which recommends the
-unique form.** The three reasons below stand as written about the construct they
+**Reconciled 2026-08-30 by § *The unique half* below, which built the unique
+form.** The three reasons below stand as written about the construct they
 were written about — litestone DERIVING a soft-delete predicate onto a unique
 index — and the reconciliation is that a declared predicate over a domain column
 is a different construct that leaves `FJS-204` untouched. The rule that keeps
@@ -320,7 +320,7 @@ literals so they stay reachable.*
 
 ### Option C — settle `FJS-204` first
 
-**Taken up: `IDEAS/partial-unique.md`.**
+**Taken up and built: § *The unique half* below.**
 
 *Decide whether partial UNIQUE is back on the table before spending on the rest.*
 
@@ -435,8 +435,135 @@ missed the index it had just declared, with nothing anywhere reporting it.
 
 ## See also
 
-- `DECISIONS.md` § Query & write semantics — `FJS-204`, the soft-delete slot
-- `ISSUES.md` — `FJS-576` (the migrator blindness), `FJS-480` (the derived index)
+- `DECISIONS.md` § Query & write semantics — `FJS-204`, the soft-delete slot ·
+  `FJS-D130`, `nullsDistinct`
+- `ISSUES.md` — `FJS-576` (the migrator blindness), `FJS-480` (the derived index),
+  `FJS-603` (the unique half), `FJS-592` (the constraint-kind migration split)
+- `IDEAS/payroll.md` phase 2 · `IDEAS/billing.md` phase 1 — the two domains that
+  produced the three unique near misses
 - [ddl.js `createIndexes`](../packages/litestone/src/core/ddl.js) ·
-  [migrate.js `introspect`](../packages/litestone/src/core/migrate.js)
+  [migrate.js `introspect`/`indexKey`/`tableUniques`](../packages/litestone/src/core/migrate.js) ·
+  [release.js `describeModel`](../packages/litestone/src/release.js)
 - `IDEAS/schema-variants.md`, `IDEAS/scoped-sql.md`
+- Prior art for the unique spelling: [Prisma 7.4.0](https://github.com/prisma/prisma/releases/tag/7.4.0) ·
+  [prisma#29282, the lookup-input mistake](https://github.com/prisma/prisma/issues/29282) ·
+  [Django constraints](https://docs.djangoproject.com/en/6.0/ref/models/constraints/)
+
+---
+
+## The unique half — `@@unique([cols], where: <expr>)`
+
+**BUILT 2026-08-31** (`FJS-603`). Argued 2026-08-30 as § *Option C* taken up.
+
+### Where it came from
+
+Three models in `example/db/schema.lite` declared the same near miss:
+
+```lite
+@@unique([planId, effectiveTo],            nullsDistinct: true)   // PlanVersion
+@@unique([employeeId, effectiveTo],        nullsDistinct: true)   // PayWindow
+@@unique([kind, fromAmount, effectiveTo],  nullsDistinct: true)   // PayRate
+```
+
+Every one wanted *at most one OPEN row per parent* and declared the opposite:
+`nullsDistinct: true` says *the open rows are deliberately unconstrained*. The
+parser offered it by name in the refusal for `@@unique([planId, effectiveTo])`,
+so the language walked an author from the right question to the wrong answer.
+`verify:employment` carried the hole as an executed assertion until this shipped.
+
+### The spelling — `@@unique`, not `@@index(unique: true)`
+
+Prisma 7.4 shipped the same spelling; Django's `UniqueConstraint(condition=…)`
+keeps the uniqueness word too, while Rails, Ecto, Drizzle, EF Core and SQLAlchemy
+say *index*. Schema languages keep the uniqueness word, migration DSLs keep the
+mechanism, and litestone is a schema language. Four reasons from inside this tree
+decide it:
+
+- **`@@index` means *changes no answer*, and this refuses writes.** An EXPLAIN is
+  what proves an index because every behavioral test passes with it dropped.
+- **`@@index(unique: true)` would be a third spelling of plain uniqueness**,
+  beside `@unique` and `@@unique([col])`.
+- **The fix has to be reachable from the refusal that sends people wrong** — one
+  clause further along the `@@unique` sentence.
+- **The errors are already named for it**: `UniqueConflictError` and
+  `SoftDeletedUniqueError` are derived from SQLite's message, which is
+  byte-identical for a partial unique index and a table constraint.
+
+The predicate keeps litestone's expression grammar. Prisma's object literal is
+not adopted — two spellings of a predicate in one language is the cost.
+
+### Why this is not `FJS-204`
+
+`FJS-204` ruled that **a soft-deleted row KEEPS its `@unique` slot**; the rejected
+alternative was litestone *deriving* `WHERE "deletedAt" IS NULL` onto every unique
+index, which makes `@unique` conditional for a reader who never asked for a
+condition. **A declared predicate over a domain column is the opposite
+construction**: conditional because the author wrote the condition, one answer
+per declaration.
+
+**The rule that keeps both true is one line.** `createIndexes` ANDs
+`@@softDelete`'s clause into a declared `@@index(where:)` — there it is an
+optimization. **It must not be ANDed into a declared `@@unique(where:)`** — there
+it IS the constraint, and ANDing it is `FJS-204`'s rejected derivation arriving
+through the back door: the deleted row stops holding its slot and
+`SoftDeletedUniqueError` can never fire. An author who wants uniqueness among live
+rows writes `deletedAt == null` into the predicate themselves.
+
+### One word, two node kinds
+
+`@@unique([a, b])` is emitted inside `CREATE TABLE` as `UNIQUE (a, b)`. A predicate
+cannot ride a table constraint, so a partial unique is a standalone
+`CREATE UNIQUE INDEX … WHERE`, and the two migrate differently — a table
+constraint changes only by rebuilding the table, an index with one DROP and one
+CREATE. They are distinguishable in the live database:
+
+```
+PRAGMA index_list, explicit partial unique : { unique: 1, origin: 'c', partial: 1 }
+PRAGMA index_list, UNIQUE (a) constraint   : { unique: 1, origin: 'u', partial: 0 }
+```
+
+So the parser emits a distinct node kind routed to `createIndexes`, and
+`tableUniques`' `origin` filter already left `c` to the index diff. `indexKey`
+already carried uniqueness and predicate. **Nothing in the migrator changed.**
+
+**`release.js` was the one correctness item**: it keyed a unique on its sorted
+column list alone, so a narrowed predicate graded as no change. The predicate is
+carried into `m.uniques` now — widened is CONTRACT, narrowed is EXPAND — and the
+rendering in `release.snapshot.md` shows it:
+`@@unique(employeeId), where: "effectiveTo" IS NULL`.
+
+**`findUnique` is not key-restricted here**, which is the edge Prisma's #29282
+bleeds from — a partial unique generating a compound lookup input. The day a
+`WhereUniqueInput` is derived, a partial unique must be excluded from it.
+
+### What building it corrected
+
+**1. The grammar argument was half wrong.** Enforcement never consults the
+planner, so the zero-parameter rule is not a correctness requirement — true. But
+the probe that ACCEPTED `WHERE status = 'active'` was hand-written SQL with a
+LITERAL. Litestone BINDS every value, and SQLite answers
+`parameters prohibited in partial index WHERE clauses` for a unique index as much
+as a plain one, at migration time. The fix is `inlineParams`, safe because these
+are the SCHEMA's own literals, never a caller's. `now()`, `auth()`, subqueries and
+foreign columns are refused at parse by name — SQLite accepts
+`datetime('now')`, an index that silently stops covering rows, on a UNIQUE index
+where the consequence is a duplicate.
+
+**2. The importer cannot carry a partial unique whose tuple has a nullable
+member**: it wants `nullsDistinct: true`, the predicate excludes it, and emitting
+both is a schema the parser refuses. Dropped whole with the reason in the gap
+record (`FJS-594`'s rule); the corpus test found it on the first run.
+
+**3. `predicateToLite` is shared with `@@index`**, so the value form is asked for on
+the unique path alone — widening it would emit an `@@index` the parser refuses.
+
+**The open questions, answered by building:** the parse error separates the two
+answers by a COLUMN LIST (`@@unique([planId], where: effectiveTo == null)` — the
+nullable column moves out of the tuple); `where` with `nullsDistinct` is refused;
+Prisma's `raw()` predicate is dropped whole with its reason, since `.lite` has no
+verbatim predicate.
+
+**Proved by** `test/index-predicates.test.ts` — the soft-delete clause ABSENT from
+the emitted DDL, a value comparison INLINED, and the rename of a pre-prefix index
+(`FJS-614`) — and `example`'s `verify:employment`, where a second open window is
+refused through `asSystem()` and through a raw INSERT.

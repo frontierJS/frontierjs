@@ -50,11 +50,12 @@ agree are the ones to leave alone.
 
 ## Tier 1 — extract, because the copies have already diverged
 
-### 1. `glow` is forked, and mesa runs the version with the known bugs
+### 1. ~~`glow` is forked, and mesa runs the version with the known bugs~~ — done
 
-`packages/mesa/src/glow.js` (211 lines) and `packages/toolbelt/src/glow/glow.js`
-(371 lines) are the same highlighter. The toolbelt copy is the one that received
-the fixes recorded in `packages/toolbelt/CLAUDE.md`; the mesa copy predates them.
+Mesa's own copy of the highlighter (211 lines) and `packages/toolbelt/src/glow/glow.js`
+(371 lines) were the same highlighter, forked. The toolbelt copy is the one that received
+the fixes recorded in `packages/toolbelt/CLAUDE.md`; mesa's own copy predated them
+and is deleted now — mesa imports `@frontierjs/toolbelt/glow`.
 Both bugs that file documents as *fixed* are live in mesa:
 
 - **Encoding is still in `elem()`, per token** — `glow.js:73` encodes only a
@@ -254,7 +255,7 @@ two. Every Tier 1 item above passes it; every Refuse item fails it.
    substrate, which is now `@frontierjs/toolbelt`. Everything below was waiting
    on it.
 2. ~~**`FJS-191`**~~ — **done 2026-08-15**: `compiler-md.js` imports
-   `@frontierjs/toolbelt/glow`, `packages/mesa/src/glow.js` is deleted, and the
+   `@frontierjs/toolbelt/glow`, mesa's own fork of the file is deleted, and the
    first core package importing the substrate proved step 1 end to end. It also
    surfaced `FJS-260`, which the fork was hiding behind its own bugs.
 3. ~~**`inflect.js`**~~ — **done 2026-08-15**, and it was five callers rather
@@ -262,7 +263,7 @@ two. Every Tier 1 item above passes it; every Refuse item fails it.
    copies knew — litestone's irregular table and junction's `us`/`is`/`as`
    guards — which is what closed `FJS-192`.
 4. **`slugify` + `escapeHTML`** — same shape, much smaller.
-5. **The purity lint**, before the package grows past two exports.
+5. ~~**The purity lint**~~ — **built**: `scripts/ci.mjs`'s substrate-purity phase.
 6. Case conversion and the validator regexes, once 1–5 have shown the seam holds.
 
 Tier 2 and the Refuse list should be re-derived, not assumed: this survey read

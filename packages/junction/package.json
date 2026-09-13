@@ -43,6 +43,7 @@
     "junction": "./tools/cli.ts"
   },
   "files": [
+    "AGENTS.md",
     "index.ts",
     "src/",
     "db",

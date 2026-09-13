@@ -165,6 +165,22 @@ function workDir(prefix, base) {
   return d
 }
 
+/** Remove a work directory a container has written into. A bind mount leaves
+ *  the files owned by the container's user — root in `oven/bun` — so on a host
+ *  where the daemon is rootful and this process is not (every GitHub runner) the
+ *  plain rm is EACCES. Ownership is handed back from inside a container, then
+ *  the rm is retried. Never throws: it runs in a `finally`, where a throw
+ *  replaces the phase's verdict with a stack trace after every assertion passed. */
+function removeWork(work, log = () => {}) {
+  active.delete(work)
+  try { rmSync(work, { recursive: true, force: true }); return } catch {}
+  const owner = `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`
+  spawnSync('docker', ['run', '--rm', '-v', `${work}:/w`, 'oven/bun:1-slim', 'chown', '-R', owner, '/w'],
+            { stdio: 'ignore' })
+  try { rmSync(work, { recursive: true, force: true }) }
+  catch (e) { log(`  · could not remove ${work} (${e.code ?? e.message}) — the next run's reap will retry`) }
+}
+
 
 const ROOT = resolve(HERE, '..')
 
@@ -304,6 +320,23 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
       return fail('`bun run check` failed on a freshly scaffolded app', check.output)
 
     log('  ✓ its own check gate is green')
+
+    // ── 5c · the agent guidance points at files that are there ─
+    // AGENTS.md sends a reader into node_modules, and the unit test grades those
+    // pointers against exports.snapshot.md. This is the installed half: the
+    // tarballs these packed, resolved the way the app resolves them. The count
+    // is asserted first, because a file naming no paths passes every lookup.
+    const agents   = readFileSync(join(app, 'AGENTS.md'), 'utf8')
+    const pointers = [...agents.matchAll(/`(node_modules\/@frontierjs\/[^`<>]+)`/g)].map(m => m[1])
+    if (pointers.length === 0)
+      return fail('the scaffolded AGENTS.md points at no shipped reference', agents)
+    const absent = pointers.filter(p => !existsSync(join(app, p)))
+    if (absent.length)
+      return fail(`AGENTS.md points at files the installed packages do not carry: ${absent.join(', ')}`, agents)
+    if (!readFileSync(join(app, 'CLAUDE.md'), 'utf8').split('\n').includes('@AGENTS.md'))
+      return fail('the scaffolded CLAUDE.md does not import AGENTS.md', '')
+
+    log(`  ✓ AGENTS.md's ${pointers.length} pointers resolve in the installed app`)
 
     // ── 6 · grow the app, then build it again ────────────────
     // FJS-036: the scaffold templates had been updated twice and never run
@@ -934,9 +967,8 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
     exec('docker', ['rm', '-f', container, `${container}_replaced`], { verbose: false })
     exec('docker', ['image', 'prune', '-f', '--filter', `label=app=${appName}`], { verbose: false })
     for (const t of imagesNamed(appName)) exec('docker', ['rmi', '-f', t], { verbose: false })
-    active.delete(work)
-    if (keep) log(`  · kept: ${work}`)
-    else rmSync(work, { recursive: true, force: true })
+    if (keep) { active.delete(work); log(`  · kept: ${work}`) }
+    else removeWork(work, log)
   }
 }
 
@@ -1460,7 +1492,7 @@ ${surface()}`)
     return { findings, skipped: null }
   } finally {
     stop()
-    if (!keep) { try { rmSync(work, { recursive: true, force: true }); active.delete(work) } catch {} }
+    if (!keep) removeWork(work, log)
   }
 }
 
@@ -1598,6 +1630,6 @@ await jobs.stop()
     return { findings, skipped: null }
   } finally {
     stop()
-    if (!keep) { try { rmSync(work, { recursive: true, force: true }); active.delete(work) } catch {} }
+    if (!keep) removeWork(work, log)
   }
 }

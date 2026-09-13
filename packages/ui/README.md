@@ -153,7 +153,7 @@ form needs beyond its inputs — whether it is in flight, whether anything
 changed, what the server said about each field, and not submitting twice:
 
 ```svelte
-<Form {leads} ondone={r => goto(`/leads/${r.id}`)}>
+<Form resource={leads} ondone={r => goto(`/leads/${r.id}`)}>
   <Input name="name" />
   <Input name="email" />
   <Button type="submit">Save</Button>
@@ -170,7 +170,7 @@ the error map in context; each control resolves its own.
 kit's own, or a number of ms — and the form writes once the typing stops:
 
 ```svelte
-<Form {leads} record={lead} autosave bind:autosaveState={saving} />
+<Form resource={leads} record={lead} autosave bind:autosaveState={saving} />
 ```
 
 It is not a submit and does not pretend to be one. It reveals nothing, so a
@@ -222,9 +222,9 @@ not "is it truthy".
 ### Or write no controls at all
 
 ```svelte
-<Form {leads} />                        <!-- every writable column, in schema order -->
-<Form {leads} only={['name', 'email']} />
-<Form {leads} except={['internalRef']} />
+<Form resource={leads} />                        <!-- every writable column, in schema order -->
+<Form resource={leads} only={['name', 'email']} />
+<Form resource={leads} except={['internalRef']} />
 ```
 
 Each column gets the control its type implies: an enum is a select over its
@@ -235,8 +235,8 @@ anywhere. Children win: passing any control means you are writing the form, and
 
 The field list is the last thing a form restates about a model, and a list typed
 into a page drifts — a column added to `.lite` stops appearing, and nothing says
-so. Which is also why a column the kit has no control for (an array, a `Json`
-document) is **warned about by name** rather than quietly skipped.
+so. Which is also why a column the kit has no control for (an array) is
+**warned about by name** rather than quietly skipped.
 
 The table that decides all of this lives in `@frontierjs/sierra`
 (`field-rules.js`) and is reached through the resource, so a generated form and
@@ -244,8 +244,9 @@ a hand-written one cannot disagree about what a `Float` is.
 
 ### Contributing a control
 
-The kit ships five, so the columns it cannot place — a `Json` document, a
-`String[]`, money, a rating, a rich editor — are controls your app owns. Two
+The kit ships a control per field rule — select, picker, combobox, multiselect,
+checkbox, textarea, input, json, file and datetime — so the columns it cannot place — a `String[]`, money,
+a rating, a rich editor — are controls your app owns. Two
 registrations, in one place, at startup:
 
 ```js
@@ -374,7 +375,7 @@ never reaches the DOM as an id: `Toast` (the identity the store dismisses by),
 bun run test     # inside this package
 ```
 
-Four suites, and the split matters:
+Five suites, and the split matters:
 
 - **`test/compile-all.mjs`** — every `.mesa` compiles *and* the emitted
   JavaScript parses. Those are different claims: Mesa can report zero errors

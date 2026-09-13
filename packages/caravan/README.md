@@ -14,7 +14,7 @@ bun add @frontierjs/caravan
 import { createCaravan } from '@frontierjs/caravan'
 
 const queue = createCaravan({
-  db:          './jobs.db',   // default
+  db:          './db/jobs.db', // default
   pollInterval: 1_000,        // ms
   queues: {
     default:  { concurrency: 2 },
@@ -90,7 +90,10 @@ await app.jobs.dispatch(sendEmail, { to: 'alice@example.com' })  // typed payloa
 | `pollInterval` | `1000` | How often to poll for new jobs (ms) |
 | `jobsDir` | — | Directory to autoload `*.job.ts` files from |
 | `cleanupAfter` | 7 days | How long terminal jobs are kept. `0` disables the sweep |
-| `admin` | `false` | Mount the admin routes. `{ path, secret }` to configure them |
+| `admin` | `false` | Mount the admin routes: `{ path, authorize, secret }`. They are raw routes with no gate, so under `NODE_ENV=production` they are not mounted without `authorize(ctx)`, and `secret` (a development shortcut) is refused there |
+| `drainTimeout` | `30000` | How long `stop()` waits for in-flight jobs (ms) |
+| `busyTimeout` | `5000` | How long a queue operation waits for another process's write lock (ms) |
+| `synchronous` | `'NORMAL'` | `PRAGMA synchronous` on the jobs database; `'FULL'` fsyncs every commit |
 | `heartbeat` | `5000` | How often this instance says it is alive (ms) — also how often abandoned work is reclaimed |
 | `lease` | `30000` | How long an instance may go quiet before its running jobs are treated as abandoned (ms) |
 

@@ -1,5 +1,70 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-13 — a scaffolded app tells an agent how to write it
+
+`fli new` writes `AGENTS.md` and `CLAUDE.md`. An agent asked to write code in a fresh app arrived
+knowing the ecosystem and nothing here, and the scaffold said nothing back: the package references
+that existed sat in `node_modules` with no pointer to any of them. Junction, sierra and mesa ship
+one now too, beside litestone's and css's.
+**`AGENTS.md` is the framework's and `CLAUDE.md` is the app's** — the second is one `@AGENTS.md`
+import, so a developer's notes are never mixed into text the framework owns.
+
+It restates no reference (`FJS-D163`). `appAgentsMd` in `core/app-config.js` points at the shipped
+AGENTS.md of each package the manifest names, lists the generators, and states the rules a generic
+habit breaks with the `fli check` id that grades each — one says `[not graded]`, because nothing
+can see a hook doing the schema's job. Three sources hold it: `AGENT_DOCS` against
+`exports.snapshot.md` in both directions, the cited ids against `RULES`, the commands against the
+registry. The `scaffold` phase asks the installed app whether every pointer resolves, which is the
+only place the published bytes are read. `doc-commands.js` grades an `AGENTS.md` now, which it had
+not for either package that shipped one.
+
+## 2026-09-13 — a scaffolded app is written in `@frontierjs/css`
+
+`fli new` imported the design system and then styled its four screens by hand — 25 hex colors
+across the layout, the home page, sign-in and register (Invariant 13) — so a theme reached none of
+them. They are vocabulary now: Shell, Topbar, Navlink with `aria-current`, Badge, Card, Facts, Steps,
+Alert, Field, Btn. `<body class="app">` is new and not cosmetic: the package has no bare `body` rule,
+so every line outside a component rendered in the browser's serif. The tutor's selectors followed —
+`.topbar` for the shell, `.auth-card` for the sign-in scope, and `09-mesa`'s anchor.
+
+The nav's `aria-current` read `page.route` with no `$:` watch over it, so the highlight was set at
+mount and never moved on a client-side navigation; the build's own warning named it. The topbar
+also carries a theme switch — `theme` in `sierra.config.js`, `theme-default`/`theme-dark` following
+the OS, keyed per app because every scaffold shares `localhost:8000` — and an unknown URL renders
+`[...404].mesa` instead of the layout around nothing.
+
+## 2026-09-13 — a scaffolded app with auth has an account page and a way back in
+
+`fli new --auth` wrote sign-in and register and nothing after them, while its README advertised
+password reset and email verification — whose callbacks logged a bare token that no page accepted.
+**`/account/`** changes the name (only where the example `users` service exists, since that is the
+one way the app writes a `User` row), the password, and ends other sessions; the topbar's address
+links to it. **`/reset/`** is both halves: without a token it asks for an address, and the link that
+request produces opens it with one. `onPasswordResetRequested` prints that link — a clickable
+`WEB_URL/reset/?token=…` — because there is no mailer, and the page says so in dev: the route answers
+the same for a registered and an unregistered address, so the terminal is the only place a reset is
+visible. **`WEB_URL` is new in `env.ts`**, defaulting to `FLI_PORT_FE`: the API's own origin has no
+page for a link to land on. Driven in a browser: rename, change password, *sign out everywhere else*
+(the other token then answers 401), and a full reset from the printed link, after which the old
+password is refused.
+
+## 2026-09-13 — a scaffolded app has a first test, and its API follows the port broker
+
+**With auth, `fli new` writes `api/test/access.test.ts`** and `bun run check` runs it last: who may
+list, rename, promote, edit and delete a `User`, every refusal paired with a caller allowed the same
+thing, graded by the app's own resolver. That needed the resolver out of `db.ts` — importing `db.ts`
+opens the app's database — so it is `api/src/core/gate.ts`, exporting `getLevel` (what
+`fli tinker --gate` loads) and `gate`. Removing `role`'s `@allow('write', …)` or lowering `User`'s
+read gate each fail exactly one test. The env takes a throwaway `encryptionKey`, because `.env` is
+gitignored and a CI run has none. Without auth nothing is written and `check` names no test:
+`bun test` over a directory with no test file exits 1. `tutor:test`'s doors test now installs the
+gate too — its prose said `actingAs` ran the app's resolver while the env it built ran the default.
+
+**The API ignored `FLI_PORT_BE`.** `vite.config.js` proxied `/api` to it while `env.ts` read only
+`PORT`, and the generated `.env` set `PORT=8100` besides — so a broker-assigned port left the proxy
+forwarding to nothing, or the API colliding with another app on 8100. `PORT` and `APP_URL` default to
+`FLI_PORT_BE` now and are commented out of `.env`; a deploy sets `PORT` explicitly and is unaffected.
+
 ## 2026-09-12 — the API on a domain of its own
 
 `FJS-1089`. **`deploy.api.domain` puts the API at its own origin** — `api.example.com` beside
@@ -6640,3 +6705,76 @@ fixture rather than an app that got the layout wrong.
 `runChecks({ allow })` is keyed `'<rule>:<path>'`, and a stale allowance is
 reported — an exception that outlives the thing it excused is an unenforced rule
 nobody knows is unenforced.
+
+## 2026-08-05 → 2026-08-10 — additions: ws:* in one repo, wsRoot, nested apps, ksite, deploy:doctor
+
+Moved out of `PROJECT_STATE.md`, which carries live state only.
+
+#### Recent additions (last few sessions)
+
+- **The `ws:*` namespace understands a single-repo monorepo (2026-08-10)** — every workspace command assumed the shape `ws:add` builds, where each member is its own git checkout. In one repo the git questions all answered repo-wide: `ws:status` printed the same branch, the same ahead/behind and the same dirty flag on all sixteen rows, and `--affected` selected everything or nothing. Worse, `ws:pub` released through `npm version` per package, which writes a commit and a `vX.Y.Z` tag into the shared history — sixteen commits, sixteen pushes of one branch, and a tag collision the moment two members sat at the same version, which nine of them did. Release now detects which shape it is in (`context.wsRepo`): one repo means one commit, one `<name>@<version>` tag per released package and one push; many repos keeps the per-package path. `git.pkgState()` is the one definition of "has this package changed", asked with a pathspec. Private packages are skipped, since npm refuses them and a failed publish aborts the run before anything is pushed. New: **`ws:npm`**, the state nothing could answer — local version against the registry, one concurrent `npm view` per package, retried once because a published package can answer 404 and "never published" is the one wrong answer that sends someone to publish over a version that exists.
+
+- **`context.wsRoot()` finds the workspace it is standing in (2026-08-10)** — it read `$WORKSPACE_DIR` or prompted, so every `ws:*` command needed an env var set to run against the repo the user was already inside, and a stale global default silently redirected them to another monorepo. `findWorkspaceRoot()` walks up for a `packages/` dir whose parent declares `workspaces` or is a git root; the env var is now the fallback for running from outside any workspace. It is deliberately not `findProjectRoot`, which stops at the deepest `db/schema.lite` and answers `packages/basecamp` from inside basecamp.
+
+- **Nested-app support for `project:*` (2026-08-05)** — `project:map` / `project:view` could not run inside `example/` or `packages/basecamp`: `findProjectRoot` walked past both to the repo's `.git` root, so `paths.db` held no `schema.lite`. Root resolution now recognizes `db/schema.lite` as an app marker (below `.fli.json`, above `.git`), and a global `--project <dir>` / `FLI_PROJECT` pins it explicitly from anywhere. Three defects surfaced underneath: the compiler deleted every line after a `<script>` tag *mentioned* in a comment, which is why `project:view` built its map and exited without starting the server; `scanFiles` was not recursive, so basecamp's `services/<name>/<name>.service.ts` layout reported 0 services; and `--no-open` was declared as flag `no-open`, which minimist never binds. All four fixed, with regression tests for root resolution and for the compiler truncation (a truncated file still parses, so the shipped-command parse sweep could not see it).
+
+- **`ksite:setup`** — first-time setup walkthrough for fresh ksite clones. Per-action confirmation, `--force` to bypass `config_ranSetup` guard, `--skip` for category, `--yes` to auto-accept. Cross-platform JS file edits (no `sed -i` hacks).
+- **`ksite:update`** (alias `ksite-update`) — pulls KSITE_DIR canonical, mirrors framework dirs to local site. `--force` to skip version-gate and dirty-checkout warning, `--no-install` to skip final npm install. Major-version compatibility check between local and canonical site/package.json.
+- **`deploy:doctor`** — read-only deploy readiness checker. Local checks (config, Dockerfile, /health route, env reference, git state), Junction-aware checks (`@frontierjs/junction` detection, `/ws` route, proxy_read_timeout reminder), and `--remote` for server-side probes (SSH, required tools, deploy dir, .env.production, container state, lock).
+- **`make:fetch-config`** (alias `mkfetchconfig`) — scaffolds a `fetch.config.js` template with all options shown commented-out.
+- **`fli:update`** (alias `update`) — monorepo-aware self-update via `git pull` + `bun install` in the fli source tree. `--branch`, `--no-install`, `--no-link` flags.
+- **`ksite:fetch`** (alias `fetch`) — sitemap/URL→markdown converter using turndown + linkedom. Validates config (errors abort, warnings continue), prints destination upfront, sitemap-index recursion, namespace-loc filtering, HTTP timeout/retry. Uses `context.paths.siteContent` and `context.paths.siteMedia`.
+
+## 2026-08-05 — engine improvements, and the script-block matcher that truncated 11 commands
+
+Moved out of `PROJECT_STATE.md`, which carries live state only.
+
+### Recent engine improvements (worth knowing about)
+
+These were the substantive runtime changes in recent sessions, in case behavior elsewhere depends on them:
+
+1. **`getConfig` deep-clones `defaultFlags` per-call.** Previously a process-wide leak — setting `--step 99` in one call leaked into all subsequent calls. Affected web GUI sessions running multiple commands sequentially.
+2. **`getConfig` per-key-merges command flags with defaults.** A command can re-declare `dry` to add its own description without losing inherited `char: 'd'` from defaultFlags. Without this, short-flag resolution silently broke for any command that re-declared a default flag.
+3. **Step abort honored before logging.** When `context.config.abort = true`, subsequent steps don't log their `[N/M] step-name` header. Cleanup steps opt back in via `runOnAbort: true`. Silently fixed the "stuck step header" output in `deploy:status`, `deploy:logs`, and any other `deploy:*` command that early-exits.
+4. **Server registry cached for 2 seconds.** Sidebar load + meta fetch + run share one filesystem scan instead of three.
+5. **`bootstrap.js` doesn't import `zx/globals`.** Saves ~100ms cold start on read-only commands (`fli list`, `fli help`, search). Compiled commands still import it themselves.
+6. **`compileCli` emits a `sourceURL=file://...` pragma** so Node stack traces reference the `.md` file, not the temp shim. Bun ignores this — known limitation.
+7. **`loadEnv` accepts `{override: true}`** for project `.env` to win over global `~/.config/fli/.env`. Handles multi-line quoted values and `\n \r \t` escapes inside double quotes.
+8. **Atomic `claimSession`** via O_EXCL guard file to prevent two concurrent fli processes from claiming the same project ID. Stale guard files reclaimed via PID liveness probe.
+9. **Bounded module cache** (256-entry LRU) so long-running GUI sessions don't accumulate stale entries from edited files.
+10. **`findFreeServicePort`** probes all 10 service slots in parallel via `Promise.all`. ~10× faster on cold scans.
+
+---
+
+### Fixed 2026-08-05 — the script-block matcher truncated 11 commands
+
+`extractScriptBlock` matched non-greedily, so a command's `<script>` block ended at
+the **first** `</script>` anywhere inside it. Every command that *generates* a file
+containing a script tag — each scaffold that writes a `.mesa` Resource — was cut off
+mid-template-literal, and the remainder was handed to `transformMarkdown` as prose.
+The compiled module was syntactically broken JavaScript.
+
+Compiling all 195 command files and parsing the output found 14 failures:
+
+    admin/generate  db/schema      deploy/_module  fli/init      make/command
+    make/component  make/model     make/resource   make/route    make/scaffold
+    project/new     web/component  web/resource    web/route
+
+The block now runs from its open tag to the **last** close tag. Depth-matching does
+not work here and cannot: `make/model.md` mentions `<script module>` inside a
+comment, which no counter can distinguish from a real tag. A command has exactly one
+script block, so first-open-to-last-close is both what a reader sees and what parses.
+
+Two of the 14 were not compiler bugs and were fixed in the sources:
+
+- `db/schema.md` — `makeModel` was missing its closing `}`. (It also still appends a
+  **Prisma** model to `schema.prisma`; the Data realm is Litestone `.lite` now, so
+  this command is stale beyond the syntax fix.)
+- `deploy/_module.md` — an illustrative `frontier.config.js` sat in a ` ```js `
+  fence, which is compiled *into* the command body, so its `export default` was a
+  syntax error. Every other fence in that file is a plain one.
+
+Guarded by a test per command file: compile it, then parse the output with a real
+ESM parser. Reverting the matcher fails 5 of them.
+
+---

@@ -1,6 +1,6 @@
 ---
 id: client-data-lifecycle
-status: partial
+status: shipped
 dated: 2026-08-06
 revised: 2026-08-25
 ---

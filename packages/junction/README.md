@@ -35,9 +35,9 @@ bun run repl
 Or test manually with curl:
 
 ```bash
-curl http://localhost:3000/health
-curl http://localhost:3000/users
-curl -X POST http://localhost:3000/users \
+curl http://localhost:3000/api/health
+curl http://localhost:3000/api/users
+curl -X POST http://localhost:3000/api/users \
   -H "Content-Type: application/json" \
   -d '{"name":"Alice","email":"alice@example.com"}'
 ```
@@ -45,10 +45,10 @@ curl -X POST http://localhost:3000/users \
 Run the test suite:
 
 ```bash
-bun run test        # tests/ — 54 files
+bun run test
 ```
 
-The example app is entirely in-memory — no database, no external services, runs immediately.
+The example app keeps its data in a local SQLite file (`demo.db`) and needs no external services.
 
 ---
 
@@ -123,7 +123,7 @@ packages/junction/
 │   ├── email/            ← mailer plugin, system + campaign senders
 │   ├── webhooks/         ← at-least-once delivery, IWebhookStore, SQLite adapter
 │   ├── devtools/         ← devtools plugin + admin UI
-│   └── ai/, scheduler/   ← re-export shims for src/ai, src/scheduler
+│   └── outbox/, backfill/, export/, metrics/
 │
 ├── src/storage/
 │   └── database/index.ts    ← createDatabase() — WAL, foreign keys, migrations
@@ -138,13 +138,13 @@ packages/junction/
 ├── src/scheduler/index.ts ← cron + interval + once, aligned ticks
 ├── src/workers/index.ts  ← Bun native thread pool, auto-respawn
 ├── src/mail/index.ts     ← IMail + SMTP/Resend adapters
-├── src/ai/index.ts       ← IAIModel interface + OpenAI + Anthropic adapters
+├── src/ai/index.ts       ← IAIModel interface — adapters reach a vendor through conduit
 ├── src/client/index.ts   ← browser/Sierra client — service(), resource()
 ├── src/testing/index.ts  ← createTestApp(), request(), withTestMeta()
 │
 ├── tools/                ← repl.ts, init.ts, setup.ts, build-app.ts, generators
 ├── example/              ← runnable apps (elegant.ts is the modern demo)
-└── tests/                ← 54 files
+└── tests/
 ```
 
 ---
@@ -356,9 +356,7 @@ Two things it does not do, and both matter:
   app behind it. That is why it is off by default, and why irreversible work
   belongs in a job rather than in an `after` hook.
 
-`FJS-089` stays open for the side-effect half.
-
-**Built-in hooks**: `authenticate`, `requireRole`, `paginate`, `protect`, `allow`, `timestamps`, `logTiming`, `circuitBreaker`, `rateLimit`.
+**Built-in hooks**: `authenticate`, `requireRole`, `paginate`, `protect`, `allow`, `timestamps`, `logTiming`, `circuitBreaker`, `rateLimitHook`.
 
 `protect()` supports dot-path notation for nested fields:
 
@@ -370,17 +368,17 @@ service.hooks({ after: { all: [protect('passwordHash')] } })
 service.hooks({ after: { all: [protect('meta.internal', 'auth.refreshToken')] } })
 ```
 
-**`rateLimit` hook** — per-service, per-method rate limiting. Keys on `userId` for authenticated requests, falls back to IP for anonymous. Different from `app.configure(rateLimit(...))` which applies globally to all HTTP routes.
+**`rateLimitHook`** — per-service, per-method rate limiting. Keys on `userId` for authenticated requests, falls back to IP for anonymous. Different from the `rateLimit` middleware, `app.configure(rateLimit(...))`, which applies globally to all HTTP routes.
 
 ```typescript
-import { rateLimit } from '@frontierjs/junction'
+import { rateLimitHook } from '@frontierjs/junction'
 
 // Per-service: limit create to 10/minute per user
 app.services.register(createService({
   name: 'posts',
   hooks: {
     before: {
-      create: [rateLimit({ max: 10, window: '1 minute' })],
+      create: [rateLimitHook({ max: 10, window: '1 minute' })],
       all:    [authenticate],
     }
   }
@@ -389,7 +387,7 @@ app.services.register(createService({
 // Custom key — rate limit by organization
 hooks: {
   before: {
-    create: [rateLimit({
+    create: [rateLimitHook({
       max:     100,
       window:  '1 hour',
       key:     (ctx) => ctx.auth.user?.accountId ?? ctx.client.ip,
@@ -399,7 +397,7 @@ hooks: {
 }
 ```
 
-Note: `rateLimit` hook uses an in-process counter — correct for single-instance deployments. For multi-instance, provide a custom `key` function and an external counter (Redis, etc.) via a custom hook.
+Note: `rateLimitHook` uses an in-process counter — correct for single-instance deployments. For multi-instance, provide a custom `key` function and an external counter (Redis, etc.) via a custom hook.
 
 **`IEventBus.onAny()`** — subscribe to all events with the event name included:
 
@@ -588,7 +586,7 @@ app.configure(healthPlugin({
 }))
 ```
 
-**`GET /health`** — `200` when healthy, `503` when any check fails. Safe as a Kubernetes `readinessProbe` / `livenessProbe` target.
+**`GET /health`** — readiness: `200` when healthy, `503` when any check fails or the app is draining. **`GET /health/live`** — liveness: consults no check, so a draining process is still alive. Point a `readinessProbe` at the first and a `livenessProbe` at the second.
 
 **`GET /metrics`** — process memory, request counts, response types, WebSocket connections, cache hit rate, service registry.
 
@@ -626,7 +624,7 @@ import { cors, helmet, rateLimit, requestLogger, correlationId, csrf } from '@fr
 
 app.configure(cors({ origins: ['https://myapp.com'] }))
 app.configure(helmet())
-app.configure(rateLimit({ limit: 100, window: 60_000 }))
+app.configure(rateLimit({ max: 100, window: 60_000 }))
 app.configure(requestLogger())
 
 // Generates/forwards X-Request-ID, stamps ctx.requestId, echoes in every response
@@ -756,7 +754,7 @@ The browser client takes the same option and must be given the same value:
 
 ```typescript
 createJunctionClient({ url, apiPrefix: '/api/v1' })
-// authenticate() then posts to /api/v1/auth/login — `authPrefix` is the auth
+// client.auth.signIn() then posts to /api/v1/auth/login — `authPrefix` is the auth
 // plugin's own prefix and stays relative to this one.
 ```
 
@@ -769,13 +767,14 @@ repeat replays the first call's answer without running the pipeline again — no
 second hook, no second row, no second broadcast.
 
 ```bash
-curl -X POST localhost:3000/orders -H 'Idempotency-Key: 8f3c…' -d '{...}'   # runs
-curl -X POST localhost:3000/orders -H 'Idempotency-Key: 8f3c…' -d '{...}'   # replays
+curl -X POST localhost:3000/orders -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: 8f3c…' -d '{...}'   # runs
+curl -X POST localhost:3000/orders -H "Authorization: Bearer $TOKEN" -H 'Idempotency-Key: 8f3c…' -d '{...}'   # replays
 ```
 
 The key is scoped to the service, the method **and the principal**: replay skips
 the hook pipeline, so it skips the auth checks in it, and a key shared across
-callers would hand one caller another's answer. Reads are never replayed.
+callers would hand one caller another's answer. A caller with no principal has
+nothing to scope by, so its key is ignored. Reads are never replayed.
 
 Two cases worth knowing:
 
@@ -901,7 +900,7 @@ const app  = createApp({ config, auth })
 app.configure(createBetterAuthPlugin(betterAuthInstance))  // mounts /auth/* routes
 ```
 
-`authenticate` hook reads `Authorization: Bearer` or `X-API-Key`, calls `auth.verifySession()`, stamps `ctx.auth.user`.
+The transport reads `Authorization: Bearer` or `X-API-Key`, calls `auth.verifySession()` and stamps `ctx.auth.user`; the `authenticate` hook only refuses a call that has no `ctx.auth.user`.
 
 ### Sessions from a cookie
 
@@ -1110,8 +1109,10 @@ setServiceCache(createSqliteCache({ path: './cache.db', defaultTtl: '1 minute' }
 ## Database
 
 ```typescript
-const app = createApp({ config, migrations: './migrations' })
-// app.db ready on start() — app.db.db is the raw bun:sqlite Database
+import { createDatabase } from '@frontierjs/junction'
+
+const db = createDatabase('./app.db')
+await db.migrate('./migrations')
 ```
 
 Production pragmas applied automatically: WAL mode, foreign keys, 5s busy timeout, 32MB page cache.
@@ -1255,8 +1256,8 @@ createService({
     const db = ctx.locals.db
 
     return db.$transaction(async (tx) => {
-      const user      = await tx.users.create({ data: ctx.data })
-      const workspace = await tx.workspaces.create({ data: { ownerId: user.id } })
+      const user      = await tx.user.create({ data: ctx.data })
+      const workspace = await tx.workspace.create({ data: { ownerId: user.id } })
       return { user, workspace }
     })
   },
@@ -1270,8 +1271,8 @@ createService({
 **What this bypasses — be explicit:**
 
 - Service hooks on `users` and `workspaces` do not run — no `before`/`after` hooks on the individual writes
-- No real-time events fire for the individual writes inside the transaction
-- Gate rules on the sub-models are bypassed — the gate on the calling service (`accounts`) is still enforced
+- The individual writes are announced by the Data boundary's own tap when the transaction commits, not by a service
+- Gates and row policies still apply to every write — `tx` is the caller-scoped client
 - Cache is not busted for affected services automatically
 
 **When this is acceptable:**
@@ -1298,7 +1299,7 @@ createService({
 })
 ```
 
-> ⚠️ **V2 — `app.transaction()`** will provide a transaction-aware service caller that preserves the hook pipeline and defers events until commit. Until then, `db.$transaction()` is the documented escape hatch with the tradeoffs above.
+When the unit of work is one service call, prefer `transactional: true` on the service: it wraps the whole pipeline, hooks included, in one transaction, and `ctx.afterCommit()` below runs effects only once it commits. `db.$transaction()` is the escape hatch for work that spans services.
 
 ### `ctx.afterCommit()` — the effect that must not run early
 
@@ -1438,8 +1439,9 @@ app.services.register(createService({
   hooks: {
     after: {
       all: [async (ctx) => {
-        const rows = Array.isArray(ctx.result) ? ctx.result
-          : (ctx.result as Record<string, unknown>)?.data ?? [ctx.result]
+        // ctx.result is the envelope: `kind` says whether `data` is a list or one row
+        const r    = ctx.result as { kind: 'list' | 'single'; data: unknown }
+        const rows = r.kind === 'list' ? r.data : [r.data]
         for (const row of rows as Record<string, unknown>[]) {
           if (row.avatar) row.avatar = fileUrl(row.avatar as string) ?? row.avatar
         }
@@ -1476,9 +1478,9 @@ const app = await createTestApp({
 })
 
 // Direct service call — no HTTP at all
-const ctx = testCtx('notes', 'create', { title: 'Hello' }, { user: { user_id: 'u1' } })
+const ctx = testCtx('notes', 'create', { title: 'Hello' }, { user: { userId: 'u1' } })
 await callService(app.services.get('notes')!, ctx)
-expect(ctx.result.title).toBe('Hello')
+expect(ctx.result.data.title).toBe('Hello')
 
 // HTTP-style assertion — no real port
 // Supports: .get() .post() .patch() .put() .delete() .options()
@@ -1585,19 +1587,27 @@ const hook = await app.webhooks.register(
 **Verifying a payload on the receiver:**
 
 ```typescript
-// Every delivery sends:
-//   X-Webhook-Signature: sha256=<hmac>   ← HMAC-SHA256 over `${timestamp}.${rawBody}`
-//   X-Webhook-Timestamp: <unix seconds>
-//   X-Webhook-Event:     orders:created
-//   X-Webhook-Id:        <delivery id>
+// Every delivery is signed with @frontierjs/toolbelt/signature under the
+// X-Webhook prefix — X-Webhook-Signature, X-Webhook-Timestamp, X-Webhook-Nonce —
+// over the method, path, query, timestamp, nonce and a hash of the body.
+// X-Webhook-Id is the EVENT, stable across retries: deduplicate on it.
 
-import { createHmac } from 'node:crypto'
+import { verifyRequest } from '@frontierjs/toolbelt/signature'
 
-function verify(secret: string, timestamp: string, rawBody: string, sig: string) {
-  const expected = 'sha256=' + createHmac('sha256', secret)
-    .update(`${timestamp}.${rawBody}`).digest('hex')
-  return expected === sig
-}
+const url     = new URL(req.url)
+const rawBody = await req.text()
+const result  = await verifyRequest({
+  secret,
+  method:  req.method,
+  path:    url.pathname,
+  query:   url.search,
+  body:    rawBody,
+  headers: req.headers,
+  prefix:  'X-Webhook',
+  now:     Math.floor(Date.now() / 1000),
+  seenNonce: async (nonce) => nonceStore.has(nonce),   // refuse a replay
+})
+if (!result.ok) return new Response(result.reason, { status: 401 })
 ```
 
 **Other API:**
@@ -1609,16 +1619,18 @@ const list = await app.webhooks.list()                  // all registrations
 const log  = await app.webhooks.deliveries(hookId)     // delivery history
 ```
 
-**HTTP management routes** (auto-registered, guard with your own auth middleware):
+**HTTP management routes** (auto-registered; a caller needs gate level `manage`, default 5 — 401 for a stranger, 403 below it):
 
 | Route | Description |
 |---|---|
 | `GET {apiPrefix}/webhooks` | list registrations |
 | `POST {apiPrefix}/webhooks` | register `{ url, events }` |
-| `DELETE {apiPrefix}/webhooks/:id` | unregister |
-| `POST {apiPrefix}/webhooks/:id/test` | fire a test ping |
+| `GET {apiPrefix}/webhooks/{id}` | one registration |
+| `DELETE {apiPrefix}/webhooks/{id}` | unregister |
+| `POST {apiPrefix}/webhooks/{id}/test` | fire a test ping |
 | `GET {apiPrefix}/webhook-deliveries` | delivery history |
-| `POST {apiPrefix}/webhook-deliveries/:id/retry` | manually retry |
+| `GET {apiPrefix}/webhook-deliveries/{id}` | one delivery |
+| `POST {apiPrefix}/webhook-deliveries/{id}/retry` | manually retry |
 
 **REPL commands:**
 
@@ -1703,10 +1715,10 @@ const client = createJunctionClient({
 // Sign in — stores the token and opens the socket
 const { token } = await client.auth.signIn('alice@example.com', 'secret')
 
-// Or set a token directly
+// Or set a token directly — this also opens (or cycles) the socket
 client.setToken(token)
 
-// Connect WebSocket for real-time events — must call after setToken()
+// Open the socket without a token, as an anonymous caller
 client.connect()
 ```
 
@@ -1940,7 +1952,7 @@ app.configure(conduit({
     kind:          'provider',
     protocol:      'http',
     address:       'https://api.resend.com',
-    auth:          { type: 'bearer', token: env.RESEND_API_KEY },
+    auth:          { type: 'bearer', ref: 'RESEND_API_KEY' },   // read from process.env at send time
     registered_at: Date.now(),
     last_seen_at:  null,
   }]
@@ -1980,13 +1992,14 @@ Swapping providers later is a one-line change to the Conduit target. The rest of
 
 ### Hook factories
 
-Send email as part of a service hook without boilerplate. Failures are logged and swallowed by default so a transient SMTP hiccup never rolls back a successful write operation. Set `optional: false` when delivery must be confirmed.
+Send email as part of a service hook without boilerplate. Failures are logged and swallowed by default, so a transient SMTP hiccup never fails a successful write. Set `optional: false` when delivery must be confirmed — the call then fails, and the write is rolled back only if the service is `transactional:`.
 
 ```typescript
 import { sendSystemEmail, sendCampaignEmail } from '@frontierjs/junction/email'
 
-app.service('users').hooks({
-  after: {
+createService({
+  name: 'users',
+  hooks: { after: {
     create: [
       // Welcome email — optional (default): SMTP failure is logged, not thrown
       sendSystemEmail(app, ctx => ({
@@ -1996,14 +2009,14 @@ app.service('users').hooks({
       })),
     ],
     patch: [
-      // Password reset — optional: false: failure throws and the patch is rolled back
+      // Password changed — optional: false: failure fails the call
       sendSystemEmail(app, ctx => ({
         to:      (ctx.result as { email: string }).email,
         subject: 'Your password was changed',
         html:    `<p>If this wasn't you, contact support.</p>`,
       }), { optional: false }),
     ],
-  }
+  } },
 })
 ```
 
@@ -2124,6 +2137,7 @@ Dead jobs (exhausted retries) stay in the database — use `app.jobs.retry(id)` 
 One interface for talking to third-party systems — REST APIs, server Outposts, local processes. Abstracts HTTP, WebSocket, and Unix socket protocols behind a single `send()` call.
 
 ```ts
+import { authenticate }      from '@frontierjs/junction'
 import { conduit }           from '@frontierjs/conduit'
 import { createSQLiteStore } from '@frontierjs/conduit/stores/sqlite'
 
@@ -2135,12 +2149,13 @@ app.configure(conduit({
       kind:     'provider',
       protocol: 'http',
       address:  'https://api.hetzner.cloud/v1',
-      auth:     { type: 'bearer', token: process.env.HETZNER_TOKEN },
+      auth:     { type: 'bearer', ref: 'HETZNER_TOKEN' },
     },
   ],
-  management: true,   // registers a service at {apiPrefix}/conduit-targets
-                      // (rename with `management: { path: '…' }` — one path
-                      //  segment, no slashes)
+  // registers a service at {apiPrefix}/conduit-targets. It must state an access
+  // decision — `hooks` or `public: true` — or configure() throws.
+  // Rename with `path: '…'` (one path segment, no slashes).
+  management: { hooks: { before: { all: [authenticate] } } },
 }))
 
 // Send from anywhere — hooks, services, routes
@@ -2273,4 +2288,4 @@ A missing services directory is a deliberate no-op, so nothing throws. You get a
 
 **Framework core**: zero external dependencies. Router, hook pipeline, logger, schema validator, scheduler, event bus, cache, body parser, static serving, WebSocket routing — all built on Bun's native APIs.
 
-**Optional**: `better-auth` (auth), `resend` (mail), `zenstack` + `@zenstackhq/runtime` (ORM). Each isolated behind an interface — none required to run the framework.
+**Optional**: `@frontierjs/litestone` (the only peer — models, gates, generated CRUD) and `better-auth` (an alternative auth provider). Neither is required to run the framework.

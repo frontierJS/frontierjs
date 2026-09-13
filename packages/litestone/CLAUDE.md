@@ -111,6 +111,11 @@ bench/
   scale-schema.mjs   — the same fixture, timed: parse, DDL, JSON Schema,
                        autoMigrate, a second boot, and the diff proving the
                        second boot changed nothing. Asserts nothing on purpose
+  ablation.mjs       — what ONE declaration costs: each schema beside the same
+                       schema without it, interleaved, min and spread per case.
+                       A delta inside the spread is marked, and every single-row
+                       write delta is — the clock resolves reads, not writes.
+                       Awaits one macrotask per loop or @@log is timed unwritten
 ```
 
 ---

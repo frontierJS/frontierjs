@@ -435,7 +435,7 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
           htmlClass: resolveHtmlClass(config),
           lang:      config.document?.lang,
           // Compile temp modules inside the app so a layout's bare imports
-          // resolve from the app's node_modules, not Mesa's (Mesa SSR_SPEC W1).
+          // resolve from the app's node_modules, not Mesa's (mesa's docs/STATIC_RENDERING.md § tmpDir).
           tmpDir: resolve(root, 'node_modules/.sierra/render'),
           warn: (m) => console.warn(`  [Sierra] prerender: ${m}`),
         })

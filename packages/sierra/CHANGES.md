@@ -1,5 +1,13 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-13 — `AGENTS.md` ships
+
+A compressed reference for an agent writing routes, resources and prerendered pages in an installed
+app (`FJS-D163`): file roles, `page`, `list()` and `record(id)`, `save()`, the publish check, the
+silent failures, and the `fli check` rules that grade them. It points at mesa's for the language.
+`files:` carries it, and a scaffolded app's `AGENTS.md` points at it. The pass found `FJS-1113` and
+`FJS-1114`.
+
 ## 2026-09-12 — the build says whether a browser will install the app
 
 **`postbuild/manifest.js` grades the manifest `index.html` links** (`FJS-D263`'s floor under a

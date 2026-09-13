@@ -7,8 +7,7 @@ Browser extension framework for FrontierJS. MV3-first, Mesa-rendered, Junction-c
 > Foundational architecture, port protocol, Junction adapter, channels,
 > Resources, Islands, dev tooling, Firefox parity, and permission audit + CLI
 > are all shipped and tested. See [What's not yet done](#whats-not-yet-done) for
-> what is still owed; `docs/future-refactors.md` has the planned post-launch
-> work.
+> what is still owed.
 
 ## What's here
 
@@ -17,8 +16,10 @@ src/
   define/        — defineHarbor, defineDock, defineOptions, definePier, defineIsland
   runtime/       — port protocol, PagePort, harbor registry, channel registry, mount, surfaces
   browser/       — typed cross-browser shim w/ permission errors + audit-miss warnings
-  junction/      — adapter contract, default WS adapter, schema cache, auth flow
-  resources/     — Sierra-shape API: createResource, createStore, hooks, login/logout
+  audit/         — permission audit: scans source for chrome.*/browser.* use
+  junction/      — adapter contract, junction-adapter (the real one), default
+                   WS adapter (placeholder), schema cache, auth flow
+  resources/     — the orchestrator; the pure logic lives in @frontierjs/toolbelt now
   island/        — content-script runtime: shadow DOM mount, UnoCSS mirror, page-script bridge,
                    chrome.scripting registration
   build/         — Vite plugin pipeline, manifest emitter, auto-gen, discover, config loader
@@ -173,12 +174,13 @@ lookup walks up from the surface to find it.
 
 ## Architecture references
 
-- Spec: see `frontierjs-jetty-v1-spec.md` (last reviewed/patched during decision phase)
-- Mesa vision: see `Mesa Vision & Specification v1.8` (informed Phase 3 integration)
+- Spec: the original planning document is not in this repo; what shipped is
+  described here and in `CLAUDE.md`
+- Mesa vision: `packages/mesa/docs/VISION.md` (informed Phase 3 integration)
 - Sierra v0.1.0: studied to understand resource API. The pure logic is no longer
   duplicated — it is `@frontierjs/toolbelt/{jsonschema,hooks}` (`FJS-059`). The
-  `@frontierjs/resources-core` package `docs/future-refactors.md` proposed was
-  refused; that document now says why.
+  `@frontierjs/resources-core` package once proposed for it was refused
+  (`FJS-D16`).
 
 ## FJS port scheme
 

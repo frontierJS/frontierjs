@@ -31,13 +31,12 @@ finds — so the app works, against a file nobody meant.
 A deployment binds both absolutely (`/data/basecamp.db`, `/data/audit/`) and an
 absolute path has no anchor, so it is unaffected either way.
 
-**A declaration wins over `createClient({ db })`, silently.** The option is not
-an error and produces no warning; it is simply ignored. `api/src/core/db.ts`
-therefore does not pass one, and anything that needs a different file — a
-scratch script, a test — sets `DATABASE_URL` instead. This is not theoretical:
-when `db/test/schema.test.ts` passed `db: <tmpdir>`, every test opened the
-DEVELOPMENT database, read its rows into assertions and wrote to it. Four tests
-failed the moment `database main` was declared, which is how it surfaced.
+**`createClient({ db })` overrides the declared `database main` path.** It
+names MAIN's path and nothing else — a second declared database keeps its own
+path regardless. `api/src/core/db.ts` does not pass one, so the schema's
+`env("DATABASE_URL", …)` decides it for the running app, and anything that
+needs a different file — a scratch script, a test — sets `DATABASE_URL`
+instead of passing `db`, to avoid stepping on that convention.
 
 Litestone's own `makeTestClient` (from `@frontierjs/litestone/testing`) is the
 safer path for new tests: it always builds a throwaway tmpdir and **overrides**
@@ -329,13 +328,13 @@ operational trail docs/VISION.md §Operate asks for ("every operational action
 attributable to a person") — deploys, provisions, rotations. One answers *what
 changed in the database*, the other *what an operator did*.
 
-### A Litestone bug to route around
+### Why `Secret.data` is `String`, not `Json`
 
-**`@encrypted` on a `Json` field silently destroys the value.** It round-trips
-as the string `"[object Object]"` — the object is stringified with `String(obj)`
-rather than `JSON.stringify` before encryption. Encryption at rest and read
-withholding both work correctly; the payload is simply gone. `Secret.data` is
-therefore `String @encrypted` and the service layer does its own
+Litestone used to stringify a `Json @encrypted` field with `String(obj)` rather
+than `JSON.stringify` before encrypting, which silently destroyed the value —
+that is fixed now (a `Json` field is serialized before encryption, and the
+round trip is symmetric). `Secret.data` still predates the fix: it is
+`String @encrypted` with the service layer doing its own
 `JSON.parse`/`stringify`, which is what the old raw-SQL code did anyway.
 
 ## Soft delete cascades

@@ -47,7 +47,7 @@ Encore's generated architecture view. That is wrong.
 - **`fli project:map`** (`packages/cli/commands/project/map.md`, 219 lines) — a
   structural snapshot of the project: schema, services, resources, migrations. It
   supports `--json`, `--out`, and `--layer schema|api|ui|migrations`.
-- **`fli project:view`** (`view.md`, 335 lines) — opens **FJSChain**, a visual map
+- **`fli project:map`** (`view.md`, 335 lines) — opens **FJSChain**, a visual map
   of the project's chain of responsibility, served in the browser.
 
 So the "living architecture" idea is built, and `project:map --json` **is an
@@ -69,7 +69,7 @@ maintained by hand — a diagram that can drift from the code is a diagram that 
 | Distributed tracing | Automatic, real spans, zero instrumentation | `correlationId` only (`core/context.ts:207`, from `x-request-id`) — correlation, not tracing |
 | Preview environments | One per pull request | **None** |
 | Service-to-service | Typed RPC across processes | `app.service('x').call()` — in-process only |
-| Dev dashboard | API explorer, live traces, architecture diagram | Devtools overlay + `project:view`; no traces |
+| Dev dashboard | API explorer, live traces, architecture diagram | Devtools overlay + `project:map`; no traces |
 | Languages | Go and TypeScript | JS/TS only |
 | Runtime | Encore.ts ships a Rust runtime | Bun |
 
@@ -147,7 +147,7 @@ secrets are scoped, and who is allowed to spend the resources.
   because nobody does.
 - **Generate the diagrams.** `project:map --json` plus the bridge index is enough
   to emit the request-path view that `website/site/src/routes/journey.mesa` currently hardcodes.
-- **A local dev dashboard** that puts `project:view`, the devtools overlay, traces
+- **A local dev dashboard** that puts `project:map`, the devtools overlay, traces
   and an API explorer in one place. This is Basecamp's local counterpart
   (`IDEAS/offline-first-and-release.md`), and probably the same codebase.
 

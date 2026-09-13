@@ -90,6 +90,7 @@
     "test:smoke": "bun test test/cli-smoke.test.ts",
     "bench": "bun bench/audit-bench.mjs",
     "bench:core": "bun bench/audit-bench.mjs baseline",
+    "bench:ablation": "bun bench/ablation.mjs",
     "build:binary": "bun scripts/build-binary.js",
     "build:binary:all": "bun scripts/build-binary.js --all --clean",
     "build:lib": "bun scripts/build-lib.js",

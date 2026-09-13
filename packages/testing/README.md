@@ -67,7 +67,7 @@ than that:
 | Step | Owner | What goes wrong when it breaks |
 | --- | --- | --- |
 | principal → `SessionContext` | the auth provider | the standing fields are absent and everyone grades down |
-| `SessionContext` → `sessionGateLevel()` | `junction/core/litestone.ts` | a gate refuses or admits the wrong tier |
+| `SessionContext` → `sessionGateLevel()` | `junction/src/core/litestone.ts` | a gate refuses or admits the wrong tier |
 | `SessionContext` → `toDataPrincipal()` | same | `userId` never becomes `id`, every row policy matches nothing, and the screen is empty with a 200 |
 | `ctx.auth.user` → the scoped client | `withLitestoneDb` | the service queries unscoped |
 
@@ -76,10 +76,11 @@ takes, minus the socket.
 
 ## What it gives you
 
-Everything `@frontierjs/litestone/testing` exports, re-exported — including the
-four executed checks (`verifyGateLadder`, `verifyConstraints`,
-`verifyFieldProtection`, `mutationScore`), which work unchanged here because they
-ask the Data boundary directly — plus:
+Everything `@frontierjs/litestone/testing` exports, re-exported — including
+`mutationScore`, and an env whose executed checks (`verifyGateLadder`,
+`verifyConstraints`, `verifyFieldProtection`, `verifyRowPolicies`,
+`verifyTenantIsolation`) work unchanged here because they ask the Data boundary
+directly — plus:
 
 | | |
 | --- | --- |

@@ -65,23 +65,18 @@ Use the left column. Never the right.
 | **Target**                  | endpoint, integration, service (for a Conduit declaration) |
 | **Job**                     | task, worker, cron                          |
 | **Queue**                   | lane, topic, pool, channel (for a Job's container) |
-| **Release**                 | manifest, deploy, build (for the immutable artefact) |
+| **Release**                 | manifest, deploy, build (for the immutable artifact) |
 
 Clarifications settled by the code:
 
 - **Signal is not Event, and both are legal words.** A **Signal** is Mesa's
-  reactive cell; an **Event** is Junction's announcement. *signal* used to sit in
-  the Event row's "not" column, which was aimed at "signal" meaning
-  *notification* and accidentally banned the word Mesa's runtime, docs and White
-  Paper use for their core primitive. The ban now reads: never call an Event a
+  reactive cell; an **Event** is Junction's announcement. Never call an Event a
   signal. A Signal never crosses a Boundary; an Event exists only to
   (`FJS-D44`).
 - **A second shape of the same truth is a `view`**, which is what the seed
   language calls it — `@@materialized` for the kind that is stored, `@@refreshOn`
   for what refreshes it. What a compiler or a component computes and throws away
-  stays **derived**. *Projection* was coined for this and is withdrawn: the
-  keyword had already shipped, and a row here naming it a second time is what
-  this table exists to prevent (`FJS-D46`).
+  stays **derived**. There is no second noun for it (`FJS-D46`).
 - **A custom service method is a Method, not an Action.** A Service answers
   CRUD plus whatever else it declares, in one `methods:` list; *custom* is the
   adjective for the ones the CRUD set does not name, and there is no noun for
@@ -170,8 +165,7 @@ Standing rules the framework is designed against.
 4. **Hooks are the extension mechanism.** If behavior belongs at a boundary,
    it is a hook.
 5. **Plugins extend realms without modifying core.** One plugin, one job.
-   Plugins compose. (Known strain: whole domain facilities also attach via the
-   plugin protocol — see §2 under-review.)
+   Plugins compose.
 6. **Access is declared, not programed — and declaration enforces.** Gates in
    the schema, resolved against the 0–9 gate ladder, enforced from the
    first request with no further wiring; a shipped default resolver, overridable.
@@ -219,14 +213,17 @@ this document's.
 | 7 — Observability & Operations   | Monitoring, logging, fleet                       | Basecamp · Outpost · junction telemetry/health/devtools |
 | 8 — Application & Infrastructure | The application itself; contains the five realms | **Junction** (API) · **Sierra** (UI meta) · **Mesa** (UI substrate, leaf) |
 
-Placements the original map did not anticipate: **jetty** (a browser-extension
+Placements outside the table: **toolbelt** (substrate, `FJS-D26`), **testing**
+(the Testing realm's API tier), **mcp** (the API realm's agent surface), **ui** and
+**email-kit** (UI), **jetty** (a browser-extension
 application *container* — UI realm plus its own build/deploy surface),
 **css** (presentation — the UI realm's second concern), and
 **auth**/**notifications** as vertical slices that ship a schema fragment, a
 service, a plugin, and a resource as one unit.
 
 Dependency direction across the core: `Litestone ← Junction ← Sierra`, with
-Mesa a strict leaf. Never the reverse, in any package.
+Mesa a strict leaf. Never the reverse, in any package. `@frontierjs/toolbelt`
+is substrate below the graph and may be imported by any package (`FJS-D26`).
 
 ---
 

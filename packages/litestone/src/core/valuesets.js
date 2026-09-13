@@ -127,10 +127,18 @@ function setFilter(bind, values) {
  * Throws `ValidationError` with one entry per offending field, the same shape
  * every other rule throws, so a refusal renders in `<Form>` beside the control
  * rather than as a bare 500.
+ *
+ * Answers undefined, not a promise, for a model binding no set — which is every
+ * write to most models, and an async function allocates its promise before its
+ * first line runs (`FJS-1108`).
  */
-export async function enforceValueSets(modelName, rows, ctx, { where = null } = {}) {
-  const binds = ctx.valueSetMap?.[modelName]
-  if (!binds?.length) return
+export function enforceValueSets(modelName, rows, ctx, opts) {
+  if (!ctx.valueSetMap?.[modelName]?.length) return
+  return enforceBoundValueSets(modelName, rows, ctx, opts)
+}
+
+async function enforceBoundValueSets(modelName, rows, ctx, { where = null } = {}) {
+  const binds = ctx.valueSetMap[modelName]
 
   const list   = Array.isArray(rows) ? rows : [rows]
   const errors = []

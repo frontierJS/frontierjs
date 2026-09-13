@@ -284,7 +284,7 @@
  *
  * What is left below is only what the package has no opinion about: the
  * guide's wordmark, the width cap on the topbar's contents, and the
- * sub-nav's indent rule. See guide/AUDIT.md.
+ * sub-nav's indent rule.
  *
  * The topbar's own layout (flex, space-between, sticky) is .topbar's. This
  * only caps how wide its contents run, which the package deliberately does
@@ -537,7 +537,7 @@
   color: var(--ink-soft);
 }
 /*
- * NOT a Badge, though an early pass at guide/AUDIT.md said it was. A Badge
+ * NOT a Badge, though it looks like one. A Badge
  * is a categorical status: it carries text, pads around it, and derives its
  * ink from its fill through chip.css. This is an empty 18px square whose
  * whole content is a color — no text to contrast against, and the padding

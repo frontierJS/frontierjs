@@ -161,7 +161,7 @@ already does.
 
 ### It landed, and what it cost
 
-**Shipped 2026-08-30.** `api/src/billing.ts` (the one owner of what a cycle
+**Shipped 2026-08-30.** `api/src/domain/billing/billing.ts` (the one owner of what a cycle
 costs), three job files, six services, and `verify:billing` — **23 assertions,
 under bun, with no server**, because everything it asks is a fact about the Data
 boundary and the two handlers the queue calls.
@@ -215,7 +215,7 @@ sums rather than lines.
 
 ### It landed, and what it cost
 
-**Shipped 2026-08-30.** `prorate()` and `changePlan()` in `api/src/billing.ts`,
+**Shipped 2026-08-30.** `prorate()` and `changePlan()` in `api/src/domain/billing/billing.ts`,
 a `subscriptions.changePlan` method over a declared `type PlanChange`, and
 `verify:proration` — **21 assertions, all sums**, green on its first run.
 
@@ -483,7 +483,7 @@ before a second app needs it is the same guess one phase later.
 What deferring costs is stated so it is not rediscovered: an app grows shortcuts
 a package cannot take — reaching into a sibling service, sharing a helper across
 a boundary that will not exist — and the longer this runs as app code the more
-of them there are to unpick. `api/src/billing.ts` is the one to watch, since it
+of them there are to unpick. `api/src/domain/billing/billing.ts` is the one to watch, since it
 is already the module a slice would be built around.
 
 Extract `@frontierjs/billing` in `slices.md`'s inferred layout — `model/`,
@@ -509,7 +509,7 @@ the format:
 
 **Phases 2 and 4 proved the clock and the handoff, and neither of them proved a
 charge.** `chargeInvoice` mints a fresh intent every cycle
-(`api/src/billing.ts`), which is the customer-present shape — it describes a
+(`api/src/domain/billing/billing.ts`), which is the customer-present shape — it describes a
 person at a keyboard being asked for a card. Nobody is at a keyboard when the
 renewal cron fires, so `verify:collect`'s end-to-end chain passes only because
 the dev provider approves an intent that nothing ever confirmed. Against a real

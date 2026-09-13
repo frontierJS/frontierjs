@@ -175,7 +175,7 @@ indentation — the three things no term owned.
 
 The evidence for the gap was this guide: 286 `<p>` each carrying a class,
 because there was no way to say *this region is prose* once. That was
-`sg-prose`, and `guide/AUDIT.md` recorded it at 287 uses as the proof the tier
+`sg-prose`, and the guide's chrome audit recorded it at 287 uses as the proof the tier
 was missing. Both are now gone.
 
 The original argument follows.

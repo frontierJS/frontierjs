@@ -68,6 +68,7 @@ different bytes; a fix after it is `0.1.1`.
 | `test/lsp.test.js` | 46 | The built server over real LSP/stdio, one process for the run |
 | `test/mesa.test.js` | 36 | The providers against a stubbed editor, with the REAL compiler |
 | `test/snippets.test.js` | 6 | Every `$` in every body of both snippet files |
+| `test/grammar.test.js` | 24 | Real files tokenized against the `.tmLanguage.json`, not read |
 
 `npm run test:nobuild` skips the build while iterating. `FJS_LSP_SERVER` and
 `FJS_MESA_CLIENT` point the first two at any copy — an unpacked `.vsix`, or the

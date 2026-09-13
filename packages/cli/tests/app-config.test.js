@@ -4,14 +4,17 @@
 // they are asserted rather than left to whoever last edited a 1400-line command.
 
 import { test, expect, describe } from 'bun:test'
-import { readFileSync }           from 'node:fs'
+import { readFileSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs'
+import { tmpdir }                 from 'node:os'
 import { dirname, resolve, join } from 'node:path'
 import { fileURLToPath }          from 'node:url'
 
 import {
-  EDITORCONFIG, APP_DEV_DEPS, FJS_PACKAGES,
-  appTsconfig, appBiomeJson, appCheckScripts, appWorkflow,
+  EDITORCONFIG, APP_DEV_DEPS, FJS_PACKAGES, AGENT_DOCS,
+  appTsconfig, appBiomeJson, appCheckScripts, appWorkflow, appAgentsMd, appClaudeMd,
 } from '../core/app-config.js'
+import { RULES }                             from '../core/checks.js'
+import { checkDocCommands, builtinCommands } from '../core/doc-commands.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const CLI  = resolve(HERE, '..')
@@ -96,6 +99,19 @@ describe('the check gate', () => {
     // freshly scaffolded app gets several hundred diagnostics from inside
     // node_modules and none of its own. `skipLibCheck` covers .d.ts only.
     expect(scripts.typecheck).toBe('fli typecheck')
+  })
+
+  test('tests run last, and only in an app that has some', () => {
+    // `bun test` over a directory with no test file exits 1, so a check naming
+    // it would fail every app scaffolded without auth. The pair is the point:
+    // a gate that always ran tests and one that never did each pass one half.
+    expect(scripts.test).toBeUndefined()
+    expect(scripts.check).not.toContain('bun run test')
+
+    const withTests = appCheckScripts({ tests: true })
+    expect(withTests.test).toBe('bun test api/test')
+    expect(withTests.check.endsWith('&& bun run test')).toBe(true)
+    expect(withTests.check.indexOf('fli check')).toBe(0)
   })
 
   test('fli is a dependency, so the gate runs on a fresh clone', () => {
@@ -249,5 +265,81 @@ describe('every framework package a generator imports is one a scaffold declares
 
     for (const pkg of importedByTemplates().keys())
       expect(uiBlock).toContain(`deps['${pkg}']`)
+  })
+})
+
+// ─── AGENTS.md and CLAUDE.md ──────────────────────────────────────────────────
+// The generated guidance is a claim about three other things — what a tarball
+// carries, what `fli check` grades, and what `fli` answers to — and each of them
+// can move without this module being opened. So each is asked of its source.
+
+describe('the agent guidance', () => {
+  const EVERY = [
+    '@frontierjs/litestone', '@frontierjs/junction', '@frontierjs/sierra', '@frontierjs/mesa',
+    '@frontierjs/css', '@frontierjs/ui', '@frontierjs/toolbelt', '@frontierjs/cli',
+  ]
+  const full    = appAgentsMd({ name: 'demo', packages: EVERY })
+  const apiOnly = appAgentsMd({ name: 'demo', packages: ['@frontierjs/litestone', '@frontierjs/junction'] })
+
+  // `fli ws:exports` asks `bun pm pack --dry-run` and the `snapshots` phase
+  // regrades it, so this is the packer's answer rather than a `files:` reading.
+  function shippedByPackage() {
+    const text = readFileSync(resolve(CLI, '..', '..', 'exports.snapshot.md'), 'utf8')
+    const out  = new Map()
+    for (const m of text.matchAll(/^## `([^`]+)`\n\n`[^`]+` · ships (.+)$/gm))
+      out.set(m[1], new Set([...m[2].matchAll(/`([^`]+)`/g)].map(x => x[1])))
+    return out
+  }
+
+  test('every pointer is a file the tarball carries, and every tarball carrying one is pointed at', () => {
+    const shipped = shippedByPackage()
+    expect(shipped.size).toBeGreaterThan(10)
+
+    for (const [pkg, { beside }] of Object.entries(AGENT_DOCS)) {
+      expect(shipped.get(pkg), `${pkg} is not in exports.snapshot.md`).toBeDefined()
+      for (const file of ['AGENTS.md', ...beside])
+        expect(shipped.get(pkg), `${pkg} does not ship ${file}`).toContain(file)
+    }
+    const carrying = [...shipped].filter(([, files]) => files.has('AGENTS.md')).map(([pkg]) => pkg).sort()
+    expect(Object.keys(AGENT_DOCS).sort()).toEqual(carrying)
+  })
+
+  test('an app is pointed only at the packages its manifest names', () => {
+    // A pair: a guide that listed every package passes the first half, and one
+    // that listed none passes the second.
+    expect(full).toContain('node_modules/@frontierjs/css/AGENTS.md')
+    expect(apiOnly).not.toContain('@frontierjs/css')
+    expect(apiOnly).toContain('node_modules/@frontierjs/litestone/AGENTS.md')
+    expect(apiOnly).not.toContain('`src/resources/`')
+  })
+
+  test('every rule id it cites is an app rule fli check runs', () => {
+    const cited = [...full.matchAll(/\[((?:`[a-z0-9-]+`(?:, )?)+)\]/g)]
+      .flatMap(m => [...m[1].matchAll(/`([a-z0-9-]+)`/g)].map(x => x[1]))
+    expect(cited.length).toBeGreaterThan(5)
+
+    const app = new Set(RULES.filter(r => r.scope === 'app').map(r => r.id))
+    expect(cited.filter(id => !app.has(id))).toEqual([])
+  })
+
+  test('every fli command it names resolves', async () => {
+    global.fliRoot     = CLI
+    global.projectRoot = resolve(CLI, '..', '..')
+    const { buildRegistry, uniqueCommands } = await import('../core/registry.js')
+    const names = uniqueCommands(buildRegistry()).flatMap(c => c.alias ? [c.title, c.alias] : [c.title])
+
+    const dir = mkdtempSync(join(tmpdir(), 'fli-agents-'))
+    writeFileSync(join(dir, 'AGENTS.md'), full)
+    const result = checkDocCommands({ root: dir, names, builtins: builtinCommands(CLI) })
+    rmSync(dir, { recursive: true, force: true })
+
+    expect(result.mentions).toBeGreaterThan(5)
+    expect(result.unresolved).toEqual([])
+  })
+
+  test('CLAUDE.md imports AGENTS.md on a line of its own', () => {
+    // The import is the whole mechanism: Claude Code reads CLAUDE.md and never
+    // opens AGENTS.md on its own, and an import inside backticks is not one.
+    expect(appClaudeMd({ name: 'demo' }).split('\n')).toContain('@AGENTS.md')
   })
 })

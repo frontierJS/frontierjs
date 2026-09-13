@@ -5,7 +5,7 @@ Semantics first: a **tone** (`danger`) and a **treatment** (`outlined`), never a
 color and never a utility class. Plain CSS, no build step required.
 
 `bun run test` drives **headless Chrome** — needs Chrome on PATH or `$FJS_CHROME`.
-`bun run demo` serves the guide on :5173 (`$PORT` overrides).
+`bun run demo` serves the guide on :8040 (`$PORT` overrides).
 
 ---
 
@@ -42,8 +42,8 @@ src/
                    --surface-raised for all seven tones (danger had to move)
   utilities.css    the deliberately small escape hatch
 vocabulary.js      THE OTHER HALF — two exports, one subject.
-                   VOCAB: 54 terms in 8 tiers, which element each is.
-                   ANATOMY: which children 25 of them expect, 42 named parts,
+                   VOCAB: terms in 8 tiers, which element each is.
+                   ANATOMY: which of them expect children, their named parts,
                    one canonical markup block each — plus NOT_ANATOMY, the
                    hyphenated classes that are NOT parts and why.
                    Four readers: the guide's Vocabulary and Anatomy pages,

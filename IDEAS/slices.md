@@ -208,12 +208,9 @@ api/server.ts       + app.configure(notifications())      ← placed after maile
 
 Ranked. Only the third is real work.
 
-1. **Bare-specifier `.lite` imports.** `parseFile()` in
-   `packages/litestone/src/core/parser.js` already resolves `import "./x.lite"`
-   recursively with cycle detection — relative paths only. Teach it
-   `@frontierjs/notifications/model/schema.lite`. Small, and load-bearing: without
-   it the Model part can't be linked and we're back to pasting. Independently
-   valuable — it also kills the auth schema hand-copy.
+1. ~~**Bare-specifier `.lite` imports.**~~ — **built.** `import "@frontierjs/notifications/schema.lite"`
+   (or `@frontierjs/auth/schema.lite`) resolves through the package's own
+   `exports` map, the same door that killed the auth schema hand-copy.
 2. **The installer.** Read the directory layout, resolve parts, apply the three
    consumer edits, order `configure()` calls by `after`. Mostly calling things
    that already exist.

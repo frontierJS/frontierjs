@@ -384,7 +384,7 @@ describe('htmlToText — via email target', () => {
 })
 
 /**
- * `tmpDir` — where the renderer's temp modules land (SSR_SPEC W1).
+ * `tmpDir` — where the renderer's temp modules land (docs/STATIC_RENDERING.md § tmpDir).
  *
  * The renderer compiles each module in the tree to a temp `.mjs` and imports
  * it. Node resolves a bare specifier relative to the *importing* file, so the

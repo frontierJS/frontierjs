@@ -1,5 +1,12 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-13 — `AGENTS.md` ships
+
+A compressed reference for an agent writing a service in an installed app (`FJS-D163`): the `$`
+context, the hook order, a wrong-guesses table from Feathers/Express/Nest habits, the silent
+failures, and the `fli check` rules that grade them. Every claim was probed against a real app on a
+real Litestone client. `files:` carries it, and a scaffolded app's `AGENTS.md` points at it.
+
 ## 2026-09-12 — the ungraded list says what runs in front of the body
 
 `FJS-1087`. `surface.snapshot.md` listed every custom method on a floor as *any signed-in caller*,

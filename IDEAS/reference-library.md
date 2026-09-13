@@ -32,9 +32,10 @@ corpus fixture is a **measurement**. Grading one of its files on whether it is
 good modeling would break the thing that makes it useful.
 
 **`packages/litestone/references/` selects for the right property at the wrong
-granularity.** Three hand-written files, one model each, self-contained by
-construction — `AuditEvent`, `Notification`, `Tag`. That answers *what columns
-does a Notification need*. It cannot answer *what does a double-entry ledger look
+granularity.** Hand-written files, one model each, self-contained by
+construction — `AuditEvent`, `Tag` (`Notification.lite` has since been
+deleted; the package ships its own). That answers *what columns
+does a model like this need*. It cannot answer *what does a double-entry ledger look
 like*, because the answer to that is six models and the relations between them,
 and the constraint that makes the folder work (no `@relation` to a model the file
 does not declare) is exactly what forbids it.

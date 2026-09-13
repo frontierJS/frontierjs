@@ -159,8 +159,8 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   always the root.** Display, layout, feedback and overlay put it where
   `{class}` already goes; a form control puts it on the CONTROL, because a
   `<label for>` and an `aria-describedby` have to reach that element and not
-  the `.field-group` around it. `test/attributes.mjs` holds it for all 64 and
-  names the six it cannot render. Where `id` is a declared prop it means
+  the `.field-group` around it. `test/attributes.mjs` holds it for every
+  component and names the ones it cannot render. Where `id` is a declared prop it means
   something else (a toast identity, a tab pairing, the id of the control a
   `Label` points at) and never reaches the DOM as an id — those are in the
   suite's own exception list, with the reason.
@@ -353,7 +353,7 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   region**, which a literal makes impossible rather than merely wrong. If the
   package should own a rule, put it there; the drawer's flex column now lives
   in `drawers.css` with a css test on it.
-- **Fifteen components carry a `<style>`, and all fifteen now read tokens.**
+- **The components that carry a `<style>` all read tokens.**
   They are `.fjs-*` prefixed, small, and mostly geometry the design system does
   not and should not ship — a slider handle's inset math, a dot's ping
   keyframe, an avatar status dot's corner offset. The two that were a second

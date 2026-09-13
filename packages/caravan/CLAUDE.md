@@ -216,9 +216,8 @@ bin/
 - **Standalone Caravan has no `runAs` and no principal** — the handler is called
   directly, `ctx.app` is `undefined` and `ctx.auth.user` is `null`. That is the
   one case a handler tests for.
-- `db.asSystem()` is still the wrong fix for any of this — it writes at the Data
-  boundary, where nothing announces (`FJS-010`) and every open tab keeps the
-  stale row.
+- `db.asSystem()` is still the wrong fix for any of this — a job carries its own
+  `ctx.auth`, and reaching past it means a write with no principal attributed.
 - **`GET /jobs` pages at 50, newest first.** The queue accumulates every job every
   drive has ever run, so an unbounded scan stops before the row you are asking
   about and reads as "there is no such job". Pass `?limit=500`.

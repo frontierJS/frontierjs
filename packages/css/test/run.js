@@ -254,7 +254,7 @@ const demoHtml = readFileSync(join(pkg, 'demo', 'index.html'), 'utf8');
  *
  * The split is the thing being held. instruments.css is the classes that
  * DRAW the system — ramps, ladders, wireframes — and guide.css is chrome
- * plus whatever debt is left; guide/AUDIT.md is the register. Two files
+ * plus whatever debt is left, held at zero by guide.spec.js. Two files
  * make the debt countable, and a spec is what stops the boundary rotting
  * back into one.
  */

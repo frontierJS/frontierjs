@@ -19,7 +19,7 @@ Parts of the eight have moved on their own since, which is the argument for
 reading the register first: §2's *jetty hardcodes Feathers-style names* closed
 as `FJS-059` (a colon is the bus spelling, the wire carries a space, and a
 channel is not an event), while its *litestone `onEvent` has zero listeners*
-half is still open as `FJS-010`, blocked on `FJS-D04`. §8's *no tsconfig
+half is closed as `FJS-010`, via `FJS-D04`'s `$tapEvents`. §8's *no tsconfig
 outside vscode* closed as `FJS-035` — every workspace member has one now.
 
 **Not a register.** Nothing here is open by being here. A finding still open has
@@ -79,9 +79,9 @@ the `protect()` password leak), **Transport** (notifications' "channel"),
 **5 · `Plugin` does double duty** — small composable extension vs whole domain
 facility attaching via the protocol (caravan/conduit/auth). "One plugin, one
 job" is meaningful for the first and meaningless for the second. Also: the
-plugin protocol itself violates principle 2 (every `register()` mutates the
-host app; `_metricsProviders` reach-through) — bless named attachment points
-(`app.registerMetricsProvider(...)`) or write the exception down.
+plugin protocol itself violated principle 2 (every `register()` mutates the
+host app; a reach-through) — **resolved**: `app.registerMetricsSource(name, fn)`
+is the named attachment point now.
 
 **6 · Remaining word collisions** — `Channel` broadcast-set vs delivery-medium
 (both load-bearing in one notifications file); `Boundary` realm↔realm vs

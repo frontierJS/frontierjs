@@ -10,7 +10,7 @@ in `../../ISSUES.md`._
 
 ## What it is
 
-`@frontierjs/notifications` v0.1.1 — a **vertical slice**, not a horizontal
+`@frontierjs/notifications` v0.1.4 — a **vertical slice**, not a horizontal
 layer. One notification class fans out to several **transports**: an in-app
 record, a WebSocket event, and an email.
 
@@ -20,16 +20,21 @@ it is the practical integration test of whether those three realms compose.
 ```
 index.ts          public barrel + the AppNotify augmentation
 notification.ts   the Notification base class (subclass this)
+define.ts         defineNotification — a notification with no class, the file
+                   name IS the persisted type
+loader.ts         where *.notification.ts live, and the file-name-is-the-type rule
 notify.ts         the fan-out engine — format, validate, deliver
 plugin.ts         Junction plugin — register / boot / shutdown
 state.ts          the plugin's state on the app, under one Symbol.for key
 builders.ts       inApp(), mail() authoring helpers
 types.ts          Transport, Recipient, NotificationDriver, the mail wire shape
 errors.ts
+db/notification.lite  the schema fragment this package ships
 drivers/inapp.ts  in-app record + WS event
 drivers/email.ts  renders MailLine[] → text/html, hands to app.mail
 examples/         WelcomeUser, PaymentReceived, wiring.ts, Notification.mesa
-tests/            harness.ts + fanout.test.ts + hook.test.ts + email-render.test.ts
+tests/            harness.ts + fanout.test.ts + hook.test.ts + email-render.test.ts +
+                   define.test.ts + schema-fragment.test.ts
 ```
 
 There is no `src/`. The `exports` map points at `./index.ts` and the files sit

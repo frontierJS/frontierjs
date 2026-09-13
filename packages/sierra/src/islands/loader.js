@@ -1,7 +1,7 @@
 /**
  * islands/loader.js — find Mesa island markers in a prerendered page and mount them.
  *
- * This is the client half of Mesa's SSR_SPEC W3. Mesa's renderer, compiled with
+ * This is the client half of mesa's island markers (docs/STATIC_RENDERING.md). Mesa's renderer, compiled with
  * `{ islands: true }`, wraps every `client:*` component in comment markers:
  *
  *   <!--mesa-island {"component":"Counter","directive":"load","props":{"start":3}}-->

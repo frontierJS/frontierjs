@@ -13,8 +13,9 @@ env.actingAs(session)   graded through the APP'S OWN getLevel
 await env.atLevel(n)    graded by a synthetic resolver
 ```
 
-`actingAs` is for **behavior**: it runs the resolver in `api/src/core/db.ts`, so
-a broken resolver fails the test. `atLevel` is for walking the **grid** — it
+`actingAs` is for **behavior**: it runs the resolver in `api/src/core/gate.ts` —
+when the env installs it, which is why the test below passes `plugins: [gate]` —
+so a broken resolver fails the test. `atLevel` is for walking the **grid** — it
 builds a second client at a fixed level, which is the only way to ask *what does
 level 3 see*, because a level is settled when a client is constructed and cannot
 be a property of a call.
@@ -63,9 +64,11 @@ const belowNote = readsAt > 0
 writeFileSync(file, [
   "import { test, expect } from 'bun:test'",
   "import { createTestEnv } from '@frontierjs/litestone/testing'",
+  "import { gate } from '../src/core/gate.ts'",
   '',
   'const open = () => createTestEnv({',
   "  schema:        'db/schema.lite',",
+  '  plugins:       [gate],',
   '  encryptionKey: process.env.ENCRYPTION_KEY,',
   '  autoFactories: true,',
   '})',
@@ -74,7 +77,7 @@ writeFileSync(file, [
   '  const env = await open()',
   '',
   '  // Both are real User rows, written below the boundary. What separates the',
-  '  // callers is one column, and the resolver in core/db.ts is what reads it',
+  '  // callers is one column, and the resolver in core/gate.ts is what reads it',
   '  // — which is what makes this the door that grades that resolver.',
   "  const admin  = await env.factories.user.asSystem().createOne({ role: 'admin' })",
   "  const person = await env.factories.user.asSystem().createOne({ role: 'user' })",

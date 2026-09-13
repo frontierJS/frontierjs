@@ -1,5 +1,5 @@
 /**
- * tests/islands.test.js — the island pipeline, end of Mesa's SSR_SPEC W3.
+ * tests/islands.test.js — the island pipeline, end of mesa's island markers.
  *
  * Mesa marks `client:*` components in SSR output; this is the half that turns a
  * marker into a mounted component. Before it, `sierraContext.islandMap` was

@@ -11,7 +11,7 @@ A counterparty is named once — its address, which credential authorises it, ho
        provider:stripe        outpost:srv-abc
               │                     │
         a third party         an FJS machine
-     (http · generic)      (websocket · our own protocol)
+     (http · generic)       (http · hmac-signed)
 ```
 
 **What ships is the outbound end.** *Integrating with* is a relationship rather than a direction — a vendor holds two of your secrets and dials you about as often as you dial it — so the receiving end belongs here too and is **not built yet**; see `IDEAS/inbound-integrations.md` for the shape and for the two things that are deliberately *not* conduit's (a counterparty signing with FrontierJS's own scheme, and a machine caller becoming a principal — both junction's).
@@ -172,8 +172,10 @@ Applied on **every** protocol: HTTP and Unix on each request, WebSocket on the c
 The signature covers a canonical string, not just the body:
 
 ```
-<METHOD>\n<path>\n<timestamp>\n<nonce>\n<sha256-hex of body>
+<METHOD>\n<path>\n<query>\n<timestamp>\n<nonce>\n<sha256-hex of body>
 ```
+
+`<query>` is the query string's pairs sorted and percent-encoded, empty when there is none — so a parameter cannot be changed under a valid signature.
 
 emitted as three headers (prefix configurable via `header_prefix`, default `X-Fjs`):
 
@@ -183,7 +185,7 @@ X-Fjs-Timestamp: <unix seconds>
 X-Fjs-Nonce:     <uuid>
 ```
 
-This binds each signature to one method and one path, so a captured signature cannot be replayed against a different endpoint on the same target, and the timestamp and nonce let the receiver reject stale or repeated requests. Requests with no body sign the hash of the empty string, so `POST /reboot` and `DELETE /servers/42` are signed like anything else.
+This binds each signature to one method, one path and one query, so a captured signature cannot be replayed against a different endpoint on the same target, and the timestamp and nonce let the receiver reject stale or repeated requests. Requests with no body sign the hash of the empty string, so `POST /reboot` and `DELETE /servers/42` are signed like anything else.
 
 **The receiving outpost must do its part:** recompute the same canonical string, compare in constant time, reject signatures outside a freshness window (60s is typical), and remember recent nonces. A signature check that ignores the timestamp gives you no replay protection.
 
@@ -252,7 +254,7 @@ Transports resolve once per attempt, so a retried request calls the resolver up 
 
 | protocol    | status | used for |
 |-------------|--------|----------|
-| `http`      | ✅ v1  | Third-party REST APIs, remote outposts |
+| `http`      | ✅ v1  | Third-party REST APIs, and `@frontierjs/outpost` (with `hmac`) |
 | `websocket` | ✅ v1  | FJS-to-FJS control-plane links — Conduit's own frame envelope, reconnecting. Not a generic WS client |
 | `unix`      | ✅ v1  | Local sidecar processes |
 | `ssh`       | 🔜 future | — |
@@ -281,7 +283,7 @@ if (result.error) {
 
 **A `304 Not Modified` is a success**, not an error: `data` is `null`, `meta.status` is 304, and the validator headers come back. Send `If-None-Match` off the previous response's `ETag` and serve your own copy when you get one.
 
-`meta.duration_ms` is the **last attempt**, not the whole call — `conduit.stats()` measures the call including every retry.
+`meta.duration_ms` is the **whole call**, every retry included — the same number `conduit.stats()` records, so the two cannot disagree.
 
 This holds for bad input too: a body that will not serialize (a cyclic object, a `BigInt`) returns `invalid_request` rather than throwing out of `send()`.
 
@@ -299,6 +301,8 @@ This holds for bad input too: a body that will not serialize (a cyclic object, a
 | `not_implemented` | no | the target's protocol has no transport yet (`ssh`, `nats`) |
 | `circuit_open` | no | the target's breaker is open — nothing was sent |
 | `overloaded` | no | the target's concurrency cap is full — nothing was sent |
+| `redirected` | no | a 3xx. Redirects are not followed unless the target sets `follow_redirects: 'same-origin'`, because a followed redirect re-sends the credential to wherever it points |
+| `stream_error` | no | a `websocket` stream failed after setup |
 
 `stream()` throws a `ConduitStreamError` if the stream cannot be established — target not found, connection failed before the first chunk, unresolvable credential, or a protocol that cannot stream. Once streaming, chunks arrive as `AsyncIterable<ConduitChunk>`.
 
@@ -399,7 +403,7 @@ Stream responses from a target. Throws `ConduitStreamError` if setup fails.
 
 ```ts
 try {
-  for await (const chunk of app.conduit.stream({ target: 'outpost:srv-abc', method: 'logs' })) {
+  for await (const chunk of app.conduit.stream({ target: 'hub:peer', method: 'logs' }))   // a websocket target {
     console.log(chunk.data, chunk.sequence)
   }
 } catch (err) {
@@ -505,8 +509,9 @@ conduit({
   trace?: (req: ConduitRequest) => Record<string, string> | null
 
   // Expose a management service for listing and deregistering targets.
-  // Disabled by default. Requires auth.
-  management?: boolean | { path?: string }
+  // Disabled by default. Enabling it requires an access decision — `hooks`
+  // (Junction's HookMap) or an explicit `public: true` — or configure() throws.
+  management?: { path?: string; hooks?: HookMap; public?: true }
 })
 ```
 
@@ -759,7 +764,7 @@ const { conduit } = await createTestConduit(
 
 **Not a service mesh.** It does not proxy application traffic between services.
 
-**Not a generic WebSocket client.** A `websocket` target speaks Conduit's own frame envelope and the far side has to implement it — in practice an `@frontierjs/outpost`. A third-party socket API is not reachable through this package, and streaming is that half's alone: `stream()` over `http` or `unix` answers `not_implemented`.
+**Not a generic WebSocket client.** A `websocket` target speaks Conduit's own frame envelope and the far side has to implement it; `@frontierjs/outpost` is not reached this way — it is an `http` target with `hmac` auth. A third-party socket API is not reachable through this package, and streaming is that half's alone: `stream()` over `http` or `unix` answers `not_implemented`.
 
 **Not a receiver — yet.** Conduit dials; it does not listen. Verifying a webhook is app code today (`example/api/src/providers/stripe/index.ts` is the reference), and `IDEAS/inbound-integrations.md` is where that is going.
 

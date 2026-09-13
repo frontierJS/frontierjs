@@ -33,7 +33,7 @@
 // `IDEAS/` names commands that deliberately do not exist — that is what an idea
 // paper IS — and the registers and CHANGES files are history and argument. The
 // surface graded is the one that tells you what to run: a README, a CLAUDE.md,
-// and a command file naming a sibling.
+// an AGENTS.md, and a command file naming a sibling.
 
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs'
 import { join, relative, basename }                        from 'path'
@@ -55,7 +55,7 @@ export function isReferenceDoc(path) {
   const rel = path.split('\\').join('/')
   if (/(^|\/)(IDEAS|docs\/handoff-archive)\//.test(rel)) return false
   if (/(^|\/)(ISSUES|ISSUES_ARCHIVE|DECISIONS|HANDOFF|CHANGES)\.md$/.test(rel)) return false
-  return /(^|\/)(README|CLAUDE)\.md$/.test(rel) || /(^|\/)commands\/.*\.md$/.test(rel)
+  return /(^|\/)(README|CLAUDE|AGENTS)\.md$/.test(rel) || /(^|\/)commands\/.*\.md$/.test(rel)
 }
 
 /**

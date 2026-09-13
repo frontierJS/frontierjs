@@ -21,16 +21,19 @@ src/
   dev/           orchestrator · server (dev WS) · dev-client · dev-plugin ·
                  browser-launcher (web-ext) · classifier · fjs-ports.js
   island/        runtime · registration · page-script (MAIN world) · unocss-mirror
-  junction/      adapter contract · default-adapter (PLACEHOLDER) · auth ·
-                 schema-cache
+  junction/      adapter contract · junction-adapter (the real one) ·
+                 default-adapter (PLACEHOLDER) · auth · schema-cache
   browser/       cross-browser API shim · permissions · idb
   audit/         permission audit — scan source for chrome.* / browser.* use
-  resources/     jetty's own copy of Sierra's resources layer
+  resources/     the pure logic shared with Sierra now lives in
+                 @frontierjs/toolbelt; what is left here is jetty's own
+                 orchestrator, not a copy
 bin/             build-ext.js · dev-ext.js
-test/            phase0 … phase8
+test/            phase0 … phase9 (11 files, incl. phase2.5)
 ```
 
-**`src/dev/fjs-ports.js` documents the whole-repo port scheme** —
+**`packages/cli/core/ports.js` owns the whole-repo port scheme**;
+`src/dev/fjs-ports.js` documents this package's own slice of it —
 `[env][category][project][service]`, extensions at 8400–8499 dev / 7400–7499 test.
 It is the only place that scheme is written down.
 

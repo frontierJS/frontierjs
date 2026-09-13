@@ -89,7 +89,7 @@ argued against a working instance of the same idea.
 - **Ash stops at the API and hands the UI to LiveView.** This project owns mesa
   and sierra, which is why `x-gate`, `x-transitions`, `x-values` and
   `x-label-field` reach a browser at all. The client half of the live store
-  (`FJS-D145`, `client-data-lifecycle.md`) has no counterpart there.
+  (`FJS-D138`, `client-data-lifecycle.md`) has no counterpart there.
 - **Committed generated artefacts as the drift mechanism** — a snapshot naming
   its own generator, reasserted by a CI phase that carries no list — is unusual
   anywhere, Ash included (`committed-artifacts.md`).

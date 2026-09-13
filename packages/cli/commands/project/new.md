@@ -126,7 +126,8 @@ import { join } from 'path'
 // What the app is given besides its own source — dev dependencies, the check
 // scripts, tsconfig, biome.json, .editorconfig, the workflow. One module, so
 // the framework's opinion about tooling is written down once and can be read.
-const { EDITORCONFIG, APP_DEV_DEPS, FJS_PACKAGES, appTsconfig, appBiomeJson, appCheckScripts, appWorkflow } =
+const { EDITORCONFIG, APP_DEV_DEPS, FJS_PACKAGES, appTsconfig, appBiomeJson, appCheckScripts, appWorkflow,
+        appAgentsMd, appClaudeMd } =
   await import(resolve(global.fliRoot, 'core/app-config.js'))
 
 // The widgets/ surface — one owner, shared with `fli make:widget`, so an app
@@ -286,9 +287,10 @@ function makePackageJson(spec) {
   if (useWeb) dbTypes.push('bunx litestone types --schema db/schema.lite --audience client --augment junction --out web/src/db.d.ts')
   scripts['db:types'] = dbTypes.join(' && ')
 
-  // lint · typecheck · check — see core/app-config.js for what each is for and
-  // why `fli check` leads the third one.
-  Object.assign(scripts, appCheckScripts())
+  // lint · typecheck · test · check — see core/app-config.js for what each is
+  // for and why `fli check` leads. Tests only with auth, the one case that
+  // writes api/test/access.test.ts.
+  Object.assign(scripts, appCheckScripts({ tests: useApi && useAuth }))
 
   return JSON.stringify({
     name:    pkgName,
@@ -337,9 +339,12 @@ function makeEnvExample(useAuth) {
     '# inside the container, where the next swap takes it.',
     'AUDIT_PATH=./db/audit/',
     '',
-    '# App',
-    'PORT=8100',
-    'APP_URL=http://localhost:8100',
+    '# App. PORT and APP_URL default to FLI_PORT_BE (the port the broker hands a',
+    '# session, and the one web/ proxies /api to) and then to 8100. Set here, they',
+    '# win over the broker, and the proxy forwards to a port the API is not on.',
+    '# PORT=8100',
+    '# APP_URL=http://localhost:8100',
+    '# WEB_URL=http://localhost:8000   # the page a password-reset link opens',
     'NODE_ENV=development',
     '',
   ]
@@ -358,7 +363,7 @@ function makeReadme(spec) {
   const { name, useAuth, useWeb, useApi = true, useWidgets = false, useSite = false, useExtension = false, withPkgs } = spec
   const surface = [useApi && 'api/', useWeb && 'web/', useWidgets && 'widgets/', useSite && 'site/', useExtension && 'extension/'].filter(Boolean)
   const features = [
-    `- ${useAuth ? 'Auth (sessions, password reset, email verify) via `@frontierjs/auth`' : 'No auth (add later with `fli auth:install`)'}`,
+    `- ${useAuth ? 'Auth via `@frontierjs/auth` — sign in, register, `/account/` (name, password, sessions) and `/reset/`. Reset and verification links print to the API terminal until a mailer is wired' : 'No auth (add later with `fli auth:install`)'}`,
     `- Litestone client with gate plugin for level-based authorization`,
     `- ${useWeb ? 'Sierra + Mesa frontend with Vite' : 'No SPA'}`,
   ]
@@ -415,14 +420,27 @@ or \`/register/\` in the browser, which signs the new account straight in.
 Registration gives everybody role \`user\`; \`--role admin\` is the only way to
 mint an ADMINISTRATOR, and \`db/schema.lite\` marks \`role\` \`@allow('write',
 auth().isAdmin)\` so nobody promotes themselves on the way in.
+
+### Email
+
+There is no mailer yet, so nothing is sent. A password reset requested at
+\`/reset/\` prints its link in the terminal running the API, and the link opens
+\`/reset/?token=…\` on \`WEB_URL\`. Wire \`app.mail.send()\` into the two
+callbacks in \`api/src/core/auth.ts\` to send them for real; set \`WEB_URL\` in
+production so the link names the deployed site.
 ` : ''}
 
 ## Checking it
 
 \`\`\`bash
-bun run check     # fli check, then lint, then typecheck
+bun run check     # fli check, then lint, then typecheck${useApi && useAuth ? ', then bun run test' : ''}
 \`\`\`
-
+${useApi && useAuth ? `
+\`api/test/access.test.ts\` is the first test: who may read, edit, promote and
+delete a \`User\`, asked of the real schema with the app's own resolver
+(\`api/src/core/gate.ts\`). Every rule it grades lives in \`db/schema.lite\`, so
+loosening one there is a red test rather than a quiet change.
+` : ''}
 That is exactly what \`.github/workflows/ci.yml\` runs, so a green local run is a
 green pipeline. The order matters: **\`fli check\` goes first because it is the
 half a linter cannot reach** — Biome reads neither \`.mesa\` nor \`.lite\`, and a
@@ -465,6 +483,8 @@ ${name}/
 ├── biome.json                  # ditto; linter only, no formatter
 ├── .editorconfig
 ├── README.md
+├── AGENTS.md                   # for an AI agent writing code here — written by fli new
+├── CLAUDE.md                   # this app's own agent notes; imports AGENTS.md
 ├── .github/workflows/ci.yml    # runs \`bun run check\`
 ├── db/
 │   └── schema.lite             # Single source of truth — data + auth
@@ -477,14 +497,16 @@ ${useApi
 │   ├── index.ts                # bun --watch entry
 │   ├── config/
 │   │   └── junction.config.js  # Autoload paths, middleware, plugins
-│   └── src/
-│       ├── app.ts              # createApp + plugin wiring
-│       ├── core/
-│       │   ├── env.ts           # Typed, validated env
-│       │   ├── db.ts           # Litestone client + GatePlugin
-│       │   ├── auth.ts         # createLitestoneAuth + plugin (if auth)
-│       │   └── hooks.ts        # withLitestoneDb
-│       └── services/           # Service files autoloaded at boot
+│   ├── src/
+│   │   ├── app.ts              # createApp + plugin wiring
+│   │   ├── core/
+│   │   │   ├── env.ts          # Typed, validated env
+│   │   │   ├── gate.ts         # Who a caller is, as a gate level
+│   │   │   ├── db.ts           # Litestone client, graded by gate.ts
+│   │   │   ├── channels.ts     # Who receives a broadcast
+│   │   │   └── auth.ts         # createLitestoneAuth + plugin (if auth)
+│   │   └── services/           # Service files autoloaded at boot
+│   └── test/                   # access.test.ts (if auth)
 `
   : ''}${useWeb
   ? `└── web/
@@ -682,18 +704,24 @@ export const env = defineEnv({
   // auth signs with encryptionKey. A required refusal over a value nothing uses
   // is a container that will not boot for no reason (FJS-360).
 
-  // App
-  PORT:     { type: 'port',   default: 8100 },
-  APP_URL:  { type: 'url',    default: 'http://localhost:8100' },
+  // App. FLI_PORT_BE is the port the broker hands a session, and
+  // web/config/vite.config.js proxies /api to it — a PORT that ignored it left
+  // the proxy forwarding to a port nothing was listening on.
+  PORT:     { type: 'port',   default: Number(process.env.FLI_PORT_BE ?? 8100) },
+  APP_URL:  { type: 'url',    default: 'http://localhost:' + (process.env.FLI_PORT_BE ?? 8100) },
+  // Where the web app is, for a link somebody is sent — a password reset lands
+  // on a page, and the API's origin serves none. FLI_PORT_FE for the reason PORT
+  // reads FLI_PORT_BE.
+  WEB_URL:  { type: 'url',    default: 'http://localhost:' + (process.env.FLI_PORT_FE ?? 8000) },
   NODE_ENV: { type: 'string', default: 'development' },
 })
 `
 }
 
-function makeApiCoreDbTs() {
-  return `// api/src/core/db.ts
-// One Litestone client for the whole app. Gate plugin maps the
-// SessionContext from auth into Litestone's level system:
+function makeApiCoreGateTs() {
+  return `// api/src/core/gate.ts
+// Who a caller IS, as a level on Litestone's ladder — what every @@gate in
+// db/schema.lite is compared against:
 //   no user           → STRANGER (0)
 //   isAdmin standing  → ADMINISTRATOR (5)
 //   anyone else       → USER (4)
@@ -704,13 +732,151 @@ function makeApiCoreDbTs() {
 // administrator is. What 'admin' MEANS is the app's decision, made once where
 // the session is built (auth's sessionFields), not matched as a string here.
 //
+// Its own file so a test can install it without opening the app's database
+// (api/test/access.test.ts), and so \`fli tinker --gate api/src/core/gate.ts\`
+// can grade a console the way the API grades a request. Anything graded by a
+// different resolver passes against a ladder the API does not run.
+
+import { GatePlugin, LEVELS } from '@frontierjs/litestone'
+
+export async function getLevel(user: unknown) {
+  const u = user as { isAdmin?: boolean; isOwner?: boolean; isSystemAdmin?: boolean } | null
+  if (!u)               return LEVELS.STRANGER
+  if (u.isSystemAdmin)  return LEVELS.SYSADMIN
+  if (u.isOwner)        return LEVELS.OWNER
+  if (u.isAdmin)        return LEVELS.ADMINISTRATOR
+  return LEVELS.USER
+}
+
+export const gate = new GatePlugin({ getLevel })
+`
+}
+
+// Written only with auth: every assertion is about the User model auth:install
+// appends, and the principals are the sessions auth's sessionFields builds.
+function makeApiAccessTest() {
+  return `// api/test/access.test.ts — who may do what to a User, asked of the real schema.
+//
+// Every rule under test is declared in db/schema.lite, not in a service: @@gate
+// sets the level each operation needs, @@allow narrows an update to your own
+// row, and @allow('write', auth().isAdmin) guards the role column. The resolver
+// is the app's own (api/src/core/gate.ts), so this grades the ladder the API
+// runs rather than a copy of it.
+//
+// Each refusal sits beside a caller who IS allowed the same thing. A schema that
+// refused everybody would pass every refusal on its own.
+
+import { afterAll, describe, expect, test } from 'bun:test'
+import { randomBytes } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
+import { createTestEnv } from '@frontierjs/litestone/testing'
+import { gate } from '../src/core/gate.ts'
+
+const schema = fileURLToPath(new URL('../../db/schema.lite', import.meta.url))
+
+// A fresh database built from the schema — never db/app.db. It is thrown away
+// with the run, so it takes a throwaway key rather than .env's, which CI does
+// not have: the file is gitignored.
+const env = await createTestEnv({
+  schema,
+  plugins:       [gate],
+  encryptionKey: randomBytes(32).toString('hex'),
+  autoFactories: true,
+})
+afterAll(() => env.close())
+
+// Fixtures are written below the boundary, so a gate refusing the caller under
+// test cannot refuse the setup. ONE factory for the file: asSystem() returns a
+// copy, and each fresh copy restarts the sequence that keeps emails unique.
+const users = env.factories.user.asSystem()
+
+// TestEnv is not generic over the schema, so its tables are typed unknown.
+const system   = env.system as any
+const actingAs = (principal: unknown) => env.actingAs(principal) as any
+
+// A principal is the SESSION the API builds, not a row: auth's sessionFields
+// turns role "admin" into isAdmin at sign-in, and gate.ts reads isAdmin.
+const admin = { id: 'admin', isAdmin: true }
+
+test('every @@gate answers the way the schema declares it', async () => {
+  expect(await env.verifyGateLadder()).toEqual([])
+})
+
+describe('User', () => {
+  test('a stranger cannot list users, and a signed-in user can', async () => {
+    const me = await users.createOne()
+
+    await expect(actingAs(null).user.findMany()).rejects.toThrow('requires level 4')
+    expect(await actingAs({ id: me.id }).user.findMany()).not.toHaveLength(0)
+  })
+
+  test('a user can rename themselves, and cannot promote themselves', async () => {
+    const me = await users.createOne({ role: 'user' })
+
+    await actingAs({ id: me.id }).user.update({
+      where: { id: me.id },
+      data:  { name: 'Renamed', role: 'admin' },
+    })
+
+    // The field policy declines in silence: no error, the column unchanged.
+    const row = await system.user.findFirst({ where: { id: me.id } })
+    expect(row?.name).toBe('Renamed')
+    expect(row?.role).toBe('user')
+  })
+
+  test('an admin can promote somebody', async () => {
+    const person = await users.createOne({ role: 'user' })
+
+    await actingAs(admin).user.update({ where: { id: person.id }, data: { role: 'admin' } })
+
+    const row = await system.user.findFirst({ where: { id: person.id } })
+    expect(row?.role).toBe('admin')
+  })
+
+  test("a user cannot edit somebody else's row, and an admin can", async () => {
+    const me    = await users.createOne()
+    const other = await users.createOne({ name: 'Other' })
+
+    // The row policy filters the row out before the write, so the answer is
+    // null rather than an error.
+    const refused = await actingAs({ id: me.id }).user.update({
+      where: { id: other.id },
+      data:  { name: 'Hijacked' },
+    })
+    expect(refused).toBeNull()
+    expect((await system.user.findFirst({ where: { id: other.id } }))?.name).toBe('Other')
+
+    await actingAs(admin).user.update({ where: { id: other.id }, data: { name: 'Edited' } })
+    expect((await system.user.findFirst({ where: { id: other.id } }))?.name).toBe('Edited')
+  })
+
+  test('deleting a user takes an administrator', async () => {
+    const me    = await users.createOne()
+    const other = await users.createOne()
+
+    await expect(
+      actingAs({ id: me.id }).user.delete({ where: { id: other.id } }),
+    ).rejects.toThrow('requires level 5')
+
+    await actingAs(admin).user.delete({ where: { id: other.id } })
+    expect(await system.user.findFirst({ where: { id: other.id } })).toBeNull()
+  })
+})
+`
+}
+
+function makeApiCoreDbTs() {
+  return `// api/src/core/db.ts
+// One Litestone client for the whole app, graded by the resolver in gate.ts.
+//
 // Schema is loaded from disk; createClient runs the DDL automatically
 // on first run. No separate apply() step needed for fresh DBs.
 
 import { fileURLToPath } from 'node:url'
 
-import { createClient, GatePlugin, LEVELS } from '@frontierjs/litestone'
-import { env } from './env.ts'
+import { createClient } from '@frontierjs/litestone'
+import { env }  from './env.ts'
+import { gate } from './gate.ts'
 
 // Anchored to THIS FILE, never to the working directory. Not every command that
 // imports this module runs from the app root — a \`site/\` build runs from its own
@@ -722,17 +888,6 @@ import { env } from './env.ts'
 // \`resolveFrom: 'schema'\` then anchors env.DATABASE_URL to the app root as well,
 // since that is the directory above the schema's own.
 const schemaPath = fileURLToPath(new URL('../../../db/schema.lite', import.meta.url))
-
-const gate = new GatePlugin({
-  async getLevel(user: unknown) {
-    const u = user as { isAdmin?: boolean; isOwner?: boolean; isSystemAdmin?: boolean } | null
-    if (!u)               return LEVELS.STRANGER
-    if (u.isSystemAdmin)  return LEVELS.SYSADMIN
-    if (u.isOwner)        return LEVELS.OWNER
-    if (u.isAdmin)        return LEVELS.ADMINISTRATOR
-    return LEVELS.USER
-  },
-})
 
 // No \`db:\` here on purpose. That option is an OVERRIDE and is resolved against
 // the process — \`database main\` in the seed already declares
@@ -833,7 +988,7 @@ export const auth = createLitestoneAuth(db, {
   encryptionKey:        env.ENCRYPTION_KEY,
 
   // The one place this app says what 'admin' MEANS, and it is load-bearing.
-  // db.ts grades the gate on \`isAdmin\`, and schema.lite spends it three times —
+  // gate.ts grades the gate on \`isAdmin\`, and schema.lite spends it three times —
   // \`@@gate("4.4.4.5")\` for who may delete a person, \`@@allow('update', … ||
   // auth().isAdmin)\` for whose row, \`@allow('write', auth().isAdmin)\` on role
   // and emailVerified. The User model ships a role STRING, which auth stores
@@ -848,13 +1003,20 @@ export const auth = createLitestoneAuth(db, {
   passwordResetTtl:     '1 hour',
   emailVerificationTtl: '24 hours',
 
-  // In a real app these send email via the mailer plugin.
-  // For now we just log — wire to mail.send() once you add it.
+  // Neither sends anything yet: there is no mailer, so the link is printed to
+  // this terminal instead, where you can click it. Both routes answer the same
+  // whether or not the address has an account — they must never reveal who is
+  // registered — so this log is the only place a reset is visible at all.
+  // Wire app.mail.send() in here once the app has a mailer.
   onPasswordResetRequested: async (email, token) => {
-    console.log(\`[auth] password reset for \${email}: token=\${token}\`)
+    // WEB_URL, not APP_URL: the link lands on web/src/routes/reset/, and the
+    // API's own origin has no page to answer it.
+    const link = \`\${env.WEB_URL}/reset/?token=\${encodeURIComponent(token)}\`
+    console.log(\`[auth] password reset for \${email} — no mailer, so here is the link:\\n  \${link}\`)
   },
   onEmailVerificationRequested: async (email, token) => {
-    console.log(\`[auth] verify email for \${email}: token=\${token}\`)
+    const link = \`\${env.APP_URL}/api/auth/email/verify?token=\${encodeURIComponent(token)}\`
+    console.log(\`[auth] verify \${email} — no mailer, so here is the link:\\n  \${link}\`)
   },
 })
 
@@ -973,7 +1135,10 @@ function makeIndexHtml(appName) {
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
   </head>
-  <body>
+  <!-- class="app" is what gives the page @frontierjs/css's font and ground; the
+       package has no bare body rule, so without it text outside a component
+       falls back to the browser's serif. -->
+  <body class="app">
     <div id="app"></div>
     <script type="module" src="/src/main.js">${sc}
   </body>
@@ -1059,6 +1224,18 @@ export default {
   routesDir:     'src/routes',
   trailingSlash: 'always',
 
+  // Two of @frontierjs/css's themes, following the OS until somebody presses the
+  // switch in the topbar. Sierra writes the class on <html> from a <head> script,
+  // before first paint — anything the app ran itself would flash the default
+  // first. Add any other theme-* class the package ships to the list and the
+  // switch cycles through it. The key is per app because every scaffold serves
+  // on localhost:8000, and one origin is one localStorage.
+  theme: {
+    themes:  ['theme-default', 'theme-dark'],
+    default: 'system',
+    key:     '${appName}_theme',
+  },
+
   junction: {
     // Where the API is. Unset, it is the page's own origin, which is right while
     // Vite or nginx proxies /api to it. An API on its own origin
@@ -1127,6 +1304,7 @@ siteName: ${appName}
 <script>
   import { goto, isActive, page } from '@frontierjs/sierra/router'
   import { status, session, signOut } from '@frontierjs/sierra/junction'
+  import { theme, toggleTheme } from '@frontierjs/sierra/theme'
 
   // Naming a property in a $: line is what SUBSCRIBES this component to it.
   // Without it status.connected renders once, at its initial false, and never
@@ -1136,7 +1314,7 @@ siteName: ${appName}
   // question: the boot restore is asynchronous, so on a cold load session.user
   // is null for a caller who IS signed in. Rendering the signed-out nav until
   // it settles is the redirect flash one layer up.
-  $: (page.siteName, status.connected, session.user, session.checked)
+  $: (page.siteName, page.route, status.connected, session.user, session.checked, theme.value)
 
   // Awaited: signOut ends the session at the SERVER and then locally, and
   // navigating first would send the guard past a session that is still there.
@@ -1146,53 +1324,54 @@ siteName: ${appName}
   }
 ${sc}
 
-<div class="shell">
-  <nav class="nav">
-    <span class="brand">{page.siteName}</span>
+<!--
+  Every class here is @frontierjs/css, imported once in main.js, so there is no
+  <style> block: a color written here is one a theme cannot reach.
 
-    <div class="links">
-      <a href="/" class:active={isActive('/')}>Home</a>
+  The current page is aria-current="page" rather than a class — the stylesheet
+  keys off the attribute, and Mesa drops one whose value is null. The leading
+  page.route read in each expression is what makes it move: Mesa takes an
+  expression's dependencies from its own text, and isActive() reads the route
+  where this file cannot see it.
+-->
+<div class="shell">
+  <header class="topbar">
+    <nav class="group" aria-label="Main">
+      <strong>{page.siteName}</strong>
+      <a class="navlink" href="/" aria-current={(page.route, isActive('/', { exact: true })) ? 'page' : null}>Home</a>
       <!-- User reads at gate level 4 in db/schema.lite, so this link cannot
            work for a stranger. A nav that offers one that always answers
            "Authentication required" is a working app reporting itself broken. -->
       {#if session.user}
-        <a href="/users/" class:active={isActive('/users/')}>Users</a>
+        <a class="navlink" href="/users/" aria-current={(page.route, isActive('/users/')) ? 'page' : null}>Users</a>
       {/if}
-    </div>
+    </nav>
 
-    <div class="status">
-      <span class="dot" class:connected={status.connected}></span>
+    <div class="group">
+      <span class="badge" class:success={status.connected} class:muted={!status.connected}>
+        {status.connected ? 'live' : 'offline'}
+      </span>
+      <button class="btn ghost square" on:click={toggleTheme}
+              aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
+        {theme.value === 'theme-dark' ? '☀' : '☾'}
+      </button>
       {#if !session.checked}
-        <span class="who">…</span>
+        <span class="text-muted">…</span>
       {:else if session.user}
-        <span class="who">{session.user.email}</span>
-        <button on:click={out}>Sign out</button>
+        <a class="navlink" href="/account/" aria-current={(page.route, isActive('/account/')) ? 'page' : null}>{session.user.email}</a>
+        <button class="btn ghost" on:click={out}>Sign out</button>
       {:else}
-        <a class="cta" href="/login/">Sign in</a>
+        <a class="btn primary" href="/login/">Sign in</a>
       {/if}
     </div>
-  </nav>
+  </header>
 
-  <main>
-    <slot />
+  <main class="screen">
+    <div class="container">
+      <slot />
+    </div>
   </main>
 </div>
-
-<style>
-  .shell { display: flex; flex-direction: column; min-height: 100vh; font-family: system-ui }
-  .nav { display: flex; align-items: center; gap: 24px; padding: 12px 24px; border-bottom: 1px solid #e5e7eb }
-  .brand { font-weight: 600; margin-right: auto }
-  .links { display: flex; gap: 16px }
-  .links a { text-decoration: none; color: #6b7280 }
-  .links a.active { color: #111 }
-  .status { display: flex; align-items: center; gap: 10px }
-  .who { color: #6b7280; font-size: 14px }
-  .cta { text-decoration: none; color: #111; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 12px }
-  main { padding: 24px; flex: 1 }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: #e5e7eb; display: inline-block }
-  .dot.connected { background: #22c55e }
-  button { background: none; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 12px; cursor: pointer }
-</style>
 `
   }
 
@@ -1202,42 +1381,69 @@ siteName: ${appName}
 <script>
   import { isActive, page } from '@frontierjs/sierra/router'
   import { status } from '@frontierjs/sierra/junction'
+  import { theme, toggleTheme } from '@frontierjs/sierra/theme'
 
   // Naming a property in a $: line is what SUBSCRIBES this component to it.
   // Without it status.connected renders once, at its initial false, and never
   // updates — the socket connects and the page still says otherwise.
-  $: (page.siteName, status.connected)
+  $: (page.siteName, page.route, status.connected, theme.value)
 ${sc}
 
+<!--
+  Every class here is @frontierjs/css, imported once in main.js, so there is no
+  <style> block: a color written here is one a theme cannot reach. The leading
+  page.route read is what makes aria-current move — Mesa takes an expression's
+  dependencies from its own text, and isActive() reads the route out of sight.
+-->
 <div class="shell">
-  <nav class="nav">
-    <span class="brand">{page.siteName}</span>
+  <header class="topbar">
+    <nav class="group" aria-label="Main">
+      <strong>{page.siteName}</strong>
+      <a class="navlink" href="/" aria-current={(page.route, isActive('/', { exact: true })) ? 'page' : null}>Home</a>
+    </nav>
 
-    <div class="links">
-      <a href="/" class:active={isActive('/')}>Home</a>
+    <div class="group">
+      <span class="badge" class:success={status.connected} class:muted={!status.connected}>
+        {status.connected ? 'live' : 'offline'}
+      </span>
+      <button class="btn ghost square" on:click={toggleTheme}
+              aria-label={theme.value === 'theme-dark' ? 'Switch to light theme' : 'Switch to dark theme'}>
+        {theme.value === 'theme-dark' ? '☀' : '☾'}
+      </button>
     </div>
+  </header>
 
-    <div class="status">
-      <span class="dot" class:connected={status.connected}></span>
+  <main class="screen">
+    <div class="container">
+      <slot />
     </div>
-  </nav>
-
-  <main>
-    <slot />
   </main>
 </div>
+`
+}
 
-<style>
-  .shell { display: flex; flex-direction: column; min-height: 100vh; font-family: system-ui }
-  .nav { display: flex; align-items: center; gap: 24px; padding: 12px 24px; border-bottom: 1px solid #e5e7eb }
-  .brand { font-weight: 600; margin-right: auto }
-  .links { display: flex; gap: 16px }
-  .links a { text-decoration: none; color: #6b7280 }
-  .links a.active { color: #111 }
-  main { padding: 24px; flex: 1 }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: #e5e7eb; display: inline-block }
-  .dot.connected { background: #22c55e }
-</style>
+// The catch-all. Without it an unknown URL renders the layout around nothing,
+// which reads as a page that failed to load rather than one that does not exist.
+function makeRouteNotFound() {
+  return `---
+title: Not found
+---
+<script>
+  import { page } from '@frontierjs/sierra/router'
+
+  // [...404] is the catch-all: Sierra matches it only after every other route
+  // has declined, and puts the unmatched path under params['404'].
+  $: page.params
+${sc}
+
+<div class="empty">
+  <div class="empty-icon" aria-hidden="true">🧭</div>
+  <div class="empty-title">Nothing lives at <code>/{page.params['404']}</code></div>
+  <div class="empty-text">The link may be old, or the address mistyped.</div>
+  <div class="empty-actions">
+    <a class="btn primary" href="/">Go home</a>
+  </div>
+</div>
 `
 }
 
@@ -1260,7 +1466,9 @@ title: Home
   // Same origin — web/config/vite.config.js proxies /api to the API in dev, and
   // a deployed build serves both from one host. '/api' is this app's apiPrefix,
   // set in web/config/sierra.config.js and api/config/default.ts together.
-  const health = () => fetch('/api/health').then(r => {
+  // One request read by two blocks: the badge, and the sentence under it that
+  // only a failure needs.
+  const health = fetch('/api/health').then(r => {
     if (!r.ok) throw new Error('API answered ' + r.status)
     return r.json()
   })
@@ -1284,97 +1492,134 @@ title: Home
   ]
 ${sc}
 
-<h1>Welcome to ${appName}</h1>
+<!--
+  Every class on this page is a word from @frontierjs/css — what a thing IS
+  (card, badge, btn) and what is true about it (primary, success, muted). The
+  <style> block at the bottom holds one grid and no color, because a color
+  written here is one no theme can reach.
+-->
+<header class="stack gap-sm">
+  <h1>Welcome to ${appName}</h1>
+  <p class="text-lg text-muted">
+    This page is <code>web/src/routes/index.mesa</code>, and the tour below is
+    running rather than quoted — every point does the thing it describes.
+  </p>
 
-<p class="lede">
-  This page is <code>web/src/routes/index.mesa</code>, and the tour below is
-  running rather than quoted — every point does the thing it describes.
-</p>
+  <div class="cluster">
+    {#await health}
+      <span class="badge muted">API · checking</span>
+    {:then}
+      <span class="badge success">API · reachable</span>
+    {:catch}
+      <span class="badge danger">API · unreachable</span>
+    {/await}
+    <span class="badge" class:success={status.connected} class:muted={!status.connected}>
+      Socket · {status.connected ? 'open' : 'opens when you sign in'}
+    </span>
+  </div>
 
-{#await health()}
-  <p>API: checking…</p>
-{:then}
-  <p>API: reachable ✓</p>
-{:catch error}
-  <p>API: unreachable — is <code>bun run dev:api</code> running? ({error.message})</p>
-{/await}
+  {#await health}{:then}{:catch error}
+    <div class="alert danger" role="alert">
+      <div class="alert-content">
+        Is <code>bun run dev:api</code> running? ({error.message})
+      </div>
+    </div>
+  {/await}
+</header>
 
-<p>Socket: {status.connected ? 'open ✓' : 'opens when you sign in'}</p>
-
-<section class="tour">
+<section class="tour stack gap-md">
   <h2>Mesa in a minute</h2>
 
-  <article>
-    <h3>1 · State is a variable</h3>
-    <p>No store, no hook, no setter. Assign to it, and the markup that read it
-       is what updates.</p>
-    <button on:click={() => count++}>pressed {count} times</button>
-  </article>
+  <div class="grid">
+    <article class="card stack gap-sm">
+      <h3>1 · State is a variable</h3>
+      <p>No store, no hook, no setter. Assign to it, and the markup that read it
+         is what updates.</p>
+      <div class="cluster">
+        <button class="btn primary" on:click={() => count++}>Press me</button>
+        <span class="pill" class:muted={count === 0} class:success={count > 0}>pressed {count} times</span>
+      </div>
+    </article>
 
-  <article>
-    <h3>2 · A <code>$:</code> line re-runs when what it read changes</h3>
-    <p>The subscription is the line itself — there is no dependency array to
-       keep in step with the body.</p>
-    <input bind:value={name} placeholder="your name" />
-    <p>{greeting}</p>
-  </article>
+    <article class="card stack gap-sm">
+      <h3>2 · A <code>$:</code> line re-runs when what it read changes</h3>
+      <p>The subscription is the line itself — there is no dependency array to
+         keep in step with the body.</p>
+      <input class="field" bind:value={name} placeholder="your name" aria-label="your name" />
+      <p class="text-lg">{greeting}</p>
+    </article>
 
-  <article>
-    <h3>3 · Blocks are markup</h3>
-    <p><code>&#123;#each&#125;</code> and <code>&#123;#if&#125;</code> are
-       compiled to DOM operations rather than re-run as functions. Both are
-       below, over the three nouns this framework has.</p>
-    <ul>
-      {#each realms as r}
-        <li><strong>{r.noun}</strong> — the {r.realm} realm, in <code>{r.where}</code></li>
-      {/each}
-    </ul>
-    {#if count > 2}
-      <p class="hint">…and the button above has been pressed {count} times.</p>
-    {/if}
-  </article>
+    <article class="card stack gap-sm">
+      <h3>3 · Blocks are markup</h3>
+      <p><code>&#123;#each&#125;</code> and <code>&#123;#if&#125;</code> are
+         compiled to DOM operations rather than re-run as functions. Both are
+         below, over the three nouns this framework has.</p>
+      <dl class="facts divided">
+        {#each realms as r}
+          <dt>{r.noun}</dt>
+          <dd>the {r.realm} realm, in <code>{r.where}</code></dd>
+        {/each}
+      </dl>
+      {#if count > 2}
+        <p class="text-sm text-muted">…and the button in card 1 has been pressed {count} times.</p>
+      {/if}
+    </article>
 
-  <article>
-    <h3>4 · Styles are scoped to the file</h3>
-    <p>The <code>&lt;style&gt;</code> block at the bottom cannot leak out of
-       this component, and cannot reach into a child one. To cross that line
-       you write <code>:global(…)</code>, which is a thing you can grep for.</p>
-  </article>
+    <article class="card stack gap-sm">
+      <h3>4 · Styles are scoped to the file</h3>
+      <p>The <code>&lt;style&gt;</code> block at the bottom cannot leak out of
+         this component, and cannot reach into a child one. To cross that line
+         you write <code>:global(…)</code>, which is a thing you can grep for.</p>
+    </article>
 
-  <article>
-    <h3>5 · Everything the runtime offers is on <code>$</code></h3>
-    <p><code>$.onMount</code>, <code>$.emit</code>, <code>$.tick</code>. Five
-       members keep a bare spelling because they are read as a bag in the
-       middle of markup: <code>$props</code>, <code>$attributes</code>,
-       <code>$slots</code>, <code>$context</code>, <code>$async</code>.</p>
-  </article>
+    <article class="card stack gap-sm">
+      <h3>5 · Everything the runtime offers is on <code>$</code></h3>
+      <p><code>$.onMount</code>, <code>$.emit</code>, <code>$.tick</code>. Five
+         members keep a bare spelling because they are read as a bag in the
+         middle of markup: <code>$props</code>, <code>$attributes</code>,
+         <code>$slots</code>, <code>$context</code>, <code>$async</code>.</p>
+    </article>
+  </div>
 </section>
 
-<section class="next">
+<section class="next stack gap-md">
   <h2>Where to go next</h2>
-  <ul>
-    <li><code>db/schema.lite</code> — the seed. Models, gates and policies; the
-        API and these screens are derived from it.</li>
-    <li><code>fli scaffold Note --fields "title:string body:text"</code> — one
-        command, a stanza in the seed and a working screen.</li>
-    <li><code>fli tutor:access</code> — the next lesson: a gate and a row policy,
-        watched refusing somebody.</li>
-    <li><a href="https://github.com/frontierjs/frontierjs">github.com/frontierjs/frontierjs</a>
-        — Mesa's reference is <code>packages/mesa/docs/</code>, the schema
-        language is <code>packages/litestone/docs/</code>.</li>
-  </ul>
+  <ol class="steps vertical">
+    <li class="step">
+      <span class="step-marker"></span>
+      <span class="step-label"><code>db/schema.lite</code></span>
+      <span class="step-hint">The seed. Models, gates and policies; the API and
+        these screens are derived from it.</span>
+    </li>
+    <li class="step">
+      <span class="step-marker"></span>
+      <span class="step-label"><code>fli scaffold Note --fields "title:string body:text"</code></span>
+      <span class="step-hint">One command, a stanza in the seed and a working screen.</span>
+    </li>
+    <li class="step">
+      <span class="step-marker"></span>
+      <span class="step-label"><code>fli tutor:access</code></span>
+      <span class="step-hint">The next lesson: a gate and a row policy, watched
+        refusing somebody.</span>
+    </li>
+    <li class="step">
+      <span class="step-marker"></span>
+      <span class="step-label"><a class="link" href="https://github.com/frontierjs/frontierjs">github.com/frontierjs/frontierjs</a></span>
+      <span class="step-hint">Mesa's reference is <code>packages/mesa/docs/</code>,
+        the schema language is <code>packages/litestone/docs/</code>.</span>
+    </li>
+  </ol>
 </section>
 
 <style>
-  .lede { color: #6b7280; max-width: 46rem }
-  .tour, .next { margin-top: 2.5rem }
-  .tour article { padding: 1rem 0; border-top: 1px solid #e5e7eb }
-  .tour h3 { margin: 0 0 .35rem; font-size: 1rem }
-  .tour p, .next li { max-width: 46rem }
-  .hint { color: #6b7280 }
-  button { padding: 6px 12px; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; cursor: pointer }
-  input { padding: 6px 10px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 14px }
-  code { background: #f3f4f6; padding: 1px 4px; border-radius: 4px; font-size: .9em }
+  .tour, .next { margin-top: var(--space-3xl) }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+    gap: var(--space-lg);
+  }
+  h3 { margin: 0 }
+  p  { margin: 0 }
 </style>
 `
 }
@@ -1441,28 +1686,30 @@ title: Sign in
   }
 ${sc}
 
-<div class="login">
-  <h1>Sign in</h1>
+<div class="auth-card card stack gap-md">
+  <h1 class="text-xl">Sign in</h1>
 
   {#if error}
-    <p class="error">{error}</p>
+    <div class="alert danger" role="alert"><div class="alert-content">{error}</div></div>
   {/if}
 
   {#if session.awaitingCode}
-    <p class="alt">Enter the code from your authenticator app, or one of your recovery codes.</p>
-    <input bind:value={code} autocomplete="one-time-code" inputmode="numeric" placeholder="123456" />
-    <button on:click={handleCode} disabled={loading}>
+    <p class="text-sm text-muted">Enter the code from your authenticator app, or one of your recovery codes.</p>
+    <input class="field" bind:value={code} autocomplete="one-time-code" inputmode="numeric" placeholder="123456" aria-label="Code" />
+    <button class="btn primary" on:click={handleCode} disabled={loading}>
       {loading ? 'Checking…' : 'Verify'}
     </button>
-    <button on:click={startOver} disabled={loading}>Start over</button>
+    <button class="btn ghost" on:click={startOver} disabled={loading}>Start over</button>
   {:else}
-    <input bind:value={email}    type="email"    placeholder="Email" />
-    <input bind:value={password} type="password" placeholder="Password" />
-    <button on:click={handleSubmit} disabled={loading}>
+    <input class="field" bind:value={email}    type="email"    placeholder="Email"    aria-label="Email" />
+    <input class="field" bind:value={password} type="password" placeholder="Password" aria-label="Password" />
+    <button class="btn primary" on:click={handleSubmit} disabled={loading}>
       {loading ? 'Signing in…' : 'Sign in'}
     </button>
 
-    <p class="alt">No account? <a href="/register/">Create one</a></p>
+    <p class="text-sm text-muted">
+      <a class="link" href="/reset/">Forgot your password?</a> · No account? <a class="link" href="/register/">Create one</a>
+    </p>
   {/if}
 
   <!-- A fresh app has no rows in \`user\`, so the first person to open this
@@ -1470,22 +1717,267 @@ ${sc}
        door is the CLI, which is also the only way to mint an ADMIN — register
        gives everybody role "user", and db/schema.lite gates delete at 5. -->
   {#if import.meta.env.DEV}
-    <p class="hint">
-      First run? No user exists yet. Either register above, or from the app root:
-      <code>fli auth:create-user you@example.com --role admin</code>
-    </p>
+    <div class="alert info">
+      <div class="alert-content text-sm">
+        First run? No user exists yet. Either register above, or from the app root:
+        <code>fli auth:create-user you@example.com --role admin</code>
+      </div>
+    </div>
   {/if}
 </div>
 
 <style>
-  .login { max-width: 320px; margin: 80px auto; display: flex; flex-direction: column; gap: 12px }
-  input { padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 14px }
-  button { padding: 8px 12px; background: #111; color: #fff; border: none; border-radius: 6px; cursor: pointer }
-  button:disabled { opacity: .5 }
-  .error { color: #ef4444; font-size: 14px }
-  .alt { font-size: 14px; color: #6b7280; margin: 0 }
-  .hint { font-size: 13px; color: #6b7280; line-height: 1.5; margin: 0 }
-  code { background: #f3f4f6; padding: 1px 4px; border-radius: 4px; font-size: .95em }
+  .auth-card { max-width: 24rem; margin: var(--space-3xl) auto }
+  h1, p { margin: 0 }
+</style>
+`
+}
+
+// The page a password-reset link opens, and the page that asks for one. Written
+// with auth, since both halves are routes @frontierjs/auth mounts.
+function makeRouteReset() {
+  return `---
+title: Reset your password
+---
+<script>
+  // Both halves of a reset, told apart by the URL. Without a token this asks for
+  // an address; the link that request produces lands back here WITH one, and
+  // then this sets the new password.
+  //
+  // The token is String()ed because the query reader turns a value that round-
+  // trips as a number into one, and a token of digits would otherwise reach the
+  // route as a number it refuses.
+  //
+  // Nothing here signs anybody in. Confirming a reset ends every session the
+  // account holds, so the next stop is the sign-in page.
+  import { page }      from '@frontierjs/sierra/router'
+  import { getClient } from '@frontierjs/sierra/junction'
+
+  $: page.query
+
+  let email    = ''
+  let password = ''
+  let again    = ''
+  let busy     = false
+  let error    = ''
+  let sent     = false
+  let done     = false
+
+  const token = () => String(page.query?.token ?? '')
+
+  async function run(fn) {
+    busy  = true
+    error = ''
+    try { await fn() } catch (e) { error = e.message } finally { busy = false }
+  }
+
+  // The route answers the same whether or not the address has an account, so
+  // "sent" is all this page can honestly say.
+  const request = () => run(async () => {
+    await getClient().auth.requestPasswordReset(email.trim())
+    sent = true
+  })
+
+  const confirm = () => run(async () => {
+    // The server sees one box. A typo in a password nobody can see is a
+    // password nobody can use, so the second box is checked here.
+    if (password !== again) throw new Error('The two passwords are not the same.')
+    await getClient().auth.confirmPasswordReset(token(), password)
+    password = ''; again = ''
+    done = true
+  })
+${sc}
+
+<div class="auth-card card stack gap-md">
+  <h1 class="text-xl">Reset your password</h1>
+
+  {#if error}
+    <div class="alert danger" role="alert"><div class="alert-content">{error}</div></div>
+  {/if}
+
+  {#if done}
+    <div class="alert success" role="status">
+      <div class="alert-content">Your password is set, and every other place you were signed in has been signed out.</div>
+    </div>
+    <a class="btn primary" href="/login/">Sign in</a>
+  {:else if token()}
+    <input class="field" bind:value={password} type="password" placeholder="New password"     aria-label="New password"     autocomplete="new-password" />
+    <input class="field" bind:value={again}    type="password" placeholder="The same again"   aria-label="The same again"   autocomplete="new-password" />
+    <button class="btn primary" on:click={confirm} disabled={busy}>
+      {busy ? 'Saving…' : 'Set password'}
+    </button>
+  {:else if sent}
+    <div class="alert success" role="status">
+      <div class="alert-content">If <strong>{email}</strong> has an account, a reset link is on its way.</div>
+    </div>
+    <!-- auth.ts prints the link instead of mailing it until the app has a
+         mailer, and nothing on this page could say so otherwise. -->
+    {#if import.meta.env.DEV}
+      <div class="alert info">
+        <div class="alert-content text-sm">No mailer is wired yet, so the link is printed in the terminal running the API.</div>
+      </div>
+    {/if}
+    <a class="link text-sm" href="/login/">Back to sign in</a>
+  {:else}
+    <p class="text-sm text-muted">Enter the address you sign in with and we will send a link to set a new password.</p>
+    <input class="field" bind:value={email} type="email" placeholder="Email" aria-label="Email" autocomplete="email" />
+    <button class="btn primary" on:click={request} disabled={busy || !email.trim()}>
+      {busy ? 'Sending…' : 'Send reset link'}
+    </button>
+    <a class="link text-sm" href="/login/">Back to sign in</a>
+  {/if}
+</div>
+
+<style>
+  .auth-card { max-width: 24rem; margin: var(--space-3xl) auto }
+  h1, p { margin: 0 }
+</style>
+`
+}
+
+// The signed-in person's own account. \`withName\` is whether the example users
+// service exists, which is the only way this app can write a User row.
+function makeRouteAccount(withName) {
+  return `---
+title: Account
+---
+<script>
+  // The signed-in person's own account: their name, their password, and every
+  // place they are signed in.
+  //
+${withName ? `  // The password and the sessions go through client.auth, which is the account
+  // and sessions services scoped to the CALLER — nothing here names a user id
+  // for them, because nothing there will take one. The name is the User row,
+  // written through the users service; db/schema.lite's @@allow('update',
+  // id == auth().id || …) is what lets a person write their own.
+  import { getClient, session, refresh } from '@frontierjs/sierra/junction'` : `  // The password and the sessions go through client.auth, which is the account
+  // and sessions services scoped to the CALLER — nothing here names a user id,
+  // because nothing there will take one. The name is not editable here: that
+  // is a write to the User row, and this app has no users service to make it.
+  import { getClient, session } from '@frontierjs/sierra/junction'`}
+
+  $: (session.user, session.checked)
+
+  let name     = ''
+  let current  = ''
+  let next     = ''
+  let sessions = []
+  let notice   = ''
+  let error    = ''
+  let busy     = false
+
+  const auth = () => getClient().auth
+
+  // Asked whenever the person changes, not once at mount: the session restore
+  // may still be in flight when this page mounts, and signing out in another
+  // tab makes the last answer somebody else's.
+  $: {
+    if (session.user) { name = session.user.name ?? ''; loadSessions() }
+    else sessions = []
+  }
+
+  async function loadSessions() {
+    try { sessions = await auth().sessions() } catch (e) { error = e.message }
+  }
+
+  // Each action answers the sentence to show when it worked.
+  async function run(fn) {
+    busy   = true
+    error  = ''
+    notice = ''
+    try { notice = await fn() } catch (e) { error = e.message } finally { busy = false }
+  }
+
+${withName ? `  const saveName = () => run(async () => {
+    await getClient().service('users').patch(session.user.userId, { name: name.trim() })
+    // The session is what the topbar reads, and it was built before the write.
+    await refresh()
+    return 'Name saved.'
+  })
+
+` : ``}  const changePassword = () => run(async () => {
+    await auth().changePassword(current, next)
+    current = ''; next = ''
+    return 'Password changed.'
+  })
+
+  const signOutOthers = () => run(async () => {
+    const { revoked } = await auth().revokeOtherSessions()
+    await loadSessions()
+    return revoked === 1 ? 'Signed out of 1 other session.' : \`Signed out of \${revoked} other sessions.\`
+  })
+
+  const signOutOne = (id) => run(async () => {
+    await auth().revokeSession(id)
+    await loadSessions()
+    return 'Signed out.'
+  })
+
+  const when = (iso) => (iso ? new Date(iso).toLocaleString() : '—')
+${sc}
+
+<header class="stack gap-sm">
+  <h1>Account</h1>
+  <p class="text-muted">Your name, your password, and where you are signed in.</p>
+</header>
+
+{#if !session.checked}
+  <p class="text-muted">…</p>
+{:else if !session.user}
+  <div class="alert info"><div class="alert-content"><a class="link" href="/login/">Sign in</a> to manage your account.</div></div>
+{:else}
+  {#if error}<div class="alert danger" role="alert"><div class="alert-content">{error}</div></div>{/if}
+  {#if notice}<div class="alert success" role="status"><div class="alert-content">{notice}</div></div>{/if}
+
+  <div class="grid">
+    <section class="card stack gap-sm">
+      <h2 class="text-lg">Profile</h2>
+      <dl class="facts">
+        <dt>Email</dt>
+        <dd>{session.user.email}</dd>
+      </dl>
+${withName ? `      <input class="field" bind:value={name} placeholder="Your name" aria-label="Name" autocomplete="name" />
+      <button class="btn primary" on:click={saveName} disabled={busy}>Save name</button>
+` : ``}    </section>
+
+    <section class="card stack gap-sm">
+      <h2 class="text-lg">Password</h2>
+      <input class="field" bind:value={current} type="password" placeholder="Current password" aria-label="Current password" autocomplete="current-password" />
+      <input class="field" bind:value={next}    type="password" placeholder="New password"     aria-label="New password"     autocomplete="new-password" />
+      <button class="btn primary" on:click={changePassword} disabled={busy || !current || !next}>Change password</button>
+    </section>
+  </div>
+
+  <section class="card stack gap-sm sessions">
+    <div class="split">
+      <h2 class="text-lg">Where you are signed in</h2>
+      <button class="btn outlined" on:click={signOutOthers} disabled={busy || sessions.length < 2}>Sign out everywhere else</button>
+    </div>
+    <dl class="facts divided">
+      {#each sessions as s}
+        <dt>{when(s.createdAt)}</dt>
+        <dd class="split">
+          {#if s.current}
+            <span class="badge success">this browser</span>
+          {:else}
+            <span class="text-sm text-muted">expires {when(s.expiresAt)}</span>
+            <button class="btn ghost" on:click={() => signOutOne(s.id)} disabled={busy}>Sign out</button>
+          {/if}
+        </dd>
+      {/each}
+    </dl>
+  </section>
+{/if}
+
+<style>
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
+    gap: var(--space-lg);
+    margin-top: var(--space-2xl);
+  }
+  .sessions { margin-top: var(--space-lg) }
+  h1, h2, p { margin: 0 }
 </style>
 `
 }
@@ -1528,30 +2020,26 @@ title: Create an account
   }
 ${sc}
 
-<div class="register">
-  <h1>Create an account</h1>
+<div class="auth-card card stack gap-md">
+  <h1 class="text-xl">Create an account</h1>
 
   {#if error}
-    <p class="error">{error}</p>
+    <div class="alert danger" role="alert"><div class="alert-content">{error}</div></div>
   {/if}
 
-  <input bind:value={name}     type="text"     placeholder="Name" />
-  <input bind:value={email}    type="email"    placeholder="Email" />
-  <input bind:value={password} type="password" placeholder="Password" />
-  <button on:click={handleSubmit} disabled={loading}>
+  <input class="field" bind:value={name}     type="text"     placeholder="Name"     aria-label="Name" />
+  <input class="field" bind:value={email}    type="email"    placeholder="Email"    aria-label="Email" />
+  <input class="field" bind:value={password} type="password" placeholder="Password" aria-label="Password" />
+  <button class="btn primary" on:click={handleSubmit} disabled={loading}>
     {loading ? 'Creating…' : 'Create account'}
   </button>
 
-  <p class="alt">Already have one? <a href="/login/">Sign in</a></p>
+  <p class="text-sm text-muted">Already have one? <a class="link" href="/login/">Sign in</a></p>
 </div>
 
 <style>
-  .register { max-width: 320px; margin: 80px auto; display: flex; flex-direction: column; gap: 12px }
-  input { padding: 8px 12px; border: 1px solid #e5e7eb; border-radius: 6px; font-size: 14px }
-  button { padding: 8px 12px; background: #111; color: #fff; border: none; border-radius: 6px; cursor: pointer }
-  button:disabled { opacity: .5 }
-  .error { color: #ef4444; font-size: 14px }
-  .alt { font-size: 14px; color: #6b7280; margin: 0 }
+  .auth-card { max-width: 24rem; margin: var(--space-3xl) auto }
+  h1, p { margin: 0 }
 </style>
 `
 }
@@ -1825,6 +2313,7 @@ mkdirSync(finalTarget, { recursive: true })
 
 const dirs = ['db']
 if (useApi) dirs.push('api', 'api/config', 'api/src', 'api/src/core', 'api/src/services')
+if (useApi && useAuth) dirs.push('api/test')
 // cli/src/routes is fli:init's to write, and fli:init refuses a directory that
 // already exists. Creating it here left the FLI surface an empty folder and a
 // warning nobody reads.
@@ -1832,7 +2321,7 @@ if (useDeploy && useApi) dirs.push('deploy')
 if (flag.ci !== false) dirs.push('.github/workflows')
 if (useWeb) {
   dirs.push('web', 'web/config', 'web/src', 'web/src/routes', 'web/src/resources', 'web/src/components', 'web/public')
-  if (useAuth) dirs.push('web/src/routes/login', 'web/src/routes/register')
+  if (useAuth) dirs.push('web/src/routes/login', 'web/src/routes/register', 'web/src/routes/reset', 'web/src/routes/account')
 }
 
 for (const d of dirs) {
@@ -1850,6 +2339,10 @@ const filesToWrite = [
   ['biome.json',                  appBiomeJson()],
   ['.editorconfig',               EDITORCONFIG],
   ['README.md',                   makeReadme(spec)],
+  // For the program somebody asks to write code here. Pointed at the packages
+  // this manifest names, so an api-only app is not sent to a stylesheet.
+  ['AGENTS.md',                   appAgentsMd({ name: appName, packages: neededPkgs })],
+  ['CLAUDE.md',                   appClaudeMd({ name: appName })],
   ['db/schema.lite',              makeSchemaLiteEmpty()],
 ]
 
@@ -1858,6 +2351,7 @@ if (useApi) {
     ['api/index.ts',                makeApiIndexTs()],
     ['api/src/app.ts',              makeApiAppTs(useAuth, useWeb)],
     ['api/src/core/env.ts',         makeApiEnvTs()],
+    ['api/src/core/gate.ts',        makeApiCoreGateTs()],
     ['api/src/core/db.ts',          makeApiCoreDbTs()],
     ['api/src/core/channels.ts',    makeApiCoreChannelsTs(useAuth)],
     ['api/config/junction.config.js', makeJunctionConfig(appName, useWeb)],
@@ -1865,7 +2359,10 @@ if (useApi) {
 }
 
 if (useAuth) {
-  filesToWrite.push(['api/src/core/auth.ts', makeApiCoreAuthTs()])
+  filesToWrite.push(
+    ['api/src/core/auth.ts',     makeApiCoreAuthTs()],
+    ['api/test/access.test.ts',  makeApiAccessTest()],
+  )
 }
 
 if (useWeb) {
@@ -1879,11 +2376,14 @@ if (useWeb) {
     ['web/src/main.js',                     makeMainJs()],
     ['web/src/routes/_module.mesa',         makeRouteModule(appName, useAuth)],
     ['web/src/routes/index.mesa',           makeRouteIndex(appName)],
+    ['web/src/routes/[...404].mesa',        makeRouteNotFound()],
   )
   if (useAuth) {
     filesToWrite.push(
       ['web/src/routes/login/index.mesa',    makeRouteLogin()],
       ['web/src/routes/register/index.mesa', makeRouteRegister()],
+      ['web/src/routes/reset/index.mesa',    makeRouteReset()],
+      ['web/src/routes/account/index.mesa',  makeRouteAccount(useExample)],
     )
   }
 }
@@ -2151,6 +2651,9 @@ echo('  New to FrontierJS? `fli tutor` — thirteen lessons that run the real')
 echo('  commands and then ask the running world whether they worked. They build')
 echo('  their own app and leave this one alone.')
 echo('')
+echo('  Writing it with an AI agent? AGENTS.md is written for it — Claude Code')
+echo('  reads it through CLAUDE.md, and your own notes about the app go there.')
+echo('')
 // A scaffold with --auth has an empty `user` table, so the login page it just
 // wrote can sign nobody in and every screen behind a gate answers
 // "Authentication required" — which reads as a broken app rather than an empty
@@ -2163,7 +2666,7 @@ if (useAuth) {
   echo('')
 }
 echo('  Then:')
-echo('    bun run check          fli check, then lint, then typecheck — the same gate CI runs')
+echo(`    bun run check          fli check, then lint, then typecheck${useApi && useAuth ? ', then tests' : ''} — the same gate CI runs`)
 echo('    fli scaffold <Model>    add a new model + service + resource + routes')
 echo('    fli admin:generate      generate CRUD admin UI from schema.lite')
 echo('    fli deploy:doctor       check deploy readiness')

@@ -1,13 +1,14 @@
 ---
 id: agent-surface
-status: proposed
+status: partial
 dated: 2026-09-10
 ---
 
 # Idea — The agent surface: an MCP server derived from the seed
 
-**Status: IDEA. Nothing here is built.** Dated 2026-08-04. No code in this repo
-implements any of it, and no package depends on MCP. Do not cite this file as
+**Status: PARTIAL.** `packages/mcp` now ships the projection this record
+proposed. Dated 2026-08-04, and the shipped package has moved past what is
+described below. Do not cite this file as
 describing behavior — see `VERIFYING.md`.
 
 **Extended 2026-08-24** with the approval gate below, from an audit of

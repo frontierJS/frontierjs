@@ -11,7 +11,7 @@ reproduced; anything else is labelled as unconfirmed._
 
 ## What it is
 
-`@frontierjs/conduit` v0.1.2 — the outbound half of an app's third-party
+`@frontierjs/conduit` v0.1.3 — the outbound half of an app's third-party
 integrations. A counterparty is declared once, with what credential and under
 what policy, and `app.conduit.send()` is how a call to it leaves the process.
 
@@ -57,20 +57,12 @@ against a real vendor is `example`: `verify:stripe` and `verify:notify` — see
 - **`FJS-659`** — junction's `ai` and `mail` batteries hand-roll the ring this
   package exists to own, and its webhooks plugin is a third. Open, and it is a
   question about where the boundary goes rather than a defect here.
-- **`FJS-660`** — `result.meta.duration_ms` reports the last attempt where
-  `stats()` reports the whole call, so a retried request under-reports on the
-  public result. Open, small, and self-contained.
-- **`FJS-739`** — a provider outage answers `retryable: false` on `example`'s
-  payment path. Open, filed against `example · conduit`, and it may be one fix
-  with the fault taxonomy in `FJS-710`.
+
+Both `FJS-660` (`duration_ms` under-reporting a retried call) and `FJS-739`
+(a transient provider fault answering `retryable: false`) are closed now — see
+`ISSUES.md` for the fix in each.
 
 ## Picking it up next
-
-`FJS-660` is the one to take first: it is a single number with a stated correct
-answer, and fixing it settles which of two clocks the public result reports.
-`FJS-739` is the one that matters most, because it is the only entry here found
-by a drive rather than by reading, and the answer to it decides whether the fault
-taxonomy under `FJS-710` gets promoted to its own id.
 
 Anything touching the transport, the encoder or a credential needs `verify:stripe`
 run afterwards — the suite here cannot see a vendor's dialect, which is the whole

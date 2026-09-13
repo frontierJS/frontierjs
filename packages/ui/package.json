@@ -14,7 +14,7 @@
     "./components/*": "./components/*.mesa"
   },
   "scripts": {
-    "test": "node test/compile-all.mjs && node test/render.mjs && node test/attributes.mjs && node test/form.mjs && node test/browser/run.mjs",
+    "test": "node test/compile-all.mjs && node test/render.mjs && node test/attributes.mjs && node test/form.mjs && node test/agents-md.mjs && node test/browser/run.mjs",
     "test:browser": "node test/browser/run.mjs",
     "serve": "node test/browser/server.mjs",
     "typecheck": "node ../../scripts/typecheck.mjs"
@@ -35,6 +35,7 @@
   ],
   "license": "MIT",
   "files": [
+    "AGENTS.md",
     "components",
     "stores",
     "controls.js",

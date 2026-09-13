@@ -71,10 +71,11 @@ npm run watch   # watch mode
 To debug the language server: use the **Extension + Server** compound launch config.
 
 ```bash
-npm test               # builds, then three suites:
+npm test               # builds, then four suites:
                        #   46  Litestone — the built server over real LSP/stdio
                        #   36  Mesa — the providers against a stubbed editor
                        #    6  Snippets — every `$` in every body
+                       #   24  Grammar — real files tokenized, not read
 npm run package        # → vscode-frontierjs-<version>.vsix
 npm run verify:package # packs, unpacks, and tests the .vsix itself
 ```

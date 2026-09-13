@@ -6,8 +6,10 @@ dated: 2026-09-06
 
 # Idea — A metric store: the time dimension nothing here has
 
-**Status: PROPOSED.** Dated 2026-09-06. Probed against the tree rather than
-recalled; every claim about what exists names the file it was read from.
+**Status: PARTIAL.** `FJS-958` is fixed and the alert evaluator (`FJS-123`) now
+ships; histograms are the remainder. Dated 2026-09-06. Probed against the tree
+rather than recalled; every claim about what exists names the file it was read
+from.
 
 `FJS-123` has been open since 2026-08-08 saying nothing evaluates an alert rule.
 That reading was right and incomplete: **the evaluator is not blocked on effort,

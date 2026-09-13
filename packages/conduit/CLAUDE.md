@@ -2,7 +2,7 @@
 
 **The third parties an app integrates with, declared in one place.** A
 counterparty is named once — with what credential, under what policy — and
-`app.conduit.send()` is how a call to it leaves the process. v0.1.2, deliberately
+`app.conduit.send()` is how a call to it leaves the process. v0.1.3, deliberately
 narrow. `bun run test` (bun).
 
 **Outbound is what ships; the relationship is the noun.** *Talk to* is a
@@ -26,10 +26,9 @@ process.
 transport is generic. A `websocket` target is an **FJS-to-FJS control-plane
 link**: the transport speaks conduit's own frame envelope
 (`{ id, type: 'request' | 'response' | 'stream_chunk' | …, method, path, body, seq }`)
-and the far side must implement it, which in practice means an
-`@frontierjs/outpost`. So `kind: 'outpost' | 'local'` and `protocol: 'websocket'`
-are one feature, not three, and **a third-party WebSocket API is not reachable
-through this package**. Streaming is that half's alone — `stream()` over `http`
+and the far side must implement it. **A third-party WebSocket API is not
+reachable through this package**, and `@frontierjs/outpost` does not use this
+half either: basecamp registers an outpost as an `http` target with `hmac` auth. Streaming is that half's alone — `stream()` over `http`
 and `unix` answers `not_implemented`.
 
 ---
@@ -47,7 +46,7 @@ src/
   types.ts          the target/message types
   testing.ts        test factory
   transports/       http · websocket · unix · stub · not_implemented · base
-    encode.ts       json | form — the ONE place a body becomes bytes
+    encode.ts       json | form | binary — the ONE place a body becomes bytes
   stores/           sqlite · memory
 ```
 

@@ -487,10 +487,9 @@ export function __mesa_hot_update(id) {
 // Add this plugin separately in vite.config.js to get the devtools endpoint
 // and the BroadcastChannel client injection:
 //
-//   import sierra from '@frontierjs/sierra'
-//   import { mesaDevtools } from '@frontierjs/mesa-vite'
+//   import { mesaDevtools } from '@frontierjs/mesa/vite'
 //
-//   export default { plugins: [sierra(), mesaDevtools()] }
+//   sierra.config.js: export default { plugins: [mesaDevtools()] }
 //
 export function mesaDevtools() {
   const devtoolsHtmlPath = fileURLToPath(new URL('./devtools.html', import.meta.url))

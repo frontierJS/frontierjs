@@ -137,7 +137,7 @@ against `test/fixtures/samples.json`, lifted from the hand-written pages at the
 commit that deleted them, because a highlighter's one catastrophic failure is
 silent: it eats a character, the block still looks like code, and the reader
 copies a sample that does not work. The fixture is deliberately not
-regenerated; the point is that those 66 strings never move again.
+regenerated; the point is that those strings never move again.
 
 Doing it found four gaps in glow, all in `FJS-515`: it could not highlight
 `.lite`, SQL or shell, and could not highlight a transcript at all.
@@ -150,8 +150,7 @@ classic script filled in on load, and every demo page built its whole content
 from JavaScript. So the site a crawler read was mostly empty divs.
 
 Now there is one layout, one theme switcher, and **every page's content is in
-its file** — 73 feature rows on the stack page, 15 walkthrough steps, 18 request
-seams, 21 landscape projects. The interactive parts are nine islands that move
+its file**. The interactive parts are nine islands that move
 selections rather than build pages. `site/test/verify.mjs` asserts both halves:
 what is in the files, and that each widget still works in a real browser.
 
@@ -183,7 +182,7 @@ Do not write a version number on this page. The root README's
 marketing copy is a second origin nothing regenerates — this file is where the
 last one rotted for months.
 
-Two things still to check on the way out, both of them the kind that go stale
+Three things still to check on the way out, both of them the kind that go stale
 without rendering wrong:
 
 - **The package maturity notes in the table are a snapshot.** Re-verify against
@@ -193,9 +192,9 @@ without rendering wrong:
 - **The install command should pin, not float.** Below 1.0 a caret pins the
   minor, and `latest` on an alpha framework hands a visitor whatever landed this
   morning. The drive proves the package EXISTS, not that the range is sane.
-- **Three pages are reachable only by URL** — `/index2/`, `/index3/` (earlier
-  drafts of the home page) and `/before-after/`, which is real content and the
-  only one worth a nav entry. They were unlinked before the port too; the
+- **Four pages are reachable only by URL** — `/index2/`, `/index3/` (earlier
+  drafts of the home page), `/vs-laravel/` and `/before-after/`, the last two real
+  content worth a nav entry. They were unlinked before the port too; the
   question is editorial, not technical.
 
 ## Later

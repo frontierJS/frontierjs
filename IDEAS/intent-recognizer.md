@@ -9,9 +9,19 @@ dated: 2026-09-12
 **Status: PARTIAL.** Dated 2026-09-12. **The resolver is built**: the candidate
 shape, the index and the verdicts are `packages/cli/core/intent.js`, and `fli intent`
 prints one — no model runs anywhere. Not built: the translator in front of it, the
-phraser behind it, a screen index, and run 2. § *Home* says where each would go. Do not cite this file as describing
+phraser behind it, and a screen index. § *Home* says where each would go. Do not cite this file as describing
 behavior — see `VERIFYING.md`. The nine questions were answered before the first
 edit and are § *The nine*, below.
+
+**Run 3 has been made and it priced the agent** (`intent-recognizer-run-3.md`) — run
+2's fifteen asks answered by a grounded agent on three models, graded blind against
+the code. Opus 5 wrote fifteen sendable replies with no false claim; Sonnet 5 six,
+with five misleading; Haiku 4.5 none, with three misleading. **The agent is a
+frontier-model job, and the check does not rescue a cheaper one**: none of the false
+claims was about something the seed declares, so the check this record keeps would
+have passed every one. It also filed eight defects in `example`. The next
+measurement is a lean harness pricing Opus per ask; as run it was about $1.14, and
+an estimate without the harness's overhead is about $0.59.
 
 **Run 2 has been made and it turned the record** (`intent-recognizer-run-2.md`) — a
 hundred messages through the built resolver against a blind key. Words alone answered
@@ -132,7 +142,7 @@ keeping it fresh. An FJS app publishes one and CI fails a stale one.
 | Realm | What the resolver reads |
 | --- | --- |
 | Data | `db/schema.lite`, `access.snapshot.md`, `jsonschema.snapshot.md`, `ddl.snapshot.sql` |
-| API | the five registers `describeAppModel` composes — surface, principal, jobs, notifications, errors (`app-atlas.md`, shipped) |
+| API | the five registers `describeAppModel` composes — surface, principal, jobs, notifications, errors (`fli app:atlas`, `FJS-D240`) |
 | UI | the route table, `src/resources/`, `@label`, registered displays |
 
 **No retrieval, no embedding index, no ingestion step, and no drift**, because the
@@ -489,7 +499,7 @@ is.
 
 `intent-recognizer-run-1.md` (sixty synthetic requests, resolved by hand) ·
 `oracle-reasoning.md` (the birth moment, and rules 1–3 used throughout) ·
-`app-atlas.md` (shipped — the API-realm index) · `lexicon.md` (the string catalog,
+`fli app:atlas` (`FJS-D240`, the API-realm index) · `lexicon.md` (the string catalog,
 a neighbor rather than the index this needs) · `polymorphic-relations.md` (the one Data shape the language cannot
 express) · `tenant-declared-fields.md` (the `you can do this` verdict) ·
 `packages/mcp` (`ungraded` kept apart from a verdict) · `DECISIONS.md` `FJS-D14`

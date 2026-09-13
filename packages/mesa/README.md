@@ -148,10 +148,10 @@ elements, `bind:value|mask`, `$.inspect`, the render pipeline — see
 
 ---
 
-## Markdown in `.mesa` files
+## Markdown in `.md` files
 
-Any `.mesa` or `.md` file that begins with `---` frontmatter is compiled as
-markdown:
+A `.md` file is compiled as markdown. The extension decides the language — a
+`---` block at the top of a `.mesa` file is metadata, not a switch to markdown:
 
 ```md
 ---
@@ -169,8 +169,11 @@ date: 2025-01-15
   Thanks for {likes} likes!
 {/if}
 
-<button on:click={() => likes++}>Like</button>
+<p><button on:click={() => likes++}>Like</button></p>
 ```
+
+Mesa closes no element for you, so a bare inline element on its own line is
+refused — markdown opens a `<p>` around it that nothing closes. Wrap it, as above.
 
 Frontmatter keys become `export const` declarations automatically. Mesa
 expressions, `{#if}`, `{#each}`, and Mesa components all work inline.
@@ -209,7 +212,7 @@ ctx.analysis.errors  // []
 ctx.analysis.warnings
 ctx.css?.result      // scoped CSS — populated only when css: FALSE (see below)
 ctx.css?.id          // the content-addressed scope class on every element
-ctx.frontmatter      // parsed frontmatter object (.md files only)
+ctx.frontmatter      // parsed frontmatter object, for .md and .mesa alike
 ctx.isStatic         // true if component has no JS at runtime
 ```
 
@@ -233,8 +236,9 @@ Useful options:
 import { mount, mountStatic, flushSync } from '@frontierjs/mesa/runtime.js'
 import App from './App.mesa'
 
-// Standard mount — inserts after the label node
-const app = mount(document.body, App, {
+// Standard mount — inserts after the label node, which needs a parent
+const label = document.getElementById('app')
+const app   = mount(label, App, {
   props: { value: 42 },
 })
 
@@ -394,7 +398,7 @@ markers, then `mount(openComment, Comp, { props })`. Use `mount`, not a bare
 nothing — a direct call registers no delegation root.
 
 The loader itself, per-island bundling, and name→module resolution belong to the
-meta-framework; `docs/SSR_SPEC.md` W3 has the full rationale, including why the
+meta-framework; `docs/STATIC_RENDERING.md` § Island markers has the rationale, including why the
 markers are comments rather than a `<mesa-island>` element and two traps waiting
 for whoever writes the loader.
 
@@ -408,7 +412,7 @@ up to Sierra's `static` target yet.
 
 ```js
 // vite.config.js
-import mesaPlugin from '@frontierjs/mesa-vite'
+import mesaPlugin from '@frontierjs/mesa/vite'
 
 export default {
   plugins: [mesaPlugin()]
@@ -453,22 +457,19 @@ DevTools URL on startup:
 
 #### Using DevTools with Sierra (or any nested plugin)
 
-Sierra wraps `mesa-vite`'s `transform()` internally but does **not** forward
-Vite's server lifecycle hooks (`configureServer`, `transformIndexHtml`).
-The DevTools route and client-injection both depend on those hooks, so they
-get silently dropped.
+Sierra compiles `.mesa` files with its own plugin rather than `mesa-vite`, so
+Mesa's DevTools server hooks (`configureServer`, `transformIndexHtml`) are never
+registered — the DevTools route and the client injection are silently absent.
 
-Add `mesaDevtools()` as a separate top-level plugin in `vite.config.js`:
+Add `mesaDevtools()` through `sierra.config.js`'s `plugins`:
 
 ```js
-import sierra from '@frontierjs/sierra'
-import { mesaDevtools } from '@frontierjs/mesa-vite'
+// web/config/sierra.config.js
+import { mesaDevtools } from '@frontierjs/mesa/vite'
 
 export default {
-  plugins: [
-    sierra(),
-    mesaDevtools(),   // separate — Sierra doesn't forward server hooks
-  ],
+  target:  'spa',
+  plugins: [mesaDevtools()],   // adds /__mesa/devtools route + client injection
 }
 ```
 
@@ -502,7 +503,7 @@ replaced was out of date in both columns without ever rendering wrong:
 | `repl` | REPL module graph, example compile + coverage, interactivity |
 
 `test/spec-check.mjs` is separate — a plain `node test/spec-check.mjs` script that
-checks every claim VISION §4 makes against the compiler. It is not part of `bun run test`.
+checks every claim VISION §4 makes against the compiler. `bun run test` runs it first.
 
 `test/mutants.mjs` is the other one, and it grades the suite rather than the
 compiler. Most of `compiler.test.js` asserts on the emitted JavaScript as text,

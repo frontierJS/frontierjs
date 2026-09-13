@@ -42,9 +42,9 @@ is `FJS-D114` below.
 
 ---
 
-## 2 · Open — each has an id
+## 2 · Ruled — each has an id (all closed now, kept for the argument)
 
-### 2.1 A Resource owning its named queries — `FJS-D114`
+### 2.1 A Resource owning its named queries — `FJS-D114`, ruled
 
 The strongest unadopted idea here. `Task.svelte` declares three things beside the
 model and every consumer reads them:
@@ -80,7 +80,7 @@ documents what the first six months intended.
 Each of these now carries an id, so the register answers for them rather than this
 file. Nothing below is built.
 
-### 3.1 `data-confirm` — a declarative confirm with one delegated listener — `FJS-D115`
+### 3.1 `data-confirm` — a declarative confirm with one delegated listener — `FJS-D115`, ruled
 
 A button writes `data-confirm="Delete forever?"`. One document-level capture listener
 shows the popover, then re-fires the click behind a flag. Zero per-component wiring,
@@ -101,14 +101,14 @@ and restore in one value. This repo already chose the same shape for toasts
 (`toasts.loading()` → `{update, dismiss}`, `FJS-119`), independently. Worth stating
 once as house style rather than rediscovering per component.
 
-### 3.3 A component file exports its own actions from module scope — `FJS-D116`
+### 3.3 A component file exports its own actions from module scope — `FJS-D116`, ruled
 
 `import Table, { empty, exportCSV } from '.../Table.svelte'`, then
 `use:empty={{name:'webhooks', span:5}}`. Same shape as a resource: the file owns the
 noun and the verbs that touch it. Also `Map.svelte` → `getGeoLocation`,
 `Form.svelte` → `useForm`.
 
-### 3.4 Route-folder naming that survives a flat search — `FJS-D117`
+### 3.4 Route-folder naming that survives a flat search — `FJS-D117`, ruled
 
 - `index` / `create` / `[xId]` — pages
 - `_module` — layout
@@ -119,13 +119,11 @@ The namespaced filename (`_tasks.TaskStatus.svelte`) means an import list is rea
 without paths and a flat search is unambiguous — better than twelve files named
 `List.svelte`. See 4.4 for how it fails.
 
-### 3.5 The page owns its own title — `FJS-389`
+### 3.5 The page owns its own title — `FJS-389`, closed
 
-Not read off the app until a second pass; the app sets a `$title` store from the page
-and the layout renders it. Sierra has the data half and not the effect: `title:` is
-ordinary frontmatter, spread onto `page`, and `document.title` is assigned nowhere in
-`packages/sierra/src` outside the prerenderer — so a `static` build titles every file
-correctly and an SPA shows `index.html`'s one string on every route.
+Was not read off the app until a second pass. Sierra now sets `document.title`
+from the route in `src/router/index.js` (not only the prerenderer), so an SPA
+navigation retitles the tab along with a `static` build.
 
 ---
 
