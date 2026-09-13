@@ -8,8 +8,8 @@ license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
 **One kit per subpath.** `/cron`, `/gate`, `/glow`, `/inflect`, `/directives`,
-`/history`, `/hooks`, `/json`, `/jsonschema`, `/match`, `/query`, `/redact`,
-`/search`, `/signature` and `/units` today; a caller
+`/history`, `/hooks`, `/json`, `/jsonschema`, `/match`, `/predicate`, `/query`,
+`/redact`, `/search`, `/signature` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -66,6 +66,31 @@ src/query/           what a query STRING means — types, structure, and the way
                      readers — junction's transport, junction's client writing
                      one, sierra's router. Ships a `.d.ts`, because junction's
                      browser client reaches it
+src/history/         `occurrenceKey` — the one definition of *this unit of work
+                     already happened*
+src/match/           does this record still belong in that query's results.
+                     Three answers, `null` meaning *ask the server*, because a
+                     matcher forced to return a boolean has to guess. Read by
+                     sierra's live store and jetty's
+src/signature/       what a signed machine-to-machine request is — canonical
+                     string, sign, verify. Three signers existed and no verifier
+src/redact/          *is this key a credential* — the question
+                     `$protectedFields` cannot answer, because `authorization`
+                     and `cookie` are on no row. Junction's logger, `defineEnv`
+                     and conduit's URL userinfo all asked it, and a list each
+                     would have drifted. It owns the WALK too, so
+                     `redactProtected` is a predicate rather than a second walker
+src/predicate/       does this record satisfy a declared `.lite` expression —
+                     litestone's own `evalJs`, MOVED rather than copied, because
+                     a `@required(where: …)` condition is answered against the
+                     record on screen as somebody types and neither sierra nor
+                     `@frontierjs/ui` may reach litestone's internals.
+                     `compileSql` and this are still the two halves an oracle
+                     holds together, so a second CALLER is not `FJS-195`'s third
+                     compilation (`FJS-D259`)
+src/search/          ranked fuzzy matching, adapted from quick-score (MIT,
+                     `LICENSE` beside it). Two callers, both in @frontierjs/ui:
+                     CommandPalette and MultiSelect
 src/hooks/           the four-phase resource pipeline — before · after · around
                      · error — plus `hookContext`/`answered`, which is whether
                      anything ever produced a result, and `hookChainMessage`,
@@ -91,7 +116,9 @@ test/fixtures/       guide-samples.json — 137 real samples from the css guide
 
 **`@frontierjs/utils` and `packages/datetime-kit/` are gone** — both folded in
 here. An import of either name is stale, and the published `@frontierjs/utils`
-0.1.x on npm no longer moves.
+0.1.x on npm no longer moves. **`createStore` did not come with them and must
+not** (`FJS-D111`): a store is state, and purity is the whole argument for the
+license.
 
 ---
 

@@ -77,6 +77,11 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   search box — it is `aria-required`, never a native one: a group is not
   labelable, and a search box whose resting state is empty would refuse every
   submit.
+- **`<Form>` is `novalidate` by default.** Controls carry a real `required`
+  because that is what assistive tech announces, and left on, the browser
+  refuses the submit with its own bubble — a message that is not the schema's,
+  which reads as a broken handler. `novalidate={false}` restores it
+  (`forms/Form.mesa` § novalidate).
 - **`<Table>` takes the `$orderBy` DIRECTIVE, not a `(key, dir)` pair**, and is
   the only thing in the repo that reads one. The directive admits `-name`,
   `{name:'asc'}` and `[{…}]` alike — deliberately, since only the query builder
@@ -162,7 +167,8 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   the `.field-group` around it. `test/attributes.mjs` holds it for every
   component and names the ones it cannot render. Where `id` is a declared prop it means
   something else (a toast identity, a tab pairing, the id of the control a
-  `Label` points at) and never reaches the DOM as an id — those are in the
+  `Label` points at) and never reaches the DOM as an id (a caller wanting a
+  hook on the element uses `data-*`) — those are in the
   suite's own exception list, with the reason.
 - **A component exposes a method with `export function`, reached by `bind:this`**
   — `Input`/`Select`/`Textarea`/`NumberInput` (`focus()`, `select()`) and `Form`

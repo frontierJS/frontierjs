@@ -6,6 +6,14 @@ per namespace. Scaffolds, deploy, the workspace/release commands and the port br
 live here.
 `bun run test` (bun).
 
+**`fli check` is the arch-test surface, and where the live-hazard catalog
+executes** (`FJS-D133`). A rule reads the file tree, a dependency's shipped
+`.lite`, the app's own source where the wrong spelling is a LEGAL spelling of
+something else, and the NOTES against the tree — and what it may grade is a
+claim with an AUTHORITY in the tree, never what a paragraph argues. **`fli
+doctor` is a different question and stays one**: whether this MACHINE can run
+fli.
+
 ---
 
 ## Layout
