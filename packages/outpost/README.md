@@ -17,9 +17,9 @@ every fleet server to do that.
 
 ```sh
 OUTPOST_SERVER_ID=<the Server row's id> \
-OUTPOST_SECRET=<the fleet secret> \
+OUTPOST_SECRET=<this server's secret> \
 BASECAMP_URL=https://basecamp.internal \
-bunx outpost
+bunx --bun @frontierjs/outpost
 ```
 
 Those three have no default and the process refuses to start without them: an
@@ -47,6 +47,7 @@ process's user, so the default is refuse and a route opts out rather than in.
 | `POST /stop` | `{ app_id }` → `{ stopped }` |
 | `POST /health-check` | `{ app_id }` → `{ healthy }` |
 | `POST /exec` | `{ command, timeout_s }` or `{ step }` → `{ exit_code, stdout, stderr }` |
+| `POST /logs` | `{ app_id, tail, since }` → `{ running, tail, since, stdout, stderr }`, plus `error` when there is no such container |
 | `POST /system/prune` | `{ targets, keep_images }` → `{ freed_bytes, removed, volumes, usage }` |
 | `POST /volumes/prune` | `{ names }` → `{ removed }` |
 | `DELETE /volumes/<name>` | → `{ removed }`, or 409 with the container holding it |

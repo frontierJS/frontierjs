@@ -1,7 +1,7 @@
 # @frontierjs/config — state
 
-**v0.1.0 · green · 12 tests.** Consumed by every app `fli new` scaffolds; not yet
-consumed by this repo's own packages.
+**Green (`bun run test`); the version is `package.json`'s.** Consumed by every
+app `fli new` scaffolds; not yet consumed by this repo's own packages.
 
 ## What is decided
 

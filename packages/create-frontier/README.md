@@ -40,7 +40,10 @@ my-app/
 ├── db/schema.lite          the seed — everything else derives from it
 ├── api/                    Junction services, hooks, plugin wiring
 ├── web/                    Sierra routes and Mesa resources
-├── deploy/                 Dockerfile + frontier.config.js
+├── cli/src/routes/         the project's own fli commands
+├── deploy/                 Dockerfile
+├── frontier.config.js      fli's deploy config
+├── .env.example
 ├── tsconfig.json           one line of extends over @frontierjs/config
 ├── biome.json              ditto — linter only, no formatter
 ├── .editorconfig

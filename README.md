@@ -31,7 +31,7 @@ schema.lite
     │
     ├── Litestone  →  tables, migrations, gate enforcement
     ├── Junction   →  service shape, validation, OpenAPI spec
-    └── Sierra     →  make() factories, form field references, incoming transforms
+    └── Sierra     →  make() defaults, field rules (coerce, blank→null, validate), forms and columns
 ```
 
 ---
@@ -44,7 +44,7 @@ schema.lite
 | ----------------------------------------------- | ------- | --------------------------------------------------------------------------------------------------- |
 | [`@frontierjs/litestone`](./packages/litestone) | Data    | Schema-first SQLite ORM with a gate system, plugin pipeline, and tenant registry                    |
 | [`@frontierjs/junction`](./packages/junction)   | API     | Bun-native service framework with HTTP + WebSocket transport, hook pipeline, and real-time channels |
-| [`@frontierjs/sierra`](./packages/sierra)       | UI      | Vite meta-framework with file-system routing, resource factory, and fine-grained reactive runtime   |
+| [`@frontierjs/sierra`](./packages/sierra)       | UI      | Vite meta-framework with file-system routing, the resource factory, and the build                    |
 | [`@frontierjs/mesa`](./packages/mesa)           | UI      | Reactive component language and compiler — the runtime Sierra is built on                           |
 | [`@frontierjs/cli`](./packages/cli)             | Tooling | `fli` — the single interface to all of the above                                                    |
 
@@ -55,9 +55,9 @@ surgery on the core:
 | --- | --- | --- |
 | [`@frontierjs/auth`](./packages/auth) | slice | Identity, sessions and API keys over Litestone's `asSystem()`. Ships its own schema fragments |
 | [`@frontierjs/caravan`](./packages/caravan) | jobs | SQLite job queue + cron → `app.jobs`. A job runs as whoever asked for it |
-| [`@frontierjs/conduit`](./packages/conduit) | outbound | The one boundary anything leaving the process crosses — declared targets, `app.conduit.send()` |
-| [`@frontierjs/notifications`](./packages/notifications) | slice | A Notification class → an in-app record, a WebSocket event and an email |
-| [`@frontierjs/ui`](./packages/ui) | UI | 65 Mesa components over the design system. A `<Form>` that reads the schema |
+| [`@frontierjs/conduit`](./packages/conduit) | outbound | The third parties an app integrates with, declared in one place — `app.conduit.send()` |
+| [`@frontierjs/notifications`](./packages/notifications) | slice | A notification file (`defineNotification`) → an in-app record, a WebSocket event and an email |
+| [`@frontierjs/ui`](./packages/ui) | UI | Mesa components over the design system. A `<Form>` that reads the schema |
 | [`@frontierjs/css`](./packages/css) | UI | The styling language — a tone and a treatment, never a color. Plain CSS, no build step |
 | [`@frontierjs/email-kit`](./packages/email-kit) | UI | Table-based email components compiled by Mesa. An MJML replacement |
 | [`@frontierjs/jetty`](./packages/jetty) | UI | A browser extension as a surface of the app — MV3, Mesa-rendered |
@@ -76,7 +76,7 @@ The packages are the application layer. The FJS World is the operational environ
 | --------------------- | ---------------------------------------------------- | -------------------- |
 | 01 · CLI              | Developer interface                                  | `fli`                |
 | 02 · Database         | Schema, migrations, ORM                              | Litestone            |
-| 03 · Config & Secrets | Environment config, secrets                          | `frontier.config.js` |
+| 03 · Config & Secrets | Environment config, secrets                          | per-surface `config/` |
 | 04 · Integrations     | Outbound connections, messaging                      | Conduit              |
 | 05 · Automation       | Background jobs, queues, workflows                   | Caravan · Orion      |
 | 06 · Auth             | Identity, sessions, access                           | FJS Auth             |
@@ -97,19 +97,14 @@ bun run dev
 is the same scaffold from the CLI directly. API runs on `:8100`, web on `:8000` —
 the FJS port scheme, `packages/cli/core/ports.js`.
 
-> **Alpha.** Every publishable package is on npm and the registry matches this
-> tree — see [Publishing status](#publishing-status) — but the surface still
+> **Alpha.** Every publishable package except `@frontierjs/mcp` and
+> `@frontierjs/outpost` is on npm and the registry matches this tree — see [Publishing status](#publishing-status) — but the surface still
 > moves between releases, so pin a version rather than taking `latest` or `*`.
 
-**`fli tutor` is the whole path, and it runs.** Eight lessons — an app that
-runs, the access rules watched refusing somebody, a write reaching a second
-client and one it must not reach, work that outlives its request, a public site
-built ahead of time and the check on what it published, a real deploy to your
-own machine with a revert, changing the schema of something already deployed,
-and a control plane with a machine reporting in to it. Every step runs the real
+**`fli tutor` is the whole path, and it runs.** Every step runs the real
 command and then asks the running world whether it worked, and `bun run ci`
-grades all eight, so a command renamed out from under a step is a red build
-rather than a stale paragraph. The [Quickstart](./docs/QUICKSTART.md) is now its
+grades every lesson, so a command renamed out from under a step is a red build
+rather than a stale paragraph. The [Quickstart](./docs/QUICKSTART.md) is its
 index.
 
 For the API realm on its own, the [Junction example ladder](./packages/junction/example/README.md)
@@ -140,39 +135,33 @@ model Lead {              // PascalCase, singular — always. Accessor: db.lead
 ```
 
 ```typescript
-// api/server.ts — Data → API connection
+// api/src/services/leads.service.ts — Data → API connection
+//
+// The name comes from the file ('leads' → /api/leads → db.lead), CRUD from the
+// model, 401s from @@gate, 400s from the field rules. Autoloaded at boot.
 
-const db         = await createClient({          // one options object, never positional
-  path:    './db/schema.lite',   // `path` is a file; `schema` is inline text
-  plugins: [gatePlugin],
-})
-const jsonSchema = generateJsonSchema(db.$schema)
+import { createBaseService } from '@frontierjs/junction'
 
-app.services.register(createService({
-  name:    'leads',      // the URL: /leads
-  model:   'lead',       // the accessor: db.lead
-  schema:  jsonSchema,   // 400s derived from the schema's own rules
-  channel: 'leads',      // declare the broadcast target — no publish hook needed
-  hooks: {
-    before: { all: [authenticate] },
-  },
-}))
+export function createLeadsService() {
+  return createBaseService({
+    channel: 'leads',   // announce every write; each frame graded per recipient
+  })
+}
 ```
 
 ```javascript
 // web/src/resources/Lead.mesa — API → UI connection
 
 <script module>
-  import { resource } from '@/core/frontier'
+  import { createResource } from '@frontierjs/sierra/junction'
 
-  const _res = resource.createResource({ model: 'Lead', service: 'leads' })
-
-  export const { store, service, load } = _res
-  export const make = spec => _res.make(spec)
+  export const leads = createResource('leads', {
+    model: 'Lead',
+  })
 </script>
 ```
 
-One schema. One service declaration. One resource binding. Any component that imports `Lead.mesa` gets a live, reactive window into the data — HTTP for writes, WebSocket push for real-time sync.
+One schema. One service file. One resource binding. Any component that imports `leads` from `Lead.mesa` gets a live, reactive window into the data — over the WebSocket when one is connected, HTTP when it is not, with pushes for real-time sync.
 
 ---
 
@@ -184,7 +173,7 @@ One schema. One service declaration. One resource binding. Any component that im
 
 **Access is declared, not programed.** The gate system defines minimum trust levels per model, per operation, enforced at the database boundary. It cannot be bypassed from a route someone forgot to protect.
 
-**Real-time is core.** Every service emits events after writes. Every resource subscribes to them. A FrontierJS UI is live by default — open two tabs, make a change in one, the other updates without a refresh.
+**Real-time is core.** A service that declares a `channel:` announces every write. Every resource subscribes to them. A FrontierJS UI is live by default — open two tabs, make a change in one, the other updates without a refresh.
 
 **Solve for the 80, leave an escape for the 20.** FrontierJS makes the common decisions for you. Every feature has a documented path for cases it does not cover.
 
@@ -192,8 +181,8 @@ One schema. One service declaration. One resource binding. Any component that im
 
 ## Requirements
 
-- [Bun](https://bun.sh) >= 1.0 — required, not optional
-- Node.js is not supported
+- [Bun](https://bun.sh) >= 1.0 — the app runtime, required, not optional
+- Node.js >= 20.6 for `fli` itself, and >= 24 for `npm create frontier`
 
 ---
 
@@ -206,9 +195,9 @@ One schema. One service declaration. One resource binding. Any component that im
 | [Architecture & Vocabulary](./ARCHITECT.md)                                           | The mental model (§1), the mandatory vocabulary (§2), the eight domains (§4)     |
 | [Decisions](./DECISIONS.md)                                                           | Dated rulings — read before relitigating any semantics                           |
 | [Verifying](./VERIFYING.md)                                                           | How to know something here is true: run it, probe failure paths, don't trust docs |
-| [Realm Bridge Reference](./CLAUDE.md#bridge-index--the-named-cross-package-handoffs)  | The named cross-package handoffs, and the file each one lives in                 |
+| [Realm Bridge Reference](./CLAUDE.md#bridge-index--the-named-cross-package-handoffs)  | The named cross-package handoffs — entries in `.claude/skills/bridge-index/`     |
 | [Issues](./ISSUES.md)                                                                 | The open register — every defect, gap and unruled question, one id each          |
-| [Handoff](./HANDOFF.md)                                                               | Current state, newest session first. Narrative; the ledger lives in Issues       |
+| [Handoff](./HANDOFF.md)                                                               | The two most recent sessions, narrative. Read cold, never cited as behavior      |
 
 ### Runnable examples
 
@@ -236,11 +225,11 @@ change), a `PROJECT_STATE.md` and a `CHANGES.md`.
 | Mesa — Reactive component language                 | [packages/mesa](./packages/mesa/README.md)                           |
 | CLI — `fli`                                        | [packages/cli](./packages/cli/README.md)                             |
 | create-frontier — the front door                   | [packages/create-frontier](./packages/create-frontier/README.md)     |
-| Auth — identity, sessions, gate enforcement        | [packages/auth](./packages/auth/README.md)                           |
+| Auth — identity, sessions, API keys                | [packages/auth](./packages/auth/README.md)                           |
 | Caravan — SQLite job queue + cron                  | [packages/caravan](./packages/caravan/README.md)                     |
 | Conduit — outbound boundary (`app.conduit.send()`) | [packages/conduit](./packages/conduit/README.md)                     |
 | Notifications — in-app + email fan-out             | [packages/notifications](./packages/notifications/README.md)         |
-| UI — 65 Mesa components                            | [packages/ui](./packages/ui/README.md)                               |
+| UI — Mesa components                               | [packages/ui](./packages/ui/README.md)                               |
 | CSS — semantics-first design system                | [packages/css](./packages/css/README.md)                             |
 | Email-kit — table-based email components           | [packages/email-kit](./packages/email-kit/README.md)                 |
 | Jetty — browser-extension app container            | [packages/jetty](./packages/jetty/README.md)                         |
@@ -255,7 +244,7 @@ than part of it:
 | | |
 | --- | --- |
 | [Basecamp](./packages/basecamp/README.md) | Fleet operations — the largest dogfooding surface, all three realms real |
-| [`example/`](./example/README.md) | The kitchen sink — one shop-ops app, six drives, every package exercised |
+| [`example/`](./example/README.md) | The kitchen sink — a fleet of shops across six surfaces, a drive per feature area, every package exercised |
 | [Oracle](./packages/oracle/README.md) · [Orion](./packages/orion/README.md) | Claimed, not built. V2, deferred until core leaves alpha (`FJS-D14`) |
 
 ---
@@ -273,7 +262,7 @@ browser extension, `desktop/` for a native app with its screens bundled in:
 
 ```
 my-app/
-  frontier.config.js         ← environment config
+  frontier.config.js         ← deploy config (fli make:deploy)
 
   db/                        ← Data realm — Litestone
     schema.lite              ← single source of truth
@@ -359,8 +348,6 @@ my-app/
     dist/                    ← the bundled screens, compiled into the binary
 
   deploy/                    ← everything about shipping — Dockerfile, deploy steps
-  tests/                     ← cross-project integration tests
-  wiki/                      ← project documentation
 ```
 
 **The database lives at the root** — shared by all sub-projects, owned by none of them.
@@ -408,8 +395,8 @@ that is the writing loop. The publish check, the island chunks and the one-file-
 output exist only in the build, so anything touching a `load()` or a page's frontmatter
 is proved with `fli site:build`.
 
-**Every sub-project has the same six folders**, `site/`, `widgets/` and `extension/`
-included, so knowing one means knowing all of them:
+**Most sub-projects draw on the same six folders**, so knowing one means knowing
+all of them:
 
 | Folder | Holds |
 | --- | --- |
@@ -422,7 +409,7 @@ included, so knowing one means knowing all of them:
 
 **All Sierra code lives under `web/`** — `config/` and `src/` belong to the UI realm, not
 to the app root. `web/` is the Vite root: `index.html` and the dev server's working
-directory are there, and the build runs as `cd web && vite -c config/vite.config.js`.
+directory are there, and the dev server runs as `cd web && vite -c config/vite.config.js`.
 Sierra locates `sierra.config.js` by looking beside `vite.config.js` first, so the
 `config/` pair needs no extra wiring.
 
@@ -430,9 +417,9 @@ Sierra locates `sierra.config.js` by looking beside `vite.config.js` first, so t
 
 ## Publishing status
 
-**Every publishable package is on npm.** The badges below are the answer — a
-version written here as text is a second origin that goes stale the next release,
-which is what this table used to be. `fli ws:npm` compares this tree against the
+**Every publishable package is on npm, except `@frontierjs/mcp` and
+`@frontierjs/outpost`.** The badges below are the answer — a version written here
+as text is a second origin that goes stale the next release. `fli ws:npm` compares this tree against the
 registry and names any package that has drifted; the `registry` CI phase fails a
 package `fli new` writes into an app that the registry has never heard of.
 

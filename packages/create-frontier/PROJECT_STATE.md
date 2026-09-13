@@ -1,7 +1,7 @@
 # create-frontier — state
 
-**v0.1.0 · green · 9 tests · unpublished.** The name is free on npm; nothing has
-claimed `create-frontier`.
+**Green (`bun run test`) · published** — `npm view create-frontier version`
+answers the version `package.json` carries.
 
 ## What works
 
@@ -25,9 +25,9 @@ directions measured, which is what makes the pin a fact rather than a precaution
 
 ## Open
 
-- **Unpublished**, so `npm create frontier@latest` does not resolve yet. It
-  cannot be published before `@frontierjs/cli@0.1.2` and `@frontierjs/config` are,
-  since it depends on both — `workspace:*` becomes a real version at publish.
+- **It releases in lockstep with `@frontierjs/cli`**, which it depends on as
+  `workspace:*` — that becomes a real version at publish, so the cli has to be on
+  the registry first.
 - **The npm path is untested end to end.** Everything here has been run against
   the working tree and against local tarballs; nobody has run
   `npm create frontier@latest` from a clean machine. That is the same gap
