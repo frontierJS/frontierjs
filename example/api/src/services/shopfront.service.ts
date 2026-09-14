@@ -4,7 +4,8 @@ import { createService, $ } from '@frontierjs/junction'
 //
 // Every other service here answers rows in this shop's database. This one
 // answers the things a shop is that are not rows: the name a customer reads on
-// a receipt, and the address the confirmation arrives from. One process serves
+// a receipt, the address the confirmation arrives from, and the zone its
+// calendar is kept in. One process serves
 // the whole fleet, so both are per shop and neither can be a constant
 // (`FJS-D126`).
 //
@@ -18,6 +19,13 @@ import { createService, $ } from '@frontierjs/junction'
 // Over no model, so the gate ladder does not apply and access is the service's
 // own business — a storefront's name is public by construction, since it is
 // printed on the page every visitor loads.
+
+declare module '@frontierjs/junction' {
+  interface AppConfig {
+    /** The IANA zone this shop's calendar is read in — `tenantConfigKeys` in app.ts. */
+    timeZone: string
+  }
+}
 
 export default createService({
   name: 'shopfront',
@@ -38,6 +46,9 @@ export default createService({
     return {
       name: config.name,
       from: config.mail?.from ?? null,
+      // Read by every screen that shows a billing period or a due date, so the
+      // day on the page is the day on the document (`FJS-1149`).
+      timeZone: config.timeZone,
       // Read back so a drive can assert that a shop CANNOT move it. A shop
       // naming its own port or its own database file is the whole reason the
       // override list is an allow-list with a reserved floor under it.

@@ -49,9 +49,14 @@ export type RenewPayload = { subscriptionId: number, periodEnd: string }
  * by an earlier attempt, the subscription may have been cancelled between the
  * sweep and this job, and it may have been asked to stop AT this boundary —
  * which is the one case where the job does something and still bills nothing.
+ *
+ * `timeZone` is the shop's calendar, which the line text is written in. An
+ * argument rather than a read, because the drive calls this with no app behind
+ * it and must say which calendar it bills in rather than inherit one.
  */
 export async function renewSubscription(
   ctx: JobContext<RenewPayload & { at?: string }>,
+  timeZone: string,
 ): Promise<string | null> {
   const sys = db.asSystem() as Record<string, any>
   const at  = ctx.data?.at ?? new Date().toISOString()
@@ -106,7 +111,7 @@ export async function renewSubscription(
       name:        plan.name,
       quantity:    sub.quantity,
       unitAmount:  version.price,
-      periodStart, periodEnd,
+      periodStart, periodEnd, timeZone,
     }),
   })
 
@@ -150,7 +155,9 @@ export async function renewSubscription(
 
 export default defineJob<RenewPayload & { at?: string }>(
   'renew-subscription',
-  async (ctx) => { await renewSubscription(ctx) },
+  // `runAs` has already put this job's shop in scope, so `configFor()` answers
+  // its calendar; `$` refuses outside a service call.
+  async (ctx) => { await renewSubscription(ctx, ctx.app!.configFor().timeZone) },
   // No cron. This one is dispatched, never scheduled — the sweep below owns the
   // clock, and a job that both schedules itself and is dispatched has two
   // answers to how often it runs.

@@ -18,6 +18,7 @@ title: Subscriptions
   import Subscription, { subscriptions } from '@/resources/Subscription.mesa'
   import { session } from '@/session.js'
   import { prefs } from '@/prefs.js'
+  import { day } from '@/datetime.js'
   import { useStore } from '@frontierjs/sierra/junction'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../money.js'
@@ -85,8 +86,6 @@ title: Subscriptions
   function open()  { editing = subscriptions.make(); error = null }
   function close() { editing = null }
 
-  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
-    { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
 </script>
 
 <SectionHeader title="Subscriptions" level={1}>
@@ -109,7 +108,7 @@ title: Subscriptions
       <td><Pill tone={TONE[s.status] ?? 'muted'} data-status={s.status}>{s.status}</Pill></td>
       <td class="text-right" data-quantity={s.quantity}>{s.quantity}</td>
       <td data-renews={s.currentPeriodEnd ?? ''} data-stopping={s.cancelAtPeriodEnd ? '1' : ''}>
-        {when(s.currentPeriodEnd)}
+        {day(s.currentPeriodEnd)}
         {#if s.cancelAtPeriodEnd && s.status !== 'cancelled'}
           <span class="text-muted text-xs"> · ends, does not renew</span>
         {/if}

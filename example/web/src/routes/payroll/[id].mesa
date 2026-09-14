@@ -27,6 +27,7 @@ title: Pay run
   import { journalEntries } from '@/resources/JournalEntry.mesa'
   import { employees }     from '@/resources/Employee.mesa'
   import { session } from '@/session.js'
+  import { day } from '@/datetime.js'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../money.js'
 
@@ -165,8 +166,6 @@ title: Pay run
     employer:   t.employer   + s.employerCost,
   }), { gross: 0, deductions: 0, net: 0, employer: 0 })
 
-  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
-    { year: 'numeric', month: 'short', day: 'numeric' }) : null
 </script>
 
 <Breadcrumbs items={[{ label: 'Payroll', href: '/payroll/' }, { label: run?.reference ?? '…' }]} />
@@ -180,7 +179,7 @@ title: Pay run
     {#snippet action()}
       <div class="cluster">
         <Pill tone={TONE[run.status] ?? 'muted'} data-status={run.status}>{run.status}</Pill>
-        <Badge tone="muted">{when(run.periodStart)} – {when(run.periodEnd)}</Badge>
+        <Badge tone="muted">{day(run.periodStart)} – {day(run.periodEnd)}</Badge>
         {#if run.approvedBy}<Badge tone="info" data-approved>approved by {run.approvedBy}</Badge>{/if}
       </div>
     {/snippet}
@@ -218,7 +217,7 @@ title: Pay run
         <td class="text-right" data-deductions={s.deductions}>{money(s.deductions)}</td>
         <td class="text-right" data-net={s.net}>{money(s.net)}</td>
         <td>
-          {#if s.sentAt}<Pill tone="success" data-sent>{when(s.sentAt)}</Pill>
+          {#if s.sentAt}<Pill tone="success" data-sent>{day(s.sentAt)}</Pill>
           {:else}<span class="text-muted">—</span>{/if}
         </td>
       </tr>

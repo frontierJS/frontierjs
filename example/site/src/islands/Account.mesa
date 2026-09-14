@@ -43,6 +43,7 @@
   let subs     = []
   let bills    = []
   let needy    = []   // payments whose bank has asked for the cardholder
+  let calendar = null // the shop's zone; its documents' dates are days in it
   let billOpen = null
   let detail   = new Map()   // invoiceId → the composed document
   let working  = null        // the subscription a cancel is in flight for
@@ -88,7 +89,7 @@
     // everything and getting this person's rows is the boundary working. A
     // screen that also filtered would be a second copy of that rule in the one
     // place it cannot be enforced.
-    const [sl, bl, pl] = await Promise.all([
+    const [sl, bl, pl, shop] = await Promise.all([
       client.service('subscriptions').find({}, { orderBy: '-createdAt', limit: 20 }),
       client.service('invoices').find({},      { orderBy: '-issuedAt',  limit: 50 }),
       // The payments that are waiting for THIS person. `Payment` reads at
@@ -97,10 +98,14 @@
       // can finish it, so a row only staff could read would leave the one
       // person who can act unable to find out.
       client.service('payments').find({ status: 'requiresAction' }, { limit: 10 }),
+      // Which calendar the bills below are dated in. Asked with the rows they
+      // date, so nothing renders a day before it is known (`FJS-1149`).
+      client.service('shopfront').invoke('settings', null, {}),
     ])
     subs  = sl?.data ?? []
     bills = bl?.data ?? []
     needy = pl?.data ?? []
+    calendar = shop?.timeZone ?? null
 
     state  = 'in'
   }
@@ -208,8 +213,11 @@
     state = 'out'
   }
 
-  const when = iso => new Date(iso).toLocaleDateString(undefined,
-    { year: 'numeric', month: 'short', day: 'numeric' })
+  // The web app's `day()` (`web/src/datetime.js`), restated because a surface
+  // owns its own src (Invariant 3): the shop's calendar and the reader's locale.
+  // UTC is the API's floor for a shop that set nothing.
+  const when = iso => new Intl.DateTimeFormat(undefined,
+    { year: 'numeric', month: 'short', day: 'numeric', timeZone: calendar ?? 'UTC' }).format(new Date(iso))
 </script>
 
 <section class="account" data-account>

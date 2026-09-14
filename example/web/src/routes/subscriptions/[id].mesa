@@ -23,6 +23,7 @@ title: Subscription
   import { planVersions }  from '@/resources/PlanVersion.mesa'
   import { invoices }      from '@/resources/Invoice.mesa'
   import { session } from '@/session.js'
+  import { day } from '@/datetime.js'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../money.js'
 
@@ -250,8 +251,6 @@ title: Subscription
     finally { busy = false }
   }
 
-  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
-    { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
 </script>
 
 <Breadcrumbs items={[
@@ -315,7 +314,7 @@ title: Subscription
     <StatCard label="Sold at" value={version ? money(version.price) : '—'} id="sd-sold-at" />
     <StatCard label="Seats"  value={String(sub.quantity)} id="sd-seats" />
     <StatCard label={sub.cancelAtPeriodEnd ? 'Ends' : 'Renews'}
-              value={when(sub.currentPeriodEnd)}
+              value={day(sub.currentPeriodEnd)}
               tone={sub.cancelAtPeriodEnd ? 'warning' : ''} id="sd-renews" />
   </div>
 
@@ -327,7 +326,7 @@ title: Subscription
   -->
   {#if sub.cancelAtPeriodEnd && sub.status !== 'cancelled'}
     <Alert tone="warning" id="sd-stopping">
-      This subscription stops on <strong>{when(sub.currentPeriodEnd)}</strong>
+      This subscription stops on <strong>{day(sub.currentPeriodEnd)}</strong>
       and will not be invoiced again. It is still active until then — the period
       has been paid for.
     </Alert>
@@ -381,9 +380,9 @@ title: Subscription
         <td><a href={'/invoices/' + inv.id + '/'}><Mono size="xs">{inv.number}</Mono></a></td>
         <td><Pill tone={inv.status === 'paid' ? 'success' : inv.status === 'void' ? 'muted' : 'warning'}
                   data-status={inv.status}>{inv.status}</Pill></td>
-        <td class="text-muted">{when(inv.periodStart)} – {when(inv.periodEnd)}</td>
+        <td class="text-muted">{day(inv.periodStart)} – {day(inv.periodEnd)}</td>
         <td class="text-right" data-total={inv.total}>{money(inv.total)}</td>
-        <td class="text-muted">{when(inv.dueAt)}</td>
+        <td class="text-muted">{day(inv.dueAt)}</td>
       </tr>
     {/snippet}
   </Table>

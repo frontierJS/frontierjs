@@ -21,6 +21,7 @@
 // Everything is minor units, as `pricing.ts` is. Nothing divides by a hundred.
 
 import { roundMinor, allocate } from '@frontierjs/toolbelt/units'
+import { format }               from '@frontierjs/toolbelt/datetime'
 import { createIntent, confirmOffSession } from '../../providers/psp/index.ts'
 
 /** A Litestone client of some flavor — see `pricing.ts` for why this is loose. */
@@ -86,10 +87,10 @@ function daysInMonth(year: number, month: number): number {
 /** The lines a full, ordinary period is made of. One today; a plan with add-ons
  *  is where the array stops being a formality. */
 export function periodLines(
-  args: { name: string, quantity: number, unitAmount: number, periodStart: string, periodEnd: string },
+  args: { name: string, quantity: number, unitAmount: number, periodStart: string, periodEnd: string, timeZone: string },
 ): BillingLine[] {
   return [{
-    description: `${args.name} — ${args.quantity} × the ${describeSpan(args.periodStart, args.periodEnd)}`,
+    description: `${args.name} — ${args.quantity} × the ${describeSpan(args.periodStart, args.periodEnd, args.timeZone)}`,
     quantity:    args.quantity,
     unitAmount:  args.unitAmount,
     amount:      args.unitAmount * args.quantity,
@@ -102,14 +103,15 @@ export function periodLines(
  *  because the line text is part of the DOCUMENT — it is frozen with the row,
  *  so it cannot be re-rendered later in a different locale or a different
  *  wording and still be the same statement. */
-export function describeSpan(from: string, to: string): string {
-  // UTC for `advancePeriod`'s reason, one step further along: this string is
-  // FROZEN into the line, so a server in another zone would write a different
-  // document for the same period — and the difference would only ever be
-  // visible on the rows written either side of a move.
-  const fmt = (s: string) => new Date(s).toLocaleDateString('en-GB',
-    { day: 'numeric', month: 'short', timeZone: 'UTC' })
-  return `${fmt(from)} – ${fmt(to)}`
+export function describeSpan(from: string, to: string, timeZone: string): string {
+  // In the SHOP's zone, stated by the caller. This string is frozen into the
+  // line, so the zone cannot be the server's — a deployment moved across zones
+  // would write a different document for the same period — and it cannot be the
+  // viewer's either, because every screen showing the period reads it in the
+  // shop's zone too, and a line and a header naming two different days for one
+  // period was `FJS-1149`.
+  const day = (s: string) => format(s, 'D MMM', { timeZone, locale: 'en-GB' })
+  return `${day(from)} – ${day(to)}`
 }
 
 // ─── Proration ────────────────────────────────────────────────────────────
@@ -160,6 +162,7 @@ export function prorate(args: {
   periodEnd:   string
   at:          string
   name:        string
+  timeZone:    string
   from: { unitAmount: number, quantity: number }
   to:   { unitAmount: number, quantity: number }
 }): Proration {
@@ -177,7 +180,7 @@ export function prorate(args: {
   const lines: BillingLine[] = []
 
   if (credit > 0) lines.push({
-    description: `Unused ${describeSpan(rest, args.periodEnd)} — credit`,
+    description: `Unused ${describeSpan(rest, args.periodEnd, args.timeZone)} — credit`,
     quantity:    args.from.quantity,
     unitAmount:  -args.from.unitAmount,
     amount:      -credit,
@@ -190,7 +193,7 @@ export function prorate(args: {
     // every seat costs the same to within the one unit the remainder moves.
     const parts = allocate(charge, Array.from({ length: args.to.quantity }, () => 1))
     for (const [i, amount] of parts.entries()) lines.push({
-      description: `${args.name} — seat ${i + 1}, ${describeSpan(rest, args.periodEnd)}`,
+      description: `${args.name} — seat ${i + 1}, ${describeSpan(rest, args.periodEnd, args.timeZone)}`,
       quantity:    1,
       unitAmount:  amount,
       amount,
@@ -346,6 +349,7 @@ export async function changePlan(
   sys: Client,
   subscriptionId: number,
   change: { planVersionId?: number | null, quantity?: number | null, at?: string },
+  timeZone: string,
 ): Promise<{ kind: 'invoice' | 'credit-note' | 'none', number?: string, net: number }> {
   const sub = await sys.subscription.findFirst({ where: { id: subscriptionId } })
   if (!sub) throw new Error(`changePlan: no subscription ${subscriptionId}`)
@@ -367,7 +371,7 @@ export async function changePlan(
   const reanchor = fromPlan.interval !== plan.interval
   if (reanchor && plan.interval === 'monthly')
     throw Object.assign(new Error(
-      `${sub.reference} is paid for the year to ${describeSpan(sub.currentPeriodStart, sub.currentPeriodEnd)} — ` +
+      `${sub.reference} is paid for the year to ${describeSpan(sub.currentPeriodStart, sub.currentPeriodEnd, timeZone)} — ` +
       `a move to a monthly plan takes effect at renewal`), { status: 409 })
 
   let periodStart = sub.currentPeriodStart
@@ -378,7 +382,7 @@ export async function changePlan(
     // The credit is `prorate`'s with nothing charged against it; the charge is
     // an ordinary whole period, which is what renewal would have written.
     const credit = prorate({
-      periodStart, periodEnd, at,
+      periodStart, periodEnd, at, timeZone,
       name: plan.name,
       from: { unitAmount: from.price, quantity: sub.quantity },
       to:   { unitAmount: 0,          quantity },
@@ -386,12 +390,12 @@ export async function changePlan(
     periodStart = at
     periodEnd   = advancePeriod(at, plan.interval).toISOString()
     const lines = [...credit.lines, ...periodLines({
-      name: plan.name, quantity, unitAmount: to.price, periodStart, periodEnd,
+      name: plan.name, quantity, unitAmount: to.price, periodStart, periodEnd, timeZone,
     })]
     p = { lines, net: lines.reduce((n, l) => n + l.amount, 0) }
   } else {
     p = prorate({
-      periodStart, periodEnd, at,
+      periodStart, periodEnd, at, timeZone,
       name: plan.name,
       from: { unitAmount: from.price, quantity: sub.quantity },
       to:   { unitAmount: to.price,   quantity },
@@ -425,7 +429,7 @@ export async function changePlan(
       number:    `CN-${3000 + (await sys.creditNote.count()) + 1}`,
       invoiceId: last.id,
       amount:    -p.net,
-      reason:    `Downgrade on ${describeSpan(at, periodEnd)} — unused time credited`,
+      reason:    `Downgrade on ${describeSpan(at, periodEnd, timeZone)} — unused time credited`,
       issuedAt:  at,
       userId:    sub.userId,
     } })

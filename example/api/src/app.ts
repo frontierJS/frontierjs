@@ -22,7 +22,7 @@ import { conduit }                              from '@frontierjs/conduit'
 import { notificationsPlugin }                  from '@frontierjs/notifications'
 import { mailerPlugin, outbox }                 from '@frontierjs/junction'
 
-import { db, shops, DEFAULT_SHOP, DEV_KEY, STORAGE_ROOT } from './core/db.ts'
+import { db, shops, DEFAULT_SHOP, DEV_KEY, STORAGE_ROOT, TIME_ZONE_FLOOR } from './core/db.ts'
 import { perShopAuth }                          from './core/auth.ts'
 import { shopGateLevel, SYSTEM }                from './core/gate.ts'
 import { joinChannels }                         from './core/channels.ts'
@@ -253,7 +253,7 @@ const app = createApp({
   // would use a file, and this one already had somewhere to put it.
   //
   // `tenantConfigKeys` is the half that makes it safe rather than the half that
-  // makes it work — only these two paths apply, a resolver answering anything
+  // makes it work — only these paths apply, a resolver answering anything
   // else is refused by name, and `database` could not be listed here even by
   // mistake: junction refuses the reserved paths at boot, and a shop naming its
   // own database file is every other shop's orders.
@@ -262,7 +262,7 @@ const app = createApp({
   // key `tenantConfigKeys` does not name — so reading the blob whole would make
   // one unrelated field break every request for that shop.
   tenantConfig:     (shop: string) => (shops.meta(shop).config ?? {}) as Record<string, unknown>,
-  tenantConfigKeys: ['name', 'mail.from'],
+  tenantConfigKeys: ['name', 'mail.from', 'timeZone'],
 
   config: {
     name: 'shop', port: PORT, apiPrefix: '/api',
@@ -271,6 +271,13 @@ const app = createApp({
     // exactly these, which is what makes adopting per-shop config free for a
     // fleet of one.
     mail: { from: 'shop@example.test' },
+
+    // Whose calendar a billing period, a due date and a start date are read
+    // in. The shop's, never the viewer's: an invoice's line text is frozen
+    // with the row, so a screen reading the same period in the viewer's zone
+    // put two different days on one page (`FJS-1149`). UTC as the floor keeps
+    // every shop that has set nothing writing exactly what it wrote before.
+    timeZone: TIME_ZONE_FLOOR,
 
     // The other half of the File column — db.ts writes the bytes under here
     // and this serves them. Rooted at the storage directory rather than at a

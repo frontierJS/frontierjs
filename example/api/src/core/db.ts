@@ -154,6 +154,10 @@ const registry = await createTenantRegistry({
  */
 export const DEFAULT_SHOP = process.env.SHOP ?? 'flagship'
 
+/** The calendar a shop keeps when its config names none — `config.timeZone` in
+ *  app.ts, and the seed, which runs with no app to ask `configFor()`. */
+export const TIME_ZONE_FLOOR = 'UTC'
+
 /**
  * Open a shop, and bring it up to the current schema the first time.
  *

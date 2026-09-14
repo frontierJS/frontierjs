@@ -31,6 +31,7 @@ title: People
   import { payWindows } from '@/resources/PayWindow.mesa'
   import { session } from '@/session.js'
   import { prefs } from '@/prefs.js'
+  import { day } from '@/datetime.js'
   import { useStore } from '@frontierjs/sierra/junction'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../money.js'
@@ -88,9 +89,6 @@ title: People
    *  this is the one place the screen has to know that. */
   const annual = (w) => w && (w.basis === 'hourly' ? w.rate * w.hoursPerWeek * 52 : w.rate)
 
-  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
-    { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
-
   function newPerson() { adding = employees.make(); error = null }
   function close()     { adding = null }
 </script>
@@ -113,9 +111,9 @@ title: People
       <td>{e.name}</td>
       <td>
         {#if isHere(e)}
-          <Pill tone="success" data-status="here">since {when(e.startedOn)}</Pill>
+          <Pill tone="success" data-status="here">since {day(e.startedOn)}</Pill>
         {:else}
-          <Pill tone="muted" data-status="left">left {when(e.endedOn)}</Pill>
+          <Pill tone="muted" data-status="left">left {day(e.endedOn)}</Pill>
         {/if}
       </td>
       <td class="text-right" data-annual={annual(open.get(e.id)) ?? ''}>

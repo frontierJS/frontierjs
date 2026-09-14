@@ -1,5 +1,26 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-14 — the codegraph page names its packages, a package stays one block, and its closed menu stays closed
+
+**A package laid across the seam of its quadrant's L is one block now.** The room around a core
+square is two bands, and each was walked by the curve from its own origin, so the band below ended
+far from where the band beside began and the package being laid when the first ran out came out in
+two pieces — `cli`, `css` and `jetty` on this repo. The L is one path now: the first band ends on its
+outer corner at the seam and the second starts on the cell across. Over 2496 packages in generated
+layouts, 834 were in more than one block before and 2 are after — a 2×odd strip, whose curve ends one
+cell short of its corner. On this repo every package is one block.
+
+Each package under `packages/` has its name set faintly over its tiles, on a halo of the ground, so
+the map reads as places without a legend. Set under slightly transparent tiles first, every tile gap
+and region edge cut through the letters, and fading them further only made that worse. A name sits
+at the region's own cell nearest its centroid — a region laid as an L has its centroid outside
+itself — is sized to the run of that region's cells along that row so it does not spill into a
+neighbor, and is capped so the largest packages do not shout. A region nested inside a package is
+named for the package: `orion/mockup/api-engine` reads `orion`.
+
+The **more** menu drew over the kind buttons while closed: `.popover` sets `display`, which beats the
+user agent's `[hidden]`, so the page hides it by id.
+
 ## 2026-09-14 — `fli done`: is the change in the working tree finished
 
 The close-out of a change was five engines and three conventions nobody asked together, and each

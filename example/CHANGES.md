@@ -2,6 +2,35 @@
 
 Newest first. What this app built and what building it found; live state is `PROJECT_STATE.md`, framework defects are `../ISSUES.md`.
 
+## 2026-09-14 — a shop keeps a calendar (`FJS-1149`)
+
+An invoice page named two days for one period. The line text is frozen with the
+row and `describeSpan` froze it in UTC; the header above it, and seven other
+screens, read the same instants in the viewer's zone through eight copies of one
+`toLocaleDateString` helper. At UTC-7 that was *For Aug 29 – Sep 28* over *30 Aug
+– 29 Sept*.
+
+**The calendar is the shop's, and it is configuration.** `timeZone` joins
+`name` and `mail.from` in `tenantConfigKeys`, over `TIME_ZONE_FLOOR` (`UTC`) in
+`api/src/core/db.ts`. `describeSpan` takes it as an argument all the way down —
+`periodLines`, `prorate` and `changePlan` each state one, and `renewSubscription`
+takes it as a second argument — so the domain reads no ambient config and every
+drive states the calendar it bills in. `shopfront.settings` answers it;
+`web/src/datetime.js` reads it once before `main.js` mounts and owns `day()`,
+which the eight screens import; the site's Account island asks for it with the
+rows it dates. Names stay in the reader's locale, because the order of a day and
+a month is theirs and which day it is belongs to the shop.
+
+A shop that sets nothing writes exactly what it wrote before: the kit's `D MMM`
+in en-GB and the old `toLocaleDateString` agree on all twelve months, on node and
+on bun. The flagship sets nothing, so an existing database's invoices stay
+consistent without a reseed.
+
+**Interim, and C replaces it.** A billing period is still an instant, `advancePeriod`
+still clamps month ends in UTC, and `/orders/`' *Today* filter is still the
+viewer's day. Each is `FJS-D143`'s — a declared plain date and a zoned window —
+and not configuration.
+
 ## 2026-08-06 — live updates, deferred work, outbound and notifications, static and islands, email
 
 Moved out of `PROJECT_STATE.md`, which carries live state only.

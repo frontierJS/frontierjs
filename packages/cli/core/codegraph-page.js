@@ -220,6 +220,8 @@ const STYLE = `
 .cg-files { table-layout: fixed; }
 .cg-files th:not(:first-child) { width: 5rem; }
 #more-menu { z-index: 3; min-width: 16rem; }
+/* .popover sets display, which beats the user agent's [hidden] — a closed menu drew over the kinds */
+#more-menu[hidden] { display: none; }
 #more-menu .item { cursor: pointer; }
 #more-menu .item[aria-checked="true"] .item-title { font-weight: 600; }
 #more-menu .item:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
@@ -266,7 +268,8 @@ function token(name) {
   return 'rgb(' + r + ',' + g + ',' + b + ')'
 }
 function readColors() {
-  C = { surface: token('surface'), empty: token('empty'), boundary: token('boundary'), na: token('na'), ink: getComputedStyle(document.body).getPropertyValue('--ink').trim() }
+  const body = getComputedStyle(document.body)
+  C = { surface: token('surface'), empty: token('empty'), boundary: token('boundary'), na: token('na'), ink: body.getPropertyValue('--ink').trim(), font: body.fontFamily }
   for (const m of [...METRICS, ...D.more]) C[m] = BANDS.map(b => token(m + '-' + b))
   C.score = STEPS.map(s => token('score-' + s))
 }
@@ -280,7 +283,32 @@ function layout() {
   const at = new Int32Array(w * h).fill(-1)
   list.forEach((f, d) => { const [x, y] = cells[d]; at[y * w + x] = f.i })
   const where = new Map(list.map((f, d) => [f.i, cells[d]]))
-  L = { w, h, at, list, where }
+  L = { w, h, at, list, where, labels: labelsFor(list, cells, w, at) }
+}
+
+// A name for each package under packages/, at the region's own cell nearest its
+// centroid — a region laid as an L has its centroid outside itself — and sized
+// to the run of that region's cells along that row. The package's own folder
+// names it: orion/mockup/api-engine reads orion, where its last folder would
+// have been mockup or api-engine and said nothing.
+const LABEL_ROOT = 'packages/'
+function labelsFor(list, cells, w, at) {
+  const groups = new Map()
+  list.forEach((f, d) => {
+    if (!f.region.startsWith(LABEL_ROOT)) return
+    if (!groups.has(f.region)) groups.set(f.region, [])
+    groups.get(f.region).push(cells[d])
+  })
+  const regionAt = (x, y) => { const i = at[y * w + x]; return i < 0 ? null : files[i].region }
+  return [...groups].map(([region, cs]) => {
+    const cx = cs.reduce((s, c) => s + c[0], 0) / cs.length, cy = cs.reduce((s, c) => s + c[1], 0) / cs.length
+    const far = c => (c[0] - cx) ** 2 + (c[1] - cy) ** 2
+    const [x, y] = cs.reduce((best, c) => far(c) < far(best) ? c : best)
+    let lo = x, hi = x
+    while (lo > 0 && regionAt(lo - 1, y) === region) lo--
+    while (hi < w - 1 && regionAt(hi + 1, y) === region) hi++
+    return { name: region.slice(LABEL_ROOT.length).split('/')[0], n: cs.length, x: (lo + hi + 1) / 2, y: y + 0.5, run: hi - lo + 1 }
+  })
 }
 const lit = f => (!state.q || f.path.toLowerCase().includes(state.q)) && (!state.focus || f.region === state.focus)
 
@@ -292,9 +320,36 @@ function size() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
 }
 
+// Names go OVER the tiles, faint, each on a halo of the ground. Set under them,
+// every tile gap and region edge cut through the letters, and fading them
+// further made that worse rather than quieter. Region edges and the hover ring
+// are drawn after, so they still win.
+const TILE_ALPHA  = 0.82
+const LABEL_ALPHA = 0.25
+const HALO_ALPHA  = 0.5
+const LABEL_MAX   = 22
+function drawLabels() {
+  ctx.save()
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'
+  ctx.fillStyle = C.ink; ctx.strokeStyle = C.surface
+  for (const t of L.labels) {
+    let px = Math.min(B * Math.sqrt(t.n) * 0.34, LABEL_MAX)
+    ctx.font = '600 ' + px + 'px ' + C.font
+    const room = t.run * B * 0.9, wide = ctx.measureText(t.name).width
+    if (wide > room) px *= room / wide
+    if (px < 10) continue
+    ctx.font = '600 ' + px + 'px ' + C.font
+    ctx.lineWidth = Math.max(2, px / 5)
+    ctx.globalAlpha = HALO_ALPHA; ctx.strokeText(t.name, t.x * B, t.y * B)
+    ctx.globalAlpha = LABEL_ALPHA; ctx.fillText(t.name, t.x * B, t.y * B)
+  }
+  ctx.restore()
+}
+
 function draw() {
   const g = B >= 10 ? 2 : B >= 6 ? 1 : 0, inner = B - g, qa = Math.ceil(inner / 2), qb = inner - qa
   ctx.fillStyle = C.surface; ctx.fillRect(0, 0, B * L.w, B * L.h)
+  ctx.globalAlpha = TILE_ALPHA
   for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) {
     const bx = x * B, by = y * B, i = L.at[y * L.w + x]
     if (i < 0) { ctx.fillStyle = C.empty; ctx.fillRect(bx + inner / 2 - 1, by + inner / 2 - 1, 2, 2); continue }
@@ -306,6 +361,8 @@ function draw() {
       ctx.fillStyle = colorOf(f, state.view); ctx.fillRect(bx, by, inner, inner)
     }
   }
+  ctx.globalAlpha = 1
+  drawLabels()
   const regionAt = (x, y) => { const i = L.at[y * L.w + x]; return i < 0 ? null : files[i].region }
   const edges = (match, color, width) => {
     ctx.beginPath()

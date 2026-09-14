@@ -1,5 +1,13 @@
 # Changes — Basecamp
 
+## 2026-09-14 — `/volumes/` says how long ago the way every screen does
+
+An eighth relative-time ladder, found by the date census after `FJS-411` closed:
+`/volumes/` said `today`, `yesterday` and `3 days ago`, and the search that found
+the other seven looked for `m ago`. It is `ago(iso, 'unknown')` now. `ago()`
+takes the word for a row with no time, because *created unknown* and *last seen
+never* are different claims and the screen is the one that knows which it means.
+
 ## 2026-09-14 — one answer to *how long ago*
 
 `FJS-411`. Seven hand-written `2h ago` ladders gave three answers: five screens

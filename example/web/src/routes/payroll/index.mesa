@@ -26,6 +26,7 @@ title: Payroll
   import { payRates } from '@/resources/PayRate.mesa'
   import { session } from '@/session.js'
   import { prefs } from '@/prefs.js'
+  import { day } from '@/datetime.js'
   import { useStore } from '@frontierjs/sierra/junction'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../money.js'
@@ -124,9 +125,6 @@ title: Payroll
   function newRun() { adding = payRuns.make(); error = null }
   function close()  { adding = null }
 
-  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
-    { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
-
   /** A band applies to the SLICE between two thresholds, never to the whole —
    *  which is the thing a payroll gets wrong first, so the column says it. */
   const slice = (b) => b.toAmount
@@ -149,7 +147,7 @@ title: Payroll
   {#snippet row(r)}
     <tr data-run={r.id} data-reference={r.reference}>
       <td><a href={'/payroll/' + r.id + '/'} data-open><Mono size="xs">{r.reference}</Mono></a></td>
-      <td>{when(r.periodStart)} – {when(r.periodEnd)}</td>
+      <td>{day(r.periodStart)} – {day(r.periodEnd)}</td>
       <td data-run-status={r.status}><Pill tone={TONE[r.status] ?? 'muted'} data-status={r.status}>{r.status}</Pill></td>
       <td class="text-right" data-headcount={r.headcount ?? ''}>{r.headcount ?? '—'}</td>
       <td>
@@ -206,7 +204,7 @@ title: Payroll
       <td>{b.kind}</td>
       <td class="text-right">{slice(b)}</td>
       <td class="text-right" data-percent={b.percent}>{(b.percent / 100).toFixed(2)}%</td>
-      <td>{when(b.effectiveFrom)}</td>
+      <td>{day(b.effectiveFrom)}</td>
     </tr>
   {/snippet}
 </Table>

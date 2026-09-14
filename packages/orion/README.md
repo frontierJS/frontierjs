@@ -108,3 +108,4 @@ the deferral is not also a loss of the thinking.
 - `../../example/` — the kitchen sink, all three realms end to end
 - `../../CLAUDE.md` — invariants and live hazards
 - `../caravan/README.md`, `../conduit/README.md` — the two engines Orion is expected to sit on
+- `../../IDEAS/orion-port.md` — the plan for turning `mockup/` into this, module by module, and the questions it waits on

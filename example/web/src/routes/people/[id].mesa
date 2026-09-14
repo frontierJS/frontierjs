@@ -34,6 +34,7 @@ title: Person
   import { employees } from '@/resources/Employee.mesa'
   import { payslips }  from '@/resources/Payslip.mesa'
   import { session } from '@/session.js'
+  import { day } from '@/datetime.js'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../money.js'
 
@@ -139,7 +140,7 @@ title: Person
 
     const opened = await employees.service.invoke('setPay', page.params.id, pay)
     toasts.success(pay.effectiveFrom
-      ? `Corrected — ${money(annual(opened))} a year from ${when(opened.effectiveFrom)}`
+      ? `Corrected — ${money(annual(opened))} a year from ${day(opened.effectiveFrom)}`
       : `Now ${money(annual(opened))} a year`)
     draft = payWindows.make()
     await Promise.all([loadHistory(), row.refresh()])
@@ -165,8 +166,6 @@ title: Person
     } finally { asking = false }
   }
 
-  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
-    { year: 'numeric', month: 'short', day: 'numeric' }) : null
 </script>
 
 <Breadcrumbs items={[{ label: 'People', href: '/people/' }, { label: person?.reference ?? '…' }]} />
@@ -181,9 +180,9 @@ title: Person
       <div class="cluster">
         <Mono size="xs" data-reference={person.reference}>{person.reference}</Mono>
         {#if person.endedOn}
-          <Badge tone="muted" data-left>left {when(person.endedOn)}</Badge>
+          <Badge tone="muted" data-left>left {day(person.endedOn)}</Badge>
         {:else}
-          <Badge tone="success" data-here>since {when(person.startedOn)}</Badge>
+          <Badge tone="success" data-here>since {day(person.startedOn)}</Badge>
         {/if}
       </div>
     {/snippet}
@@ -192,7 +191,7 @@ title: Person
   <div class="cluster">
     <StatCard label="On now" value={current ? money(annual(current)) : '—'} id="pd-now" />
     <StatCard label="Basis"  value={current?.basis ?? '—'} />
-    <StatCard label="Since"  value={when(current?.effectiveFrom) ?? '—'} />
+    <StatCard label="Since"  value={day(current?.effectiveFrom)} />
     <StatCard label="Payslips" value={String(slips.length)} id="pd-slips" />
   </div>
 
@@ -236,9 +235,9 @@ title: Person
       <tr data-window={w.id} data-open={w.effectiveTo ? null : 'true'}>
         <td class="text-right" data-rate={w.rate}>{money(w.rate)}</td>
         <td>{w.basis}{#if w.basis === 'hourly'} <span class="text-muted">· {w.hoursPerWeek}h/wk</span>{/if}</td>
-        <td>{when(w.effectiveFrom)}</td>
+        <td>{day(w.effectiveFrom)}</td>
         <td>
-          {#if w.effectiveTo}{when(w.effectiveTo)}{:else}<Pill tone="success">open</Pill>{/if}
+          {#if w.effectiveTo}{day(w.effectiveTo)}{:else}<Pill tone="success">open</Pill>{/if}
         </td>
       </tr>
     {/snippet}
@@ -273,7 +272,7 @@ title: Person
       {#snippet row(s)}
         <tr data-payslip={s.id}>
           <td><Mono size="xs">{s.reference}</Mono></td>
-          <td>{when(s.periodStart)} – {when(s.periodEnd)}</td>
+          <td>{day(s.periodStart)} – {day(s.periodEnd)}</td>
           <td class="text-right" data-gross={s.gross}>{money(s.gross)}</td>
           <td class="text-right" data-net={s.net}>{money(s.net)}</td>
         </tr>

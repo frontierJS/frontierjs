@@ -90,8 +90,9 @@ The allow-list of configuration keys a tenant may override.
 | --- | --- |
 | `name` | a tenant may set this |
 | `mail.from` | a tenant may set this |
+| `timeZone` | a tenant may set this |
 
-2 path(s). **Everything else is the floor**, and a
+3 path(s). **Everything else is the floor**, and a
 resolver answering a path not on this list is refused by name rather than dropped.
 
 This list is the half that makes the feature safe rather than the half that makes

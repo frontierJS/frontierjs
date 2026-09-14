@@ -86,7 +86,7 @@ check('the shop exists once it has been created', shops.list().includes(SHOP), t
 // already addressed this shop would be correct in the registry and stale in the
 // process serving it. `invalidateTenantConfig` is the answer inside one process;
 // across two, the answer is to write before the first request.
-shops.metaSet(SHOP, { config: { name: 'High Street', mail: { from: `orders@${SHOP}.test` } } })
+shops.metaSet(SHOP, { config: { name: 'High Street', mail: { from: `orders@${SHOP}.test` }, timeZone: 'Europe/London' } })
 check('…and so does the one every other drive uses', shops.list().includes(DEFAULT_SHOP), true)
 
 // The staff of THIS shop, created through auth against this shop's own client.
@@ -230,6 +230,12 @@ check('the flagship reads its own name',        cfgHome.name, 'Flagship Store')
 check('…and its own from-address',              cfgHome.from, 'orders@flagship.test')
 check('the other shop reads a different name',  cfgAway.name, 'High Street')
 check('…and a different from-address',          cfgAway.from, `orders@${SHOP}.test`)
+
+// Whose calendar a billing period is read in (`FJS-1149`). Per shop, because an
+// invoice's line text is frozen in it and every screen showing the period has
+// to agree with that text.
+check('a shop that names no calendar reads the floor', cfgHome.timeZone, 'UTC')
+check('…and one that names its own reads that',      cfgAway.timeZone, 'Europe/London')
 
 // The half that makes it safe. Only the declared paths apply, so a shop cannot
 // reach a value the deployment owns — and `database` could not be listed even

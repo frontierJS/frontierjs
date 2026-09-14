@@ -28,7 +28,7 @@
 
 import { createLitestoneAuth } from '@frontierjs/auth'
 import { toMinor }             from '@frontierjs/toolbelt/units'
-import { sys, db, DEV_KEY }    from '../api/src/core/db.ts'
+import { sys, db, DEV_KEY, shops, DEFAULT_SHOP, TIME_ZONE_FLOOR } from '../api/src/core/db.ts'
 import { move }                from '../api/src/domain/shop'
 import { priceBasket, BASE }   from '../api/src/domain/shop'
 import { issueInvoice, periodLines, settleInvoice } from '../api/src/domain/billing'
@@ -733,6 +733,10 @@ async function seedBilling() {
         unitAmount:  soldAt.price,
         periodStart: sub.currentPeriodStart,
         periodEnd:   sub.currentPeriodEnd,
+        // The line text is written in the shop's calendar (`FJS-1149`). Read off
+        // the registry meta `tenantConfig` reads in app.ts, over the same floor:
+        // there is no app here to ask `configFor()`.
+        timeZone:    (shops.meta(DEFAULT_SHOP)?.config as { timeZone?: string } | undefined)?.timeZone ?? TIME_ZONE_FLOOR,
       }),
     })
 

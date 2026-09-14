@@ -619,10 +619,16 @@ describe('core neighborhoods', () => {
     expect(new Set(at('y').map(c => quadrant(w, c)))).toEqual(new Set([1]))
   })
 
-  test('laid by the curve a region stays one block, or two where it crosses the seam of its L', () => {
-    const files = [...region('a', 9, 1), ...region('b', 9, 1), ...region('c', 9, 1), ...region('d', 9, 1), ...region('x', 24)]
-    const { w, cells } = coreLayout(files, ['a', 'b', 'c', 'd'], { x: { d: 1 } })
-    expect(blocks(w, files.map((f, k) => f.region === 'x' ? cells[k] : null).filter(Boolean))).toBeLessThanOrEqual(2)
+  // The L is two bands, and r is laid across the seam between them: 12×12, a
+  // 4×4 core square, p's 5 cells then 3 of r's in the band below it, r's other 7
+  // in the band beside. Each band walked from its own origin cut r in two.
+  test('a region laid across the seam of its L stays one block', () => {
+    const files = [...region('a', 16, 1), ...region('b', 16, 1), ...region('c', 16, 1), ...region('d', 16, 1), ...region('p', 5), ...region('r', 10)]
+    const { w, cells } = coreLayout(files, ['a', 'b', 'c', 'd'], { p: { a: 1 }, r: { a: 1 } })
+    const at = name => files.map((f, k) => f.region === name ? cells[k] : null).filter(Boolean)
+    expect(w).toBe(12)
+    expect(new Set([...at('p'), ...at('r')].map(c => quadrant(w, c)))).toEqual(new Set([0]))
+    expect([blocks(w, at('p')), blocks(w, at('r'))]).toEqual([1, 1])
   })
 
   test('a region with no pull goes to the emptiest quadrant; one that fits nowhere is split and counted', () => {

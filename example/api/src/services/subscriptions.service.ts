@@ -121,7 +121,7 @@ export function createSubscriptionsService() {
       const row = await db.subscription.findFirst({ where: { id: Number($.id) } })
       if (!row) throw Object.assign(new Error('No such subscription'), { status: 404 })
 
-      return await changePlan(db.asSystem(), row.id, body)
+      return await changePlan(db.asSystem(), row.id, body, $.config.timeZone)
     },
 
     // Stated whole, because declaring one method declares the list — a service

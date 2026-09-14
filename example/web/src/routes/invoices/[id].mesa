@@ -29,6 +29,7 @@ title: Invoice
   import { invoices } from '@/resources/Invoice.mesa'
   import { subscriptions } from '@/resources/Subscription.mesa'
   import { session } from '@/session.js'
+  import { day } from '@/datetime.js'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../money.js'
 
@@ -98,9 +99,6 @@ title: Invoice
     } finally { busy = false }
   }
 
-  const when = iso => iso ? new Date(iso).toLocaleDateString(undefined,
-    { year: 'numeric', month: 'short', day: 'numeric' }) : '—'
-
   $: credited = (invoice?.creditNotes ?? []).reduce((n, c) => n + c.amount, 0)
   $: overdue  = invoice?.status === 'issued' && new Date(invoice.dueAt) < new Date()
 </script>
@@ -148,9 +146,9 @@ title: Invoice
     <StatCard label="Status" value={invoice.status} id="id-status"
               tone={invoice.status === 'void' ? 'muted' : invoice.status === 'paid' ? 'success' : ''} />
     <StatCard label="Total"  value={money(invoice.total)} id="id-total" />
-    <StatCard label="Issued" value={when(invoice.issuedAt)} />
-    <StatCard label="Due"    value={when(invoice.dueAt)} id="id-due" />
-    {#if invoice.paidAt}<StatCard label="Paid" value={when(invoice.paidAt)} id="id-paid" />{/if}
+    <StatCard label="Issued" value={day(invoice.issuedAt)} />
+    <StatCard label="Due"    value={day(invoice.dueAt)} id="id-due" />
+    {#if invoice.paidAt}<StatCard label="Paid" value={day(invoice.paidAt)} id="id-paid" />{/if}
   </div>
 
   {#if overdue}
@@ -161,7 +159,7 @@ title: Invoice
   {/if}
 
   <p class="text-muted">
-    For {when(invoice.periodStart)} – {when(invoice.periodEnd)}
+    For {day(invoice.periodStart)} – {day(invoice.periodEnd)}
     {#if invoice.subscriptionId}
       · <a href={'/subscriptions/' + invoice.subscriptionId + '/'} data-subscription>subscription</a>
     {/if}
@@ -178,7 +176,7 @@ title: Invoice
           change on day 19 makes two lines out of one period. Null on an
           ordinary full-period line, which is most of them.
         -->
-        <td class="text-muted">{l.periodStart ? when(l.periodStart) + ' – ' + when(l.periodEnd) : '—'}</td>
+        <td class="text-muted">{l.periodStart ? day(l.periodStart) + ' – ' + day(l.periodEnd) : '—'}</td>
         <td class="text-right">{l.quantity}</td>
         <td class="text-right">{money(l.unitAmount)}</td>
         <td class="text-right" data-amount={l.amount}>{money(l.amount)}</td>

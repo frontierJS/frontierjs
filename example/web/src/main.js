@@ -7,8 +7,9 @@ import 'virtual:sierra'
 // defines a color, a radius or a spacing scale of its own.
 import '@frontierjs/css'
 
-import { getClient }    from '@frontierjs/sierra/junction'
-import { useCartClient } from './cart.js'
+import { getClient }        from '@frontierjs/sierra/junction'
+import { useCartClient }    from './cart.js'
+import { loadShopCalendar } from './datetime.js'
 import './money-control.js'
 import './displays.js'
 
@@ -27,4 +28,10 @@ const root   = document.getElementById('app')
 const anchor = document.createTextNode('')
 root.appendChild(anchor)
 
-mount(anchor, App, { root })
+// Which calendar the shop keeps, before anything renders a date in it — a date
+// that re-rendered once the answer arrived would show the wrong day first. A
+// failure still mounts: the app is more use than a blank page, and `day()` then
+// reads UTC, which is what a shop that set nothing is billed in.
+loadShopCalendar()
+  .catch((err) => console.warn(`[example] the shop's calendar did not load, so dates read in UTC: ${err?.message ?? err}`))
+  .finally(() => mount(anchor, App, { root }))

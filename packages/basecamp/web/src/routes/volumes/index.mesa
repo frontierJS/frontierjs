@@ -15,6 +15,7 @@ title: Volumes
   // through the outpost and fail in words when nothing answers. The screen never
   // pre-empts that refusal by disabling itself: the decision is the server's.
   import { session } from '../../session.js'
+  import { ago }     from '../../datetime.js'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
   import { volumes } from '../../resources/Volume.mesa'
 
@@ -117,11 +118,6 @@ title: Volumes
     }
   }
 
-  function when(iso) {
-    if (!iso) return 'unknown'
-    const days = Math.floor((Date.now() - new Date(iso)) / 86_400_000)
-    return days < 1 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`
-  }
 </script>
 
 <div class="section-header">
@@ -195,8 +191,8 @@ title: Volumes
           <!-- Docker's own timestamp, not discoveredAt: the question this
                answers is how long the disk has been lying around, and on a
                fresh install every row was discovered today. -->
-          <span class="text-sm text-muted">created {when(v.createdOnServer)}</span>
-          <span class="text-sm text-muted">last seen {when(v.lastSeenAt)}</span>
+          <span class="text-sm text-muted">created {ago(v.createdOnServer, 'unknown')}</span>
+          <span class="text-sm text-muted">last seen {ago(v.lastSeenAt, 'unknown')}</span>
         </div>
 
         {#if v.inUse && (v.containers ?? []).length}

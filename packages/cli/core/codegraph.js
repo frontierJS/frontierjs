@@ -566,9 +566,19 @@ export function coreLayout(files, core, uses = {}) {
   members.forEach((m, q) => m.slice(0, side[q] ** 2).forEach((k, n) => { cells[k] = place(q, ring[n][0], ring[n][1]) }))
   core.forEach((_, q) => {
     const c = side[q], order = []
-    const band = (w, h, ox, oy) => { if (w > 0 && h > 0) for (const [x, y] of gilbert(w, h)) order.push([ox + x, oy + y]) }
-    band(c, half - c, 0, c)
-    band(half - c, half, c, 0)
+    // One path through the L: the band under the core square ENDS on its outer
+    // corner at the seam, and the band beside it STARTS on the cell across. Each
+    // band walked from its own origin left the region at the seam in two blocks.
+    // A curve ends on a corner of its rectangle — a 2×odd strip one cell short —
+    // so flipping each axis toward the wanted corner is enough.
+    const endingAt = (w, h, tx, ty) => {
+      if (w <= 0 || h <= 0) return []
+      const path = gilbert(w, h), [ex, ey] = path[path.length - 1]
+      const fx = Math.abs(w - 1 - ex - tx) < Math.abs(ex - tx), fy = Math.abs(h - 1 - ey - ty) < Math.abs(ey - ty)
+      return path.map(([x, y]) => [fx ? w - 1 - x : x, fy ? h - 1 - y : y])
+    }
+    for (const [x, y] of endingAt(c, half - c, c - 1, half - c - 1)) order.push([x, c + y])
+    for (const [x, y] of endingAt(half - c, half, 0, half - 1).reverse()) order.push([c + x, y])
     slots[q].sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0).flatMap(slot => slot[1])
       .forEach((k, n) => { cells[k] = place(q, order[n][0], order[n][1]) })
   })

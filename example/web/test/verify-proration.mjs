@@ -44,7 +44,7 @@ const { got, t } = results()
     periodStart: '2026-03-01T00:00:00Z',
     periodEnd:   '2026-03-31T00:00:00Z',
     at:          '2026-03-12T00:00:00Z',
-    name: 'Pro',
+    name: 'Pro', timeZone: 'UTC',
     from: { unitAmount: 0,   quantity: 0 },
     to:   { unitAmount: 999, quantity: 6 },
   })
@@ -68,7 +68,7 @@ const { got, t } = results()
     periodStart: '2026-03-01T00:00:00Z',
     periodEnd:   '2026-03-31T00:00:00Z',
     at:          '2026-03-19T00:00:00Z',
-    name: 'Pro',
+    name: 'Pro', timeZone: 'UTC',
     from: { unitAmount: 1900, quantity: 2 },
     to:   { unitAmount: 2400, quantity: 3 },
   })
@@ -82,9 +82,21 @@ const { got, t } = results()
   // upstream, and the answer has to be a bounded one rather than a negative
   // fraction quietly inverting every figure.
   const base = { periodStart: '2026-03-01T00:00:00Z', periodEnd: '2026-03-31T00:00:00Z',
-                 name: 'Pro', from: { unitAmount: 0, quantity: 0 }, to: { unitAmount: 1000, quantity: 1 } }
+                 name: 'Pro', timeZone: 'UTC', from: { unitAmount: 0, quantity: 0 }, to: { unitAmount: 1000, quantity: 1 } }
   t('proration.beforeTheStartIsAWholePeriod', prorate({ ...base, at: '2026-01-01T00:00:00Z' }).fraction === 1)
   t('proration.afterTheEndIsNothing',        prorate({ ...base, at: '2026-12-01T00:00:00Z' }).fraction === 0)
+}
+
+{
+  // A period's line text is written in the SHOP's calendar (`FJS-1149`). The
+  // seed's periods start at 03:10Z, which is the previous evening anywhere in
+  // the Americas, so the same period is two different pairs of days — and the
+  // screen reads it in the shop's zone too, or the header and the line disagree.
+  // The UTC row is the control: a shop that set nothing writes what it always did.
+  const line = (timeZone) => periodLines({ name: 'Pro', quantity: 1, unitAmount: 100,
+    periodStart: '2026-08-30T03:10:01.052Z', periodEnd: '2026-09-29T03:10:01.052Z', timeZone })[0].description
+  t('span.inTheShopsZone', line('America/New_York'))
+  t('span.utcUnchanged',   line('UTC'))
 }
 
 {
@@ -129,7 +141,7 @@ await issueInvoice(sys, {
   subscriptionId: sub.id,
   userId:         customer.userId,
   periodStart, periodEnd,
-  lines: periodLines({ name: plan.name, quantity: 2, unitAmount: cheap.price, periodStart, periodEnd }),
+  lines: periodLines({ name: plan.name, quantity: 2, unitAmount: cheap.price, periodStart, periodEnd, timeZone: 'UTC' }),
 })
 
 const invoicesFor = () => sys.invoice.findMany({ where: { subscriptionId: sub.id }, orderBy: { id: 'asc' } })
@@ -147,7 +159,7 @@ const periodOf = async (id) => {
 {
   const before = (await invoicesFor()).length
   const window = await periodOf(sub.id)
-  const r = await changePlan(sys, sub.id, { planVersionId: dear.id, quantity: 5 })
+  const r = await changePlan(sys, sub.id, { planVersionId: dear.id, quantity: 5 }, 'UTC')
   // The control for `interval.*` below: a same-interval change is a slice of the
   // period it happens in and must leave that period where it was.
   t('upgrade.periodDoesNotMove', String(await periodOf(sub.id)) === String(window))
@@ -171,7 +183,7 @@ const periodOf = async (id) => {
 {
   const beforeNotes = (await notesFor()).length
   const beforeInv   = (await invoicesFor()).length
-  const r = await changePlan(sys, sub.id, { quantity: 1 })
+  const r = await changePlan(sys, sub.id, { quantity: 1 }, 'UTC')
   t('downgrade.writesACreditNote', r.kind === 'credit-note' && (await notesFor()).length - beforeNotes === 1)
   t('downgrade.writesNoInvoice', (await invoicesFor()).length === beforeInv)
   t('downgrade.creditIsPositiveOnTheNote', (await notesFor()).every(n => n.amount > 0))
@@ -196,7 +208,7 @@ const periodOf = async (id) => {
 // customer was charged nothing, which is a different claim from no charge.
 {
   const before = (await invoicesFor()).length + (await notesFor()).length
-  const r = await changePlan(sys, sub.id, { quantity: 1 })
+  const r = await changePlan(sys, sub.id, { quantity: 1 }, 'UTC')
   t('noop.writesNoDocument', r.kind === 'none' && (await invoicesFor()).length + (await notesFor()).length === before)
 }
 
@@ -223,20 +235,20 @@ await issueInvoice(sys, {
   subscriptionId: annual.id,
   userId:         customer.userId,
   periodStart, periodEnd,
-  lines: periodLines({ name: plan.name, quantity: 2, unitAmount: cheap.price, periodStart, periodEnd }),
+  lines: periodLines({ name: plan.name, quantity: 2, unitAmount: cheap.price, periodStart, periodEnd, timeZone: 'UTC' }),
 })
 const annualInvoices = () => sys.invoice.findMany({ where: { subscriptionId: annual.id }, orderBy: { id: 'asc' } })
 
 {
   const at = new Date().toISOString()
-  const r  = await changePlan(sys, annual.id, { planVersionId: yearly.id, at })
+  const r  = await changePlan(sys, annual.id, { planVersionId: yearly.id, at }, 'UTC')
   const docs  = await annualInvoices()
   const doc   = docs[docs.length - 1]
   const lines = await sys.invoiceLine.findMany({ where: { invoiceId: doc.id } })
 
   // The oracle for the credit is the pure function over the SAME slice, with
   // nothing charged against it — so this row is about which slice, not rounding.
-  const unused = prorate({ periodStart, periodEnd, at, name: plan.name,
+  const unused = prorate({ periodStart, periodEnd, at, name: plan.name, timeZone: 'UTC',
     from: { unitAmount: cheap.price, quantity: 2 }, to: { unitAmount: 0, quantity: 2 } }).credit
   const end = new Date(at); end.setUTCFullYear(end.getUTCFullYear() + 1)
 
@@ -256,14 +268,14 @@ const annualInvoices = () => sys.invoice.findMany({ where: { subscriptionId: ann
 {
   const before = (await annualInvoices()).length
   let refusal = null
-  try { await changePlan(sys, annual.id, { planVersionId: cheap.id }) }
+  try { await changePlan(sys, annual.id, { planVersionId: cheap.id }, 'UTC') }
   catch (e) { refusal = e }
   const s = await sys.subscription.findFirst({ where: { id: annual.id } })
 
   t('interval.yearlyToMonthlyRefused', refusal?.status === 409)
   t('interval.refusalWritesNothing', s.planVersionId === yearly.id && (await annualInvoices()).length === before)
 
-  const r = await changePlan(sys, annual.id, { quantity: 3 })
+  const r = await changePlan(sys, annual.id, { quantity: 3 }, 'UTC')
   t('interval.yearlySeatChangeStillAllowed', r.kind === 'invoice'
     && (await sys.subscription.findFirst({ where: { id: annual.id } })).quantity === 3)
 }
@@ -311,6 +323,8 @@ const expected = {
   'proration.creditLineIsNegative': true,
   'proration.beforeTheStartIsAWholePeriod': true,
   'proration.afterTheEndIsNothing': true,
+  'span.inTheShopsZone': 'Pro — 1 × the 29 Aug – 28 Sept',
+  'span.utcUnchanged':   'Pro — 1 × the 30 Aug – 29 Sept',
   'proration.allocateNeverLosesAUnit': true,
   'upgrade.periodDoesNotMove': true,
   'upgrade.issuesAnInvoice': true,

@@ -107,7 +107,7 @@ const reread      = () => sys.subscription.findFirst({ where: { id: sub.id } })
 const before = (await invoicesFor()).length
 const number = await renewSubscription({ data: {
   subscriptionId: sub.id, periodEnd, at: new Date().toISOString(),
-} })
+} }, 'UTC')
 const after = await invoicesFor()
 
 t('renew.issuedOne', after.length - before === 1)
@@ -127,7 +127,7 @@ t('renew.dueDateFromTerms',
   Math.round((Date.parse(invoice.dueAt) - Date.parse(invoice.issuedAt)) / DAY) === TERMS_DAYS)
 
 // Running the SAME period again — a queue retry after the transaction committed.
-const dup = await renewSubscription({ data: { subscriptionId: sub.id, periodEnd } })
+const dup = await renewSubscription({ data: { subscriptionId: sub.id, periodEnd } }, 'UTC')
 t('renew.replayIssuesNothing', dup === null && (await invoicesFor()).length === after.length)
 
 // ─── 3. The document does not move, for anybody ───────────────────────────
@@ -225,7 +225,7 @@ const second = await renewSubscription({ data: {
   subscriptionId: sub.id,
   periodEnd: (await reread()).currentPeriodEnd,
   at: new Date().toISOString(),
-} })
+} }, 'UTC')
 {
   const unpaid = (await invoicesFor()).find(i => i.number === second)
   const late   = new Date(Date.parse(unpaid.dueAt) + (DUNNING_DAYS + 1) * DAY).toISOString()
@@ -287,7 +287,7 @@ const mkSub = (suffix, cancelAtPeriodEnd) => sys.subscription.create({ data: {
 
   const stoppedNumber = await renewSubscription({ data: {
     subscriptionId: stopping.id, periodEnd: boundaryPeriodEnd, at: new Date().toISOString(),
-  } })
+  } }, 'UTC')
   const stoppedRow = await sys.subscription.findFirst({ where: { id: stopping.id } })
   t('boundary.flaggedEndsAtItsPeriodEnd', stoppedRow.status === 'cancelled')
 
@@ -299,7 +299,7 @@ const mkSub = (suffix, cancelAtPeriodEnd) => sys.subscription.create({ data: {
   // The control: same instant, same job, no flag.
   const keptNumber = await renewSubscription({ data: {
     subscriptionId: control.id, periodEnd: boundaryPeriodEnd, at: new Date().toISOString(),
-  } })
+  } }, 'UTC')
   const keptRow = await sys.subscription.findFirst({ where: { id: control.id } })
   t('boundary.unflaggedRenews',
     typeof keptNumber === 'string'
@@ -317,7 +317,7 @@ const mkSub = (suffix, cancelAtPeriodEnd) => sys.subscription.create({ data: {
   await sys.subscription.update({ where: { id: control.id }, data: { cancelAtPeriodEnd: true } })
   const replay = await renewSubscription({ data: {
     subscriptionId: control.id, periodEnd: boundaryPeriodEnd, at: new Date().toISOString(),
-  } })
+  } }, 'UTC')
   const afterReplay = await sys.subscription.findFirst({ where: { id: control.id } })
   t('boundary.staleDispatchDoesNotEndIt', replay === null && afterReplay.status === 'active')
 

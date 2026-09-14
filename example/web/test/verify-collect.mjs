@@ -129,7 +129,7 @@ async function freshSubscription(suffix, who = customer) {
     number: `INV-C${RUN}${suffix}`, customerId: who.id, subscriptionId: sub.id,
     userId: who.userId, periodStart: start, periodEnd: end,
     lines: periodLines({ name: plan.name, quantity: 1, unitAmount: version.price,
-                         periodStart: start, periodEnd: end }),
+                         periodStart: start, periodEnd: end, timeZone: 'UTC' }),
   })
   return { sub, invoice }
 }

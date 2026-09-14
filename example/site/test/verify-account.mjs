@@ -178,7 +178,7 @@ await issueInvoice(sys, {
   periodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString(),
   lines: periodLines({ name: 'Pro', quantity: 1, unitAmount: 1900,
                        periodStart: new Date().toISOString(),
-                       periodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString() }),
+                       periodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString(), timeZone: 'UTC' }),
 })
 
 // …and one of the SHOPPER's own with a challenge waiting on it. `requiresAction`
@@ -197,7 +197,7 @@ const ownBill = await issueInvoice(sys, {
   periodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString(),
   lines: periodLines({ name: 'Pro', quantity: 1, unitAmount: 1900,
                        periodStart: new Date().toISOString(),
-                       periodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString() }),
+                       periodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString(), timeZone: 'UTC' }),
 })
 const CHALLENGE = `http://localhost:8112/challenge/pi_acct${RUN}`
 await sys.payment.create({ data: {
