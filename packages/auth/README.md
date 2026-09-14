@@ -305,6 +305,21 @@ It is an **observer**, unlike `onLogin` and the other three: a throw is logged
 and refuses nothing, so a mail outage cannot keep a factor on that somebody
 switched off. Optional to the type system, required in practice.
 
+## In the console
+
+`@frontierjs/auth/console` holds commands for an app's `db/tinker.js`, which
+`fli tinker` loads:
+
+```js
+import { resetPasswords } from '@frontierjs/auth/console'
+export default { resetPasswords }
+```
+
+`.resetPasswords [password]` sets every `password` credential in the open
+database (or tenant) to one value, `test1234` by default, hashed the way a login
+checks it. OAuth credentials are untouched and an account without a password
+does not gain one. Under `NODE_ENV=production` it refuses unless given `--force`.
+
 ## Escape hatch
 
 OAuth sign-in is native — `oauthProviders` built with `defineProvider` (`oauth.ts`).

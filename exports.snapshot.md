@@ -28,12 +28,13 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/auth`
 
-`packages/auth` · ships `LICENSE` `README.md` `auth.ts` `cleanup.ts` `crypto.ts` `db/` `errors.ts` `index.ts` `oauth.ts` `package.json` `plugin.ts` `schema.ts` `services.ts` `totp.ts` `types.ts`
+`packages/auth` · ships `LICENSE` `README.md` `auth.ts` `cleanup.ts` `console.ts` `crypto.ts` `db/` `errors.ts` `index.ts` `oauth.ts` `package.json` `plugin.ts` `schema.ts` `services.ts` `totp.ts` `types.ts`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `.` | `index.ts` | yes |
 | exports | `./schema` | `schema.ts` | yes |
+| exports | `./console` | `console.ts` | yes |
 | exports | `./schema.lite` | `db/auth.lite` | yes |
 | exports | `./user.lite` | `db/user.lite` | yes |
 | main | `main` | `index.ts` | yes |
@@ -348,8 +349,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*.js` | `stores/*.js` | 3 files |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 72 files |
-| exports | `./components/*` | `components/*.mesa` | 72 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 73 files |
+| exports | `./components/*` | `components/*.mesa` | 73 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

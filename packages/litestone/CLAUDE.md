@@ -1167,7 +1167,7 @@ litestone explain [@word] [--visibility] [--json]        # the language, no sche
 litestone catalog --snapshot [--check]                   # the language surface, committed
 litestone catalog --reference [--check]                  # docs/reference.snapshot.md, the A-Z page
 litestone advise [--json]                                # legal-and-wrong, plus legal-and-MISSING
-litestone assistant [--bare] [--out=<path>]              # a chat-model schema assistant + this schema, to paste
+litestone assistant [--bare] [--out=<path>] [--purpose=<path>]  # a chat-model schema assistant + this schema + PURPOSE.md, to paste
 litestone assistant --snapshot [--check]                 # assistant.snapshot.md — the URL form, no schema
 litestone jsonschema [--out=./schemas/] [--format=flat]
 litestone jsonschema --snapshot [--check] [--stdout] [--out=<path>]

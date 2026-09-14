@@ -505,7 +505,7 @@ function checkRules() {
 
 // ─── what proves a change ─────────────────────────────────────────────────────
 //
-// The highest-value paragraph in a root `CLAUDE.md` is the table that says
+// The highest-value table in the workspace is the one in `DRIVES.md` that says
 // which drive proves a change to which package — *changed the compiler, run the
 // SSR drive AND the hydration one, they fail apart*. It exists in exactly one
 // place, in prose, and a person who needs it is by definition not reading the
@@ -522,7 +522,7 @@ function checkRules() {
 // while the resolver needs the backticks, because a backticked token IS the
 // path or the target it is matching. Two readings of one parse rather than two
 // parses.
-// The rows are prose in `CLAUDE.md` and the map used to carry them as prose,
+// The rows are prose in `DRIVES.md` and the map used to carry them as prose,
 // which is the one thing a generated page adds nothing to. What it can add is
 // RESOLUTION: a row naming a drive that has been renamed reads exactly like a
 // row that is right, and that is invisible in the markdown. Each target is
@@ -1238,7 +1238,7 @@ function proofSection(model) {
 
   return section('proofs', 'Which drive proves a change',
     `${model.proofs.length} rows · ${targets.length} targets · ${missing} not found`,
-    `<p class="note">Parsed from <code>CLAUDE.md</code>, never restated. The third column is each target resolved against the tree — <code>not found</code> is a row naming a drive that has been renamed, which in the markdown reads exactly like a row that is right. Half these rows are not import edges: <em>a gate on a model a screen reads</em> is a statement about what a drive can SEE, so this is a parse and not a build graph.</p>` +
+    `<p class="note">Parsed from <code>DRIVES.md</code>, never restated. The third column is each target resolved against the tree — <code>not found</code> is a row naming a drive that has been renamed, which in the markdown reads exactly like a row that is right. Half these rows are not import edges: <em>a gate on a model a screen reads</em> is a statement about what a drive can SEE, so this is a parse and not a build graph.</p>` +
     table(['Changed', 'Run', 'Resolved'], rows))
 }
 

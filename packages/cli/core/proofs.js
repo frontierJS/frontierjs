@@ -1,7 +1,7 @@
 // ─── proofs.js — which drive proves the change I just made ───────────────────
 //
-// `CLAUDE.md` § *Which drive proves a change* is thirty rows of the most
-// expensive knowledge in this repository: each one was paid for once, usually by
+// `DRIVES.md` § *Which drive proves a change* holds the most
+// expensive knowledge in this repository: each row was paid for once, usually by
 // a defect that got through. It is prose, so it answers nobody at the moment
 // somebody has just changed sierra's router, and — the sharper half — nothing
 // has ever checked that a row still names a drive that exists.
@@ -9,12 +9,13 @@
 // This module reads that table and resolves both of its columns: `run` onto
 // things that can actually be run, `changed` onto a matcher over a file list.
 //
-// ── The table stays where it is ─────────────────────────────────────────────
+// ── The table stays where people read it ────────────────────────────────────
 //
-// It lives in `CLAUDE.md` because people read it there. A copy in this file
-// would be the exact duplication the control surface was built against, so this
-// is a PARSE and never a second table. `repo-map.js` reads the same rows
-// through here rather than keeping the copy it used to have.
+// A copy in this file would be the exact duplication the control surface was
+// built against, so this is a PARSE and never a second table. `repo-map.js` and
+// `preflight.js` read the same file through `DRIVES_FILE` rather than naming
+// the path again. It is not the root `CLAUDE.md`, because that file is loaded
+// on every agent turn and a turn that proves nothing never needs these rows.
 //
 // ── What this is not ────────────────────────────────────────────────────────
 //
@@ -31,15 +32,18 @@ import { join }                                  from 'node:path'
 
 // ─── the parse ────────────────────────────────────────────────────────────────
 
+/** Where both drive tables live, relative to the workspace root. */
+export const DRIVES_FILE = 'DRIVES.md'
+
 /**
- * The rows of `CLAUDE.md` § *Which drive proves a change*, as written.
+ * The rows of `DRIVES.md` § *Which drive proves a change*, as written.
  *
  * `[]` where the file or the table is absent, which is correct for any project
  * that is not this one — a client app has no such table, and a reader that
  * invented rows for it would be worse than one that is short.
  */
 export function readProofs(root) {
-  const src = read(join(root, 'CLAUDE.md'))
+  const src = read(join(root, DRIVES_FILE))
   if (!src) return []
 
   const out = []

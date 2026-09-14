@@ -344,6 +344,29 @@ button[data-health] {
           </div>
         </section>
 
+        <!-- The open register ranked. Hidden when the project keeps no register,
+             which is every project but one that files its own defects. -->
+        <section class="surface" id="next" hidden>
+          <div class="bar bordered dense">
+            <strong class="text-sm">next up</strong>
+            <span class="text-xs text-muted" id="next-note" role="status"></span>
+            <button class="btn ghost text-xs" onclick="loadNext()">recheck</button>
+          </div>
+          <ul class="rows divided" id="next-rows"></ul>
+        </section>
+
+        <!-- What only the owner can answer. Hidden when nothing can be picked:
+             a question with no options is work for somebody else first, so its
+             count is a note on this panel rather than a reason to show it. -->
+        <section class="surface" id="decisions" hidden>
+          <div class="bar bordered dense">
+            <strong class="text-sm">waiting on you</strong>
+            <span class="text-xs text-muted" id="decisions-note" role="status"></span>
+            <button class="btn ghost text-xs" onclick="loadDecisions()">recheck</button>
+          </div>
+          <ul class="rows divided" id="decisions-rows"></ul>
+        </section>
+
         <!-- Two engines that existed and were nowhere a person looks. They stay
              two questions in one panel: `fli check` grades the PROJECT against
              the rules this framework publishes, `fli doctor` grades the MACHINE
@@ -1501,13 +1524,137 @@ async function loadDashboard() {
     document.getElementById('dash-tick').textContent = `could not read the project: ${err.message}`
   }
   loadProves()
+  loadNext()
+  loadDecisions()
   loadChecks()
   loadRelease()
 }
 
+// ─── next up ──────────────────────────────────────────────────────────────────
+//
+// `fli next`'s ranking, head only. Every row shows the terms that scored it,
+// because a ranking with its reasons hidden is one nobody can disagree with.
+
+async function loadNext() {
+  const panel = document.getElementById('next')
+  const note  = document.getElementById('next-note')
+  try {
+    const body = await fetch(`${API}/api/next`).then(r => r.json())
+    if (body.error) throw new Error(body.error)
+
+    panel.hidden = body.readyCount === 0 && body.blocked.length === 0
+    note.textContent = `${body.readyCount} ready · ${body.blocked.length} blocked · fli next for the rest`
+    document.getElementById('next-rows').innerHTML = body.ready.map(r => `
+      <li class="list-row" data-next="${esc(r.id)}">
+        <div class="stack gap-3xs">
+          <span class="text-sm"><code>${esc(r.id)}</code> ${esc(r.title)}</span>
+          <span class="text-xs text-muted">${esc(r.pkg.join(' · '))} · ${r.terms.map(t => `${esc(t.note)} +${t.value}`).join(' · ')}</span>
+        </div>
+        <div class="row-actions cluster gap-2xs">
+          ${r.probeFirst ? '<span class="badge warning text-xs">probe first</span>' : ''}
+          <span class="badge muted text-xs" data-score>${r.score}</span>
+        </div>
+      </li>`).join('')
+  } catch (err) {
+    panel.hidden = false
+    note.textContent = `could not rank the register: ${err.message}`
+  }
+}
+
+// ─── waiting on you ───────────────────────────────────────────────────────────
+//
+// The open questions the registers hold that carry lettered options. A pick is
+// sent to `/api/decide`, which is `fli register:decide`'s own writer: it files
+// the ruling, strikes the question in its paper, and puts both back if
+// `register:check` disagrees — so this page never edits a register itself.
+
+let decisionsBody = { decidable: [], open: [], sections: [] }
+const decisionPicks = {}
+// A pick re-renders the row, so a reason already typed is held here or the
+// click that changed the option would throw it away.
+const decisionWhy = {}
+
+async function loadDecisions() {
+  const panel = document.getElementById('decisions')
+  const note  = document.getElementById('decisions-note')
+  try {
+    const body = await fetch(`${API}/api/decisions`).then(r => r.json())
+    if (body.error) throw new Error(body.error)
+    decisionsBody = body
+
+    panel.hidden = body.decidable.length === 0
+    note.textContent = `${body.decidable.length} to pick · ${body.open.length} still need options written`
+    renderDecisions()
+  } catch (err) {
+    panel.hidden = false
+    note.textContent = `could not read the registers: ${err.message}`
+  }
+}
+
+function renderDecisions() {
+  const { decidable, sections } = decisionsBody
+  document.getElementById('decisions-rows').innerHTML = decidable.map((q, i) => {
+    const picked = decisionPicks[q.id] ?? q.recommend?.letter ?? null
+    const options = q.options.map(o => `
+      <button class="btn ${picked === o.letter ? 'outlined' : 'ghost'} text-xs" aria-pressed="${picked === o.letter}"
+              data-option="${esc(o.letter)}" onclick="pickDecision(${i}, ${esc(JSON.stringify(o.letter))})">
+        ${esc(o.letter)} — ${esc(o.text)}${q.recommend?.letter === o.letter ? ' <span class="badge info text-xs">recommended</span>' : ''}
+      </button>`).join('')
+
+    // A reason is required only against the recommendation, which is the one
+    // pick the paper has not already argued for.
+    const against = picked && q.recommend?.letter !== picked
+    return `
+      <li class="list-row" data-decision="${esc(q.id)}">
+        <div class="stack gap-2xs">
+          <span class="text-sm">${esc(q.question)}</span>
+          <span class="text-xs text-muted">${esc(q.file)}:${q.line}${q.recommend?.why ? ` · why ${esc(q.recommend.letter)}: ${esc(q.recommend.why)}` : ''}</span>
+          <div class="cluster gap-2xs">${options}</div>
+          <div class="cluster gap-2xs">
+            <input class="field text-xs" type="text" id="decision-why-${i}" aria-label="why"
+                   value="${esc(decisionWhy[q.id] ?? '')}"
+                   placeholder="${against ? 'why — required, this is not the recommendation' : 'why (optional — the recommendation is the reason)'}">
+            <select class="field text-xs" id="decision-section-${i}" aria-label="DECISIONS.md section">
+              ${sections.map(s => `<option>${esc(s)}</option>`).join('')}
+            </select>
+            <button class="btn text-xs" onclick="ruleDecision(${i})" ${picked ? '' : 'disabled'}>rule</button>
+          </div>
+          <span class="text-xs" id="decision-result-${i}" role="status"></span>
+        </div>
+      </li>`
+  }).join('')
+}
+
+function pickDecision(i, letter) {
+  const id = decisionsBody.decidable[i].id
+  decisionWhy[id]   = document.getElementById(`decision-why-${i}`)?.value ?? ''
+  decisionPicks[id] = letter
+  renderDecisions()
+}
+
+async function ruleDecision(i) {
+  const q      = decisionsBody.decidable[i]
+  const result = document.getElementById(`decision-result-${i}`)
+  const body   = {
+    id:      q.id,
+    pick:    decisionPicks[q.id] ?? q.recommend?.letter,
+    why:     document.getElementById(`decision-why-${i}`).value,
+    section: document.getElementById(`decision-section-${i}`).value,
+  }
+  const out = await fetch(`${API}/api/decide`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  }).then(r => r.json()).catch(err => ({ ok: false, reason: err.message }))
+
+  if (!out.ok) { result.textContent = `✗ ${out.reason}`; return }
+  delete decisionPicks[q.id]
+  delete decisionWhy[q.id]
+  await loadDecisions()
+  document.getElementById('decisions-note').textContent += ` · ${out.ruling} filed under ${body.section}`
+}
+
 // ─── what proves this change ──────────────────────────────────────────────────
 //
-// `CLAUDE.md` § *Which drive proves a change* against the working tree. The
+// `DRIVES.md` § *Which drive proves a change* against the working tree. The
 // server resolves both columns, so every answer here is either a row this page
 // can press or an honest statement that it is not one.
 //
@@ -1629,7 +1776,7 @@ function dashRow(r) {
     ? `<code class="gui-cmd" title="${esc(r.dir)}">${esc(r.dir === '.' ? '' : r.dir + ' · ')}${esc(r.start)}</code>`
     : `<span class="text-xs text-muted">nothing here starts it</span>`
 
-  // A drive's preamble, from `CLAUDE.md`'s own *Start first* column. A step the
+  // A drive's preamble, from `DRIVES.md`'s own *Start first* column. A step the
   // table names that the directory does not declare is shown in danger rather
   // than dropped: a missing step and a step nobody wrote down look identical
   // once one of them is invisible.

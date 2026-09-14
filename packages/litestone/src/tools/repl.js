@@ -45,21 +45,49 @@ export function describeStanding({ label = null, graded = 0, synthetic = false }
   return 'anonymous(0)'
 }
 
+// ─── an app's own commands ────────────────────────────────────────────────────
+//
+// `db/tinker.js`, beside the schema, default-exports `{ name: { help, run } }`.
+// `.name a b` calls `run({ db, sys, args: ['a', 'b'], out, tenant })`. The file
+// is refused whole rather than entry by entry: a command silently missing from
+// the list reads as a typo at the prompt, not as a broken file.
+
+const BUILT_IN     = ['help', 'standing', 'exit']
+const COMMAND_NAME = /^[A-Za-z][\w-]*$/
+
+export function tinkerCommands(mod, file = 'db/tinker.js') {
+  const table = mod?.default
+  if (!table || typeof table !== 'object' || Array.isArray(table))
+    throw new Error(`${file} must export default an object of commands — { resetPasswords: { help, run } }`)
+
+  for (const [name, cmd] of Object.entries(table)) {
+    if (!COMMAND_NAME.test(name))
+      throw new Error(`${file}: "${name}" is not a command name — a letter, then letters, digits, - or _`)
+    if (BUILT_IN.includes(name))
+      throw new Error(`${file}: .${name} is built in — name the command something else`)
+    if (!cmd || typeof cmd.run !== 'function')
+      throw new Error(`${file}: .${name} needs a run function — { help: '…', run({ db, sys, args, out }) { … } }`)
+    if (cmd.help != null && typeof cmd.help !== 'string')
+      throw new Error(`${file}: .${name}'s help must be a string`)
+  }
+  return table
+}
+
 // ─── startRepl ────────────────────────────────────────────────────────────────
 //
-//   startRepl({ db, sys, standing, accessors, hints, out })  → Promise<void>
+//   startRepl({ db, sys, standing, accessors, commands, tenant, hints, out })  → Promise<void>
 //
 // Resolves when the session ends. `out` is injectable so a test can read what a
 // session printed without a terminal.
 
-export function startRepl({ db, sys, standing, accessors = [], hints = [], out = console.log } = {}) {
+export function startRepl({ db, sys, standing, accessors = [], commands = {}, tenant = null, hints = [], out = console.log } = {}) {
   const prompt = `${standing} > `
 
   const rl = createInterface({
     input:     process.stdin,
     output:    process.stdout,
     prompt,
-    completer: completerFor(accessors),
+    completer: completerFor(accessors, Object.keys(commands)),
     history:   loadHistory(),
     terminal:  process.stdin.isTTY,
   })
@@ -92,10 +120,27 @@ export function startRepl({ db, sys, standing, accessors = [], hints = [], out =
 
       if (!line)                 return rl.prompt()
       if (line === '.exit')      return rl.close()
-      if (line === '.help')      { for (const l of helpLines(accessors)) out(l); return rl.prompt() }
+      if (line === '.help')      { for (const l of helpLines(accessors, commands)) out(l); return rl.prompt() }
       if (line === '.standing')  { out(`  ${standing}`); return rl.prompt() }
 
       remember(line)
+
+      // No JavaScript statement starts with a dot, so a dotted line that names
+      // no command is a typo — evaluating it would print a SyntaxError about
+      // the typo's punctuation instead of the name.
+      if (line.startsWith('.')) {
+        const [name, ...args] = line.slice(1).split(/\s+/)
+        if (!Object.hasOwn(commands, name)) {
+          out(`  No command .${name}. ${dim('.help lists them')}`)
+          return rl.prompt()
+        }
+        try {
+          await commands[name].run({ db, sys, args, out, tenant })
+        } catch (err) {
+          out(`  ${err.name}: ${err.message}`)
+        }
+        return rl.prompt()
+      }
 
       try {
         out(format(await evaluate(line, db, sys)))
@@ -161,10 +206,11 @@ const METHODS = [
   'remove', 'removeMany', 'delete', 'deleteMany', 'restore', 'transitions',
 ]
 
-function completerFor(accessors) {
+function completerFor(accessors, commandNames = []) {
   const roots = [
     ...accessors.flatMap(a => [`db.${a}.`, `sys.${a}.`]),
     'db.', 'sys.', '.help', '.standing', '.exit',
+    ...commandNames.map(n => `.${n}`),
   ]
 
   return (line) => {
@@ -201,7 +247,9 @@ function remember(line) {
 
 // ─── help ─────────────────────────────────────────────────────────────────────
 
-function helpLines(accessors) {
+function helpLines(accessors, commands = {}) {
+  const own   = Object.entries(commands)
+  const width = Math.max(10, ...own.map(([n]) => n.length + 2))
   return [
     '',
     '  db          the standing this session booted at',
@@ -213,5 +261,10 @@ function helpLines(accessors) {
     '  .help       this',
     '  .exit       leave (Ctrl-D also works)',
     '',
+    ...(own.length
+      ? [...own.map(([n, c]) => `  ${`.${n}`.padEnd(width)}  ${c.help ?? ''}`.trimEnd()), '']
+      : ['  db/tinker.js beside the schema adds commands of your own', '']),
   ]
 }
+
+function dim(s) { return process.stdout.isTTY ? `\x1b[2m${s}\x1b[22m` : s }

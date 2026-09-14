@@ -1,6 +1,6 @@
 // ─── preflight.js — what a drive needs started before it ─────────────────────
 //
-// `CLAUDE.md`'s drive table carries a *Start first* column — `verify:live` needs
+// `DRIVES.md`'s drive table carries a *Start first* column — `verify:live` needs
 // `db:seed`, then `api` and `web`; `verify:cart` needs nothing because it starts
 // and stops both servers itself — and until this module nothing read it. So the
 // dashboard offered a start button that ran a drive into an exit 1, and the only
@@ -34,12 +34,12 @@
 import { readFileSync } from 'node:fs'
 import { join }         from 'node:path'
 
-import { resolveWhere, splitRow } from './proofs.js'
+import { DRIVES_FILE, resolveWhere, splitRow } from './proofs.js'
 
 // ─── the parse ────────────────────────────────────────────────────────────────
 
 /**
- * The rows of `CLAUDE.md`'s drive table, as written.
+ * The rows of `DRIVES.md`'s drive table, as written.
  *
  * `[]` where the file or the table is absent, which is correct for any project
  * that is not this one. Each row is `{ dir, script, cell, line, needs }`, and
@@ -47,7 +47,7 @@ import { resolveWhere, splitRow } from './proofs.js'
  * directory must run first, in the order the cell states it.
  */
 export function readPreambles(root) {
-  const src = read(join(root, 'CLAUDE.md'))
+  const src = read(join(root, DRIVES_FILE))
   if (!src) return []
 
   const out = []
@@ -153,6 +153,6 @@ function read(path) { try { return readFileSync(path, 'utf8') } catch { return n
 // Kept for a caller that wants to know whether the table is there at all before
 // grading anything against it.
 export function hasPreambleTable(root) {
-  const src = read(join(root, 'CLAUDE.md'))
+  const src = read(join(root, DRIVES_FILE))
   return Boolean(src && /^\|\s*Drive\s*\|\s*Start first\s*\|/im.test(src))
 }

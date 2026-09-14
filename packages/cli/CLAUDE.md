@@ -49,8 +49,20 @@ core/
                 running the command that owns them, because a second
                 implementation is how the GUI ends up disagreeing with the
                 terminal about whether a deploy can be undone
-  proofs.js     which drive proves a change — the parse of `CLAUDE.md`'s own
-                table and the resolution of both its columns. A PARSE and never
+  decisions.js  what is waiting on the owner — the open questions in ISSUES
+                § Needs a decision and every IDEAS paper's `## Open questions`,
+                each ruled · decidable (lettered options) · open. A READ of
+                where the questions are argued, never a third list of them
+  decide.js     the ONE writer behind `register:decide` and the GUI panel: the
+                ruling, the struck question, and a put-back when
+                `register:check` finds a new error. A pick against the
+                recommendation needs a reason
+  next.js       the open register ranked — severity, then citations, `blocked by`
+                edges and code touched recently, every term printed with its
+                row. `WEIGHTS` is one frozen table and no flag moves it.
+                Proposals are not ranked; nothing measurable separates them
+  proofs.js     which drive proves a change — owns `DRIVES_FILE`, parses its
+                table and resolves both its columns. A PARSE and never
                 a second table; not a build graph, and it must not become one
   intent.js     what a person asked, resolved against the app's seed — a
                 CANDIDATE (a claim, facts in plain words) in, a verdict with a
@@ -189,6 +201,16 @@ core/
                 Minting writes nothing: the id is a pure function of the tree and
                 the bindings, which is what makes a digest promotable
   vendor.js     pack the workspace into an app's build context
+  tiles.js      a project drawn as one tile per tracked file — age and churn from
+                git, tested and complexity from the files — for `project:tiles`.
+                NOT a snapshot: age reads a clock and TESTED may come from a
+                `coverage/lcov.info` nobody commits. Bands are fixed thresholds,
+                never the project's own percentiles, or every badge would draw
+                the same complexity. A separate collection from `repo-map.js`,
+                so a command of its own rather than a `ws:atlas --as` (`FJS-D240`)
+  png.js        RGBA → PNG with no dependency. `stored` is the desktop icon's,
+                whose bytes are compared to `example/desktop/` and so cannot move
+                with the zlib a runtime carries
   config.js · bootstrap.js · ports.js · utils.js · server.js
 commands/  one directory per namespace — `fli list` prints them all (ksite is
            NOT FrontierJS — a separate static-site toolchain that used to hold
@@ -323,7 +345,11 @@ tests/     one file per module under core/, plus the deploy pipeline's own
   snapshot naming no generator FAILS rather than being skipped — a generated file
   nothing can recheck is a document wearing a gate's clothes. What stays in
   `ci.mjs` is the repo-history half: a snapshot tracked at the base ref and gone
-  now is a failure, because discovery alone fails open.
+  now is a failure, because discovery alone fails open. **The exception is the
+  FIRST write**: `expectedSnapshots` gives the command for each register an app's
+  layout calls for, and only `write: true` (`--fix`) runs the missing ones, so
+  CI's recheck never reads it. A new kind of APP register gets a row there too,
+  or a fresh app never has it.
 - **`core/repo-map.js` reads the workspace; it never describes it — and it is
   the ONE reader behind both presentations** (`FJS-D223`). `collect()` builds
   the model; `renderHtml` is the report and `core/repo-atlas.js` is the deck,
@@ -417,7 +443,7 @@ tests/     one file per module under core/, plus the deploy pipeline's own
   over parts, actions, open rows, doc topics, commands, snapshots, drives,
   scripts, CI phases and registers, ranked by prefix-then-substring. A test
   fails any route in it that names no rendered dossier. **Each plate also says
-  what proves a change to it**, parsed from the root `CLAUDE.md`'s `Changed →
+  what proves a change to it**, parsed from `DRIVES.md`'s `Changed →
   Run` table and matched on the CHANGED half only — a package named as the
   drive to run is not the package that changed.
   **Three doors, all routes** — `#/part/…`, `#/do/…`, `#/realm/…`. The action

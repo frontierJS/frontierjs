@@ -21,7 +21,7 @@ flags:
 import { execSync } from 'child_process'
 </script>
 
-Reads `CLAUDE.md` § *Which drive proves a change* and matches it against what
+Reads `DRIVES.md` § *Which drive proves a change* and matches it against what
 you have actually changed.
 
 The table is thirty rows of knowledge that was paid for one defect at a time,

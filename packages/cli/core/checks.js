@@ -47,7 +47,7 @@ import { singularize, modelName } from '@frontierjs/toolbelt/inflect'
 export { findApps } from './runnables.js'
 import { runnables }              from './runnables.js'
 import { appSchemaViews, appSchemaModels, shippedSchemas } from './app-schema.js'
-import { readProofs, resolveRun } from './proofs.js'
+import { DRIVES_FILE, readProofs, resolveRun } from './proofs.js'
 import { readPreambles, resolveNeeds } from './preflight.js'
 import { readCourse }             from './tutorial.js'
 import { declaredLogDatabases }        from './db-preflight.js'
@@ -2170,8 +2170,8 @@ const CHECKS = {
   // client) is support code and is named by whatever imports it.
   // ── the proof table ────────────────────────────────────────────────────────
   //
-  // `CLAUDE.md` § *Which drive proves a change* is thirty rows of knowledge that
-  // was paid for one defect at a time, and nothing had ever checked it. Both
+  // `DRIVES.md` § *Which drive proves a change* is knowledge that was paid for
+  // one defect at a time, and nothing had ever checked it. Both
   // failures are silent and they fail in opposite directions: a row naming a
   // drive that has been renamed is advice that dies when taken, and a drive no
   // row names is knowledge that exists and cannot be found.
@@ -2189,7 +2189,7 @@ const CHECKS = {
       for (const t of resolveRun(p.run, { root, rows })) {
         if (t.kind !== 'unknown') continue
         findings.push({
-          file: join(root, 'CLAUDE.md'), line: p.line,
+          file: join(root, DRIVES_FILE), line: p.line,
           message: `the proof table sends a change in "${p.changed}" to \`${t.where}\`: ` +
                    `\`${t.name}\`, and ${t.dir ? `${t.dir} declares no such script or file` : `there is no ${t.where} here`}. ` +
                    'A row that names a drive which has been renamed is advice that fails when it is taken.',
@@ -2211,7 +2211,7 @@ const CHECKS = {
 
     return { findings: rows.filter(r => r.kind === 'drive' && !named.has(r.id)).map(r => ({
       file: join(root, r.source), line: 1,
-      message: `\`${r.name}\` in ${r.dir} is a drive that no row of CLAUDE.md's proof table names, ` +
+      message: `\`${r.name}\` in ${r.dir} is a drive that no row of DRIVES.md's proof table names, ` +
                'so nobody is told to run it for any change. Either add a row, or say in one that an ' +
                'existing row covers it.',
     })) }
@@ -2241,7 +2241,7 @@ const CHECKS = {
       for (const n of resolveNeeds(p.needs, p.dir, rows)) {
         if (n.id) continue
         findings.push({
-          file: join(root, 'CLAUDE.md'), line: p.line,
+          file: join(root, DRIVES_FILE), line: p.line,
           message: `\`${p.script}\` says to run \`${n.run}\` first, and ${p.dir} declares no such script. ` +
                    'The dashboard presses this before it runs the drive, so a step that has been renamed ' +
                    'is a preamble that fails where it used to be prose somebody could correct.',

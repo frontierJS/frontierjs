@@ -233,6 +233,8 @@ describe('what proves a change', () => {
       '| sierra | UI meta | Routing | green |',
       '| cli (`fli`) | D1 | The command runtime | green |',
       '',
+    ].join('\n'),
+    'DRIVES.md': [
       '| Changed | Run |',
       '| --- | --- |',
       '| litestone client/policy/gate | `example`: `verify` + `sierra`: `test:safety` |',

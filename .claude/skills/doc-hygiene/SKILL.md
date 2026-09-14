@@ -33,7 +33,7 @@ Where the ladder decides how far down a piece sits, **co-location decides what s
 
 ## What cannot move
 
-**A section a program parses is a source of truth and stays where the parser looks.** Six modules read the root `CLAUDE.md` by path — `preflight.js` the drives table's *Start first* column, `invariants.js` the numbered list, `repo-map.js` and `repo-atlas.js` the package table, `checks.js` the proof rows (through `proofs.js`), `doc-audit.js` the invariant count. Moving one of those is editing a parser, and doing it by accident is a green build over a table nothing reads any more.
+**A section a program parses is a source of truth and moves only with its parser.** Modules read the root `CLAUDE.md` by path — `invariants.js` the numbered list, `repo-map.js` and `repo-atlas.js` the package table, `doc-audit.js` the invariant count — and `DRIVES.md` by the path `proofs.js` owns, for both of its tables. Moving a table without its reader is a green build over a table nothing reads any more; moving it WITH the reader is the ladder's third rung applied to parsed material, which is how the drive tables left the always-loaded file (60% of it, and branch-only: a turn that proves nothing never needs them).
 
 That is also the case the cache rule below gets wrong on first look. The drives table restates every `verify:*` script that is already in `example/package.json`, so it reads as a copy of the environment. It is not one: `preflight.js` parses the column beside them, and there is nowhere else that column lives.
 

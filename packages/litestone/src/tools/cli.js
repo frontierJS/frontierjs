@@ -211,6 +211,7 @@ const HELP = `
     ${dim('  --gate <path[#export]>')}              grade previews with this app's own getLevel
     ${dim('  --host <addr> --token <secret>')}      serve beyond loopback; the token is required there
     ${cyan('litestone repl')} [--as|--level|--gate]  a console that boots at a gate level
+    ${dim('  --tenant <id>')}                       whose database, under strategy database (asked when omitted)
     ${cyan('litestone export')} <dataset> --as <who>  take an extract, graded as that account
     ${cyan('litestone doctor')}                     check setup, audit health
     ${cyan('litestone seed')} [SeederClass]             seed the database
@@ -241,6 +242,7 @@ const HELP = `
     ${dim('  --json')}                                 both lists as data
     ${cyan('litestone assistant')}                    a chat-model schema assistant, with this schema, to paste
     ${dim('  --bare')}                                 the instructions alone, no schema
+    ${dim('  --purpose=<path>')}                       the app's PURPOSE.md ${dim('(default: found above the schema)')}
     ${dim('  --snapshot')}                             write assistant.snapshot.md ${dim('(--check in CI)')}
     ${cyan('litestone jsonschema')}                   generate JSON Schema from schema.lite
     ${cyan('litestone access')}                       write the access snapshot ${dim('(--check in CI)')}
@@ -1395,7 +1397,16 @@ async function cmdRepl(cfg) {
   const parseResult = loadSchema(cfg.schema)
   const { isSoftDelete } = await import('../core/ddl.js')
   const { createClient } = await import('../core/client.js')
-  const { startRepl, describeStanding } = await import('./repl.js')
+  const { startRepl, describeStanding, tinkerCommands } = await import('./repl.js')
+
+  // Loaded before any database opens: a broken commands file is a refusal
+  // naming the file, not a session that starts and lacks the command.
+  const commandsFile = join(dirname(resolve(cfg.schema)), 'tinker.js')
+  let commands = {}
+  if (existsSync(commandsFile)) {
+    try { commands = tinkerCommands(await import(commandsFile), rel(commandsFile)) }
+    catch (e) { fatal(`${rel(commandsFile)} could not be loaded.\n     ${e.message}`) }
+  }
 
   const asWho = getFlag('as')
   const level = getFlag('level') != null ? Number(getFlag('level')) : null
@@ -1424,12 +1435,48 @@ async function cmdRepl(cfg) {
   // The house form, encryption key included: a console that cannot decrypt an
   // `@encrypted` column shows ciphertext where the app shows a value, which is
   // a console that lies about the row you came to look at.
-  const base = await createClient({
+  const openMain = () => createClient({
     parsed:        parseResult,
     db:            clientDb(parseResult, cfg),
     encryptionKey: getEncKey(),
     ...(plugins.length ? { plugins } : {}),
   })
+
+  // Under `strategy database` main holds the machinery and none of the rows, so
+  // a console on main answers `count()` with 0 for a shop full of orders — an
+  // empty table and the wrong file look identical from the prompt.
+  let tenantId = getFlag('tenant') ?? null
+  let tenants  = null
+  let base
+
+  if (parseResult.schema.tenancy?.strategy === 'database') {
+    const { createTenantRegistry } = await import('../tenant.js')
+    const { dir, registry, migrationsDir } = await tenantOptions(cfg)
+    tenants = await createTenantRegistry({
+      dir, registry, path: cfg.schema,
+      migrationsDir: migrationsDir && existsSync(resolve(migrationsDir)) ? resolve(migrationsDir) : null,
+      encryptionKey: getEncKey(),
+      ...(plugins.length ? { plugins } : {}),
+    })
+    const ids   = tenants.list()
+    const known = ids.length ? `Known: ${ids.map(i => cyan(i)).join(', ')}` : dim('No tenants exist yet.')
+
+    if (tenantId && !tenants.exists(tenantId))
+      fatal(`No tenant ${cyan(tenantId)}. ${known}`)
+
+    if (!tenantId && ids.length) {
+      if (!process.stdin.isTTY)
+        fatal(`This schema is ${cyan('strategy database')}, so name whose data: ${cyan('--tenant <id>')}.\n` +
+              `     ${known}\n` +
+              `     ${dim('Without one the console would open main, which holds the machinery and none of the rows.')}`)
+      tenantId = await chooseTenant(ids)
+    }
+
+    base = tenantId ? await tenants.get(tenantId) : await openMain()
+  } else {
+    if (tenantId) fatal(`${cyan('--tenant')} needs ${cyan('tenancy { strategy database }')} — this schema declares none.`)
+    base = await openMain()
+  }
 
   const sys = base.asSystem()
 
@@ -1460,7 +1507,7 @@ async function cmdRepl(cfg) {
   const graded   = level != null ? level : (user ? await resolver(user) : 0)
 
   const label    = user ? (user.email ?? user.username ?? user.name ?? `#${user.id}`) : null
-  const standing = describeStanding({ label, graded, synthetic: level != null })
+  const standing = (tenantId ? `${tenantId} · ` : '') + describeStanding({ label, graded, synthetic: level != null })
 
   const models    = parseResult.schema.models
   const accessors = models.map(m => modelToAccessor(m.name))
@@ -1470,7 +1517,9 @@ async function cmdRepl(cfg) {
     ? parseResult.schema.databases.filter(d => !d.driver || d.driver === 'sqlite').map(d => d.name).join(', ')
     : (cfg.db ? rel(resolve(cfg.db)) : '(from schema)')
 
-  console.log(`  ${dim('Database:')}   ${dbDisplay}`)
+  console.log(`  ${dim('Database:')}   ${!tenants ? dbDisplay
+    : tenantId ? `${cyan(tenantId)} ${dim('(tenant)')}`
+    : `main ${yellow('— the machinery; no tenant rows are here')}`}`)
   console.log(`  ${dim('Tables:')}     ${accessors.join(', ')}`)
   if (softTbls.length) console.log(`  ${dim('Soft delete:')} ${softTbls.join(', ')}`)
   console.log(`  ${dim('Standing:')}   ${cyan(standing)} ${dim(levelLabel(graded))}`)
@@ -1493,11 +1542,39 @@ async function cmdRepl(cfg) {
                `     ${dim('--as <email> to boot as somebody, --level <n> for a standing with no user.')}\n`)
 
   hints.push(`  ${green('✓')}  ${cyan('db')} at this standing · ${cyan('sys')} bypasses everything · ${dim('.help')}`)
+  const names = Object.keys(commands)
+  if (names.length)
+    hints.push(`  ${green('✓')}  ${rel(commandsFile)}: ${names.map(n => cyan('.' + n)).join(' ')}`)
   hints.push('')
 
-  await startRepl({ db, sys, standing, accessors, hints })
+  await startRepl({ db, sys, standing, accessors, commands, tenant: tenantId, hints })
 
-  try { base.$close() } catch {}
+  try { tenants ? tenants.close() : base.$close() } catch {}
+}
+
+// The picker behind a bare `litestone repl` on a `strategy database` schema.
+// Main is offered last and says what it is, because it is a legitimate place to
+// look (sessions, the outbox) and the wrong place to look for a tenant's rows.
+async function chooseTenant(ids) {
+  const { createInterface } = await import('node:readline/promises')
+  console.log(`  ${dim('This schema is')} ${cyan('strategy database')}${dim(' — whose data?')}\n`)
+  ids.forEach((id, i) => console.log(`    ${dim(String(i + 1).padStart(2))}  ${cyan(id)}`))
+  console.log(`    ${dim(' 0')}  main ${dim('— the machinery, no tenant rows')}\n`)
+
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  try {
+    for (;;) {
+      const fallback = ids.length === 1 ? ' [1]' : ''
+      const answer   = (await rl.question(`  tenant${fallback}: `)).trim() || (ids.length === 1 ? '1' : '')
+      if (answer === '0' || answer === 'main') { console.log(); return null }
+      const n = Number(answer)
+      if (Number.isInteger(n) && n >= 1 && n <= ids.length) { console.log(); return ids[n - 1] }
+      if (ids.includes(answer)) { console.log(); return answer }
+      console.log(`  ${dim('a number from the list, or a tenant id')}`)
+    }
+  } finally {
+    rl.close()
+  }
 }
 
 // `--gate ./api/gate.ts#shopGateLevel`. A named export wins; otherwise the
@@ -6780,7 +6857,7 @@ async function main() {
   // beside the catalog, which is what the published URL serves, and --check
   // is its CI half.
   if (cmd === 'assistant') {
-    const { renderAssistant, collectSchemaFiles } = await import('./assistant.js')
+    const { renderAssistant, collectSchemaFiles, findPurpose } = await import('./assistant.js')
     const cmdline = 'litestone assistant --snapshot'
     const outPath = resolve(import.meta.dirname, '../../assistant.snapshot.md')
 
@@ -6800,13 +6877,20 @@ async function main() {
       return
     }
 
-    let schema = null
+    let schema = null, purpose = null
     if (!flag('bare')) {
       const cfg = await loadConfig()
       loadSchema(cfg.schema)
       schema = collectSchemaFiles(cfg.schema)
+      if (getFlag('purpose')) {
+        const path = resolve(getFlag('purpose'))
+        if (!existsSync(path)) { console.error(`  ${red('✗')}  --purpose: ${getFlag('purpose')} not found`); process.exit(1) }
+        purpose = { label: rel(path), text: readFileSync(path, 'utf8') }
+      } else {
+        purpose = findPurpose(cfg.schema)
+      }
     }
-    const body = renderAssistant({ schema })
+    const body = renderAssistant({ schema, purpose })
     if (getFlag('out')) {
       writeFileSync(resolve(getFlag('out')), body, 'utf8')
       console.error(`  ${green('✓')}  ${getFlag('out')} — paste it into a chat, then say what you want to change`)

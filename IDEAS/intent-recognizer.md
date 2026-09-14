@@ -162,6 +162,54 @@ and a client schema with no prose is nearer that number than to 31.
 `.mesa` file read because nothing indexes what a screen shows, and it is the
 difference between 31 answered and 45.
 
+### What the app is FOR: `PURPOSE.md`
+
+*Added 2026-09-13. Not measured by any run.*
+
+**Every row above says what is true, and none says what is intended.** The seed
+can answer *does a customer have a pets field*; it cannot answer whether the
+app should ever track each pet by name, because that depends on what the app is
+for. A quoting tool wants a count, and a system that sends a crew to the door
+may want names. `PURPOSE.md` at an app's root is the author's statement of that
+scope: Purpose, For whom, Ambition, In scope, Out of scope, May grow into,
+Tradeoffs we choose, Open, and Revisions. Litestone's schema assistant already
+reads it (`litestone assistant`, `PURPOSE_SECTIONS` in
+`packages/litestone/src/tools/assistant.js`, which owns the headings), and this
+record is its likely second reader.
+
+**It is the one input here that is written by hand, so the index's "no drift"
+claim does not cover it.** No generator reruns it and CI cannot fail a stale
+one. Its only drift guard is Revisions: a request that stretches the stated
+scope is a prompt to revise the file on purpose and log why. It is evidence of
+what the author means, never of what the code does, so it must never make a
+verdict cite behavior.
+
+**What it would change here:**
+
+- **`needs us` gains a scope reading.** A change inside In scope is ordinary
+  work. One under Out of scope or beyond the Ambition is a STRETCH, and a
+  stretch is a decision for the owner about what the app is, not an estimate.
+  One under May grow into is anticipated. The cost class stays exactly as
+  derived; the purpose file only says whether the work is wanted.
+- **`declined by design` gets a second source.** Today it cites the seed. *Out
+  of scope: scheduling crews is the field-service system's job* is the same
+  kind of answer, citing the purpose file instead. Two sources for one verdict
+  have to stay distinguishable to the person reading it, for the reason
+  `unhomed` is kept apart from a verdict that resolved.
+- **Read it backwards gets a target.** Requests that keep landing under Out of
+  scope or May grow into are measured demand to revise the purpose file, the
+  way misses clustering on one model measure a modeling error.
+- **An Open question in the purpose file is never answered.** A request
+  touching one routes to a person, the same way `incident` does.
+
+**It does not touch run 3's finding.** None of the false claims there were
+about the seed, and none were about scope either; a purpose file would not have
+caught them.
+
+`maid.tech` is the first app with a draft, written from its production data
+while its conversion was being planned (`conversion-maid-tech.md`). That makes
+it the natural app for a run that measures what a purpose file changes.
+
 ## Classification: realm first, shape second
 
 Placing the fact in a realm before describing it is `oracle-reasoning.md` rule 3, and
@@ -442,6 +490,13 @@ the customer-facing word can be loose while the verdict stays precise.
 - **Where does the request register live?** An app's own model, or a hosted thing one
   tier up that reads many apps' registers. The second is a product; the first is a
   weekend.
+- **Is a stretch its own verdict, or a qualifier on `needs us`?** § *What the app is
+  FOR* argues for a qualifier, since the cost class is unchanged. That is untested,
+  and a customer told *that is outside what this app is for* may read it as a refusal
+  whichever way it is modeled. Unmeasured until a run carries a purpose file.
+- **Where do the headings live once there are two readers?** They are litestone's
+  today, but the recognizer lives in the cli and a purpose file describes the whole
+  app, not the Data realm. A second caller is what moves an owner.
 
 **The falsification run was set a bar before it ran**: seven in ten answered by
 lookup alone keeps the shape, four in ten changes it. **Run 1 landed at 5.2 — 31 of
@@ -502,5 +557,7 @@ is.
 `fli app:atlas` (`FJS-D240`, the API-realm index) · `lexicon.md` (the string catalog,
 a neighbor rather than the index this needs) · `polymorphic-relations.md` (the one Data shape the language cannot
 express) · `tenant-declared-fields.md` (the `you can do this` verdict) ·
-`packages/mcp` (`ungraded` kept apart from a verdict) · `DECISIONS.md` `FJS-D14`
+`packages/mcp` (`ungraded` kept apart from a verdict) · `PURPOSE.md` (an app's
+stated scope; the headings are `PURPOSE_SECTIONS` in `packages/litestone/src/tools/assistant.js`) ·
+`DECISIONS.md` `FJS-D14`
 (an app built on the framework is not a gap in it)

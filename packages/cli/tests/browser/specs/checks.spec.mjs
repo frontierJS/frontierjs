@@ -81,9 +81,12 @@ export async function run(t) {
 
   /* ── errors first ─────────────────────────────────────────────────────── */
 
-  const order = rows.map(r => (r.severity === 'error' ? 0 : 1))
+  // The machine's own row is placed first by design, whatever its severity, and
+  // is asserted below — so the order is graded over the project's findings.
+  const project = rows.filter(r => r.where !== 'this machine')
+  const order   = project.map(r => (r.severity === 'error' ? 0 : 1))
   t.ok(order.every((n, i) => i === 0 || order[i - 1] <= n),
-    `what is on screen is in order (${rows.map(r => r.severity).join(' → ')})`)
+    `what is on screen is in order (${project.map(r => r.severity).join(' → ')})`)
 
   // And the rule itself, against a list that HAS both. This project currently
   // raises no errors at all, so the assertion above is true whether or not the

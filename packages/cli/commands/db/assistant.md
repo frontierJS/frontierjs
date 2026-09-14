@@ -47,6 +47,17 @@ time, and proposes the smallest change as a before and after of the model block.
 **It has read your schema; it has not run it** — so it ends every proposal on
 `fli db:advise`, `fli db:explain` and `fli db:migrate`, which have.
 
+## PURPOSE.md
+
+A `PURPOSE.md` at the app's root goes into the paste too. It states what the
+app is for and how far it means to go — Purpose, For whom, Ambition, In scope,
+Out of scope, May grow into, Tradeoffs we choose, Open, Revisions — and it is
+what decides a close call the schema cannot: the same request wants a simpler
+shape in a quoting tool than in a CRM. A request past the stated scope is named
+as a stretch, with the in-scope shape and a revision of `PURPOSE.md` offered side
+by side. Without the file, the assistant asks for the purpose first and offers
+to write one; the template is in the document.
+
 ## Without the CLI
 
 The instructions without a schema are committed and served as

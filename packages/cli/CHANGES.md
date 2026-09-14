@@ -1,5 +1,82 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-14 — `fli next`: the open register ranked, with its reasons
+
+Of 112 open rows, 68 are S3, so severity alone orders most of the register by file position.
+`core/next.js` adds three terms under it, each derived or declared where it holds: how many live
+records cite a row, how many open rows declare themselves `blocked by` it, and whether a code file
+it links is in the working tree or the last ten commits. Markdown and snapshots do not count as
+touched, since a register session touches them every time, and a `blocked by` reference is scored
+once as blocking rather than again as a citation. A blocked row leaves the ranking until its blocker
+closes. The prose was searched for dependency language first and yielded no edges, which is why
+blocking is a declaration. `fli register:next` (`fli next`, `--pkg`, `--json`) prints every row
+with its terms, and `fli gui`'s front page has a *next up* panel over `GET /api/next`. Proposals
+are not ranked; `IDEAS/overview.md` still ranks those by hand.
+
+## 2026-09-14 — `fli decisions` and `fli decide`: the owner's queue, and answering it without a session
+
+`ISSUES.md` § Needs a decision held one row while the IDEAS papers held about 180 open questions
+under `## Open questions`, so *what is waiting on me* had no answer short of asking an agent to read
+forty papers. `core/decisions.js` reads both as one queue and grades each question ruled (the papers'
+existing `~~**…**~~ **Answered**` convention), decidable (the bullet carries `**A** —` / `**B** —`
+sub-bullets and a `**Recommend X** —` line) or open. `core/decide.js` is the one writer: the next free
+`FJS-D` id, a ruling prepended to the chosen `DECISIONS.md` section, the question struck in its paper,
+and both files put back if `register:check` finds a new error. A pick against the recommendation is
+refused without a reason. `fli register:decisions` and `fli register:decide` are the commands, and
+`fli gui`'s front page has a *waiting on you* panel over `GET /api/decisions` and `POST /api/decide`,
+which refuses a request whose `Origin` is not the page's own host — the server answers CORS with `*`.
+
+`tests/checks.spec.mjs` graded the checks panel's severity order over the machine's own row too,
+which is placed first whatever its severity; it failed only on a machine that is not ok while the
+project had an error, and grades the project's rows now.
+
+## 2026-09-14 — `fli project:tiles` draws a project as one tile per file
+
+A picture of where a project is fresh, busy, untested and heavy, read statically from any git
+project. Each tracked file is a 2×2 tile: age since its last commit and lifetime churn from one
+`git log -M` pass, tested and complexity (indent summed in levels) from the files. Files are laid in
+path order along a generalized Hilbert curve sized to the file count, so a package is one region and
+a boundary line marks where it ends. `--as=map` writes the PNG, `--as=badge` a 63-pixel summary of
+four 4×4 waffles over source files, `--as=json` the model with the rules it was graded by. The map
+draws source files by default, the set the badge counts, because TESTED is grey on every other kind;
+`--all` draws every tracked file, and is refused beside `--as=badge` or `--as=json`.
+
+Tested prefers a `coverage/lcov.info` found under the project for every file it names, and warns
+when a report is older than a commit to a file it covers; otherwise a test must name the file, and a
+file it imports reads as partly. A commit touching more than a tenth of the tree is a sweep and
+counts for neither age nor churn — on this repo 10 of 130 commits, without which every file reads
+fresh. Bands are absolute, so badges from two projects compare. It is not a snapshot and writes no
+generator line.
+
+The PNG writer that lived inside `core/desktop-surface.js` is `core/png.js` now, with a compressed
+mode beside the stored one the desktop icon still uses byte for byte.
+
+## 2026-09-14 — the drive tables live in `DRIVES.md`
+
+The drives table and *Which drive proves a change* were 60% of the root `CLAUDE.md` (100 of 172 KB),
+which is loaded on every agent turn, and a turn that proves nothing never reads them. Both moved,
+byte for byte, into a root `DRIVES.md`; `core/proofs.js` owns the path as `DRIVES_FILE` and
+`core/preflight.js` imports it, so `fli proves`, `fli gui`'s panel, the atlas and the three rules
+(`proof-target`, `proof-drive-named`, `drive-preamble`) read the new file with no second path
+anywhere. The root `CLAUDE.md` keeps a pointer to `fli proves`. `tests/proofs.test.js` fails if
+either table header reappears in the root `CLAUDE.md`, where nothing would read it.
+
+## 2026-09-14 — `fli test:snapshots --fix` writes the snapshots an app does not have yet
+
+A fresh `fli new` app had no snapshots, so `--fix` found no headers and reran nothing, and
+`fli project:map` and `fli app:atlas` refused for want of `surface.snapshot.md` while naming a
+`junction surface` command the developer had to type out. `expectedSnapshots` in
+`core/snapshots.js` gives the first command for each register an app's layout calls for, found by
+probing the tree: the four Data-realm ones beside `db/schema.lite`, surface, jobs and principal when
+`api/src/app.ts` exists (plus notifications when the app depends on the package), and a route table
+for `web/` and `site/`. `--fix` writes whichever are missing. The junction ones go at the app root,
+because a scaffolded app keeps `.env` there and its module refuses to load without it; one committed
+under `api/` counts as present. After the first write the file's own header is the generator again.
+
+Check mode lists the missing ones and does not fail, because a zero-snapshot app used to read as
+*0 checked* and clean. CI never passes `write`, so the repo's `snapshots` phase is unchanged. Its
+first run over `packages/basecamp` names a `notifications.snapshot.md` the app never committed.
+
 ## 2026-09-13 — the first-run command has a copy button
 
 The sign-in page's first-run hint put `fli auth:create-user you@example.com --role admin` in an

@@ -12,10 +12,13 @@
 // in the working tree, and the process table behind a start button:
 //   GET  /api/runnables       → the inventory, cached on the registry's TTL
 //   GET  /api/state           → probed per poll, four answers, `unknown` is one
-//   GET  /api/proves          → CLAUDE.md's proof table against `git diff`
+//   GET  /api/proves          → DRIVES.md's proof table against `git diff`
 //   GET  /api/health/:id      → what the thing on that port says about itself
 //   GET  /api/check           → the architecture rules over this project's apps
 //   GET  /api/doctor          → can this machine run fli
+//   GET  /api/decisions       → the open questions the registers hold
+//   GET  /api/next            → the open register ranked — `core/next.js`
+//   POST /api/decide          → rule on one — `core/decide.js`, the command's own writer
 //   POST /api/start/:id · POST /api/stop/:id · GET /api/output/:id
 //
 // SSE event shapes sent to client:
@@ -136,6 +139,21 @@ function route(req, res) {
   // GET /api/doctor — can this machine run fli
   if (req.method === 'GET' && path === '/api/doctor') {
     return handleDoctor(req, res)
+  }
+
+  // GET /api/next — the open register ranked, each row with its terms
+  if (req.method === 'GET' && path === '/api/next') {
+    return handleNext(req, res)
+  }
+
+  // GET /api/decisions — what is waiting on the owner
+  if (req.method === 'GET' && path === '/api/decisions') {
+    return handleDecisions(req, res)
+  }
+
+  // POST /api/decide — answer one, through the same writer `fli register:decide` uses
+  if (req.method === 'POST' && path === '/api/decide') {
+    return handleDecide(req, res)
   }
 
   // GET /api/release — the pivot verdict for every app in this tree
@@ -260,6 +278,64 @@ async function handleReleaseTarget(req, res) {
     json(res, out.ok ? 200 : 400, out)
   } catch (err) {
     json(res, 500, { error: err.message })
+  }
+}
+
+// ─── the decisions ────────────────────────────────────────────────────────────
+//
+// The read and the write are `core/decisions.js` and `core/decide.js`, the same
+// two modules the commands call, so the page and the terminal cannot disagree
+// about what is open or about what a pick writes.
+
+// No parameter: the page shows the whole ranking's head, and a package filter
+// is a thing a person types at a terminal.
+async function handleNext(req, res) {
+  try {
+    const { rankNext } = await import('./next.js')
+    const out = rankNext(global.projectRoot)
+    json(res, 200, { ready: out.ready.slice(0, 8), readyCount: out.ready.length, blocked: out.blocked, decide: out.decide })
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
+async function handleDecisions(req, res) {
+  try {
+    const { openDecisions, rulingSections } = await import('./decisions.js')
+    const root = global.projectRoot
+    json(res, 200, { ...openDecisions(root), sections: rulingSections(root) })
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
+
+// This writes two register files, and the server answers every origin with
+// `Access-Control-Allow-Origin: *`. So a page on some other site could send it,
+// and the refusal is here: a browser always states the Origin of a cross-site
+// POST, and one naming any host but this server's own is refused.
+async function handleDecide(req, res) {
+  const origin = req.headers.origin
+  if (origin) {
+    let host = null
+    try { host = new URL(origin).host } catch {}
+    if (host !== req.headers.host) return json(res, 403, { ok: false, reason: `a decision is not taken from ${origin}` })
+  }
+
+  let body
+  try { body = await readBody(req) } catch { return json(res, 400, { ok: false, reason: 'Invalid JSON body' }) }
+
+  try {
+    const { decide } = await import('./decide.js')
+    const out = decide({
+      root:    global.projectRoot,
+      id:      String(body?.id ?? ''),
+      pick:    String(body?.pick ?? ''),
+      why:     String(body?.why ?? ''),
+      section: String(body?.section ?? ''),
+    })
+    json(res, out.ok ? 200 : 400, out)
+  } catch (err) {
+    json(res, 500, { ok: false, reason: err.message })
   }
 }
 

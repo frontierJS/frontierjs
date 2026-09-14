@@ -61,7 +61,8 @@ export const SEVERITY     = ['S1', 'S2', 'S3', 'S4']
 // taken back and nothing replaced it. **Absence means in force**, which is the
 // state of nearly every row and is why it is the one that costs nothing to
 // write. `proposed` is not here: an undecided question lives in `ISSUES.md`
-// § Needs a decision, so it has no referent in this file.
+// § Needs a decision or a paper's `## Open questions` (`core/decisions.js`),
+// so it has no referent in this file.
 export const RULING_STATUS = ['superseded-by', 'amended-by', 'withdrawn']
 
 // The lifecycle a proposal is on, plus the two shapes that are on no lifecycle.

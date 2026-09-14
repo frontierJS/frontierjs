@@ -195,6 +195,10 @@ around is worse than the current honest raw one.
 - **`@encrypted` columns.** Decryption happens above SQLite, so a view exposes
   ciphertext. Omit them (safe, surprising) or expose them raw (honest, useless)? Omit,
   probably, with the omission reported.
+  - **A** — omit them from the view, and report the omission to the caller
+  - **B** — expose the ciphertext as it is stored
+  - **Recommend A** — ciphertext in a result is useless to a reader and looks like
+    data, while a reported omission says exactly what was withheld and why
 - **Does the view set follow `$scopedBy(...)` too?** It should — same declarations,
   same binding — but that multiplies the cache key.
 - **Reads across a relation.** A join between two scoped views is correct by

@@ -1,5 +1,15 @@
 # Changes — @frontierjs/auth
 
+## 2026-09-14 — `resetPasswords` for the console
+
+`@frontierjs/auth/console` exports `resetPasswords`, a command an app's `db/tinker.js` hands to
+`fli tinker`: `.resetPasswords [password]` sets every `password` credential to one value through
+`hashPassword`, so what it writes is what `login()` verifies. OAuth credentials keep their value and
+an account with no password gains none. Refused under `NODE_ENV=production` without `--force`.
+`tests/console.test.ts` grades it by signing in rather than by reading the column — measured, writing
+the password unhashed reds 3 of its 4 rows — and pairs the production refusal with the same call
+forced.
+
 ## 2026-09-12 — an invitation sets the first password
 
 `FJS-1099`. `confirmPasswordReset` refused every account with no password credential, which included

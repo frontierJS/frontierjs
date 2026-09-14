@@ -1,6 +1,6 @@
 // preflight.test.js — what a drive needs started before it.
 //
-// `CLAUDE.md`'s drive table carries a *Start first* column and until this module
+// `DRIVES.md`'s drive table carries a *Start first* column and until this module
 // nothing read it, so the dashboard's start button ran `verify:live` into the
 // exit 1 that names the missing process.
 //
@@ -42,7 +42,7 @@ function fixture(table) {
   }))
   w('packages/sierra/package.json', JSON.stringify({ name: '@frontierjs/sierra', scripts: { 'test:widgets': 'node x.mjs' } }))
 
-  w('CLAUDE.md', [
+  w('DRIVES.md', [
     '# thing', '', '**The browser drives.**', '',
     '| Drive | Start first | Covers |', '| --- | --- | --- |', ...table, '',
     'prose after the table, `bun run nonsense`, which must not be read as a row.',
@@ -230,7 +230,7 @@ describe('over this repo', () => {
     const bad  = []
     for (const p of readPreambles(REPO)) {
       for (const n of resolveNeeds(p.needs, p.dir, rows)) {
-        if (!n.id) bad.push(`CLAUDE.md:${p.line} ${p.dir}/${p.script} → ${n.run}`)
+        if (!n.id) bad.push(`DRIVES.md:${p.line} ${p.dir}/${p.script} → ${n.run}`)
       }
     }
     expect(bad).toEqual([])

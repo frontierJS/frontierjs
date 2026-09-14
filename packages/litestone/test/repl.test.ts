@@ -11,7 +11,7 @@
 
 import { describe, it, expect } from 'bun:test'
 import { PassThrough }          from 'node:stream'
-import { startRepl, describeStanding } from '../src/tools/repl.js'
+import { startRepl, describeStanding, tinkerCommands } from '../src/tools/repl.js'
 
 /** Drive a session: feed lines, collect what it printed. */
 async function session(lines: string[], binds: any = {}) {
@@ -32,6 +32,8 @@ async function session(lines: string[], binds: any = {}) {
       sys:       binds.sys ?? {},
       standing:  binds.standing ?? 'anonymous(0)',
       accessors: binds.accessors ?? ['order'],
+      commands:  binds.commands ?? {},
+      tenant:    binds.tenant ?? null,
       out:       (l: string) => said.push(l),
     })
     for (const line of lines) input.write(`${line}\n`)
@@ -156,5 +158,82 @@ describe('dot commands', () => {
     const out = await session(['.help'], { accessors: ['user', 'post'] })
     expect(out).toMatch(/accessors\s+[^\n]*\buser\b/)
     expect(out).not.toContain('User')
+  })
+})
+
+describe("an app's own commands — db/tinker.js", () => {
+  it('.name runs the command with the clients, the words after it, and the tenant', async () => {
+    let seen: any
+    const commands = { resetPasswords: { help: 'set them all', run: async (ctx: any) => { seen = ctx; ctx.out('  done') } } }
+    const db = { who: 'db' }, sys = { who: 'sys' }
+
+    const out = await session(['.resetPasswords hunter2 --force'], { db, sys, commands, tenant: 'flagship' })
+
+    expect(seen.args).toEqual(['hunter2', '--force'])
+    expect(seen.sys).toBe(sys)
+    expect(seen.db).toBe(db)
+    expect(seen.tenant).toBe('flagship')
+    expect(out).toContain('done')
+  })
+
+  it('an unknown .name is refused by name and never evaluated — paired with a known one running', async () => {
+    let ran = 0
+    const commands = { purge: { run: async () => { ran++ } } }
+
+    const out = await session(['.prge', '.purge'], { commands })
+
+    expect(out).toContain('No command .prge')
+    expect(out).not.toContain('SyntaxError')
+    expect(ran).toBe(1)
+  })
+
+  it('a command that throws prints the message and the session goes on', async () => {
+    const commands = { boom: { run: async () => { throw new Error('refused: production') } } }
+    const out = await session(['.boom', '1 + 1'], { commands })
+
+    expect(out).toContain('Error: refused: production')
+    expect(out).toContain('2')
+  })
+
+  it('runs in the order typed, like any other line', async () => {
+    const order: string[] = []
+    const commands = { slow: { run: () => new Promise<void>(r => setTimeout(() => { order.push('slow'); r() }, 40)) } }
+    await session(['.slow', 'db.fast()'], { commands, db: { fast: () => order.push('fast') } })
+    expect(order).toEqual(['slow', 'fast'])
+  })
+
+  it('.help lists each command with its help, and says where they come from when there are none', async () => {
+    const withOne = await session(['.help'], { commands: { resetPasswords: { help: 'every password to one value', run: async () => {} } } })
+    expect(withOne).toMatch(/\.resetPasswords\s+every password to one value/)
+
+    expect(await session(['.help'])).toContain('db/tinker.js')
+  })
+})
+
+describe('tinkerCommands — what the file must look like', () => {
+  const ok = { resetPasswords: { help: 'h', run: async () => {} } }
+
+  it('a table of { help, run } is accepted', () => {
+    expect(tinkerCommands({ default: ok })).toBe(ok)
+  })
+
+  it('no default export is refused, naming the shape', () => {
+    expect(() => tinkerCommands({ resetPasswords: ok.resetPasswords })).toThrow('export default an object')
+  })
+
+  it('a bare function is refused — beside the same function inside { run } accepted', () => {
+    const fn = async () => {}
+    expect(() => tinkerCommands({ default: { purge: fn } })).toThrow('.purge needs a run function')
+    expect(() => tinkerCommands({ default: { purge: { run: fn } } })).not.toThrow()
+  })
+
+  it('a built-in name is refused — beside the same command under another name', () => {
+    expect(() => tinkerCommands({ default: { exit: ok.resetPasswords } })).toThrow('.exit is built in')
+    expect(() => tinkerCommands({ default: { leave: ok.resetPasswords } })).not.toThrow()
+  })
+
+  it('a name with a space is refused — beside a hyphenated one', () => {
+    expect(() => tinkerCommands({ default: { 'reset all': ok.resetPasswords } })).toThrow('not a command name')
+    expect(() => tinkerCommands({ default: { 'reset-all': ok.resetPasswords } })).not.toThrow()
   })
 })

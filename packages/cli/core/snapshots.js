@@ -218,10 +218,95 @@ function binEntry(manifestPath, pkgName, bin) {
   return existsSync(file) ? file : null
 }
 
+// ─── missingSnapshots ─────────────────────────────────────────────────────────
+//
+//   missingSnapshots({ root, found? })  → [{ file, dir, argv, error: null }]
+//
+// The snapshots an APP's own layout calls for and does not have yet. Discovery
+// reads a header, and an app `fli new` just wrote has no headers to read — so
+// `project:map` and `app:atlas`, which read `surface.snapshot.md`, refused a
+// fresh app while naming a command nobody had typed.
+//
+// A row is only the FIRST command. Once written, the file's own header is the
+// generator and this table is not consulted for it again, so an app that moved
+// its entry or added a flag keeps what it wrote.
+//
+// Each row is conditional on a probe of the tree, never on a path derived from
+// another (Invariant 3). A row names every directory its snapshot may already
+// sit in, because an app may commit the junction registers under `api/` — and
+// it is seeded into the first, the app root, because that is where `.env` is
+// and the app module refuses to load without it.
+//
+// Outside an app root (no `db/schema.lite`, no `api/`) this is empty, which is
+// what keeps the framework repo's own CI phase a pure recheck.
+
+const APP_ENTRIES = ['api/src/app.ts', 'api/src/app.js']
+
+function appDependsOn(root, pkg) {
+  for (const manifest of ['package.json', 'api/package.json']) {
+    try {
+      const m = JSON.parse(readFileSync(join(root, manifest), 'utf8'))
+      if (m.dependencies?.[pkg] || m.devDependencies?.[pkg]) return true
+    } catch { /* absent or unreadable — not a dependency */ }
+  }
+  return false
+}
+
+export function expectedSnapshots(root) {
+  const rows  = []
+  const has   = (p) => existsSync(join(root, p))
+  const entry = APP_ENTRIES.find(has)
+
+  if (has('db/schema.lite')) {
+    rows.push(
+      { file: 'access.snapshot.md',     dirs: ['db'], argv: ['litestone', 'access', '--schema', 'schema.lite'] },
+      { file: 'ddl.snapshot.sql',       dirs: ['db'], argv: ['litestone', 'ddl', '--schema', 'schema.lite'] },
+      { file: 'release.snapshot.md',    dirs: ['db'], argv: ['litestone', 'release', '--schema', 'schema.lite'] },
+      { file: 'jsonschema.snapshot.md', dirs: ['db'], argv: ['litestone', 'jsonschema', '--snapshot', '--schema', 'schema.lite'] },
+    )
+  }
+
+  if (entry) {
+    const app = ['--app', entry]
+    rows.push(
+      { file: 'surface.snapshot.md',   dirs: ['.', 'api'], argv: ['junction', 'surface', ...app] },
+      { file: 'jobs.snapshot.md',      dirs: ['.', 'api'], argv: ['junction', 'jobs', ...app] },
+      { file: 'principal.snapshot.md', dirs: ['.', 'api'], argv: ['junction', 'principal', ...app] },
+    )
+    // Without the package the answer is always *none*, and a committed file
+    // saying so is a diff nobody reads.
+    if (appDependsOn(root, '@frontierjs/notifications')) {
+      rows.push({ file: 'notifications.snapshot.md', dirs: ['.', 'api'], argv: ['junction', 'notifications', ...app] })
+    }
+  }
+
+  // `widgets/` builds no route table, so it has no row.
+  for (const surface of ['web', 'site']) {
+    if (has(`${surface}/config/sierra.config.js`)) {
+      rows.push({ file: 'routes.snapshot.md', dirs: [surface], argv: ['sierra', 'routes', '--config', 'config/sierra.config.js'] })
+    }
+  }
+
+  return rows
+}
+
+export function missingSnapshots({ root, found = findSnapshots({ root }) } = {}) {
+  const present = new Set(found.map(s => s.file))
+  return expectedSnapshots(root)
+    .filter(row => !row.dirs.some(d => present.has(d === '.' ? row.file : `${d}/${row.file}`)))
+    .map(row => ({
+      file:  row.dirs[0] === '.' ? row.file : `${row.dirs[0]}/${row.file}`,
+      dir:   row.dirs[0],
+      argv:  row.argv,
+      error: null,
+    }))
+}
+
 // ─── checkSnapshots ───────────────────────────────────────────────────────────
 //
 //   checkSnapshots({ root })              → reruns each generator with `--check`
-//   checkSnapshots({ root, write: true }) → reruns each WITHOUT it, rewriting
+//   checkSnapshots({ root, write: true }) → reruns each WITHOUT it, rewriting,
+//                                           and writes every missing one too
 //
 // The write half exists because the remedy was 26 commands a person rebuilt
 // from a failure message, and the three anybody remembers are the three they
@@ -233,7 +318,9 @@ function binEntry(manifestPath, pkgName, bin) {
 // the allow-list above still governs what may run.
 
 export function checkSnapshots({ root, only = null, write = false, timeoutMs = 15 * 60 * 1000, maxBuffer = 64 * 1024 * 1024 } = {}) {
-  const entries = findSnapshots({ root }).filter(e => !only || only.includes(e.file))
+  const found   = findSnapshots({ root })
+  const seeds   = write ? missingSnapshots({ root, found }).map(e => ({ ...e, seeded: true })) : []
+  const entries = [...found, ...seeds].filter(e => !only || only.includes(e.file))
   const results = []
 
   for (const entry of entries) {
@@ -274,7 +361,7 @@ export function checkSnapshots({ root, only = null, write = false, timeoutMs = 1
     results.push({
       ...entry,
       ok:     run.status === 0,
-      error:  run.status === 0 ? null : write ? 'could not be regenerated' : 'no longer matches its source',
+      error:  run.status === 0 ? null : entry.seeded ? 'could not be written' : write ? 'could not be regenerated' : 'no longer matches its source',
       stdout: run.stdout ?? '',
       stderr: run.stderr ?? '',
     })
@@ -294,6 +381,9 @@ export function formatSnapshotResults(results) {
     if (r.ok) continue
     out.push(`  ✗  ${r.file} ${r.error}`)
     if (r.argv) out.push(`       cd ${r.dir} && bunx ${r.argv.join(' ')}`)
+    // A stale snapshot's remedy is the rerun; a snapshot that never existed
+    // failed for a reason only the generator printed, like an unset env var.
+    if (r.seeded) for (const line of (r.stderr ?? '').trim().split('\n').filter(Boolean).slice(-4)) out.push(`       ${line}`)
   }
   return out
 }

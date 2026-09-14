@@ -1,6 +1,6 @@
 // proofs.test.js — which drive proves the change I just made.
 //
-// The module reads `CLAUDE.md` § *Which drive proves a change* and resolves both
+// The module reads `DRIVES.md` § *Which drive proves a change* and resolves both
 // of its columns. What is worth testing is exactly that: the parse survives the
 // prose the table is written in, and neither column is resolved by guessing.
 //
@@ -12,7 +12,7 @@
 // report. So a false target is worse than a missed one, and it is asserted.
 
 import { describe, test, expect } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs'
 import { join, resolve, dirname } from 'path'
 import { tmpdir } from 'os'
 import { fileURLToPath } from 'url'
@@ -41,7 +41,7 @@ function fixture(table) {
   w('shop/package.json', JSON.stringify({ name: 'shop', scripts: { 'verify:live': 'node x.mjs' } }))
   w('shop/web/src/cart.js', '')
 
-  w('CLAUDE.md', [
+  w('DRIVES.md', [
     '# thing', '', '**Which drive proves a change.**', '',
     '| Changed | Run |', '| --- | --- |', ...table, '',
     'prose after the table, `with backticks`, which must not be read as a row.',
@@ -199,10 +199,18 @@ describe('over this repo', () => {
     const bad  = []
     for (const p of readProofs(REPO)) {
       for (const t of resolveRun(p.run, { root: REPO, rows })) {
-        if (t.kind === 'unknown') bad.push(`CLAUDE.md:${p.line} ${t.where}: ${t.name}`)
+        if (t.kind === 'unknown') bad.push(`DRIVES.md:${p.line} ${t.where}: ${t.name}`)
       }
     }
     expect(bad).toEqual([])
+  })
+
+  test('the root CLAUDE.md carries neither drive table', () => {
+    // Both readers look in `DRIVES.md` only, so a row written into the
+    // always-loaded file out of habit is a row nothing reads.
+    const claude = readFileSync(join(REPO, 'CLAUDE.md'), 'utf8')
+    expect(claude).not.toMatch(/^\|\s*Changed\s*\|\s*Run\s*\|/im)
+    expect(claude).not.toMatch(/^\|\s*Drive\s*\|\s*Start first\s*\|/im)
   })
 
   test('the table is read, and it is not empty', () => {

@@ -251,10 +251,10 @@ describe('where a row points', () => {
 
 describe('proofs', () => {
 
-  test('reads the drive-per-change table out of the root CLAUDE.md', () => {
+  test('reads the drive-per-change table out of DRIVES.md', () => {
     const dir = tree('proofs', {
       'package.json': pkg({ name: 'ws' }),
-      'CLAUDE.md': [
+      'DRIVES.md': [
         '# Map',
         '',
         '| Changed                | Run                                            |',
@@ -282,7 +282,7 @@ describe('proofs', () => {
       // is not, so a grader that marked both would look like one that marked
       // neither.
       'example/package.json': pkg({ name: 'example', scripts: { verify: 'node v.mjs' } }),
-      'CLAUDE.md': [
+      'DRIVES.md': [
         '# Map',
         '',
         '| Changed | Run |',
@@ -303,7 +303,7 @@ describe('proofs', () => {
   })
 
   test('no table is an empty list, not a thrown reader', () => {
-    const dir = tree('no-proofs', { 'package.json': pkg({ name: 'ws' }), 'CLAUDE.md': '# Map\n\nnothing here\n' })
+    const dir = tree('no-proofs', { 'package.json': pkg({ name: 'ws' }), 'DRIVES.md': '# Map\n\nnothing here\n' })
     expect(collect({ root: dir }).proofs).toEqual([])
   })
 })

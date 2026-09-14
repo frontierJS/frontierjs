@@ -19,7 +19,10 @@ IDEAS/         — what is not started     (one paper per proposal)
 ```
 
 ```
-fli register:check  — grade the registers against their own rules
+fli register:check      — grade the registers against their own rules
+fli register:decisions  — what is waiting on the owner, read out of all of them
+fli register:decide     — rule on one: file the ruling, strike the question
+fli register:next       — the open register ranked, with the terms that scored each row
 ```
 
 They stay markdown, because a register is argued in prose and reviewed in a

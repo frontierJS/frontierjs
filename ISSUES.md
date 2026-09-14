@@ -29,6 +29,7 @@ one of the two files. Search both before concluding an id is unknown.
 | **Sev** | `S1` blocker — data loss, a security hole, or cannot ship · `S2` high — silently wrong, costs a day to find · `S3` medium · `S4` low or cosmetic |
 | **Status** | `open` — verified open on the date shown · `stale?` — inherited from an older audit and **not re-verified**; probe before acting · `contested` — the recorded diagnosis is doubted, see the note |
 | **Verified** | The date somebody last ran it. A `stale?` row's date is when it was *written*, not confirmed. |
+| **Blocked by** | A row that cannot start until another closes says `blocked by FJS-###` in its own text, and nowhere else. `fli next` takes it out of the ranking until that row closes and weighs the blocker up. Write it only where the order is real — a row that merely relates to another cites it. |
 
 **A row has exactly the columns its table's header names**, and `fli
 register:check` fails on anything else (`row-shape`). Both ways of getting it
@@ -154,6 +155,7 @@ exists to name, wearing the other label.
 
 | Id | Pkg | Title | Status | Verified | Detail |
 | --- | --- | --- | --- | --- | --- |
+| <a id="fjs-1146"></a>FJS-1146 | cli | **`fli gui`'s health spec fails intermittently, so a red `test:browser` run cannot be read as a regression.** Five runs over one tree went 18/18, 18/18, 14/18, 14/18, 17/18; the same 14/18 came back with the dashboard's newest panel loads removed, so the cause is in the spec's timing rather than in what loads. | open | 2026-09-14 | Standalone the four failures are the healthy-badge rows right after `serve()` binds — the badge is still hidden when read, as if the probe ran before the listener answered; in a full run it is instead *carries no verdict until it is asked*, after the rebind. Cause not diagnosed. Probe with repeated `bun run test:browser health --verbose` before diagnosing · [health.spec.mjs](packages/cli/tests/browser/specs/health.spec.mjs) |
 | <a id="fjs-1144"></a>FJS-1144 | mesa | **`boundaryBlock` rebuilds its `{:pending}` branch on every state change while still loading**, discarding any DOM state in it — a focused input, an animation mid-flight. | open | 2026-09-13 | The effect calls `_mountBranch(outerOwner, pendingBlock)` on each run where any state is loading, and each rebuild disposes the last, so it is not a leak. A behavior question: leaving a mounted pending branch alone changes what a `fetching` → `loading` transition looks like. Noted in the 2026-08-01 block-teardown pass and never filed · [runtime.js `boundaryBlock`](packages/mesa/src/runtime.js) · [CHANGES.md 2026-08-01](packages/mesa/CHANGES.md) |
 | <a id="fjs-1143"></a>FJS-1143 | mesa | **A memo disposed while clean still serves its last value on read** rather than warning, so a read through a torn-down owner looks like a live one. | stale? | 2026-08-01 | Recorded as open by the 2026-08-01 reactivity pass with no reproduction; `_disposed` guards were added then. Probe before acting · [runtime.js](packages/mesa/src/runtime.js) · [CHANGES.md 2026-08-01](packages/mesa/CHANGES.md) |
 | <a id="fjs-1142"></a>FJS-1142 | mesa | **Two context systems over one stack: symbol-keyed `createContext`/`provideContext`/`useContext` and string-keyed `contextProvide`/`contextRead`**, invisible to each other, while the `$context.key` language form compiles to the string one. | open | 2026-09-13 | Six exports for one idea (Invariant 4's shape inside a package). All still exported from `runtime.js`. Cleanup, no known bug: pick the one the language compiles to and delete the other · [runtime.js](packages/mesa/src/runtime.js) |
@@ -200,7 +202,11 @@ exists to name, wearing the other label.
 ## Needs a decision
 
 These are questions, not defects. A ruling moves to `DECISIONS.md` and closes the
-row here.
+row here. **This table is the questions with an id; most open questions are argued
+inside an IDEAS paper's `## Open questions` and stay there.** `fli decisions` reads
+both as one queue, and a question becomes pickable — by `fli decide` or on `fli gui`
+— once its bullet carries lettered options and a `**Recommend X**` line. A row's
+cell cannot hold options, so they go in the paper its Detail links.
 
 | Id | Area | Question | Detail |
 | --- | --- | --- | --- |

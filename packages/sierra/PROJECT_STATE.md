@@ -39,7 +39,7 @@ nothing. None of the three is in the others — `test` does not run either drive
 What the suite cannot reach is the app-shaped half: the SPA, the prerender and
 the resource layer are proven by `example`'s browser drives (`verify`,
 `verify:build`, `verify:site`, `verify:widget`) and by `basecamp`'s. The rows in
-`../../CLAUDE.md` § *Which drive proves a change* are the map; `fli proves` reads
+`../../DRIVES.md` § *Which drive proves a change* are the map; `fli proves` reads
 them off a diff.
 
 ## What is NOT built

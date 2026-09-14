@@ -1248,7 +1248,7 @@ describe('the repo scope', () => {
 
 describe('drive-preamble', () => {
 
-  // `CLAUDE.md`'s *Start first* column is now read: `runnables.js` puts it on the
+  // `DRIVES.md`'s *Start first* column is now read: `runnables.js` puts it on the
   // drive's row so one button runs the whole thing. Which makes a renamed script
   // worse than it was — the advice is no longer only read by a person who can
   // see it is wrong, it is pressed.
@@ -1258,7 +1258,7 @@ describe('drive-preamble', () => {
     'shop/db/schema.lite':   'model Order {\n  id Int @id\n}\n',
     'shop/api/index.ts':     '',
     'shop/package.json':     JSON.stringify({ name: 'shop', scripts: { api: 'x', 'db:seed': 'y', 'verify:live': 'z' } }),
-    'CLAUDE.md': [
+    'DRIVES.md': [
       '| Drive | Start first | Covers |', '| --- | --- | --- |',
       `| \`shop\`: \`verify:live\` | ${cell} | x |`, '',
     ].join('\n'),

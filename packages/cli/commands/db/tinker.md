@@ -23,6 +23,11 @@ flags:
     type: string
     description: The app's own getLevel — path[#export]. Without it the console grades with the default resolver
     defaultValue: ''
+  tenant:
+    char: t
+    type: string
+    description: Whose database, under tenancy { strategy database }. Omitted at a terminal, it lists them and asks
+    defaultValue: ''
 ---
 
 ```js
@@ -33,7 +38,8 @@ const { schema } = resolveDb(context, flag)
 const opts = [
   flag.as    ? `--as ${flag.as}`       : '',
   flag.level ? `--level ${flag.level}` : '',
-  flag.gate  ? `--gate ${flag.gate}`   : '',
+  flag.gate   ? `--gate ${flag.gate}`     : '',
+  flag.tenant ? `--tenant ${flag.tenant}` : '',
 ].filter(Boolean).join(' ')
 
 await context.stream({
@@ -112,6 +118,50 @@ neither, it refuses and asks rather than guessing which table holds principals:
 ```
 fli tinker --as Customer:ops@acme.test
 ```
+
+## Under `strategy database`, which file
+
+Each tenant is its own database and `main` holds the machinery — sessions, the
+outbox — and none of the tenant's rows. A console on `main` answers
+`count()` with 0 for a shop full of orders, which reads exactly like an empty
+table, so it does not open there by default:
+
+```
+fli tinker --tenant flagship --as ops@acme.test
+fli tinker                       # at a terminal: lists the tenants, 0 is main
+```
+
+Piped or scripted, with no `--tenant`, it refuses and names the known ones.
+`--as` is looked up INSIDE the chosen tenant, since that is where its people are.
+
+## Commands of your own
+
+`db/tinker.js`, beside the schema, adds dot commands. It default-exports a
+table of `{ help, run }`, and `.name a b` calls `run` with the session:
+
+```
+// db/tinker.js
+import { resetPasswords } from '@frontierjs/auth/console'
+
+export default {
+  resetPasswords,
+  purgeCarts: {
+    help: 'delete baskets untouched for N days (default 30)',
+    async run({ db, sys, args, out, tenant }) { … },
+  },
+}
+```
+
+`args` is the words after the name, `db` and `sys` are the two clients above,
+and `tenant` is whichever one the console opened — so a command reaches one
+tenant's rows and never the fleet's. `.help` lists them. A malformed file stops
+the console before it opens rather than starting without the command, and
+`.help`, `.standing` and `.exit` cannot be taken.
+
+`resetPasswords` is auth's rather than a copy in the app because the hash is
+auth's: a bcrypt call written in an app writes hashes the next auth release may
+not verify. It sets every `password` credential, leaves an OAuth-only account
+without one, and refuses under `NODE_ENV=production` unless given `--force`.
 
 ## What it is not, yet
 

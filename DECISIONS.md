@@ -12033,9 +12033,13 @@ esbuild/biome shape) beats a fork, because it still ships upstream's bytes.
 
 ## Open (discussed, not yet ruled)
 
-**Moved to `ISSUES.md` § Needs a decision (2026-08-05)** — every unruled question
-in the repo is listed there with an id, so that "what is waiting on me?" is one
-table rather than six. A ruling comes back **here** and closes the row there.
+**What is waiting on the owner is `fli decisions`** — one queue read out of
+`ISSUES.md` § Needs a decision (the questions with an id) and every IDEAS paper's
+`## Open questions` (the ones argued inside a proposal, which is most of them). The
+questions are not copied into a single table: listing them all in `ISSUES.md` with
+ids was the plan on 2026-08-05, and the papers went on arguing theirs where they
+were, so the queue is derived instead. A ruling comes back **here** — `fli decide`
+writes it and strikes the question where it was asked.
 
 What was listed here has since been ruled, every one of it, and each ruling is
 above: `FJS-D01` junction structural refactor (2026-08-13) · `FJS-D11` bulk

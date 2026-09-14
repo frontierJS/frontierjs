@@ -35,6 +35,7 @@
 
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { resolve, dirname }                     from 'node:path'
+import { encodePng }                            from './png.js'
 
 // ─── names ────────────────────────────────────────────────────────────────────
 
@@ -432,41 +433,9 @@ export function desktopShellGitignore() {
  */
 export function desktopIcon() {
   const size = 32
-  const row  = Buffer.alloc(1 + size * 4)
-  for (let x = 0; x < size; x++) row.set([0x2b, 0x4c, 0x7e, 0xff], 1 + x * 4)
-  const raw  = Buffer.concat(Array.from({ length: size }, () => row))
-
-  // zlib: a header, one STORED deflate block (raw is under 65535 bytes), adler32.
-  const len  = raw.length
-  let a = 1, b = 0
-  for (const byte of raw) { a = (a + byte) % 65521; b = (b + a) % 65521 }
-  const idat = Buffer.concat([
-    Buffer.from([0x78, 0x01, 0x01, len & 0xff, len >> 8, ~len & 0xff, (~len >> 8) & 0xff]),
-    raw,
-    u32((b << 16) | a),
-  ])
-
-  const ihdr = Buffer.concat([u32(size), u32(size), Buffer.from([8, 6, 0, 0, 0])])
-  return Buffer.concat([
-    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
-    chunk('IHDR', ihdr), chunk('IDAT', idat), chunk('IEND', Buffer.alloc(0)),
-  ])
-}
-
-function u32(n) {
-  const out = Buffer.alloc(4)
-  out.writeUInt32BE(n >>> 0)
-  return out
-}
-
-function chunk(type, data) {
-  const body = Buffer.concat([Buffer.from(type, 'ascii'), data])
-  let c = ~0
-  for (const byte of body) {
-    c ^= byte
-    for (let k = 0; k < 8; k++) c = (c >>> 1) ^ (0xedb88320 & -(c & 1))
-  }
-  return Buffer.concat([u32(data.length), body, u32(~c)])
+  const rgba = Buffer.alloc(size * size * 4)
+  for (let i = 0; i < size * size; i++) rgba.set([0x2b, 0x4c, 0x7e, 0xff], i * 4)
+  return encodePng(size, size, rgba, { stored: true })
 }
 
 // ─── writing it ───────────────────────────────────────────────────────────────

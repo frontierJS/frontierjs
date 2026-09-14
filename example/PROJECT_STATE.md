@@ -1,7 +1,7 @@
 # PROJECT_STATE — `example/` (the kitchen sink)
 
 **As of 2026-08-06**, and the **Verified** row below is dated separately
-(2026-08-26) and lists 27 drives — root `CLAUDE.md`'s drive table now names
+(2026-08-26) and lists 27 drives — root `DRIVES.md`'s drive table now names
 over 30 for this app, so both dates and the per-drive counts here need a
 re-run before they are trusted; nothing here has been re-verified since. Read
 `README.md` first for what the app *is*; this file is what was built, what was

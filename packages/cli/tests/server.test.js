@@ -494,8 +494,8 @@ describe('POST /api/start/:id and /api/stop/:id', () => {
 // does in a project that has no proof table, which is every project but this
 // one.
 //
-// `projectRoot` is `packages/cli` in this file, and `packages/cli/CLAUDE.md`
-// declares no such table. So this suite runs the negative control by default,
+// `projectRoot` is `packages/cli` in this file, and `packages/cli` has no
+// `DRIVES.md`. So this suite runs the negative control by default,
 // which is the case a fixture is least likely to be written for.
 
 describe('GET /api/proves', () => {
@@ -534,6 +534,53 @@ describe('GET /api/proves', () => {
     const b = await (await fetch(`${base}/api/proves?from=$(touch /tmp/fli-proves-pwned)`)).json()
     expect(b.files).toEqual(a.files)
     expect(existsSync('/tmp/fli-proves-pwned')).toBe(false)
+  })
+
+})
+
+// ─── the decisions ────────────────────────────────────────────────────────────
+//
+// The reader and the writer are covered over a fixture in
+// `tests/decisions.test.js`. What is here is the endpoint's own contract, and
+// `packages/cli` keeps no registers, so no request below can write one.
+
+describe('GET /api/next', () => {
+
+  test('a project with no register ranks nothing rather than failing', async () => {
+    // `packages/cli` keeps no ISSUES.md, which is every client app's state too.
+    const body = await (await fetch(`${base}/api/next`)).json()
+    expect(body.error).toBeUndefined()
+    expect(body.ready).toEqual([])
+    expect(body.readyCount).toBe(0)
+  })
+
+})
+
+describe('GET /api/decisions · POST /api/decide', () => {
+
+  test('the read answers the shape the panel draws', async () => {
+    const body = await (await fetch(`${base}/api/decisions`)).json()
+    expect(body.error).toBeUndefined()
+    expect(Array.isArray(body.decidable)).toBe(true)
+    expect(Array.isArray(body.open)).toBe(true)
+    expect(Array.isArray(body.sections)).toBe(true)
+  })
+
+  test('a pick from another origin is refused before anything is read', async () => {
+    // The server answers every origin with `*`, so a page elsewhere could send
+    // this. The pair: the same request from no origin reaches the writer.
+    const foreign = await fetch(`${base}/api/decide`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://evil.example' },
+      body: JSON.stringify({ id: 'x:y', pick: 'A', section: 'S' }),
+    })
+    expect(foreign.status).toBe(403)
+
+    const own = await fetch(`${base}/api/decide`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: 'x:y', pick: 'A', section: 'S' }),
+    })
+    expect(own.status).toBe(400)
+    expect((await own.json()).reason).toMatch(/no question has the id x:y/)
   })
 
 })

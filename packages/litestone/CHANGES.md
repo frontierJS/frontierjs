@@ -1,5 +1,46 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-14 — an app's own console commands
+
+`db/tinker.js` beside the schema default-exports `{ name: { help, run } }`, and `.name a b` in
+`litestone repl` / `fli tinker` calls `run({ db, sys, args, out, tenant })`. `tinkerCommands` in
+`tools/repl.js` checks the file whole before any database opens — no default export, a bare function
+where `{ run }` belongs, a built-in name (`help`, `standing`, `exit`) and a name with a space are each
+refused by name, each test paired with the legal shape one step away. An unknown `.name` is refused by name instead of being
+evaluated, since no JavaScript statement starts with a dot and the SyntaxError would describe the
+typo's punctuation. Commands join the promise chain, so a slow one finishes before the next line
+starts, and `.help` lists them. The first command is auth's `resetPasswords`
+(`@frontierjs/auth/console`); `example/db/tinker.js` uses it, and a run against flagship set 39
+password credentials.
+
+## 2026-09-14 — the console opens a tenant
+
+`litestone repl` (and `fli tinker`) ignored `tenancy { strategy database }` and always opened
+`main`, which holds the machinery and none of a tenant's rows — so `sys.product.count()` answered 0
+against `example`'s flagship shop, which holds 13. **`--tenant <id>`** opens that tenant's database,
+the flag `litestone export` already takes. Omitted at a terminal, it lists the tenants and asks, with
+`main` offered last and labeled; omitted from a pipe, it refuses and names the known ones, since a
+script that silently read main is the failure. `--as` is looked up inside the chosen tenant, and the
+prompt carries it (`flagship · alex@shop.test(5) >`). Run against `example`: 13 products and 27
+orders on flagship, the picker defaulting to the only tenant, `nope` refused naming `flagship`.
+
+## 2026-09-13 — the schema assistant reads the app's purpose
+
+A schema cannot say whether pets are a count or a row; what the app is FOR can, so the assistant
+now asks for it. **`PURPOSE.md` at an app's root states the scope of the whole project** — Purpose,
+For whom, Ambition, In scope, Out of scope, May grow into, Tradeoffs we choose, Open, Revisions —
+and the playbook steers by those headings: it settles the purpose before touching the schema,
+skips interview questions the purpose file already answers, picks the simplest shape that serves the
+purpose and quotes the line that decided a close call, and treats a request past the scope as a
+STRETCH — named, with the in-scope shape and a revision of the purpose file offered side by side — rather
+than building it or refusing it. Without a purpose file it asks for the purpose and offers to write the
+file from the template, which is rendered from `PURPOSE_SECTIONS` into the document. The paste finds
+`PURPOSE.md` by walking up from the schema to the first `package.json` or `.git`, so a schema inside
+an app never reads the purpose file of the repository around it; `--purpose=<path>` names one. Tests: the
+template's headings in order, every italic name the playbook steers by resolving to a real heading
+(paired with a renamed one refused), the step numbering "begin at step 2" relies on, and the walk's
+stop. Drafted against my.maid.tech's data first, where it put `pets` back as the count it already is.
+
 ## 2026-09-13 — a schema assistant any chat model can run
 
 `litestone assistant` prints one document to paste into Claude, ChatGPT or anything else: a
