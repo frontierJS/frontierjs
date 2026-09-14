@@ -17,6 +17,7 @@ title: Disk cleanup
   // which. Where a machine has never reported, this says so rather than
   // rendering zeroes that read as "nothing to reclaim".
   import { session } from '../../session.js'
+  import { ago }     from '../../datetime.js'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
   import { cleanup } from '../../resources/CleanupRun.mesa'
 
@@ -137,16 +138,6 @@ title: Disk cleanup
     }
   }
 
-  function when(iso) {
-    if (!iso) return 'never'
-    const mins = Math.floor((Date.now() - new Date(iso)) / 60_000)
-    if (mins < 1)  return 'just now'
-    if (mins < 60) return `${mins}m ago`
-    const hours = Math.floor(mins / 60)
-    if (hours < 24) return `${hours}h ago`
-    return `${Math.floor(hours / 24)}d ago`
-  }
-
   function statusTone(status) {
     if (status === 'success') return 'success'
     if (status === 'failed')  return 'danger'
@@ -218,7 +209,7 @@ title: Disk cleanup
           <span class="cluster">
             {#if s.reported}
               <Badge tone={estimate(s) ? 'warning' : 'muted'}>{size(estimate(s))} by these targets</Badge>
-              <Badge tone="muted">reported {when(s.reportedAt)}</Badge>
+              <Badge tone="muted">reported {ago(s.reportedAt)}</Badge>
             {:else}
               <Badge tone="muted">never reported</Badge>
             {/if}
@@ -235,14 +226,14 @@ title: Disk cleanup
         {#if s.fullness === null}
           <p class="text-sm text-muted" id={`fullness-${s.serverId}`}>
             No filesystem reading — this machine has not reported how full it is.
-            Last heartbeat {when(s.fullnessAt)}.
+            Last heartbeat {ago(s.fullnessAt)}.
           </p>
         {:else}
           <div class="cluster" style="justify-content: space-between" id={`fullness-${s.serverId}`}>
             <div style="flex: 1">
               <Bar label="Disk in use" value={Math.round(s.fullness)} unit="%" />
             </div>
-            <span class="text-xs text-muted">read {when(s.fullnessAt)}</span>
+            <span class="text-xs text-muted">read {ago(s.fullnessAt)}</span>
           </div>
         {/if}
 
@@ -290,7 +281,7 @@ title: Disk cleanup
         <div class="cluster">
           {#if s.lastCleanup}
             <span class="text-sm text-muted">
-              last swept {when(s.lastCleanup.finishedAt)} · freed {size(s.lastCleanup.freedBytes)}
+              last swept {ago(s.lastCleanup.finishedAt)} · freed {size(s.lastCleanup.freedBytes)}
             </span>
           {:else}
             <span class="text-sm text-muted">never swept</span>
@@ -315,7 +306,7 @@ title: Disk cleanup
              it ran. The two differ, and only one of them happened. -->
         <td class="text-sm">{size(run.freedBytes)}</td>
         <td class="text-sm text-muted">{(run.targets ?? []).join(', ')}</td>
-        <td class="text-sm text-muted">{when(run.finishedAt ?? run.createdAt)}</td>
+        <td class="text-sm text-muted">{ago(run.finishedAt ?? run.createdAt)}</td>
       </tr>
       {#if run.error}
         <tr><td colspan="5" class="text-sm">{run.error}</td></tr>

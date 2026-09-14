@@ -12,6 +12,7 @@ import { glow } from '@frontierjs/toolbelt/glow'
 | --- | --- | --- |
 | `/glow` | source code → highlighted HTML | shipping |
 | `/cron` | what a five-field cron expression admits | shipping |
+| `/datetime` | an instant read as a place's wall clock, formatted, and written back | shipping |
 | `/inflect` | how a name is spelled — number and shape | shipping |
 | `/directives` | the `$` convention — filters vs directives | shipping |
 | `/gate` | the access ladder — levels, `levelPasses`, `gradeStanding`, `canAtLevel` | shipping |
@@ -27,14 +28,11 @@ import { glow } from '@frontierjs/toolbelt/glow'
 | `/signature` | what a signed machine-to-machine request is | shipping |
 | `/units` | a magnitude with a unit, as a person reads it | shipping |
 
-Date, time and timezone formatting is not a kit: the prototype is parked in
-`mockup/datetime/`, which ships nowhere.
-
 The whole package holds to one rule:
 
 > **Every export is a pure function.** Same input, same output. No I/O, no clock, no filesystem, no network, no globals, no framework imports, no mutation of its arguments.
 
-That rule is not a style preference — it is what buys the package its standing (below). A helper that needs the current time, an env var, or a Junction `ctx` does not go in a new subpath here; it goes in the package that needs it, until something rules otherwise.
+That rule is not a style preference — it is what buys the package its standing (below). A helper that needs the current time is handed it — as an argument, or as a clock function the app passes in (`FJS-D268`). One that needs an env var or a Junction `ctx` does not go in a new subpath here; it goes in the package that needs it.
 
 ---
 
@@ -119,6 +117,36 @@ one entry, so `jun` resolves and `ju` is refused naming what it could be.
 `false` there is a schedule that never fires and never says so.
 
 Sunday is 0 and 7. A term may combine a list, a range and a step (`0,2-4,9-15/3`).
+
+## `datetime` — an instant, a place, and the words between them
+
+```js
+import { createDatetime } from '@frontierjs/toolbelt/datetime'
+
+// once, in the app — the kit reads no clock and keeps no settings of its own
+export const dt = createDatetime({ timeZone: 'America/Denver', now: Date.now })
+
+dt.format(order.createdAt, 'DDDD, MMMM D [at] h:mm aa')   // 'Saturday, July 4 at 10:05 AM'
+dt.relativeToNow(order.createdAt)                          // '2 hours ago'
+dt.fromWall({ year: 2026, month: 11, day: 1, hour: 1, minute: 30 }, { disambiguation: 'reject' })
+// RangeError: datetime: 2026-11-01T01:30:00 in America/Denver happens twice — the clock went back. …
+```
+
+Every function also stands alone with its arguments explicit: `format(instant, pattern, { timeZone, locale })`, `relative(instant, now, { style })`, `partsIn(instant, timeZone)`, `resolveWall(fields, timeZone)` and `fromWall(fields, timeZone, { disambiguation })`. An instant is epoch milliseconds, a `Date`, or an ISO string with `Z` or an offset — a string without one is refused, because it names a different moment wherever it is read.
+
+**Tokens.** Uppercase is the date, lowercase is the time. Literal text goes in brackets, and a run of letters that is not made of tokens is an error that names it.
+
+| Token | | Token | |
+| --- | --- | --- | --- |
+| `YYYY` `YY` | year | `hh` `h` | hour — 12-hour only when `a`/`aa`/`aaa` is in the pattern |
+| `GGGG` | the ISO week's year | `mm` `m` | minute |
+| `QQQQ` `QQQ` `QQ` `Q` | `3rd quarter` `Q3` `03` `3` | `ss` `s` | second |
+| `MMMM` `MMM` `MM` `M` | `July` `Jul` `07` `7` | `aaa` `aa` `a` | `in the morning` `AM` `A` |
+| `WWWW` `WWW` | week of the month: `1st week` `W1` | `ttt` `tt` | `Mountain Daylight Time` `MDT` |
+| `WW` `W` | ISO week | `t` | offset, `-06:00` |
+| `DDDD` `DDD` `DD` `D` | `Saturday` `Sat` `04` `4` | | |
+
+Names follow `locale`; digits are always Latin. `QQQQ` and `WWWW` are English and refuse another locale. Zone rules are the runtime's own ICU table, and node and bun can disagree where a country changed its rules recently (`FJS-D268`).
 
 ## `units` — a magnitude with a unit
 
@@ -318,7 +346,7 @@ Nothing here is committed to. Listed so the boundary is legible:
 - type guards and small predicates
 - result/option helpers, if the framework settles on a shape
 
-Date and time helpers are not on that list: they are the `/datetime` kit, and take an explicit `now` for the same reason everything else here does.
+Date and time helpers are not on that list: they are the `/datetime` kit.
 
 ---
 

@@ -27,6 +27,7 @@ title: Hub backups
   // (`FJS-327`, `FJS-328`).
   import { backups }   from '../../../resources/Backup.mesa'
   import { hubConfig } from '../../../resources/HubConfig.mesa'
+  import { ago }       from '../../../datetime.js'
   import { formatBytes as size } from '@frontierjs/toolbelt/units'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -115,16 +116,6 @@ title: Hub backups
     return 'info'
   }
 
-  function when(iso) {
-    if (!iso) return '—'
-    const mins = Math.floor((Date.now() - new Date(iso)) / 60_000)
-    if (mins < 1)  return 'just now'
-    if (mins < 60) return `${mins}m ago`
-    const hours = Math.floor(mins / 60)
-    if (hours < 24) return `${hours}h ago`
-    return `${Math.floor(hours / 24)}d ago`
-  }
-
   const COLUMNS = [
     { name: 'when',   label: 'Taken' },
     { name: 'kind',   label: 'Kind' },
@@ -186,7 +177,7 @@ title: Hub backups
   <Table id="backup-history" columns={COLUMNS} rows={rows} striped hover={false}>
     {#snippet row(b)}
       <tr>
-        <td class="text-sm">{when(b.finishedAt ?? b.startedAt ?? b.createdAt)}</td>
+        <td class="text-sm">{ago(b.finishedAt ?? b.startedAt ?? b.createdAt)}</td>
         <td><Pill tone="muted">{b.kind}</Pill></td>
         <td>
           <Pill tone={tone(b.status)}>{b.status}</Pill>

@@ -64,12 +64,9 @@ package's whole license to be imported by litestone and mesa (`FJS-D26`).
 
 ## What is NOT built
 
-- **`/datetime`.** `docs/datetime.md` is the intent and `mockup/datetime/` is the
-  parked prototype, sitting below the `packages/*` glob and named in
-  `scripts/ci-allowances.json` § nonMembers. `FJS-411` is waiting on it — the
-  *2h ago* ladder is written three times in basecamp and cannot move here until
-  the clock argument is settled, because relative time is not a pure function of
-  its argument.
+- **`/datetime` v2**, which waits on `FJS-D143`'s declaration: a half-open
+  day/week/month window in a zone, the zoned string form
+  `…-04:00[America/New_York]`, and an ISO duration if `@retain` needs one.
 - **A busy-element owner** — `FJS-390`, which may land here or in
   `@frontierjs/ui` and is deliberately not designed yet.
 - `FJS-274` is repo-scope and names this package's history: `@frontierjs/utils`
@@ -80,8 +77,6 @@ package's whole license to be imported by litestone and mesa (`FJS-D26`).
 
 1. **Run the suite under both runtimes.** `bun run test` alone cannot see the
    currency divergence, and the package advertises node.
-4. `/datetime` is the largest open piece, and `FJS-411` is the caller waiting for
-   it. Start from `docs/datetime.md`, not from `mockup/`.
 
 A kit here is only correct in its callers — `CLAUDE.md` § Proving a change is the
 table, and it is where a change to `inflect` or `directives` is really graded.

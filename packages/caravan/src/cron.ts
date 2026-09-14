@@ -18,8 +18,7 @@
 
 import { parseCron, cronMatches } from '@frontierjs/toolbelt/cron'
 import type { CronFields } from '@frontierjs/toolbelt/cron'
-
-const DAYS = ['su', 'mo', 'tu', 'we', 'th', 'fr', 'sa']
+import { partsIn } from '@frontierjs/toolbelt/datetime'
 
 type FieldKey = 'minutes' | 'hours' | 'date' | 'month' | 'day'
 // The kit's own type, not a restatement of it: the fields now carry which were
@@ -28,25 +27,17 @@ type CronConfig = CronFields
 
 // ─── Date → field map ─────────────────────────────────────────────────────────
 
+// A schedule with no zone runs on the HOST's clock, and the kit takes no such
+// default, so this is where that choice is stated. Read per call: a test that
+// sets TZ after import must not be answered by the zone at import.
+function zoneOf(timeZone?: string): string {
+  return timeZone ?? new Intl.DateTimeFormat().resolvedOptions().timeZone
+}
+
 function getDateMap(date: Date, timeZone?: string): Record<FieldKey, number> {
-  const opts: Intl.DateTimeFormatOptions = {
-    hour12: false,
-    ...(timeZone ? { timeZone } : {}),
-  }
-
-  const local = date.toLocaleString('en', opts)
-  const [dateString, timeString] = local.split(', ')
-
-  const [month, dateNum] = dateString.split('/').map(Number)
-  const [hours, minutes] = timeString.split(':').map(Number)
-
-  const dayStr = date.toLocaleString('en', {
-    weekday: 'short',
-    ...(timeZone ? { timeZone } : {}),
-  }).toLowerCase()
-  const day = DAYS.indexOf(dayStr.substring(0, 2))
-
-  return { minutes, hours, date: dateNum, month, day }
+  const p = partsIn(date, zoneOf(timeZone))
+  // Cron's day of week counts Sunday as 0; the kit's is ISO, Sunday 7.
+  return { minutes: p.minute, hours: p.hour, date: p.day, month: p.month, day: p.weekday % 7 }
 }
 
 // ─── Validate ─────────────────────────────────────────────────────────────────
@@ -135,18 +126,9 @@ export function nextFireTime(
 // stable, and the same number in every process reading the same zone, which is
 // what lets two instances collapse to one dispatch (see CronSchedule.fn).
 
-const WALL_PARTS: Intl.DateTimeFormatOptions = {
-  hour12: false,
-  year:   'numeric', month: '2-digit', day:    '2-digit',
-  hour:   '2-digit', minute: '2-digit',
-}
-
 function wallMinute(date: Date, timeZone?: string): number {
-  const fmt   = new Intl.DateTimeFormat('en-US', { ...WALL_PARTS, ...(timeZone ? { timeZone } : {}) })
-  const parts = Object.fromEntries(fmt.formatToParts(date).map(p => [p.type, p.value])) as Record<string, string>
-  // `hour12: false` renders midnight as 24 in some ICU versions; % 24 is the fix
-  // and it is safe because the field is a clock hour rather than a duration.
-  return Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour % 24, +parts.minute) / 60_000
+  const p = partsIn(date, zoneOf(timeZone))
+  return Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) / 60_000
 }
 
 /**

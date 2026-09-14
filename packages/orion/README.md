@@ -5,7 +5,7 @@
 > is owed **until FrontierJS core leaves alpha** (`FJS-D14` — `DECISIONS.md` §
 > Repo conventions). Orion is an app built ON the
 > framework, so building it now spends alpha time on a consumer of seams that are still moving. Its primary
-> trigger is a Junction subscriber for litestone's write tap, which `announceDataWrites` now provides.
+> trigger is litestone's write tap, which Orion subscribes to directly (`FJS-D247`).
 > This file is the intent, not a description of behavior — and the thing to reopen when core is out of alpha.
 
 An automations engine. Triggers, conditions, actions — wired into flows that run on their own. Think Zapier or n8n, except it runs inside your own app, against your own schema, with your own gates enforced.
@@ -42,13 +42,26 @@ D7 / app — like basecamp. Orion is expected to *consume* the framework across 
 | Realm             | Orion uses                                                                                |
 | ----------------- | ----------------------------------------------------------------------------------------- |
 | Data (Model)      | litestone — flows, versions, runs, step results, all as declared models with real `@@gate` |
-| API (Service)     | junction — services + hooks; model events as the primary trigger source                    |
+| API (Service)     | junction — authoring, inspection and manual runs; a step's action may call a service       |
 | UI (Resource)     | sierra + mesa + `@frontierjs/ui` — the flow builder and the run inspector                  |
-| Jobs              | caravan — every step execution is a job; retries and backoff are already solved            |
+| Jobs              | caravan — cron and dispatch at the edge of a run, never a job per step                     |
 | Outbound          | conduit — the single boundary for any call leaving the app                                 |
 | Notify            | notifications — flow failure, approval requests                                            |
 
 If Orion needs something the framework cannot express, that is a finding against the framework and belongs in `ISSUES.md` — not a local workaround.
+
+---
+
+## The engine is written for speed
+
+**`api/src/engine/` is the one place in Orion built for throughput, and it is still inside the app.** The compiler, the expression language, the executor and the step store are plain modules, not services. The loop checkpoints every step, so what that write goes through is the engine's cost:
+
+- **The executor writes step results through the litestone client directly.** Not through a Junction service, which roughly doubles the per-step cost, and not through a Caravan job per step, which adds a second checkpoint to the one the engine already writes. The gate stays on, since it costs almost nothing.
+- **A step's ACTION is not the engine's bookkeeping.** An action that touches app data runs as the flow's principal through the gated client or a service (§ Non-negotiables); only the engine's own run and step records take the direct path.
+- **`RunStep` carries no `@@log`.** Run history is already a log, and auditing it writes the trail twice at the rate the engine runs. `Flow`, `FlowVersion` and credentials are what the audit trail is for.
+- **The step store sits behind one interface.** If a measured flow shows checkpointing dominates, that one table moves to prepared statements and nothing above it changes. Measure first: an action spends milliseconds on I/O where a checkpoint spends microseconds, so the gap shows only in flows that do little I/O.
+
+The measurements behind this are `IDEAS/operational-edge.md` § durable workflows.
 
 ---
 
@@ -68,7 +81,7 @@ Inherited, and worth restating because an automations engine is exactly where th
 ```
 orion/
   db/      schema.lite — Flow, FlowVersion, Trigger, Step, Run, RunStep
-  api/     services + the execution engine (Caravan-backed)
+  api/     services, and src/engine/ — the executor (§ The engine is written for speed)
   web/     src/resources/*.mesa — builder canvas, run inspector
 ```
 
@@ -85,7 +98,6 @@ the deferral is not also a loss of the thinking.
 - **Who owns scheduling** — Caravan's cron, or an Orion scheduler over it? Caravan, unless something concrete says otherwise.
 - **Durable waits.** A step that sleeps three days cannot hold a worker. Continuation state has to live in the Data realm, which makes resume a query, not a memory read.
 - **Which principal does a flow run as?** Its author, a service account, or the triggering user? This decides what gates see, so it is a Data-realm question, not a config toggle.
-- **Trigger source for model events.** `announceDataWrites` is the Junction subscriber for litestone's write tap now — Orion is the use case that would put it to work.
 - **Blast radius.** A flow that patches every row on every write is one edit away. Rate limits, dry runs, and a kill switch are day-one features, not hardening.
 
 ---

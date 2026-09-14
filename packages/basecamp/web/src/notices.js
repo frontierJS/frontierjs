@@ -3,14 +3,17 @@
 // This file is the one statement of WHAT deserves attention, against the real
 // schema.
 //
-// Deliberately a **leaf module**: no imports, no resource, no client. It takes
-// rows and returns notices, so it runs in plain node and is testable without a
+// Deliberately a **leaf module**: no resource, no client, and one import — a
+// toolbelt kit, which is pure and runs anywhere this does. It takes rows and
+// returns notices, so it runs in plain node and is testable without a
 // browser or a server — the same reason `sierra/src/junction/field-rules.js`
 // is written this way. Every screen and the shell call the same function, so
 // "needs attention" cannot mean two different things in two places.
 //
 // Times are parsed with Date.parse: litestone emits DateTime as ISO-8601 TEXT,
 // never epoch-ms (CLAUDE.md § Live hazards).
+
+import { relative } from '@frontierjs/toolbelt/datetime'
 
 export const PRIORITY_ORDER = { critical: 0, warning: 1, info: 2 }
 
@@ -29,13 +32,10 @@ const MEM_CRITICAL         = 90
 // though it meant more (`FJS-517`).
 const DEPLOY_IN_FLIGHT = ['building']
 
-function ageLabel(ms) {
-  if (!Number.isFinite(ms)) return 'unknown'
-  const mins = Math.round(ms / MINUTE)
-  if (mins < 60) return `${mins}m ago`
-  const hours = Math.round(mins / 60)
-  if (hours < 48) return `${hours}h ago`
-  return `${Math.round(hours / 24)}d ago`
+// The same words every screen prints (`web/src/datetime.js`), with the clock
+// this module is handed rather than the one the screens read.
+function ago(iso, now) {
+  return since(iso, now) === null ? 'at an unknown time' : relative(iso, now, { style: 'narrow' })
 }
 
 function since(iso, now) {
@@ -123,7 +123,7 @@ export function computeNotices({ servers = [], deployments = [], jobs = [] } = {
       if (age !== null && age > DEPLOY_STUCK_MS) {
         add({
           id: `deploy-stuck-${d.id}`, priority: 'warning', category: 'deploy',
-          title: `Deploy has been ${d.status} for ${ageLabel(age)}`,
+          title: `Deploy ${d.startedAt ? 'started' : 'queued'} ${ago(d.startedAt ?? d.queuedAt, now)} and is still ${d.status}`,
           detail: 'It may be stuck on a step.',
           href: `/deployments/${d.id}/`, action: 'View progress',
         })
@@ -137,7 +137,7 @@ export function computeNotices({ servers = [], deployments = [], jobs = [] } = {
       add({
         id: `job-failed-${j.id}`, priority: 'critical', category: 'job',
         title: `Job failed: ${j.name}`,
-        detail: j.lastRunAt ? `Last run ${ageLabel(since(j.lastRunAt, now))}.` : 'It has not completed.',
+        detail: j.lastRunAt ? `Last run ${ago(j.lastRunAt, now)}.` : 'It has not completed.',
         href: `/jobs/${j.id}/`, action: 'View job',
       })
     } else if (j.lastRunStatus === 'failed') {
@@ -147,7 +147,7 @@ export function computeNotices({ servers = [], deployments = [], jobs = [] } = {
       add({
         id: `job-lastrun-${j.id}`, priority: 'warning', category: 'job',
         title: `Last run failed: ${j.name}`,
-        detail: j.lastRunAt ? `${ageLabel(since(j.lastRunAt, now))}.` : 'See the run history.',
+        detail: j.lastRunAt ? `Ran ${ago(j.lastRunAt, now)}.` : 'See the run history.',
         href: `/jobs/${j.id}/`, action: 'View runs',
       })
     }

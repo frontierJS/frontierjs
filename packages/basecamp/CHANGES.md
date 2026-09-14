@@ -1,5 +1,24 @@
 # Changes — Basecamp
 
+## 2026-09-14 — one answer to *how long ago*
+
+`FJS-411`. Seven hand-written `2h ago` ladders gave three answers: five screens
+floored to whole days, `notices.js` rounded and held hours until 48, and
+`/servers/` rounded and never passed hours, so one heartbeat read `2d ago` on
+one screen and `50h ago` on the next. `web/src/datetime.js` is the owner now —
+an instance of `@frontierjs/toolbelt/datetime` over the browser's zone and
+`Date.now`, and `ago(iso)` answering the kit's narrow words — and six screens
+import it. `notices.js` takes the pure `relative` with the `now` it is already
+handed, so it stays testable in plain node.
+
+Two strings change on purpose. Under a minute is `now` rather than `just now`,
+and a row with no time is `never` on every screen: settings and hub backups
+answered `—`, which their `?? createdAt` fallbacks made unreachable.
+
+**The stuck-deploy notice rendered *Deploy has been building for 45m ago*.** A
+relative label cannot follow *for*; it reads *Deploy started 45m ago and is still
+building*, or *queued* when the job has not been picked up.
+
 ## 2026-09-14 — the React mock is deleted
 
 `docs/mock/BasecampUI.jsx` (12,557 lines, 796KB) is gone. All 41 of its views are built (`FJS-153`)

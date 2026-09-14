@@ -1,5 +1,17 @@
 # Changes — @frontierjs/caravan
 
+## 2026-09-14 — a zone's wall clock is read by `/datetime`
+
+`src/cron.ts` held two readers of one fact: `getDateMap` split
+`toLocaleString('en')` on `', '` and `/`, which is a parse of a DISPLAY string
+whose punctuation ICU is free to change, and `wallMinute` carried its own
+`formatToParts` with a midnight-is-24 workaround. Both are
+`@frontierjs/toolbelt/datetime`'s `partsIn` now (`FJS-D268`). The kit takes no
+host-zone default, so `zoneOf` states caravan's: a schedule with no `timeZone`
+runs on the host's clock, read per call. Measured: answering UTC from `zoneOf`
+fails the three DST walks, both clock-correction rows and the two-instance
+identity row — six specs — so the suite does grade the swapped path.
+
 ## 2026-09-12 — every queue at once, a holder, and a bin a deploy runs
 
 `FJS-D262`: `fli deploy:pause` drains the queues, and does it by running

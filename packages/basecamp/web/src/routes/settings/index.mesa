@@ -34,6 +34,7 @@ title: Your settings
   // rather than to off.
   import { getClient } from '@frontierjs/sierra/junction'
   import { session }   from '../../session.js'
+  import { ago }       from '../../datetime.js'
   import { notificationPreferences as prefs } from '../../resources/NotificationPreference.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -150,16 +151,6 @@ title: Your settings
     } finally {
       busy = null
     }
-  }
-
-  function when(iso) {
-    if (!iso) return '—'
-    const mins = Math.floor((Date.now() - new Date(iso)) / 60_000)
-    if (mins < 1)  return 'just now'
-    if (mins < 60) return `${mins}m ago`
-    const hours = Math.floor(mins / 60)
-    if (hours < 24) return `${hours}h ago`
-    return `${Math.floor(hours / 24)}d ago`
   }
 
   const SESSION_COLUMNS = [
@@ -289,7 +280,7 @@ title: Your settings
             {#if s.current}<Pill tone="success">this one</Pill>{/if}
             <div class="text-sm text-muted">{s.ip ?? ''}</div>
           </td>
-          <td class="text-sm text-muted">{when(s.lastSeenAt ?? s.createdAt)}</td>
+          <td class="text-sm text-muted">{ago(s.lastSeenAt ?? s.createdAt)}</td>
           <td>
             {#if !s.current}
               <Button variant="ghost" disabled={busy === s.id}

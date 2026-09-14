@@ -111,8 +111,6 @@ src/datetime/        an instant read as a place's wall clock, and written back �
                      which binds locale, zone and an app-supplied clock.
                      Temporal's words over plain values, not its classes
                      (`FJS-D268`). Ships a `.d.ts` — caravan reads zone parts
-mockup/datetime/     the prototype /datetime was rebuilt from. Below the
-                     packages/* glob, allowance-named in CI
 test/run.js          the harness
 test/specs/          one .spec.js per export
 test/fixtures/       guide-samples.json — 137 real samples from the css guide
@@ -131,6 +129,31 @@ license.
 ---
 
 ## What bites here
+
+- **`/datetime`'s zone answers are the RUNTIME's, and node and bun differ.** The
+  rules come from the host ICU and nothing else (`FJS-D268`): `America/Asuncion`
+  disagreed for 36 months of 2020-2030. The oracle is generated under node, so a
+  row failing under bun alone is a zone whose rules changed — drop it from the
+  generator's `ZONES`, never special-case it in the spec. Run the suite under
+  both (`bun run test`, then `node test/run.js datetime`).
+- **The inverse reads the offset a day either side, and the one-line version is
+  wrong only near a transition.** `wall - offsetAt(wall)` passes every ordinary
+  day, which is why the oracle spec carries it as a negative control that must
+  fail more than fifty rows. Measured: narrowing `candidates` to the offset at
+  the wall clock alone reds three specs.
+- **A pattern word built from token letters is taken as tokens.** `at` is `a`
+  then `t` and renders `A-06:00`; only a run that cannot split is refused. The
+  spec asserts the limit. Bracket every literal word.
+- **`hh` is 24-hour unless a day-period token is in the SAME pattern.** Rendering
+  the time and the AM/PM in two calls gives `16:05` and `PM`. Put both in one
+  pattern.
+- **An ISO string with no `Z` or offset is refused, and SQLite's
+  `CURRENT_TIMESTAMP` shape is one.** `Date.parse` would read it in the host
+  zone. Litestone writes `…Z`, so a refusal means the value came from somewhere
+  else.
+- **`relative` is ELAPSED time.** 30 hours ago is `1 day ago` even across two
+  midnights, and a month is an average month. A calendar answer (*yesterday*)
+  needs a zone and is a different function.
 
 - **`/query`'s number rule is one line and it is the whole design.** A string is
   a number only if `String(Number(v)) === v`. Every trap of the obvious
@@ -441,6 +464,7 @@ license.
 | --- | --- |
 | `glow` | `packages/css`: `bun run test code` — it styles *real glow output*, injected by the css harness. A change to the element glow picks for a token breaks there, not here. Then `packages/mesa`: `bun run test`, whose markdown fences run it |
 | `inflect` | `packages/litestone`: `bun run test` (table names), `packages/junction` and `packages/sierra`: `bun run test` (model resolution). A rule changed here renames tables — read the DDL snapshot diff before believing a green run |
+| `datetime` | `packages/toolbelt`: `bun run test` AND `node test/run.js datetime` — the zone table is each runtime's own. A change to the inverse is graded by the oracle; regenerate it only when the ZONES or the window change, never to make a row pass |
 | `units` | `packages/toolbelt`: `bun run test`, then `example`: `verify` and `verify:site` — the prices on a live screen and in a PRERENDERED file, which is the one place the formatter runs in node with no browser under it |
 | `gate` | `packages/litestone`: `bun run test` (the boundary that enforces it) · `packages/junction`: `bun run test` — `session-gate-level.test.ts` asserts the export IS the kit's binding, which is the assertion four hand copies could not make · `packages/sierra`: `bun run test` (the screen's verdict). The kit's own spec walks the whole 216-case grid and the whole 0-9 square, because the drift was one branch and asking one grader about one caller is what hid it |
 | `directives` | `packages/junction`: `bun run test` — the bridge strips by this table, and `live-order.test.ts` asserts both transports only emit names it holds. Then `packages/sierra`: `bun run test` (`page-query.test.js`), and `example`: `verify` for a real navigation. **The orderBy pair has a third caller and a browser is the only place it runs**: `packages/ui`: `test:browser`, whose `Table — the modes` pushes the object and bracket-indexed shapes through the prop, each paired with a header that must stay unmarked |

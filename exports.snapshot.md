@@ -317,6 +317,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | --- | --- | --- | --- |
 | exports | `./cron (types)` | `src/cron/cron.d.ts` | yes |
 | exports | `./cron (default)` | `src/cron/cron.js` | yes |
+| exports | `./datetime (types)` | `src/datetime/datetime.d.ts` | yes |
+| exports | `./datetime (default)` | `src/datetime/datetime.js` | yes |
 | exports | `./directives (types)` | `src/directives/directives.d.ts` | yes |
 | exports | `./directives (default)` | `src/directives/directives.js` | yes |
 | exports | `./gate (types)` | `src/gate/gate.d.ts` | yes |

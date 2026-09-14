@@ -197,6 +197,25 @@ separate runtime with its own security model. That is the usual shape of an FJS 
 and it is also the reason not to start from `orion`'s DAG executor without asking
 whether a DAG is the right noun.
 
+**Steps are Services describes a step's action, not the engine's bookkeeping.**
+Measured 2026-09-14, to settle whether orion should be an FJS app or a separate
+engine: one step checkpointed as two writes (insert `running`, update `done` with a
+JSON output), 5,000 steps, one WAL file database, bun 1.3.11, one run each.
+
+| Write path | µs per step | vs raw |
+| --- | --- | --- |
+| `bun:sqlite` prepared statements | 46 | 1× |
+| litestone client | 110 | 2.4× |
+| litestone, `@@gate` + `@@log(audit)` | 121 | 2.6× |
+| a Junction service, `create` + `patch` | 224 | 4.9× |
+
+An action that does I/O spends 20–500 ms, so at those rates the checkpoint is under
+1% of a real step, and the whole gap is ~2 s against ~0.5 s over a 10,000-item loop
+that does no I/O. The audit trail wrote 9 MB for those 10,000 writes, asynchronously,
+so its timing understates what it costs. The answer taken is `packages/orion/README.md`
+§ The engine is written for speed: orion is an FJS app, and its executor checkpoints
+through the litestone client directly while the actions keep the service path.
+
 ---
 
 ## Verdict

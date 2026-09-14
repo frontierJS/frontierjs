@@ -4,6 +4,7 @@ title: Servers
 <script>
   import { page, goto } from '@frontierjs/sierra/router'
   import { session }    from '../../session.js'
+  import { ago }        from '../../datetime.js'
   import { servers }    from '../../resources/Server.mesa'
   import Button         from '@frontierjs/ui/components/forms/Button.mesa'
   import Input          from '@frontierjs/ui/components/forms/Input.mesa'
@@ -143,14 +144,6 @@ title: Servers
     unreachable: 'danger',
     stopped:     'muted',
     destroyed:   'muted',
-  }
-
-  const ago = (iso) => {
-    if (!iso) return 'never'
-    const mins = Math.round((Date.now() - new Date(iso)) / 60_000)
-    if (mins < 1)  return 'just now'
-    if (mins < 60) return `${mins}m ago`
-    return `${Math.round(mins / 60)}h ago`
   }
 
   // `sortable` on the columns SQLite can order by. A @computed column cannot be

@@ -1,10 +1,19 @@
 ---
 id: datetime-kit
-status: proposed
+status: partial
 dated: 2026-08-12
 ---
 
 # Idea — `datetime-kit`: scope
+
+**Partly built 2026-09-14, and in a different shape — [`FJS-D268`](../DECISIONS.md#fjs-d268)
+wins where this record disagrees.** § The library's five classes and thirty methods
+are superseded: `@frontierjs/toolbelt/datetime` is functions over epoch
+milliseconds, wall-clock objects and IANA names, because `FJS-D26` admits only
+pure functions and `FJS-D143` refused a date library. § Formatting shipped with the
+four defects closed plus three more the build measured. § Relative time shipped as
+elapsed time in one step, not `until` + `Duration.format()`. § Ranges and
+§ The declaration are unbuilt and wait on `FJS-D143`.
 
 **Status: IDEA. The code that exists today is not this.** Dated 2026-08-12; scope
 unchanged, home changed 2026-08-15 — this is now **`@frontierjs/toolbelt/datetime`**, a

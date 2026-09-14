@@ -1,5 +1,43 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-14 — `/datetime` — an instant, a place, and the words between them
+
+`FJS-D268`. The kit the prototype in `mockup/datetime/` promised, rebuilt as
+functions over epoch milliseconds, wall-clock objects and IANA names rather than
+the five Temporal-shaped classes `IDEAS/datetime-kit.md` proposed.
+`partsIn` reads an instant in a zone; `resolveWall` answers the 0, 1 or 2
+instants a wall clock names and `fromWall` picks one by Temporal's
+`disambiguation`; `format` is the prototype's token language; `relative` is
+elapsed time through `Intl.RelativeTimeFormat`; and `createDatetime({ locale,
+timeZone, now })` binds all of them, which is how `relativeToNow()` exists while
+nothing under `src/` reads a clock.
+
+**The inverse is graded against Temporal, not against itself.**
+`test/fixtures/datetime-oracle.json` is the polyfill's answer for 1764 wall
+clocks around every transition in twelve zones over 2024-2027, in all four
+modes, plus 1908 instants read back and 350 ISO weeks. It agrees on every row
+under node and under bun. The one-line inverse — subtract the offset at the wall
+clock — is carried as a negative control and must fail; narrowing the kit to it
+reds three specs.
+
+**The formatter keeps the prototype's tokens and none of its engine.** Measured
+against the prototype: one `Intl` call per pattern gave every token of a unit the
+LAST one's style, so `MM (MMMM)` and `WWW W` could not be written; bare text was
+substituted letter by letter (`Today is DDDD` → `Todin the afternoony i3
+Saturday`); `hh:mm:ss` answered `04:05:03` where its own README said `14:30:45`;
+minutes and seconds did not pad; the locale was hardcoded; `W YYYY` labeled
+2024-12-30 week 1 of 2024; and the caller's options object was written to. Each
+is a spec row beside the spelling that must keep working. New: `GGGG` for the
+ISO week's year, `t` for the offset, and `hh` 24-hour unless the pattern names a
+day period.
+
+**Two callers the same day, and the prototype is deleted.** basecamp's seven
+relative-time ladders (`FJS-411`) and caravan's two wall-clock readers moved
+onto the kit. `mockup/datetime/` and its `nonMembers` allowance are gone;
+`@frontierjs/datetime-kit` on npm is still `FJS-274`'s.
+
+## 2026-09-12 — `/directives` — the orderBy pair
+
 ## 2026-09-12 — `/directives` — the orderBy pair
 
 `FJS-1077`. `orderByPair(orderBy)` answers the `{key, dir}` a sorted header
