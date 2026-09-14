@@ -7,7 +7,7 @@ framework import, no mutation of its arguments. The rule is the package's
 license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
-**One kit per subpath.** `/cron`, `/gate`, `/glow`, `/inflect`, `/directives`,
+**One kit per subpath.** `/cron`, `/datetime`, `/gate`, `/glow`, `/inflect`, `/directives`,
 `/history`, `/hooks`, `/json`, `/jsonschema`, `/match`, `/predicate`, `/query`,
 `/redact`, `/search`, `/signature` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
@@ -105,13 +105,21 @@ src/jsonschema/      the CONSUMER half of what litestone emits — follow a
                      Same two callers
 docs/glow/           the Svelte editor and SCSS theme glow arrived with.
                      Reference only — not shipped, not FrontierJS code
-mockup/datetime/     the prototype /datetime is being rebuilt from, and its
-                     intent (README.md). Parked,
-                     below the packages/* glob, allowance-named in CI
+src/datetime/        an instant read as a place's wall clock, and written back —
+                     partsIn, resolveWall/fromWall (0, 1 or 2 instants),
+                     format's token language, relative, and createDatetime,
+                     which binds locale, zone and an app-supplied clock.
+                     Temporal's words over plain values, not its classes
+                     (`FJS-D268`). Ships a `.d.ts` — caravan reads zone parts
+mockup/datetime/     the prototype /datetime was rebuilt from. Below the
+                     packages/* glob, allowance-named in CI
 test/run.js          the harness
 test/specs/          one .spec.js per export
 test/fixtures/       guide-samples.json — 137 real samples from the css guide
                      extract.mjs — regenerates it
+                     datetime-oracle.json — Temporal's answers around every
+                     transition in twelve zones; datetime-oracle.mjs regenerates
+                     it from a polyfill installed OUTSIDE this package
 ```
 
 **`@frontierjs/utils` and `packages/datetime-kit/` are gone** — both folded in

@@ -49,6 +49,12 @@ core/
                 running the command that owns them, because a second
                 implementation is how the GUI ends up disagreeing with the
                 terminal about whether a deploy can be undone
+  done.js       is the change in the working tree FINISHED — a CHANGES entry per
+                package touched, a new module or command named where its
+                siblings are, then test-files-run, register:check and the
+                snapshots asked about this tree. Grades the close-out, never
+                the change. `stopVerdict` is the Stop hook's whole policy:
+                block only on an item not shown since HEAD moved
   decisions.js  what is waiting on the owner — the open questions in ISSUES
                 § Needs a decision and every IDEAS paper's `## Open questions`,
                 each ruled · decidable (lettered options) · open. A READ of
@@ -201,13 +207,29 @@ core/
                 Minting writes nothing: the id is a pure function of the tree and
                 the bindings, which is what makes a digest promotable
   vendor.js     pack the workspace into an app's build context
-  tiles.js      a project drawn as one tile per tracked file — age and churn from
-                git, tested and complexity from the files — for `project:tiles`.
-                NOT a snapshot: age reads a clock and TESTED may come from a
-                `coverage/lcov.info` nobody commits. Bands are fixed thresholds,
-                never the project's own percentiles, or every badge would draw
-                the same complexity. A separate collection from `repo-map.js`,
-                so a command of its own rather than a `ws:atlas --as` (`FJS-D240`)
+  codegraph.js  a project drawn as one tile per tracked file — heat and blast
+                radius on top, complexity and exposure (complexity no test
+                covers) below, and a score folding three of them — for
+                `project:codegraph`. Age, churn and tested are still graded, for
+                the page's `more`. NOT a snapshot: heat reads a clock and TESTED
+                may come from a `coverage/lcov.info` nobody commits. Bands are
+                fixed thresholds, never the project's own percentiles, or every
+                badge would draw the same complexity. A separate collection from
+                `repo-map.js`, so a command of its own rather than a
+                `ws:atlas --as` (`FJS-D240`). Colors are `@frontierjs/css` TONES
+                mixed over the theme's ground — `color-mix()` on the page, the
+                same oklab mix computed for a PNG — so a theme or one line of
+                `TONES`/`MIX`/`SCORE_RAMP` moves every picture. The score ramp is
+                danger alone, turned in hue, and its climb away from the ground is
+                tested over every theme the stylesheet ships. A bare package
+                import resolves through that package's own `package.json`
+                (`exportTarget`), never a guessed folder — the guess dropped every
+                `@frontierjs/junction` import in the repo
+  codegraph-page.js the codegraph model as one page; reads no files. `gilbert`,
+                `gridFor` and `coreLayout` are serialized into its script with
+                `toString()` and every band and score is graded in node, so the
+                page cannot lay a file out differently from the PNG. Its own
+                stylesheet writes no hex (tested)
   png.js        RGBA → PNG with no dependency. `stored` is the desktop icon's,
                 whose bytes are compared to `example/desktop/` and so cannot move
                 with the zlib a runtime carries

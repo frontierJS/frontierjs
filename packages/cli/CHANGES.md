@@ -1,5 +1,22 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-14 — `fli done`: is the change in the working tree finished
+
+The close-out of a change was five engines and three conventions nobody asked together, and each
+step was remembered or not: a new test file absent from the `test` script, snapshots stale after a
+docs edit, no `CHANGES.md` entry, a new module missing from the layout map. `core/done.js` asks
+them all of `git diff HEAD` plus untracked files. Three checks are new — a `## ` heading added to the
+`CHANGES.md` of every directory with a changed file, and a new module or command named in its
+`CLAUDE.md` or `_module.md` when that document already names most of its siblings, which reads the
+rule off each document rather than imposing one no directory keeps. The other three reuse
+`test-files-run`, `register:check` and `checkSnapshots`; the drives `fli proves` names are listed and
+not graded. `fli test:done` (`fli done`, `--json`) exits 1 while anything is unfinished.
+
+`.claude/hooks/fli-done-stop.mjs` is a Stop hook over the same report. `stopVerdict` is its policy and
+is tested: nothing runs while the tree is unchanged, an unfinished item blocks once and is not
+repeated until HEAD moves, and `stop_hook_active` answers nothing, so a shared tree with another
+session's work in it costs one block per new item rather than every stop.
+
 ## 2026-09-14 — `fli next`: the open register ranked, with its reasons
 
 Of 112 open rows, 68 are S3, so severity alone orders most of the register by file position.
@@ -30,6 +47,43 @@ which refuses a request whose `Origin` is not the page's own host — the server
 which is placed first whatever its severity; it failed only on a machine that is not ok while the
 project had an error, and grades the project's rows now.
 
+## 2026-09-14 — `fli project:tiles` is `fli project:codegraph`, and a tile reads risk
+
+The command, its two modules, its test file and its outputs are `codegraph` now — `codegraph.png`,
+`codegraph.html`, `codegraph-badge.png`, `codegraph.json` — with no alias for the old name.
+
+**A tile's four quadrants changed, and dark means look here in every one.** Measured on this repo the
+old four overlapped: age and churn ranked −0.38 against each other and churn 0.42 with complexity,
+since a big file collects commits for being big; age drew 414 of 1230 source files in its darkest
+band because the repo is five months old; and dark age meant *recent*, the one quadrant where strong
+was not a warning. The tile is now **heat** (commits, each counting half as much every 30 days, so
+one number says *changing now*), **blast radius** (the used-by count, −0.04 against age and the most
+independent reading there was), **complexity**, and **exposure** — complexity × (1 − coverage), on
+complexity's bands, so the bottom two squares match when nothing tests a file. Commit times come out
+of the same `git log` pass, which is also what gives each file `created`.
+
+**The score** folds exposure, heat and blast radius into one number per source file, as a product of
+levels that pass through the band cutoffs, so a file is red only when several things are wrong at once
+and a tested file scores 0. Snapped to whole bands it zeroed 756 files and left three in the top two
+steps; continuous, the steps hold 683 · 50 · 66 · 39 · 46 · 29 · 12 · 3, and 44 files score over 9.
+Its color is one tone, `danger`, turned in hue from purple to orange and mixed further off the ground
+each step; `secondary` could not be the purple, since it is navy, green or rust by theme and nearer
+the ground than danger on a light one. The climb is tested over every theme the stylesheet ships. A
+hotspot is heat and exposure both in their top two bands, which took this repo from 122 to 40.
+
+The page opens on the score, with the 2×2 tile, each quadrant alone, and age, churn and tested under a
+**more** menu — the package's Popover over `.items.menu`. It lists the highest scores and the widest
+blast radii.
+
+Code under an `example/`, `examples/` or `website/` directory is its own kind, `example`, rather than
+source. Counted as source, this repo's kitchen-sink app was the largest package on the map and
+decided which packages read most used: `@frontierjs/junction`'s entry fell from 141 users to 76, sierra
+left the four core packages for basecamp, and untested source went from 503 files to 274. A test, doc
+or config file inside one keeps its own kind.
+
+The map and the page are laid **core at center** by default. The PNG has no other layout; the page
+keeps **path order** one click away.
+
 ## 2026-09-14 — `fli project:tiles` draws a project as one tile per file
 
 A picture of where a project is fresh, busy, untested and heavy, read statically from any git
@@ -41,12 +95,39 @@ four 4×4 waffles over source files, `--as=json` the model with the rules it was
 draws source files by default, the set the badge counts, because TESTED is grey on every other kind;
 `--all` draws every tracked file, and is refused beside `--as=badge` or `--as=json`.
 
+`--as=page` writes one HTML file to explore the same map: hover for a file's readings, pin, one metric
+at a time, kinds on and off (which reflows), a path filter and a package row (which dim, so nothing
+moves while somebody looks), and the hotspots. It is written in `@frontierjs/css`, inlined, and every
+color is a tone: age `success`, churn `info`, complexity `warning` and tested `danger`, each mixed over
+the theme's ground at four strengths, three for tested. The page states that as `color-mix()` and the PNGs compute the same oklab mix off the
+theme's tokens, so `--theme` (and the page's own switcher) moves all of them, and `TONES` and `MIX`
+are the one place a color is chosen.
+
 Tested prefers a `coverage/lcov.info` found under the project for every file it names, and warns
 when a report is older than a commit to a file it covers; otherwise a test must name the file, and a
 file it imports reads as partly. A commit touching more than a tenth of the tree is a sweep and
 counts for neither age nor churn — on this repo 10 of 130 commits, without which every file reads
 fresh. Bands are absolute, so badges from two projects compare. It is not a snapshot and writes no
 generator line.
+
+Every source file also carries **used by**: how many source files name it, and how many of those sit in
+another package. A package imported by its own name now resolves through its `package.json` —
+`exports` with Node's subpath patterns, then `main`, then its directory — where it used to resolve
+only `@frontierjs/<pkg>/<sub>` by guessing a folder; the 185 bare `@frontierjs/junction` imports on
+this repo counted for nothing before, and `packages/junction/index.ts` is now the most used file at
+141. The same fix reaches TESTED, since a test importing a package by name now names its entry: 48
+source files moved off untested. The page adds a *Most used* table and a line in the readout.
+
+The page's **core at center** layout puts the four most important regions in the middle of the map,
+one per quadrant: `coreRegions` ranks by share of source lines plus share of use from other regions,
+since size alone crowns an app nobody imports and use alone a kit nobody edits — on this repo ui,
+junction, litestone and sierra. `coreLayout` grows each outward in square rings, diagonal first and
+most used file first, so four regions of one size are exact mirror images and an asymmetry on screen
+is an asymmetry in the code. Every other region joins the quadrant of the core region it imports most
+and is laid by the curve through the L its core square leaves — poured ring by ring, as the first
+version did, a package came out as a line wrapped round the middle. A region goes whole to the best
+quadrant with room and is split only when none has; the square grows twice before a split is
+accepted, and on this repo nothing splits. Page only for now; the PNG still draws path order.
 
 The PNG writer that lived inside `core/desktop-surface.js` is `core/png.js` now, with a compressed
 mode beside the stored one the desktop icon still uses byte for byte.

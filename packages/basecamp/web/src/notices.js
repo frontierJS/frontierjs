@@ -1,7 +1,7 @@
 // src/notices.js — the attention rules.
 //
-// The mock's `computeNotices()` (BasecampUI.jsx) is the reference for WHAT
-// deserves attention. This is that rule set against the real schema.
+// This file is the one statement of WHAT deserves attention, against the real
+// schema.
 //
 // Deliberately a **leaf module**: no imports, no resource, no client. It takes
 // rows and returns notices, so it runs in plain node and is testable without a

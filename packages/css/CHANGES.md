@@ -1,5 +1,10 @@
 # Changes — @frontierjs/css
 
+## 2026-09-14 — `basecamp.css` no longer cites a deleted file
+
+The theme's header pointed at `packages/basecamp/docs/mock/BasecampUI.jsx`, which basecamp deleted.
+Comment only; no rule moved.
+
 ## 2026-09-13 — `.alert-content` can shrink
 
 A `.code` block inside an alert widened the alert past its card: `.alert-content` is `flex: 1`

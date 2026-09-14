@@ -1,5 +1,12 @@
 # Changes — Basecamp
 
+## 2026-09-14 — the React mock is deleted
+
+`docs/mock/BasecampUI.jsx` (12,557 lines, 796KB) is gone. All 41 of its views are built (`FJS-153`)
+and nothing read it any more; the seven comments and doc rows that cited it by path now say what
+they mean without it. `SCREENS.md` and `PROVISIONING.md` name the commit it is recoverable from,
+`8626db5b`.
+
 ## 2026-09-12 — every hook factory returns a named function
 
 The thirteen factories in `core/hooks.ts`, `core/session-auth.ts` and `api-keys/scopes.ts` returned

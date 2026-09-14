@@ -479,7 +479,8 @@ async function handleProves(req, res) {
 
     if (!files.length) return json(res, 200, { at: new Date().toISOString(), files: [], rows: [] })
 
-    const diff = git(['diff', '-U0', 'HEAD'])
+    // `--no-color`: a user's `color.diff = always` colors a piped diff too.
+    const diff = git(['diff', '--no-color', '-U0', 'HEAD'])
 
     const { provesFor } = await import('./proofs.js')
     const { runnables } = await import('./runnables.js')

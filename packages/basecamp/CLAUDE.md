@@ -122,7 +122,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
           ADAPTERS.md — that debt, per adapter: every boundary declared,
           nothing behind any of them, what wiring one costs and which drive
           assertions flip when you do
-          VISION.md · mock/
+          VISION.md · PROVISIONING.md
 ```
 
 ---

@@ -41,6 +41,18 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/fli-done-stop.mjs\"",
+            "timeout": 120,
+            "statusMessage": "fli done — checking the working tree"
+          }
+        ]
+      }
     ]
   }
 }

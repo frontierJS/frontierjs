@@ -12,6 +12,10 @@
       "types": "./src/cron/cron.d.ts",
       "default": "./src/cron/cron.js"
     },
+    "./datetime": {
+      "types": "./src/datetime/datetime.d.ts",
+      "default": "./src/datetime/datetime.js"
+    },
     "./directives": {
       "types": "./src/directives/directives.d.ts",
       "default": "./src/directives/directives.js"

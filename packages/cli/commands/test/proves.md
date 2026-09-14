@@ -60,7 +60,8 @@ if (!files.length) {
 
 // The diff CONTENT, for the symbol tier. Without it a row that names
 // `announceDataWrites` can only match by the package it lives in.
-const diff = git(`diff -U0 ${against}`)
+// `--no-color`: a user's `color.diff = always` colors a piped diff too.
+const diff = git(`diff --no-color -U0 ${against}`)
 const rows = provesFor(root, { files, diff, rows: runnables(root) })
 
 if (flag.json) {

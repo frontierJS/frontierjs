@@ -1,7 +1,7 @@
 // db/blueprints.js
 // The starter catalog — eight third-party applications, as `Blueprint` rows.
 //
-// Read out of `docs/mock/BasecampUI.jsx`'s own `BLUEPRINTS` constant rather than
+// Read out of the UI prototype's own `BLUEPRINTS` constant rather than
 // invented, and converted column for column: the mock's nested `app` block is
 // flat here because `Blueprint`'s columns are `App`'s where they overlap, and
 // its `params` array is `BlueprintParam` rows because that list is an ordered

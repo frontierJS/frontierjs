@@ -31,6 +31,7 @@ fli test:access     — write db/access.snapshot.md, the reviewable access artef
 fli test:ddl        — write db/ddl.snapshot.sql, the tables SQLite is given
 fli test:snapshots  — recheck every committed snapshot in this app
 fli test:mutate     — mutate the schema, report what the checks cannot see
+fli test:done       — is the change in the working tree finished
 ```
 
 Every snapshot names the command that regenerates it in its own header, so

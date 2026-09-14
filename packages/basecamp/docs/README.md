@@ -16,7 +16,5 @@ These pages are read in different situations rather than in order.
 - [PROVISIONING.md](PROVISIONING.md) — buying a machine at a cloud: the compute
   connector boundary, the spend guard, cloud-init and enrollment, phase by phase
 
-`mock/` beside them is the design mock the inventory is counted against.
-
 The package root keeps the standard four (`README`, `CLAUDE`, `PROJECT_STATE`,
 `CHANGES`); everything here is the depth behind them, per Invariant 17.

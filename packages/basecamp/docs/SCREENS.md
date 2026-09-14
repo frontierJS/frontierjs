@@ -2,7 +2,10 @@
 
 **Written 2026-08-06**, by counting the mock and the tree, not by memory.
 
-`docs/mock/BasecampUI.jsx` is 12,557 lines: **41 `*View` components, 13
+**The mock is deleted** (2026-09-14) — all 41 views are built and nothing reads
+it. It is recoverable from git: `git show 8626db5b:packages/basecamp/docs/mock/BasecampUI.jsx`.
+
+`docs/mock/BasecampUI.jsx` was 12,557 lines: **41 `*View` components, 13
 modals/wizards** and a shell (sidebar, top bar, command palette, notice bar,
 action queue, toasts). `web/src/routes/` is **20 route files**. Until now no
 document said which of the 41 exist and which do not — `UI_PLAN.md` recorded one
@@ -998,7 +1001,7 @@ external probe read it; worth a decision rather than a quiet edit.
 Every unbuilt view was blocked on a model, an adapter, or a derived read. This
 pass took the first group: **six models, four enums, one deliberate refusal.**
 
-Nothing was invented. Each shape was read out of `docs/mock/BasecampUI.jsx` —
+Nothing was invented. Each shape was read out of the mock —
 the view AND the data constant behind it — because a model derived from a screen
 that was never opened is a guess about what somebody will want.
 

@@ -20,7 +20,7 @@ this sits in. It **amends ring 1's mechanism** and says so in § *The hearing*.
 
 | | |
 | --- | --- |
-| The mock | `docs/mock/BasecampUI.jsx:1178` — `ProvisionServerView`, five steps, a DigitalOcean catalog written out as three constants, and a nine-line progress list driven by `setTimeout` |
+| The mock | `ProvisionServerView` in the deleted React mock (`git show 8626db5b:packages/basecamp/docs/mock/BasecampUI.jsx`, line 1178) — five steps, a DigitalOcean catalog written out as three constants, and a nine-line progress list driven by `setTimeout` |
 | The screen | `web/src/routes/servers/create.mesa`, 87 lines (now split into `provision.mesa` and `import.mesa` — § P2). Name, role, IP address, region — **an import form**, and its own header comment says why: the adapters are stubs, so a wizard would promise what the API cannot do |
 | The column | `Server.registerMethod` defaults to `"imported"` and there is no code path that writes anything else |
 | The states | `ServerStatus` ran `pending provisioning installing ready online …` with **`installing`, `ready` and `unreachable` the target of no move** — the seed was their only producer. `ready` is deleted; the other two are [FJS-1021](../../../ISSUES.md#fjs-1021) |

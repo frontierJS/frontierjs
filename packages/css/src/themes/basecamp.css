@@ -2,8 +2,8 @@
  * basecamp.css
  * Deep blue-black, cool neutrals, six accent hues. The fleet-operations look.
  *
- * Ported from the Basecamp UI prototype (packages/basecamp/docs/mock/
- * BasecampUI.jsx), which carried its palette as an 18-key `T` object read by
+ * Ported from the Basecamp UI prototype, which carried its palette as an
+ * 18-key `T` object read by
  * 2,761 inline style objects. The hues are that palette; the neutral ramp is
  * not, and the difference is the point — see below.
  *

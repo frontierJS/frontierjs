@@ -11329,6 +11329,52 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d268"></a>2026-09-14 · `FJS-D268` — `/datetime` is Temporal's words over plain values, not a reduced Temporal. The zone table is the host's, and a clock the APP hands in keeps the substrate pure.
+
+[`IDEAS/datetime-kit.md`](IDEAS/datetime-kit.md) proposed five immutable classes
+and roughly thirty methods. [`FJS-D143`](#fjs-d143) then ruled that the zone work
+is `Intl` and must not become a date library, and [`FJS-D26`](#fjs-d26) admits
+this package below the dependency graph only because every export is a pure
+function. Classes answering methods satisfy neither. So the kit is functions over
+an epoch millisecond, a wall-clock object and an IANA name, and it speaks
+Temporal's vocabulary — `disambiguation`, `compatible`, the 0-1-2 answer of a
+wall clock — so a caller moving to Temporal when every runtime ships it changes
+the call and not the stored value. Neither node 22 nor bun 1.3 has it today.
+
+**The zone rules are the host's ICU table, and that narrows `FJS-D26` rather
+than breaking it.** Measured the day this was ruled: node (tz 2025b) lists 418
+zones and bun 445, and they disagree on `America/Asuncion`'s offset for 36 of the
+132 months of 2020-2030, because Paraguay changed its rules between the two
+tables. `FJS-745` answered the same shape for currencies by SHIPPING the table;
+tzdata is not a 180-row list, and shipping it is the date library `FJS-D143`
+refuses. So an answer here is a pure function of its arguments and of the
+runtime's zone table, the spec runs under both runtimes, and its oracle holds no
+zone whose rules moved recently.
+
+**`relativeToNow()` exists and the kit still reads no clock.** A module-level
+`configure()` was refused twice over: it is state (`FJS-D111`), and one server
+renders for viewers in many zones, which is the prototype's own `setTimeZone`
+bug. `createDatetime({ locale, timeZone, now })` answers a frozen object of bound
+functions, and `now` is a function the app passes — `now: Date.now` in the app's
+own module — so the call to the clock is written outside `src/` and CI's hygiene
+rule stays the whole enforcement. A closure invoking a clock it was HANDED is the
+reading of *no clock* this ruling settles: the package never decides what time it
+is. Both the zone and `now` are required at creation, because a host-zone
+fallback renders one row differently on the server and in the browser.
+
+**The token language is the prototype's, with four rules its code broke.**
+Uppercase is the date and lowercase the time. Every run of letters outside
+brackets must split entirely into tokens or it is refused by name. `h`/`hh` is
+12-hour exactly when the pattern holds a day-period token, since a 12-hour clock
+with no AM or PM names two times — the prototype's own README already read it
+that way and its code did not. The ISO week's year is `GGGG`, because
+2024-12-30 is week 1 of 2025 and `W YYYY` is wrong on those days. Ordinal tokens
+are English and refuse another locale; numbers are Latin digits in every locale;
+`t` is the offset and `tt`/`ttt` the zone's names.
+
+*Lives in:* `packages/toolbelt/src/datetime/` · `test/fixtures/datetime-oracle.json`,
+generated from the Temporal polyfill · `packages/toolbelt/CLAUDE.md` § What bites here.
+
 ### <a id="fjs-d235"></a>2026-09-07 · `FJS-D235` — a broker the business already runs is a conduit target of kind `broker`, and the message's own id is the dispatch id. Delivery semantics stay the broker's, and both existing refusals stand untouched.
 
 Filed from a territory survey that had messaging as a blank and found two rulings

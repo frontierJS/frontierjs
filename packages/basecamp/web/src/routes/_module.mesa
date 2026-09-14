@@ -150,11 +150,9 @@ siteName: Basecamp
   }
 
   // ── Navigation ───────────────────────────────────────────────────────────
-  // Nineteen destinations, grouped the way the mock's Sidebar groups them
-  // (docs/mock/BasecampUI.jsx § Sidebar): what you open daily, what you open
+  // Nineteen destinations in four groups: what you open daily, what you open
   // weekly, what you configure, and the tier above the workspace. The headings
-  // are the design system's `.navlist-label`; the mock separated Daily and
-  // Weekly with a bare rule, and a heading says the same thing out loud.
+  // are the design system's `.navlist-label`.
   //
   // A table rather than nineteen hand-written anchors: the list is rendered
   // TWICE — the sidebar at full width, a drawer below 767px — and two copies of
