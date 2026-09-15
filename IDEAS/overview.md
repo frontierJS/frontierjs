@@ -567,7 +567,7 @@ minimum bar and spending everything else on `only`.**
   condition is in the ruling.
 - `packages/orion/` — a `README.md` and nothing else, referenced by no other
   document. It is either a reservation that should be named or a thing to
-  remove; ruled 2026-08-15 — both are V2, deferred until core leaves alpha (`FJS-D14`).
+  remove; ruled 2026-08-15 — both V2, deferred (`FJS-D14`); orion's deferral lifted 2026-09-14 (`FJS-D275`), plan in `orion-port.md`.
 
 ## See also
 

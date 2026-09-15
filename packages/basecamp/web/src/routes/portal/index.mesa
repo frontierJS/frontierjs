@@ -11,6 +11,7 @@ title: Portal
   // reads the first, this screen reads the second.
   import { portal } from '../../resources/Portal.mesa'
   import { session } from '../../session.js'
+  import { clock } from '../../datetime.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -79,7 +80,6 @@ title: Portal
   const TONE = {
     healthy: 'success', degraded: 'warning', unreachable: 'danger', unconfigured: 'muted',
   }
-  const when = (ms) => ms ? new Date(ms).toLocaleTimeString() : 'not checked'
 </script>
 
 <div class="section-header">
@@ -130,7 +130,7 @@ title: Portal
         <p class="text-sm text-muted">{entry.description}</p>
         <dl class="facts">
           <dt>URL</dt><dd><code>{entry.url ?? 'not set'}</code></dd>
-          <dt>Checked</dt><dd class="text-sm text-muted">{when(entry.checked_at)}</dd>
+          <dt>Checked</dt><dd class="text-sm text-muted">{clock(entry.checked_at, 'not checked')}</dd>
         </dl>
         <div class="cluster">
           <Button variant="ghost" disabled={busy !== null} onclick={() => check(entry)}>

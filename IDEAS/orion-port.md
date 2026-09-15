@@ -6,9 +6,8 @@ dated: 2026-09-14
 
 # Idea — Porting orion's mockup onto FrontierJS
 
-**Status: PROPOSED.** Dated 2026-09-14, read against the tree. Nothing here is
-owed while `FJS-D14` defers orion until core leaves alpha; phase 0 is reopening
-that ruling, and no code lands before it.
+**Status: PROPOSED.** Dated 2026-09-14, read against the tree. Orion is not
+deferred (`FJS-D275`), and its shape is ruled (`FJS-D269`–`FJS-D274`).
 
 `packages/orion/README.md` is the intent — what orion is for and the
 non-negotiables it inherits. This paper is how the two mockups under
@@ -60,7 +59,7 @@ surface is a hand-rolled router of `path.match` calls with no authentication.
 | --- | --- | --- | --- |
 | `types/` | 268 | keep | the engine's primitives, unchanged |
 | `compiler/` | 786 | keep | unchanged; gains a model-action validator in phase 4 |
-| `expression/` | 476 | keep | see open question 2 |
+| `expression/` | 476 | keep | the evaluator; its text syntax comes from toolbelt's shared parser (`FJS-D271`) |
 | `executor/` | 243 | keep | `ctx.fetch` wiring moves to conduit |
 | `runtime/scheduler.ts` | 297 | keep | the stage loop; its own polling loop and concurrency go, since Caravan runs one job per run |
 | `runtime/context.ts`, `helpers.ts` | 135 | keep | unchanged |
@@ -70,7 +69,7 @@ surface is a hand-rolled router of `path.match` calls with no authentication.
 | `plugins/` | 692 | keep | the registry and descriptors |
 | `nodes/index.ts` | 545 | mostly keep | per-node notes under § Actions |
 | `nodes/providers/` | 362 | delete | vendor code is the app's, as adapters over conduit (`FJS-D153`) |
-| `nodes/code-worker-pool.ts` | 136 | hold | see open question 3 |
+| `nodes/code-worker-pool.ts` | 136 | keep | behind `SYSADMIN(7)` (`FJS-D272`, `FJS-D279`) |
 | `events/` | 163 | replace | model events from litestone's tap, named events as a service |
 | `triggers/registry.ts`, `activator.ts` | 287 | keep | rewired to the new trigger sources |
 | `triggers/cron.ts` | 252 | delete | `toolbelt/cron` plus Caravan's `schedule` / `unschedule` |
@@ -87,8 +86,8 @@ favor of an owner that already exists.** The tests follow the code they cover.
 
 ## The shape
 
-**Open question 1 decides this section, and the recommendation is a package
-installed into an app, in `@frontierjs/auth`'s shape.** Orion's pitch is that it
+**Orion is a package installed into an app, in `@frontierjs/auth`'s shape
+(`FJS-D269`).** Orion's pitch is that it
 runs inside your app, against your schema, with your gates. Three parts of that
 only work in-process: litestone's write tap is a subscriber on the client
 (`FJS-D247`), typing a step against a model needs that app's `generateJsonSchema`,
@@ -103,7 +102,7 @@ packages/orion/
     engine/  the kernel — imports nothing from the framework
     plugin.ts  orion({ … }) — services, raw routes, the run job, the tap subscriber
     services/  flows, runs, credentials, metrics
-  web/       the builder and the inspector, as .mesa (open question 1b)
+  web/       the builder and the inspector, as .mesa routes the host mounts (`FJS-D270`)
 ```
 
 Auth ships its schema as two `.lite` files split by owner, with the gated models
@@ -170,11 +169,12 @@ run. Inside the job the scheduler runs stages in order and nodes within a stage
 in parallel, as it does now. The mockup's `Scheduler.run()` polling loop and its
 `concurrency` option are Caravan's job, and they go.
 
-**Caravan answers most of *which principal does a flow run as*.** `dispatch`
-records who asked and the worker re-resolves that user when the job runs, so a
-manual run is the caller, a cron fire is the app's `system`, and `{ actor }` names
-anyone else. What stays open is the policy — which of those a flow *may* run as
-— and it stays in the README's open questions.
+**A run acts as the flow's owner** (`FJS-D276`), dispatched with
+`{ actor: flow.ownerId }` whatever triggered it, so Caravan re-resolves the owner
+when the job runs and a demoted owner's flows lose the access with them. Who may
+activate a flow is declared on `Flow.status`: `USER(4)` drafts,
+`ADMINISTRATOR(5)` activates (`FJS-D278`). Flows are rows, one immutable
+`FlowVersion` per version, with JSON export and import for review (`FJS-D277`).
 
 **A crash resumes at the stage, so a stage runs at least once.** Caravan reclaims
 a job whose instance stopped heartbeating; the handler loads `Run.context` and
@@ -192,7 +192,7 @@ becomes a Caravan cron job.
 **A synchronous webhook cannot be dispatched.** `http.respond` answers a request
 held open in memory, and a dispatched job may be claimed by another instance. A
 flow whose trigger is `mode: "sync"` runs inline in the request's process with a
-deadline, and a sync flow containing `flow.wait` is a compile error.
+deadline, and a sync flow containing `flow.wait` is a compile error (`FJS-D280`).
 
 ---
 
@@ -200,7 +200,7 @@ deadline, and a sync flow containing `flow.wait` is a compile error.
 
 | Trigger | Source | Notes |
 | --- | --- | --- |
-| model event | a subscriber on litestone's write tap (`FJS-D247`) | an Observer, post-commit and at-most-once across a crash — see open question 5 |
+| model event | a subscriber on litestone's write tap (`FJS-D247`) | an Observer, post-commit and at-most-once across a crash, stated in the builder (`FJS-D274`) |
 | cron | Caravan `schedule`, `unschedule` on deactivate | `unschedule` exists for schedules that come from a row, which is this |
 | webhook | a junction raw route, `/hooks/:path` | a mapper per provider verifies its own signature |
 | named event | a service method, `events.emit` | runs as the caller |
@@ -231,20 +231,20 @@ The existing nodes move onto their owners:
 
 | Node | Becomes |
 | --- | --- |
-| `http.request` | `app.conduit.send` — see open question 4 |
+| `http.request` | `app.conduit.send` through the target a `Credential` registers (`FJS-D273`) |
 | `ai` | junction's `IAIModel` registry; the OpenAI, Anthropic and Ollama providers become example adapters in the app |
-| `store` | the `KvEntry` model; `scope: "flow"` is a key prefix |
+| `store` | the `KvEntry` model; `scope: "flow"` is a key prefix (`FJS-D281`) |
 | `flow.wait` | the `Wait` model, as above |
-| `data.code` | open question 3 |
+| `data.code` | unchanged, refused below `SYSADMIN(7)` (`FJS-D272`, `FJS-D279`) |
 | `trigger.*`, `flow.*`, `data.template`, `data.parse`, `expr.pipeline` | unchanged |
 
 Two more the README lists and the mockup lacks: `notify` over `app.notify` and
 `job.dispatch` over `app.jobs`.
 
-**Blast radius is day one**, as the README says: a dry run that compiles and
-executes against a transaction that is rolled back, a per-flow rate limit on
-runs, and `paused` on `Flow` as the kill switch that the tap subscriber and the
-cron both read.
+**Blast radius is day one** (`FJS-D283`): a dry run against a rolled-back
+transaction with outbound calls recorded and not sent, a per-flow rate limit on
+runs, `paused` on `Flow.status` as a kill switch every trigger reads, and a
+ceiling on the rows one run may write.
 
 ---
 
@@ -254,7 +254,7 @@ cron both read.
 it gives is every screen, every state and a mock dataset. The rewrite is mesa over
 `@frontierjs/ui`, styled with tones and treatments rather than `tokens.js`'s
 colors (Invariant 13), with `Flow.mesa`, `Run.mesa` and `Credential.mesa` as the
-resources (Invariants 18 and 19).
+resources (Invariants 18 and 19). The host mounts them by adding one file under its own routes that points at the package's route directory (`FJS-D282`) — a Sierra mechanism that does not exist yet and is built in phase 6.
 
 **The canvas is the expensive part and the kit has nothing for it.**
 `flow-editor.jsx` is 2,752 lines — pan, zoom, drag, edge routing — and
@@ -270,12 +270,13 @@ inspector is a live store over them.
 
 ## Phases
 
-**0 — Gate.** Reopen `FJS-D14` and amend it with open question 1's answer. Answer
-questions 2 to 5. If question 1 goes to A, orion needs a project id, and the
-table has none free (`FJS-1148`); as a package it binds nothing of its own. No
-code.
+**0 — Decide.** Done: the shape is ruled (`FJS-D269`–`FJS-D283`) and the
+deferral is lifted (`FJS-D275`).
 
-**1 — Lift the kernel.** Move the modules marked *keep* into `src/engine/`,
+**1 — Lift the kernel, and share the syntax.** Extract the `.lite` expression
+grammar from litestone's parser into a toolbelt kit that litestone then imports,
+with litestone's own suite and the policy oracle unchanged as the proof; orion's
+text syntax is parsed by the same kit (`FJS-D271`). Move the modules marked *keep* into `src/engine/`,
 unchanged. The tests move with them onto the package's runner, and `sql.js`
 goes. Add the enforcer for the engine rule: a test that fails when anything under
 `src/engine/` imports a framework package. *Done when* every carried test passes
@@ -310,7 +311,7 @@ and cannot express is filed against the framework, per the README.
 
 ## Open questions
 
-- **1 — Package or application?** `FJS-D14` calls orion an application beside
+- ~~**1 — Package or application?**~~ **Answered 2026-09-14 (`FJS-D269`): B — a package installed into an app, in auth's shape: `.lite` models, a Junction plugin, the engine inside.** `FJS-D14` calls orion an application beside
   basecamp.
   - **A** — an application: its own `db/`, `api/`, `web/`, reaching other apps
     through their APIs.
@@ -319,7 +320,7 @@ and cannot express is filed against the framework, per the README.
   - **Recommend B** — the write tap is in-process, author-time typing needs the
     host's schema, and a flow's principal is graded by the host's gates. A keeps
     only the last, through an HTTP hop.
-- **1b — If orion is a package, where do its screens live?** No package ships
+- ~~**1b — If orion is a package, where do its screens live?**~~ **Answered 2026-09-14 (`FJS-D270`): A — routes the host's `web/` mounts under a prefix, built by the host's Sierra build.** No package ships
   `.mesa` screens into an app yet.
   - **A** — routes the host's `web/` mounts under a prefix, built by the host's
     Sierra build.
@@ -328,17 +329,28 @@ and cannot express is filed against the framework, per the README.
   - **Recommend A** — Invariant 3 gives a surface its own directory when its
     config, tests and release are all different answers, and the builder's are
     the host SPA's: same session, same API, same deploy.
-- **2 — One expression language or two?** Orion's is a JSON AST over run context
-  with `map`, `reduce`, `match` and a function table of its own; `toolbelt/predicate` is the
-  `.lite` policy language, boolean, over one record, in SQLite's three-valued
-  logic.
-  - **A** — keep orion's, and call it the flow expression language.
-  - **B** — write edge conditions in the `.lite` language and keep the AST only
-    for transforms.
-  - **Recommend A** — the two answer different questions over different inputs,
-    and B puts SQLite's null semantics on JSON that never came from SQLite. A
-    condition that tests a model record is the case to revisit.
-- **3 — The code node.** `new Worker(…, { eval: true })` with `vm` inside is not a
+- ~~**2 — One expression language or two?**~~ **Answered 2026-09-14 (`FJS-D271`): C — one expression syntax and parser in toolbelt, used by both. An edge condition is evaluated by `predicate`'s three-valued rules; `map`, `pipe` and the functions stay orion's, parsed from the same syntax.** Orion's is a JSON AST over run context
+  with `map`, `reduce`, `match`, `pipe` and a function table of its own, and it
+  has **no text syntax** — while the UI mockup has authors typing
+  `$.item.score > 0.7`, so orion needs one either way. `toolbelt/predicate` is the
+  `.lite` policy language: boolean, over one record, in SQLite's three-valued
+  logic and comparison rules, compiled to SQL as well and held to that half by an
+  oracle; its grammar is ~150 lines inside litestone's parser. The two share
+  comparisons, `&&`/`||`/`!`, paths and literals, and nothing else.
+  - **A** — fully separate: orion invents its own text syntax over its AST.
+  - **B** — one language and one evaluator in toolbelt, with a policy mode and a
+    value mode.
+  - **C** — one expression syntax and parser in toolbelt, used by both. An edge
+    condition is evaluated by `predicate`'s three-valued rules; `map`, `pipe` and
+    the functions stay orion's, parsed from the same syntax.
+  - **Recommend C** — a condition on an edge is the question a policy asks, so it
+    shares the semantics and not only the spelling, which avoids one text meaning
+    two things over a null. A leaves two languages that read alike and disagree
+    on null; B puts value-producing forms onto the evaluator whose safety
+    argument is one compiler checked against SQL. The cost is extracting the
+    grammar from litestone's parser, which toolbelt's substrate standing permits
+    (`FJS-D26`).
+- ~~**3 — The code node.**~~ **Answered 2026-09-14 (`FJS-D272`): B — keep it, restricted to a gate level that already implies server access.** `new Worker(…, { eval: true })` with `vm` inside is not a
   security boundary; anyone who can author a flow can reach the process.
   - **A** — ship without `data.code`; the expression language covers transforms.
   - **B** — keep it, restricted to a gate level that already implies server
@@ -348,14 +360,14 @@ and cannot express is filed against the framework, per the README.
   - **Recommend A** — B is a flag that widens the road without changing it, and C
     is its own project. Revisit when a flow needs a transform the language cannot
     express.
-- **4 — Outbound calls to an arbitrary URL.** Conduit's model is a declared
+- ~~**4 — Outbound calls to an arbitrary URL.**~~ **Answered 2026-09-14 (`FJS-D273`): A — every call goes through a target, and a `Credential` registers one, with no auth for a public URL.** Conduit's model is a declared
   target with its own policy; a flow author types a URL.
   - **A** — every call goes through a target, and a `Credential` registers one,
     with no auth for a public URL.
   - **B** — one shared open target for anything without a credential.
   - **Recommend A** — timeouts, retries and the breaker stay per destination, and
     the credential list is also the list of everywhere this app's flows call.
-- **5 — Can a model trigger miss a write?** The tap is at-most-once across a
+- ~~**5 — Can a model trigger miss a write?**~~ **Answered 2026-09-14 (`FJS-D274`): A — the tap, with the gap stated in the builder.** The tap is at-most-once across a
   crash (`FJS-D247`).
   - **A** — the tap, with the gap stated in the builder.
   - **B** — the transactional outbox, so the trigger is written in the same
@@ -363,3 +375,60 @@ and cannot express is filed against the framework, per the README.
   - **Recommend A for the first version** — B is `FJS-D228`'s territory and
     costs a write per mutation on every triggered model; offer it per flow when a
     flow cannot tolerate a miss.
+- ~~**6 — Which principal does a flow run as?**~~ **Answered 2026-09-14 (`FJS-D276`): A — the flow's owner, re-resolved at run time through Caravan's actor.** It decides what every gate sees
+  when a step writes.
+  - **A** — the flow's owner, re-resolved at run time through Caravan's actor.
+  - **B** — the user who caused the run where there is one, the owner otherwise.
+  - **C** — declared per flow, owner or system, with system gated high.
+  - **Recommend A** — a flow can do exactly what its owner can, and a demoted
+    owner's flows lose the access with them. B makes one flow's reach vary by
+    trigger, and C puts `asSystem()` behind a checkbox.
+- ~~**7 — How is a flow stored?**~~ **Answered 2026-09-14 (`FJS-D277`): A — rows: `FlowVersion` holds the definition as JSON, immutable per version, with export and import as files for review.**
+  - **A** — rows: `FlowVersion` holds the definition as JSON, immutable per
+    version, with export and import as files for review.
+  - **B** — files committed with the app, written by the builder.
+  - **C** — files as the source and rows as a compiled cache.
+  - **Recommend A** — it is what the mockup already does, the builder in
+    production cannot write a repository, and C is two sources of truth.
+- ~~**8 — Who may author and activate a flow?**~~ **Answered 2026-09-14 (`FJS-D278`): A — `USER(4)` drafts and edits; `ADMINISTRATOR(5)` activates, declared as `@@transitions` on `Flow.status`.** A flow acts with its principal's
+  reach, so authoring is a privilege.
+  - **A** — `USER(4)` drafts and edits; `ADMINISTRATOR(5)` activates, declared as
+    `@@transitions` on `Flow.status`.
+  - **B** — `ADMINISTRATOR(5)` and above only.
+  - **C** — `USER(4)` authors and activates their own flows.
+  - **Recommend A** — drafting is harmless and activation is the act with reach,
+    and the split is declared in the schema rather than checked in a hook.
+- ~~**9 — Which rung is the code node's gate?**~~ **Answered 2026-09-14 (`FJS-D279`): A — `SYSADMIN(7)`.** `FJS-D272` restricts it to a level
+  that already implies server access.
+  - **A** — `SYSADMIN(7)`.
+  - **B** — `OWNER(6)`.
+  - **Recommend A** — a tenant owner in a multi-tenant host holds no server
+    access, so B would hand them more than they have.
+- ~~**10 — Synchronous webhooks.**~~ **Answered 2026-09-14 (`FJS-D280`): A — a sync-triggered flow runs inline in the request's process with a deadline; a sync flow containing `flow.wait` fails to compile.** `http.respond` answers a request held open in
+  memory, and a dispatched job may be claimed by another instance.
+  - **A** — a sync-triggered flow runs inline in the request's process with a
+    deadline; a sync flow containing `flow.wait` fails to compile.
+  - **B** — no sync mode in the first version; every webhook answers 202.
+  - **Recommend A** — it keeps flows that compute a response, and the deadline
+    and the compile error bound it.
+- ~~**11 — Where does the `store` node keep state?**~~ **Answered 2026-09-14 (`FJS-D281`): A — the `KvEntry` model, gated and tenant-scoped.**
+  - **A** — the `KvEntry` model, gated and tenant-scoped.
+  - **B** — junction's cache.
+  - **Recommend A** — state a flow relies on must survive a restart, and a model
+    is visible in studio and the inspector under the same redaction rules.
+- ~~**12 — How does a package contribute routes to a host's Sierra app?**~~ **Answered 2026-09-14 (`FJS-D282`): A — the host adds one file under its own routes that points at the package's route directory, and the file-tree router follows it.** No
+  mechanism exists, and `FJS-D270` needs one.
+  - **A** — the host adds one file under its own routes that points at the
+    package's route directory, and the file-tree router follows it.
+  - **B** — `sierra.config.js` lists packages whose routes mount under a prefix.
+  - **C** — build the screens inside `example/` and extract the mechanism later.
+  - **Recommend A** — the mount is visible in the host's own tree and removed by
+    deleting one file; B puts routes on the page that the tree does not show.
+- ~~**13 — Which limits does a flow ship with on day one?**~~ **Answered 2026-09-14 (`FJS-D283`): A — all four: a dry run against a rolled-back transaction with outbound calls recorded and not sent, a per-flow rate limit on runs, `paused` on `Flow.status` as a kill switch read by every trigger, and a ceiling on rows one run may write.**
+  - **A** — all four: a dry run against a rolled-back transaction with outbound
+    calls recorded and not sent, a per-flow rate limit on runs, `paused` on
+    `Flow.status` as a kill switch read by every trigger, and a ceiling on rows
+    one run may write.
+  - **B** — the kill switch and the dry run only.
+  - **Recommend A** — the README calls these day-one features rather than
+    hardening, and each one bounds a different way a flow edit goes wrong.

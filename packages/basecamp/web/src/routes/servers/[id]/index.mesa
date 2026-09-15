@@ -5,6 +5,7 @@ title: Server
   import { page, goto } from '@frontierjs/sierra/router'
   import { humanize } from '@frontierjs/toolbelt/inflect'
   import { servers } from '../../../resources/Server.mesa'
+  import { at } from '../../../datetime.js'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
@@ -111,8 +112,6 @@ title: Server
     online: 'success', draining: 'warning',
     unreachable: 'danger', stopped: 'muted', destroyed: 'muted',
   }
-
-  const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
 
   /**
    * `action()` hands back exactly what the server sent, and a custom method
@@ -333,7 +332,7 @@ title: Server
     <dt>Address</dt>       <dd><code>{server.ipAddress ?? '—'}</code></dd>
     <dt>SSH</dt>           <dd><code>{server.sshUser}@{server.ipAddress ?? '—'}:{server.sshPort}</code></dd>
     <dt>Outpost</dt>         <dd>{server.outpostVersion ?? 'not installed'}</dd>
-    <dt>Last heartbeat</dt><dd id="server-heartbeat">{when(server.lastHeartbeatAt)}</dd>
+    <dt>Last heartbeat</dt><dd id="server-heartbeat">{at(server.lastHeartbeatAt)}</dd>
   </dl>
 
   <div class="tiles" style="--tile-min: 18rem">
@@ -387,7 +386,7 @@ title: Server
           <article class="feed-item">
             <span class="feed-dot" aria-hidden="true"></span>
             <div class="feed-content">
-              <div class="text-muted text-sm">{when(event.createdAt)}</div>
+              <div class="text-muted text-sm">{at(event.createdAt)}</div>
               <div class="cluster">
                 <strong>{event.message}</strong>
                 <!-- `humanize`, not the identifier. `provision_requested` is a

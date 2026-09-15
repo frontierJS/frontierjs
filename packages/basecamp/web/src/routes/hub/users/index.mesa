@@ -38,6 +38,7 @@ title: Hub users
   import { getClient, refresh } from '@frontierjs/sierra/junction'
   import { goto } from '@frontierjs/sierra/router'
   import { hub } from '../../../resources/Hub.mesa'
+  import { day } from '../../../datetime.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -168,7 +169,6 @@ title: Hub users
   }
 
   const label = (u) => u.name || u.email
-  const when  = (iso) => iso ? new Date(iso).toLocaleDateString() : '—'
 
   $: counts = {
     human: rows.filter(u => u.kind === 'human').length,
@@ -270,7 +270,7 @@ title: Hub users
         <td>
           {#if u.isSystemAdmin}<Pill tone="warning">sysadmin</Pill>{:else}<span class="text-sm text-muted">—</span>{/if}
         </td>
-        <td class="text-sm text-muted">{when(u.createdAt)}</td>
+        <td class="text-sm text-muted">{day(u.createdAt)}</td>
         <td>
           <span class="cluster">
             {#if u.id === me}

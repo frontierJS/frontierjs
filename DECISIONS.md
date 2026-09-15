@@ -838,6 +838,30 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d279"></a>2026-09-14 · `FJS-D279` — Orion's code node is gated at `SYSADMIN(7)`.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (`OWNER(6)`).
+
+The paper's recommendation, taken as written: a tenant owner in a multi-tenant host holds no server access, so B would hand them more than they have.
+
+### <a id="fjs-d278"></a>2026-09-14 · `FJS-D278` — An orion flow is drafted by `USER(4)` and activated by `ADMINISTRATOR(5)`, declared as `@@transitions` on `Flow.status`.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (`ADMINISTRATOR(5)` and above only), **C** (`USER(4)` authors and activates their own flows).
+
+The paper's recommendation, taken as written: drafting is harmless and activation is the act with reach, and the split is declared in the schema rather than checked in a hook.
+
+### <a id="fjs-d276"></a>2026-09-14 · `FJS-D276` — An orion flow runs as its owner, re-resolved at run time through Caravan's actor.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (the user who caused the run where there is one, the owner otherwise), **C** (declared per flow, owner or system, with system gated high).
+
+The paper's recommendation, taken as written: a flow can do exactly what its owner can, and a demoted owner's flows lose the access with them. B makes one flow's reach vary by trigger, and C puts `asSystem()` behind a checkbox.
+
+### <a id="fjs-d272"></a>2026-09-14 · `FJS-D272` — Orion keeps its code node, restricted to a gate level that already implies server access, as an escape hatch rather than a sandbox.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **B** was picked over **A** (ship without `data.code`; the expression language covers transforms), **C** (a real sandbox: a subprocess with no network, a memory ceiling and a deadline).
+
+An escape hatch: the flow expression language will not cover every transform on day one, and a code step restricted to a gate level that already implies server access keeps flows unblocked until it does; C replaces it when a real sandbox is built.
+
 ### <a id="fjs-d265"></a>2026-09-12 · `FJS-D265` — a reset link sets the FIRST password of an account that has no way in at all. An OAuth-only account is still refused.
 
 **Ruled by the owner on `FJS-1099`**, which found that every account an operator
@@ -2394,6 +2418,12 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d271"></a>2026-09-14 · `FJS-D271` — Orion and `.lite` policies share one expression syntax and parser in toolbelt. An edge condition is evaluated by `predicate`'s three-valued rules; `map`, `pipe` and the functions stay orion's, parsed from the same syntax.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **C** was picked over **A** (fully separate: orion invents its own text syntax over its AST), **B** (one language and one evaluator in toolbelt, with a policy mode and a value mode).
+
+The paper's recommendation, taken as written: a condition on an edge is the question a policy asks, so it shares the semantics and not only the spelling, which avoids one text meaning two things over a null. A leaves two languages that read alike and disagree on null; B puts value-producing forms onto the evaluator whose safety argument is one compiler checked against SQL. The cost is extracting the grammar from litestone's parser, which toolbelt's substrate standing permits (`FJS-D26`).
 
 ### <a id="fjs-d267"></a>2026-09-12 · `FJS-D267` — litestone IS the kernel, and its operation pipeline ends at EXECUTE. Announcing a mutation stays junction's, as an observer on `$tapEvents`; the phase order under the verbs is private through alpha, and the `Plugin` contract is the public surface over it.
 
@@ -4908,6 +4938,42 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d283"></a>2026-09-14 · `FJS-D283` — An orion flow ships with four limits on day one: a dry run against a rolled-back transaction with outbound calls recorded and not sent, a per-flow rate limit on runs, `paused` on `Flow.status` as a kill switch read by every trigger, and a ceiling on rows one run may write.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (the kill switch and the dry run only).
+
+The paper's recommendation, taken as written: the README calls these day-one features rather than hardening, and each one bounds a different way a flow edit goes wrong.
+
+### <a id="fjs-d281"></a>2026-09-14 · `FJS-D281` — Orion's `store` node keeps state in the `KvEntry` model, gated and tenant-scoped.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (junction's cache).
+
+The paper's recommendation, taken as written: state a flow relies on must survive a restart, and a model is visible in studio and the inspector under the same redaction rules.
+
+### <a id="fjs-d280"></a>2026-09-14 · `FJS-D280` — A sync-triggered orion flow runs inline in the request's process with a deadline; a sync flow containing `flow.wait` fails to compile.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (no sync mode in the first version; every webhook answers 202).
+
+The paper's recommendation, taken as written: it keeps flows that compute a response, and the deadline and the compile error bound it.
+
+### <a id="fjs-d277"></a>2026-09-14 · `FJS-D277` — An orion flow is stored as rows: `FlowVersion` holds the definition as JSON, immutable per version, with export and import as files for review.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (files committed with the app, written by the builder), **C** (files as the source and rows as a compiled cache).
+
+The paper's recommendation, taken as written: it is what the mockup already does, the builder in production cannot write a repository, and C is two sources of truth.
+
+### <a id="fjs-d274"></a>2026-09-14 · `FJS-D274` — An orion model-event trigger is a write-tap subscriber, and the builder states that it can miss a write across a crash.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (the transactional outbox, so the trigger is written in the same transaction as the row), as the paper recommended for the first version.
+
+The outbox is `FJS-D228`'s territory and costs a write per mutation on every triggered model; the tap ships first with the gap stated in the builder, and an outbox-backed trigger is offered per flow when a flow cannot tolerate a miss.
+
+### <a id="fjs-d273"></a>2026-09-14 · `FJS-D273` — Every orion outbound call goes through a conduit target, and a `Credential` registers one, with no auth for a public URL.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (one shared open target for anything without a credential).
+
+The paper's recommendation, taken as written: timeouts, retries and the breaker stay per destination, and the credential list is also the list of everywhere this app's flows call.
 
 ### <a id="fjs-d262"></a>2026-09-12 · `FJS-D262` — a deploy pause stops the queues too, and Caravan does the stopping. `fli` runs Caravan's own bin inside the serving container, never opens `jobs.db`, and a queue pause is lifted only by whoever made it.
 
@@ -9471,6 +9537,33 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d282"></a>2026-09-14 · `FJS-D282` — A package contributes routes to a host's Sierra app by the host adding one file under its own routes that points at the package's route directory, and the file-tree router follows it.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (`sierra.config.js` lists packages whose routes mount under a prefix), **C** (build the screens inside `example/` and extract the mechanism later).
+
+The paper's recommendation, taken as written: the mount is visible in the host's own tree and removed by deleting one file; B puts routes on the page that the tree does not show.
+
+### <a id="fjs-d275"></a>2026-09-14 · `FJS-D275` — Orion is no longer deferred. `FJS-D14`'s wait for core to leave alpha is lifted for orion; oracle's stands.
+
+`FJS-D14` deferred orion because building a consumer of seams still moving spends alpha time on them. Two things answered that for orion. The seam it waited on is built — orion subscribes to litestone's write tap directly (`FJS-D247`) — and `FJS-D269` through `FJS-D274` rule its shape, so a port starts from settled answers rather than an open argument. **A consumer built now is also how the seams get found**, which is basecamp's argument and the README's: anything orion needs and cannot express is filed against the framework.
+
+The owner lifted the deferral for orion. Oracle is untouched — its open decision is a posture question about the CLI calling an LLM, which nothing here answers.
+— `IDEAS/orion-port.md` · `packages/orion/README.md`.
+
+### <a id="fjs-d270"></a>2026-09-14 · `FJS-D270` — Orion's screens are routes the host's `web/` mounts under a prefix, built by the host's Sierra build.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (a surface of its own beside `web/`, with its own config, port and release).
+
+The paper's recommendation, taken as written: Invariant 3 gives a surface its own directory when its config, tests and release are all different answers, and the builder's are the host SPA's: same session, same API, same deploy.
+
+### <a id="fjs-d269"></a>2026-09-14 · `FJS-D269` — Orion is a package installed into an app, in auth's shape: `.lite` models, a Junction plugin, the engine inside.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **B** was picked over **A** (an application: its own `db/`, `api/`, `web/`, reaching other apps through their APIs).
+
+The paper's recommendation, taken as written: the write tap is in-process, author-time typing needs the host's schema, and a flow's principal is graded by the host's gates. A keeps only the last, through an HTTP hop.
+
+This amends `FJS-D14`'s description of orion as an application beside basecamp. ~~Its deferral is untouched: nothing here is built until core leaves alpha~~ — lifted by [`FJS-D275`](#fjs-d275); these rulings settle the shape so the port does not start from an open argument.
+
 ### <a id="fjs-d263"></a>2026-09-12 · `FJS-D263` — a desktop app is `desktop/`, a surface whose screens are BUNDLED into a native shell. It owns its `src/` like every surface, or names another surface's with `wraps`, and either way the config, the tests, the release and the output are its own.
 
 **Two products hide under one word, and the directory follows from which.** A
@@ -11252,6 +11345,8 @@ in July, read in November, with nothing in the text to say which. Git holds it.
 is reusable and outlives any run of it.
 
 ### <a id="fjs-d14"></a>2026-08-15 · `FJS-D14` — the four claimed folders are named: two collapse into one package, two are V2.
+
+**Status:** amended-by [`FJS-D269`](#fjs-d269) — orion is a package installed into an app, not an application beside basecamp — and by [`FJS-D275`](#fjs-d275), which lifts orion's deferral. Oracle's deferral is unchanged.
 
 `orion` is the automations engine and platform.
 `toolbelt` is the core pure-function library, shared across repos and meant to

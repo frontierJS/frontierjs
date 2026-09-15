@@ -21,6 +21,7 @@ title: Audit trail
   import { session } from '../../../session.js'
   import { audit } from '../../../resources/AuditEvent.mesa'
   import { useStore } from '@frontierjs/sierra/junction'
+  import { at } from '../../../datetime.js'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Input  from '@frontierjs/ui/components/forms/Input.mesa'
   import Table  from '@frontierjs/ui/components/display/Table.mesa'
@@ -75,7 +76,6 @@ title: Audit trail
   $: session.workspaceId, () => load()
   $.onDestroy(() => unsubscribe())
 
-  const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
   const AUDIT_COLUMNS = [
     { name: 'when',    label: 'When' },
     { name: 'action',  label: 'Action' },
@@ -111,7 +111,7 @@ title: Audit trail
   <Table id="audit-rows" columns={AUDIT_COLUMNS} rows={rows()} striped hover={false}>
     {#snippet row(event)}
       <tr>
-        <td class="text-sm text-muted">{when(event.createdAt)}</td>
+        <td class="text-sm text-muted">{at(event.createdAt)}</td>
         <td><code>{event.action}</code></td>
         <td>{event.subjectType} <span class="text-sm text-muted">{event.subjectId?.slice(0, 8)}</span></td>
         <td class="text-sm">{event.actorType} <span class="text-muted">{event.actorId?.slice(0, 8) ?? 'system'}</span></td>

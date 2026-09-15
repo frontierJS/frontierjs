@@ -28,6 +28,7 @@ title: Activity
   import { audit }      from '../../resources/AuditEvent.mesa'
   import { workspaces } from '../../resources/Workspace.mesa'
   import { servers }    from '../../resources/Server.mesa'
+  import { at }         from '../../datetime.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -124,7 +125,6 @@ title: Activity
   const toneOf  = (action) => VERB_TONE[verbOf(action)] ?? ''
   const hrefOf  = (r) => SUBJECT_ROUTE[r.subjectType] ? `${SUBJECT_ROUTE[r.subjectType]}${r.subjectId}/` : null
   const actorOf = (r) => r.actorId ? (people[r.actorId] ?? r.actorId) : r.actorType
-  const when    = (iso) => iso ? new Date(iso).toLocaleString() : '—'
   const ACTIVITY_COLUMNS = [
     { name: 'when',    label: 'When' },
     { name: 'who',     label: 'Who' },
@@ -184,7 +184,7 @@ title: Activity
   <Table id="activity-rows" columns={ACTIVITY_COLUMNS} rows={visible} striped>
     {#snippet row(r)}
       <tr>
-        <td class="text-sm text-muted">{when(r.createdAt)}</td>
+        <td class="text-sm text-muted">{at(r.createdAt)}</td>
         <td>
           {actorOf(r)}
           {#if r.actorType !== 'user'}<Badge tone="muted">{r.actorType}</Badge>{/if}

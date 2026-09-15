@@ -14,6 +14,7 @@ title: Hub workspaces
   // hook every workspace-scoped service already runs, so a suspended tenant is
   // refused everywhere rather than merely labeled here.
   import { hub } from '../../../resources/Hub.mesa'
+  import { day } from '../../../datetime.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -64,8 +65,6 @@ title: Hub workspaces
       busy = null
     }
   }
-
-  const when = (iso) => iso ? new Date(iso).toLocaleDateString() : '—'
 
   $: active    = rows.filter(w => w.status === 'active').length
   $: suspended = rows.length - active
@@ -126,7 +125,7 @@ title: Hub workspaces
         <td>{w.servers}</td>
         <td>{w.projects}</td>
         <td class="text-sm text-muted">{w.owner?.email ?? '—'}</td>
-        <td class="text-sm text-muted">{when(w.createdAt)}</td>
+        <td class="text-sm text-muted">{day(w.createdAt)}</td>
         <td>
           {#if w.status === 'active'}
             <Button variant="ghost" tone="danger" disabled={busy === w.id}

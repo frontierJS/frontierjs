@@ -1,5 +1,21 @@
 # Changes — Basecamp
 
+## 2026-09-14 — a date reads the same for every operator
+
+Twenty-one screens and widgets each carried a `when` over `toLocaleString()`,
+`toLocaleDateString()` or `toLocaleTimeString()`, which write a date in whatever
+order the browser's locale uses — `9/14/2026` for one operator, `14/09/2026` for
+the next, and `3/4` either month. `web/src/datetime.js` owns three patterns
+beside `ago()`: `day` (`Sep 14, 2026`), `at` (`Sep 14, 2026, 4:05:03 PM`) and
+`clock` (`4:05:03 PM`), each taking the word for a row with no time, as `ago()`
+does. Each screen kept its kind and its word. Still the viewer's zone, since a
+fleet keeps no calendar of its own.
+
+The kit refuses an ISO string with no offset, where `new Date()` read one in the
+host's zone, so every `…At`/`…_at` column in the dev databases was probed first:
+no zone-less value in any of the 54 tables. `verify:screens` 83/83 with no
+console error across every screen, `verify:build` 8/8.
+
 ## 2026-09-14 — `/volumes/` says how long ago the way every screen does
 
 An eighth relative-time ladder, found by the date census after `FJS-411` closed:

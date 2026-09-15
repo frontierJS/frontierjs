@@ -21,6 +21,7 @@ title: Channels
   import { session } from '../../session.js'
   import { channels } from '../../resources/NotificationChannel.mesa'
   import { messageFor } from '../../errors.js'
+  import { at } from '../../datetime.js'
 
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -167,7 +168,6 @@ title: Channels
   }
 
   $: active = rows.filter(r => r.isActive).length
-  const when = (iso) => iso ? new Date(iso).toLocaleString() : 'never'
   const CHANNEL_COLUMNS = [
     { name: 'name',     label: 'Name' },
     { name: 'kind',     label: 'Kind' },
@@ -248,7 +248,7 @@ title: Channels
             <Badge tone="muted">paused</Badge>
           {/if}
         </td>
-        <td class="text-sm text-muted">{when(c.lastTestAt)}</td>
+        <td class="text-sm text-muted">{at(c.lastTestAt, 'never')}</td>
         <td>
           <div class="cluster">
             <Button variant="ghost" disabled={busy === c.id}

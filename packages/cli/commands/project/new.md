@@ -516,6 +516,7 @@ ${useApi
     │   └── sierra.config.js    # Routes dir, target, junction url
     └── src/
         ├── main.js             # Entry: boots the router + client, mounts App
+        ├── datetime.js         # The app's clock and zone — at(), ago()
         ├── App.mesa            # Root: <RouterView />
         ├── routes/             # Sierra file-based routes (.mesa)
         └── resources/          # One Resource per model — Note.mesa (.mesa)
@@ -1296,6 +1297,38 @@ mount(anchor, App, { root })
 `
 }
 
+function makeDatetimeJs() {
+  return `// web/src/datetime.js — when something happened, on every screen that says it.
+//
+// @frontierjs/toolbelt/datetime reads no clock and keeps no settings, so the app
+// binds both once, here, and a screen imports the words from this file. A
+// screen that formats a date itself gets whatever order the browser's locale
+// writes, so one column reads 9/14/2026 for one person and 14/09/2026 for the
+// next, and 3/4 is either month.
+//
+// Everything here reads in the VIEWER's zone. A date that belongs to a place —
+// the day an invoice is for, the hour a store opens — is that place's: call the
+// kit's format(instant, pattern, { timeZone }) with the zone from its config.
+
+import { createDatetime } from '@frontierjs/toolbelt/datetime'
+
+export const dt = createDatetime({
+  timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  now:      Date.now,
+})
+
+/** 'Sep 14, 2026, 4:05 PM' — or none, for a row with no time. */
+export function at(instant, none = '—') {
+  return instant ? dt.format(instant, 'MMM D, YYYY, h:mm aa') : none
+}
+
+/** '5 minutes ago', 'now' under a minute — or none, for a row with no time. */
+export function ago(instant, none = 'never') {
+  return instant ? dt.relativeToNow(instant) : none
+}
+`
+}
+
 function makeRouteModule(appName, useAuth) {
   if (useAuth) {
     return `---
@@ -1851,11 +1884,13 @@ ${withName ? `  // The password and the sessions go through client.auth, which i
   // for them, because nothing there will take one. The name is the User row,
   // written through the users service; db/schema.lite's @@allow('update',
   // id == auth().id || …) is what lets a person write their own.
-  import { getClient, session, refresh } from '@frontierjs/sierra/junction'` : `  // The password and the sessions go through client.auth, which is the account
+  import { getClient, session, refresh } from '@frontierjs/sierra/junction'
+  import { at } from '../../datetime.js'` : `  // The password and the sessions go through client.auth, which is the account
   // and sessions services scoped to the CALLER — nothing here names a user id,
   // because nothing there will take one. The name is not editable here: that
   // is a write to the User row, and this app has no users service to make it.
-  import { getClient, session } from '@frontierjs/sierra/junction'`}
+  import { getClient, session } from '@frontierjs/sierra/junction'
+  import { at } from '../../datetime.js'`}
 
   $: (session.user, session.checked)
 
@@ -1913,8 +1948,6 @@ ${withName ? `  const saveName = () => run(async () => {
     await loadSessions()
     return 'Signed out.'
   })
-
-  const when = (iso) => (iso ? new Date(iso).toLocaleString() : '—')
 ${sc}
 
 <header class="stack gap-sm">
@@ -1956,12 +1989,12 @@ ${withName ? `      <input class="field" bind:value={name} placeholder="Your nam
     </div>
     <dl class="facts divided">
       {#each sessions as s}
-        <dt>{when(s.createdAt)}</dt>
+        <dt>{at(s.createdAt)}</dt>
         <dd class="split">
           {#if s.current}
             <span class="badge success">this browser</span>
           {:else}
-            <span class="text-sm text-muted">expires {when(s.expiresAt)}</span>
+            <span class="text-sm text-muted">expires {at(s.expiresAt)}</span>
             <button class="btn ghost" on:click={() => signOutOne(s.id)} disabled={busy}>Sign out</button>
           {/if}
         </dd>
@@ -2375,6 +2408,7 @@ if (useWeb) {
     ['web/config/sierra.config.js',         makeSierraConfig(appName)],
     ['web/src/App.mesa',                    makeAppMesa()],
     ['web/src/main.js',                     makeMainJs()],
+    ['web/src/datetime.js',                 makeDatetimeJs()],
     ['web/src/routes/_module.mesa',         makeRouteModule(appName, useAuth)],
     ['web/src/routes/index.mesa',           makeRouteIndex(appName)],
     ['web/src/routes/[...404].mesa',        makeRouteNotFound()],

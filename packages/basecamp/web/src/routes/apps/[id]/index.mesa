@@ -19,6 +19,7 @@ title: App
   import { apps } from '../../../resources/App.mesa'
   import { domains } from '../../../resources/Domain.mesa'
   import { servers } from '../../../resources/Server.mesa'
+  import { at } from '../../../datetime.js'
 
   import NoRecord from '../../../components/NoRecord.mesa'
 
@@ -222,7 +223,6 @@ title: App
   const DEPLOY_TONE = {
     success: 'success', failed: 'danger', rolled_back: 'warning', cancelled: 'muted',
   }
-  const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
 
   // Only the tabs with something behind them. See the note at the foot.
   const TABS = ['overview', 'domains', 'config', 'releases', 'logs']
@@ -382,7 +382,7 @@ title: App
               {/if}
               <dt>Certificate expires</dt>
               <dd>
-                {when(d.certExpiresAt)}
+                {at(d.certExpiresAt)}
                 {#if d.cert_days_remaining !== null && d.cert_days_remaining !== undefined}
                   <span class="text-sm text-muted">({d.cert_days_remaining} days)</span>
                 {/if}
@@ -449,7 +449,7 @@ title: App
       <Table id="app-releases" columns={APP_RELEASES_COLUMNS} rows={app.recent_deployments} striped>
         {#snippet row(d)}
           <tr>
-            <td class="text-sm text-muted">{when(d.queuedAt)}</td>
+            <td class="text-sm text-muted">{at(d.queuedAt)}</td>
             <td><a href={`/deployments/${d.id}/`}><Pill tone={DEPLOY_TONE[d.status] ?? 'info'}>{d.status}</Pill></a></td>
             <td><code>{d.commitSha?.slice(0, 7) ?? '—'}</code></td>
             <td class="text-sm text-muted">{d.trigger}</td>

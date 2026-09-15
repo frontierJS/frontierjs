@@ -5,6 +5,7 @@ title: Job
   import { page }       from '@frontierjs/sierra/router'
   import { session }    from '../../../session.js'
   import { jobs }       from '../../../resources/Job.mesa'
+  import { at }         from '../../../datetime.js'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
 
@@ -64,7 +65,6 @@ title: Job
 
   const TONE     = { running: 'info', failed: 'danger', cancelled: 'muted' }
   const RUN_TONE = { success: 'success', failed: 'danger', timeout: 'warning', running: 'info' }
-  const when     = (iso) => iso ? new Date(iso).toLocaleString() : '—'
   const secs     = (ms) => ms == null ? '—' : `${(ms / 1000).toFixed(1)}s`
 
   $: runs = job?.recent_runs ?? []
@@ -109,7 +109,7 @@ title: Job
     <dt>Kind</dt>     <dd>{job.kind}</dd>
     <dt>Command</dt>  <dd><code>{job.command ?? '—'}</code></dd>
     <dt>Schedule</dt> <dd><code>{job.cronExpression ?? 'on demand'}</code></dd>
-    <dt>Next run</dt> <dd>{when(job.nextRunAt)}</dd>
+    <dt>Next run</dt> <dd>{at(job.nextRunAt)}</dd>
     <dt>Timeout</dt>  <dd>{job.timeoutSeconds}s</dd>
     <dt>Retries</dt>  <dd>{job.retryCount} of {job.retryLimit}</dd>
   </dl>
@@ -124,7 +124,7 @@ title: Job
           <article class="feed-item">
             <span class="feed-dot {RUN_TONE[run.status] ?? ''}" aria-hidden="true"></span>
             <div class="feed-content">
-              <div class="text-muted text-sm">{when(run.startedAt)} · {secs(run.durationMs)}</div>
+              <div class="text-muted text-sm">{at(run.startedAt)} · {secs(run.durationMs)}</div>
               <div class="cluster">
                 <span class="pill {RUN_TONE[run.status] ?? ''}">{run.status}</span>
                 <span class="text-sm text-muted">exit {run.exitCode ?? '—'} · {run.trigger}</span>

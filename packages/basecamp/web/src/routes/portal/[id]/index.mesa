@@ -7,6 +7,7 @@ title: Appliance
   // last list render.
   import { page } from '@frontierjs/sierra/router'
   import { portal } from '../../../resources/Portal.mesa'
+  import { at } from '../../../datetime.js'
 
   import Badge  from '@frontierjs/ui/components/display/Badge.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
@@ -42,7 +43,6 @@ title: Appliance
   const TONE = {
     healthy: 'success', degraded: 'warning', unreachable: 'danger', unconfigured: 'muted',
   }
-  const when = (ms) => ms ? new Date(ms).toLocaleString() : 'never'
 </script>
 
 <nav aria-label="Breadcrumb" class="cluster">
@@ -71,7 +71,7 @@ title: Appliance
       <dt>Adapter</dt><dd><code>{entry.adapter}</code></dd>
       <dt>Configured</dt>
       <dd>{#if entry.configured}<Badge tone="success">yes</Badge>{:else}<Badge tone="muted">stub</Badge>{/if}</dd>
-      <dt>Last checked</dt><dd class="text-sm text-muted">{when(entry.checked_at)}</dd>
+      <dt>Last checked</dt><dd class="text-sm text-muted">{at(entry.checked_at, 'never')}</dd>
     </dl>
 
     <div class="cluster">

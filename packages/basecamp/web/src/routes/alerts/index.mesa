@@ -13,6 +13,7 @@ title: Alerts
   import { messageFor } from '../../errors.js'
   import { alerts }   from '../../resources/AlertRule.mesa'
   import { channels } from '../../resources/NotificationChannel.mesa'
+  import { at }       from '../../datetime.js'
 
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -191,7 +192,6 @@ title: Alerts
   // the schema above, and this only spells each word — a value missing here
   // renders as the enum's own name rather than as blank.
   const SYMBOL = { gt: '>', gte: '≥', lt: '<', lte: '≤' }
-  const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
 </script>
 
 <div class="section-header">
@@ -269,7 +269,7 @@ title: Alerts
             {#if metric[rule.id] === null}
               <Badge tone="warning">nothing writes this metric</Badge>
             {:else if metric[rule.id]?.stale}
-              <Badge tone="warning">last seen {when(metric[rule.id].lastSeenAt)}</Badge>
+              <Badge tone="warning">last seen {at(metric[rule.id].lastSeenAt)}</Badge>
             {:else if metric[rule.id]}
               <Badge tone="success">live</Badge>
             {:else}
@@ -320,7 +320,7 @@ title: Alerts
                 <li class="cluster">
                   <Pill tone={ev.status === 'resolved' ? 'muted' : TONE[ev.severity] ?? ''}>{ev.status}</Pill>
                   <span class="text-sm">{ev.message}</span>
-                  <span class="text-sm text-muted">{when(ev.firedAt)}</span>
+                  <span class="text-sm text-muted">{at(ev.firedAt)}</span>
                   {#if !ev.acknowledgedAt && ev.status !== 'resolved'}
                     <Button variant="ghost" disabled={busy === rule.id}
                             onclick={() => acknowledge(rule, ev)}>Acknowledge</Button>

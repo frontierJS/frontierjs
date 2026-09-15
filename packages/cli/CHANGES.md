@@ -1,5 +1,21 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-14 — `fli new` writes `web/src/datetime.js`
+
+A scaffolded web app gets the file that binds `@frontierjs/toolbelt/datetime` to
+a clock and a zone once, with `at()` and `ago()` beside it, and the account page's
+sessions list reads through `at()` rather than a `toLocaleString()` of its own.
+The kit reads no clock and keeps no settings (`FJS-D268`), so without an app-level
+binding the first screen that wants *5 minutes ago* writes one inline, and the
+second writes another. The header says where the viewer's zone stops being the
+answer — a date that belongs to a place takes that place's zone.
+
+`@frontierjs/toolbelt` was already an app dependency. **A real `fli new` against
+npm needs toolbelt published with `/datetime`**: 0.1.4 does not carry it, and
+the `scaffold` phase cannot see that because it packs the working tree. The
+scaffold build here — pack, install, build, the app's own `check`, the
+declared-imports walk — is green with the file in it.
+
 ## 2026-09-14 — the codegraph page names its packages, a package stays one block, and its closed menu stays closed
 
 **A package laid across the seam of its quadrant's L is one block now.** The room around a core

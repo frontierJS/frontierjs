@@ -6,6 +6,7 @@
   // memory figure — is per-container telemetry nothing here collects; the app's
   // own `status` column is real and is what this card shows.
   import { apps } from '../../resources/App.mesa'
+  import { at } from '../../datetime.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
   export let widget = null
@@ -45,7 +46,6 @@
   $.onDestroy(() => { unwatch?.(); row?.release() })
 
   $: last = app?.recent_deployments?.[0] ?? null
-  const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
 </script>
 
 {#if loading}
@@ -63,7 +63,7 @@
     <a href={`/apps/${app.id}/`}>{app.name}</a>
   </p>
   {#if last}
-    <p class="text-xs text-muted">Last release {last.status} · {when(last.queuedAt)}</p>
+    <p class="text-xs text-muted">Last release {last.status} · {at(last.queuedAt)}</p>
   {:else}
     <p class="text-xs text-muted">Never deployed.</p>
   {/if}

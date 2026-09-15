@@ -6,6 +6,7 @@ title: Deployment
   import { status }       from '@frontierjs/sierra/junction'
   import { session }      from '../../../session.js'
   import { deployments }  from '../../../resources/Deployment.mesa'
+  import { clock }        from '../../../datetime.js'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
 
@@ -76,7 +77,6 @@ title: Deployment
   const TONE = { success: 'success', failed: 'danger', cancelled: 'muted', rolled_back: 'warning' }
   const STEP_TONE = { success: 'success', failed: 'danger', running: 'info', skipped: 'muted' }
 
-  const when = (iso) => iso ? new Date(iso).toLocaleTimeString() : '—'
   const secs = (ms) => ms == null ? '—' : `${(ms / 1000).toFixed(1)}s`
 
   $: steps = deployment?.steps ?? []
@@ -173,7 +173,7 @@ title: Deployment
         <article class="feed-item">
           <span class="feed-dot {STEP_TONE[step.status] ?? ''}" aria-hidden="true"></span>
           <div class="feed-content">
-            <div class="text-muted text-sm">{when(step.startedAt)} · {secs(step.durationMs)}</div>
+            <div class="text-muted text-sm">{clock(step.startedAt)} · {secs(step.durationMs)}</div>
             <div class="cluster">
               <strong>{step.name}</strong>
               <span class="pill {STEP_TONE[step.status] ?? ''}">{step.status}</span>

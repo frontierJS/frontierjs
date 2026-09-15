@@ -4,6 +4,7 @@ title: Jobs
 <script>
   import { session } from '../../session.js'
   import { jobs } from '../../resources/Job.mesa'
+  import { at } from '../../datetime.js'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Table  from '@frontierjs/ui/components/display/Table.mesa'
 
@@ -56,7 +57,6 @@ title: Jobs
 
   const TONE = { running: 'info', failed: 'danger', cancelled: 'muted' }
   const RUN_TONE = { success: 'success', failed: 'danger', timeout: 'warning', running: 'info' }
-  const when = (iso) => iso ? new Date(iso).toLocaleString() : 'never'
   const JOB_COLUMNS = [
     { name: 'name',     label: 'Name' },
     { name: 'kind',     label: 'Kind' },
@@ -95,7 +95,7 @@ title: Jobs
         <td><code>{job.cronExpression ?? '—'}</code></td>
         <td><span class="pill {TONE[job.status] ?? ''}">{job.status}</span></td>
         <td class="text-sm text-muted">
-          {when(job.lastRunAt)}
+          {at(job.lastRunAt, 'never')}
           {#if job.lastRunStatus}
             <span class="badge {RUN_TONE[job.lastRunStatus] ?? 'muted'}">{job.lastRunStatus}</span>
           {/if}

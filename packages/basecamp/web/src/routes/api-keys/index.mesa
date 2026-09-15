@@ -18,6 +18,7 @@ title: API keys
   // scope the guard does not recognize.
   import { session } from '../../session.js'
   import { apiKeys } from '../../resources/ApiKey.mesa'
+  import { day } from '../../datetime.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
@@ -154,7 +155,6 @@ title: API keys
   $: usesToday = rows.reduce((n, r) => n + (r.usesOnDate ?? 0), 0)
   $: distinct  = new Set(rows.flatMap(r => r.scopes ?? [])).size
 
-  const when = (iso) => iso ? new Date(iso).toLocaleDateString() : '—'
   const TONE = { active: 'success', expired: 'warning', revoked: 'muted' }
   const KEY_COLUMNS = [
     { name: 'name',    label: 'Name' },
@@ -214,7 +214,7 @@ title: API keys
     </div>
     <p class="text-sm text-muted">
       {minted.name} · {(minted.scopes ?? []).join(', ')} ·
-      {minted.expiresAt ? `expires ${when(minted.expiresAt)}` : 'no expiry'}
+      {minted.expiresAt ? `expires ${day(minted.expiresAt)}` : 'no expiry'}
     </p>
     <Button id="minted-done" onclick={() => minted = null}>Done — I have saved it</Button>
   </Card>
@@ -287,9 +287,9 @@ title: API keys
           </div>
         </td>
         <td class="text-sm text-muted">
-          {k.totalUses ?? 0} total · {k.lastUsedAt ? when(k.lastUsedAt) : 'never'}
+          {k.totalUses ?? 0} total · {day(k.lastUsedAt, 'never')}
         </td>
-        <td class="text-sm text-muted">{k.expiresAt ? when(k.expiresAt) : 'never'}</td>
+        <td class="text-sm text-muted">{day(k.expiresAt, 'never')}</td>
         <td>
           <div class="cluster">
             {#if k.status === 'active'}

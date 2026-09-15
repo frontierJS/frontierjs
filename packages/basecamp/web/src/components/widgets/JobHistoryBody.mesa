@@ -7,6 +7,7 @@
   // renders in its table.
   import { jobs } from '../../resources/Job.mesa'
   import { onWrite } from './live.js'
+  import { at } from '../../datetime.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
   let rows    = []
@@ -29,7 +30,6 @@
   load()
   $.onDestroy(onWrite(jobs.service, load))
 
-  const when = (iso) => iso ? new Date(iso).toLocaleString() : 'never run'
 </script>
 
 {#if loading}
@@ -44,7 +44,7 @@
       <li class="cluster">
         <Badge tone={TONE[job.lastRunStatus] ?? 'muted'}>{job.lastRunStatus ?? job.status}</Badge>
         <a href={`/jobs/${job.id}/`}>{job.name}</a>
-        <span class="text-xs text-muted">{when(job.lastRunAt)}</span>
+        <span class="text-xs text-muted">{at(job.lastRunAt, 'never run')}</span>
       </li>
     {/each}
   </ul>

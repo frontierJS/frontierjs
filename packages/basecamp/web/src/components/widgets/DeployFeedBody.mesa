@@ -7,6 +7,7 @@
   // fetching every app first to decide which deployments to keep.
   import { deployments } from '../../resources/Deployment.mesa'
   import { onWrite } from './live.js'
+  import { at } from '../../datetime.js'
   import Badge from '@frontierjs/ui/components/display/Badge.mesa'
 
   export let widget = null
@@ -35,7 +36,6 @@
   load()
   $.onDestroy(onWrite(deployments.service, load))
 
-  const when = (iso) => iso ? new Date(iso).toLocaleString() : '—'
 </script>
 
 {#if loading}
@@ -50,7 +50,7 @@
       <li class="cluster">
         <Badge tone={TONE[d.status] ?? 'muted'}>{d.status}</Badge>
         <a href={`/deployments/${d.id}/`}>{d.app?.name ?? d.appId}</a>
-        <span class="text-xs text-muted">{when(d.queuedAt)}</span>
+        <span class="text-xs text-muted">{at(d.queuedAt)}</span>
       </li>
     {/each}
   </ul>

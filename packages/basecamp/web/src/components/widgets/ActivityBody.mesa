@@ -12,6 +12,7 @@
   // narrative.
   import { audit } from '../../resources/AuditEvent.mesa'
   import { onWrite } from './live.js'
+  import { clock } from '../../datetime.js'
   import Pill from '@frontierjs/ui/components/display/Pill.mesa'
 
   let rows    = []
@@ -37,7 +38,6 @@
   load()
   $.onDestroy(onWrite(audit.service, load))
 
-  const when = (iso) => iso ? new Date(iso).toLocaleTimeString() : '—'
 </script>
 
 {#if loading}
@@ -54,7 +54,7 @@
       <li class="cluster">
         <Pill tone={TONE[verbOf(row.action)] ?? ''}>{verbOf(row.action)}</Pill>
         <span class="text-sm">{row.subjectType}</span>
-        <span class="text-xs text-muted">{when(row.createdAt)}</span>
+        <span class="text-xs text-muted">{clock(row.createdAt)}</span>
       </li>
     {/each}
   </ul>
