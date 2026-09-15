@@ -34,6 +34,17 @@ export interface WallParts {
   offset:      number
 }
 
+/** A day in no zone — 'YYYY-MM-DD', what a `String @date` column holds. */
+export type PlainDate = string
+
+/** Temporal's `PlainDate.add` fields. Integers, all one sign. */
+export interface DateDuration {
+  years?:  number
+  months?: number
+  weeks?:  number
+  days?:   number
+}
+
 export type Disambiguation = 'compatible' | 'earlier' | 'later' | 'reject'
 
 export interface FormatOptions {
@@ -53,6 +64,10 @@ export function resolveWall(fields: WallFields, timeZone: string): number[]
 export function fromWall(fields: WallFields, timeZone: string, options?: { disambiguation?: Disambiguation }): number
 export function format(instant: InstantInput, pattern: string, options: FormatOptions): string
 export function relative(instant: InstantInput, now: InstantInput, options?: RelativeOptions): string
+export function plainDateIn(instant: InstantInput, timeZone: string): PlainDate
+export function addToDate(date: PlainDate, duration: DateDuration): PlainDate
+export function daysBetween(from: PlainDate, to: PlainDate): number
+export function startOfDay(date: PlainDate, timeZone: string): number
 
 export interface Datetime {
   readonly locale:   string
@@ -63,6 +78,10 @@ export interface Datetime {
   fromWall(fields: WallFields, options?: { disambiguation?: Disambiguation; timeZone?: string }): number
   relative(instant: InstantInput, now: InstantInput, options?: RelativeOptions): string
   relativeToNow(instant: InstantInput, options?: RelativeOptions): string
+  plainDateIn(instant: InstantInput, timeZone?: string): PlainDate
+  startOfDay(date: PlainDate, timeZone?: string): number
+  /** The day `now()` falls on in the instance's zone, or the one given. */
+  today(timeZone?: string): PlainDate
 }
 
 export function createDatetime(options: {

@@ -1,6 +1,6 @@
-import { describe, test, expect } from "vitest"
-import { ExpressionResolver, ResolutionError, type ResolutionContext } from "./index"
-import type { Expression } from "../types"
+import { describe, test, expect } from "bun:test"
+import { ExpressionResolver, ResolutionError, type ResolutionContext } from "../../../src/engine/expression/index"
+import type { Expression } from "../../../src/engine/types"
 
 // ─────────────────────────────────────────────
 // TEST CONTEXT

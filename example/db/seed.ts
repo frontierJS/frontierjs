@@ -31,7 +31,8 @@ import { toMinor }             from '@frontierjs/toolbelt/units'
 import { sys, db, DEV_KEY, shops, DEFAULT_SHOP, TIME_ZONE_FLOOR } from '../api/src/core/db.ts'
 import { move }                from '../api/src/domain/shop'
 import { priceBasket, BASE }   from '../api/src/domain/shop'
-import { issueInvoice, periodLines, settleInvoice } from '../api/src/domain/billing'
+import { issueInvoice, periodLines, settleInvoice, advancePeriod } from '../api/src/domain/billing'
+import { plainDateIn, addToDate, startOfDay } from '@frontierjs/toolbelt/datetime'
 
 // ─── The unit, and why this file is not written in it ─────────────────────
 //
@@ -694,17 +695,20 @@ async function seedBilling() {
     sub = await sys.subscription.findFirst({ where: { id: sub.id } })
   }
 
+  // The shop's calendar, read off the registry meta `tenantConfig` reads in
+  // app.ts, over the same floor: there is no app here to ask `configFor()`.
+  const timeZone = (shops.meta(DEFAULT_SHOP)?.config as { timeZone?: string } | undefined)?.timeZone ?? TIME_ZONE_FLOOR
+
   if (!sub) {
-    const periodStart = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000)
-    const periodEnd   = new Date(periodStart.getTime() + 30 * 24 * 60 * 60 * 1000)
+    const periodStart = addToDate(plainDateIn(Date.now(), timeZone), { days: -10 })
     sub = await sys.subscription.create({ data: {
       reference: REF,
       customerId: buyerCustomer.id,
       planVersionId: soldAt.id,
       status: 'active',
       quantity: 2,
-      currentPeriodStart: periodStart.toISOString(),
-      currentPeriodEnd:   periodEnd.toISOString(),
+      currentPeriodStart: periodStart,
+      currentPeriodEnd:   advancePeriod(periodStart, 'monthly'),
       userId: buyerUser?.id ?? null,
     } })
   }
@@ -726,17 +730,14 @@ async function seedBilling() {
       userId:         buyerUser?.id ?? null,
       periodStart:    sub.currentPeriodStart,
       periodEnd:      sub.currentPeriodEnd,
-      issuedAt:       sub.currentPeriodStart,
+      issuedAt:       new Date(startOfDay(sub.currentPeriodStart, timeZone)).toISOString(),
+      timeZone,
       lines: periodLines({
         name:        plan?.name ?? 'Pro',
         quantity:    sub.quantity,
         unitAmount:  soldAt.price,
         periodStart: sub.currentPeriodStart,
         periodEnd:   sub.currentPeriodEnd,
-        // The line text is written in the shop's calendar (`FJS-1149`). Read off
-        // the registry meta `tenantConfig` reads in app.ts, over the same floor:
-        // there is no app here to ask `configFor()`.
-        timeZone:    (shops.meta(DEFAULT_SHOP)?.config as { timeZone?: string } | undefined)?.timeZone ?? TIME_ZONE_FLOOR,
       }),
     })
 
@@ -751,13 +752,14 @@ async function seedBilling() {
   // this has to be true on every run: a drive can settle it, void it, or leave
   // a re-seeded shop holding an overdue document.
   const issued = await sys.invoice.findFirst({ where: { number: INV } })
-  if (issued?.status === 'issued') await settleInvoice(sys, issued.id, issued.dueAt)
+  const paidAt = issued && new Date(startOfDay(issued.dueOn, timeZone)).toISOString()
+  if (issued?.status === 'issued') await settleInvoice(sys, issued.id, paidAt)
   // A row an earlier seed settled with the transition alone, before
   // `settleInvoice` owned both writes. Repaired rather than left, because a
   // paid invoice with no payment date is the kind of thing a screen renders as
   // a blank and nobody notices.
   else if (issued && !issued.paidAt)
-    await sys.invoice.update({ where: { id: issued.id }, data: { paidAt: issued.dueAt }, system: ['paidAt'] })
+    await sys.invoice.update({ where: { id: issued.id }, data: { paidAt }, system: ['paidAt'] })
 }
 
 // ─── The payroll ──────────────────────────────────────────────────────────

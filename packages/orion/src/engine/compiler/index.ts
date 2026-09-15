@@ -8,6 +8,7 @@ import type {
   CompilationError,
   NodeDefinition,
   JSONSchema,
+  PredicateNode,
 } from "../types"
 
 // ─────────────────────────────────────────────
@@ -354,6 +355,20 @@ function validateExpressions(ctx: PipelineContext): void {
   }
 }
 
+// Every value a condition holds, in order. The shape around them is the
+// predicate kit's and holds no refs of its own.
+function holesOf(node: PredicateNode): Expression[] {
+  const n = node as { type: string; [k: string]: any }
+  switch (n.type) {
+    case "hole":    return [n.expr]
+    case "not":     return holesOf(n.expr)
+    case "and":
+    case "or":
+    case "compare": return [...holesOf(n.left), ...holesOf(n.right)]
+    default:        return []
+  }
+}
+
 function findInvalidRefs(expr: Expression, available: Set<string>): string[] {
   const invalid: string[] = []
 
@@ -363,6 +378,10 @@ function findInvalidRefs(expr: Expression, available: Set<string>): string[] {
       if (!available.has(root)) invalid.push(expr.path)
       break
     }
+    case "predicate":
+      // A condition holds its values as holes; the refs are inside them.
+      for (const hole of holesOf(expr.ast)) invalid.push(...findInvalidRefs(hole, available))
+      break
     case "template":
       for (const part of expr.parts)    invalid.push(...findInvalidRefs(part, available))
       break
@@ -383,7 +402,9 @@ function findInvalidRefs(expr: Expression, available: Set<string>): string[] {
       if (expr.else) invalid.push(...findInvalidRefs(expr.else, available))
       break
     case "pipe":
-      for (const step of expr.steps) invalid.push(...findInvalidRefs(step, available))
+      // A later pipe step may omit the operand the flowing value fills; this walk
+      // already skips an absent branch, so it reads a step as the expression it extends.
+      for (const step of expr.steps) invalid.push(...findInvalidRefs(step as Expression, available))
       break
     case "map": {
       invalid.push(...findInvalidRefs(expr.over, available))
@@ -440,6 +461,10 @@ function validateExpressionForms(ctx: PipelineContext): void {
             nodeId,
           })
         }
+        break
+
+      case "predicate":
+        for (const hole of holesOf(expr.ast)) validate(hole, nodeId, field)
         break
 
       case "template":
@@ -500,7 +525,7 @@ function validateExpressionForms(ctx: PipelineContext): void {
             nodeId,
           })
         }
-        for (const step of expr.steps ?? []) validate(step, nodeId, field)
+        for (const step of expr.steps ?? []) validate(step as Expression, nodeId, field)
         break
 
       case "map":

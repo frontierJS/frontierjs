@@ -23,7 +23,7 @@ title: Subscription
   import { planVersions }  from '@/resources/PlanVersion.mesa'
   import { invoices }      from '@/resources/Invoice.mesa'
   import { session } from '@/session.js'
-  import { day } from '@/datetime.js'
+  import { day, span } from '@/datetime.js'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../money.js'
 
@@ -380,9 +380,9 @@ title: Subscription
         <td><a href={'/invoices/' + inv.id + '/'}><Mono size="xs">{inv.number}</Mono></a></td>
         <td><Pill tone={inv.status === 'paid' ? 'success' : inv.status === 'void' ? 'muted' : 'warning'}
                   data-status={inv.status}>{inv.status}</Pill></td>
-        <td class="text-muted">{day(inv.periodStart)} – {day(inv.periodEnd)}</td>
+        <td class="text-muted">{span(inv.periodStart, inv.periodEnd)}</td>
         <td class="text-right" data-total={inv.total}>{money(inv.total)}</td>
-        <td class="text-muted">{day(inv.dueAt)}</td>
+        <td class="text-muted">{day(inv.dueOn)}</td>
       </tr>
     {/snippet}
   </Table>

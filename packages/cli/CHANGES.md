@@ -1,5 +1,12 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-14 — the codegraph page copies its map as a PNG
+
+**Copy image** puts the map on the clipboard as a PNG, as drawn — view, layout, kinds, filter and an
+isolated package — without the hover and pin rings. Driven in Chrome over CDP with clipboard access
+granted, the clipboard read back is `image/png` at the canvas's own size; with the page unfocused the
+write is refused and the button says so rather than failing silently.
+
 ## 2026-09-14 — `fli new` writes `web/src/datetime.js`
 
 A scaffolded web app gets the file that binds `@frontierjs/toolbelt/datetime` to

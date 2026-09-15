@@ -2,6 +2,50 @@
 
 Newest first. What this app built and what building it found; live state is `PROJECT_STATE.md`, framework defects are `../ISSUES.md`.
 
+## 2026-09-14 — a billing period is DAYS (`FJS-D288`)
+
+The interim the entry below left: a period was still an instant, `advancePeriod`
+clamped month ends in UTC, and `/orders/`' *Today* was the viewer's day. All
+three are gone, and none of it needed new grammar — `String @date` already
+validates `YYYY-MM-DD`, reaches the browser as `<input type="date">` and orders
+correctly as text.
+
+**What moved.** `Subscription.currentPeriodStart`/`End`, `Invoice.periodStart`/
+`End`, `InvoiceLine`'s narrower pair, and `Invoice.dueAt` — now `dueOn`, because
+a day called `…At` reads as an instant. `issuedAt` and `paidAt` stay instants:
+they are when a document was written and when money arrived.
+
+**Why.** Measured for a New York shop, advancing an instant by a month in UTC:
+the evening of 30 March became 29 April, 30 January became 27 February, and a
+period crossing a clock change moved by an hour as well. A plain date has no zone
+to be read in, so the same period is the same two days everywhere.
+
+**The zone is now spent at two crossings and nowhere else.** `plainDateIn` turns
+the instant of a change into the shop's day; `startOfDay` turns a day into the
+instant a screen filters by. Between them there is none — which is why
+`describeSpan` takes no zone any more, and why the line text and every screen
+read the same two strings by construction rather than by agreement.
+
+**Three rules follow.** A period is `[start, end)`, so *due* is
+`currentPeriodEnd <= today` in the shop's calendar and the text names the LAST
+day covered — `30 Aug – 28 Sept`, not `29 Sept`, which the next period charges
+for. Proration counts whole days, so every instant of a day is the same slice;
+by milliseconds an evening upgrade was cheaper than a morning one. Terms are
+days from the shop's day of issue, so seven days from 23:30 in New York is the
+7th day on its calendar.
+
+**`/orders/`' date filter is the shop's day too.** The picker speaks the
+browser's calendar, so a picked day is read back in the viewer's zone and turned
+into the shop's window; *Last 7 days* was `today − 6 × 24h`, an hour out across
+a clock change.
+
+Payroll's effective-dated rates and pay windows are the same shape and are not
+converted — `FJS-1152`. Drives: `verify:billing` 34/34 (with
+`renew.periodIsPlainDates`), `verify:proration` 35/35 (`span.namesTheDaysItCovers`,
+`slice.theShopsDayDecidesIt`, and every-instant-of-a-day), `verify:collect`
+49/49, `verify` 66/66, `verify:account` 44/44, `verify:tenants` 28/28,
+`verify:jobs` 12/12.
+
 ## 2026-09-14 — a shop keeps a calendar (`FJS-1149`)
 
 An invoice page named two days for one period. The line text is frozen with the

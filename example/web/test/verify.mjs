@@ -1483,7 +1483,7 @@ const expected = {
   // Every one of these headers is derived: humanized from the column name, or
   // from the RELATION for a foreign key, or taken verbatim from an @label.
   'invoicesList.derived': {
-    heads: ['Number', 'Status', 'Customer', 'Total', 'Issued At', 'Due At', ''],
+    heads: ['Number', 'Status', 'Customer', 'Total', 'Issued At', 'Due On', ''],
     integer: true, formatted: true, agree: true, statusPill: true,
   },
   'invoicesList.searchRefused': { box: false, controls: true, said: true, omitted: true },

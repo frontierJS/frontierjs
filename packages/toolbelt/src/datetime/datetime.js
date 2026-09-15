@@ -249,6 +249,85 @@ function formatWall(w) {
   return `${p(w.year, 4)}-${p(w.month)}-${p(w.day)}T${p(w.hour)}:${p(w.minute)}:${p(w.second)}`
 }
 
+// ─── plain dates ──────────────────────────────────────────────────────────
+//
+// A day in no zone: '2026-09-14', which is what a `String @date` column holds. A
+// billing period, a due date and a start date are days, and an instant holding one
+// names a different day wherever it is read — so the calendar arithmetic happens
+// on the date, and a zone is asked for only at the two crossings, `plainDateIn`
+// and `startOfDay`.
+
+const PLAIN_DATE = /^(\d{4})-(\d{2})-(\d{2})$/
+
+function readDate(value, name = 'date') {
+  const m = typeof value === 'string' ? PLAIN_DATE.exec(value) : null
+  if (!m) {
+    throw new TypeError(`datetime: ${name} ${JSON.stringify(value)} is not a plain date — pass 'YYYY-MM-DD'. An instant becomes one with plainDateIn(instant, timeZone).`)
+  }
+  const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])]
+  if (month < 1 || month > 12) throw new RangeError(`datetime: ${name} ${value} has month ${month}, out of range 1-12`)
+  const last = daysInMonth(year, month)
+  if (day < 1 || day > last) throw new RangeError(`datetime: ${name} ${value} has day ${day}, out of range 1-${last}`)
+  return { year, month, day }
+}
+
+const writeDate = ({ year, month, day }) => `${pad(year, 4)}-${pad(month)}-${pad(day)}`
+
+/** An instant → the day it falls on in `timeZone`, as 'YYYY-MM-DD'. */
+export function plainDateIn(instant, timeZone) {
+  return writeDate(partsIn(instant, timeZone))
+}
+
+const DURATION = ['years', 'months', 'weeks', 'days']
+
+/**
+ * A plain date moved by a duration, as Temporal's `PlainDate.add` with
+ * `overflow: 'constrain'`: years and months first, clamped to the last day of the
+ * month they land in, then weeks and days.
+ *
+ *   addToDate('2026-01-31', { months: 1 })   // '2026-02-28'
+ *
+ * The clamp does not remember the day it came from, so adding a month twice is
+ * not adding two months — '2026-01-31' → '02-28' → '03-28'. A recurring period
+ * that must keep its day is computed from its anchor each time.
+ */
+export function addToDate(date, duration) {
+  const d = readDate(date)
+  if (!duration || typeof duration !== 'object') throw new TypeError(`datetime: addToDate() needs a duration — { ${DURATION.join(', ')} }`)
+  for (const key of Object.keys(duration)) {
+    if (!DURATION.includes(key)) throw new RangeError(`datetime: duration field "${key}" is not one of ${DURATION.join(', ')}`)
+    if (!Number.isInteger(duration[key])) throw new TypeError(`datetime: duration field ${key} must be an integer, got ${JSON.stringify(duration[key])}`)
+  }
+  const { years = 0, months = 0, weeks = 0, days = 0 } = duration
+  const signs = new Set([years, months, weeks, days].filter(Boolean).map(Math.sign))
+  if (signs.size > 1) throw new RangeError(`datetime: a duration mixes signs — ${JSON.stringify(duration)}. Add them in two calls, in the order you mean.`)
+
+  const index = d.year * 12 + (d.month - 1) + years * 12 + months
+  const year  = Math.floor(index / 12)
+  const month = index - year * 12 + 1
+  const day   = Math.min(d.day, daysInMonth(year, month))
+  return writeDate(civilFromDays(daysFromCivil(year, month, day) + weeks * 7 + days))
+}
+
+/** Whole days from `from` to `to` — negative when `to` is earlier. */
+export function daysBetween(from, to) {
+  const a = readDate(from, 'from')
+  const b = readDate(to, 'to')
+  return daysFromCivil(b.year, b.month, b.day) - daysFromCivil(a.year, a.month, a.day)
+}
+
+/**
+ * The first instant of a plain date in `timeZone`, as epoch milliseconds.
+ *
+ * Midnight, unless the clock jumps past it — Santiago moves its clocks at
+ * midnight, so that day starts at 01:00 — which is Temporal's `startOfDay`. A day
+ * is `[startOfDay(d), startOfDay(addToDate(d, { days: 1 })))`, and that window is
+ * 23 or 25 hours on a transition day, which is why it is not `start + 24h`.
+ */
+export function startOfDay(date, timeZone) {
+  return fromWall(readDate(date), timeZone, { disambiguation: 'compatible' })
+}
+
 // ─── format ───────────────────────────────────────────────────────────────
 
 const pad = (n, width = 2) => String(n).padStart(width, '0')
@@ -342,7 +421,9 @@ function compile(pattern) {
       for (let k = 0; k < run.length;) {
         const name = TOKEN_NAMES.find((t) => run.startsWith(t, k))
         if (!name) {
-          throw new SyntaxError(`datetime: "${run}" in pattern "${pattern}" is not made of tokens — bracket literal text, as in [${run}]`)
+          // `HH` is every other formatter's 24-hour hour, so it arrives by habit.
+          const hint = run[k] === 'H' ? ' — the hour is hh or h (lowercase is the time), 24-hour unless the pattern holds a, aa or aaa' : ''
+          throw new SyntaxError(`datetime: "${run}" in pattern "${pattern}" is not made of tokens — bracket literal text, as in [${run}]${hint}`)
         }
         tokens.push(name)
         k += name.length
@@ -438,5 +519,8 @@ export function createDatetime({ locale = 'en-US', timeZone, now } = {}) {
     fromWall:      (fields, options = {}) => fromWall(fields, options.timeZone ?? timeZone, options),
     relative:      (instant, reference, options) => relative(instant, reference, { locale, ...options }),
     relativeToNow: (instant, options) => relative(instant, toEpoch(now(), 'now()'), { locale, ...options }),
+    plainDateIn:   (instant, zone = timeZone) => plainDateIn(instant, zone),
+    startOfDay:    (date, zone = timeZone) => startOfDay(date, zone),
+    today:         (zone = timeZone) => plainDateIn(toEpoch(now(), 'now()'), zone),
   })
 }

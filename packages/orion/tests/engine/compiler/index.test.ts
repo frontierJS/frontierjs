@@ -1,6 +1,6 @@
-import { describe, test, expect, beforeEach } from "vitest"
-import { Compiler, type IPluginRegistry } from "./index"
-import type { Flow, NodeDefinition, Edge, JSONSchema } from "../types"
+import { describe, test, expect, beforeEach } from "bun:test"
+import { Compiler, type IPluginRegistry } from "../../../src/engine/compiler/index"
+import type { Flow, NodeDefinition, Edge, JSONSchema } from "../../../src/engine/types"
 
 // ─────────────────────────────────────────────
 // TEST REGISTRY

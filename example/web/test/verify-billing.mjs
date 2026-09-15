@@ -13,7 +13,8 @@
  *
  * A billing cycle is unobservable in a normal test run: the interesting instant
  * is a month away. So the clock is a PARAMETER — `sweepRenewals({ at })` and
- * `dunSubscriptions({ at })` take the instant to grade at, and the drive stands
+ * `dunSubscriptions({ at })` take the instant to grade at, read as a day in the
+ * calendar each call names (`UTC` throughout here), and the drive stands
  * at one. That is the same code path the cron fires, not a second one: the cron
  * passes no `at` and gets `now()`.
  *
@@ -36,6 +37,7 @@ import { sweepRenewals }   from '../../api/src/jobs/renew-subscriptions.job.ts'
 import { renewSubscription } from '../../api/src/jobs/renew-subscription.job.ts'
 import { dunSubscriptions }  from '../../api/src/jobs/dun-subscriptions.job.ts'
 import { occurrenceKey }   from '@frontierjs/toolbelt/history'
+import { plainDateIn, addToDate, daysBetween, startOfDay } from '@frontierjs/toolbelt/datetime'
 import { results, report } from './lib/report.mjs'
 
 const sys = db.asSystem()
@@ -68,9 +70,13 @@ const plan     = await sys.plan.findFirst({ where: { code: 'PRO' } })
 const version  = await sys.planVersion.findFirst({ where: { planId: plan.id, effectiveTo: null } })
 
 // Its period ends in the past, so it is due the moment the sweep looks — which
-// is how a month is crossed in a test that takes a second.
-const periodStart = new Date(Date.now() - 40 * DAY).toISOString()
-const periodEnd   = new Date(Date.now() - 10 * DAY).toISOString()
+// is how a month is crossed in a test that takes a second. A period is DAYS in
+// the shop's calendar (`FJS-D143`), so the fixtures are plain dates and the
+// instants below are built from them rather than the other way round.
+const TODAY       = plainDateIn(Date.now(), 'UTC')
+const dayOf       = (date) => new Date(startOfDay(date, 'UTC')).toISOString()
+const periodStart = addToDate(TODAY, { days: -40 })
+const periodEnd   = addToDate(TODAY, { days: -10 })
 
 const sub = await sys.subscription.create({ data: {
   reference:  `SUB-B${RUN}`,
@@ -90,7 +96,7 @@ const reread      = () => sys.subscription.findFirst({ where: { id: sub.id } })
 
 {
   const r = recorder()
-  const queued = await sweepRenewals({ ...r.ctx, data: { at: new Date().toISOString() } })
+  const queued = await sweepRenewals({ ...r.ctx, data: { at: new Date().toISOString() } }, 'UTC')
   const mine   = r.seen.find(s => s.payload?.subscriptionId === sub.id)
   t('sweep.queuedMine', Boolean(mine))
   t('sweep.idIsOccurrenceKey', mine?.id === occurrenceKey('renew', String(sub.id), periodEnd))
@@ -98,7 +104,7 @@ const reread      = () => sys.subscription.findFirst({ where: { id: sub.id } })
 
   // The same sweep again, same minute, same period. A cron fires in every
   // replica and an operator re-runs a half-finished sweep; both land here.
-  const again = await sweepRenewals({ ...r.ctx, data: { at: new Date().toISOString() } })
+  const again = await sweepRenewals({ ...r.ctx, data: { at: new Date().toISOString() } }, 'UTC')
   t('sweep.secondPassQueuesNothingNew', again === 0)
 }
 
@@ -122,9 +128,14 @@ t('renew.headerIdentity', invoice.total === invoice.subtotal + invoice.tax)
 // The subscriber is on the version they were sold at, and that is what they are
 // charged — which is the whole reason a price is a row with a window.
 t('renew.chargedTheSoldPrice', lines[0].unitAmount === version.price && lines[0].quantity === sub.quantity)
-t('renew.windowMoved', (await reread()).currentPeriodEnd === advancePeriod(periodEnd, plan.interval).toISOString())
+t('renew.windowMoved', (await reread()).currentPeriodEnd === advancePeriod(periodEnd, plan.interval))
 t('renew.dueDateFromTerms',
-  Math.round((Date.parse(invoice.dueAt) - Date.parse(invoice.issuedAt)) / DAY) === TERMS_DAYS)
+  daysBetween(plainDateIn(invoice.issuedAt, 'UTC'), invoice.dueOn) === TERMS_DAYS)
+// The period is a pair of DAYS, and the invoice charges for the one the
+// subscription had reached. A row holding an instant here reads as a date to
+// every screen and to `describeSpan` and is one somewhere else.
+t('renew.periodIsPlainDates',
+  invoice.periodStart === periodEnd && invoice.periodEnd === advancePeriod(periodEnd, plan.interval))
 
 // Running the SAME period again — a queue retry after the transaction committed.
 const dup = await renewSubscription({ data: { subscriptionId: sub.id, periodEnd } }, 'UTC')
@@ -188,19 +199,19 @@ t('document.linesStillSumAfterAllThat',
 // which is the only anchor dunning reads — no counter is kept anywhere, so
 // running the job twice at the same instant has to be the same answer.
 
-const at = (days) => new Date(Date.parse(invoice.dueAt) + days * DAY).toISOString()
+const at = (days) => dayOf(addToDate(invoice.dueOn, { days }))
 
 {
-  const r1 = await dunSubscriptions({ data: { subscriptionId: sub.id, at: at(GRACE_DAYS - 1) } })
+  const r1 = await dunSubscriptions({ data: { subscriptionId: sub.id, at: at(GRACE_DAYS - 1) } }, 'UTC')
   t('dunning.insideGraceDoesNothing',
     !r1.lapsed.includes(sub.reference) && (await reread()).status === 'active')
 
-  const r2 = await dunSubscriptions({ data: { subscriptionId: sub.id, at: at(GRACE_DAYS + 1) } })
+  const r2 = await dunSubscriptions({ data: { subscriptionId: sub.id, at: at(GRACE_DAYS + 1) } }, 'UTC')
   t('dunning.pastGraceLapses', r2.lapsed.includes(sub.reference) && (await reread()).status === 'pastDue')
 
   // Twice at the same instant. A counter-based design gives a different answer
   // here, and that is the whole reason there is no counter.
-  const r3 = await dunSubscriptions({ data: { subscriptionId: sub.id, at: at(GRACE_DAYS + 1) } })
+  const r3 = await dunSubscriptions({ data: { subscriptionId: sub.id, at: at(GRACE_DAYS + 1) } }, 'UTC')
   t('dunning.isIdempotent', r3.lapsed.length === 0 && (await reread()).status === 'pastDue')
 }
 
@@ -215,7 +226,7 @@ await settleInvoice(sys, invoice.id)
   // date, in three separate copies of the same two lines.
   t('settle.stampsPaidAt', paid.status === 'paid' && Boolean(paid.paidAt))
 
-  const r = await dunSubscriptions({ data: { subscriptionId: sub.id, at: at(GRACE_DAYS + 2) } })
+  const r = await dunSubscriptions({ data: { subscriptionId: sub.id, at: at(GRACE_DAYS + 2) } }, 'UTC')
   t('dunning.recoversWhenLedgerIsClean',
     r.recovered.includes(sub.reference) && (await reread()).status === 'active')
 }
@@ -228,8 +239,8 @@ const second = await renewSubscription({ data: {
 } }, 'UTC')
 {
   const unpaid = (await invoicesFor()).find(i => i.number === second)
-  const late   = new Date(Date.parse(unpaid.dueAt) + (DUNNING_DAYS + 1) * DAY).toISOString()
-  const r = await dunSubscriptions({ data: { subscriptionId: sub.id, at: late } })
+  const late   = dayOf(addToDate(unpaid.dueOn, { days: DUNNING_DAYS + 1 }))
+  const r = await dunSubscriptions({ data: { subscriptionId: sub.id, at: late } }, 'UTC')
   t('dunning.pastDeadlineCancels', r.cancelled.includes(sub.reference) && (await reread()).status === 'cancelled')
 }
 
@@ -241,7 +252,7 @@ t('dunning.cancellingLeavesTheDebt',
 // The sweep leaves a cancelled subscription alone.
 {
   const r = recorder()
-  await sweepRenewals({ ...r.ctx, data: { at: new Date(Date.now() + 400 * DAY).toISOString() } })
+  await sweepRenewals({ ...r.ctx, data: { at: new Date(Date.now() + 400 * DAY).toISOString() } }, 'UTC')
   t('sweep.skipsCancelled', !r.seen.some(s => s.payload?.subscriptionId === sub.id))
 }
 
@@ -260,7 +271,7 @@ t('dunning.cancellingLeavesTheDebt',
 // at an instant with no server, so what it can ask is what the JOB does when it
 // arrives at the period end.
 
-const boundaryPeriodEnd = new Date(Date.now() - 5 * DAY).toISOString()
+const boundaryPeriodEnd = addToDate(TODAY, { days: -5 })
 
 const mkSub = (suffix, cancelAtPeriodEnd) => sys.subscription.create({ data: {
   reference:  `SUB-B${RUN}${suffix}`,
@@ -268,7 +279,7 @@ const mkSub = (suffix, cancelAtPeriodEnd) => sys.subscription.create({ data: {
   planVersionId: version.id,
   status:     'active',
   quantity:   1,
-  currentPeriodStart: new Date(Date.now() - 35 * DAY).toISOString(),
+  currentPeriodStart: addToDate(TODAY, { days: -35 }),
   currentPeriodEnd:   boundaryPeriodEnd,
   userId:     customer.userId,
   cancelAtPeriodEnd,
@@ -304,7 +315,7 @@ const mkSub = (suffix, cancelAtPeriodEnd) => sys.subscription.create({ data: {
   t('boundary.unflaggedRenews',
     typeof keptNumber === 'string'
     && keptRow.status === 'active'
-    && new Date(keptRow.currentPeriodEnd) > new Date(boundaryPeriodEnd))
+    && keptRow.currentPeriodEnd > boundaryPeriodEnd)
 
   // ─── the guard ordering ───────────────────────────────────────────────
   //
@@ -323,7 +334,7 @@ const mkSub = (suffix, cancelAtPeriodEnd) => sys.subscription.create({ data: {
 
   // The sweep will bring it back at the RIGHT boundary, which is the next one.
   const r = recorder()
-  await sweepRenewals({ ...r.ctx, data: { at: new Date(Date.parse(afterReplay.currentPeriodEnd) + DAY).toISOString() } })
+  await sweepRenewals({ ...r.ctx, data: { at: dayOf(addToDate(afterReplay.currentPeriodEnd, { days: 1 })) } }, 'UTC')
   const requeued = r.seen.find(x => x.payload?.subscriptionId === control.id)
   t('boundary.itIsPickedUpAtTheNextOne',
     requeued?.payload?.periodEnd === afterReplay.currentPeriodEnd)
@@ -374,6 +385,7 @@ const expected = {
   'renew.chargedTheSoldPrice': true,
   'renew.windowMoved': true,
   'renew.dueDateFromTerms': true,
+  'renew.periodIsPlainDates': true,
   'renew.replayIssuesNothing': true,
   'document.systemCannotRestateTotal': true,
   'document.sameValueAlsoRefused': true,

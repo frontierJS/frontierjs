@@ -296,6 +296,16 @@
         "@frontierjs/junction": "^0.1.0",
       },
     },
+    "packages/orion": {
+      "name": "@frontierjs/orion",
+      "version": "0.0.0",
+      "dependencies": {
+        "@frontierjs/toolbelt": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.3.14",
+      },
+    },
     "packages/outpost": {
       "name": "@frontierjs/outpost",
       "version": "0.1.1",
@@ -519,6 +529,8 @@
     "@frontierjs/mesa": ["@frontierjs/mesa@workspace:packages/mesa"],
 
     "@frontierjs/notifications": ["@frontierjs/notifications@workspace:packages/notifications"],
+
+    "@frontierjs/orion": ["@frontierjs/orion@workspace:packages/orion"],
 
     "@frontierjs/outpost": ["@frontierjs/outpost@workspace:packages/outpost"],
 

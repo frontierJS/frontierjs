@@ -1,14 +1,14 @@
-import { describe, test, expect, vi, beforeEach } from "vitest"
+import { describe, test, expect, vi, beforeEach } from "bun:test"
 import {
   NodeExecutor,
   type INodeRegistry,
   type INodeImplementation,
   type NodeContext,
   type NodeResult,
-} from "./index"
-import { InMemoryCache } from "../cache"
-import type { NodeDefinition } from "../types"
-import type { ResolutionContext } from "../expression"
+} from "../../../src/engine/executor/index"
+import { InMemoryCache } from "../../../src/engine/cache"
+import type { NodeDefinition } from "../../../src/engine/types"
+import type { ResolutionContext } from "../../../src/engine/expression"
 
 // ─────────────────────────────────────────────
 // TEST HELPERS
@@ -266,10 +266,10 @@ describe("Retry", () => {
     const delays: number[] = []
     const originalSetTimeout = global.setTimeout
     const spy = vi.spyOn(global, "setTimeout").mockImplementation(
-      (fn: (...args: unknown[]) => void, ms?: number) => {
+      ((fn: (...args: unknown[]) => void, ms?: number) => {
         if (ms && ms > 0) delays.push(ms)
         return originalSetTimeout(fn, 0)
-      }
+      }) as unknown as typeof setTimeout
     )
 
     let calls = 0

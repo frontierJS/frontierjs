@@ -1,6 +1,9 @@
 /*
  * predicate.js — does this record satisfy a declared expression?
  *
+ * The kit is the `.lite` expression language whole: `parseExpression` (in
+ * parse.js, re-exported here) reads one into the AST, and `evaluate` answers it.
+ *
  * The `.lite` policy expression language, evaluated against one record in
  * JavaScript, in SQLite's three-valued logic and with SQLite's comparison
  * rules. `@@allow`/`@@deny` on a create, `$readAs` grading a broadcast, and a
@@ -50,6 +53,9 @@
  *
  * `affinityOf` is the third and it is not decoration — see `compare` below.
  */
+
+export { parseExpression, parseFlowExpression, TOKEN, OPERATORS } from './parse.js'
+export { tokenize, TK, ParseError }         from './tokenize.js'
 
 // ─── three-valued logic ───────────────────────────────────────────────────────
 //

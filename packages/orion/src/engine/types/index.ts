@@ -12,7 +12,7 @@ export type Expression =
   | { type: "cond";     if: Expression; then: Expression; else: Expression }
   // ── Iteration & Composition ──────────────────────────────────────────────
   // Chain expressions left-to-right — "$" in a step = current flowing value
-  | { type: "pipe";     steps: Expression[] }
+  | { type: "pipe";     steps: [Expression, ...PipeStep[]] }
   // Transform every item — "as" names the loop variable, accessible via "$.{as}"
   | { type: "map";      over: Expression; as: string; body: Expression }
   // Subset an array by condition
@@ -23,10 +23,35 @@ export type Expression =
   | { type: "let";      bindings: Record<string, Expression>; body: Expression }
   // Pattern matching — first matching case wins, $ = tested value inside when/then
   | { type: "match";    value: Expression; cases: Array<{ when: Expression; then: Expression }>; default?: Expression }
+  // A CONDITION, parsed from text and answered by @frontierjs/toolbelt/predicate
+  // in SQLite's three-valued logic, so an edge condition and a row policy
+  // written the same way agree (`FJS-D271`). Every value inside it is a hole the
+  // resolver fills; `null` is unknown and does not fire the edge.
+  | { type: "predicate"; ast: PredicateNode }
+
+// A step after the first in a pipe takes the flowing value as its input, so the
+// operand that input fills is optional: `{ type: "fn", name: "lower" }` is
+// lower($), and a map with no `over` maps over $.
+export type PipeStep =
+  | Expression
+  | { type: "fn";     name: string; args?: Expression[] }
+  | { type: "map";    over?: Expression; as: string; body: Expression }
+  | { type: "filter"; over?: Expression; as: string; where: Expression }
+  | { type: "reduce"; over?: Expression; as: string; acc: string; init: Expression; body: Expression }
 
 // ─────────────────────────────────────────────
 // NODE
 // ─────────────────────────────────────────────
+
+// The shape a condition keeps between parsing and answering: the predicate
+// kit's own nodes, with each value position held as a hole.
+export type PredicateNode =
+  | { type: "hole";    expr: Expression }
+  | { type: "literal"; value: unknown }
+  | { type: "list";    items: unknown[] }
+  | { type: "not";     expr: PredicateNode }
+  | { type: "and" | "or"; left: PredicateNode; right: PredicateNode }
+  | { type: "compare"; op: string; left: PredicateNode; right: PredicateNode }
 
 export interface NodeMeta {
   name:               string
@@ -197,10 +222,15 @@ export interface FlowSettings {
 // ─────────────────────────────────────────────
 
 export interface JSONSchema {
-  type:        "string" | "number" | "boolean" | "object" | "array"
-  properties?: Record<string, JSONSchema>
-  items?:      JSONSchema
-  required?:   string[]
+  // Absent on a descriptor field that takes any Expression.
+  type?:        "string" | "number" | "boolean" | "object" | "array"
+  properties?:  Record<string, JSONSchema>
+  items?:       JSONSchema
+  required?:    string[]
+  description?: string
+  enum?:        unknown[]
+  default?:     unknown
+  format?:      string
 }
 
 // ─────────────────────────────────────────────

@@ -21,7 +21,7 @@
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { partsIn, resolveWall, fromWall, format, relative, createDatetime } from '../../src/datetime/datetime.js'
+import { partsIn, resolveWall, fromWall, format, relative, createDatetime, plainDateIn, addToDate, daysBetween, startOfDay } from '../../src/datetime/datetime.js'
 
 const here   = dirname(fileURLToPath(import.meta.url))
 const ORACLE = JSON.parse(readFileSync(join(here, '..', 'fixtures', 'datetime-oracle.json'), 'utf8'))
@@ -95,6 +95,68 @@ test('datetime: W and GGGG agree with Temporal at both ends of every year', func
     if (format(ms, 'YYYY', { timeZone: 'UTC' }) !== String(weekYear)) differs++
   }
   assert.ok(differs > 0, 'the fixture must hold dates whose week year is not their calendar year')
+})
+
+test('datetime: addToDate agrees with Temporal, clamping into the month it lands in', function () {
+  const wrong = []
+  for (const [date, duration, expected] of ORACLE.added) {
+    const got = addToDate(date, duration)
+    if (got !== expected) wrong.push(`${date} + ${JSON.stringify(duration)}: expected ${expected}, got ${got}`)
+  }
+  assert.equal(wrong.length, 0, wrong.slice(0, 5).join('\n      '))
+})
+
+test('datetime: a month added the Date way rolls over on the same rows (negative control)', function () {
+  let wrong = 0
+  for (const [date, duration, expected] of ORACLE.added) {
+    if (!duration.months || Object.keys(duration).length > 1) continue
+    const d = new Date(date + 'T00:00:00Z')
+    d.setUTCMonth(d.getUTCMonth() + duration.months)
+    if (d.toISOString().slice(0, 10) !== expected) wrong++
+  }
+  assert.ok(wrong > 10, `setUTCMonth must roll 01-31 into March; wrong on ${wrong}`)
+})
+
+test('datetime: daysBetween agrees with Temporal', function () {
+  const wrong = ORACLE.between.filter(([a, b, days]) => daysBetween(a, b) !== days)
+  assert.equal(wrong.length, 0, wrong.slice(0, 5).map(String).join('\n      '))
+})
+
+test('datetime: startOfDay agrees with Temporal on every transition day', function () {
+  const wrong = []
+  for (const [zone, date, expected] of ORACLE.days) {
+    const got = startOfDay(date, zone)
+    if (got !== expected) wrong.push(`${zone} ${date}: expected ${expected}, got ${got}`)
+  }
+  assert.equal(wrong.length, 0, wrong.slice(0, 5).join('\n      '))
+})
+
+test('datetime: midnight minus the day\'s noon offset misses a day that does not start at midnight (negative control)', function () {
+  let wrong = 0
+  for (const [zone, date, expected] of ORACLE.days) {
+    const noon = Date.parse(date + 'T12:00:00Z')
+    if (Date.parse(date + 'T00:00:00Z') - partsIn(noon, zone).offset * 60_000 !== expected) wrong++
+  }
+  assert.ok(wrong > 0, `the fixture must hold a day that starts at 01:00 (Santiago); wrong on ${wrong}`)
+})
+
+test('datetime: plainDateIn is the calendar half of partsIn', function () {
+  const pad = (n, w = 2) => String(n).padStart(w, '0')
+  for (const [zone, ms, year, month, day] of ORACLE.parts) {
+    assert.equal(plainDateIn(ms, zone), `${pad(year, 4)}-${pad(month)}-${pad(day)}`, `${zone} ${ms}`)
+  }
+  assert.equal(plainDateIn('2026-01-31T01:00:00Z', 'America/New_York'), '2026-01-30', 'an evening in New York is the next day in UTC')
+})
+
+test('datetime: a plain date is YYYY-MM-DD and a real day, or refused by name', function () {
+  assert.throws(() => addToDate('2026-02-30', { days: 1 }), /day 30, out of range 1-28/)
+  assert.throws(() => addToDate('2026-09-14T00:00:00Z', { days: 1 }), /not a plain date.*plainDateIn/)
+  assert.throws(() => daysBetween('2026-09-14', 20260915), /to 20260915 is not a plain date/)
+  assert.throws(() => addToDate('2026-09-14', { hours: 1 }), /"hours" is not one of years, months, weeks, days/)
+  assert.throws(() => addToDate('2026-09-14', { months: 1.5 }), /months must be an integer/)
+  assert.throws(() => addToDate('2026-09-14', { months: 1, days: -1 }), /mixes signs/)
+  assert.equal(addToDate('2026-01-31', { months: 1 }), '2026-02-28')
+  assert.equal(addToDate(addToDate('2026-01-31', { months: 1 }), { months: 1 }), '2026-03-28', 'the clamp does not remember its day — the stated limit')
 })
 
 /* ── Instants and zones ─────────────────────────────────────────────── */
@@ -174,6 +236,13 @@ test('format: text that is not made of tokens is refused, not substituted', func
   assert.equal(denver('[Today is] DDDD'), 'Today is Saturday')
   assert.equal(denver('hhmm'), '1005', 'a run of tokens with no separator still splits')
   assert.throws(() => denver('[YYYY'), /unclosed \[ at position 0/)
+})
+
+test('format: HH is refused with the hour tokens named', function () {
+  assert.throws(() => denver('YYYY-MM-DD HH:mm'), /"HH" .* the hour is hh or h \(lowercase is the time\)/)
+  let message = ''
+  try { denver('Today') } catch (e) { message = e.message }
+  assert.ok(message && !/the hour is/.test(message), 'the hint is for H alone')
 })
 
 test('format: a word made of token letters is taken as tokens — the stated limit', function () {
@@ -264,6 +333,15 @@ test('createDatetime: two instances share nothing', function () {
   assert.equal(b.format(JULY_4, 'hh:mm'), '21:35')
   assert.equal(a.format(JULY_4, 'hh:mm'), '16:05')
   assert.ok(Object.isFrozen(a))
+})
+
+test('createDatetime: today is the day the clock is on in the instance\'s zone', function () {
+  const late = Date.UTC(2026, 0, 31, 1)   // 20:00 on the 30th in New York
+  const dt = createDatetime({ timeZone: 'America/New_York', now: () => late })
+  assert.equal(dt.today(), '2026-01-30')
+  assert.equal(dt.today('UTC'), '2026-01-31')
+  assert.equal(dt.startOfDay('2026-01-30'), Date.UTC(2026, 0, 30, 5))
+  assert.equal(dt.plainDateIn(late, 'Asia/Kolkata'), '2026-01-31')
 })
 
 test('createDatetime: the zone and the clock are required up front', function () {

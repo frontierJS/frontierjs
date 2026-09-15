@@ -26,11 +26,11 @@
 import { db }         from '../../api/src/core/db.ts'
 import { prorate, changePlan, issueInvoice, periodLines } from '../../api/src/domain/billing'
 import { allocate }   from '@frontierjs/toolbelt/units'
+import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
 import { results, report } from './lib/report.mjs'
 
 const sys = db.asSystem()
 const RUN = String(Date.now()).slice(-6)
-const DAY = 24 * 60 * 60 * 1000
 
 const { got, t } = results()
 
@@ -41,8 +41,8 @@ const { got, t } = results()
   // 3796/6 is 632.67 — six lines of 633 is 3798, six of 632 is 3792, and the
   // shop has taken 3796.
   const p = prorate({
-    periodStart: '2026-03-01T00:00:00Z',
-    periodEnd:   '2026-03-31T00:00:00Z',
+    periodStart: '2026-03-01',
+    periodEnd:   '2026-03-31',
     at:          '2026-03-12T00:00:00Z',
     name: 'Pro', timeZone: 'UTC',
     from: { unitAmount: 0,   quantity: 0 },
@@ -58,15 +58,30 @@ const { got, t } = results()
   // by putting the whole remainder on one line would pass the line above.
   const seats = p.lines.map(l => l.amount)
   t('proration.everySeatWithinOneUnit', Math.max(...seats) - Math.min(...seats) <= 1)
-  t('proration.fractionIsByInstant', Math.abs(p.fraction - 19 / 30) < 1e-9)
+  t('proration.fractionIsWholeDays', Math.abs(p.fraction - 19 / 30) < 1e-9)
+
+  // A period is DAYS (`FJS-D143`), so every instant of the 12th is the same
+  // slice: the 12th is used and paid for whatever o'clock the change was made.
+  // Milliseconds made the evening of the 12th cheaper than its morning, and a
+  // 23-hour day in March cheaper than its neighbors, on a document that prints
+  // neither.
+  const evening = prorate({
+    periodStart: '2026-03-01',
+    periodEnd:   '2026-03-31',
+    at:          '2026-03-12T23:59:59Z',
+    name: 'Pro', timeZone: 'UTC',
+    from: { unitAmount: 0,   quantity: 0 },
+    to:   { unitAmount: 999, quantity: 6 },
+  })
+  t('proration.everyInstantOfADayIsTheSameSlice', evening.fraction === p.fraction && evening.charge === p.charge)
 }
 
 {
   // The credit and the charge are the two other roundings, and a change that
   // swaps one price for another at the same quantity is where they meet.
   const p = prorate({
-    periodStart: '2026-03-01T00:00:00Z',
-    periodEnd:   '2026-03-31T00:00:00Z',
+    periodStart: '2026-03-01',
+    periodEnd:   '2026-03-31',
     at:          '2026-03-19T00:00:00Z',
     name: 'Pro', timeZone: 'UTC',
     from: { unitAmount: 1900, quantity: 2 },
@@ -81,22 +96,31 @@ const { got, t } = results()
   // The clamps. A change dated outside the period is a data error somewhere
   // upstream, and the answer has to be a bounded one rather than a negative
   // fraction quietly inverting every figure.
-  const base = { periodStart: '2026-03-01T00:00:00Z', periodEnd: '2026-03-31T00:00:00Z',
+  const base = { periodStart: '2026-03-01', periodEnd: '2026-03-31',
                  name: 'Pro', timeZone: 'UTC', from: { unitAmount: 0, quantity: 0 }, to: { unitAmount: 1000, quantity: 1 } }
   t('proration.beforeTheStartIsAWholePeriod', prorate({ ...base, at: '2026-01-01T00:00:00Z' }).fraction === 1)
   t('proration.afterTheEndIsNothing',        prorate({ ...base, at: '2026-12-01T00:00:00Z' }).fraction === 0)
 }
 
 {
-  // A period's line text is written in the SHOP's calendar (`FJS-1149`). The
-  // seed's periods start at 03:10Z, which is the previous evening anywhere in
-  // the Americas, so the same period is two different pairs of days — and the
-  // screen reads it in the shop's zone too, or the header and the line disagree.
-  // The UTC row is the control: a shop that set nothing writes what it always did.
-  const line = (timeZone) => periodLines({ name: 'Pro', quantity: 1, unitAmount: 100,
-    periodStart: '2026-08-30T03:10:01.052Z', periodEnd: '2026-09-29T03:10:01.052Z', timeZone })[0].description
-  t('span.inTheShopsZone', line('America/New_York'))
-  t('span.utcUnchanged',   line('UTC'))
+  // A period is a pair of DAYS, so its line text names them and no zone is
+  // consulted at all — which is what `FJS-1149` was about, one layer down: the
+  // line and every screen showing the period now read the same two strings.
+  // The span is `[start, end)` and the text names the LAST day it covers, or a
+  // reader takes the 29th to be included and the next period charges for it.
+  t('span.namesTheDaysItCovers', periodLines({ name: 'Pro', quantity: 1, unitAmount: 100,
+    periodStart: '2026-08-30', periodEnd: '2026-09-29' })[0].description)
+
+  // The shop's zone is spent HERE instead: on which of its days a change made
+  // at an instant falls. 03:10Z is the previous evening in New York, so the
+  // same change is one day earlier there — one more day credited, one fewer
+  // charged.
+  const slice = (timeZone) => prorate({
+    periodStart: '2026-08-30', periodEnd: '2026-09-29', at: '2026-09-14T03:10:01.052Z',
+    name: 'Pro', timeZone, from: { unitAmount: 3000, quantity: 1 }, to: { unitAmount: 0, quantity: 1 },
+  })
+  t('slice.theShopsDayDecidesIt', slice('America/New_York').credit > slice('UTC').credit)
+  t('slice.utcUnchanged', slice('UTC').credit === 1500)
 }
 
 {
@@ -120,8 +144,9 @@ const versions = await sys.planVersion.findMany({ where: { planId: plan.id }, or
 const cheap    = versions[0]
 const dear     = versions[versions.length - 1]
 
-const periodStart = new Date(Date.now() - 10 * DAY).toISOString()
-const periodEnd   = new Date(Date.now() + 20 * DAY).toISOString()
+const TODAY       = plainDateIn(Date.now(), 'UTC')
+const periodStart = addToDate(TODAY, { days: -10 })
+const periodEnd   = addToDate(TODAY, { days: 20 })
 
 const sub = await sys.subscription.create({ data: {
   reference:  `SUB-P${RUN}`,
@@ -140,8 +165,8 @@ await issueInvoice(sys, {
   customerId:     customer.id,
   subscriptionId: sub.id,
   userId:         customer.userId,
-  periodStart, periodEnd,
-  lines: periodLines({ name: plan.name, quantity: 2, unitAmount: cheap.price, periodStart, periodEnd, timeZone: 'UTC' }),
+  periodStart, periodEnd, timeZone: 'UTC',
+  lines: periodLines({ name: plan.name, quantity: 2, unitAmount: cheap.price, periodStart, periodEnd }),
 })
 
 const invoicesFor = () => sys.invoice.findMany({ where: { subscriptionId: sub.id }, orderBy: { id: 'asc' } })
@@ -152,7 +177,7 @@ const notesFor    = async () => {
 
 const periodOf = async (id) => {
   const s = await sys.subscription.findFirst({ where: { id } })
-  return [Date.parse(s.currentPeriodStart), Date.parse(s.currentPeriodEnd)]
+  return [s.currentPeriodStart, s.currentPeriodEnd]
 }
 
 // UPGRADE — more seats, dearer plan. Owes money, so it is an invoice.
@@ -234,8 +259,8 @@ await issueInvoice(sys, {
   customerId:     customer.id,
   subscriptionId: annual.id,
   userId:         customer.userId,
-  periodStart, periodEnd,
-  lines: periodLines({ name: plan.name, quantity: 2, unitAmount: cheap.price, periodStart, periodEnd, timeZone: 'UTC' }),
+  periodStart, periodEnd, timeZone: 'UTC',
+  lines: periodLines({ name: plan.name, quantity: 2, unitAmount: cheap.price, periodStart, periodEnd }),
 })
 const annualInvoices = () => sys.invoice.findMany({ where: { subscriptionId: annual.id }, orderBy: { id: 'asc' } })
 
@@ -250,7 +275,8 @@ const annualInvoices = () => sys.invoice.findMany({ where: { subscriptionId: ann
   // nothing charged against it — so this row is about which slice, not rounding.
   const unused = prorate({ periodStart, periodEnd, at, name: plan.name, timeZone: 'UTC',
     from: { unitAmount: cheap.price, quantity: 2 }, to: { unitAmount: 0, quantity: 2 } }).credit
-  const end = new Date(at); end.setUTCFullYear(end.getUTCFullYear() + 1)
+  const today = plainDateIn(at, 'UTC')
+  const end   = addToDate(today, { years: 1 })
 
   t('interval.issuesAnInvoice', r.kind === 'invoice' && docs.length === 2)
   t('interval.linesSumToSubtotal', lines.reduce((n, l) => n + l.amount, 0) === doc.subtotal)
@@ -258,8 +284,8 @@ const annualInvoices = () => sys.invoice.findMany({ where: { subscriptionId: ann
   // The bug charged `yearly.price × 2 × fraction` here — a fraction of a YEAR's
   // price over what was left of a MONTH.
   t('interval.chargesOneWholeYear', lines.filter(l => l.amount > 0).reduce((n, l) => n + l.amount, 0) === yearly.price * 2)
-  t('interval.periodIsReanchored', String(await periodOf(annual.id)) === String([Date.parse(at), end.getTime()]))
-  t('interval.documentCoversTheYear', Date.parse(doc.periodEnd) === end.getTime())
+  t('interval.periodIsReanchored', String(await periodOf(annual.id)) === String([today, end]))
+  t('interval.documentCoversTheYear', doc.periodEnd === end)
 }
 
 // And back again is refused until renewal, and refused BEFORE anything is
@@ -317,14 +343,16 @@ const expected = {
   'proration.linesSumToTheCharge': true,
   'proration.naiveSplitWouldBeShort': true,
   'proration.everySeatWithinOneUnit': true,
-  'proration.fractionIsByInstant': true,
+  'proration.fractionIsWholeDays': true,
+  'proration.everyInstantOfADayIsTheSameSlice': true,
   'proration.netIsChargeMinusCredit': true,
   'proration.everyLineSumsToNet': true,
   'proration.creditLineIsNegative': true,
   'proration.beforeTheStartIsAWholePeriod': true,
   'proration.afterTheEndIsNothing': true,
-  'span.inTheShopsZone': 'Pro — 1 × the 29 Aug – 28 Sept',
-  'span.utcUnchanged':   'Pro — 1 × the 30 Aug – 29 Sept',
+  'span.namesTheDaysItCovers': 'Pro — 1 × the 30 Aug – 28 Sept',
+  'slice.theShopsDayDecidesIt': true,
+  'slice.utcUnchanged': true,
   'proration.allocateNeverLosesAUnit': true,
   'upgrade.periodDoesNotMove': true,
   'upgrade.issuesAnInvoice': true,

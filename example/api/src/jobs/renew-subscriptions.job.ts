@@ -5,27 +5,33 @@
 // inline would be one long transaction whose failure halfway leaves half a
 // shop billed, with nothing to retry but the whole thing.
 //
-// Hourly rather than daily. A period ends at an instant, not on a date, so a
-// daily sweep bills up to 24 hours late — which is invisible in a demo and is a
-// real complaint from anybody whose trial ended at nine in the morning.
+// Hourly rather than daily. A period ends on a DAY of the shop's calendar, and
+// that day begins at the shop's midnight, which is not the server's — a daily
+// sweep at a fixed UTC hour would bill a shop in one zone the evening before and
+// a shop in another most of a day late. Hourly bills every zone within the hour
+// its day begins.
 
 import { defineJob }       from '@frontierjs/caravan'
 import type { JobContext } from '@frontierjs/caravan'
 import { occurrenceKey }   from '@frontierjs/toolbelt/history'
+import { plainDateIn }     from '@frontierjs/toolbelt/datetime'
 import { db }              from '../core/db.ts'
 import { dueForRenewal }   from '../domain/billing'
 import renewSubscription   from './renew-subscription.job.ts'
 
 /**
- * Dispatch a renewal for everything due at `at`.
+ * Dispatch a renewal for everything due at `at`, read as a day in `timeZone`.
  *
  * Answers how many it QUEUED, which is not how many it billed — a dispatch the
  * queue already holds answers false and is not counted, so a second sweep over
  * the same minute reports 0 rather than doing the work twice.
+ *
+ * `timeZone` is an argument for `renewSubscription`'s reason: a drive calls this
+ * with no app behind it and must say which calendar it sweeps.
  */
-export async function sweepRenewals(ctx: JobContext<{ at?: string }>): Promise<number> {
+export async function sweepRenewals(ctx: JobContext<{ at?: string }>, timeZone: string): Promise<number> {
   const at  = ctx.data?.at ?? new Date().toISOString()
-  const due = await dueForRenewal(db.asSystem(), at)
+  const due = await dueForRenewal(db.asSystem(), plainDateIn(at, timeZone))
 
   let queued = 0
   for (const sub of due) {
@@ -45,6 +51,6 @@ export async function sweepRenewals(ctx: JobContext<{ at?: string }>): Promise<n
 
 export default defineJob<{ at?: string }>(
   'renew-subscriptions',
-  async (ctx) => { await sweepRenewals(ctx) },
+  async (ctx) => { await sweepRenewals(ctx, ctx.app!.configFor().timeZone) },
   { cron: '0 * * * *' },
 )

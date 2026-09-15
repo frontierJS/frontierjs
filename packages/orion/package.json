@@ -1,0 +1,27 @@
+{
+  "name": "@frontierjs/orion",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Automations for a FrontierJS app \u2014 flows of triggers, conditions and actions, run by an engine installed into the app",
+  "type": "module",
+  "license": "MIT",
+  "author": "FrontierJS",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/frontierJS/frontierjs.git",
+    "directory": "packages/orion"
+  },
+  "scripts": {
+    "test": "bun test tests",
+    "typecheck": "node ../../scripts/typecheck.mjs"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14"
+  },
+  "dependencies": {
+    "@frontierjs/toolbelt": "workspace:*"
+  }
+}

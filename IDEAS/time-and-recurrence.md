@@ -7,7 +7,11 @@ dated: 2026-08-12
 # Idea — Time: the hardest thing in the job, and the seed says nothing about it
 
 **Status: PARTIAL, PARTLY RULED (`FJS-D143`, 2026-08-25).** DST handling and a
-test clock (`env.clock`) have since shipped.
+test clock (`env.clock`) have since shipped, and so has the PLAIN-DATE half
+(`FJS-D288`, 2026-09-14): a day an app bills on is `String @date`, the kit does
+the calendar arithmetic, and a zone is spent only where an instant and a day
+cross. `example`'s billing runs on it. What is still unbuilt here is the ZONED
+wall-clock column — *the shop opens at 09:00* — which still has no caller.
 The ruling settles the axis this record deliberately left open — the kind is
 declared by an ATTRIBUTE, `DateTime` keeps its name, and a zoned comparison is a
 window the framework binds rather than a predicate SQLite evaluates — and
@@ -44,9 +48,9 @@ This is the answer that came back first and by the widest margin.
   index — so the gap is filed, not addressed.
 - **There is no date/time code in the tree.** `packages/datetime-kit/` was a
   `README.md` and nothing else; 2026-08-15 it folded into `@frontierjs/toolbelt` as the
-  `/datetime` kit — intent in `packages/toolbelt/mockup/datetime/README.md`, prototype parked at
-  `packages/toolbelt/mockup/datetime/` (nine source files, a non-member of the
-  workspace glob, run by nothing). **Still true on 2026-08-25**: toolbelt exports
+  `/datetime` kit — the intent and the prototype were `packages/toolbelt/mockup/datetime/`,
+  built out and deleted 2026-09-14 (`FJS-D268`), so read
+  `packages/toolbelt/src/datetime/` for what the kit does now. **Still true on 2026-08-25**: toolbelt exports
   eleven subpaths and `./datetime` is not one of them. `FJS-411` — three copies of a
   *2h ago* ladder in basecamp — is the open cost of that, blocked on whether a kit
   that reads the clock can live in a package whose standing is purity (`FJS-D26`).
@@ -412,4 +416,4 @@ is which subset earns a name.
 - `IDEAS/testing-realm.md` — the movable clock this would make testable
 - `packages/caravan/src/cron.ts` — the one place in the repo that already gets a
   timezone right
-- `packages/toolbelt/mockup/datetime/README.md` — the claim, now a kit inside toolbelt (`FJS-D14`, ruled)
+- `packages/toolbelt/src/datetime/` — the kit the claim became (`FJS-D268`, `FJS-D288`)

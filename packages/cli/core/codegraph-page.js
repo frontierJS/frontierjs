@@ -117,6 +117,7 @@ export function renderPage(model, { css, theme, all = false, name }) {
             <button class="btn outlined" data-layout="packages" aria-pressed="false">each package</button>
             <button class="btn outlined" data-layout="path" aria-pressed="false">path order</button>
           </div>
+          <button class="btn outlined" id="copy" title="Copy the map as it is drawn now, as a PNG">copy image</button>
           <label class="cluster gap-2xs" for="q"><span class="text-xs text-muted">filter</span>
             <input class="field" id="q" type="search" placeholder="path contains…" autocomplete="off" spellcheck="false">
           </label>
@@ -555,6 +556,31 @@ menu.addEventListener('keydown', ev => {
 document.addEventListener('click', ev => { if (!menu.hidden && !ev.target.closest('.popover-anchor')) openMenu(false) })
 
 $('layouts').addEventListener('click', ev => { const b = ev.target.closest('[data-layout]'); if (!b) return; state.layout = b.dataset.layout; reflow() })
+
+// ─── copy the map ────────────────────────────────────────────────
+// The picture is what is drawn — view, layout, kinds, filter and an isolated
+// package — without the hover and pin rings, which mark a pointer and not the
+// project. toBlob copies the bitmap when it is called, so the rings go back on
+// at once. The promise goes into the ClipboardItem unawaited, because Safari
+// refuses a write that is not started inside the click. A page in a frame the
+// host has not granted clipboard-write refuses too, and the button says so.
+const copyBtn = $('copy')
+copyBtn.addEventListener('click', async () => {
+  const keep = [state.hover, state.pinned]
+  state.hover = -1; state.pinned = -1; draw()
+  const png = new Promise((done, fail) => cv.toBlob(blob => blob ? done(blob) : fail(new Error('empty canvas')), 'image/png'))
+  ;[state.hover, state.pinned] = keep; redraw()
+  let said
+  try {
+    if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') throw new Error('no clipboard')
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })])
+    said = 'copied ✓'
+  } catch {
+    said = 'copy blocked here'
+  }
+  copyBtn.textContent = said
+  setTimeout(() => { copyBtn.textContent = 'copy image' }, 2000)
+})
 $('views').addEventListener('click', ev => {
   const b = ev.target.closest('[data-view]'); if (!b) return
   state.view = b.dataset.view

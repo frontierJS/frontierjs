@@ -148,6 +148,18 @@ Every function also stands alone with its arguments explicit: `format(instant, p
 
 Names follow `locale`; digits are always Latin. `QQQQ` and `WWWW` are English and refuse another locale. Zone rules are the runtime's own ICU table, and node and bun can disagree where a country changed its rules recently (`FJS-D268`).
 
+**Plain dates — a day in no zone**, which is what a `String @date` column holds and what a billing period, a due date or a birthday is (`FJS-D288`).
+
+```js
+plainDateIn('2026-01-31T01:00:00Z', 'America/New_York')  // '2026-01-30' — an evening there
+addToDate('2026-01-31', { months: 1 })                   // '2026-02-28' — clamped, Temporal's 'constrain'
+daysBetween('2026-08-30', '2026-09-29')                  // 30
+startOfDay('2026-09-06', 'America/Santiago')             // the instant that day begins — 01:00, not midnight
+dt.today()                                               // the day it is now, in the instance's zone
+```
+
+A zone is asked for at exactly two crossings — an instant to a day, and a day to the instant it starts — and the calendar arithmetic between them has none to disagree with. A day is `[startOfDay(d), startOfDay(addToDate(d, { days: 1 })))`, 23 or 25 hours long on a transition day, so it is never `start + 24h`. `addToDate`'s clamp does not remember the day it came from: `'2026-01-31'` plus a month twice is 28 February and then 28 March, so a recurring date is computed from its anchor rather than by stepping.
+
 ## `units` — a magnitude with a unit
 
 ```js

@@ -1,32 +1,65 @@
-import { describe, test, expect, vi, beforeAll, afterAll } from "vitest"
-import type { NodeContext } from "../executor"
-import { createNodeImplementations, type NodeDeps } from "./index"
-import { KVStore }           from "../store/kv"
-import { WaitRegistry }      from "../store/wait"
-import { AIProviderRegistry } from "./providers"
-import { CodeWorkerPool }    from "./code-worker-pool"
-import { createSqlJsDatabase, runMigrations } from "../store/db"
-import type { IDatabase }    from "../store/db"
+import { describe, test, expect, vi, beforeAll, afterAll } from "bun:test"
+import type { NodeContext } from "../../../src/engine/executor"
+import { createNodeImplementations, type NodeDeps } from "../../../src/engine/nodes/index"
+import { CodeWorkerPool }    from "../../../src/engine/nodes/code-worker-pool"
+import type { AIProvider, IAIProviderRegistry, IKeyValueStore, IWaitRegistry, ProviderFactory, WaitEntry } from "../../../src/engine/ports"
+
+// ─────────────────────────────────────────────
+// PORT FAKES
+// The engine's ports, in memory. These grade the NODES — what each one asks of
+// its port and what it returns. The model-backed store and Wait registry are
+// graded in their own suite against a real litestone client.
+// ─────────────────────────────────────────────
+
+class MemoryKeyValueStore implements IKeyValueStore {
+  private readonly rows = new Map<string, unknown>()
+  private id(ws: string, scope: string, key: string) { return `${ws}\u0000${scope}\u0000${key}` }
+  get(ws: string, scope: string, key: string)             { return this.rows.get(this.id(ws, scope, key)) }
+  set(ws: string, scope: string, key: string, v: unknown) { this.rows.set(this.id(ws, scope, key), v) }
+  delete(ws: string, scope: string, key: string)          { return this.rows.delete(this.id(ws, scope, key)) }
+}
+
+class MemoryWaitRegistry implements IWaitRegistry {
+  private readonly entries = new Map<string, WaitEntry>()
+  register(entry: WaitEntry)  { this.entries.set(entry.resumeKey, entry) }
+  getByKey(resumeKey: string) { return this.entries.get(resumeKey) }
+}
+
+class MemoryProviderRegistry implements IAIProviderRegistry {
+  private readonly factories = new Map<string, ProviderFactory>()
+  register(name: string, factory: ProviderFactory) { this.factories.set(name, factory) }
+  get(name: string): ProviderFactory {
+    const f = this.factories.get(name)
+    if (!f) throw new Error(`Unknown AI provider: "${name}"`)
+    return f
+  }
+}
+
+function fakeProvider(overrides: Partial<AIProvider> = {}): AIProvider {
+  const refuse = () => Promise.reject(new Error("fake provider: not stubbed"))
+  return { name: "fake", complete: refuse, embed: refuse, classify: refuse, extract: refuse, ...overrides }
+}
 
 // ─────────────────────────────────────────────
 // TEST SETUP
 // ─────────────────────────────────────────────
 
-let db:        IDatabase
+let waitReg:   MemoryWaitRegistry
 let deps:      NodeDeps
 let pool:      CodeWorkerPool
 let impls:     ReturnType<typeof createNodeImplementations>
 
-beforeAll(async () => {
-  db   = await createSqlJsDatabase()
-  await runMigrations(db)
+beforeAll(() => {
+  pool    = new CodeWorkerPool(2)
+  waitReg = new MemoryWaitRegistry()
 
-  pool = new CodeWorkerPool(2)
+  const aiProviders = new MemoryProviderRegistry()
+  aiProviders.register("openai", () => fakeProvider())
 
   deps = {
-    kv:          new KVStore(db),
-    waitReg:     new WaitRegistry(db),
-    aiProviders: new AIProviderRegistry(),
+    kv:          new MemoryKeyValueStore(),
+    waitReg,
+    aiProviders,
     workspaceId: "ws-test",
     codePool:    pool,
   }
@@ -344,7 +377,7 @@ describe("flow.wait", () => {
     expect(res.ok).toBe(true)
     if (res.ok) {
       const key   = (res.data as any).resumeKey
-      const entry = deps.waitReg.getByKey(key)
+      const entry = waitReg.getByKey(key)
       expect(entry).toBeDefined()
       expect(entry?.executionId).toBe("exec-wait-2")
       expect(entry?.resumeCtxKey).toBe("payloadKey")
@@ -506,23 +539,18 @@ describe("ai", () => {
     expect((res as any).error).toMatch(/Unknown AI provider/)
   })
 
-  test("complete mode — mocked OpenAI response", async () => {
-    const mockFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      choices: [{ message: { content: "Hello!" }, finish_reason: "stop" }],
-      usage:   { prompt_tokens: 10, completion_tokens: 5 },
-    }), { status: 200, headers: { "content-type": "application/json" } }))
+  test("complete mode — the provider's answer lands in the node output", async () => {
+    const complete = vi.fn().mockResolvedValue({ text: "Hello!", finishReason: "stop", usage: { inputTokens: 10, outputTokens: 5 } })
 
-    // Register a custom openai provider that uses our mock fetch
-    const registry = new AIProviderRegistry()
-    const { OpenAIProvider } = await import("./providers")
-    registry.register("openai-mock", () => new OpenAIProvider("test-key", "https://api.openai.com/v1", mockFetch))
+    const registry = new MemoryProviderRegistry()
+    registry.register("stub", () => fakeProvider({ complete }))
 
     const localDeps = { ...deps, aiProviders: registry }
     const localImpls = createNodeImplementations(localDeps)
     const aiImpl = localImpls.find(i => i.type === "ai")!
 
     const ctx = makeCtx({
-      config: { model: "gpt-4o", mode: "complete", prompt: "Say hi", __provider: { provider: "openai-mock" } },
+      config: { model: "gpt-4o", mode: "complete", prompt: "Say hi", __provider: { provider: "stub" } },
     })
     const res = await aiImpl.execute(ctx)
     expect(res.ok).toBe(true)
@@ -530,6 +558,7 @@ describe("ai", () => {
       expect((res.data as any).result).toBe("Hello!")
       expect((res.data as any).finishReason).toBe("stop")
     }
+    expect(complete).toHaveBeenCalledWith({ model: "gpt-4o", prompt: "Say hi", options: undefined })
   })
 
   test("fails with helpful error for missing prompt in complete mode", async () => {

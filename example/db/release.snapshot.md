@@ -303,15 +303,15 @@ table `invoice` · db `main` · gate `1.8.4.8`
 | `creditNotes` | `CreditNote[]` | — | — | relation |
 | `customer` | `Customer` | — | — | relation |
 | `customerId` | `Int` | no | — | **required on write** |
-| `dueAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `dueOn` | `String` | no | — | **required on write** |
 | `id` | `Int` | no | — | id |
 | `issuedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `lines` | `InvoiceLine[]` | — | — | relation |
 | `number` | `String` | no | — | unique · **required on write** |
 | `paidAt` | `DateTime` | yes | — | @system |
 | `payments` | `Payment[]` | — | — | relation |
-| `periodEnd` | `DateTime` | no | — | **required on write** |
-| `periodStart` | `DateTime` | no | — | **required on write** |
+| `periodEnd` | `String` | no | — | **required on write** |
+| `periodStart` | `String` | no | — | **required on write** |
 | `status` | `InvoiceStatus` | no | `'draft'` | — |
 | `subscription` | `Subscription` | — | — | relation |
 | `subscriptionId` | `Int` | yes | — | — |
@@ -344,8 +344,8 @@ table `invoice_line` · db `main` · gate `1.8.8.8`
 | `id` | `Int` | no | — | id |
 | `invoice` | `Invoice` | — | — | relation |
 | `invoiceId` | `Int` | no | — | **required on write** |
-| `periodEnd` | `DateTime` | yes | — | — |
-| `periodStart` | `DateTime` | yes | — | — |
+| `periodEnd` | `String` | yes | — | — |
+| `periodStart` | `String` | yes | — | — |
 | `quantity` | `Int` | no | `1` | — |
 | `unitAmount` | `Int` | no | — | **required on write** |
 | `userId` | `String` | yes | — | @system |
@@ -961,8 +961,8 @@ table `subscription` · db `main` · gate `1.4.4.5`
 | `cancelAtPeriodEnd` | `Boolean` | no | `0` | @system |
 | `cancelledAt` | `DateTime` | yes | — | @system |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
-| `currentPeriodEnd` | `DateTime` | no | — | @system · **required on write** |
-| `currentPeriodStart` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | @system |
+| `currentPeriodEnd` | `String` | no | — | @system · **required on write** |
+| `currentPeriodStart` | `String` | no | — | @system · **required on write** |
 | `customer` | `Customer` | — | — | relation |
 | `customerId` | `Int` | no | — | **required on write** |
 | `id` | `Int` | no | — | id |

@@ -5,6 +5,8 @@ title: Orders
   import { orders } from '../../resources/Order.mesa'
   import { session } from '@/session.js'
   import { prefs } from '@/prefs.js'
+  import { day, today, calendarZone } from '@/datetime.js'
+  import { plainDateIn, addToDate, startOfDay } from '@frontierjs/toolbelt/datetime'
   import { useStore } from '@frontierjs/sierra/junction'
   import { page } from '@frontierjs/sierra/router'
 
@@ -94,17 +96,31 @@ title: Orders
   // Client-side, like the product filters: the point is the control, not a
   // query builder. `createdAt` is an ISO-8601 instant (Litestone stores
   // DateTime as TEXT), so it is compared as a timestamp and not as a string.
+  //
+  // **A day here is the SHOP's day.** The picker speaks the browser's calendar —
+  // a picked day arrives as the viewer's local midnight — so the day is read
+  // back out of that timestamp in the viewer's zone and then turned into the
+  // shop's window, `[startOfDay(from), startOfDay(to + 1 day))`. Comparing
+  // against the viewer's midnight instead is *Today* meaning a different eight
+  // hours per person on a console whose orders all belong to one shop, and
+  // `today - 6 × 24h` is an hour off across a clock change.
   let placedFrom = undefined
   let placedTo   = undefined
 
+  const viewerZone = Intl.DateTimeFormat().resolvedOptions().timeZone
+  const pickedDay  = (ms) => plainDateIn(ms, viewerZone)
+  const shown      = (date) => startOfDay(date, viewerZone)
+
   // A preset carrying `start`/`end` applies itself; the picker has no callback
-  // for "a preset was chosen" and does not need one.
-  const DAY   = 86_400_000
-  const TODAY = new Date().setHours(0, 0, 0, 0)
+  // for "a preset was chosen" and does not need one. Each is the shop's day,
+  // handed to the picker as that day's midnight in the viewer's calendar so the
+  // picker highlights the day the shop means.
+  const TODAY   = today()
+  const back    = (days) => shown(addToDate(TODAY, { days: -days }))
   const PRESETS = [
-    { value: 'today', text: 'Today',        start: TODAY,            end: TODAY },
-    { value: '7d',    text: 'Last 7 days',  start: TODAY - 6 * DAY,  end: TODAY },
-    { value: '30d',   text: 'Last 30 days', start: TODAY - 29 * DAY, end: TODAY },
+    { value: 'today', text: 'Today',        start: back(0),  end: back(0) },
+    { value: '7d',    text: 'Last 7 days',  start: back(6),  end: back(0) },
+    { value: '30d',   text: 'Last 30 days', start: back(29), end: back(0) },
   ]
 
   function clearPlaced() {
@@ -113,13 +129,14 @@ title: Orders
   }
 
   // `inclusiveEnd` is the picker's default, so the end date means the whole of
-  // that day — comparing against midnight would drop every order placed after
-  // it on the last day of the range.
+  // that day — the window closes at the START of the next one, which a clock
+  // change makes 23 or 25 hours after the last day began.
+  const from    = placedFrom === undefined ? -Infinity : startOfDay(pickedDay(placedFrom), calendarZone())
+  const through = placedTo   === undefined ?  Infinity : startOfDay(addToDate(pickedDay(placedTo), { days: 1 }), calendarZone())
   const visible = rows().filter(o => {
     if (placedFrom === undefined && placedTo === undefined) return true
     const at = Date.parse(o.createdAt)
-    return (placedFrom === undefined || at >= placedFrom)
-        && (placedTo   === undefined || at <= placedTo + DAY - 1)
+    return at >= from && at < through
   })
 
   // Which tone a status gets is not something the schema can answer, and the
@@ -206,9 +223,9 @@ title: Orders
 
   {#if placedFrom !== undefined || placedTo !== undefined}
     <Tag tone="info" label="Clear the placed-between filter" onremove={clearPlaced}>
-      {placedFrom !== undefined ? new Date(placedFrom).toLocaleDateString() : 'any'}
+      {placedFrom !== undefined ? day(pickedDay(placedFrom)) : 'any'}
       →
-      {placedTo !== undefined ? new Date(placedTo).toLocaleDateString() : 'any'}
+      {placedTo !== undefined ? day(pickedDay(placedTo)) : 'any'}
     </Tag>
     <span class="text-sm text-muted">{visible.length} of {rows().length}</span>
   {/if}

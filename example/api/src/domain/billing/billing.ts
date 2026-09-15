@@ -21,7 +21,7 @@
 // Everything is minor units, as `pricing.ts` is. Nothing divides by a hundred.
 
 import { roundMinor, allocate } from '@frontierjs/toolbelt/units'
-import { format }               from '@frontierjs/toolbelt/datetime'
+import { format, plainDateIn, addToDate, daysBetween } from '@frontierjs/toolbelt/datetime'
 import { createIntent, confirmOffSession } from '../../providers/psp/index.ts'
 
 /** A Litestone client of some flavor — see `pricing.ts` for why this is loose. */
@@ -37,8 +37,8 @@ export type BillingLine = {
   periodEnd?:   string | null
 }
 
-/** How long after issue an invoice is due. Days, because that is how terms are
- *  written; the deadline below is measured from the same column. */
+/** How long after issue an invoice is due, in days on the shop's calendar —
+ *  how terms are written; the deadline below is measured from the same column. */
 export const TERMS_DAYS = 7
 
 /** How long a subscription may sit unpaid before it is cancelled, measured from
@@ -52,45 +52,30 @@ export const DUNNING_DAYS = 21
  *  before anybody has had a chance to fix it. */
 export const GRACE_DAYS = 3
 
-const DAY = 24 * 60 * 60 * 1000
-
-/** Move an instant on by one billing interval.
+/** Move a period boundary on by one billing interval — a plain date in, a plain
+ *  date out, and no zone anywhere.
  *
  *  Calendar months rather than 30 days: a monthly subscription bought on the
  *  3rd is charged on the 3rd, which is what a subscriber expects and what every
  *  billing system they have used does. The 31st of January plus a month clamps
  *  to the 28th or 29th of February rather than rolling into March.
  *
- *  **Every operation here is UTC**, and that is not tidiness. The local-clock
- *  spelling (`setMonth`, `getDate`) reads the SERVER's zone, so the same
- *  subscription advances to a different instant depending on where the process
- *  is running — and moving a deployment across a zone would move every
- *  subscriber's billing date by a day, silently, once. Measured on a machine at
- *  UTC-7 while writing this: `2026-01-31T00:00:00Z` advanced to 1 March. */
-export function advancePeriod(from: Date | string, interval: 'monthly' | 'yearly'): Date {
-  const d = new Date(from)
-  const next = new Date(d)
-  if (interval === 'yearly') next.setUTCFullYear(d.getUTCFullYear() + 1)
-  else {
-    const day = d.getUTCDate()
-    next.setUTCDate(1)                    // set the month on a day every month has
-    next.setUTCMonth(d.getUTCMonth() + 1)
-    next.setUTCDate(Math.min(day, daysInMonth(next.getUTCFullYear(), next.getUTCMonth())))
-  }
-  return next
-}
-
-function daysInMonth(year: number, month: number): number {
-  return new Date(Date.UTC(year, month + 1, 0)).getUTCDate()
+ *  **A day, never an instant.** Advanced as an instant, the month is counted in
+ *  whichever zone the arithmetic ran in, and every other zone reads a different
+ *  day: a New York shop's period starting on the evening of 30 March advanced in
+ *  UTC to the evening of 29 April. On a plain date the calendar is the only
+ *  input, so there is no zone to disagree with. */
+export function advancePeriod(from: string, interval: 'monthly' | 'yearly'): string {
+  return addToDate(from, interval === 'yearly' ? { years: 1 } : { months: 1 })
 }
 
 /** The lines a full, ordinary period is made of. One today; a plan with add-ons
  *  is where the array stops being a formality. */
 export function periodLines(
-  args: { name: string, quantity: number, unitAmount: number, periodStart: string, periodEnd: string, timeZone: string },
+  args: { name: string, quantity: number, unitAmount: number, periodStart: string, periodEnd: string },
 ): BillingLine[] {
   return [{
-    description: `${args.name} — ${args.quantity} × the ${describeSpan(args.periodStart, args.periodEnd, args.timeZone)}`,
+    description: `${args.name} — ${args.quantity} × the ${describeSpan(args.periodStart, args.periodEnd)}`,
     quantity:    args.quantity,
     unitAmount:  args.unitAmount,
     amount:      args.unitAmount * args.quantity,
@@ -99,19 +84,19 @@ export function periodLines(
   }]
 }
 
-/** `1 Mar – 1 Apr`, for a line a person reads. Kept here rather than on a screen
- *  because the line text is part of the DOCUMENT — it is frozen with the row,
- *  so it cannot be re-rendered later in a different locale or a different
- *  wording and still be the same statement. */
-export function describeSpan(from: string, to: string, timeZone: string): string {
-  // In the SHOP's zone, stated by the caller. This string is frozen into the
-  // line, so the zone cannot be the server's — a deployment moved across zones
-  // would write a different document for the same period — and it cannot be the
-  // viewer's either, because every screen showing the period reads it in the
-  // shop's zone too, and a line and a header naming two different days for one
-  // period was `FJS-1149`.
-  const day = (s: string) => format(s, 'D MMM', { timeZone, locale: 'en-GB' })
-  return `${day(from)} – ${day(to)}`
+/** `1 Mar – 31 Mar`, for a line a person reads: the first day and the LAST day
+ *  of a `[from, to)` span, so the end printed is the day before `to`. A reader
+ *  takes `1 Mar – 1 Apr` to include the 1st of April, which the next period
+ *  charges for again.
+ *
+ *  Kept here rather than on a screen because the line text is part of the
+ *  DOCUMENT — it is frozen with the row, so it cannot be re-rendered later in a
+ *  different locale or a different wording and still be the same statement. */
+export function describeSpan(from: string, to: string): string {
+  // A plain date is formatted as midnight UTC in UTC, which names that day and
+  // no other; the shop's zone was already spent turning an instant into it.
+  const day = (d: string) => format(`${d}T00:00:00Z`, 'D MMM', { timeZone: 'UTC', locale: 'en-GB' })
+  return `${day(from)} – ${day(addToDate(to, { days: -1 }))}`
 }
 
 // ─── Proration ────────────────────────────────────────────────────────────
@@ -129,8 +114,11 @@ export function describeSpan(from: string, to: string, timeZone: string): string
 
 /** What a change costs, and what its lines are. */
 export type Proration = {
-  /** How much of the period is left, 0–1. Milliseconds, not days: a period is
-   *  an interval between two instants and a change happens at one. */
+  /** How much of the period is left, 0–1, in whole DAYS of the shop's
+   *  calendar. The day of the change counts as left: an upgrade on the 12th
+   *  is used on the 12th. Days rather than milliseconds because the period is
+   *  days, and a 23-hour day in March would otherwise cost less than its
+   *  neighbors on a document that prints neither. */
   fraction: number
   /** Owed back for time paid for and not used. Always positive. */
   credit:   number
@@ -160,27 +148,26 @@ export type Proration = {
 export function prorate(args: {
   periodStart: string
   periodEnd:   string
+  /** The instant of the change. Read as a day in `timeZone`, the shop's. */
   at:          string
   name:        string
   timeZone:    string
   from: { unitAmount: number, quantity: number }
   to:   { unitAmount: number, quantity: number }
 }): Proration {
-  const start = Date.parse(args.periodStart)
-  const end   = Date.parse(args.periodEnd)
-  const now   = Math.min(Math.max(Date.parse(args.at), start), end)
-  const span  = Math.max(1, end - start)
+  const today = plainDateIn(args.at, args.timeZone)
+  const rest  = today < args.periodStart ? args.periodStart : today > args.periodEnd ? args.periodEnd : today
+  const span  = Math.max(1, daysBetween(args.periodStart, args.periodEnd))
 
-  const fraction = (end - now) / span
+  const fraction = daysBetween(rest, args.periodEnd) / span
   const credit   = roundMinor(args.from.unitAmount * args.from.quantity * fraction)
   const charge   = roundMinor(args.to.unitAmount   * args.to.quantity   * fraction)
   const net      = charge - credit
 
-  const rest  = new Date(now).toISOString()
   const lines: BillingLine[] = []
 
   if (credit > 0) lines.push({
-    description: `Unused ${describeSpan(rest, args.periodEnd, args.timeZone)} — credit`,
+    description: `Unused ${describeSpan(rest, args.periodEnd)} — credit`,
     quantity:    args.from.quantity,
     unitAmount:  -args.from.unitAmount,
     amount:      -credit,
@@ -193,7 +180,7 @@ export function prorate(args: {
     // every seat costs the same to within the one unit the remainder moves.
     const parts = allocate(charge, Array.from({ length: args.to.quantity }, () => 1))
     for (const [i, amount] of parts.entries()) lines.push({
-      description: `${args.name} — seat ${i + 1}, ${describeSpan(rest, args.periodEnd, args.timeZone)}`,
+      description: `${args.name} — seat ${i + 1}, ${describeSpan(rest, args.periodEnd)}`,
       quantity:    1,
       unitAmount:  amount,
       amount,
@@ -244,6 +231,8 @@ export async function issueInvoice(
     periodStart:    string
     periodEnd:      string
     issuedAt?:      string
+    /** The shop's calendar, which the terms are counted in. */
+    timeZone:       string
   },
 ): Promise<{ id: number, number: string, subtotal: number, tax: number, total: number }> {
   if (!args.lines.length)
@@ -262,7 +251,7 @@ export async function issueInvoice(
   const tax  = roundMinor(Math.max(0, subtotal) * (rate?.rate ?? 0))
 
   const issuedAt = args.issuedAt ?? new Date().toISOString()
-  const dueAt    = new Date(new Date(issuedAt).getTime() + TERMS_DAYS * DAY).toISOString()
+  const dueOn    = addToDate(plainDateIn(issuedAt, args.timeZone), { days: TERMS_DAYS })
 
   // One transaction. A header without its lines is an invoice that says it
   // charged for nothing, and a frozen subtotal means it can never be corrected —
@@ -276,7 +265,7 @@ export async function issueInvoice(
       subtotal, tax, total: subtotal + tax,
       periodStart:    args.periodStart,
       periodEnd:      args.periodEnd,
-      issuedAt, dueAt,
+      issuedAt, dueOn,
     } })
 
     await tx.invoiceLine.createMany({ data: args.lines.map(l => ({
@@ -371,7 +360,7 @@ export async function changePlan(
   const reanchor = fromPlan.interval !== plan.interval
   if (reanchor && plan.interval === 'monthly')
     throw Object.assign(new Error(
-      `${sub.reference} is paid for the year to ${describeSpan(sub.currentPeriodStart, sub.currentPeriodEnd, timeZone)} — ` +
+      `${sub.reference} is paid for the year ${describeSpan(sub.currentPeriodStart, sub.currentPeriodEnd)} — ` +
       `a move to a monthly plan takes effect at renewal`), { status: 409 })
 
   let periodStart = sub.currentPeriodStart
@@ -387,10 +376,10 @@ export async function changePlan(
       from: { unitAmount: from.price, quantity: sub.quantity },
       to:   { unitAmount: 0,          quantity },
     })
-    periodStart = at
-    periodEnd   = advancePeriod(at, plan.interval).toISOString()
+    periodStart = plainDateIn(at, timeZone)
+    periodEnd   = advancePeriod(periodStart, plan.interval)
     const lines = [...credit.lines, ...periodLines({
-      name: plan.name, quantity, unitAmount: to.price, periodStart, periodEnd, timeZone,
+      name: plan.name, quantity, unitAmount: to.price, periodStart, periodEnd,
     })]
     p = { lines, net: lines.reduce((n, l) => n + l.amount, 0) }
   } else {
@@ -412,9 +401,10 @@ export async function changePlan(
       subscriptionId: sub.id,
       userId:         sub.userId,
       issuedAt:       at,
-      periodStart:    at,
+      periodStart:    plainDateIn(at, timeZone),
       periodEnd,
       lines:          p.lines,
+      timeZone,
     })
     result = { kind: 'invoice', number: invoice.number, net: p.net }
   } else {
@@ -429,7 +419,7 @@ export async function changePlan(
       number:    `CN-${3000 + (await sys.creditNote.count()) + 1}`,
       invoiceId: last.id,
       amount:    -p.net,
-      reason:    `Downgrade on ${describeSpan(at, periodEnd, timeZone)} — unused time credited`,
+      reason:    `Downgrade for ${describeSpan(plainDateIn(at, timeZone), periodEnd)} — unused time credited`,
       issuedAt:  at,
       userId:    sub.userId,
     } })
@@ -601,13 +591,15 @@ export async function nextInvoiceNumber(sys: Client, prefix = 'INV'): Promise<st
   return `${prefix}-${3000 + (last?.id ?? 0) + 1}`
 }
 
-/** Which subscriptions are due to be charged at `at`.
+/** Which subscriptions are due to be charged on `today`, the shop's day.
  *
- *  A trial that has ended counts: the whole of *the trial converts* is that the
- *  period ran out and the next one is charged for. */
-export async function dueForRenewal(sys: Client, at: string): Promise<any[]> {
+ *  A period is `[start, end)`, so it is over on the day it ends — `lte`, and a
+ *  plain date compares as its text. A trial that has ended counts: the whole of
+ *  *the trial converts* is that the period ran out and the next one is charged
+ *  for. */
+export async function dueForRenewal(sys: Client, today: string): Promise<any[]> {
   return await sys.subscription.findMany({
-    where:   { status: { in: ['trialing', 'active', 'pastDue'] }, currentPeriodEnd: { lte: at } },
+    where:   { status: { in: ['trialing', 'active', 'pastDue'] }, currentPeriodEnd: { lte: today } },
     orderBy: { id: 'asc' },
   })
 }
@@ -617,6 +609,6 @@ export async function dueForRenewal(sys: Client, at: string): Promise<any[]> {
 export async function unpaidInvoices(sys: Client, subscriptionId: number): Promise<any[]> {
   return await sys.invoice.findMany({
     where:   { subscriptionId, status: 'issued' },
-    orderBy: { dueAt: 'asc' },
+    orderBy: { dueOn: 'asc' },
   })
 }

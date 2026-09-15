@@ -97,8 +97,8 @@ export class CodeWorkerPool {
     })
   }
 
-  drain(): Promise<void[]> {
-    return Promise.all(this.pool.map(pw => pw.worker.terminate()))
+  async drain(): Promise<void> {
+    await Promise.all(this.pool.map(pw => pw.worker.terminate()))
   }
 
   private spawn(): PoolWorker {

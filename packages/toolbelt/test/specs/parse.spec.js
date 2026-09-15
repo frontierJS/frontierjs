@@ -1,0 +1,143 @@
+/*
+ * parse.spec.js
+ *
+ * `parseExpression` — the `.lite` expression grammar, walked over a cursor.
+ *
+ * What is graded here is the CONTRACT a caller relies on: the grammar reads
+ * tokens through the six cursor methods and nothing else, builds the AST
+ * `evaluate` answers, and throws whatever the caller's `fail` returns with the
+ * token it failed at. Litestone is the real caller and every schema in its suite
+ * parses through this function, so the policy rows below are hand-built tokens —
+ * the shape litestone hands in. The flow rows tokenize their own text, because
+ * that is how orion arrives (`FJS-D287`).
+ */
+
+import { parseExpression, parseFlowExpression, tokenize, TOKEN, OPERATORS, evaluate, ParseError } from '../../src/predicate/predicate.js'
+
+const T = TOKEN
+const tok = (type, value = null) => ({ type, value, line: 1, col: 0 })
+
+// The smallest cursor the grammar can walk — the shape litestone's parser has.
+function cursor(tokens) {
+  const all = [...tokens, tok('EOF')].map((t, i) => ({ ...t, col: i + 1 }))
+  let pos = 0
+  const p = {
+    peek:     (n = 0) => all[pos + n],
+    advance:  () => all[pos++],
+    check:    (type) => all[pos].type === type,
+    eat(type) {
+      if (all[pos].type !== type) throw p.fail(`Expected ${type}, got '${all[pos].value}'`, all[pos])
+      return all[pos++]
+    },
+    maybeEat: (type) => (all[pos].type === type ? all[pos++] : undefined),
+    fail:     (msg, at) => Object.assign(new Error(msg), { at }),
+    rest:     () => all.slice(pos),
+  }
+  return p
+}
+
+test('parse: a comparison between a column and a literal', function () {
+  const ast = parseExpression(cursor([tok(T.IDENT, 'status'), tok(T.EQ, '=='), tok(T.STRING, 'paid')]))
+  assert.equal(JSON.stringify(ast), JSON.stringify({
+    type: 'compare', op: '==', left: { type: 'field', name: 'status' }, right: { type: 'literal', value: 'paid' },
+  }))
+})
+
+test('parse: && binds tighter than ||, and the ternary looser than both', function () {
+  // a || b && c ? 1 : 2
+  const ast = parseExpression(cursor([
+    tok(T.IDENT, 'a'), tok(T.OR, '||'), tok(T.IDENT, 'b'), tok(T.AND, '&&'), tok(T.IDENT, 'c'),
+    tok(T.QUESTION, '?'), tok(T.NUMBER, 1), tok(T.COLON, ':'), tok(T.NUMBER, 2),
+  ]))
+  assert.equal(ast.type, 'ternary')
+  assert.equal(ast.cond.type, 'or')
+  assert.equal(ast.cond.right.type, 'and')
+})
+
+test('parse: what it builds is what evaluate answers', function () {
+  // qty > 3 && status in ['paid', 'shipped']
+  const ast = parseExpression(cursor([
+    tok(T.IDENT, 'qty'), tok(T.GT, '>'), tok(T.NUMBER, 3), tok(T.AND, '&&'),
+    tok(T.IDENT, 'status'), tok(T.IDENT, 'in'), tok(T.LBRACKET, '['),
+    tok(T.STRING, 'paid'), tok(T.COMMA, ','), tok(T.STRING, 'shipped'), tok(T.RBRACKET, ']'),
+  ]))
+  assert.equal(evaluate(ast, { record: { qty: 5, status: 'shipped' } }), true)
+  assert.equal(evaluate(ast, { record: { qty: 5, status: 'draft' } }), false)
+})
+
+test('parse: stops at the first token that is not part of the expression', function () {
+  const p = cursor([tok(T.IDENT, 'a'), tok(T.EQ, '=='), tok(T.NUMBER, 1), tok(T.RPAREN, ')')])
+  parseExpression(p)
+  assert.equal(p.peek().type, T.RPAREN)
+})
+
+test('parse: a refusal is the caller\'s error, at the token it failed on', function () {
+  const p = cursor([tok(T.IDENT, 'order'), tok(T.DOT, '.'), tok(T.IDENT, 'user'), tok(T.DOT, '.'), tok(T.IDENT, 'id')])
+  let threw = null
+  try { parseExpression(p) } catch (e) { threw = e }
+  assert.ok(threw, 'expected a refusal')
+  assert.match(threw.message, /crosses two relations/)
+  assert.equal(threw.at.col, 4)
+})
+
+test('parse: a word where an operator belongs names the operators', function () {
+  assert.throws(
+    () => parseExpression(cursor([tok(T.IDENT, 'status'), tok(T.IDENT, 'like'), tok(T.STRING, 'a%')])),
+    new RegExp(`'like' is not a policy operator. Available: ${OPERATORS.join(', ')}`),
+  )
+})
+
+// ── the flow dialect ─────────────────────────────────────────────────────────
+//
+// Same grammar, same tokens, and the lexer is now in this kit too — so a spec
+// can write the text a flow author writes.
+
+function flow(src) {
+  const all = tokenize(src)
+  let pos = 0
+  const p = {
+    peek:     (n = 0) => all[pos + n],
+    advance:  () => all[pos++],
+    check:    (t) => all[pos].type === t,
+    eat(t) { if (all[pos].type !== t) throw p.fail(`Expected ${t}, got '${all[pos].value}'`, all[pos]); return all[pos++] },
+    maybeEat: (t) => (all[pos].type === t ? all[pos++] : undefined),
+    fail:     (m, at) => new ParseError(m, at),
+  }
+  return parseFlowExpression(p)
+}
+
+test('parse: a flow reads the run with $ at any depth', function () {
+  assert.equal(JSON.stringify(flow('$.trigger.body.email')), JSON.stringify({ type: 'ref', path: '$.trigger.body.email' }))
+  assert.equal(JSON.stringify(flow('$')), JSON.stringify({ type: 'ref', path: '$' }))
+})
+
+test('parse: a flow call, and a lambda binding a name over its body', function () {
+  const ast = flow('map($.items, i => upper(i.name))')
+  assert.equal(ast.type, 'call')
+  assert.equal(ast.name, 'map')
+  assert.equal(ast.args[1].type, 'lambda')
+  assert.equal(JSON.stringify(ast.args[1].params), '["i"]')
+  assert.equal(ast.args[1].body.args[0].path, '$.i.name')
+})
+
+test('parse: reduce binds two names', function () {
+  const ast = flow('reduce($.items, 0, (acc, i) => add(acc, i.price))')
+  assert.equal(JSON.stringify(ast.args[2].params), '["acc","i"]')
+})
+
+test('parse: a bare name is refused in a flow, and a column is not', function () {
+  assert.throws(() => flow("status == 'paid'"), /'status' is not defined here/)
+  // The same text in the policy dialect is a column, which is the whole reason
+  // the dialect exists rather than a second grammar.
+  const policy = parseExpression(cursor([tok(TOKEN.IDENT, 'status'), tok(TOKEN.EQ, '=='), tok(TOKEN.STRING, 'paid')]))
+  assert.equal(policy.left.type, 'field')
+})
+
+test("parse: a policy's own words are refused in a flow", function () {
+  assert.throws(() => flow('auth().id == 1'), /belongs to a policy/)
+  assert.throws(() => flow("check(owner, 'read')"), /belongs to a policy/)
+})
+
+test('parse: a lambda parameter is out of scope outside its body', function () {
+  assert.throws(() => flow('add(i, map($.items, i => i))'), /'i' is not defined here/)
+})

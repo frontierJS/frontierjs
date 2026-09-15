@@ -1,9 +1,9 @@
-import { describe, test, expect, beforeEach } from "vitest"
-import { PluginRegistry, PluginRegistrationError } from "./index"
-import type { PluginManifest }  from "./types"
-import type { INodeImplementation } from "../executor"
-import { BUILTIN_DESCRIPTORS }  from "./builtins"
-import { Compiler } from "../compiler"
+import { describe, test, expect, beforeEach } from "bun:test"
+import { PluginRegistry, PluginRegistrationError } from "../../../src/engine/plugins/index"
+import type { PluginManifest }  from "../../../src/engine/plugins/types"
+import type { INodeImplementation } from "../../../src/engine/executor"
+import { BUILTIN_DESCRIPTORS }  from "../../../src/engine/plugins/builtins"
+import { Compiler } from "../../../src/engine/compiler"
 
 // ─────────────────────────────────────────────
 // HELPERS
@@ -359,7 +359,7 @@ describe("PluginRegistry — compiler integration", () => {
         t: { id: "t", type: "trigger.webhook", config: {} },
         x: { id: "x", type: "not.a.real.type", config: {} },
       },
-      edges: [{ id: "e1", source: "t", target: "x" }],
+      edges: [{ id: "e1", from: "t", to: "x" }],
     })
 
     expect(result.ok).toBe(false)

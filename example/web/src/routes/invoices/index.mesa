@@ -23,8 +23,8 @@ title: Invoices
   //
   // This app's, and unable to be anything else:
   //
-  //   overdue   `dueAt` against the clock. Not a status and must not be — it
-  //             is true from one moment onward with nothing writing a row, so
+  //   overdue   `dueOn` against the shop's today. Not a status and must not be
+  //             — it is true from one day onward with nothing writing a row, so
   //             a column for it would be a value that goes stale while nobody
   //             is looking.
   //   the tone  whether `void` is bad news. No attribute decides that
@@ -37,6 +37,7 @@ title: Invoices
   import { invoices } from '@/resources/Invoice.mesa'
   import { session } from '@/session.js'
   import { prefs } from '@/prefs.js'
+  import { today } from '@/datetime.js'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
@@ -79,9 +80,9 @@ title: Invoices
   // no column marked.
   const list = invoices.list()
 
-  // Overdue is not a status. It is `dueAt` against the clock, so it is true
-  // from one moment onward with nothing writing a row.
-  const overdue = (inv) => inv.status === 'issued' && new Date(inv.dueAt) < new Date()
+  // Overdue is not a status. It is `dueOn` against the shop's calendar, so it
+  // is true from the day after with nothing writing a row.
+  const overdue = (inv) => inv.status === 'issued' && inv.dueOn < today()
 </script>
 
 <SectionHeader title="Invoices" level={1}>
@@ -147,9 +148,9 @@ title: Invoices
 {/if}
 
 <Alert tone="muted">
-  <strong>overdue</strong> is not a status. It is <code>dueAt</code> against the
-  clock — true from one moment onward with nothing writing a row — which is also
-  the only thing dunning counts: <em>how long has this been unpaid</em> is
-  <code>now − dueAt</code> on the oldest unpaid invoice, so no counter is kept
-  anywhere and no counter can disagree with the rows.
+  <strong>overdue</strong> is not a status. It is <code>dueOn</code> against the
+  shop's calendar — true from the day after with nothing writing a row — which is
+  also the only thing dunning counts: <em>how long has this been unpaid</em> is
+  the days from <code>dueOn</code> to today on the oldest unpaid invoice, so no
+  counter is kept anywhere and no counter can disagree with the rows.
 </Alert>

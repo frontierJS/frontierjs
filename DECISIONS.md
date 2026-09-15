@@ -27,6 +27,24 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d286"></a>2026-09-14 · `FJS-D286` — Map, filter and reduce in a flow expression take arrow lambdas as call arguments: `map($.items, i => mul(i.price, i.qty))`.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (JSON only in the first version).
+
+The paper's recommendation, taken as written: the binding name is explicit and the shape is familiar; the cost is `=>` in the lexer. Neither grammar has arithmetic operators, so a product is `mul(a, b)` from the function table.
+
+### <a id="fjs-d285"></a>2026-09-14 · `FJS-D285` — A flow expression chains functions by nesting calls, with no pipe in the first version: `lower(trim($.trigger.body.email))`.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (a pipe written `|`), **C** (a pipe written `|>`).
+
+The paper's recommendation, taken as written: one form added to the grammar, and a pipe can be added later without breaking anything already written.
+
+### <a id="fjs-d284"></a>2026-09-14 · `FJS-D284` — A flow expression names a run value with `$.path`, at any depth — `$.trigger.body.email`, `$.fetchLead.data.owner.id`.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (bare names at any depth: `trigger.body.email`).
+
+The paper's recommendation, taken as written: the `$` marks run context, so a bare name keeps meaning a model column under the one-hop rule, and `a.b.c` does not mean a deep path in one place and a refused second hop in the other.
+
 ### <a id="fjs-d266"></a>2026-09-12 · `FJS-D266` — `.lite` and `.mesa` stay LANGUAGES. Neither is replaced by a TypeScript SDK or a compiler over TSX, and the alpha is locked on both.
 
 [`IDEAS/kernel-and-projections.md`](IDEAS/kernel-and-projections.md) left two open
@@ -2418,6 +2436,64 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d288"></a>2026-09-14 · `FJS-D288` — A day an app BILLS on is a plain date in a `String @date` column, and a zone is spent only where an instant and a day have to cross. The kit grows four plain-date functions; `DateTime @zoned` stays unbuilt until a second app wants it.
+
+`FJS-D143` ruled that a column declares what KIND of time it holds, and left the
+spelling of a plain date open. It needs none: **`.lite` already has one.**
+`String @date` validates `YYYY-MM-DD`, emits `format: 'date'`, gets an
+`<input type="date">` from sierra's control table and orders correctly as text —
+and a plain date is not an instant, so putting one in a `DateTime` column would
+be the `timestamptz` mistake `FJS-D143` kept the name to avoid. What is still
+owed there is the ZONED kind, which none of the work below needed, so it stays
+unbuilt; D143's *revisit belongs with a second app* stands.
+
+**A billing period, a due date and a change's slice are DAYS.** `example`'s
+periods were instants, and every reading of them was a bet on the zone the
+arithmetic ran in. Measured for a New York shop: `advancePeriod` on the evening
+of 30 March answered 29 April, on 30 January answered 27 February, and across a
+clock change moved the hour as well. On a plain date the calendar is the only
+input, so there is nothing to disagree with.
+
+**Proration counts whole days, not milliseconds.** Every instant of a day is the
+same slice, which is what the document prints and what a person checking it
+computes; by milliseconds, an evening upgrade was cheaper than a morning one and
+a 23-hour March day cheaper than its neighbors, on a receipt that shows neither.
+
+**A period ends at the shop's midnight** — `[start, end)` — so *due* is
+`currentPeriodEnd <= today` in the shop's calendar, and the text a person reads
+names the LAST day it covers, never `end` itself, which the next period charges
+for.
+
+**The zone is spent at exactly two crossings**, and nowhere else: turning an
+instant into a day (`plainDateIn` — when a change happened, which day an invoice
+was issued on) and turning a day into an instant (`startOfDay` — the window a
+screen filters instants with). Between them there is no zone, which is why the
+line text on an invoice now needs none at all.
+
+**The kit takes four functions, named for Temporal's operations** (`FJS-D268`):
+`plainDateIn`, `addToDate` (`overflow: 'constrain'`), `daysBetween`,
+`startOfDay`, plus `today()` on an instance, since the kit reads no clock. They
+are graded against the polyfill: 224 addition rows, 196 spans and 789 day starts
+across twelve zones, each with a negative control — `setUTCMonth` rolls 31
+January into March, and midnight minus the day's offset misses a day that starts
+at 01:00 (Santiago).
+
+**Payroll is not converted.** Its effective-dated rates and pay windows are the
+same shape and a second pass; the row that covers them is `FJS-1152`.
+
+The nine questions, answered before the edits: one origin (the seed says which
+columns are days, and the kit is the only arithmetic); no new concept (a plain
+date is the distinction D143 already ruled); the complexity is the problem's —
+calendars are not a uniform scale; predictability rises, since a period reads the
+same in every zone; derived rather than restated (`@date` exists, and the display
+rule has one owner per surface); one owner (`billing.ts` for the document,
+`web/src/datetime.js` for the screens); the boundary is declared in `.lite` and
+enforced by the validator; the failure mode is proportional — a wrong day on a
+document, which is why the drives assert the text; and it CAN be wrong silently,
+which is what `renew.periodIsPlainDates`, `span.namesTheDaysItCovers` and
+`slice.theShopsDayDecidesIt` exist to catch. No § IV adjudication is in tension.
+Tier: Register, and `FJS-D143` is the guiding record it serves.
 
 ### <a id="fjs-d271"></a>2026-09-14 · `FJS-D271` — Orion and `.lite` policies share one expression syntax and parser in toolbelt. An edge condition is evaluated by `predicate`'s three-valued rules; `map`, `pipe` and the functions stay orion's, parsed from the same syntax.
 
@@ -11423,6 +11499,12 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d287"></a>2026-09-14 · `FJS-D287` — Litestone's tokenizer moves into `toolbelt/predicate`, and litestone and orion both import it.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (an expression-only lexer in toolbelt, held to litestone's by a conformance test).
+
+The paper's recommendation, taken as written: one lexer means a string, a number or an operator cannot lex two ways; the tokens only orion's syntax uses exist in a schema file too, and no schema grammar accepts them.
 
 ### <a id="fjs-d268"></a>2026-09-14 · `FJS-D268` — `/datetime` is Temporal's words over plain values, not a reduced Temporal. The zone table is the host's, and a clock the APP hands in keeps the substrate pure.
 

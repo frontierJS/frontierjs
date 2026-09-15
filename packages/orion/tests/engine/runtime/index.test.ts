@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from "vitest"
+import { describe, test, expect, beforeEach } from "bun:test"
 import {
   InMemoryQueue,
   InMemoryExecutionStore,
@@ -10,19 +10,19 @@ import {
   type ExecutionRecord,
   type IExecutionStore,
   type SchedulerEvent,
-} from "./index"
-import type { NodeExecutionState } from "./context"
+} from "../../../src/engine/runtime/index"
+import type { NodeExecutionState } from "../../../src/engine/runtime/context"
 import type {
   ExecutionPlan,
   ExecutionStage,
   NodeDefinition,
   Edge,
-} from "../types"
+} from "../../../src/engine/types"
 import type {
   INodeRegistry,
   INodeImplementation,
   NodeContext,
-} from "../executor"
+} from "../../../src/engine/executor"
 
 // ─────────────────────────────────────────────
 // TEST HELPERS
@@ -47,7 +47,7 @@ function makePlan(overrides: {
     edges: Object.fromEntries(nodeIds.map(id => [id, edges.filter(e => e.from === id)])),
   }]
 
-  const routing: Record<string, import("../types").ExecutionEdge[]> = {}
+  const routing: Record<string, import("../../../src/engine/types").ExecutionEdge[]> = {}
   for (const edge of edges) {
     if (!routing[edge.from]) routing[edge.from] = []
     routing[edge.from]!.push({ edge, sourceStage: 0, targetStage: 1 })

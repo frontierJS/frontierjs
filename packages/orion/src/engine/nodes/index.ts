@@ -1,7 +1,5 @@
 import type { INodeImplementation, NodeContext } from "../executor"
-import type { KVStore }            from "../store/kv"
-import type { WaitRegistry }       from "../store/wait"
-import type { AIProviderRegistry } from "./providers"
+import type { IKeyValueStore, IWaitRegistry, IAIProviderRegistry } from "../ports"
 import { CodeWorkerPool }          from "./code-worker-pool"
 
 // ─────────────────────────────────────────────
@@ -11,9 +9,9 @@ import { CodeWorkerPool }          from "./code-worker-pool"
 // ─────────────────────────────────────────────
 
 export interface NodeDeps {
-  kv:          KVStore
-  waitReg:     WaitRegistry
-  aiProviders: AIProviderRegistry
+  kv:          IKeyValueStore
+  waitReg:     IWaitRegistry
+  aiProviders: IAIProviderRegistry
   workspaceId: string   // resolved from server config / auth context
   codePool?:   CodeWorkerPool
 }
@@ -193,7 +191,7 @@ const flowEach: INodeImplementation = {
 }
 
 // flow.wait — suspends execution until an external resume
-function makeFlowWait(waitReg: WaitRegistry): INodeImplementation {
+function makeFlowWait(waitReg: IWaitRegistry): INodeImplementation {
   return {
     type: "flow.wait",
     async execute(ctx: NodeContext) {
@@ -328,7 +326,7 @@ const httpRespond: INodeImplementation = {
 // AI NODE
 // ─────────────────────────────────────────────
 
-function makeAiNode(providerRegistry: AIProviderRegistry): INodeImplementation {
+function makeAiNode(providerRegistry: IAIProviderRegistry): INodeImplementation {
   return {
     type: "ai",
     async execute(ctx: NodeContext) {
@@ -392,7 +390,7 @@ function makeAiNode(providerRegistry: AIProviderRegistry): INodeImplementation {
 // STORE NODE
 // ─────────────────────────────────────────────
 
-function makeStoreNode(kv: KVStore, workspaceId: string): INodeImplementation {
+function makeStoreNode(kv: IKeyValueStore, workspaceId: string): INodeImplementation {
   return {
     type: "store",
     async execute(ctx: NodeContext) {

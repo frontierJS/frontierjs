@@ -276,7 +276,11 @@ deferral is lifted (`FJS-D275`).
 **1 — Lift the kernel, and share the syntax.** Extract the `.lite` expression
 grammar from litestone's parser into a toolbelt kit that litestone then imports,
 with litestone's own suite and the policy oracle unchanged as the proof; orion's
-text syntax is parsed by the same kit (`FJS-D271`). Move the modules marked *keep* into `src/engine/`,
+text syntax is parsed by the same kit (`FJS-D271`). *Done 2026-09-14*: the
+grammar and then the lexer moved into `@frontierjs/toolbelt/predicate`
+(`FJS-D287`), every schema's AST byte-identical across both; the kit's second
+dialect is the flow one, and orion's `compileExpression` turns its text into the
+engine's nodes with conditions answered three-valued. Move the modules marked *keep* into `src/engine/`,
 unchanged. The tests move with them onto the package's runner, and `sql.js`
 goes. Add the enforcer for the engine rule: a test that fails when anything under
 `src/engine/` imports a framework package. *Done when* every carried test passes
@@ -432,3 +436,29 @@ and cannot express is filed against the framework, per the README.
   - **B** — the kill switch and the dry run only.
   - **Recommend A** — the README calls these day-one features rather than
     hardening, and each one bounds a different way a flow edit goes wrong.
+- ~~**14 — How does a flow expression name a value from the run?**~~ **Answered 2026-09-14 (`FJS-D284`): A — `$.path`, at any depth: `$.trigger.body.email`, `$.fetchLead.data.owner.id`.**
+  - **A** — `$.path`, at any depth: `$.trigger.body.email`, `$.fetchLead.data.owner.id`.
+  - **B** — bare names at any depth: `trigger.body.email`.
+  - **Recommend A** — the `$` marks run context, so a bare name keeps meaning a
+    model column under the one-hop rule, and `a.b.c` does not mean a deep path in
+    one place and a refused second hop in the other.
+- ~~**15 — How are functions chained in text?**~~ **Answered 2026-09-14 (`FJS-D285`): A — calls only in the first version: `lower(trim($.trigger.body.email))`.**
+  - **A** — calls only in the first version: `lower(trim($.trigger.body.email))`.
+  - **B** — a pipe written `|`.
+  - **C** — a pipe written `|>`.
+  - **Recommend A** — one form added to the grammar, and a pipe can be added
+    later without breaking anything already written.
+- ~~**16 — How are map, filter and reduce written in text?**~~ **Answered 2026-09-14 (`FJS-D286`): A — arrow lambdas as call arguments: `map($.items, i => mul(i.price, i.qty))`.**
+  - **A** — arrow lambdas as call arguments: `map($.items, i => mul(i.price, i.qty))`.
+  - **B** — JSON only in the first version.
+  - **Recommend A** — the binding name is explicit and the shape is familiar;
+    the cost is `=>` in the lexer. Neither grammar has arithmetic operators, so a
+    product is `mul(a, b)` from the function table.
+- ~~**17 — Where does the lexer live?**~~ **Answered 2026-09-14 (`FJS-D287`): A — litestone's tokenizer moves into `toolbelt/predicate`, and litestone and orion both import it.**
+  - **A** — litestone's tokenizer moves into `toolbelt/predicate`, and litestone
+    and orion both import it.
+  - **B** — an expression-only lexer in toolbelt, held to litestone's by a
+    conformance test.
+  - **Recommend A** — one lexer means a string, a number or an operator cannot
+    lex two ways; the tokens only orion's syntax uses exist in a schema file too,
+    and no schema grammar accepts them.

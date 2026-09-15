@@ -35,6 +35,6 @@
   // reaches `list()` alone; a picker over invoices is not a ledger.
   export const invoices = createResource('invoices', {
     listQuery: { directives: { orderBy: '-issuedAt' } },
-    columns:   { only: ['number', 'status', 'customerId', 'total', 'issuedAt', 'dueAt'] },
+    columns:   { only: ['number', 'status', 'customerId', 'total', 'issuedAt', 'dueOn'] },
   })
 </script>

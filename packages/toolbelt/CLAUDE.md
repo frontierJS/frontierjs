@@ -80,7 +80,14 @@ src/redact/          *is this key a credential* — the question
                      and conduit's URL userinfo all asked it, and a list each
                      would have drifted. It owns the WALK too, so
                      `redactProtected` is a predicate rather than a second walker
-src/predicate/       does this record satisfy a declared `.lite` expression —
+src/predicate/       the `.lite` expression language, whole. `tokenize.js` is the
+                     LEXER — litestone's, moved, so a schema and a flow
+                     expression cannot lex two ways (`FJS-D287`). `parse.js` is
+                     the GRAMMAR, in two dialects over a cursor the caller
+                     supplies: a policy's, over one record, and a flow's, which
+                     adds `$.a.b`, calls and lambdas and refuses a bare name
+                     (`FJS-D271`, `FJS-D284`-`FJS-D286`). The rest:
+                     does this record satisfy a declared expression —
                      litestone's own `evalJs`, MOVED rather than copied, because
                      a `@required(where: …)` condition is answered against the
                      record on screen as somebody types and neither sierra nor
@@ -109,6 +116,10 @@ src/datetime/        an instant read as a place's wall clock, and written back �
                      partsIn, resolveWall/fromWall (0, 1 or 2 instants),
                      format's token language, relative, and createDatetime,
                      which binds locale, zone and an app-supplied clock.
+                     Plus the PLAIN DATE half — plainDateIn, addToDate,
+                     daysBetween, startOfDay — a day in no zone, which is what
+                     a billing period is (`FJS-D288`): the zone is spent at the
+                     two crossings and the calendar arithmetic has none.
                      Temporal's words over plain values, not its classes
                      (`FJS-D268`). Ships a `.d.ts` — caravan reads zone parts
 test/run.js          the harness
@@ -151,6 +162,14 @@ license.
   `CURRENT_TIMESTAMP` shape is one.** `Date.parse` would read it in the host
   zone. Litestone writes `…Z`, so a refusal means the value came from somewhere
   else.
+- **`addToDate`'s clamp does not remember the day it came from.** Temporal's
+  `constrain` is stateless, so `'2026-01-31'` plus a month twice is 28 February
+  and then 28 March. A recurring date is computed from its ANCHOR each time, or
+  a subscription sold on the 31st walks backwards through the year.
+- **A day is not 24 hours, and `startOfDay` is not always midnight.** Santiago
+  moves its clocks at midnight, so that day begins at 01:00 — the oracle carries
+  it, and the negative control (midnight minus the day's offset) fails on it.
+  A day's window is `[startOfDay(d), startOfDay(d + 1 day))`.
 - **`relative` is ELAPSED time.** 30 hours ago is `1 day ago` even across two
   midnights, and a month is an average month. A calendar answer (*yesterday*)
   needs a zone and is a different function.

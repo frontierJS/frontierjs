@@ -1,4 +1,5 @@
-import type { Expression } from "../types"
+import type { Expression, PipeStep, PredicateNode } from "../types"
+import { answerPredicate } from "./text"
 
 // ─────────────────────────────────────────────
 // RESOLUTION CONTEXT
@@ -20,7 +21,7 @@ export interface ResolutionContext {
 export class ResolutionError extends Error {
   constructor(
     message: string,
-    public readonly expression: Expression,
+    public readonly expression: Expression | PipeStep,
     public readonly path?: string,
   ) {
     super(message)
@@ -121,7 +122,7 @@ const BUILTINS: Record<string, BuiltinFn> = {
   isObject: (a) => typeof a === "object" && a !== null && !Array.isArray(a),
 
   // Coerce
-  toString: (a) => String(a),
+  toString: (a: unknown) => String(a),
   toNumber: (a) => Number(a),
   toBool:   (a) => Boolean(a),
   toJson:   (a) => JSON.stringify(a),
@@ -249,6 +250,12 @@ export class ExpressionResolver {
         return fn(...args)
       }
 
+      // A condition — the predicate kit answers it, three-valued, once this
+      // fills the holes (`FJS-D271`). `null` is unknown and is falsy where a
+      // caller branches on it.
+      case "predicate":
+        return answerPredicate(expr.ast, (inner) => this.resolve(inner, ctx))
+
       // Conditional — if → then | else
       case "cond": {
         const condition = this.resolve(expr.if, ctx)
@@ -270,16 +277,13 @@ export class ExpressionResolver {
       case "pipe": {
         if (expr.steps.length === 0) return undefined
 
-        let current: unknown = undefined
+        // First step — resolve normally against the flow context
+        const [first, ...rest] = expr.steps
+        let current: unknown = this.resolve(first, ctx)
 
-        for (const [i, step] of expr.steps.entries()) {
-          if (i === 0) {
-            // First step — resolve normally against the flow context
-            current = this.resolve(step, ctx)
-          } else {
-            const pipeCtx = this.withPipeValue(current, ctx)
-            current = this.resolvePipeStep(step, current, pipeCtx)
-          }
+        for (const step of rest) {
+          const pipeCtx = this.withPipeValue(current, ctx)
+          current = this.resolvePipeStep(step, current, pipeCtx)
         }
 
         return current
@@ -382,7 +386,7 @@ export class ExpressionResolver {
   //   - fn with no args → current value injected as first arg
   //   - fn with args    → args resolved normally (current value in ctx as "$")
   //   - map/filter/reduce with no "over" → current value used as the array
-  private resolvePipeStep(step: Expression, current: unknown, pipeCtx: ResolutionContext): unknown {
+  private resolvePipeStep(step: PipeStep, current: unknown, pipeCtx: ResolutionContext): unknown {
     switch (step.type) {
 
       // fn with no explicit args — pass current as implicit first arg

@@ -29,7 +29,7 @@ title: Invoice
   import { invoices } from '@/resources/Invoice.mesa'
   import { subscriptions } from '@/resources/Subscription.mesa'
   import { session } from '@/session.js'
-  import { day } from '@/datetime.js'
+  import { day, span, today } from '@/datetime.js'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../money.js'
 
@@ -100,7 +100,7 @@ title: Invoice
   }
 
   $: credited = (invoice?.creditNotes ?? []).reduce((n, c) => n + c.amount, 0)
-  $: overdue  = invoice?.status === 'issued' && new Date(invoice.dueAt) < new Date()
+  $: overdue  = invoice?.status === 'issued' && invoice.dueOn < today()
 </script>
 
 <Breadcrumbs items={[
@@ -147,19 +147,19 @@ title: Invoice
               tone={invoice.status === 'void' ? 'muted' : invoice.status === 'paid' ? 'success' : ''} />
     <StatCard label="Total"  value={money(invoice.total)} id="id-total" />
     <StatCard label="Issued" value={day(invoice.issuedAt)} />
-    <StatCard label="Due"    value={day(invoice.dueAt)} id="id-due" />
+    <StatCard label="Due"    value={day(invoice.dueOn)} id="id-due" />
     {#if invoice.paidAt}<StatCard label="Paid" value={day(invoice.paidAt)} id="id-paid" />{/if}
   </div>
 
   {#if overdue}
     <Alert tone="danger" id="id-overdue">
-      Past its terms. Dunning reads <code>now − dueAt</code> on the oldest
-      unpaid invoice, so this row is the clock.
+      Past its terms. Dunning counts the days from <code>dueOn</code> on the
+      oldest unpaid invoice, so this row is the clock.
     </Alert>
   {/if}
 
   <p class="text-muted">
-    For {day(invoice.periodStart)} – {day(invoice.periodEnd)}
+    For {span(invoice.periodStart, invoice.periodEnd)}
     {#if invoice.subscriptionId}
       · <a href={'/subscriptions/' + invoice.subscriptionId + '/'} data-subscription>subscription</a>
     {/if}
@@ -176,7 +176,7 @@ title: Invoice
           change on day 19 makes two lines out of one period. Null on an
           ordinary full-period line, which is most of them.
         -->
-        <td class="text-muted">{l.periodStart ? day(l.periodStart) + ' – ' + day(l.periodEnd) : '—'}</td>
+        <td class="text-muted">{span(l.periodStart, l.periodEnd)}</td>
         <td class="text-right">{l.quantity}</td>
         <td class="text-right">{money(l.unitAmount)}</td>
         <td class="text-right" data-amount={l.amount}>{money(l.amount)}</td>

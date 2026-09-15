@@ -215,9 +215,12 @@
 
   // The web app's `day()` (`web/src/datetime.js`), restated because a surface
   // owns its own src (Invariant 3): the shop's calendar and the reader's locale.
-  // UTC is the API's floor for a shop that set nothing.
-  const when = iso => new Intl.DateTimeFormat(undefined,
-    { year: 'numeric', month: 'short', day: 'numeric', timeZone: calendar ?? 'UTC' }).format(new Date(iso))
+  // UTC is the API's floor for a shop that set nothing. A plain date — a period
+  // end — is already a day and is shown as itself: read as midnight UTC in the
+  // shop's zone it would name the day before anywhere west of Greenwich.
+  const when = value => /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' }).format(new Date(`${value}T00:00:00Z`))
+    : new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: calendar ?? 'UTC' }).format(new Date(value))
 </script>
 
 <section class="account" data-account>

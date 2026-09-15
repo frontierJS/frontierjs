@@ -14,9 +14,10 @@
 // backup makes the row disagree with the rows — and the disagreement is
 // invisible until somebody is cancelled a week early.
 //
-// So: `now - dueAt` on the OLDEST unpaid invoice. That is a read of two frozen
-// columns (`@immutable`, `FJS-D162`), it is the same answer however many times
-// anything ran, and it is the number a person would have worked out by hand.
+// So: the days from `dueOn` to the shop's today, on the OLDEST unpaid invoice.
+// That is a read of a frozen column (`@immutable`, `FJS-D162`) against the
+// calendar, it is the same answer however many times anything ran, and it is
+// the number a person would have worked out by hand.
 //
 // ─── What it does not do ──────────────────────────────────────────────────
 //
@@ -27,14 +28,14 @@
 import { defineJob }       from '@frontierjs/caravan'
 import type { JobContext } from '@frontierjs/caravan'
 import { db }              from '../core/db.ts'
+import { plainDateIn, daysBetween } from '@frontierjs/toolbelt/datetime'
 import { DUNNING_DAYS, GRACE_DAYS, unpaidInvoices } from '../domain/billing'
-
-const DAY = 24 * 60 * 60 * 1000
 
 export type DunningOutcome = { lapsed: string[], cancelled: string[], recovered: string[] }
 
 /**
- * Grade every live subscription against its own unpaid invoices at `at`.
+ * Grade every live subscription against its own unpaid invoices on the day `at`
+ * falls on in `timeZone`, the shop's calendar.
  *
  * Three moves and each is a declared transition, so what is legal from where is
  * in `db/schema.lite` and not here: `lapse` when the oldest unpaid invoice is
@@ -45,9 +46,10 @@ export type DunningOutcome = { lapsed: string[], cancelled: string[], recovered:
  */
 export async function dunSubscriptions(
   ctx: JobContext<{ at?: string, subscriptionId?: number }>,
+  timeZone: string,
 ): Promise<DunningOutcome> {
-  const sys = db.asSystem() as Record<string, any>
-  const at  = new Date(ctx.data?.at ?? new Date().toISOString()).getTime()
+  const sys   = db.asSystem() as Record<string, any>
+  const today = plainDateIn(ctx.data?.at ?? new Date().toISOString(), timeZone)
   const out: DunningOutcome = { lapsed: [], cancelled: [], recovered: [] }
 
   // `subscriptionId` narrows the run to one row. It is an operator's parameter
@@ -81,9 +83,9 @@ export async function dunSubscriptions(
       continue
     }
 
-    const overdueBy = at - new Date(oldest.dueAt).getTime()
+    const overdueBy = daysBetween(oldest.dueOn, today)
 
-    if (overdueBy >= DUNNING_DAYS * DAY) {
+    if (overdueBy >= DUNNING_DAYS) {
       // The deadline. Cancelling is legal from `active` as well as `pastDue`,
       // so a subscription that somehow skipped the middle state is still
       // stopped rather than left running unpaid forever.
@@ -92,7 +94,7 @@ export async function dunSubscriptions(
       continue
     }
 
-    if (overdueBy >= GRACE_DAYS * DAY && sub.status === 'active') {
+    if (overdueBy >= GRACE_DAYS && sub.status === 'active') {
       await sys.subscription.transition(sub.id, 'lapse')
       out.lapsed.push(sub.reference)
     }
@@ -105,7 +107,7 @@ export async function dunSubscriptions(
 
 export default defineJob<{ at?: string, subscriptionId?: number }>(
   'dun-subscriptions',
-  async (ctx) => { await dunSubscriptions(ctx) },
+  async (ctx) => { await dunSubscriptions(ctx, ctx.app!.configFor().timeZone) },
   // Daily, and early. A deadline measured in days does not need a finer clock,
   // and a person who is about to be cancelled should find out at the start of a
   // working day rather than at midnight.

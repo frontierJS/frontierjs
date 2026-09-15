@@ -615,8 +615,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `planVersionId` | `integer` | yes | — | — | — |
 | `status` | `SubscriptionStatus` = `"trialing"` | — | — | — | — |
 | `quantity` | `integer` = `1` | — | Quantity | `minimum: 1` | — |
-| `currentPeriodStart` | `string` | — | — | `format: "date-time"` `x-litestone-kind` | — |
-| `currentPeriodEnd` | `string` | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `currentPeriodStart` | `string` | — | — | `format: "date"` `x-litestone-kind` | — |
+| `currentPeriodEnd` | `string` | — | — | `format: "date"` `x-litestone-kind` | — |
 | `trialEndsAt` | `string`? | — | — | `format: "date-time"` | — |
 | `cancelledAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `cancelAtPeriodEnd` | `boolean` = `false` | — | Cancels at period end | `x-litestone-kind` | — |
@@ -644,14 +644,14 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `subtotal` | `integer` | — | Subtotal | `minimum: 0` `x-litestone-kind` `x-money` | — |
 | `tax` | `integer` = `0` | — | Tax | `minimum: 0` `x-litestone-kind` `x-money` | — |
 | `total` | `integer` | — | Total | `minimum: 0` `x-litestone-kind` `x-money` | — |
-| `periodStart` | `string` | yes | — | `format: "date-time"` | — |
-| `periodEnd` | `string` | yes | — | `format: "date-time"` | — |
+| `periodStart` | `string` | yes | — | `format: "date"` | — |
+| `periodEnd` | `string` | yes | — | `format: "date"` | — |
 | `issuedAt` | `string` | — | — | `format: "date-time"` | — |
-| `dueAt` | `string` | — | — | `format: "date-time"` | — |
+| `dueOn` | `string` | yes | — | `format: "date"` | — |
 | `paidAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `number`, `customerId`, `periodStart`, `periodEnd` · not accepted — `id`
+**On create**: required — `number`, `customerId`, `periodStart`, `periodEnd`, `dueOn` · not accepted — `id`
 
 ### `InvoiceLine`
 
@@ -666,8 +666,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `quantity` | `integer` = `1` | — | — | `minimum: 1` | — |
 | `unitAmount` | `integer` | yes | Unit price | `x-money` | — |
 | `amount` | `integer` | yes | Amount | `x-money` | — |
-| `periodStart` | `string`? | — | — | `format: "date-time"` | — |
-| `periodEnd` | `string`? | — | — | `format: "date-time"` | — |
+| `periodStart` | `string`? | — | — | `format: "date"` | — |
+| `periodEnd` | `string`? | — | — | `format: "date"` | — |
 | `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
 **On create**: required — `invoiceId`, `description`, `unitAmount`, `amount` · not accepted — `id`

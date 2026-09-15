@@ -12,8 +12,11 @@ are superseded: `@frontierjs/toolbelt/datetime` is functions over epoch
 milliseconds, wall-clock objects and IANA names, because `FJS-D26` admits only
 pure functions and `FJS-D143` refused a date library. § Formatting shipped with the
 four defects closed plus three more the build measured. § Relative time shipped as
-elapsed time in one step, not `until` + `Duration.format()`. § Ranges and
-§ The declaration are unbuilt and wait on `FJS-D143`.
+elapsed time in one step, not `until` + `Duration.format()`. **§ The declaration's
+plain-date half shipped 2026-09-14** ([`FJS-D288`](../DECISIONS.md#fjs-d288)): the
+column is `String @date`, which `.lite` already had, and the kit answers
+`plainDateIn`, `addToDate`, `daysBetween` and `startOfDay`. § Ranges and the
+ZONED half are still unbuilt.
 
 **Status: IDEA. The code that exists today is not this.** Dated 2026-08-12; scope
 unchanged, home changed 2026-08-15 — this is now **`@frontierjs/toolbelt/datetime`**, a

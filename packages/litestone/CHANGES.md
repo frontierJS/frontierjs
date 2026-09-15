@@ -1,5 +1,36 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-14 — the tokenizer is toolbelt's, with the grammar
+
+`FJS-D287`. `tokenize`, `TK` and `ParseError` moved to
+`@frontierjs/toolbelt/predicate` and are imported back; the schema vocabulary
+(`SCALAR_TYPES`, `RENAMED_TYPES`, `KEYWORDS`, `VALUE_STRENGTHS`) stayed, because
+none of it is lexical. A `.lite` file and a flow expression are one language
+lexically, and two lexers is how a string or a number comes to lex two ways.
+
+One visible change: `$` and `=>` are tokens now — a flow expression's, and
+accepted by no schema grammar — so either one in a `.lite` file is refused by
+whatever was parsing (`Expected …, got '$'`) rather than by the lexer's
+*Unexpected character* hint.
+
+Proven the same way as the grammar move: byte-identical ASTs for every `.lite`
+file in the repo and for the refusal corpus, and the suite unchanged at 4814
+pass, 3 skip, 0 fail.
+
+
+`parsePolicyExpr()` is one line now: it hands this parser, as a token cursor, to
+`@frontierjs/toolbelt/predicate`'s `parseExpression`. The 203 lines under it —
+ternary, `||`, `&&`, `!`, comparison, operand and value, with `POLICY_OPERATORS`
+and the error-hint printer — moved there, because orion parses the same
+language (`FJS-D271`) and a second grammar is where a form comes to parse in one
+place and not the other. The parser gained `fail(msg, pos)`, the error the moved
+grammar throws, so every refusal keeps its `(line, col)`.
+
+Nothing a schema author sees changed: every `.lite` file in the repo, plus a
+corpus of refused and accepted expressions, parses to byte-identical JSON before
+and after, messages included; the suite is 4814 pass, 3 skip, 0 fail on both
+sides. `compileSql` and `evaluate` read the same AST as before.
+
 ## 2026-09-14 — an app's own console commands
 
 `db/tinker.js` beside the schema default-exports `{ name: { help, run } }`, and `.name a b` in

@@ -50,9 +50,9 @@ export type RenewPayload = { subscriptionId: number, periodEnd: string }
  * sweep and this job, and it may have been asked to stop AT this boundary —
  * which is the one case where the job does something and still bills nothing.
  *
- * `timeZone` is the shop's calendar, which the line text is written in. An
- * argument rather than a read, because the drive calls this with no app behind
- * it and must say which calendar it bills in rather than inherit one.
+ * `timeZone` is the shop's calendar, which the invoice's terms are counted in.
+ * An argument rather than a read, because the drive calls this with no app
+ * behind it and must say which calendar it bills in rather than inherit one.
  */
 export async function renewSubscription(
   ctx: JobContext<RenewPayload & { at?: string }>,
@@ -71,7 +71,7 @@ export async function renewSubscription(
   // Already advanced. The dispatch id makes a second dispatch a no-op, and this
   // makes a second EXECUTION one — a job that was retried after its transaction
   // committed but before the queue recorded it done.
-  if (new Date(sub.currentPeriodEnd) > new Date(ctx.data.periodEnd)) return null
+  if (sub.currentPeriodEnd > ctx.data.periodEnd) return null
 
   // Asked to stop, and this is where the asking lands. `subscriptions.cancel`
   // sets a flag rather than moving the row, because the period had been paid
@@ -98,7 +98,7 @@ export async function renewSubscription(
   if (!version || !plan) return null
 
   const periodStart = sub.currentPeriodEnd
-  const periodEnd   = advancePeriod(periodStart, plan.interval).toISOString()
+  const periodEnd   = advancePeriod(periodStart, plan.interval)
 
   const invoice = await issueInvoice(sys, {
     number:         await nextInvoiceNumber(sys),
@@ -106,12 +106,12 @@ export async function renewSubscription(
     subscriptionId: sub.id,
     userId:         sub.userId,
     issuedAt:       at,
-    periodStart, periodEnd,
+    periodStart, periodEnd, timeZone,
     lines: periodLines({
       name:        plan.name,
       quantity:    sub.quantity,
       unitAmount:  version.price,
-      periodStart, periodEnd, timeZone,
+      periodStart, periodEnd,
     }),
   })
 

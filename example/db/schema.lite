@@ -1755,9 +1755,14 @@ model Subscription {
   /// proration has to split a period's price across when it changes mid-cycle.
   quantity           Int                @default(1) @gte(1) @label("Quantity")
 
-  /// The cycle. Both are stamped by the renewal job, never by a caller.
-  currentPeriodStart DateTime           @default(now()) @system
-  currentPeriodEnd   DateTime           @system
+  /// The cycle, as DAYS in the shop's calendar: `[start, end)`, so the period
+  /// is over when the shop's day reaches `currentPeriodEnd`. Plain dates rather
+  /// than instants because a month is calendar arithmetic, and an instant
+  /// advanced by a month in UTC lands on a different day in any zone west of
+  /// it — a New York signup on the evening of 30 March renewed on 29 April.
+  /// Both are stamped by the renewal job, never by a caller.
+  currentPeriodStart String             @date @system
+  currentPeriodEnd   String             @date @system
   trialEndsAt        DateTime?
   cancelledAt        DateTime?          @system
 
@@ -1904,26 +1909,26 @@ model Invoice {
   tax            Int             @money(USD) @gte(0) @default(0) @system @immutable @label("Tax")
   total          Int             @money(USD) @gte(0) @system @immutable @label("Total")
 
-  /// The window this invoice charges for. A proration line's own period is
-  /// narrower and lives on the line.
-  periodStart    DateTime        @immutable
-  periodEnd      DateTime        @immutable
+  /// The days this invoice charges for, `[start, end)` in the shop's calendar
+  /// — `Subscription`'s window at the time it was issued. A proration line's
+  /// own period is narrower and lives on the line. `issuedAt` stays an instant:
+  /// it is when the document was written, not a day it is about.
+  periodStart    String          @date @immutable
+  periodEnd      String          @date @immutable
   issuedAt       DateTime        @default(now()) @immutable
 
-  /// When it has to be paid by, and it is part of the DOCUMENT — an invoice
+  /// The day it has to be paid by, and it is part of the DOCUMENT — an invoice
   /// that could be given a later due date after it was issued is an invoice
   /// whose terms moved, which is the thing a statement about a moment cannot
   /// do. It is also the only anchor dunning needs: *how long has this been
-  /// unpaid* is `now - dueAt` on the oldest unpaid invoice, so no counter has
-  /// to be kept on the subscription and no counter can disagree with the rows.
+  /// unpaid* is the days from `dueOn` to the shop's today on the oldest unpaid
+  /// invoice, so no counter has to be kept on the subscription and no counter
+  /// can disagree with the rows.
   ///
-  /// `@default(now())` is not decoration: a required column with no default
-  /// cannot be added to a populated table, and litestone refuses the migration
-  /// rather than applying half of it (`FJS-604` — it used to report success and
-  /// leave the column missing). The default is also the honest floor — an
-  /// invoice issued with no stated terms is due immediately — and every writer
-  /// states one, because `api/src/billing.ts` mints it from the shop's terms.
-  dueAt          DateTime        @default(now()) @immutable
+  /// A day and not an instant, because terms are written in days and the shop
+  /// is the one counting them: seven days from an issue at 23:30 in New York is
+  /// the 7th day on the shop's calendar, not 07:30 UTC a week later.
+  dueOn          String          @date @immutable
 
   paidAt         DateTime?       @system
 
@@ -1988,11 +1993,11 @@ model InvoiceLine {
   unitAmount  Int      @money(USD) @immutable @label("Unit price")
   amount      Int      @money(USD) @immutable @label("Amount")
 
-  /// The slice of time this line is for, where it is narrower than the
-  /// invoice's own window — a plan change on day 19 makes two lines out of one
-  /// period. Null on an ordinary full-period line.
-  periodStart DateTime? @immutable
-  periodEnd   DateTime? @immutable
+  /// The days this line is for, `[start, end)`, where they are narrower than
+  /// the invoice's own window — a plan change on day 19 makes two lines out of
+  /// one period. Null on an ordinary full-period line.
+  periodStart String?   @date @immutable
+  periodEnd   String?   @date @immutable
 
   userId      String?  @system
 

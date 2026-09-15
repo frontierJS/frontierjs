@@ -105,6 +105,43 @@ for (let y = 1998; y <= 2032; y++) {
   }
 }
 
+// Plain-date arithmetic: every month end, both leap days, and a mid-month control,
+// moved by each unit alone and combined. A clamp that remembers its day, or one
+// that rolls into the next month, disagrees on the month ends and nowhere else.
+const DATES = ['2023-01-31', '2023-02-28', '2024-01-29', '2024-01-30', '2024-01-31', '2024-02-29',
+  '2024-03-31', '2024-04-30', '2024-05-31', '2024-08-31', '2024-10-31', '2024-12-31', '2025-12-31', '2026-06-15']
+const DURATIONS = [{ months: 1 }, { months: -1 }, { months: 2 }, { months: 11 }, { months: 13 }, { months: -13 },
+  { years: 1 }, { years: -1 }, { years: 4 }, { weeks: 2 }, { weeks: -1 }, { days: 1 }, { days: -1 }, { days: 366 },
+  { years: 1, months: 1, days: 1 }, { months: -1, days: -1 }]
+const added = []
+for (const d of DATES) for (const duration of DURATIONS) {
+  added.push([d, duration, Temporal.PlainDate.from(d).add(duration, { overflow: 'constrain' }).toString()])
+}
+const between = []
+for (const a of DATES) for (const b of DATES) {
+  between.push([a, b, Temporal.PlainDate.from(a).until(b, { largestUnit: 'day' }).days])
+}
+
+// startOfDay: the local day holding every transition, the days either side, and a
+// mid-month control. Santiago moves its clocks AT midnight, which is the case
+// where a day does not start at 00:00.
+const days = []
+for (const zone of ZONES) {
+  const seen = new Set()
+  const add = (date) => {
+    const key = date.toString()
+    if (seen.has(key)) return
+    seen.add(key)
+    days.push([zone, key, date.toZonedDateTime(zone).epochMilliseconds])
+  }
+  for (let y = FROM; y <= TO; y++) for (let m = 1; m <= 12; m++) add(Temporal.PlainDate.from({ year: y, month: m, day: 15 }))
+  for (const [z, ms] of transitions) {
+    if (z !== zone) continue
+    const local = Temporal.Instant.fromEpochMilliseconds(ms).toZonedDateTimeISO(zone).toPlainDate()
+    for (const shift of [-1, 0, 1]) add(local.add({ days: shift }))
+  }
+}
+
 const out = {
   generator: 'node packages/toolbelt/test/fixtures/datetime-oracle.mjs, from a directory holding @js-temporal/polyfill',
   polyfill:  '@js-temporal/polyfill@0.5.1',
@@ -114,7 +151,10 @@ const out = {
   resolve,
   parts,
   weeks,
+  added,
+  between,
+  days,
 }
 const target = join(dirname(fileURLToPath(import.meta.url)), 'datetime-oracle.json')
 writeFileSync(target, JSON.stringify(out) + '\n')
-console.log(`${resolve.length} wall clocks, ${parts.length} instants, ${weeks.length} dates → ${target}`)
+console.log(`${resolve.length} wall clocks, ${parts.length} instants, ${weeks.length} week dates, ${added.length} additions, ${between.length} spans, ${days.length} day starts → ${target}`)

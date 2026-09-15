@@ -64,9 +64,12 @@ package's whole license to be imported by litestone and mesa (`FJS-D26`).
 
 ## What is NOT built
 
-- **`/datetime` v2**, which waits on `FJS-D143`'s declaration: a half-open
-  day/week/month window in a zone, the zoned string form
-  `…-04:00[America/New_York]`, and an ISO duration if `@retain` needs one.
+- **`/datetime` v2's remaining half.** The plain-date functions landed
+  2026-09-14 (`FJS-D288`) — `plainDateIn`, `addToDate`, `daysBetween`,
+  `startOfDay` — and a DAY's window in a zone is the pair of `startOfDay` calls
+  around it. Still unbuilt: a week or month window, the zoned string form
+  `…-04:00[America/New_York]`, and an ISO duration if `@retain` needs one. Each
+  waits on a caller; the plain dates had one, which is `example`'s billing.
 - **A busy-element owner** — `FJS-390`, which may land here or in
   `@frontierjs/ui` and is deliberately not designed yet.
 - `FJS-274` is repo-scope and names this package's history: `@frontierjs/utils`

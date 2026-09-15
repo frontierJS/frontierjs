@@ -20,11 +20,15 @@ export interface NodeContext {
   trigger: unknown
   nodes:   Record<string, unknown>
   logger:  NodeLogger
-  fetch:   typeof fetch             // pre-wired with credential headers
+  fetch:   Fetch                    // pre-wired with credential headers
   signal:  AbortSignal              // fires on timeout
   // Only present for sync webhook executions — used by http.respond
   respond?: (res: SyncHttpResponse) => void
 }
+
+// The call a node makes, not the runtime's whole `fetch` object — bun's carries
+// `preconnect`, which no host's credential-wrapping fetch should have to supply.
+export type Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
 export interface NodeLogger {
   info  (message: string, data?: unknown): void
@@ -230,7 +234,7 @@ function computeDelay(retry: RetryPolicy, attempt: number): number {
     : retry.delayMs
 }
 
-function makeScopedFetch(signal: AbortSignal): typeof fetch {
+function makeScopedFetch(signal: AbortSignal): Fetch {
   return (input, init) => fetch(input, { ...init, signal })
 }
 

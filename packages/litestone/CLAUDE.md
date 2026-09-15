@@ -21,7 +21,9 @@ The guiding philosophy: simple, portable, 80/20, production-ready. Litestone han
 ```
 src/
   core/
-    parser.js      — .lite schema DSL → AST
+    parser.js      — .lite schema DSL → AST. The LEXER and the condition-expression
+                     grammar are @frontierjs/toolbelt/predicate's; this file is the
+                     schema grammar over the tokens it hands back
     ddl.js         — AST → CREATE TABLE / INDEX / TRIGGER SQL
     client.js      — createClient(), all table ops, plugins, hooks, events
     migrate.js     — schema diffing: introspect, buildPristine, diffSchemas

@@ -37,6 +37,7 @@ import { fileURLToPath } from 'node:url'
 import { serveSite } from '@frontierjs/sierra/site/serve'
 
 import { authenticator, wrongCode, enrolledAccount } from '../../web/test/lib/authenticator.mjs'
+import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SITE = join(HERE, '..')
@@ -155,6 +156,10 @@ check('subscriptions and invoices are not public either',
 const { db } = await import(join(ROOT, 'api/src/core/db.ts'))
 const sys = db.asSystem()
 const { issueInvoice, periodLines } = await import(join(ROOT, 'api/src/domain/billing'))
+// The period is a pair of DAYS in the shop's calendar (`FJS-D143`); this drive
+// bills in UTC and names it on every call that mints a document.
+const TODAY = plainDateIn(Date.now(), 'UTC')
+const NEXT  = addToDate(TODAY, { months: 1 })
 const RUN = String(Date.now()).slice(-6)
 const OTHER_INV = `INV-A${RUN}`
 const someoneElse = await sys.customer.findFirst({ where: { email: { not: BUYER.email } } })
@@ -169,16 +174,14 @@ const anyVersion = await sys.planVersion.findFirst({ where: { effectiveTo: null 
 await sys.subscription.create({ data: {
   reference: OWN_SUB, customerId: buyerCust.id, planVersionId: anyVersion.id,
   status: 'active', quantity: 1, userId: buyerCust.userId,
-  currentPeriodStart: new Date().toISOString(),
-  currentPeriodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString(),
+  currentPeriodStart: TODAY,
+  currentPeriodEnd:   NEXT,
 } })
 await issueInvoice(sys, {
   number: OTHER_INV, customerId: someoneElse.id, userId: someoneElse.userId,
-  periodStart: new Date().toISOString(),
-  periodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString(),
+  periodStart: TODAY, periodEnd: NEXT, timeZone: 'UTC',
   lines: periodLines({ name: 'Pro', quantity: 1, unitAmount: 1900,
-                       periodStart: new Date().toISOString(),
-                       periodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString(), timeZone: 'UTC' }),
+                       periodStart: TODAY, periodEnd: NEXT }),
 })
 
 // …and one of the SHOPPER's own with a challenge waiting on it. `requiresAction`
@@ -193,11 +196,9 @@ await issueInvoice(sys, {
 const OWN_INV = `INV-Q${RUN}`
 const ownBill = await issueInvoice(sys, {
   number: OWN_INV, customerId: buyerCust.id, userId: buyerCust.userId,
-  periodStart: new Date().toISOString(),
-  periodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString(),
+  periodStart: TODAY, periodEnd: NEXT, timeZone: 'UTC',
   lines: periodLines({ name: 'Pro', quantity: 1, unitAmount: 1900,
-                       periodStart: new Date().toISOString(),
-                       periodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString(), timeZone: 'UTC' }),
+                       periodStart: TODAY, periodEnd: NEXT }),
 })
 const CHALLENGE = `http://localhost:8112/challenge/pi_acct${RUN}`
 await sys.payment.create({ data: {
@@ -282,8 +283,8 @@ const paidVersion = await sys.planVersion.findFirst({ where: { effectiveTo: null
 const otherSub = await sys.subscription.create({ data: {
   reference: OTHER_SUB, customerId: someoneElse.id, planVersionId: paidVersion.id,
   status: 'active', quantity: 1, userId: someoneElse.userId,
-  currentPeriodStart: new Date().toISOString(),
-  currentPeriodEnd:   new Date(Date.now() + 30 * 86400_000).toISOString(),
+  currentPeriodStart: TODAY,
+  currentPeriodEnd:   NEXT,
 } })
 const documentsFor = async () => (await sys.invoice.findMany({ where: { subscriptionId: otherSub.id } })).length
 

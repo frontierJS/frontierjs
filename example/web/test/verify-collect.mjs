@@ -37,6 +37,7 @@ import { execFileSync }  from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { signRequest }   from '@frontierjs/toolbelt/signature'
+import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
 import { results, report } from './lib/report.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -109,6 +110,9 @@ const sys = db.asSystem()
 
 const RUN = String(Date.now()).slice(-6)
 const DAY = 24 * 60 * 60 * 1000
+// A billing period is DAYS in the shop's calendar (`FJS-D143`), so the fixtures
+// below are plain dates; this drive bills in UTC and says so on every call.
+const TODAY = plainDateIn(Date.now(), 'UTC')
 const { got, t } = results()
 
 // ─── A subscription with something owed ───────────────────────────────────
@@ -118,8 +122,8 @@ const plan     = await sys.plan.findFirst({ where: { code: 'PRO' } })
 const version  = await sys.planVersion.findFirst({ where: { planId: plan.id, effectiveTo: null } })
 
 async function freshSubscription(suffix, who = customer) {
-  const start = new Date(Date.now() - 5 * DAY).toISOString()
-  const end   = new Date(Date.now() + 25 * DAY).toISOString()
+  const start = addToDate(TODAY, { days: -5 })
+  const end   = addToDate(TODAY, { days: 25 })
   const sub = await sys.subscription.create({ data: {
     reference: `SUB-C${RUN}${suffix}`, customerId: who.id, planVersionId: version.id,
     status: 'active', quantity: 1,
@@ -127,9 +131,9 @@ async function freshSubscription(suffix, who = customer) {
   } })
   const invoice = await issueInvoice(sys, {
     number: `INV-C${RUN}${suffix}`, customerId: who.id, subscriptionId: sub.id,
-    userId: who.userId, periodStart: start, periodEnd: end,
+    userId: who.userId, periodStart: start, periodEnd: end, timeZone: 'UTC',
     lines: periodLines({ name: plan.name, quantity: 1, unitAmount: version.price,
-                         periodStart: start, periodEnd: end, timeZone: 'UTC' }),
+                         periodStart: start, periodEnd: end }),
   })
   return { sub, invoice }
 }
@@ -398,8 +402,8 @@ async function settles(fn, ms = 20000) {
 }
 
 {
-  const start = new Date(Date.now() - 40 * DAY).toISOString()
-  const end   = new Date(Date.now() - 10 * DAY).toISOString()
+  const start = addToDate(TODAY, { days: -40 })
+  const end   = addToDate(TODAY, { days: -10 })
   const sub = await sys.subscription.create({ data: {
     reference: `SUB-C${RUN}X`, customerId: customer.id, planVersionId: version.id,
     status: 'active', quantity: 1,
@@ -410,7 +414,7 @@ async function settles(fn, ms = 20000) {
   // row that this process's own workers pick up, so everything after this line
   // happens because the queue made it happen.
   const { sweepRenewals } = await import(join(ROOT, 'api/src/jobs/renew-subscriptions.job.ts'))
-  const queued = await sweepRenewals({ app, data: { at: new Date().toISOString() } })
+  const queued = await sweepRenewals({ app, data: { at: new Date().toISOString() } }, 'UTC')
   t('chain.sweepQueuedIt', queued >= 1)
 
   // Two waits and two different questions. The first is the renewal handler
@@ -439,14 +443,14 @@ async function settles(fn, ms = 20000) {
   // that bills and does not advance bills again on the next sweep, for ever —
   // which is the failure a drive that stops at *an invoice exists* cannot see.
   const after = await sys.subscription.findFirst({ where: { id: sub.id } })
-  t('chain.windowMoved', new Date(after.currentPeriodEnd) > new Date(end))
+  t('chain.windowMoved', after.currentPeriodEnd > end)
   t('chain.stillActive', after.status === 'active')
 
   // And it does not bill twice. A second sweep at the same instant finds the
   // subscription no longer due — the window moved — so this is the WINDOW
   // doing the work rather than the dispatch id, which is the half
   // `verify:billing` cannot separate because its sweep never advanced anything.
-  const againQueued = await sweepRenewals({ app, data: { at: new Date().toISOString() } })
+  const againQueued = await sweepRenewals({ app, data: { at: new Date().toISOString() } }, 'UTC')
   const bills = await sys.invoice.count({ where: { subscriptionId: sub.id } })
   t('chain.secondSweepBillsNothing', againQueued === 0 && bills === 1)
 }
