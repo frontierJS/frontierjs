@@ -156,8 +156,10 @@ shows the multiplication.
 The same page draws the 2×2 tile, each quadrant alone, and — under **more** — the
 age of the last commit, lifetime churn and tested. It lists the highest scores
 and the widest blast radii, isolates a package from its table, filters by path,
-switches kinds and theme, and can re-lay the map in **path order**, where files
-run along a generalized Hilbert curve. It is one HTML file with the stylesheet
+switches kinds and theme, and can re-lay the map two other ways: **each
+package**, where every package is a square of its own, largest first, named, with
+its files in path order inside it; and **path order**, where files run along a
+generalized Hilbert curve. It is one HTML file with the stylesheet
 inlined, so it opens from disk with no network.
 
 ## What is measured, and where it is guessed

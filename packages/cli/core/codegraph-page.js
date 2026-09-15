@@ -19,13 +19,13 @@
  *
  * ── The curve is the module's, not a copy ──────────────────────────────────
  *
- * `gilbert`, `gridFor` and `coreLayout` are serialized into the script with
+ * `gilbert`, `gridFor`, `coreLayout` and `packageGrid` are serialized into the script with
  * `toString()`, and every band, score, label and hotspot is computed in node,
  * so the page cannot lay out or grade a file differently from the PNG beside it.
  */
 
 import {
-  gilbert, gridFor, coreLayout, coreRegions, tileBands, scoreOf, isHotspot, bandLabels, paletteCss, themesIn,
+  gilbert, gridFor, coreLayout, packageGrid, coreRegions, tileBands, scoreOf, isHotspot, bandLabels, paletteCss, themesIn,
   KINDS, TONES, QUADRANTS, MORE, STRONG, TESTED_BAND, HALF_LIFE_DAYS, SCORE_RAMP, SCORE_STEPS, SCORE_WARN, SCORE_MAX,
 } from './codegraph.js'
 
@@ -114,6 +114,7 @@ export function renderPage(model, { css, theme, all = false, name }) {
           </div>
           <div class="cluster gap-2xs" role="group" aria-label="Layout" id="layouts">
             <button class="btn outlined" data-layout="core" aria-pressed="true">core at center</button>
+            <button class="btn outlined" data-layout="packages" aria-pressed="false">each package</button>
             <button class="btn outlined" data-layout="path" aria-pressed="false">path order</button>
           </div>
           <label class="cluster gap-2xs" for="q"><span class="text-xs text-muted">filter</span>
@@ -176,7 +177,7 @@ export function renderPage(model, { css, theme, all = false, name }) {
     </section>`,
     `<section class="pane"><dl class="facts divided" id="method"></dl></section>`,
     '</main>',
-    `<script>const D = ${json}\n${gilbert.toString()}\n${gridFor.toString()}\n${coreLayout.toString()}\n${SCRIPT}</script>`,
+    `<script>const D = ${json}\n${gilbert.toString()}\n${gridFor.toString()}\n${coreLayout.toString()}\n${packageGrid.toString()}\n${SCRIPT}</script>`,
     '</body></html>',
     '',
   ].join('\n')
@@ -279,23 +280,27 @@ function layout() {
   const list = files.filter(f => state.kinds.has(f.kind))
   let w, h, cells
   if (state.layout === 'core') ({ w, h, cells } = coreLayout(list, D.core, D.uses))
+  else if (state.layout === 'packages') ({ w, h, cells } = packageGrid(list))
   else { ({ w, h } = gridFor(list.length)); cells = gilbert(w, h).slice(0, list.length) }
   const at = new Int32Array(w * h).fill(-1)
   list.forEach((f, d) => { const [x, y] = cells[d]; at[y * w + x] = f.i })
   const where = new Map(list.map((f, d) => [f.i, cells[d]]))
-  L = { w, h, at, list, where, labels: labelsFor(list, cells, w, at) }
+  L = { w, h, at, list, where, labels: labelsFor(list, cells, w, at, state.layout === 'packages') }
 }
 
 // A name for each package under packages/, at the region's own cell nearest its
 // centroid — a region laid as an L has its centroid outside itself — and sized
 // to the run of that region's cells along that row. The package's own folder
 // names it: orion/mockup/api-engine reads orion, where its last folder would
-// have been mockup or api-engine and said nothing.
+// have been mockup or api-engine and said nothing. Laid a square each, every
+// region is named, by its whole path under packages/: a square with no name is
+// a package nobody can find, and mesa/mesa-bench is a square of its own there,
+// where the first folder alone would name two squares mesa.
 const LABEL_ROOT = 'packages/'
-function labelsFor(list, cells, w, at) {
+function labelsFor(list, cells, w, at, everyRegion) {
   const groups = new Map()
   list.forEach((f, d) => {
-    if (!f.region.startsWith(LABEL_ROOT)) return
+    if (!everyRegion && !f.region.startsWith(LABEL_ROOT)) return
     if (!groups.has(f.region)) groups.set(f.region, [])
     groups.get(f.region).push(cells[d])
   })
@@ -307,7 +312,8 @@ function labelsFor(list, cells, w, at) {
     let lo = x, hi = x
     while (lo > 0 && regionAt(lo - 1, y) === region) lo--
     while (hi < w - 1 && regionAt(hi + 1, y) === region) hi++
-    return { name: region.slice(LABEL_ROOT.length).split('/')[0], n: cs.length, x: (lo + hi + 1) / 2, y: y + 0.5, run: hi - lo + 1 }
+    const inPackages = region.startsWith(LABEL_ROOT) ? region.slice(LABEL_ROOT.length) : region
+    return { name: everyRegion ? inPackages : inPackages.split('/')[0], n: cs.length, x: (lo + hi + 1) / 2, y: y + 0.5, run: hi - lo + 1 }
   })
 }
 const lit = f => (!state.q || f.path.toLowerCase().includes(state.q)) && (!state.focus || f.region === state.focus)
@@ -352,7 +358,8 @@ function draw() {
   ctx.globalAlpha = TILE_ALPHA
   for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) {
     const bx = x * B, by = y * B, i = L.at[y * L.w + x]
-    if (i < 0) { ctx.fillStyle = C.empty; ctx.fillRect(bx + inner / 2 - 1, by + inner / 2 - 1, 2, 2); continue }
+    // a dot marks an unfilled slot on a curve; between package squares the ground is only a gap
+    if (i < 0) { if (state.layout !== 'packages') { ctx.fillStyle = C.empty; ctx.fillRect(bx + inner / 2 - 1, by + inner / 2 - 1, 2, 2) } continue }
     const f = files[i]
     if (!lit(f)) { ctx.fillStyle = C.na; ctx.fillRect(bx, by, inner, inner); continue }
     if (state.view === 'all') {
@@ -497,6 +504,8 @@ function syncControls() {
   $('foot').textContent = L.w + '×' + L.h + ' tiles · ' + n(L.list.length) + ' drawn of ' + n(files.length) + ' · ' +
     (state.layout === 'core'
       ? 'each quadrant is a core package at the center and the packages that import it most: ' + D.core.map((r, q) => corner[q] + ' ' + r).join(' · ')
+      : state.layout === 'packages'
+      ? 'each package is its own square, largest first, its files in path order'
       : 'a line in the gap is where a package ends')
 }
 

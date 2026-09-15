@@ -15,7 +15,7 @@ import {
   gilbert, parseGitLog, indentSum, kindOf, band, parseLcov, collectCodegraph, heatOf, exposureOf, scoreOf, LEVEL,
   tileBands, badgeCells, renderBadge, renderMap, regionReader, gridFor, AGE_DAYS, HALF_LIFE_DAYS, SCORE_RAMP, SCORE_WARN,
   themesIn, themeTokens, mixOklab, turnOklch, deltaOklab, scoreRamp, paletteFrom, paletteCss, isHotspot, bandLabels, MIX, TONES, STRONG, QUADRANTS, MORE,
-  exportTarget, packageIndex, referenceGraph, coreRegions, coreLayout,
+  exportTarget, packageIndex, referenceGraph, coreRegions, coreLayout, packageGrid,
 } from '../core/codegraph.js'
 import { renderPage } from '../core/codegraph-page.js'
 import { ownStyleBundle } from '../core/assets.js'
@@ -586,6 +586,34 @@ describe('core layout', () => {
     const files = tree({ a: 60, b: 1, c: 1, d: 1 })
     const { w, cells } = coreLayout(files, ['a', 'b', 'c', 'd'])
     expect(new Set(cells.map(([x, y]) => y * w + x)).size).toBe(files.length)
+  })
+})
+
+describe('package grid', () => {
+  const region = (name, n) => Array.from({ length: n }, (_, i) => ({ path: `${name}/${String(i).padStart(3, '0')}`, region: name, kind: 'source' }))
+
+  test('each region fills a square of its own, and no two squares touch', () => {
+    const files = [...region('big', 50), ...region('mid', 12), ...region('one', 1), ...region('two', 2), ...region('odd', 7)]
+    const { w, h, cells, boxes } = packageGrid(files)
+    expect(new Set(cells.map(([x, y]) => y * w + x)).size).toBe(files.length)
+    expect(cells.every(([x, y]) => x >= 0 && y >= 0 && x < w && y < h)).toBe(true)
+    for (const box of boxes) {
+      const mine = files.map((f, k) => f.region === box.region ? cells[k] : null).filter(Boolean)
+      expect(box.side).toBe(Math.ceil(Math.sqrt(mine.length)))
+      expect(mine.every(([x, y]) => x >= box.x && x < box.x + box.side && y >= box.y && y < box.y + box.side)).toBe(true)
+    }
+    // a cell of ground between any two squares: no file has a 4-neighbor from another region
+    const regionAt = new Map(files.map((f, k) => [cells[k].join(), f.region]))
+    const touching = files.filter((f, k) => { const [x, y] = cells[k]; return [[1, 0], [0, 1]].some(([dx, dy]) => { const r = regionAt.get([x + dx, y + dy].join()); return r && r !== f.region }) })
+    expect(touching).toEqual([])
+  })
+
+  test('largest square first, and files inside it run in path order along the curve', () => {
+    const files = [...region('small', 4), ...region('large', 16)].reverse()
+    const { cells, boxes } = packageGrid(files)
+    expect(boxes.map(b => b.region)).toEqual(['large', 'small'])
+    const large = files.map((f, k) => [f.path, cells[k]]).filter(([p]) => p.startsWith('large/')).sort((a, b) => a[0] < b[0] ? -1 : 1).map(([, c]) => c)
+    expect(large).toEqual(gilbert(4, 4))
   })
 })
 

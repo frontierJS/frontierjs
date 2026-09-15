@@ -585,6 +585,46 @@ export function coreLayout(files, core, uses = {}) {
   return { w: plan.S, h: plan.S, cells, splits: plan.splits }
 }
 
+/**
+ * Every region as a square of its own, side `ceil(√files)`, with a cell of
+ * ground between squares — the packages side by side, where the core layout
+ * reads them as neighborhoods. Largest first, packed in shelves at whichever
+ * width makes the squarest picture. Inside a square files run in path order along the curve,
+ * as they do in the whole-project path order. `boxes` names each square for the
+ * page's labels. The page serializes this with `toString()` beside `gilbert`.
+ */
+export function packageGrid(files) {
+  const by = new Map()
+  files.forEach((f, k) => { if (!by.has(f.region)) by.set(f.region, []); by.get(f.region).push(k) })
+  const groups = [...by].map(([region, ks]) => ({ region, ks: ks.sort((a, b) => files[a].path < files[b].path ? -1 : 1), side: Math.ceil(Math.sqrt(ks.length)) }))
+    .sort((a, b) => b.side - a.side || b.ks.length - a.ks.length || (a.region < b.region ? -1 : 1))
+  const pack = w => {
+    const boxes = []
+    let x = 0, y = 0, shelf = 0
+    for (const g of groups) {
+      if (x > 0 && x + g.side > w) { x = 0; y += shelf + 1; shelf = 0 }
+      boxes.push({ region: g.region, x, y, side: g.side })
+      x += g.side + 1
+      shelf = Math.max(shelf, g.side)
+    }
+    return { w, h: Math.max(1, y + shelf), boxes }
+  }
+  // Shelves waste the space beside a short square, so no one width is right:
+  // every width is tried and the squarest picture kept, the smaller on a tie.
+  const widest = groups.reduce((sum, g) => sum + g.side + 1, 0)
+  let plan = pack(groups.length ? groups[0].side : 1)
+  for (let w = plan.w + 1; w <= widest; w++) {
+    const next = pack(w)
+    if (Math.max(next.w, next.h) < Math.max(plan.w, plan.h) || (Math.max(next.w, next.h) === Math.max(plan.w, plan.h) && next.w * next.h < plan.w * plan.h)) plan = next
+  }
+  const cells = new Array(files.length)
+  groups.forEach((g, i) => {
+    const { x, y } = plan.boxes[i], curve = gilbert(g.side, g.side)
+    g.ks.forEach((k, n) => { cells[k] = [x + curve[n][0], y + curve[n][1]] })
+  })
+  return { w: plan.w, h: plan.h, cells, boxes: plan.boxes }
+}
+
 // ─── bands per file ───────────────────────────────────────────────────────────
 
 /** The reading order of a tile's quadrants: top left, top right, bottom left, bottom right. */

@@ -16,7 +16,14 @@ the `scaffold` phase cannot see that because it packs the working tree. The
 scaffold build here — pack, install, build, the app's own `check`, the
 declared-imports walk — is green with the file in it.
 
-## 2026-09-14 — the codegraph page names its packages, a package stays one block, and its closed menu stays closed
+## 2026-09-14 — the codegraph page names its packages, lays each as its own square, a package stays one block, and its closed menu stays closed
+
+**Each package** is a third layout beside core at center and path order: every region a square of
+its own, side `ceil(√files)`, a cell of ground between squares, largest first, and every square
+named. `packageGrid` packs them in shelves and tries every width for the squarest picture — a width
+guessed off the total area drew this repo's source 36×49 and half empty, and the search draws it
+37×42 at 60% in 3ms. It lives in `core/codegraph.js` and is serialized into the page like
+`coreLayout`, so it is tested in node.
 
 **A package laid across the seam of its quadrant's L is one block now.** The room around a core
 square is two bands, and each was walked by the curve from its own origin, so the band below ended
