@@ -1,8 +1,8 @@
 # Orion
 
-> **Status: claimed, being ported.** A tracked `mockup/api-engine` exists (a DAG
-> executor, event layer, plugin system and worker pool) and is being ported into
-> this package (`FJS-D275`; plan in `IDEAS/orion-port.md`). Orion is a package
+> **Status: being ported.** The engine, its data layer, execution on Caravan,
+> the triggers, the actions and the services are built (`FJS-D275`; plan in
+> `IDEAS/orion-port.md`); the screens are next, from `mockup/ui/`. Orion is a package
 > built ON the framework and installed into an app (`FJS-D269`). Its primary
 > trigger is litestone's write tap, which Orion subscribes to directly (`FJS-D247`).
 > This file is the intent, not a description of behavior.

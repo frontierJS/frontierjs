@@ -1,0 +1,15 @@
+<script>
+  // The automations section: its own tabs, inside whatever shell the host's
+  // layouts draw around a mounted route.
+  import { page, isActive } from '@frontierjs/sierra/router'
+
+  $: page.route
+</script>
+
+<nav class="cluster" aria-label="Automations" id="orion-nav">
+  <a class="navlink" href="/automations/"             aria-current={(page.route, isActive('/automations/', { exact: true }) || isActive('/automations/flows/')) ? 'page' : null}>Flows</a>
+  <a class="navlink" href="/automations/runs/"        aria-current={(page.route, isActive('/automations/runs/')) ? 'page' : null}>Runs</a>
+  <a class="navlink" href="/automations/credentials/" aria-current={(page.route, isActive('/automations/credentials/')) ? 'page' : null}>Credentials</a>
+</nav>
+
+<slot />

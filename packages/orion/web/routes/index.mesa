@@ -1,0 +1,95 @@
+---
+title: Automations
+---
+<script>
+  // Every flow this caller can read, and a way to start one.
+  import Flow, { flows } from '../resources/Flow.mesa'
+  import { session, useStore } from '@frontierjs/sierra/junction'
+  import { page, goto } from '@frontierjs/sierra/router'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Drawer        from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+
+  const columns = [
+    { name: 'name',           label: 'Flow' },
+    { name: 'status',         label: 'Status' },
+    { name: 'currentVersion', label: 'Version', align: 'right' },
+    { name: 'updatedAt',      label: 'Changed' },
+  ]
+
+  // A tone per status, never a color (Invariant 13).
+  const TONE = { draft: 'muted', active: 'success', paused: 'warning', archived: 'muted' }
+
+  const { get: rows, unsubscribe } = useStore(flows.store)
+  $.onDestroy(unsubscribe)
+  $: (session.level)
+
+  let error   = null
+  let editing = null
+
+  function load() {
+    flows.load(page.query, { orderBy: '-updatedAt', ...page.directives }).catch(e => { error = e.message })
+  }
+  load()
+  $: page.query, page.directives, () => load()
+
+  $: canCreate = flows.can('create', session.level)
+
+  function open()  { editing = flows.make(); error = null }
+  function close() { editing = null }
+
+  // A flow file exported from here or another app becomes a draft this caller
+  // owns (`FJS-D277`); the service compiles it first.
+  async function importFile(event) {
+    const file = event.target.files?.[0]
+    if (!file) return
+    error = null
+    try {
+      const created = await flows.service.invoke('import', null, JSON.parse(await file.text()))
+      goto('/automations/flows/' + created.id + '/')
+    } catch (e) { error = e.message }
+    finally { event.target.value = '' }
+  }
+</script>
+
+<SectionHeader title="Automations" level={1}>
+  {#snippet action()}
+    <div class="cluster">
+      <label class="navlink" for="orion-import">Import…</label>
+      <input id="orion-import" type="file" accept="application/json" hidden onchange={importFile} />
+      <Button id="orion-new" disabled={!canCreate} onclick={open}>New flow</Button>
+    </div>
+  {/snippet}
+</SectionHeader>
+
+{#if error}<Alert tone="danger" id="orion-error">{error}</Alert>{/if}
+
+<Table {columns} rows={rows()} striped hover>
+  {#snippet row(f)}
+    <tr data-flow={f.id}>
+      <td>
+        <a href={'/automations/flows/' + f.id + '/'} data-open>{f.name}</a>
+        {#if f.description}<div class="text-muted text-sm">{f.description}</div>{/if}
+      </td>
+      <td><Pill tone={TONE[f.status] ?? 'muted'} data-status={f.status}>{f.status}</Pill></td>
+      <td class="text-right">{f.currentVersion ?? '—'}</td>
+      <td class="text-muted text-sm">{new Date(f.updatedAt).toLocaleString()}</td>
+    </tr>
+  {/snippet}
+</Table>
+
+<Drawer open={editing !== null} title="New flow" side="right" onclose={close}>
+  {#if editing}
+    <Flow
+      bind:record={editing}
+      method="create"
+      submitId="orion-save"
+      oncancel={close}
+      ondone={(r) => { close(); if (r?.id) goto('/automations/flows/' + r.id + '/') }}
+    />
+  {/if}
+</Drawer>

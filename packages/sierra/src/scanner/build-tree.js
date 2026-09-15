@@ -40,10 +40,15 @@ import {
  * @param {string} routesDir    — e.g. 'src/routes'
  * @param {object} options
  * @param {string} [options.trailingSlash='always'] — 'always' | 'never' | 'preserve'
+ * @param {Map<string, string>} [options.sources] — a mounted file's virtual path
+ *        → its real absolute path, as `walk` fills it
  * @returns {Promise<RouteNode>} — root node
  */
 export async function buildTree(files, routesDir, options = {}) {
-  const { trailingSlash = 'always', cwd = process.cwd() } = options
+  const { trailingSlash = 'always', cwd = process.cwd(), sources = new Map() } = options
+  // Every step below works in the VIRTUAL path a file appears at, because the
+  // URL and the layout chain are computed from it; only a read goes to disk.
+  const abs = (file) => sources.get(file) ?? resolve(cwd, file)
 
   // Separate routes, layouts, companions
   const routeFiles = []
@@ -78,7 +83,7 @@ export async function buildTree(files, routesDir, options = {}) {
   // companion file path → meta object (or {} if no meta export)
   const companionMetaCache = await loadAllCompanionMeta(
     [...companionMap.values()],
-    cwd
+    abs
   )
 
   // Pre-load frontmatter from all layout (_module.mesa) files
@@ -86,7 +91,7 @@ export async function buildTree(files, routesDir, options = {}) {
   const layoutFrontmatterCache = new Map()
   await Promise.all(
     [...layoutMap.values()].map(async (layoutFile) => {
-      const absFm = resolve(cwd, layoutFile)
+      const absFm = abs(layoutFile)
       const fm = await readFrontmatter(absFm)
       // Strip Sierra-internal fields that should not propagate to pages
       const { reset, ...publicFm } = fm
@@ -105,12 +110,22 @@ export async function buildTree(files, routesDir, options = {}) {
       file, routesDir, layoutMap, companionMap,
       layoutCompanionMap, companionMetaCache,
       layoutFrontmatterCache,
-      trailingSlash, cwd
+      trailingSlash, abs
     ))
   )
 
   // Two files, one URL
   checkUrlConflicts(entries)
+
+  // What a node STORES is the path every consumer resolves against the project
+  // root — the route table's imports, the prerender, the dev static-data
+  // endpoint — so a mounted file is stored where it really is.
+  const stored = (file) => file && sources.has(file) ? relative(cwd, sources.get(file)).replace(/\\/g, '/') : file
+  for (const entry of entries) {
+    entry.file      = stored(entry.file)
+    entry.companion = stored(entry.companion)
+    entry.layout    = stored(entry.layout)
+  }
 
   // Sort: shorter paths first, alphabetically within same depth
   entries.sort((a, b) => {
@@ -129,9 +144,9 @@ async function parseRouteFile(
   file, routesDir, layoutMap, companionMap,
   layoutCompanionMap, companionMetaCache,
   layoutFrontmatterCache,
-  trailingSlash, cwd
+  trailingSlash, abs
 ) {
-  const absFile = resolve(cwd, file)
+  const absFile = abs(file)
   const frontmatter = await readFrontmatter(absFile)
 
   const relToRoutes = relative(routesDir, file).replace(/\\/g, '/')
@@ -183,10 +198,10 @@ async function parseRouteFile(
  * Failures are silently swallowed — missing/broken meta = {}
  *
  * @param {string[]} companionFiles — companion file paths (relative to cwd)
- * @param {string} cwd
+ * @param {(file: string) => string} abs — where a file is on disk
  * @returns {Promise<Map<string, Record<string, unknown>>>}
  */
-async function loadAllCompanionMeta(companionFiles, cwd) {
+async function loadAllCompanionMeta(companionFiles, abs) {
   const cache = new Map()
 
   await Promise.all(
@@ -199,8 +214,7 @@ async function loadAllCompanionMeta(companionFiles, cwd) {
         // force a rescan changed nothing, and only a restart did — with nothing
         // saying so (`FJS-821`). Its two sibling importers already busted, and
         // the query string they bust with is not enough under bun (`FJS-806`).
-        const absPath = resolve(cwd, file)
-        const mod = await importFresh(absPath)
+        const mod = await importFresh(abs(file))
         cache.set(file, mod.meta ?? {})
       } catch {
         cache.set(file, {})

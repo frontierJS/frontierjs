@@ -66,13 +66,56 @@ export interface ExecutionContext {
   endedAt?:     number
   currentStage: number    // last stage index reached — resume starts here
 
+  // The flow.wait node a suspended run is waiting on; cleared by the resume.
+  waitingOn?: string
+
   // Flow-level error (distinct from node errors)
   error?: string
+
+  // Transient — NEVER serialized. Who the run acts as, as the host's ports
+  // understand it (a principal-scoped client, for a litestone host). The engine
+  // only carries it to the nodes; a resumed run is handed it again by its job.
+  actor?: unknown
+
+  // Transient. A dry run: a node with an effect outside the actor records what
+  // it would have done and does not do it (`FJS-D283`).
+  dryRun?: boolean
+
+  // Transient. How many rows this run may still write through model nodes, and
+  // how many it has — seeded from the completed model nodes in nodeStates, so a
+  // resumed run counts what it already wrote (`FJS-D283`).
+  writes?: WriteBudget
 
   // Transient — NEVER serialized to SQLite.
   // Present only for sync webhook executions (trigger.webhook mode: "sync").
   // http.respond reads this to send the held HTTP response.
   responseHandle?: SyncResponseHandle
+}
+
+// ─────────────────────────────────────────────
+// EXECUTION JOB
+// One run handed to Scheduler.processJob — by the host's run job.
+// ─────────────────────────────────────────────
+
+export interface WriteBudget {
+  limit: number
+  used:  number
+}
+
+export interface ExecutionJob {
+  executionId: string
+  flowId:      string
+  version:     string
+  trigger:     unknown
+  // If set, the scheduler resumes from this state instead of starting fresh
+  resumeFrom?: ExecutionContext
+  // Present for sync webhook flows — resolved by the http.respond node
+  responseHandle?: SyncResponseHandle
+  // Who the run acts as — see ExecutionContext.actor
+  actor?: unknown
+  dryRun?: boolean
+  // Rows the run may write through model nodes. Absent is no ceiling.
+  maxWrites?: number
 }
 
 // ─────────────────────────────────────────────

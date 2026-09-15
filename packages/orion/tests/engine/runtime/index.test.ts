@@ -1,10 +1,8 @@
 import { describe, test, expect, beforeEach } from "bun:test"
 import {
-  InMemoryQueue,
   InMemoryExecutionStore,
   InMemoryPlanCache,
   Scheduler,
-  QueueFullError,
   type ExecutionContext,
   type ExecutionJob,
   type ExecutionRecord,
@@ -101,67 +99,6 @@ function makeRegistry(impls: INodeImplementation[]): INodeRegistry {
 function makeJob(flowId = "flow_test", trigger: unknown = { body: {} }): ExecutionJob {
   return { executionId: newId(), flowId, version: "1.0.0", trigger }
 }
-
-// ─────────────────────────────────────────────
-// IN-MEMORY QUEUE
-// ─────────────────────────────────────────────
-
-describe("InMemoryQueue", () => {
-  test("enqueues and dequeues jobs in FIFO order", async () => {
-    const q   = new InMemoryQueue()
-    const job1 = makeJob("flow_a")
-    const job2 = makeJob("flow_b")
-
-    await q.enqueue(job1)
-    await q.enqueue(job2)
-
-    expect(await q.dequeue()).toEqual(job1)
-    expect(await q.dequeue()).toEqual(job2)
-  })
-
-  test("dequeue returns undefined when empty", async () => {
-    const q = new InMemoryQueue()
-    expect(await q.dequeue()).toBeUndefined()
-  })
-
-  test("size reflects current queue length", async () => {
-    const q = new InMemoryQueue()
-    expect(q.size()).toBe(0)
-    await q.enqueue(makeJob())
-    expect(q.size()).toBe(1)
-    await q.enqueue(makeJob())
-    expect(q.size()).toBe(2)
-    await q.dequeue()
-    expect(q.size()).toBe(1)
-  })
-
-  test("throws QueueFullError at capacity", async () => {
-    const q = new InMemoryQueue(2)
-    await q.enqueue(makeJob())
-    await q.enqueue(makeJob())
-    await expect(q.enqueue(makeJob())).rejects.toBeInstanceOf(QueueFullError)
-  })
-
-  test("QueueFullError carries capacity", async () => {
-    const q = new InMemoryQueue(3)
-    await q.enqueue(makeJob())
-    await q.enqueue(makeJob())
-    await q.enqueue(makeJob())
-    try {
-      await q.enqueue(makeJob())
-    } catch (err) {
-      expect(err instanceof QueueFullError && err.capacity).toBe(3)
-    }
-  })
-
-  test("clear empties the queue", async () => {
-    const q = new InMemoryQueue()
-    await q.enqueue(makeJob())
-    await q.enqueue(makeJob())
-    q.clear()
-    expect(q.size()).toBe(0)
-  })
-})
 
 // ─────────────────────────────────────────────
 // IN-MEMORY EXECUTION STORE
@@ -282,7 +219,6 @@ describe("Scheduler — single node", () => {
     plans.set("flow_test", "1.0.0", plan)
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(),
       plans,
       new InMemoryExecutionStore(),
       makeRegistry([successNode("greet", { hello: "world" })]),
@@ -302,7 +238,6 @@ describe("Scheduler — single node", () => {
     plans.set("flow_test", "1.0.0", plan)
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(),
       plans,
       new InMemoryExecutionStore(),
       makeRegistry([failNode("bad", "something broke")]),
@@ -324,7 +259,6 @@ describe("Scheduler — single node", () => {
     const job   = makeJob()
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(),
       plans,
       store,
       makeRegistry([successNode("ok")]),
@@ -341,7 +275,6 @@ describe("Scheduler — single node", () => {
   test("throws when plan not found", async () => {
     const plans     = new InMemoryPlanCache()
     const scheduler = new Scheduler(
-      new InMemoryQueue(),
       plans,
       new InMemoryExecutionStore(),
       makeRegistry([]),
@@ -388,7 +321,6 @@ describe("Scheduler — linear flow", () => {
     plans.set("flow_test", "1.0.0", plan)
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(),
       plans,
       new InMemoryExecutionStore(),
       makeRegistry([fetchImpl, processImpl]),
@@ -414,7 +346,6 @@ describe("Scheduler — linear flow", () => {
     plans.set("flow_test", "1.0.0", plan)
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(),
       plans,
       new InMemoryExecutionStore(),
       makeRegistry([impl]),
@@ -468,7 +399,6 @@ describe("Scheduler — parallel execution", () => {
     plans.set("flow_test", "1.0.0", plan)
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(),
       plans,
       new InMemoryExecutionStore(),
       makeRegistry([
@@ -530,7 +460,6 @@ describe("Scheduler — error routing", () => {
     plans.set("flow_test", "1.0.0", plan)
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(),
       plans,
       new InMemoryExecutionStore(),
       makeRegistry([
@@ -556,7 +485,6 @@ describe("Scheduler — error routing", () => {
     plans.set("flow_test", "1.0.0", plan)
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(),
       plans,
       new InMemoryExecutionStore(),
       makeRegistry([failNode("fail")]),
@@ -617,7 +545,6 @@ describe("Scheduler — conditional edges", () => {
     plans.set("flow_test", "1.0.0", plan)
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(),
       plans,
       new InMemoryExecutionStore(),
       makeRegistry([successNode("trigger", {}), scoreNode, notifyNode]),
@@ -690,7 +617,6 @@ describe("Resumability", () => {
     }
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(),
       plans,
       new InMemoryExecutionStore(),
       makeRegistry([fetchImpl, processImpl]),
@@ -728,7 +654,6 @@ describe("Resumability", () => {
     plans.set("flow_test", "1.0.0", plan)
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(),
       plans,
       store,
       makeRegistry([
@@ -739,13 +664,86 @@ describe("Resumability", () => {
       { checkpoint: true },
     )
 
+    const stages: number[] = []
+    const save = store.saveContext.bind(store)
+    store.saveContext = async (ctx) => { stages.push(ctx.currentStage); return save(ctx) }
+
     const job = makeJob()
     await scheduler.processJob(job)
 
-    // Context was checkpointed during execution
+    expect(stages).toEqual([0, 1])
+    // The run ended, so there is nothing left to resume from.
+    expect(await store.getContext(job.executionId)).toBeUndefined()
+  })
+
+  test("a failing node ends the run only once its stage has settled", async () => {
+    let siblingDone = false
+    const plan  = makePlan({ nodes: { a: makeNode("a", "fails"), b: makeNode("b", "slow") } })
+    const plans = new InMemoryPlanCache()
+    plans.set("flow_test", "1.0.0", plan)
+
+    const record = await new Scheduler(
+      plans, new InMemoryExecutionStore(),
+      makeRegistry([
+        failNode("fails"),
+        nodeImpl("slow", async () => { await new Promise(r => setTimeout(r, 30)); siblingDone = true; return { ok: true, data: 1 } }),
+      ]),
+    ).processJob(makeJob())
+
+    expect(record.status).toBe("failed")
+    expect(siblingDone).toBe(true)
+    expect(record.nodeStates["b"]?.status).toBe("completed")
+  })
+
+  test("a node that cannot run fails the run rather than being stepped over", async () => {
+    const plan  = makePlan({
+      nodes:  { a: makeNode("a", "unregistered"), b: makeNode("b", "nodeB") },
+      stages: [
+        { index: 0, nodes: ["a"], edges: {} },
+        { index: 1, nodes: ["b"], edges: {} },
+      ],
+    })
+    const plans = new InMemoryPlanCache()
+    plans.set("flow_test", "1.0.0", plan)
+
+    const record = await new Scheduler(
+      plans, new InMemoryExecutionStore(),
+      makeRegistry([successNode("nodeB", { b: 2 })]),
+    ).processJob(makeJob())
+
+    expect(record.status).toBe("failed")
+    expect(record.error).toMatch(/No implementation registered/)
+    expect(record.nodeStates["b"]?.status).toBe("pending")
+  })
+
+  test("a run suspended at a wait is checkpointed and not recorded", async () => {
+    const store = new InMemoryExecutionStore()
+    const plan  = makePlan({
+      nodes:  { a: makeNode("a", "waits"), b: makeNode("b", "nodeB") },
+      stages: [
+        { index: 0, nodes: ["a"], edges: {} },
+        { index: 1, nodes: ["b"], edges: {} },
+      ],
+    })
+    const plans = new InMemoryPlanCache()
+    plans.set("flow_test", "1.0.0", plan)
+
+    const scheduler = new Scheduler(
+      plans, store,
+      makeRegistry([
+        successNode("waits", { __orion_wait: true, resumeKey: "k" }),
+        successNode("nodeB", { b: 2 }),
+      ]),
+    )
+
+    const job    = makeJob()
+    const record = await scheduler.processJob(job)
+
+    expect(record.status).toBe("waiting")
+    expect(await store.getRecord(job.executionId)).toBeUndefined()
     const saved = await store.getContext(job.executionId)
-    expect(saved).toBeDefined()
-    expect(saved?.currentStage).toBeGreaterThan(0)
+    expect(saved?.status).toBe("waiting")
+    expect(saved?.nodeStates["b"]?.status).toBe("pending")
   })
 })
 
@@ -760,7 +758,6 @@ describe("Execution record", () => {
     plans.set("flow_test", "1.0.0", plan)
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(),
       plans,
       new InMemoryExecutionStore(),
       makeRegistry([successNode("ok")]),
@@ -776,7 +773,6 @@ describe("Execution record", () => {
     plans.set("flow_test", "1.0.0", plan)
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(),
       plans,
       new InMemoryExecutionStore(),
       makeRegistry([
@@ -797,7 +793,6 @@ describe("Execution record", () => {
     plans.set("flow_test", "1.0.0", plan)
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(),
       plans,
       new InMemoryExecutionStore(),
       makeRegistry([successNode("ok")]),
@@ -823,7 +818,6 @@ describe("Execution record", () => {
     plans.set("flow_test", "1.0.0", plan)
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(),
       plans,
       new InMemoryExecutionStore(),
       makeRegistry([
@@ -835,217 +829,6 @@ describe("Execution record", () => {
     const record = await scheduler.processJob(makeJob())
     expect(record.finalContext["a"]).toEqual({ from: "a" })
     expect(record.finalContext["b"]).toEqual({ from: "b" })
-  })
-})
-
-// ─────────────────────────────────────────────
-// STORE — queryRecords
-// ─────────────────────────────────────────────
-
-describe("InMemoryExecutionStore — queryRecords", () => {
-  function makeRecord(overrides: Partial<ExecutionRecord> = {}): ExecutionRecord {
-    return {
-      executionId:  newId(),
-      flowId:       "flow_a",
-      version:      "1.0.0",
-      status:       "completed",
-      trigger:      {},
-      startedAt:    Date.now(),
-      endedAt:      Date.now() + 100,
-      durationMs:   100,
-      nodeStates:   {},
-      nodeTimings:  {},
-      slowNodes:    [],
-      finalContext: {},
-      ...overrides,
-    }
-  }
-
-  test("returns all records when no filter", async () => {
-    const store = new InMemoryExecutionStore()
-    await store.saveRecord(makeRecord())
-    await store.saveRecord(makeRecord())
-    await store.saveRecord(makeRecord())
-    const results = await store.queryRecords({})
-    expect(results).toHaveLength(3)
-  })
-
-  test("filters by flowId", async () => {
-    const store = new InMemoryExecutionStore()
-    await store.saveRecord(makeRecord({ flowId: "flow_a" }))
-    await store.saveRecord(makeRecord({ flowId: "flow_a" }))
-    await store.saveRecord(makeRecord({ flowId: "flow_b" }))
-    const results = await store.queryRecords({ flowId: "flow_a" })
-    expect(results).toHaveLength(2)
-    expect(results.every(r => r.flowId === "flow_a")).toBe(true)
-  })
-
-  test("filters by status", async () => {
-    const store = new InMemoryExecutionStore()
-    await store.saveRecord(makeRecord({ status: "completed" }))
-    await store.saveRecord(makeRecord({ status: "failed" }))
-    await store.saveRecord(makeRecord({ status: "failed" }))
-    const results = await store.queryRecords({ status: "failed" })
-    expect(results).toHaveLength(2)
-  })
-
-  test("filters by since timestamp", async () => {
-    const store = new InMemoryExecutionStore()
-    const now   = Date.now()
-    await store.saveRecord(makeRecord({ startedAt: now - 10_000 }))  // old
-    await store.saveRecord(makeRecord({ startedAt: now - 1_000  }))  // recent
-    await store.saveRecord(makeRecord({ startedAt: now          }))  // now
-    const results = await store.queryRecords({ since: now - 5_000 })
-    expect(results).toHaveLength(2)
-  })
-
-  test("respects limit", async () => {
-    const store = new InMemoryExecutionStore()
-    for (let i = 0; i < 10; i++) await store.saveRecord(makeRecord())
-    const results = await store.queryRecords({ limit: 3 })
-    expect(results).toHaveLength(3)
-  })
-
-  test("respects offset for pagination", async () => {
-    const store = new InMemoryExecutionStore()
-    const ids: string[] = []
-    for (let i = 0; i < 5; i++) {
-      const r = makeRecord({ startedAt: Date.now() + i })
-      ids.push(r.executionId)
-      await store.saveRecord(r)
-    }
-    const page1 = await store.queryRecords({ limit: 2, offset: 0 })
-    const page2 = await store.queryRecords({ limit: 2, offset: 2 })
-    expect(page1).toHaveLength(2)
-    expect(page2).toHaveLength(2)
-    // No overlap
-    const p1ids = page1.map(r => r.executionId)
-    const p2ids = page2.map(r => r.executionId)
-    expect(p1ids.some(id => p2ids.includes(id))).toBe(false)
-  })
-
-  test("returns newest first", async () => {
-    const store = new InMemoryExecutionStore()
-    const now   = Date.now()
-    await store.saveRecord(makeRecord({ startedAt: now - 2000, executionId: "old" }))
-    await store.saveRecord(makeRecord({ startedAt: now,        executionId: "new" }))
-    const results = await store.queryRecords({})
-    expect(results[0]!.executionId).toBe("new")
-    expect(results[1]!.executionId).toBe("old")
-  })
-})
-
-// ─────────────────────────────────────────────
-// STORE — getMetrics
-// ─────────────────────────────────────────────
-
-describe("InMemoryExecutionStore — getMetrics", () => {
-  function makeRecord(overrides: Partial<ExecutionRecord> = {}): ExecutionRecord {
-    return {
-      executionId:  newId(),
-      flowId:       "flow_a",
-      version:      "1.0.0",
-      status:       "completed",
-      trigger:      {},
-      startedAt:    Date.now(),
-      endedAt:      Date.now() + 200,
-      durationMs:   200,
-      nodeStates:   {},
-      nodeTimings:  {},
-      slowNodes:    [],
-      finalContext: {},
-      ...overrides,
-    }
-  }
-
-  test("totalRuns counts all records in window", async () => {
-    const store = new InMemoryExecutionStore()
-    await store.saveRecord(makeRecord())
-    await store.saveRecord(makeRecord())
-    await store.saveRecord(makeRecord())
-    const m = await store.getMetrics()
-    expect(m.totalRuns).toBe(3)
-  })
-
-  test("successRate is 1 when all completed", async () => {
-    const store = new InMemoryExecutionStore()
-    await store.saveRecord(makeRecord({ status: "completed" }))
-    await store.saveRecord(makeRecord({ status: "completed" }))
-    const m = await store.getMetrics()
-    expect(m.successRate).toBe(1)
-  })
-
-  test("successRate is 0.5 with half failures", async () => {
-    const store = new InMemoryExecutionStore()
-    await store.saveRecord(makeRecord({ status: "completed" }))
-    await store.saveRecord(makeRecord({ status: "failed" }))
-    const m = await store.getMetrics()
-    expect(m.successRate).toBe(0.5)
-  })
-
-  test("avgDurationMs is computed correctly", async () => {
-    const store = new InMemoryExecutionStore()
-    await store.saveRecord(makeRecord({ durationMs: 100 }))
-    await store.saveRecord(makeRecord({ durationMs: 200 }))
-    await store.saveRecord(makeRecord({ durationMs: 300 }))
-    const m = await store.getMetrics()
-    expect(m.avgDurationMs).toBe(200)
-  })
-
-  test("filters metrics by flowId", async () => {
-    const store = new InMemoryExecutionStore()
-    await store.saveRecord(makeRecord({ flowId: "flow_a", status: "completed" }))
-    await store.saveRecord(makeRecord({ flowId: "flow_a", status: "completed" }))
-    await store.saveRecord(makeRecord({ flowId: "flow_b", status: "failed" }))
-    const m = await store.getMetrics("flow_a")
-    expect(m.totalRuns).toBe(2)
-    expect(m.successRate).toBe(1)
-  })
-
-  test("excludes records outside windowMs", async () => {
-    const store = new InMemoryExecutionStore()
-    const now   = Date.now()
-    await store.saveRecord(makeRecord({ startedAt: now - 7_200_000 }))  // 2h ago — outside 1h window
-    await store.saveRecord(makeRecord({ startedAt: now - 1_800_000 }))  // 30m ago — inside
-    await store.saveRecord(makeRecord({ startedAt: now              }))  // now — inside
-    const m = await store.getMetrics(undefined, 3_600_000)  // 1h window
-    expect(m.totalRuns).toBe(2)
-  })
-
-  test("slowNodes shows top slowest node types", async () => {
-    const store = new InMemoryExecutionStore()
-    await store.saveRecord(makeRecord({ nodeTimings: { fetchLead: 800, scoreLead: 1500 } }))
-    await store.saveRecord(makeRecord({ nodeTimings: { fetchLead: 600, scoreLead: 1200 } }))
-    const m = await store.getMetrics()
-    expect(m.slowNodes[0]!.nodeId).toBe("scoreLead")
-    expect(m.slowNodes[0]!.avgMs).toBe(1350)
-  })
-
-  test("errorSummary groups and counts errors", async () => {
-    const store = new InMemoryExecutionStore()
-    const withErrors = (errors: Record<string, string>): Record<string, NodeExecutionState> =>
-      Object.fromEntries(Object.entries(errors).map(([id, error]) => [
-        id, { status: "failed" as const, error, attempts: 1, fromCache: false, logs: [] }
-      ]))
-
-    await store.saveRecord(makeRecord({ nodeStates: withErrors({ n: "api timeout" }) }))
-    await store.saveRecord(makeRecord({ nodeStates: withErrors({ n: "api timeout" }) }))
-    await store.saveRecord(makeRecord({ nodeStates: withErrors({ n: "invalid input" }) }))
-    const m = await store.getMetrics()
-    expect(m.errorSummary[0]!.error).toBe("api timeout")
-    expect(m.errorSummary[0]!.count).toBe(2)
-    expect(m.errorSummary[1]!.error).toBe("invalid input")
-    expect(m.errorSummary[1]!.count).toBe(1)
-  })
-
-  test("returns empty metrics for no records", async () => {
-    const store = new InMemoryExecutionStore()
-    const m = await store.getMetrics()
-    expect(m.totalRuns).toBe(0)
-    expect(m.successRate).toBe(1)   // no failures = 100% success
-    expect(m.avgDurationMs).toBe(0)
-    expect(m.slowNodes).toHaveLength(0)
-    expect(m.errorSummary).toHaveLength(0)
   })
 })
 
@@ -1077,7 +860,7 @@ describe("Scheduler — events", () => {
     plans.set("flow_test", "1.0.0", makeSingleNodePlan())
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(), plans, new InMemoryExecutionStore(),
+      plans, new InMemoryExecutionStore(),
       makeRegistry([successNode("ok")]),
     )
     scheduler.on(e => events.push(e))
@@ -1097,7 +880,7 @@ describe("Scheduler — events", () => {
     plans.set("flow_test", "1.0.0", makeSingleNodePlan("bad"))
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(), plans, new InMemoryExecutionStore(),
+      plans, new InMemoryExecutionStore(),
       makeRegistry([failNode("bad")]),
     )
     scheduler.on(e => events.push(e))
@@ -1113,7 +896,7 @@ describe("Scheduler — events", () => {
     plans.set("flow_test", "1.0.0", makeSingleNodePlan())
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(), plans, new InMemoryExecutionStore(),
+      plans, new InMemoryExecutionStore(),
       makeRegistry([successNode("ok")]),
     )
     scheduler.on(e => events.push(e))
@@ -1130,7 +913,7 @@ describe("Scheduler — events", () => {
     plans.set("flow_test", "1.0.0", makeSingleNodePlan("bad"))
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(), plans, new InMemoryExecutionStore(),
+      plans, new InMemoryExecutionStore(),
       makeRegistry([failNode("bad", "boom")]),
     )
     scheduler.on(e => events.push(e))
@@ -1150,7 +933,7 @@ describe("Scheduler — events", () => {
     plans.set("flow_test", "1.0.0", makeMultiStagePlan())
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(), plans, new InMemoryExecutionStore(),
+      plans, new InMemoryExecutionStore(),
       makeRegistry([successNode("nodeA"), successNode("nodeB")]),
     )
     scheduler.on(e => events.push(e))
@@ -1167,7 +950,7 @@ describe("Scheduler — events", () => {
     plans.set("flow_test", "1.0.0", makeSingleNodePlan())
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(), plans, new InMemoryExecutionStore(),
+      plans, new InMemoryExecutionStore(),
       makeRegistry([successNode("ok")]),
     )
 
@@ -1183,7 +966,7 @@ describe("Scheduler — events", () => {
     plans.set("flow_test", "1.0.0", makeSingleNodePlan())
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(), plans, new InMemoryExecutionStore(),
+      plans, new InMemoryExecutionStore(),
       makeRegistry([successNode("ok")]),
     )
 
@@ -1195,23 +978,13 @@ describe("Scheduler — events", () => {
     expect(record.status).toBe("completed")
   })
 
-  test("activeCount reflects running job count", () => {
-    const scheduler = new Scheduler(
-      new InMemoryQueue(),
-      new InMemoryPlanCache(),
-      new InMemoryExecutionStore(),
-      makeRegistry([]),
-    )
-    expect(scheduler.activeCount).toBe(0)
-  })
-
   test("node:completed carries fromCache flag", async () => {
     const events: SchedulerEvent[] = []
     const plans = new InMemoryPlanCache()
     plans.set("flow_test", "1.0.0", makeSingleNodePlan())
 
     const scheduler = new Scheduler(
-      new InMemoryQueue(), plans, new InMemoryExecutionStore(),
+      plans, new InMemoryExecutionStore(),
       makeRegistry([successNode("ok")]),
     )
     scheduler.on(e => events.push(e))

@@ -2,7 +2,7 @@
   "name": "@frontierjs/orion",
   "version": "0.0.0",
   "private": true,
-  "description": "Automations for a FrontierJS app \u2014 flows of triggers, conditions and actions, run by an engine installed into the app",
+  "description": "Automations for a FrontierJS app — flows of triggers, conditions and actions, run by an engine installed into the app",
   "type": "module",
   "license": "MIT",
   "author": "FrontierJS",
@@ -11,17 +11,36 @@
     "url": "git+https://github.com/frontierJS/frontierjs.git",
     "directory": "packages/orion"
   },
+  "exports": {
+    "./plugin": "./src/plugin.ts",
+    "./routes": "./web/routes.js",
+    "./orion.lite": "./db/orion.lite"
+  },
   "scripts": {
     "test": "bun test tests",
-    "typecheck": "node ../../scripts/typecheck.mjs"
+    "typecheck": "node ../../scripts/typecheck.mjs",
+    "bench": "bun bench/checkpoint.ts"
   },
   "engines": {
     "bun": ">=1.0.0"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.14"
+    "@types/bun": "^1.3.14",
+    "@frontierjs/junction": "workspace:*",
+    "@frontierjs/litestone": "workspace:*",
+    "@frontierjs/conduit": "workspace:*",
+    "@frontierjs/sierra": "workspace:*",
+    "@frontierjs/ui": "workspace:*",
+    "@frontierjs/mesa": "workspace:*"
   },
   "dependencies": {
     "@frontierjs/toolbelt": "workspace:*"
+  },
+  "peerDependencies": {
+    "@frontierjs/junction": "*",
+    "@frontierjs/litestone": "*",
+    "@frontierjs/conduit": "*",
+    "@frontierjs/sierra": "*",
+    "@frontierjs/ui": "*"
   }
 }

@@ -2,6 +2,17 @@
 
 Newest first. What this app built and what building it found; live state is `PROJECT_STATE.md`, framework defects are `../ISSUES.md`.
 
+## 2026-09-15 — automations
+
+Orion is installed. `db/schema.lite` imports `@frontierjs/orion/orion.lite`, so each shop's
+file holds its own flows, runs and waits (`FJS-D294`); `api/src/app.ts` configures
+`orion({ level: shopGateLevel })` after the queue; and `web/src/routes/automations.mount.js`
+mounts orion's screens at `/automations/` by one line (`FJS-D282`). **Found by installing it**:
+orion's services graded an administrator by junction's `sessionGateLevel`, under which a shop's
+`role: 'admin'` is USER(4) though every model here grades it 5 — hence `level`, and `FJS-1161`
+for junction's own method gate, which has the same split. The screens build and are in the route
+snapshot; no drive runs them yet.
+
 ## 2026-09-14 — a billing period is DAYS (`FJS-D288`)
 
 The interim the entry below left: a period was still an instant, `advancePeriod`

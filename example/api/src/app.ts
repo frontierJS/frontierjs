@@ -20,6 +20,7 @@ import type { CredentialChange }                 from '@frontierjs/auth'
 import { createCaravan }                        from '@frontierjs/caravan'
 import { conduit }                              from '@frontierjs/conduit'
 import { notificationsPlugin }                  from '@frontierjs/notifications'
+import { orion }                                from '@frontierjs/orion/plugin'
 import { mailerPlugin, outbox }                 from '@frontierjs/junction'
 
 import { db, shops, DEFAULT_SHOP, DEV_KEY, STORAGE_ROOT, TIME_ZONE_FLOOR } from './core/db.ts'
@@ -459,6 +460,15 @@ app.configure(queue)
 // a committed call kicks the relay immediately. It is how long a row a crash
 // left behind waits, and one second keeps the drive's assertions quick.
 app.configure(outbox({ intervalMs: 1_000 }))
+
+// ─── Automations ──────────────────────────────────────────────────────────
+//
+// Orion: flows a person draws, run by Caravan as the flow's owner in the flow's
+// own shop (`FJS-D276`, `FJS-D294`). AFTER the queue, which it declares it
+// requires. Its screens mount at /automations/ in web/ by one file. `level` is
+// the same mapping the Data boundary grades by, so a shop's `admin` role is an
+// administrator to orion's services as well.
+app.configure(orion({ level: shopGateLevel }))
 
 // ─── Outbound ─────────────────────────────────────────────────────────────
 //

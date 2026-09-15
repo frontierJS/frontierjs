@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-27 routes · 1 layout · target spa · trailing slash always
+32 routes · 2 layouts · target spa · trailing slash always
 ```
 
 ## Routes
@@ -24,6 +24,11 @@ column is what the page DECLARED, already merged down the layout chain.
 | --- | --- | --- | --- |
 | `/` | `src/routes/index.mesa` | `src/routes/_module.mesa` | — |
 | `/account/` | `src/routes/account/index.mesa` | `src/routes/_module.mesa` | — |
+| `/automations/` | `../../packages/orion/web/routes/index.mesa` | `../../packages/orion/web/routes/_module.mesa` | — |
+| `/automations/credentials/` | `../../packages/orion/web/routes/credentials/index.mesa` | `../../packages/orion/web/routes/_module.mesa` | — |
+| `/automations/flows/:flowId/` | `../../packages/orion/web/routes/flows/[flowId].mesa` | `../../packages/orion/web/routes/_module.mesa` | `flowId` |
+| `/automations/runs/` | `../../packages/orion/web/routes/runs/index.mesa` | `../../packages/orion/web/routes/_module.mesa` | — |
+| `/automations/runs/:runId/` | `../../packages/orion/web/routes/runs/[runId].mesa` | `../../packages/orion/web/routes/_module.mesa` | `runId` |
 | `/cart/` | `src/routes/cart/index.mesa` | `src/routes/_module.mesa` | — |
 | `/customers/` | `src/routes/customers/index.mesa` | `src/routes/_module.mesa` | — |
 | `/inventory/` | `src/routes/inventory/index.mesa` | `src/routes/_module.mesa` | — |
@@ -59,6 +64,11 @@ this section exists to show.
 
 - `/` — siteName: `Kitchen sink` · title: `Home`
 - `/account/` — siteName: `Kitchen sink` · title: `Account`
+- `/automations/` — siteName: `Kitchen sink` · title: `Automations`
+- `/automations/credentials/` — siteName: `Kitchen sink` · title: `Credentials`
+- `/automations/flows/:flowId/` — siteName: `Kitchen sink` · title: `Flow`
+- `/automations/runs/` — siteName: `Kitchen sink` · title: `Runs`
+- `/automations/runs/:runId/` — siteName: `Kitchen sink` · title: `Run`
 - `/cart/` — siteName: `Kitchen sink` · title: `Basket`
 - `/customers/` — siteName: `Kitchen sink` · title: `Customers`
 - `/inventory/` — siteName: `Kitchen sink` · title: `Inventory`
@@ -90,4 +100,5 @@ this section exists to show.
 Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
+- `../../packages/orion/web/routes/_module.mesa` — 5 routes: `/automations/`, `/automations/credentials/`, `/automations/flows/:flowId/`, `/automations/runs/`, `/automations/runs/:runId/`
 - `src/routes/_module.mesa` — 27 routes: `/`, `/account/`, `/cart/`, `/customers/`, `/inventory/`, `/invoices/`, `/invoices/:id/`, `/orders/`, `/orders/:id/`, `/orders/create/`, `/payroll/`, `/payroll/:id/`, `/people/`, `/people/:id/`, `/plans/`, `/plans/:id/`, `/products/`, `/products/:id/`, `/products/create/`, `/reports/`, `/reset/`, `/settings/`, `/settings/fields/`, `/sign-in/`, `/subscriptions/`, `/subscriptions/:id/`, `/users/`

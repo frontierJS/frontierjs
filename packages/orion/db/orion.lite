@@ -1,0 +1,267 @@
+// ─── @frontierjs/orion — flows and their runs ────────────────────────────────
+//
+// Every model an installed orion reads or writes. An app IMPORTS this file
+// rather than pasting it, because it changes when this package does
+// (`import "@frontierjs/orion/orion.lite"`), and adds what this file cannot
+// know with `extend model`: a relation from `Flow.ownerId` to its own User, and
+// under `strategy row` tenancy the tenant column on Flow, FlowCredential and
+// KvEntry, since the column's name is the app's. Every other model here reaches
+// a Flow through its relation, which scopes it (`FJS-D294`, `FJS-1159`).
+//
+// Two kinds of model and two gate shapes. What a PERSON edits — Flow,
+// FlowVersion, FlowLayout, FlowCredential — is gated at the level that edits it.
+// What the ENGINE writes — Run, RunStep, Wait, KvEntry — is written at 8, and
+// the engine is the only thing holding a system client over it.
+//
+// A run acts as its flow's owner (`FJS-D276`), so `ownerId` is an access grant
+// and is guarded like one: stamped from the creator, refused when a create
+// names somebody else, and never written again. A flow anyone could re-own
+// would run with whichever standing its author picked.
+//
+// This file is REAL .lite and parses standalone.
+
+// ─── Flows ───────────────────────────────────────────────────────────────────
+
+enum FlowStatus {
+  draft
+  // What every trigger reads. `paused` is the kill switch (`FJS-D283`).
+  active
+  paused
+  archived
+}
+
+model Flow {
+  id              String       @id @default(uuid())
+  name            String       @trim @length(1, 200)
+  description     String?
+  status          FlowStatus   @default(draft)
+  // The FlowVersion.version a trigger runs. Not writable while the flow is
+  // active: pointing a live flow at a new definition is an activation, and it
+  // goes through `pause` and `activate` like one. The write is dropped rather
+  // than refused, which is litestone's answer for a field `@allow('write')`.
+  // A create reads the payload, where an absent status is NULL and a bare
+  // `status != 'active'` would drop the version from every new flow.
+  currentVersion  Int?         @allow('write', status == null || status != 'active')
+  ownerId         String       @default(auth().id) @immutable
+  // How many runs may start in any sixty seconds. Null is no limit; a trigger
+  // over it is refused rather than queued (`FJS-D283`).
+  runsPerMinute   Int?         @gte(1)
+  // How many rows one run may write through model nodes (`FJS-D283`).
+  maxWrites       Int          @default(1000) @gte(0)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  versions        FlowVersion[]
+  layout          FlowLayout?
+
+  // Drafting is USER(4); activation is the act with reach, ADMINISTRATOR(5)
+  // (`FJS-D278`). Pausing and archiving take reach away, so they stay at the
+  // model's level. Delete is 5 and takes the versions and their runs with it —
+  // `archived` is the way to retire a flow and keep its history.
+  @@gate("4.4.4.5")
+  @@transitions(status,
+    activate: [draft, paused]         -> active @gate(5),
+    pause:    active                  -> paused,
+    archive:  [draft, active, paused] -> archived,
+    restore:  archived                -> draft
+  )
+  // A create is evaluated before its defaults are stamped, so an absent value
+  // is legitimate here and the `!= null` is what keeps it so. Without the
+  // status rule a flow created `active` never passes the activation gate.
+  // The gate is the whole answer to who creates; the denies only narrow what.
+  @@allow('create', true)
+  // Only the owner edits, an administrator included (`FJS-D289`): an edit
+  // changes what the owner's standing does. An administrator activating or
+  // pausing somebody else's flow goes through the flows service, which grades
+  // the caller and writes as system — so the `@gate(5)` above grades an owner.
+  @@allow('update', ownerId == auth().id)
+  @@deny('create', ownerId != null && ownerId != auth().id)
+  @@deny('create', status != null && status != 'draft')
+  @@index([status])
+  @@index([ownerId])
+}
+
+// One definition, immutable once written (`FJS-D277`): update is 9, so an edit
+// is a new row and nothing, the system client included, rewrites an old one.
+model FlowVersion {
+  id          String    @id @default(uuid())
+  flowId      String
+  flow        Flow      @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  version     Int
+  // The engine's `Flow` JSON: nodes, edges, trigger.
+  definition  Json
+  // Who wrote this definition. A run acts as the flow's OWNER, so the author of
+  // what runs and the standing it runs with can be two people, and activating
+  // a flow is approving the one below. Null when the system wrote it.
+  authorId    String?   @default(auth().id)
+  createdAt   DateTime  @default(now())
+
+  runs        Run[]
+
+  @@gate("4.4.9.8")
+  // A version is an edit, so it is the owner's (`FJS-D289`).
+  @@allow('create', flow.ownerId == auth().id)
+  @@deny('create', authorId != null && authorId != auth().id)
+  @@unique([flowId, version])
+}
+
+// Where the builder drew the nodes. Unversioned: moving a box is not an edit.
+model FlowLayout {
+  id        String    @id @default(uuid())
+  flowId    String    @unique
+  flow      Flow      @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  layout    Json      @default("{}")
+  updatedAt DateTime  @updatedAt
+
+  @@gate("4.4.4.5")
+  @@allow('create,update,delete', flow.ownerId == auth().id)   // FJS-D289
+}
+
+// ─── Runs ────────────────────────────────────────────────────────────────────
+
+enum RunStatus {
+  pending
+  running
+  // Suspended at a `flow.wait`; the context holds everything a resume needs.
+  waiting
+  completed
+  failed
+  cancelled
+}
+
+model Run {
+  id             String     @id @default(uuid())
+  flowVersionId  String
+  flowVersion    FlowVersion @relation(fields: [flowVersionId], references: [id], onDelete: Cascade)
+  status         RunStatus  @default(pending)
+  trigger        Json?
+  // The resume checkpoint, rewritten once per stage — the engine's hot path.
+  // Encrypted and hidden below system, because it holds every value every step
+  // produced, protected fields included; cleared when the run ends, after which
+  // RunStep is the history (Invariant 7).
+  context        Json?      @encrypted
+  currentStage   Int        @default(0)
+  // Who the run acted as. The owner at dispatch; recorded, never trusted.
+  actorId        String?
+  startedAt      DateTime?
+  endedAt        DateTime?
+  error          String?
+  // When the trigger wrote the row. A run still pending well after this is one
+  // whose dispatch was lost between the insert and the queue, which the sweep
+  // dispatches again under the same job id.
+  createdAt      DateTime   @default(now())
+  // Stamped while a sync webhook run executes in the process holding the
+  // request, which no job lease covers. Set means that process owns the run;
+  // stale means it stopped, and the sweep hands the run to a job (FJS-1156).
+  heartbeatAt    DateTime?
+
+  steps          RunStep[]
+  waits          Wait[]
+
+  // Read by the inspector at USER(4); written by nothing but the engine.
+  @@gate("4.8.8.8")
+  // The engine writes through asSystem(), which does not consult this, so it
+  // binds the engine only through the store suite that grades every status
+  // write against it. What it gives the host is x-transitions for `cancel`.
+  // The database sees a run at its checkpoints, so a wait in the first stage
+  // arrives from `pending`.
+  @@transitions(status,
+    start:    pending                     -> running,
+    suspend:  [pending, running]          -> waiting,
+    resume:   waiting                     -> running,
+    complete: running                     -> completed,
+    fail:     [pending, running, waiting] -> failed,
+    cancel:   [pending, running, waiting] -> cancelled
+  )
+  @@index([flowVersionId, startedAt])
+  @@index([status, createdAt])
+  @@index([status, heartbeatAt])
+}
+
+enum StepStatus { pending running completed failed skipped }
+
+// One node's outcome in one run, written once when the run ends and never
+// amended. No @@log: a run already IS a record, and an audit row per step would
+// double every terminal write.
+model RunStep {
+  id          String      @id @default(uuid())
+  runId       String
+  run         Run         @relation(fields: [runId], references: [id], onDelete: Cascade)
+  nodeId      String
+  status      StepStatus
+  attempts    Int         @default(0)
+  fromCache   Boolean     @default(false)
+  startedAt   DateTime?
+  durationMs  Int?
+  output      Json?
+  error       String?
+  logs        Json?
+
+  // Update is 9 because a step is history; delete is 8 so retention can run.
+  @@gate("4.8.9.8")
+  @@unique([runId, nodeId])
+}
+
+// A run suspended at `flow.wait`. The key is the credential that resumes it.
+model Wait {
+  id         String     @id @default(uuid())
+  // Global under row tenancy on purpose: 32 random bytes name one wait in the
+  // whole installation, and a resume arrives knowing nothing else.
+  resumeKey  String     @unique(global)
+  runId      String
+  run        Run        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  nodeId     String
+  timeoutAt  DateTime?
+  createdAt  DateTime   @default(now())
+
+  @@gate("8")
+  @@index([timeoutAt])
+}
+
+// ─── What a flow holds ───────────────────────────────────────────────────────
+
+enum FlowCredentialAuth {
+  // A public API: the credential is the address alone.
+  none
+  bearer
+  api_key
+  hmac
+}
+
+// Somewhere a flow's http.request may call, and how it signs the call. Every
+// outbound call goes through one — a public URL is a credential with no auth
+// (`FJS-D273`) — so this table is also the list of everywhere this app's flows
+// reach. Registered as a conduit target on first use and again after an edit.
+// An administrator writes one and reads it back without the secret. Not
+// `Credential`: that is @frontierjs/auth's, and an app imports both.
+model FlowCredential {
+  id         String              @id @default(uuid())
+  name       String              @unique @trim @length(1, 200)
+  provider   String              @trim
+  // The base URL a request's path is joined to.
+  address    String              @trim
+  auth       FlowCredentialAuth  @default(none)
+  // The header an api_key is sent in, or an hmac signature's header prefix.
+  header     String?
+  // How a request body goes on the wire: json, or form for the APIs that want it.
+  encoding   String?             @default("json")
+  secret     String?             @encrypted
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  @@gate("5")
+}
+
+// The `store` node's state (`FJS-D281`). `scope` is `global` or `flow:<id>`.
+model KvEntry {
+  id         String    @id @default(uuid())
+  scope      String
+  key        String
+  value      Json
+  expiresAt  DateTime?
+  updatedAt  DateTime  @updatedAt
+
+  @@gate("8")
+  @@unique([scope, key])
+  @@index([expiresAt])
+}

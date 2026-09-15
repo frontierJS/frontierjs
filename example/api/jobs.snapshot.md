@@ -29,6 +29,8 @@ it re-resolved when it runs. Survives a restart.
 | `calculate-payslip` | `default` | on dispatch | — | 3 | default | **none** |
 | `collect-invoice` | `default` | on dispatch | — | 4 | default | **none** |
 | `dun-subscriptions` | `default` | `0 6 * * *` | — | 3 | default | **none** |
+| `orion.run` | `orion` | on dispatch | — | 3 | default | **none** |
+| `orion.sweep` | `orion` | `* * * * *` | — | 3 | default | **none** |
 | `release-holds` | `default` | `*/5 * * * *` | — | 3 | default | **none** |
 | `renew-subscription` | `default` | on dispatch | — | 3 | default | **none** |
 | `renew-subscriptions` | `default` | `0 * * * *` | — | 3 | default | **none** |
@@ -36,9 +38,9 @@ it re-resolved when it runs. Survives a restart.
 | `send-payslip` | `default` | on dispatch | — | 5 | default | **none** |
 | `sweep-abandoned` | `default` | `0 3 * * *` | — | 3 | default | **none** |
 
-11 handler(s), 5 of them on a clock.
+13 handler(s), 6 of them on a clock.
 
-**10 with no timeout.** Absent means no bound, honestly — but a
+**12 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a
 single-concurrency queue everything behind it waits (`FJS-295`). Worth knowing
 which ones those are, which is why the column is here rather than omitted when

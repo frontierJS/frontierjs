@@ -16,19 +16,23 @@ import { ExpressionResolver } from "../expression"
 
 export interface NodeContext {
   executionId: string
+  flowId:      string
+  nodeId:      string
+  attempt:     number
   config:  Record<string, unknown>  // fully resolved — no Expression types
   trigger: unknown
   nodes:   Record<string, unknown>
   logger:  NodeLogger
-  fetch:   Fetch                    // pre-wired with credential headers
   signal:  AbortSignal              // fires on timeout
   // Only present for sync webhook executions — used by http.respond
   respond?: (res: SyncHttpResponse) => void
+  // Who the run acts as, opaque to the engine and handed to the host's ports
+  actor?: unknown
+  // A dry run: record an effect outside the actor, do not perform it
+  dryRun?: boolean
+  // The run's row budget, shared by every model node in it
+  writes?: import("../runtime/context").WriteBudget
 }
-
-// The call a node makes, not the runtime's whole `fetch` object — bun's carries
-// `preconnect`, which no host's credential-wrapping fetch should have to supply.
-export type Fetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
 export interface NodeLogger {
   info  (message: string, data?: unknown): void
@@ -107,7 +111,7 @@ export class NodeExecutor {
   async execute(
     node: NodeDefinition,
     ctx:  ResolutionContext,
-    extras?: { executionId?: string; respond?: (res: SyncHttpResponse) => void },
+    extras?: Pick<NodeContext, "respond" | "actor" | "dryRun" | "writes"> & { executionId?: string; flowId?: string },
   ): Promise<{ outcome: ExecutorOutcome; logs: LogEntry[] }> {
     const logs   = [] as LogEntry[]
     const logger = this.makeLogger(logs)
@@ -163,10 +167,15 @@ export class NodeExecutor {
       try {
         const nodeCtx: NodeContext = {
           executionId: extras?.executionId ?? "",
+          flowId:      extras?.flowId ?? "",
+          nodeId:      node.id,
+          attempt:     attempts,
           config, trigger: ctx.trigger, nodes: ctx.nodes, logger,
-          fetch:   makeScopedFetch(controller.signal),
           signal:  controller.signal,
           respond: extras?.respond,
+          actor:   extras?.actor,
+          dryRun:  extras?.dryRun,
+          writes:  extras?.writes,
         }
 
         const result = await (node.timeout
@@ -232,10 +241,6 @@ function computeDelay(retry: RetryPolicy, attempt: number): number {
   return retry.backoff === "exponential"
     ? Math.pow(2, attempt - 2) * retry.delayMs
     : retry.delayMs
-}
-
-function makeScopedFetch(signal: AbortSignal): Fetch {
-  return (input, init) => fetch(input, { ...init, signal })
 }
 
 function sleep(ms: number): Promise<void> {

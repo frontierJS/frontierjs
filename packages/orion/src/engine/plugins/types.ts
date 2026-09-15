@@ -13,6 +13,7 @@ export type NodeCategory =
   | "http"          // http.request, http.respond
   | "ai"            // ai
   | "storage"       // store
+  | "data"          // model.*, service.call, job.dispatch, notify — what the host app owns
   | "subflow"       // subflow.*
 
 // ─────────────────────────────────────────────

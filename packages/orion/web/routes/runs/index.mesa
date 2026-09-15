@@ -1,0 +1,87 @@
+---
+title: Runs
+---
+<script>
+  // Every run this caller can read, newest first, and how the last hour went.
+  //
+  // The list is the resource's live store, so a run a trigger starts appears and
+  // moves through its statuses with nothing refreshing. The counts are the
+  // `runs.metrics` method over the same rows, asked again when the filter moves.
+  import { runs } from '../../resources/Run.mesa'
+  import { session, useStore } from '@frontierjs/sierra/junction'
+  import { page, goto } from '@frontierjs/sierra/router'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Select        from '@frontierjs/ui/components/forms/Select.mesa'
+  import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+
+  const TONE = { completed: 'success', failed: 'danger', waiting: 'warning', running: 'info', pending: 'muted', cancelled: 'muted' }
+  const STATUSES = ['pending', 'running', 'waiting', 'completed', 'failed', 'cancelled']
+
+  const columns = [
+    { name: 'status',    label: 'Status' },
+    { name: 'actorId',   label: 'As' },
+    { name: 'createdAt', label: 'Started' },
+    { name: 'endedAt',   label: 'Ended' },
+    { name: 'error',     label: '' },
+  ]
+
+  const { get: rows, unsubscribe } = useStore(runs.store)
+  $.onDestroy(unsubscribe)
+  $: (session.level, page.query.status)
+
+  let error   = null
+  let metrics = null
+
+  async function load() {
+    error = null
+    try {
+      await runs.load(page.query, { orderBy: '-createdAt', limit: 50, ...page.directives })
+      metrics = await runs.service.invoke('metrics', null, { windowMs: 3_600_000 })
+    } catch (e) { error = e.message }
+  }
+  load()
+  $: page.query, page.directives, () => load()
+
+  function filter(status) {
+    const q = new URLSearchParams(page.search)
+    status ? q.set('status', status) : q.delete('status')
+    goto('/automations/runs/' + (q.toString() ? '?' + q : ''))
+  }
+
+  const pct = (n) => n == null ? '—' : Math.round(n * 100) + '%'
+  const ms  = (n) => n == null ? '—' : n < 1000 ? n + ' ms' : (n / 1000).toFixed(1) + ' s'
+</script>
+
+<SectionHeader title="Runs" level={1}>
+  {#snippet action()}
+    <Select id="runs-status" placeholder="Every status" value={page.query.status ?? null}
+      options={STATUSES.map(s => ({ value: s, label: s }))} onchange={(e) => filter(e.target.value)} />
+  {/snippet}
+</SectionHeader>
+
+{#if error}<Alert tone="danger" id="runs-error">{error}</Alert>{/if}
+
+{#if metrics}
+  <div class="tiles" style="--tile-min: 10rem" id="runs-metrics">
+    <StatCard label="Runs, last hour" value={String(metrics.totalRuns)} />
+    <StatCard label="Succeeded"       value={pct(metrics.successRate)} />
+    <StatCard label="Mean duration"   value={ms(metrics.avgDurationMs)} />
+    <StatCard label="p95 duration"    value={ms(metrics.p95DurationMs)} />
+  </div>
+{/if}
+
+<Table {columns} rows={rows()} striped hover compact>
+  {#snippet row(r)}
+    <tr data-run={r.id}>
+      <td><a href={'/automations/runs/' + r.id + '/'} data-open><Pill tone={TONE[r.status] ?? 'muted'} data-status={r.status}>{r.status}</Pill></a></td>
+      <td>{r.actorId ?? '—'}</td>
+      <td class="text-muted text-sm">{new Date(r.createdAt).toLocaleString()}</td>
+      <td class="text-muted text-sm">{r.endedAt ? new Date(r.endedAt).toLocaleString() : ''}</td>
+      <td class="text-sm">{r.error ?? ''}</td>
+    </tr>
+  {/snippet}
+</Table>

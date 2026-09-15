@@ -42,7 +42,7 @@ describe("PluginRegistry — built-ins loaded at construction", () => {
 
   beforeEach(() => { registry = new PluginRegistry() })
 
-  test("all 18 built-in node types are registered", () => {
+  test("all 22 built-in node types are registered", () => {
     expect(registry.types()).toHaveLength(BUILTIN_DESCRIPTORS.length)
   })
 

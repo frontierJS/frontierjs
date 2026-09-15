@@ -23,6 +23,58 @@ export const tree = {
       children: [],
     },
   {
+      id: "automations",
+      path: "/automations/",
+      file: "../../packages/orion/web/routes/index.mesa",
+      companion: null,
+      layout: "../../packages/orion/web/routes/_module.mesa",
+      meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Automations\",\"isIndex\":true}"),
+      params: [],
+      children: [
+      {
+          id: "automations.credentials",
+          path: "/automations/credentials/",
+          file: "../../packages/orion/web/routes/credentials/index.mesa",
+          companion: null,
+          layout: "../../packages/orion/web/routes/_module.mesa",
+          meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Credentials\",\"isIndex\":true}"),
+          params: [],
+          children: [],
+        },
+      {
+          id: "automations.runs",
+          path: "/automations/runs/",
+          file: "../../packages/orion/web/routes/runs/index.mesa",
+          companion: null,
+          layout: "../../packages/orion/web/routes/_module.mesa",
+          meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Runs\",\"isIndex\":true}"),
+          params: [],
+          children: [
+          {
+              id: "automations.runs.[runId]",
+              path: "/automations/runs/:runId/",
+              file: "../../packages/orion/web/routes/runs/[runId].mesa",
+              companion: null,
+              layout: "../../packages/orion/web/routes/_module.mesa",
+              meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Run\",\"dynamic\":true}"),
+              params: ["runId"],
+              children: [],
+            }
+          ],
+        },
+      {
+          id: "automations.flows.[flowId]",
+          path: "/automations/flows/:flowId/",
+          file: "../../packages/orion/web/routes/flows/[flowId].mesa",
+          companion: null,
+          layout: "../../packages/orion/web/routes/_module.mesa",
+          meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Flow\",\"dynamic\":true}"),
+          params: ["flowId"],
+          children: [],
+        }
+      ],
+    },
+  {
       id: "cart",
       path: "/cart/",
       file: "src/routes/cart/index.mesa",
@@ -287,6 +339,11 @@ export const tree = {
 export const components = {
   'root': () => import('../src/routes/index.mesa'),
   'account': () => import('../src/routes/account/index.mesa'),
+  'automations': () => import('../../../packages/orion/web/routes/index.mesa'),
+  'automations.credentials': () => import('../../../packages/orion/web/routes/credentials/index.mesa'),
+  'automations.runs': () => import('../../../packages/orion/web/routes/runs/index.mesa'),
+  'automations.runs.[runId]': () => import('../../../packages/orion/web/routes/runs/[runId].mesa'),
+  'automations.flows.[flowId]': () => import('../../../packages/orion/web/routes/flows/[flowId].mesa'),
   'cart': () => import('../src/routes/cart/index.mesa'),
   'customers': () => import('../src/routes/customers/index.mesa'),
   'inventory': () => import('../src/routes/inventory/index.mesa'),
@@ -327,12 +384,18 @@ export const loaders = {
 // always has the component factory available when rendering the chain.
 export const layouts = {
   "src/routes/_module.mesa": () => import('../src/routes/_module.mesa'),
+  "../../packages/orion/web/routes/_module.mesa": () => import('../../../packages/orion/web/routes/_module.mesa'),
 }
 
 // Flat URL arrays for route table consumers (sitemap, llms.txt, deploys)
 export const all = [
   "/",
   "/account/",
+  "/automations/",
+  "/automations/credentials/",
+  "/automations/runs/",
+  "/automations/runs/:runId/",
+  "/automations/flows/:flowId/",
   "/cart/",
   "/customers/",
   "/inventory/",
@@ -363,6 +426,11 @@ export const all = [
 export const published = [
   "/",
   "/account/",
+  "/automations/",
+  "/automations/credentials/",
+  "/automations/runs/",
+  "/automations/runs/:runId/",
+  "/automations/flows/:flowId/",
   "/cart/",
   "/customers/",
   "/inventory/",
@@ -393,6 +461,9 @@ export const published = [
 export const indexed = [
   "/",
   "/account/",
+  "/automations/",
+  "/automations/credentials/",
+  "/automations/runs/",
   "/cart/",
   "/customers/",
   "/inventory/",

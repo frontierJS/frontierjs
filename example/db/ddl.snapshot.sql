@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 43 models · 2 databases
+-- 51 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -136,6 +136,47 @@ CREATE TABLE IF NOT EXISTS "metric_series" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_metric_series_name" ON "metric_series" ("name");
 CREATE INDEX IF NOT EXISTS "idx_metric_series_lastSeenAt" ON "metric_series" ("lastSeenAt");
+
+CREATE TABLE IF NOT EXISTS "flow" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "name" TEXT NOT NULL,
+  "description" TEXT,
+  "status" TEXT NOT NULL DEFAULT 'draft',
+  "currentVersion" INTEGER,
+  "ownerId" TEXT NOT NULL,
+  "runsPerMinute" INTEGER,
+  "maxWrites" INTEGER NOT NULL DEFAULT 1000,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  CHECK ("status" IN ('draft', 'active', 'paused', 'archived'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_flow_status" ON "flow" ("status");
+CREATE INDEX IF NOT EXISTS "idx_flow_ownerId" ON "flow" ("ownerId");
+
+CREATE TABLE IF NOT EXISTS "flow_credential" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "name" TEXT NOT NULL UNIQUE,
+  "provider" TEXT NOT NULL,
+  "address" TEXT NOT NULL,
+  "auth" TEXT NOT NULL DEFAULT 'none',
+  "header" TEXT,
+  "encoding" TEXT DEFAULT 'json',
+  "secret" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  CHECK ("auth" IN ('none', 'bearer', 'api_key', 'hmac'))
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "kv_entry" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "scope" TEXT NOT NULL,
+  "key" TEXT NOT NULL,
+  "value" TEXT NOT NULL,
+  "expiresAt" TEXT,
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  UNIQUE ("scope", "key")
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_kv_entry_expiresAt" ON "kv_entry" ("expiresAt");
 
 CREATE TABLE IF NOT EXISTS "product" (
   "id" INTEGER NOT NULL PRIMARY KEY,
@@ -483,6 +524,25 @@ CREATE TABLE IF NOT EXISTS "metric_hour" (
   FOREIGN KEY ("seriesId") REFERENCES "metric_series" ("id") ON DELETE CASCADE
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS "flow_version" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "flowId" TEXT NOT NULL,
+  "version" INTEGER NOT NULL,
+  "definition" TEXT NOT NULL,
+  "authorId" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE ("flowId", "version"),
+  FOREIGN KEY ("flowId") REFERENCES "flow" ("id") ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "flow_layout" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "flowId" TEXT NOT NULL UNIQUE,
+  "layout" TEXT NOT NULL DEFAULT '{}',
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY ("flowId") REFERENCES "flow" ("id") ON DELETE CASCADE
+) STRICT;
+
 -- The buyable thing. One row per option combination, and the row a basket
 -- line, a price and a stock count all point at.
 CREATE TABLE IF NOT EXISTS "product_variant" (
@@ -689,6 +749,26 @@ CREATE TABLE IF NOT EXISTS "pay_window" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_pay_window_employeeId_effectiveFrom" ON "pay_window" ("employeeId", "effectiveFrom");
 CREATE UNIQUE INDEX IF NOT EXISTS "uniq_pay_window_employeeId" ON "pay_window" ("employeeId") WHERE "effectiveTo" IS NULL;
+
+CREATE TABLE IF NOT EXISTS "run" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "flowVersionId" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "trigger" TEXT,
+  "context" TEXT,
+  "currentStage" INTEGER NOT NULL DEFAULT 0,
+  "actorId" TEXT,
+  "startedAt" TEXT,
+  "endedAt" TEXT,
+  "error" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "heartbeatAt" TEXT,
+  CHECK ("status" IN ('pending', 'running', 'waiting', 'completed', 'failed', 'cancelled')),
+  FOREIGN KEY ("flowVersionId") REFERENCES "flow_version" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_run_flowVersionId_startedAt" ON "run" ("flowVersionId", "startedAt");
+CREATE INDEX IF NOT EXISTS "idx_run_status_createdAt" ON "run" ("status", "createdAt");
+CREATE INDEX IF NOT EXISTS "idx_run_status_heartbeatAt" ON "run" ("status", "heartbeatAt");
 
 -- A photograph. The bytes live in object storage and this column holds the
 -- reference — `File` is the type that means that, and `FileStorage` in
@@ -960,6 +1040,34 @@ CREATE TABLE IF NOT EXISTS "payslip" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_payslip_employeeId" ON "payslip" ("employeeId");
 CREATE INDEX IF NOT EXISTS "idx_payslip_payWindowId" ON "payslip" ("payWindowId");
+
+CREATE TABLE IF NOT EXISTS "run_step" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "runId" TEXT NOT NULL,
+  "nodeId" TEXT NOT NULL,
+  "status" TEXT NOT NULL,
+  "attempts" INTEGER NOT NULL DEFAULT 0,
+  "fromCache" INTEGER NOT NULL DEFAULT 0,
+  "startedAt" TEXT,
+  "durationMs" INTEGER,
+  "output" TEXT,
+  "error" TEXT,
+  "logs" TEXT,
+  CHECK ("status" IN ('pending', 'running', 'completed', 'failed', 'skipped')),
+  UNIQUE ("runId", "nodeId"),
+  FOREIGN KEY ("runId") REFERENCES "run" ("id") ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "wait" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "resumeKey" TEXT NOT NULL UNIQUE,
+  "runId" TEXT NOT NULL,
+  "nodeId" TEXT NOT NULL,
+  "timeoutAt" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  FOREIGN KEY ("runId") REFERENCES "run" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_wait_timeoutAt" ON "wait" ("timeoutAt");
 
 -- One side of one journal.
 -- 

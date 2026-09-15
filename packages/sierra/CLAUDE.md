@@ -17,7 +17,8 @@ src/
   index.js               — public entry
 
   scanner/               — routes dir → route tree
-    walk.js              recursive directory walk
+    walk.js              recursive directory walk; follows a symlink, and a
+                         `*.mount.js` into the directory it names (`FJS-D282`)
     classify.js          what each file is (page, layout, error, …)
     parse-frontmatter.js YAML frontmatter
     build-tree.js        the node tree

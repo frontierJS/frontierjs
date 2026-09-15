@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-39 services · 44 routes · 12 plugins · prefix /api
+42 services · 46 routes · 13 plugins · prefix /api
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -23,7 +23,7 @@ in, whatever the row policies say, because the Data boundary never sees who
 asked. Each row below is either meant — a read-shaped method, a scoped write —
 or wants `methods: [{ method, gate }]`.
 
-### Nothing in front of the body but the floor (19)
+### Nothing in front of the body but the floor (20)
 
 The list to read first: only the method body stands between a signed-in caller
 and what it does.
@@ -41,6 +41,7 @@ and what it does.
 | `customers.segment` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `customFields.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
 | `discounts.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
+| `flowCredentials.restore` | **any signed-in caller** — floor, read gate 5; standing not graded |
 | `invoices.settle` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `invoices.void` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `paymentMethods.startSetup` | **any signed-in caller** — floor, read gate 1; standing not graded |
@@ -306,6 +307,52 @@ name when it declares none.
 | before | `update` | `autoValidate` |
 | before | `setPay` | `validateInput` |
 | before | `payOn` | `validateInput` |
+
+### `flowCredentials` · model `FlowCredential`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **who may call** —
+  - `restore` — **any signed-in caller** — floor, read gate 5; standing not graded
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `flows` · model `Flow`
+
+- **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `save`, `versions`, `activate`, `pause`, `archive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`
+- **custom methods** — `save`, `versions`, `activate`, `pause`, `archive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`
+- **who may call** —
+  - `restore` — standing 4 or above — declared `gate: 4`
+  - `save` — standing 4 or above — declared `gate: 4`
+  - `versions` — standing 4 or above — declared `gate: 4`
+  - `activate` — standing 4 or above — declared `gate: 4`
+  - `pause` — standing 4 or above — declared `gate: 4`
+  - `archive` — standing 4 or above — declared `gate: 4`
+  - `run` — standing 4 or above — declared `gate: 4`
+  - `dryRun` — standing 4 or above — declared `gate: 4`
+  - `export` — standing 4 or above — declared `gate: 4`
+  - `import` — standing 4 or above — declared `gate: 4`
+  - `layout` — standing 4 or above — declared `gate: 4`
+  - `saveLayout` — standing 4 or above — declared `gate: 4`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+| after | `patch` | `anonymous` |
+| after | `remove` | `anonymous` |
 
 ### `inventory` · model `InventoryMovement`
 
@@ -704,6 +751,25 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 
+### `runs` · model `Run`
+
+- **methods** — `find`, `get`, `steps`, `cancel`, `metrics`
+- **custom methods** — `steps`, `cancel`, `metrics`
+- **who may call** —
+  - `steps` — standing 4 or above — declared `gate: 4`
+  - `cancel` — standing 4 or above — declared `gate: 4`
+  - `metrics` — standing 4 or above — declared `gate: 4`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
 ### `sessions` · model `sessions`
 
 - **methods** — `find`, `remove`, `revokeOthers`
@@ -862,6 +928,8 @@ once; everything else was registered by hand or by a plugin.
 | GET | `/api/manifest` | raw |
 | GET | `/api/metrics` | raw |
 | GET | `/api/migrations` | raw |
+| POST | `/api/orion/hooks/{path}` | raw |
+| POST | `/api/orion/wait/{key}` | raw |
 | POST | `/api/webhooks/payments` | raw |
 | POST | `/api/webhooks/stripe` | raw |
 
@@ -874,10 +942,11 @@ In configure order, which is what `requires:` is checked against.
 3. `@frontierjs/auth`
 4. `caravan`
 5. `outbox`
-6. `conduit`
-7. `mailer`
-8. `notifications`
-9. `manifest`
-10. `channels`
-11. `corsPlugin`
-12. `health`
+6. `orion`
+7. `conduit`
+8. `mailer`
+9. `notifications`
+10. `manifest`
+11. `channels`
+12. `corsPlugin`
+13. `health`

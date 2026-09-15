@@ -1,0 +1,137 @@
+---
+title: Run
+---
+<script>
+  // One run: what triggered it, where it is, and what each node did.
+  //
+  // The run is watched rather than read, so a run still going moves here as its
+  // checkpoints land. Its steps are written when it ENDS — a checkpoint carries
+  // them in the encrypted context until then — so a run in flight shows its
+  // status and stage and no steps, and they arrive with the terminal status.
+  //
+  // A waiting run can be cancelled by its flow's owner or an administrator; a
+  // queued or running one is refused by the service (`FJS-1157`).
+  import { runs } from '../../resources/Run.mesa'
+  import { session } from '@frontierjs/sierra/junction'
+  import { page } from '@frontierjs/sierra/router'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Breadcrumbs   from '@frontierjs/ui/components/display/Breadcrumbs.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Json          from '@frontierjs/ui/components/display/Json.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Skeleton      from '@frontierjs/ui/components/feedback/Skeleton.mesa'
+  import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+
+  $: (page.params, session.level)
+
+  const TONE = { completed: 'success', failed: 'danger', waiting: 'warning', running: 'info', pending: 'muted', cancelled: 'muted', skipped: 'muted' }
+  const rowsOf = (v) => Array.isArray(v) ? v : v?.data ?? []
+
+  let run     = null
+  let row     = null
+  let unwatch = null
+  let steps   = []
+  let error   = null
+  let busy    = false
+  let seen    = null   // the status the steps were last read at
+
+  function watch() {
+    row?.release()
+    row = runs.record(page.params.runId)
+    unwatch = row.subscribe(v => { run = v })
+    return row.ready
+  }
+
+  async function loadSteps() {
+    steps = rowsOf(await runs.service.invoke('steps', page.params.runId))
+    seen  = run?.status ?? null
+  }
+
+  async function boot() {
+    error = null
+    try { await watch(); await loadSteps() }
+    catch (e) { error = e.message }
+  }
+  boot()
+  $: page.params.runId, () => boot()
+  $.onDestroy(() => { unwatch?.(); row?.release() })
+
+  // The steps land with the terminal status, so a status moving is the signal.
+  $: run, () => { if (run && run.status !== seen) loadSteps().catch(e => { error = e.message }) }
+
+  async function cancel() {
+    busy = true; error = null
+    try {
+      await runs.service.invoke('cancel', page.params.runId)
+      await row.refresh()
+      toasts.success('Run cancelled')
+    } catch (e) { error = e.message }
+    finally { busy = false }
+  }
+
+  const ms = (n) => n == null ? '—' : n < 1000 ? n + ' ms' : (n / 1000).toFixed(1) + ' s'
+  const columns = [
+    { name: 'nodeId',     label: 'Node' },
+    { name: 'status',     label: 'Status' },
+    { name: 'attempts',   label: 'Attempts', align: 'right' },
+    { name: 'durationMs', label: 'Took', align: 'right' },
+    { name: 'output',     label: 'Output' },
+  ]
+</script>
+
+<Breadcrumbs items={[{ label: 'Automations', href: '/automations/' }, { label: 'Runs', href: '/automations/runs/' }, { label: run ? run.id.slice(0, 8) : '…' }]} />
+
+{#if error}<Alert tone="danger" id="run-error">{error}</Alert>{/if}
+
+{#if !run}
+  <div class="stack">
+    <Skeleton variant="text" width="40%" />
+    <Skeleton variant="card" />
+  </div>
+{:else}
+  <SectionHeader title={'Run ' + run.id.slice(0, 8)} level={1}>
+    {#snippet action()}
+      <div class="cluster">
+        <Pill tone={TONE[run.status] ?? 'muted'} id="run-status" data-status={run.status}>{run.status}</Pill>
+        {#if run.status === 'waiting'}
+          <Button variant="ghost" id="run-cancel" disabled={busy} onclick={cancel}>Cancel</Button>
+        {/if}
+      </div>
+    {/snippet}
+  </SectionHeader>
+
+  {#if run.error}<Alert tone="danger" id="run-failure">{run.error}</Alert>{/if}
+
+  <div class="tiles" style="--tile-min: 10rem">
+    <StatCard label="As"      value={run.actorId ?? '—'} />
+    <StatCard label="Stage"   value={String(run.currentStage)} />
+    <StatCard label="Started" value={run.startedAt ? new Date(run.startedAt).toLocaleString() : '—'} />
+    <StatCard label="Ended"   value={run.endedAt ? new Date(run.endedAt).toLocaleString() : '—'} />
+  </div>
+
+  <SectionHeader title="Trigger" level={2} />
+  <Json value={run.trigger} expand={2} />
+
+  <SectionHeader title="Steps" level={2} />
+  {#if !steps.length}
+    <p class="text-muted" id="run-no-steps">
+      {['completed', 'failed', 'cancelled'].includes(run.status) ? 'No node ran.' : 'Steps are recorded when the run ends.'}
+    </p>
+  {:else}
+    <Table {columns} rows={steps} striped compact>
+      {#snippet row(s)}
+        <tr data-step={s.nodeId}>
+          <td><code>{s.nodeId}</code></td>
+          <td><Pill tone={TONE[s.status] ?? 'muted'} data-status={s.status}>{s.status}</Pill></td>
+          <td class="text-right">{s.attempts}</td>
+          <td class="text-right">{ms(s.durationMs)}</td>
+          <td>{#if s.error}<span class="text-sm">{s.error}</span>{:else}<Json value={s.output} expand={0} />{/if}</td>
+        </tr>
+      {/snippet}
+    </Table>
+  {/if}
+{/if}

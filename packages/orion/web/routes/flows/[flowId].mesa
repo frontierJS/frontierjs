@@ -1,0 +1,217 @@
+---
+title: Flow
+---
+<script>
+  // One flow: its status and the moves from it, running it by hand or dry, its
+  // definition and versions, and its recent runs.
+  //
+  // ─── What decides what is offered ─────────────────────────────────────────
+  //
+  // Every button is an affordance and every call is graded again: activation is
+  // ADMINISTRATOR(5) on the move itself (`FJS-D278`), changing a flow is its
+  // owner's or an administrator's (`FJS-D289`), and so is running it by hand
+  // (`FJS-D292`). The page reads those off the session to decide what to show,
+  // and renders the server's refusal where its guess was wrong.
+  //
+  // ─── The definition ───────────────────────────────────────────────────────
+  //
+  // Edited as JSON until the canvas exists. Saving writes a NEW version, which
+  // the compiler checks first — a flow that does not compile is refused with the
+  // compiler's own sentence, shown here — and it becomes current unless the flow
+  // is active, which pauses and activates to move.
+  import { flows } from '../../resources/Flow.mesa'
+  import { runs }  from '../../resources/Run.mesa'
+  import { session } from '@frontierjs/sierra/junction'
+  import { page, goto } from '@frontierjs/sierra/router'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Breadcrumbs   from '@frontierjs/ui/components/display/Breadcrumbs.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Json          from '@frontierjs/ui/components/display/Json.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Skeleton      from '@frontierjs/ui/components/feedback/Skeleton.mesa'
+  import StatCard      from '@frontierjs/ui/components/display/StatCard.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+  import Textarea      from '@frontierjs/ui/components/forms/Textarea.mesa'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+
+  $: (page.params, session.level, session.user)
+
+  const TONE = { draft: 'muted', active: 'success', paused: 'warning', archived: 'muted', completed: 'success', failed: 'danger', waiting: 'warning', running: 'info', pending: 'muted', cancelled: 'muted' }
+
+  // A list result may arrive as the envelope or as the rows.
+  const rowsOf = (v) => Array.isArray(v) ? v : v?.data ?? []
+
+  let flow     = null
+  let row      = null
+  let unwatch  = null
+  let versions = []
+  let recent   = []
+  let source   = ''
+  let error    = null
+  let busy     = false
+  let dry      = null
+
+  function watch() {
+    row?.release()
+    row = flows.record(page.params.flowId)
+    unwatch = row.subscribe(v => { flow = v })
+    return row.ready
+  }
+
+  async function loadDefinition() {
+    versions = rowsOf(await flows.service.invoke('versions', page.params.flowId))
+    if (flow?.currentVersion == null) { source = source || JSON.stringify({ name: flow?.name ?? '', nodes: { t: { id: 't', type: 'trigger.manual', config: {} } }, edges: [] }, null, 2); return }
+    const file = await flows.service.invoke('export', page.params.flowId)
+    source = JSON.stringify(file.definition, null, 2)
+  }
+
+  async function loadRuns() {
+    if (!versions.length) { recent = []; return }
+    const found = await runs.service.find({ flowVersionId: { in: versions.map(v => v.id) } }, { orderBy: '-createdAt', limit: 20 })
+    recent = rowsOf(found)
+  }
+
+  async function boot() {
+    error = null
+    try { await watch(); await loadDefinition(); await loadRuns() }
+    catch (e) { error = e.message }
+  }
+  boot()
+  $: page.params.flowId, () => boot()
+  $.onDestroy(() => { unwatch?.(); row?.release() })
+
+  // Affordances only. The owner test is the service's, and so is the gate.
+  $: isOwner     = !!flow && String(flow.ownerId) === String(session.user?.userId ?? session.user?.id ?? '')
+  $: isAdmin     = (session.level ?? 0) >= 5
+  $: mayChange   = isOwner || isAdmin
+  $: hasManual   = (() => { try { return Object.values(JSON.parse(source).nodes ?? {}).some(n => n.type === 'trigger.manual') } catch { return false } })()
+  $: moves       = !flow ? [] : [
+    ...(['draft', 'paused'].includes(flow.status) && isAdmin ? [['activate', 'Activate', 'primary']] : []),
+    ...(flow.status === 'active' && mayChange ? [['pause', 'Pause', 'ghost']] : []),
+    ...(flow.status !== 'archived' && mayChange ? [['archive', 'Archive', 'ghost']] : []),
+    ...(flow.status === 'archived' && mayChange ? [['restore', 'Restore', 'ghost']] : []),
+  ]
+
+  async function act(label, fn) {
+    busy = true; error = null
+    try { return await fn() }
+    catch (e) { error = e.message; return null }
+    finally { busy = false }
+  }
+
+  const move = (name) => act(name, async () => {
+    await flows.service.invoke(name, page.params.flowId)
+    await row.refresh()
+    toasts.success(`Flow ${name === 'activate' ? 'activated' : name + 'd'}`)
+  })
+
+  const save = () => act('save', async () => {
+    let definition
+    try { definition = JSON.parse(source) } catch (e) { throw new Error(`The definition is not JSON: ${e.message}`) }
+    const out = await flows.service.invoke('save', page.params.flowId, { definition })
+    toasts.success(out.current ? `Saved version ${out.version}` : `Saved version ${out.version} — pause and activate the flow to run it`)
+    await row.refresh()
+    await loadDefinition()
+  })
+
+  const runNow = () => act('run', async () => {
+    const { runId } = await flows.service.invoke('run', page.params.flowId, { payload: {} })
+    goto('/automations/runs/' + runId + '/')
+  })
+
+  const dryRun = () => act('dryRun', async () => {
+    dry = await flows.service.invoke('dryRun', page.params.flowId, { trigger: {} })
+  })
+
+  const download = () => act('export', async () => {
+    const file = await flows.service.invoke('export', page.params.flowId)
+    const url  = URL.createObjectURL(new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }))
+    const a    = Object.assign(document.createElement('a'), { href: url, download: `${file.name}.flow.json` })
+    a.click()
+    URL.revokeObjectURL(url)
+  })
+
+  const versionColumns = [
+    { name: 'version',   label: 'Version', align: 'right' },
+    { name: 'authorId',  label: 'Author' },
+    { name: 'createdAt', label: 'Written' },
+  ]
+  const runColumns = [
+    { name: 'status',    label: 'Status' },
+    { name: 'createdAt', label: 'Started' },
+    { name: 'error',     label: '' },
+  ]
+</script>
+
+<Breadcrumbs items={[{ label: 'Automations', href: '/automations/' }, { label: flow?.name ?? '…' }]} />
+
+{#if error}<Alert tone="danger" id="flow-error">{error}</Alert>{/if}
+
+{#if !flow}
+  <div class="stack">
+    <Skeleton variant="text" width="40%" />
+    <Skeleton variant="card" />
+  </div>
+{:else}
+  <SectionHeader title={flow.name} level={1}>
+    {#snippet action()}
+      <div class="cluster">
+        <Pill tone={TONE[flow.status] ?? 'muted'} id="flow-status" data-status={flow.status}>{flow.status}</Pill>
+        {#each moves as [name, label, variant]}
+          <Button {variant} id={'flow-' + name} disabled={busy} onclick={() => move(name)}>{label}</Button>
+        {/each}
+      </div>
+    {/snippet}
+  </SectionHeader>
+
+  {#if flow.description}<p class="text-muted">{flow.description}</p>{/if}
+
+  <div class="tiles" style="--tile-min: 12rem">
+    <StatCard label="Current version" value={flow.currentVersion == null ? '—' : String(flow.currentVersion)} id="flow-version" />
+    <StatCard label="Runs per minute" value={flow.runsPerMinute == null ? 'no limit' : String(flow.runsPerMinute)} />
+    <StatCard label="Rows per run"    value={String(flow.maxWrites)} />
+  </div>
+
+  <div class="cluster">
+    <Button id="flow-run" disabled={busy || !mayChange || flow.status !== 'active' || !hasManual} onclick={runNow}>Run now</Button>
+    <Button variant="ghost" id="flow-dry" disabled={busy || !mayChange || flow.currentVersion == null} onclick={dryRun}>Dry run</Button>
+    <Button variant="ghost" id="flow-export" disabled={busy || flow.currentVersion == null} onclick={download}>Export</Button>
+  </div>
+
+  {#if dry}
+    <Alert tone={dry.status === 'completed' ? 'success' : 'danger'} id="flow-dry-result">
+      Dry run {dry.status}{dry.error ? ': ' + dry.error : ''}. Nothing was written and {dry.notSent.length} call{dry.notSent.length === 1 ? ' was' : 's were'} not sent.
+    </Alert>
+    {#if dry.notSent.length}<Json value={dry.notSent} expand={2} />{/if}
+  {/if}
+
+  <SectionHeader title="Definition" level={2} />
+  <Textarea id="flow-definition" bind:value={source} rows={16} readonly={!mayChange} />
+  <div class="cluster">
+    <Button id="flow-save" disabled={busy || !mayChange} onclick={save}>Save as a new version</Button>
+  </div>
+
+  <SectionHeader title="Versions" level={2} />
+  <Table columns={versionColumns} rows={versions} striped compact>
+    {#snippet row(v)}
+      <tr data-version={v.version}>
+        <td class="text-right">{v.version}{v.version === flow.currentVersion ? ' (current)' : ''}</td>
+        <td>{v.authorId ?? 'system'}</td>
+        <td class="text-muted text-sm">{new Date(v.createdAt).toLocaleString()}</td>
+      </tr>
+    {/snippet}
+  </Table>
+
+  <SectionHeader title="Recent runs" level={2} />
+  <Table columns={runColumns} rows={recent} striped compact hover>
+    {#snippet row(r)}
+      <tr data-run={r.id}>
+        <td><a href={'/automations/runs/' + r.id + '/'}><Pill tone={TONE[r.status] ?? 'muted'}>{r.status}</Pill></a></td>
+        <td class="text-muted text-sm">{new Date(r.createdAt).toLocaleString()}</td>
+        <td class="text-sm">{r.error ?? ''}</td>
+      </tr>
+    {/snippet}
+  </Table>
+{/if}

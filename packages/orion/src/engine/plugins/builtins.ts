@@ -6,12 +6,13 @@ import type { NodeTypeDescriptor } from "./types"
 // These are registered automatically on every PluginRegistry instance.
 //
 // Node set:
-//   TRIGGERS (4)      trigger.webhook, trigger.cron, trigger.manual, trigger.event
+//   TRIGGERS (5)      trigger.webhook, trigger.cron, trigger.manual, trigger.event, trigger.model
 //   TRANSFORM (4)     expr.pipeline, data.code, data.template, data.parse
 //   FLOW CONTROL (6)  flow.merge, flow.delay, flow.each, flow.wait, flow.loop, flow.error
 //   HTTP (2)          http.request, http.respond
 //   AI (1)            ai
 //   STORAGE (1)       store
+//   DATA (4)          model.create, model.patch, model.remove, service.call
 // ─────────────────────────────────────────────
 
 export const BUILTIN_DESCRIPTORS: NodeTypeDescriptor[] = [
@@ -28,6 +29,9 @@ export const BUILTIN_DESCRIPTORS: NodeTypeDescriptor[] = [
       properties: {
         path:   { type: "string" },
         method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE"] },
+        // sync: the request waits for the flow's http.respond, up to a deadline
+        // (`FJS-D280`); async, the default, answers 202 with the run id.
+        mode:   { type: "string", enum: ["async", "sync"] },
       },
       required: ["path"],
     },
@@ -80,6 +84,30 @@ export const BUILTIN_DESCRIPTORS: NodeTypeDescriptor[] = [
       type: "object",
       properties: {
         payload: { type: "object" },
+      },
+    },
+  },
+
+  {
+    type:        "trigger.model",
+    category:    "trigger",
+    label:       "Record changed",
+    description: "Starts a flow after a row of one of the app's models is written. At most once: a write whose process stops before the flow starts starts nothing.",
+    configSchema: {
+      type: "object",
+      properties: {
+        model: { type: "string" },
+        on:    { type: "array", items: { type: "string", enum: ["create", "update", "remove", "transition"] } },
+      },
+      required: ["model"],
+    },
+    outputSchema: {
+      type: "object",
+      properties: {
+        model:      { type: "string" },
+        event:      { type: "string" },
+        record:     { type: "object" },
+        transition: { type: "string" },
       },
     },
   },
@@ -274,18 +302,18 @@ export const BUILTIN_DESCRIPTORS: NodeTypeDescriptor[] = [
     type:        "http.request",
     category:    "http",
     label:       "HTTP Request",
-    description: "Makes an outbound HTTP request.",
+    description: "Calls an outside API through a credential, which names the address and signs the call.",
     configSchema: {
       type: "object",
       properties: {
-        url:         { description: "Expression resolving to the URL string" },
-        method:      { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"] },
-        headers:     { description: "Expression resolving to headers object" },
-        body:        { description: "Expression resolving to the request body" },
-        credential:  { type: "string", description: "Credential ID — headers injected automatically" },
-        timeoutMs:   { type: "number" },
+        credential: { type: "string", description: "The credential the call goes through (`FJS-D273`)" },
+        method:     { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"] },
+        path:       { description: "Expression resolving to the path under the credential's address" },
+        query:      { description: "Expression resolving to query parameters" },
+        headers:    { description: "Expression resolving to headers object" },
+        body:       { description: "Expression resolving to the request body" },
       },
-      required: ["url"],
+      required: ["credential"],
     },
     outputSchema: {
       type: "object",
@@ -296,7 +324,6 @@ export const BUILTIN_DESCRIPTORS: NodeTypeDescriptor[] = [
         ok:      { type: "boolean" },
       },
     },
-    modes: ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"],
   },
 
   {
@@ -320,29 +347,27 @@ export const BUILTIN_DESCRIPTORS: NodeTypeDescriptor[] = [
     type:        "ai",
     category:    "ai",
     label:       "AI",
-    description: "Runs an AI model call — completion, embedding, classification, or extraction.",
+    description: "Asks one of the app's AI models to complete a prompt.",
     configSchema: {
       type: "object",
       properties: {
-        credential: { type: "string", description: "Credential ID for the AI provider" },
-        model:      { description: "Expression resolving to model identifier" },
-        prompt:     { description: "Expression resolving to the prompt string (complete mode)" },
-        input:      { description: "Expression resolving to input text (embed/classify/extract modes)" },
-        schema:     { type: "object", description: "JSON Schema for structured extraction (extract mode)" },
-        options:    { type: "object", description: "Additional model options (temperature, max_tokens, etc.)" },
+        model:       { type: "string", description: "The app's model name, as its AI registry knows it" },
+        prompt:      { description: "Expression resolving to the prompt" },
+        system:      { description: "Expression resolving to a system prompt" },
+        maxTokens:   { type: "number" },
+        temperature: { type: "number" },
       },
-      required: ["credential", "model"],
+      required: ["model", "prompt"],
     },
     outputSchema: {
       type: "object",
       properties: {
-        result:     { description: "Model output — string (complete), number[] (embed), string (classify), object (extract)" },
-        usage:      { type: "object", description: "Token usage stats" },
-        model:      { type: "string" },
-        finishReason: { type: "string" },
+        result: { type: "string" },
+        usage:  { type: "object" },
+        model:  { type: "string" },
       },
     },
-    modes: ["complete", "embed", "classify", "extract"],
+    modes: ["complete"],
   },
 
   // ── STORAGE ────────────────────────────────
@@ -373,6 +398,94 @@ export const BUILTIN_DESCRIPTORS: NodeTypeDescriptor[] = [
     modes: ["get", "set", "delete"],
   },
 
+  // ── DATA ───────────────────────────────────
+  // The host app's own models and services, as the run's principal. `model` is
+  // a literal so the compiler can type `data` against it at author time.
+
+  {
+    type:        "model.create",
+    category:    "data",
+    label:       "Create record",
+    description: "Creates a row in one of the app's models, as the flow's owner.",
+    configSchema: {
+      type: "object",
+      properties: { model: { type: "string" }, data: { type: "object" } },
+      required: ["model", "data"],
+    },
+  },
+
+  {
+    type:        "model.patch",
+    category:    "data",
+    label:       "Update record",
+    description: "Updates the named fields of one row, as the flow's owner.",
+    configSchema: {
+      type: "object",
+      properties: { model: { type: "string" }, id: {}, data: { type: "object" } },
+      required: ["model", "id", "data"],
+    },
+  },
+
+  {
+    type:        "model.remove",
+    category:    "data",
+    label:       "Remove record",
+    description: "Removes one row, as the flow's owner.",
+    configSchema: {
+      type: "object",
+      properties: { model: { type: "string" }, id: {} },
+      required: ["model", "id"],
+    },
+  },
+
+  {
+    type:        "service.call",
+    category:    "data",
+    label:       "Call service",
+    description: "Calls a method on one of the app's services, as the flow's owner.",
+    configSchema: {
+      type: "object",
+      properties: {
+        service: { type: "string" },
+        method:  { type: "string" },
+        id:      {},
+        data:    {},
+        query:   { type: "object" },
+      },
+      required: ["service", "method"],
+    },
+  },
+
+  {
+    type:        "job.dispatch",
+    category:    "data",
+    label:       "Dispatch job",
+    description: "Queues one of the app's jobs, with the flow's owner as its actor.",
+    configSchema: {
+      type: "object",
+      properties: {
+        job:  { type: "string" },
+        data: {},
+      },
+      required: ["job"],
+    },
+  },
+
+  {
+    type:        "notify",
+    category:    "data",
+    label:       "Notify",
+    description: "Sends one of the app's notifications to a recipient.",
+    configSchema: {
+      type: "object",
+      properties: {
+        notification: { type: "string" },
+        to:           { type: "object" },
+        payload:      {},
+      },
+      required: ["notification", "to"],
+    },
+  },
 ]
 
 // ─────────────────────────────────────────────
@@ -404,4 +517,5 @@ export const BUILTIN_FUNCTION_NAMES: ReadonlySet<string> = new Set([
   "toNumber", "toString", "toBoolean", "toArray",
   // Date/time
   "now", "dateFormat", "dateParse", "dateAdd",
+
 ])

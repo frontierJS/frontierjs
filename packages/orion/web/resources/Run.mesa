@@ -1,0 +1,7 @@
+<script module>
+  // Run — the Resource layer for orion's `runs` service. Read-only: the engine
+  // writes runs, and the only thing a person does to one is cancel it.
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const runs = createResource('runs')
+</script>

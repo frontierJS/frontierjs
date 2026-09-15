@@ -1,5 +1,19 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-15 — `app.withDb` and `app.onTenantClient`
+
+**Work that holds no ctx gets the client a service call would.** `app.withDb(fn)` runs the app's
+own data hook — `withTenantDb` or `withLitestoneDb`, the one owner of *caller → `ctx.locals.db`* —
+around `fn`, so inside `app.runAs(user, { tenant })` it is that user's client in that tenant with the
+principal resolver's claims merged. Scoping by hand from `principal()` misses both halves: which
+tenant's file under `strategy database`, and the claim under `strategy row`, without which every row
+the tenant owns is refused. The client is leased for `fn`'s length, since the pool may evict it after.
+**`app.onTenantClient(observer)`** is an Observer called once per tenant client the app opens, with
+its tenant, on the seam `tapTenantWrites` already runs on — how a plugin hears every tenant's writes
+when there is no one client to tap. Orion is the first caller of both (`FJS-D294`).
+`tests/with-db.test.ts` asks all three shapes against real clients and a real registry, each tenant
+assertion paired with the other tenant's rows.
+
 ## 2026-09-13 — `AGENTS.md` ships
 
 A compressed reference for an agent writing a service in an installed app (`FJS-D163`): the `$`

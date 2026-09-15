@@ -3,8 +3,7 @@ import type { ResolutionContext } from "../expression"
 import type { ExecutorOutcome, INodeRegistry, LogEntry } from "../executor"
 import type { IExecutionCache } from "../cache"
 import { NodeExecutor } from "../executor"
-import type { ExecutionContext, NodeExecutionState, SyncResponseHandle } from "./context"
-import type { ExecutionJob } from "./queue"
+import type { ExecutionContext, ExecutionJob, NodeExecutionState } from "./context"
 import type { IExecutionStore, IPlanCache } from "./store"
 import { buildRecord } from "./helpers"
 
@@ -28,31 +27,25 @@ export type SchedulerEventHandler = (event: SchedulerEvent) => void
 
 // ─────────────────────────────────────────────
 // SCHEDULER
-// Pulls jobs off the queue, runs stages in order, writes the record.
-// The only place that understands the DAG structure at runtime.
+// Runs one run's stages in order and writes the record.
+// The only place that understands the DAG structure at runtime. Which run, when
+// and how many at once is the host's queue — one job per run.
 //
 // Surface API:
-//   new Scheduler(queue, plans, store, nodeRegistry, cache?, opts?)
-//   scheduler.run()                → starts processing loop (until stop())
-//   scheduler.stop()               → graceful halt
+//   new Scheduler(plans, store, nodeRegistry, cache?, opts?)
 //   scheduler.processJob(job)      → run a single job, returns ExecutionRecord
 //   scheduler.on(handler)          → subscribe to events, returns unsubscribe fn
-//   scheduler.activeCount          → current in-flight job count (health endpoint)
 // ─────────────────────────────────────────────
 
 export interface SchedulerOptions {
-  concurrency?: number   // max concurrent jobs — default 10
   checkpoint?:  boolean  // save context after each stage — enables mid-flow resume
 }
 
 export class Scheduler {
   private readonly executor:  NodeExecutor
   private readonly listeners = new Set<SchedulerEventHandler>()
-  private          running   = 0
-  private          stopped   = false
 
   constructor(
-    private readonly queue:    import("./queue").IExecutionQueue,
     private readonly plans:    IPlanCache,
     private readonly store:    IExecutionStore,
     nodeRegistry:              INodeRegistry,
@@ -61,27 +54,6 @@ export class Scheduler {
   ) {
     this.executor = new NodeExecutor(nodeRegistry, nodeCache)
   }
-
-  // ─── LIFECYCLE ───────────────────────────────
-
-  async run(): Promise<void> {
-    this.stopped = false
-    const concurrency = this.opts.concurrency ?? 10
-
-    while (!this.stopped) {
-      if (this.running >= concurrency) { await sleep(10); continue }
-
-      const job = await this.queue.dequeue()
-      if (!job) { await sleep(10); continue }
-
-      this.running++
-      this.processJob(job).finally(() => this.running--)
-    }
-  }
-
-  stop(): void { this.stopped = true }
-
-  get activeCount(): number { return this.running }
 
   // ─── EVENT EMITTER ───────────────────────────
 
@@ -103,8 +75,10 @@ export class Scheduler {
     if (!plan) throw new Error(`No execution plan found for flow "${job.flowId}"`)
 
     const ctx: ExecutionContext = job.resumeFrom
-      ? { ...job.resumeFrom, status: "resuming" }
+      ? { ...job.resumeFrom, status: "resuming", actor: job.actor ?? job.resumeFrom.actor }
       : makeContext(job, plan)
+    ctx.dryRun = job.dryRun
+    if (job.maxWrites !== undefined) ctx.writes = { limit: job.maxWrites, used: writesIn(ctx, plan) }
 
     ctx.status    = "running"
     ctx.startedAt = ctx.startedAt || Date.now()
@@ -112,7 +86,9 @@ export class Scheduler {
     this.emit({ type: "execution:started", executionId: ctx.executionId, flowId: ctx.flowId, trigger: ctx.trigger })
 
     try {
-      await this.runStages(ctx, plan)
+      // A suspended run has not ended. Recording it would clear the context its
+      // resume reads, and call a half-run flow completed.
+      if (await this.runStages(ctx, plan) === "suspended") return buildRecord(ctx)
       ctx.status  = "completed"
       ctx.endedAt = Date.now()
       this.emit({ type: "execution:completed", executionId: ctx.executionId, flowId: ctx.flowId, durationMs: ctx.endedAt - ctx.startedAt })
@@ -130,7 +106,7 @@ export class Scheduler {
 
   // ─── STAGES ──────────────────────────────────
 
-  private async runStages(ctx: ExecutionContext, plan: ExecutionPlan): Promise<void> {
+  private async runStages(ctx: ExecutionContext, plan: ExecutionPlan): Promise<"ended" | "suspended"> {
     for (let i = ctx.currentStage; i < plan.stages.length; i++) {
       const stage    = plan.stages[i]!
       ctx.currentStage = i
@@ -140,20 +116,28 @@ export class Scheduler {
         return !s || s.status === "pending"
       })
 
+      // Every node in the stage settles before a failure ends the run. With
+      // Promise.all the record was written while a sibling was still running, so
+      // it named a step `running` in an ended run and that sibling's write could
+      // land after the run was recorded failed.
       if (runnable.length > 0) {
-        await Promise.all(runnable.map(id => this.runNode(id, ctx, plan)))
+        const settled = await Promise.allSettled(runnable.map(id => this.runNode(id, ctx, plan)))
+        const failure = settled.find((s): s is PromiseRejectedResult => s.status === "rejected")
+        if (failure) throw failure.reason
       }
 
-      // flow.wait suspended this execution — checkpoint and stop processing
+      // flow.wait suspended this execution — checkpoint and stop processing.
+      // Unconditional: without it a wait loses everything before it.
       if (ctx.status === "waiting") {
-        if (this.opts.checkpoint) await this.store.saveContext(ctx)
-        return
+        await this.store.saveContext(ctx)
+        return "suspended"
       }
 
       this.emit({ type: "stage:completed", executionId: ctx.executionId, stage: i })
 
       if (this.opts.checkpoint) await this.store.saveContext(ctx)
     }
+    return "ended"
   }
 
   // ─── NODE ────────────────────────────────────
@@ -169,7 +153,11 @@ export class Scheduler {
     const resCtx: ResolutionContext = { trigger: ctx.trigger, nodes: ctx.nodes }
     const { outcome, logs } = await this.executor.execute(node, resCtx, {
       executionId: ctx.executionId,
+      flowId:      ctx.flowId,
       respond:     ctx.responseHandle?.resolve,
+      actor:       ctx.actor,
+      dryRun:      ctx.dryRun,
+      writes:      ctx.writes,
     })
 
     state.endedAt  = Date.now()
@@ -180,8 +168,9 @@ export class Scheduler {
       // flow.wait sentinel — node signals the execution should suspend
       const data = outcome.data as Record<string, unknown> | null
       if (data && typeof data === "object" && data["__orion_wait"] === true) {
-        ctx.status = "waiting"
-        state.status = "completed"
+        ctx.status    = "waiting"
+        ctx.waitingOn = nodeId
+        state.status  = "completed"
         state.output = data
         ctx.nodes[nodeId] = data
         return
@@ -197,7 +186,9 @@ export class Scheduler {
       state.error  = outcome.error
       this.emit({ type: "node:failed", executionId: ctx.executionId, nodeId, error: outcome.error, routable: outcome.routable })
 
-      if (!outcome.routable) return
+      // The node never ran — no implementation, or config that did not resolve —
+      // so no error edge is an answer to it, and the flow stops.
+      if (!outcome.routable) throw new Error(`Node "${nodeId}" could not run: ${outcome.error}`)
 
       const errorEdges = (plan.routing[nodeId] ?? [])
         .filter(e => e.edge.kind === "error" || e.edge.kind === "always")
@@ -278,7 +269,18 @@ function makeContext(job: ExecutionJob, plan: ExecutionPlan): ExecutionContext {
     startedAt:      Date.now(),
     currentStage:   0,
     responseHandle: job.responseHandle,  // transient — stripped on serialize
+    actor:          job.actor,           // transient — stripped on serialize
   }
+}
+
+// A model node writes one row, so what a run has written is how many of them
+// completed.
+function writesIn(ctx: ExecutionContext, plan: ExecutionPlan): number {
+  let used = 0
+  for (const [id, state] of Object.entries(ctx.nodeStates)) {
+    if (state.status === "completed" && plan.nodes[id]?.type.startsWith("model.")) used++
+  }
+  return used
 }
 
 function initNodeState(ctx: ExecutionContext, nodeId: string): NodeExecutionState {
@@ -290,8 +292,4 @@ function initNodeState(ctx: ExecutionContext, nodeId: string): NodeExecutionStat
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms))
 }

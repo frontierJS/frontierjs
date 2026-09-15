@@ -9,7 +9,10 @@ import type {
   NodeDefinition,
   JSONSchema,
   PredicateNode,
+  ErrorCode,
 } from "../types"
+import type { HostCatalog, INameCatalog } from "../ports"
+import { RESERVED_JOB_PREFIX } from "../ports"
 
 // ─────────────────────────────────────────────
 // PLUGIN REGISTRY INTERFACE
@@ -42,6 +45,7 @@ export type CompilerResult =
 interface PipelineContext {
   flow:        Flow
   registry:    IPluginRegistry
+  catalog:     HostCatalog
   errors:      CompilationError[]
   adjacency:   Map<string, string[]>
   inDegree:    Map<string, number>
@@ -58,12 +62,16 @@ interface PipelineContext {
 
 export class Compiler {
 
-  constructor(private readonly registry: IPluginRegistry) {}
+  constructor(
+    private readonly registry: IPluginRegistry,
+    private readonly catalog:  HostCatalog = {},
+  ) {}
 
   compile(flow: Flow): CompilerResult {
     const ctx: PipelineContext = {
       flow,
       registry:   this.registry,
+      catalog:    this.catalog,
       errors:     [],
       adjacency:  new Map(),
       inDegree:   new Map(),
@@ -85,6 +93,9 @@ export class Compiler {
       validateErrorEdges,       // error edges → flow.error nodes; error nodes reachable?
       validateLoopNodes,        // flow.loop has required config + valid maxRuns
       validateNodeModes,        // store + ai nodes have valid mode config
+      validateModelActions,     // model.* nodes write only fields their model declares
+      validateAppActions,       // job.dispatch and notify name what the host has
+      validateSyncFlows,        // a sync webhook flow cannot wait
       validateExpressions,      // do all $.refs point to real upstream data?
       validateExpressionForms,  // are all expressions structurally valid?
       validateSchemas,          // are declared input/output schemas compatible?
@@ -744,8 +755,117 @@ function validateLoopNodes(ctx: PipelineContext): void {
 // store and ai are mode-driven nodes — mode must be a valid literal
 // ─────────────────────────────────────────────
 
+// ─────────────────────────────────────────────
+// VALIDATE MODEL ACTIONS
+// A flow that writes a field its model does not have is refused here rather
+// than at 3am. Typing needs the model and the field NAMES at author time, so
+// both are literal; the values may be any expression. With no catalog the host
+// has nothing to type against, and the Data boundary is the only check.
+// ─────────────────────────────────────────────
+
+const MODEL_WRITE_MODE: Record<string, "create" | "update" | undefined> = {
+  "model.create": "create",
+  "model.patch":  "update",
+  "model.remove": undefined,
+}
+
+function validateModelActions(ctx: PipelineContext): void {
+  for (const [id, node] of Object.entries(ctx.flow.nodes)) {
+    if (!(node.type in MODEL_WRITE_MODE)) continue
+    const fail = (code: ErrorCode, message: string) => ctx.errors.push({ code, message, nodeId: id })
+
+    const model = literalOf(node.config["model"])
+    if (typeof model !== "string") {
+      fail("INVALID_MODEL_ACTION", `Node "${id}" (${node.type}) must name its model as a literal`)
+      continue
+    }
+    if (node.type !== "model.create" && node.config["id"] === undefined) {
+      fail("INVALID_MODEL_ACTION", `Node "${id}" (${node.type}) must say which row, with config.id`)
+    }
+
+    const mode = MODEL_WRITE_MODE[node.type]
+    if (!ctx.catalog.models) continue
+    const writable = ctx.catalog.models.fields(model, mode ?? "update")
+    if (!writable) {
+      fail("UNKNOWN_MODEL", `Node "${id}" (${node.type}) names model "${model}", which this app does not have`)
+      continue
+    }
+    if (!mode) continue
+
+    const keys = fieldNamesOf(node.config["data"])
+    if (!keys) {
+      fail("INVALID_MODEL_ACTION", `Node "${id}" (${node.type}) must write an object whose field names are written out, so they can be checked against ${model}`)
+      continue
+    }
+    for (const key of keys) {
+      if (!writable.has(key)) {
+        fail("UNKNOWN_FIELD", `Node "${id}" (${node.type}) writes "${key}", which ${model} does not accept on ${mode} (it accepts: ${[...writable].sort().join(", ")})`)
+      }
+    }
+  }
+}
+
+// A job or a notification is named as a literal and checked against what the
+// host declares, as a model is. Orion's own jobs are refused with or without a
+// catalog: dispatching one would run a run beside its own job.
+const APP_ACTIONS: Record<string, { key: string; code: ErrorCode; what: string; catalog: keyof HostCatalog }> = {
+  "job.dispatch": { key: "job",          code: "UNKNOWN_JOB",          what: "job",          catalog: "jobs" },
+  "notify":       { key: "notification", code: "UNKNOWN_NOTIFICATION", what: "notification", catalog: "notifications" },
+}
+
+function validateAppActions(ctx: PipelineContext): void {
+  for (const [id, node] of Object.entries(ctx.flow.nodes)) {
+    const action = APP_ACTIONS[node.type]
+    if (!action) continue
+    const fail = (code: ErrorCode, message: string) => ctx.errors.push({ code, message, nodeId: id })
+
+    const name = literalOf(node.config[action.key])
+    if (typeof name !== "string") {
+      fail("INVALID_APP_ACTION", `Node "${id}" (${node.type}) must name its ${action.what} as a literal`)
+      continue
+    }
+    if (node.type === "job.dispatch" && name.startsWith(RESERVED_JOB_PREFIX)) {
+      fail("INVALID_APP_ACTION", `Node "${id}" (job.dispatch) names "${name}", which is orion's own job`)
+      continue
+    }
+    const catalog = ctx.catalog[action.catalog] as INameCatalog | undefined
+    if (!catalog) continue
+    const names = catalog.names().filter(n => node.type !== "job.dispatch" || !n.startsWith(RESERVED_JOB_PREFIX))
+    if (!names.includes(name)) {
+      fail(action.code, `Node "${id}" (${node.type}) names ${action.what} "${name}", which this app does not have (it has: ${[...names].sort().join(", ") || "none"})`)
+    }
+  }
+}
+
+// A sync webhook holds a request open in the process that received it, and a
+// wait ends the job and resumes wherever the queue claims it (`FJS-D280`).
+function validateSyncFlows(ctx: PipelineContext): void {
+  const nodes = Object.entries(ctx.flow.nodes)
+  const sync  = nodes.some(([, n]) => n.type === "trigger.webhook" && literalOf(n.config["mode"]) === "sync")
+  if (!sync) return
+  for (const [id, node] of nodes) {
+    if (node.type === "flow.wait") {
+      ctx.errors.push({ code: "SYNC_FLOW_WAITS", message: `Node "${id}" waits, and a flow answering its webhook synchronously cannot`, nodeId: id })
+    }
+  }
+}
+
+function literalOf(expr: Expression | undefined): unknown {
+  return expr?.type === "literal" ? expr.value : undefined
+}
+
+// The field names a data expression writes, when it states them: an object
+// expression, or a literal object. Anything else is a value computed at run time.
+function fieldNamesOf(expr: Expression | undefined): string[] | undefined {
+  if (expr?.type === "object") return Object.keys(expr.properties)
+  if (expr?.type === "literal" && expr.value !== null && typeof expr.value === "object" && !Array.isArray(expr.value)) {
+    return Object.keys(expr.value)
+  }
+  return undefined
+}
+
 const STORE_MODES = new Set(["get", "set", "delete"])
-const AI_MODES    = new Set(["complete", "embed", "classify", "extract"])
+const AI_MODES    = new Set(["complete"])
 
 function validateNodeModes(ctx: PipelineContext): void {
   const { flow, registry, errors } = ctx

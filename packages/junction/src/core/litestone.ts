@@ -2785,6 +2785,8 @@ export const PRINCIPAL_RESOLVER = Symbol.for('junction.principalResolver')
 /** Where `createApp({ tenants })` parks the registry, for the same reason. Under
  *  that strategy there is no app-wide client to ask the declaration of. */
 export const TENANT_REGISTRY = Symbol.for('junction.tenantRegistry')
+/** Where `app.onTenantClient` keeps its observers, for the hook that opens a tenant's client. */
+export const TENANT_CLIENT_OBSERVERS = Symbol.for('junction.tenantClientObservers')
 
 /** Claims that would change WHO is calling rather than what they hold here. */
 const IDENTITY_KEYS = ['userId', 'id'] as const
@@ -3797,10 +3799,16 @@ function liftRowTenant(ctx: ServiceContext, client: unknown, claims?: PrincipalC
  * one strategy over.
  */
 const _tapped = new WeakSet<object>()
-function tapTenantWrites(app: unknown, client: unknown): void {
+function tapTenantWrites(app: unknown, client: unknown, tenantId: string): void {
   if (!client || typeof client !== 'object' || _tapped.has(client as object)) return
   if (!app || typeof app !== 'object') return
   _tapped.add(client as object)
+  const observers = (app as Record<symbol, Set<(client: unknown, tenantId: string) => void> | undefined>)[TENANT_CLIENT_OBSERVERS]
+  for (const observe of observers ?? []) {
+    try { observe(client, tenantId) } catch (err) {
+      ;(app as { logger?: { error?: (msg: string, err: unknown) => void } }).logger?.error?.('[Junction] an onTenantClient observer threw', err)
+    }
+  }
   announceDataWrites(app as Parameters<typeof announceDataWrites>[0], client)
   // The audit trail's provenance, on the same *once per tenant client* seam and
   // for the same reason: under `strategy database` there is no one app client
@@ -3874,7 +3882,7 @@ export function withTenantDb(registry: TenantRegistryLike, principal?: Principal
       // The tap goes on the TENANT's client, not on a scoped view of it: a
       // scoped client is a proxy built per call, and tapping one would announce
       // for the length of that call and no longer.
-      tapTenantWrites((ctx as { app?: unknown }).app, client)
+      tapTenantWrites((ctx as { app?: unknown }).app, client, id)
 
       ctx.locals.tenantId = id
       ctx.locals.db = dataPrincipal && typeof client?.$setAuth === 'function'

@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-43 models · 1 view · 44 gated · 0 unrestricted
-13 with row policies · 21 with protected fields · 15 declared moves · 8 @system · 1 @seals
+51 models · 1 view · 52 gated · 0 unrestricted
+16 with row policies · 24 with protected fields · 25 declared moves · 8 @system · 1 @seals
 ```
 
 ## Gates
@@ -30,11 +30,16 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `CustomField` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Discount` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Employee` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `Flow` | 4 USER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `FlowCredential` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `FlowLayout` | 4 USER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `FlowVersion` | 4 USER | 4 USER | 9 LOCKED | 8 SYSTEM |
 | `InventoryMovement` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 9 LOCKED | 9 LOCKED |
 | `Invoice` | 1 VISITOR | 8 SYSTEM | 4 USER | 8 SYSTEM |
 | `InvoiceLine` | 1 VISITOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `JournalEntry` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
 | `JournalLine` | 5 ADMINISTRATOR | 8 SYSTEM | 9 LOCKED | 9 LOCKED |
+| `KvEntry` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `LoginChallenge` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `MetricHour` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `MetricPoint` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -58,6 +63,8 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `ProductImage` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `ProductVariant` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `revenueByStatus` *(view)* | 5 ADMINISTRATOR | — *no writes* | — *no writes* | — *no writes* |
+| `Run` | 4 USER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `RunStep` | 4 USER | 8 SYSTEM | 9 LOCKED | 8 SYSTEM |
 | `Session` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `ShippingMethod` | 0 STRANGER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `StockReservation` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -65,6 +72,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `TaxRate` | 0 STRANGER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `User` | 4 USER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `Verification` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `Wait` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 
 ## Bulk export
 
@@ -105,6 +113,24 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 - allow **read** — `auth().isStaff`
 - allow **read** — `userId == auth().id`
+
+### `Flow`
+
+- allow **create** — `true`
+- deny **create** — `ownerId != null && ownerId != auth().id`
+- deny **create** — `status != null && status != 'draft'`
+- allow **update** — `ownerId == auth().id`
+
+### `FlowLayout`
+
+- allow **create** — `flow.ownerId == auth().id`
+- allow **update** — `flow.ownerId == auth().id`
+- allow **delete** — `flow.ownerId == auth().id`
+
+### `FlowVersion`
+
+- allow **create** — `flow.ownerId == auth().id`
+- deny **create** — `authorId != null && authorId != auth().id`
 
 ### `Invoice`
 
@@ -178,6 +204,8 @@ rather than refusing the row.
 | `Customer` | `fieldsSlots` | `@system` |
 | `CustomField` | `slot` | `@system` |
 | `Discount` | `redemptions` | `@system` |
+| `Flow` | `currentVersion` | `@allow('write', status == null || status != 'active')` |
+| `FlowCredential` | `secret` | `@encrypted` |
 | `Invoice` | `subtotal` | `@system` |
 | `Invoice` | `tax` | `@system` |
 | `Invoice` | `total` | `@system` |
@@ -213,6 +241,7 @@ rather than refusing the row.
 | `Payslip` | `net` | `@system` |
 | `Payslip` | `employerCost` | `@system` |
 | `Payslip` | `sentAt` | `@system` |
+| `Run` | `context` | `@encrypted` |
 | `Session` | `token` | `@guarded` |
 | `Subscription` | `currentPeriodStart` | `@system` |
 | `Subscription` | `currentPeriodEnd` | `@system` |
@@ -251,6 +280,10 @@ caller at once. Everything reachable from the target seals with it.
 
 | Model | Field | Move | From → To | Made by | Level | Seals |
 | --- | --- | --- | --- | --- | --- | --- |
+| `Flow` | `status` | `activate` | draft, paused → active | caller | 5 ADMINISTRATOR | — |
+| `Flow` | `status` | `pause` | active → paused | caller | — | — |
+| `Flow` | `status` | `archive` | draft, active, paused → archived | caller | — | — |
+| `Flow` | `status` | `restore` | archived → draft | caller | — | — |
 | `Invoice` | `status` | `issue` | draft → issued | **application** | — | **yes** |
 | `Invoice` | `status` | `settle` | issued → paid | **application** | — | — |
 | `Invoice` | `status` | `void` | issued → void | caller | 5 ADMINISTRATOR | — |
@@ -262,6 +295,12 @@ caller at once. Everything reachable from the target seals with it.
 | `PayRun` | `status` | `revert` | calculated → draft | caller | — | — |
 | `PayRun` | `status` | `approve` | calculated → approved | caller | 5 ADMINISTRATOR | — |
 | `PayRun` | `status` | `pay` | approved → paid | **application** | — | — |
+| `Run` | `status` | `start` | pending → running | caller | — | — |
+| `Run` | `status` | `suspend` | pending, running → waiting | caller | — | — |
+| `Run` | `status` | `resume` | waiting → running | caller | — | — |
+| `Run` | `status` | `complete` | running → completed | caller | — | — |
+| `Run` | `status` | `fail` | pending, running, waiting → failed | caller | — | — |
+| `Run` | `status` | `cancel` | pending, running, waiting → cancelled | caller | — | — |
 | `Subscription` | `status` | `activate` | trialing → active | **application** | — | — |
 | `Subscription` | `status` | `lapse` | active → pastDue | **application** | — | — |
 | `Subscription` | `status` | `recover` | pastDue → active | **application** | — | — |

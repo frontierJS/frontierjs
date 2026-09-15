@@ -72,6 +72,7 @@
     "@frontierjs/litestone": "workspace:*",
     "@frontierjs/mesa": "workspace:*",
     "@frontierjs/notifications": "workspace:*",
+    "@frontierjs/orion": "workspace:*",
     "@frontierjs/sierra": "workspace:*",
     "@frontierjs/toolbelt": "workspace:*",
     "@frontierjs/ui": "workspace:*",

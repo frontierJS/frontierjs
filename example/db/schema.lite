@@ -187,6 +187,9 @@ enum Size { one xs s m l xl xxl }
 import "@frontierjs/auth/schema.lite"
 import "@frontierjs/junction/outbox.lite"
 import "@frontierjs/junction/metrics.lite"
+// Orion's flows and runs. Per shop like everything else here: a shop's
+// automations, and the runs they make, are in the shop's own file (`FJS-D294`).
+import "@frontierjs/orion/orion.lite"
 import "./user.lite"
 
 // A claim a caller with NO SESSION holds, resolved per request off a declared

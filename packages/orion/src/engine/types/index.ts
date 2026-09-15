@@ -289,6 +289,13 @@ export type ErrorCode =
   | "INVALID_ERROR_EDGE"       // error edge points to non-flow.error node
   | "UNREACHABLE_ERROR_NODE"   // flow.error node has no incoming error edges
   | "INVALID_NODE_MODE"        // store/ai node has missing or invalid mode field
+  | "INVALID_MODEL_ACTION"     // model.* node whose model or data cannot be typed
+  | "UNKNOWN_MODEL"            // model.* node naming a model the host does not have
+  | "UNKNOWN_FIELD"            // model.* node writing a field its model does not declare
+  | "SYNC_FLOW_WAITS"          // a sync webhook flow containing flow.wait (`FJS-D280`)
+  | "INVALID_APP_ACTION"       // job.dispatch or notify whose target is not a literal, or is orion's own job
+  | "UNKNOWN_JOB"              // job.dispatch naming a job the host does not register
+  | "UNKNOWN_NOTIFICATION"     // notify naming a notification the host does not declare
 
 export interface CompilationError {
   code:    ErrorCode

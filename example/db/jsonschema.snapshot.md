@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-76 definitions · 43 models · 1 view · 12 types · 20 enums · 0 other
+88 definitions · 51 models · 1 view · 12 types · 24 enums · 0 other
 ```
 
 ## Definitions
@@ -34,6 +34,14 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `MetricSeries` | model |
 | `MetricPoint` | model |
 | `MetricHour` | model |
+| `Flow` | model |
+| `FlowVersion` | model |
+| `FlowLayout` | model |
+| `Run` | model |
+| `RunStep` | model |
+| `Wait` | model |
+| `FlowCredential` | model |
+| `KvEntry` | model |
 | `Product` | model |
 | `Color` | model |
 | `ProductVariant` | model |
@@ -71,6 +79,10 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `revenueByStatus` | view |
 | `VerificationPurpose` | enum |
 | `MetricType` | enum |
+| `FlowStatus` | enum |
+| `RunStatus` | enum |
+| `StepStatus` | enum |
+| `FlowCredentialAuth` | enum |
 | `Brand` | enum |
 | `Size` | enum |
 | `CustomFieldType` | enum |
@@ -109,6 +121,10 @@ validates, and a select that silently drops an option.
 
 - `VerificationPurpose` — `passwordReset`, `emailVerify`, `oauthLink`
 - `MetricType` — `counter`, `gauge`, `histogram`
+- `FlowStatus` — `draft`, `active`, `paused`, `archived`
+- `RunStatus` — `pending`, `running`, `waiting`, `completed`, `failed`, `cancelled`
+- `StepStatus` — `pending`, `running`, `completed`, `failed`, `skipped`
+- `FlowCredentialAuth` — `none`, `bearer`, `api_key`, `hmac`
 - `Brand` — `frontierjs`, `junction`, `litestone`
 - `Size` — `one`, `xs`, `s`, `m`, `l`, `xl`, `xxl`
 - `CustomFieldType` — `text`, `number`
@@ -273,6 +289,146 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `increase` | `number`? | — | — | — | — |
 
 **On create**: required — `seriesId`, `hour`, `min`, `max`, `sum`, `count`
+
+### `Flow`
+
+- gate `read:4 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+- relation `versions` — hasMany `FlowVersion`
+- relation `layout` — hasMany `FlowLayout` · optional
+- transitions on `status` — `activate`: draft|paused → active @5 · `pause`: active → paused · `archive`: draft|active|paused → archived · `restore`: archived → draft
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `description` | `string`? | — | — | — | — |
+| `status` | `FlowStatus` = `"draft"` | — | — | — | — |
+| `currentVersion` | `integer`? | — | — | `x-litestone-write-policy` | — |
+| `ownerId` | `string` | — | — | — | — |
+| `runsPerMinute` | `integer`? | — | — | `minimum: 1` | — |
+| `maxWrites` | `integer` = `1000` | — | — | `minimum: 0` | — |
+
+**On create**: required — `name` · not accepted — `id`
+
+### `FlowVersion`
+
+- gate `read:4 create:4 update:9 delete:8` · closed (`additionalProperties: false`)
+- relation `flow` — belongsTo `Flow` via `flowId` · on delete Cascade
+- relation `runs` — hasMany `Run`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `flowId` | `string` | yes | — | — | — |
+| `version` | `integer` | yes | — | — | — |
+| `definition` | `json` | yes | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `authorId` | `string`? | — | — | — | — |
+
+**On create**: required — `flowId`, `version`, `definition` · not accepted — `id`
+
+### `FlowLayout`
+
+- gate `read:4 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+- relation `flow` — belongsTo `Flow` via `flowId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `flowId` | `string` | yes | — | — | — |
+| `layout` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+
+**On create**: required — `flowId` · not accepted — `id`
+
+### `Run`
+
+- gate `read:4 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `flowVersion` — belongsTo `FlowVersion` via `flowVersionId` · on delete Cascade
+- relation `steps` — hasMany `RunStep`
+- relation `waits` — hasMany `Wait`
+- transitions on `status` — `start`: pending → running · `suspend`: pending|running → waiting · `resume`: waiting → running · `complete`: running → completed · `fail`: pending|running|waiting → failed · `cancel`: pending|running|waiting → cancelled
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `flowVersionId` | `string` | yes | — | — | — |
+| `status` | `RunStatus` = `"pending"` | — | — | — | — |
+| `trigger` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `context` | `json`? | — | — | `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
+| `currentStage` | `integer` = `0` | — | — | — | — |
+| `actorId` | `string`? | — | — | — | — |
+| `startedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `endedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `error` | `string`? | — | — | — | — |
+| `heartbeatAt` | `string`? | — | — | `format: "date-time"` | — |
+
+**On create**: required — `flowVersionId` · not accepted — `id`
+
+### `RunStep`
+
+- gate `read:4 create:8 update:9 delete:8` · closed (`additionalProperties: false`)
+- relation `run` — belongsTo `Run` via `runId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `runId` | `string` | yes | — | — | — |
+| `nodeId` | `string` | yes | — | — | — |
+| `status` | `StepStatus` | yes | — | — | — |
+| `attempts` | `integer` = `0` | — | — | — | — |
+| `fromCache` | `boolean` = `false` | — | — | — | — |
+| `startedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `durationMs` | `integer`? | — | — | — | — |
+| `output` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `error` | `string`? | — | — | — | — |
+| `logs` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
+
+**On create**: required — `runId`, `nodeId`, `status` · not accepted — `id`
+
+### `Wait`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `run` — belongsTo `Run` via `runId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `resumeKey` | `string` | yes | — | — | — |
+| `runId` | `string` | yes | — | — | — |
+| `nodeId` | `string` | yes | — | — | — |
+| `timeoutAt` | `string`? | — | — | `format: "date-time"` | — |
+
+**On create**: required — `resumeKey`, `runId`, `nodeId` · not accepted — `id`
+
+### `FlowCredential`
+
+- gate `read:5 create:5 update:5 delete:5` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `name` | `string` | yes | — | `minLength: 1` `maxLength: 200` | — |
+| `provider` | `string` | yes | — | — | — |
+| `address` | `string` | yes | — | — | — |
+| `auth` | `FlowCredentialAuth` = `"none"` | — | — | — | — |
+| `header` | `string`? | — | — | — | — |
+| `encoding` | `string`? = `"json"` | — | — | — | — |
+| `secret` | `string`? | — | — | `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
+
+**On create**: required — `name`, `provider`, `address` · not accepted — `id`
+
+### `KvEntry`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `scope` | `string` | yes | — | — | — |
+| `key` | `string` | yes | — | — | — |
+| `value` | `json` | yes | — | `x-sortable: "json"` `x-aggregatable` | — |
+| `expiresAt` | `string`? | — | — | `format: "date-time"` | — |
+
+**On create**: required — `scope`, `key`, `value` · not accepted — `id`
 
 ### `Product`
 

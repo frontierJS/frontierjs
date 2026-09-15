@@ -1,5 +1,6 @@
 import type { INodeImplementation, NodeContext } from "../executor"
-import type { IKeyValueStore, IWaitRegistry, IAIProviderRegistry } from "../ports"
+import type { IKeyValueStore, IAIModels, IJobDispatcher, IModelActions, INotifier, IOutbound, IServiceCaller, Recipient } from "../ports"
+import { RESERVED_JOB_PREFIX } from "../ports"
 import { CodeWorkerPool }          from "./code-worker-pool"
 
 // ─────────────────────────────────────────────
@@ -10,9 +11,12 @@ import { CodeWorkerPool }          from "./code-worker-pool"
 
 export interface NodeDeps {
   kv:          IKeyValueStore
-  waitReg:     IWaitRegistry
-  aiProviders: IAIProviderRegistry
-  workspaceId: string   // resolved from server config / auth context
+  outbound?:   IOutbound
+  ai?:         IAIModels
+  models?:     IModelActions
+  services?:   IServiceCaller
+  jobs?:       IJobDispatcher
+  notifier?:   INotifier
   codePool?:   CodeWorkerPool
 }
 
@@ -39,6 +43,13 @@ const triggerCron: INodeImplementation = {
 
 const triggerManual: INodeImplementation = {
   type: "trigger.manual",
+  async execute(ctx: NodeContext) {
+    return { ok: true, data: ctx.trigger }
+  },
+}
+
+const triggerModel: INodeImplementation = {
+  type: "trigger.model",
   async execute(ctx: NodeContext) {
     return { ok: true, data: ctx.trigger }
   },
@@ -81,6 +92,9 @@ function makeDataCode(pool: CodeWorkerPool): INodeImplementation {
       if (typeof code !== "string" || !code.trim()) {
         return { ok: false, error: "data.code: config.code must be a non-empty string" }
       }
+      // A script can reach anything the process can, so a dry run cannot vouch
+      // for what it would do and does not run it.
+      if (ctx.dryRun) return notSent(ctx, { code: "not run" })
       try {
         const result = await pool.run(code, { ...ctx.nodes, nodes: ctx.nodes, trigger: ctx.trigger }, 5_000)
         return { ok: true, data: { result } }
@@ -190,34 +204,132 @@ const flowEach: INodeImplementation = {
   },
 }
 
-// flow.wait — suspends execution until an external resume
-function makeFlowWait(waitReg: IWaitRegistry): INodeImplementation {
+// flow.wait — suspends execution until an external resume.
+// The node only answers the sentinel. The host writes the Wait row in the same
+// transaction as the checkpoint that suspends the run, so a resume key exists
+// exactly while its run is waiting.
+const flowWait: INodeImplementation = {
+  type: "flow.wait",
+  async execute(ctx: NodeContext) {
+    const { event, timeoutMs, resumeKey: into = "resumePayload" } = ctx.config
+    if (typeof event !== "string") {
+      return { ok: false, error: "flow.wait: config.event must be a string" }
+    }
+    return {
+      ok:   true,
+      data: {
+        __orion_wait: true,
+        // The key is the credential that resumes the run, so it is random bytes
+        // and not Math.random.
+        resumeKey:    randomKey(),
+        event,
+        timeoutAt:    timeoutMs != null ? Date.now() + Number(timeoutMs) : null,
+        into:         String(into),
+      },
+    }
+  },
+}
+
+// model.* and service.call — the app's own data, through the host's ports.
+// A refusal is the Data boundary's answer to this principal, and asking again
+// cannot change it, so nothing here is retried.
+function makeModelNode(type: "model.create" | "model.patch" | "model.remove", models?: IModelActions): INodeImplementation {
   return {
-    type: "flow.wait",
+    type,
     async execute(ctx: NodeContext) {
-      const { event, timeoutMs, resumeKey: configKey = "resumePayload" } = ctx.config
-      if (typeof event !== "string") {
-        return { ok: false, error: "flow.wait: config.event must be a string" }
+      if (!models) return { ok: false, error: `${type}: this host supplies no model actions`, retry: false }
+      const { model, id, data } = ctx.config
+      if (typeof model !== "string") return { ok: false, error: `${type}: config.model must be a string`, retry: false }
+      if (type !== "model.remove" && (data === null || typeof data !== "object" || Array.isArray(data))) {
+        return { ok: false, error: `${type}: config.data must be an object`, retry: false }
       }
+      if (type !== "model.create" && (id === undefined || id === null)) {
+        return { ok: false, error: `${type}: config.id is required`, retry: false }
+      }
+      // Taken before the await, so parallel nodes in one stage cannot all pass a
+      // check the last row would have failed; given back when nothing was written.
+      if (ctx.writes) {
+        if (ctx.writes.used >= ctx.writes.limit) {
+          return { ok: false, error: `${type}: this run has written its ceiling of ${ctx.writes.limit} rows`, retry: false }
+        }
+        ctx.writes.used++
+      }
+      try {
+        const row = type === "model.create" ? await models.create(ctx.actor, model, data as Record<string, unknown>)
+                  : type === "model.patch"  ? await models.patch(ctx.actor, model, id, data as Record<string, unknown>)
+                  :                           await models.remove(ctx.actor, model, id)
+        return { ok: true, data: row ?? null }
+      } catch (err) {
+        if (ctx.writes) ctx.writes.used--
+        return { ok: false, error: errorMessage(err), retry: false }
+      }
+    },
+  }
+}
 
-      // Generate opaque resume key
-      const resumeKey = generateId(21)
-      const timeoutAt = timeoutMs != null ? Date.now() + Number(timeoutMs) : null
+function makeServiceCall(services?: IServiceCaller): INodeImplementation {
+  return {
+    type: "service.call",
+    async execute(ctx: NodeContext) {
+      const { service, method, id, data, query } = ctx.config
+      if (typeof service !== "string" || typeof method !== "string") {
+        return { ok: false, error: "service.call: config.service and config.method must be strings", retry: false }
+      }
+      if (ctx.dryRun) return notSent(ctx, { service, method, id, data, query })
+      if (!services) return { ok: false, error: "service.call: this host supplies no services", retry: false }
+      try {
+        return { ok: true, data: (await services.call(ctx.actor, service, method, { id, data, query })) ?? null }
+      } catch (err) {
+        return { ok: false, error: errorMessage(err), retry: false }
+      }
+    },
+  }
+}
 
-      waitReg.register({
-        resumeKey,
-        executionId:  ctx.executionId,
-        flowId:       (ctx.nodes as any).__flowId ?? "",
-        nodeId:       event,  // store event name as nodeId for logging
-        resumeCtxKey: configKey as string,
-        timeoutAt,
-        createdAt:    Date.now(),
-      })
+// The job id is the run and the node, so a stage run again after a crash
+// dispatches the job it already dispatched rather than a second one.
+function makeJobDispatch(jobs?: IJobDispatcher): INodeImplementation {
+  return {
+    type: "job.dispatch",
+    async execute(ctx: NodeContext) {
+      const { job, data } = ctx.config
+      if (typeof job !== "string") return { ok: false, error: "job.dispatch: config.job must be a string", retry: false }
+      if (job.startsWith(RESERVED_JOB_PREFIX)) {
+        return { ok: false, error: `job.dispatch: "${job}" is orion's own job, and a flow cannot dispatch it`, retry: false }
+      }
+      const id = `orion:${ctx.executionId}:${ctx.nodeId}`
+      if (ctx.dryRun) return notSent(ctx, { job, data: data ?? null, id })
+      if (!jobs) return { ok: false, error: "job.dispatch: this host supplies no job queue", retry: false }
+      try {
+        return { ok: true, data: { jobId: await jobs.dispatch(ctx.actor, job, data ?? null, { id }) } }
+      } catch (err) {
+        return { ok: false, error: errorMessage(err) }
+      }
+    },
+  }
+}
 
-      // Return sentinel — scheduler sees __orion_wait and suspends
-      return {
-        ok:   true,
-        data: { __orion_wait: true, resumeKey, event, timeoutAt },
+// Not idempotent: a notification has no delivery key, so a stage run again after
+// a crash sends it again, and a failure is not retried because some transports
+// may already have delivered.
+function makeNotify(notifier?: INotifier): INodeImplementation {
+  return {
+    type: "notify",
+    async execute(ctx: NodeContext) {
+      const { notification, to, payload } = ctx.config
+      if (typeof notification !== "string") {
+        return { ok: false, error: "notify: config.notification must be a string", retry: false }
+      }
+      if (to === null || typeof to !== "object" || Array.isArray(to)) {
+        return { ok: false, error: "notify: config.to must be a recipient — an object with an id, an email, or both", retry: false }
+      }
+      if (ctx.dryRun) return notSent(ctx, { notification, to, payload: payload ?? null })
+      if (!notifier) return { ok: false, error: "notify: this host supplies no notifications", retry: false }
+      try {
+        await notifier.notify(ctx.actor, notification, to as Recipient, payload ?? null)
+        return { ok: true, data: { sent: true } }
+      } catch (err) {
+        return { ok: false, error: errorMessage(err), retry: false }
       }
     },
   }
@@ -254,54 +366,34 @@ const flowError: INodeImplementation = {
 // HTTP NODES
 // ─────────────────────────────────────────────
 
-const httpRequest: INodeImplementation = {
-  type: "http.request",
-  async execute(ctx: NodeContext) {
-    const { url, method = "GET", headers = {}, body: reqBody } = ctx.config
-    if (typeof url !== "string" || !url) {
-      return { ok: false, error: "http.request: config.url must resolve to a non-empty string" }
-    }
-
-    const fetchInit: RequestInit = {
-      method:  String(method),
-      headers: headers as HeadersInit,
-      signal:  ctx.signal,
-    }
-    if (reqBody != null && method !== "GET" && method !== "HEAD") {
-      fetchInit.body = typeof reqBody === "string" ? reqBody : JSON.stringify(reqBody)
-      if (!(fetchInit.headers as Record<string, string>)["content-type"]) {
-        (fetchInit.headers as Record<string, string>)["content-type"] = "application/json"
+function makeHttpRequest(outbound?: IOutbound): INodeImplementation {
+  return {
+    type: "http.request",
+    async execute(ctx: NodeContext) {
+      const { credential, method = "GET", path = "", query, headers, body } = ctx.config
+      if (typeof credential !== "string" || !credential) {
+        return { ok: false, error: "http.request: config.credential must name the credential the call goes through", retry: false }
       }
-    }
+      const req = {
+        credential,
+        method:         String(method).toUpperCase(),
+        path:           String(path),
+        query:          query as Record<string, unknown> | undefined,
+        headers:        headers as Record<string, string> | undefined,
+        body:           body ?? undefined,
+        idempotencyKey: `${ctx.executionId}:${ctx.nodeId}:${ctx.attempt}`,
+      }
+      if (ctx.dryRun) return notSent(ctx, req)
+      if (!outbound) return { ok: false, error: "http.request: this host supplies no outbound calls", retry: false }
 
-    let res: Response
-    try {
-      res = await ctx.fetch(url, fetchInit)
-    } catch (err) {
-      return { ok: false, error: `http.request: fetch failed — ${errorMessage(err)}` }
-    }
-
-    const contentType = res.headers.get("content-type") ?? ""
-    let responseBody: unknown
-    try {
-      responseBody = contentType.includes("json") ? await res.json() : await res.text()
-    } catch {
-      responseBody = null
-    }
-
-    const outHeaders: Record<string, string> = {}
-    res.headers.forEach((v, k) => { outHeaders[k] = v })
-
-    return {
-      ok: true,
-      data: {
-        status:  res.status,
-        headers: outHeaders,
-        body:    responseBody,
-        ok:      res.ok,
-      },
-    }
-  },
+      try {
+        const res = await outbound.send(ctx.actor, req)
+        return { ok: true, data: { ...res, ok: res.status >= 200 && res.status < 300 } }
+      } catch (err) {
+        return { ok: false, error: `http.request: ${errorMessage(err)}` }
+      }
+    },
+  }
 }
 
 // http.respond — sends the held HTTP response for sync webhook flows
@@ -326,61 +418,32 @@ const httpRespond: INodeImplementation = {
 // AI NODE
 // ─────────────────────────────────────────────
 
-function makeAiNode(providerRegistry: IAIProviderRegistry): INodeImplementation {
+function makeAiNode(models?: IAIModels): INodeImplementation {
   return {
     type: "ai",
     async execute(ctx: NodeContext) {
-      const { model, mode = "complete", prompt, input, schema, options, __provider } = ctx.config
+      const { model, mode = "complete", prompt, system, maxTokens, temperature } = ctx.config
+      if (mode !== "complete") return { ok: false, error: `ai: unknown mode "${mode}"`, retry: false }
+      if (typeof model !== "string" || !model) return { ok: false, error: "ai: config.model must name one of the app's AI models", retry: false }
+      if (!prompt) return { ok: false, error: "ai: config.prompt is required", retry: false }
 
-      if (!__provider || typeof __provider !== "object") {
-        return { ok: false, error: "ai: credential must include a provider config object" }
+      const req = {
+        messages:    [{ role: "user" as const, content: String(prompt) }],
+        ...(system      != null ? { system:      String(system) }      : {}),
+        ...(maxTokens   != null ? { maxTokens:   Number(maxTokens) }   : {}),
+        ...(temperature != null ? { temperature: Number(temperature) } : {}),
       }
-
-      const providerConfig = __provider as Record<string, unknown>
-      const providerName   = providerConfig.provider as string
-      if (!providerName) return { ok: false, error: "ai: credential.provider field is required" }
-
-      let provider
-      try {
-        provider = providerRegistry.get(providerName)(providerConfig)
-      } catch (err) {
-        return { ok: false, error: errorMessage(err) }
-      }
-
-      const modelStr = String(model ?? "")
-      if (!modelStr) return { ok: false, error: "ai: config.model is required" }
+      if (ctx.dryRun) return notSent(ctx, { ai: model, ...req })
+      if (!models) return { ok: false, error: "ai: this host supplies no AI models", retry: false }
 
       try {
-        if (mode === "complete") {
-          if (!prompt) return { ok: false, error: "ai: config.prompt required for complete mode" }
-          const res = await provider.complete({ model: modelStr, prompt: String(prompt), options: options as any })
-          return { ok: true, data: { result: res.text, finishReason: res.finishReason, model: modelStr, usage: res.usage } }
+        const res = await models.complete(ctx.actor, model, req)
+        return {
+          ok:   true,
+          data: { result: res.content, model: res.model, usage: { inputTokens: res.inputTokens ?? null, outputTokens: res.outputTokens ?? null } },
         }
-
-        if (mode === "embed") {
-          if (!input) return { ok: false, error: "ai: config.input required for embed mode" }
-          const res = await provider.embed({ model: modelStr, input: input as any })
-          return { ok: true, data: { result: res.embeddings, model: modelStr, usage: res.usage } }
-        }
-
-        if (mode === "classify") {
-          const labels = (ctx.config.labels as string[] | undefined) ?? []
-          if (!input) return { ok: false, error: "ai: config.input required for classify mode" }
-          if (!labels.length) return { ok: false, error: "ai: config.labels required for classify mode" }
-          const res = await provider.classify({ model: modelStr, input: String(input), labels, options: options as any })
-          return { ok: true, data: { result: res.label, score: res.score, model: modelStr, usage: res.usage } }
-        }
-
-        if (mode === "extract") {
-          if (!input)  return { ok: false, error: "ai: config.input required for extract mode" }
-          if (!schema) return { ok: false, error: "ai: config.schema required for extract mode" }
-          const res = await provider.extract({ model: modelStr, input: String(input), schema: schema as any, options: options as any })
-          return { ok: true, data: { result: res.data, model: modelStr, usage: res.usage } }
-        }
-
-        return { ok: false, error: `ai: unknown mode "${mode}"` }
       } catch (err) {
-        return { ok: false, error: errorMessage(err) }
+        return { ok: false, error: `ai: ${errorMessage(err)}` }
       }
     },
   }
@@ -390,32 +453,35 @@ function makeAiNode(providerRegistry: IAIProviderRegistry): INodeImplementation 
 // STORE NODE
 // ─────────────────────────────────────────────
 
-function makeStoreNode(kv: IKeyValueStore, workspaceId: string): INodeImplementation {
+function makeStoreNode(kv: IKeyValueStore): INodeImplementation {
   return {
     type: "store",
     async execute(ctx: NodeContext) {
-      const { key, mode = "get", value, output = "value", ttlMs, scope = "workspace" } = ctx.config
+      const { key, mode = "get", value, output = "value", ttlMs, scope = "flow" } = ctx.config
 
       if (typeof key !== "string" || !key) {
         return { ok: false, error: "store: config.key must resolve to a non-empty string" }
       }
-
-      const kvScope = scope === "execution" ? ctx.executionId : "workspace"
+      const kvScope = scope === "global" ? "global"
+                    : scope === "run"    ? `run:${ctx.executionId}`
+                    : scope === "flow"   ? `flow:${ctx.flowId}`
+                    : undefined
+      if (!kvScope) return { ok: false, error: `store: unknown scope "${scope}" (global, flow or run)` }
 
       if (mode === "get") {
-        const found_val = kv.get(workspaceId, kvScope, key)
-        const found = found_val !== undefined
-        return { ok: true, data: { [output as string]: found_val, found, key } }
+        const found_val = await kv.get(ctx.actor, kvScope, key)
+        return { ok: true, data: { [output as string]: found_val, found: found_val !== undefined, key } }
       }
 
+      if (ctx.dryRun && (mode === "set" || mode === "delete")) return notSent(ctx, { store: mode, scope: kvScope, key, value })
+
       if (mode === "set") {
-        kv.set(workspaceId, kvScope, key, value, ttlMs != null ? Number(ttlMs) : undefined)
+        await kv.set(ctx.actor, kvScope, key, value, ttlMs != null ? Number(ttlMs) : undefined)
         return { ok: true, data: { key, set: true } }
       }
 
       if (mode === "delete") {
-        const deleted = kv.delete(workspaceId, kvScope, key)
-        return { ok: true, data: { key, deleted } }
+        return { ok: true, data: { key, deleted: await kv.delete(ctx.actor, kvScope, key) } }
       }
 
       return { ok: false, error: `store: unknown mode "${mode}"` }
@@ -436,6 +502,7 @@ export function createNodeImplementations(deps: NodeDeps): INodeImplementation[]
     triggerCron,
     triggerManual,
     triggerEvent,
+    triggerModel,
     // Transform
     exprPipeline,
     makeDataCode(pool),
@@ -445,22 +512,36 @@ export function createNodeImplementations(deps: NodeDeps): INodeImplementation[]
     flowMerge,
     flowDelay,
     flowEach,
-    makeFlowWait(deps.waitReg),
+    flowWait,
     flowLoop,
     flowError,
     // HTTP
-    httpRequest,
+    makeHttpRequest(deps.outbound),
     httpRespond,
     // AI
-    makeAiNode(deps.aiProviders),
+    makeAiNode(deps.ai),
     // Storage
-    makeStoreNode(deps.kv, deps.workspaceId),
+    makeStoreNode(deps.kv),
+    // Data
+    makeModelNode("model.create", deps.models),
+    makeModelNode("model.patch",  deps.models),
+    makeModelNode("model.remove", deps.models),
+    makeServiceCall(deps.services),
+    makeJobDispatch(deps.jobs),
+    makeNotify(deps.notifier),
   ]
 }
 
 // ─────────────────────────────────────────────
 // INTERNAL HELPERS
 // ─────────────────────────────────────────────
+
+// What a dry-run node answers: the effect it would have had, in its own output
+// and its log, so the run record is the list of everything not sent.
+function notSent(ctx: NodeContext, wouldSend: Record<string, unknown>) {
+  ctx.logger.info("dry run: not sent", wouldSend)
+  return { ok: true as const, data: { dryRun: true, wouldSend } }
+}
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
@@ -477,11 +558,9 @@ function resolvePath(obj: Record<string, unknown>, path: string): unknown {
   }, obj)
 }
 
-function generateId(len: number): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
-  let id = ""
-  for (let i = 0; i < len; i++) id += chars[Math.floor(Math.random() * chars.length)]
-  return id
+function randomKey(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32))
+  return Buffer.from(bytes).toString("base64url")
 }
 
 // ── Minimal CSV parser (RFC 4180 subset) ─────

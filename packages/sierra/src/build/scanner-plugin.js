@@ -39,11 +39,20 @@ export function scannerPlugin(config, sierraContext) {
   // throws away the component-level HMR that mesa-plugin just set up.
   let _lastTable = null
 
+  // Every directory a `*.mount.js` names, as of the last scan — watched beside
+  // the routes directory, or a route added to a mounted package appears only
+  // after a restart.
+  let mounts = new Set()
+
   async function runScan(root, warn, error) {
+    const found = new Set()
     const tree = await scan(routesDir, {
       cwd: root,
       trailingSlash,
+      mounts: found,
     })
+    for (const dir of found) if (!mounts.has(dir)) watcher?.add(dir)
+    mounts = found
 
     // Write the route table to disk. generateRouteTable is a no-op when the
     // bytes are unchanged, so this does not touch the watcher on a body-only edit.
@@ -159,10 +168,14 @@ export function scannerPlugin(config, sierraContext) {
       // Watch routes directory for file system changes
       server.watcher.add(absRoutesDir)
 
+      for (const dir of mounts) server.watcher.add(dir)
+      const inScope = (file) => file.startsWith(absRoutesDir) || [...mounts].some(dir => file.startsWith(dir))
+      const roleOf  = (file) => file.endsWith('.mount.js') ? 'mount' : classify(relative(root, file).replace(/\\/g, '/'))
+
       server.watcher.on('add', async (file) => {
-        if (!file.startsWith(absRoutesDir)) return
+        if (!inScope(file)) return
         const rel = relative(root, file).replace(/\\/g, '/')
-        const role = classify(rel)
+        const role = roleOf(file)
 
         // Only rescan for route-relevant files
         if (role === 'ignored') return
@@ -173,9 +186,9 @@ export function scannerPlugin(config, sierraContext) {
       })
 
       server.watcher.on('unlink', async (file) => {
-        if (!file.startsWith(absRoutesDir)) return
+        if (!inScope(file)) return
         const rel = relative(root, file).replace(/\\/g, '/')
-        const role = classify(rel)
+        const role = roleOf(file)
 
         if (role === 'ignored') return
 
@@ -186,16 +199,15 @@ export function scannerPlugin(config, sierraContext) {
 
       // Re-scan when frontmatter changes in a route file
       server.watcher.on('change', async (file) => {
-        if (!file.startsWith(absRoutesDir)) return
-        const rel = relative(root, file).replace(/\\/g, '/')
-        const role = classify(rel)
+        if (!inScope(file)) return
+        const role = roleOf(file)
 
         // A COMPANION counts. `meta` exported from a `*.meta.js` is merged into
         // the node's meta and inherited by every page under a layout, so
         // editing a title there changes the tree — and returning early here was
         // the second half of why it appeared to change nothing: the reader did
         // not miss the module cache either (`FJS-821`, `FJS-806`).
-        if (role !== 'route' && role !== 'layout' && role !== 'companion') return
+        if (role !== 'route' && role !== 'layout' && role !== 'companion' && role !== 'mount') return
 
         // A body edit leaves the tree identical, so the route table is unchanged
         // and there is nothing for virtual:sierra to pick up — mesa-plugin's

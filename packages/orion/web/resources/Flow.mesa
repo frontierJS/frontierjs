@@ -1,0 +1,29 @@
+<script module>
+  // Flow — the Resource layer for orion's `flows` service.
+  //
+  // The verbs a row write cannot say — save a version, activate, run — are
+  // custom methods, called as `flows.service.invoke(name, id, data)`.
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const flows = createResource('flows')
+</script>
+
+<script>
+  // The default form: what a person writes when creating a flow. The owner is
+  // stamped from the session and the status starts at draft, so neither is here.
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let record      = undefined
+  export let method      = undefined
+  export let submitLabel = 'Save'
+  export let cancelHref  = null
+  export let oncancel    = null
+  export let submitId    = undefined
+  export let actions     = null
+</script>
+
+<Form resource={flows} bind:record={record} {method} {actions} only={['name', 'description']} {...$attributes}>
+  <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
+  <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
+</Form>

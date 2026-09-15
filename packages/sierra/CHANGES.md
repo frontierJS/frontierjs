@@ -1,5 +1,18 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-15 — a package's routes, mounted by one file
+
+`FJS-D282`. `automations.mount.js` in an app's routes directory default-exports a directory — in
+practice re-exported from the package that owns it, `export { default } from '@frontierjs/orion/routes'`
+— and the files there become routes under `/automations/`, inside the app's own layouts and the
+package's. The mount is visible in the host's tree and removed by deleting it. **`walk` reports the
+path a file appears at and records where it is**, because a URL, a layout chain and a conflict are
+all computed from the first, and `build-tree` stores the second relative to the root — so the route
+table, the prerender and the dev static-data endpoint all resolve a mounted file unchanged. A mount
+naming no directory is refused by name rather than producing a section with no routes, a URL the app
+already has is still a conflict, and the dev server watches every mounted directory, so a route added
+to a package appears without a restart. `tests/scanner-mount.test.js`.
+
 ## 2026-09-13 — `AGENTS.md` ships
 
 A compressed reference for an agent writing routes, resources and prerendered pages in an installed

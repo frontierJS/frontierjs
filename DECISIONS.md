@@ -856,6 +856,36 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d293"></a>2026-09-15 · `FJS-D293` — An orion named event is emitted by the app's own code, `app.orion.emit(name, payload)`, and orion ships no service for it; an app wanting it over HTTP wraps it in a method of its own and grades that.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (an `events` service with `emit`, open to `USER(4)`), **C** (an `events` service with `emit`, gated at `ADMINISTRATOR(5)`).
+
+The paper's recommendation, taken as written: whoever may emit starts other people's flows with a payload of their choosing, and which callers may do that is the app's to say; a webhook needs a signature in production for the same reason. A is also the smallest surface, and B or C can be added without changing it.
+
+### <a id="fjs-d292"></a>2026-09-15 · `FJS-D292` — An orion flow is started by hand — `flows.run` and `flows.dryRun` — by its owner or an `ADMINISTRATOR(5)`, the test `FJS-D289` applies to an edit.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (anyone who can read the flow (`USER(4)`)).
+
+The paper's recommendation, taken as written: B lets any user run an administrator's flow with their own payload, which is the escalation `FJS-D276` rules out by trigger; A is the rule a flow's edits already follow, so there is one answer to *who may act on this flow*.
+
+### <a id="fjs-d291"></a>2026-09-14 · `FJS-D291` — An orion flow's `notify` node sends any notification the app declares, to any recipient the flow computes — an account id or a bare email address.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **B** was picked over **A** (the app names the notifications a flow may send in `orion({ notifications: [...] })`, and a recipient is an account id read through the owner's own client on the auth user model, so the row it addresses is one the owner can read and the email comes off that row. No bare addresses), **C** (the owner only: a flow notifies the person it runs as).
+
+Picked by the owner against the paper's recommendation: the content is the app's own declared notification, so reaching an arbitrary recipient sends nothing the app did not write. The cost A named stands — anyone who can draft a flow that an administrator activates can send the app's mail to any address — and the activation at `ADMINISTRATOR(5)` (`FJS-D278`) is what is between them.
+
+### <a id="fjs-d290"></a>2026-09-14 · `FJS-D290` — An orion flow's `job.dispatch` node dispatches any job the app registers, with the flow's owner as Caravan's actor and nothing further.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **C** was picked over **A** (only jobs the app names in `orion({ jobs: [...] })`. A flow naming any other fails to compile, by name; the job runs with Caravan's actor set to the flow's owner), **B** (any registered job, with the node gated at `SYSADMIN(7)` where a flow is saved, as `data.code` is (`FJS-D279`)).
+
+Picked by the owner against the paper's recommendation: a job handler runs as its actor and grades its own input, so an allow-list in orion would be a second copy of that grading. What this puts on a handler is stated rather than hidden: one that writes through `asSystem()` with data it did not check is reachable by any flow an administrator activates.
+
+### <a id="fjs-d289"></a>2026-09-14 · `FJS-D289` — An orion flow is edited only by its owner — `@@allow('update', ownerId == auth().id)` on `Flow`, and the same test through the flow on `FlowLayout` and on a version's create — and an administrator acts on another person's flow through the `flows` service, which grades the caller and writes as system.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (the gate only. Any `USER(4)` edits any flow, and activation at `ADMINISTRATOR(5)` is the review, showing each version's author).
+
+The paper's recommendation, taken as written: B makes the review the only thing between a colleague and the owner's standing, and a review of a JSON definition is not one anybody reads closely. A costs administrators a service path rather than the model's own update, and it is expressible in the file today.
+
 ### <a id="fjs-d279"></a>2026-09-14 · `FJS-D279` — Orion's code node is gated at `SYSADMIN(7)`.
 
 Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (`OWNER(6)`).
@@ -5015,6 +5045,12 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d294"></a>2026-09-15 · `FJS-D294` — Orion is tenant-aware before it has screens: a run records its tenant, its job carries it, the store and the runner reach that tenant's database, and activation, the poll and the sweep walk every tenant, under both `strategy database` and `strategy row`. The screens follow, installed into `example/`.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (the screens first, installed into a harness app inside the package with no tenancy; tenancy after, before phase 7's drive), **C** (row tenancy only for now, and install into `basecamp` first; database tenancy later).
+
+The paper's recommendation, taken as written: screens built against a host no real app resembles are screens the tenancy work reopens, since every read they make crosses the tenant boundary; A costs the most before a pixel, and it is the work every host needs.
+
 ### <a id="fjs-d283"></a>2026-09-14 · `FJS-D283` — An orion flow ships with four limits on day one: a dry run against a rolled-back transaction with outbound calls recorded and not sent, a per-flow rate limit on runs, `paused` on `Flow.status` as a kill switch read by every trigger, and a ceiling on rows one run may write.
 
 Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (the kill switch and the dry run only).
@@ -5045,7 +5081,9 @@ Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** w
 
 The outbox is `FJS-D228`'s territory and costs a write per mutation on every triggered model; the tap ships first with the gap stated in the builder, and an outbox-backed trigger is offered per flow when a flow cannot tolerate a miss.
 
-### <a id="fjs-d273"></a>2026-09-14 · `FJS-D273` — Every orion outbound call goes through a conduit target, and a `Credential` registers one, with no auth for a public URL.
+### <a id="fjs-d273"></a>2026-09-14 · `FJS-D273` — Every orion outbound call goes through a conduit target, and a `FlowCredential` registers one, with no auth for a public URL.
+
+The model was asked about as `Credential`, which is `@frontierjs/auth`'s, and an app imports both; phase 2 named it `FlowCredential`.
 
 Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (one shared open target for anything without a credential).
 

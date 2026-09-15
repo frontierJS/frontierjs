@@ -8,7 +8,7 @@ import { bridge, errorResponse } from '../transport/bridge.ts'
 import { freezeUser, enterRequest, requestMeta, currentCall, resolvePrincipal, inheritedClient, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions } from './context.ts'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
-import { withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites, installLogContext, installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY } from './litestone.ts'
+import { withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites, installLogContext, installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY, TENANT_CLIENT_OBSERVERS } from './litestone.ts'
 import { configFor, createTenantConfigStore } from './config-scope.ts'
 import type { TenantConfigOptions, TenantConfigStore } from './config-scope.ts'
 import { createEventBus }           from '../events/index.ts'
@@ -410,6 +410,33 @@ export interface App {
     optsOrFn: RunAsOptions | ((user: import('../auth/types.ts').SessionContext | null) => T | Promise<T>),
     fn?: (user: import('../auth/types.ts').SessionContext | null) => T | Promise<T>,
   ) => Promise<T>
+
+  /**
+   * Run `fn` with the client a service call made right now would read and
+   * write through: the principal in scope, in the tenant in scope, with the
+   * principal resolver's claims applied — `ctx.locals.db`, for work that holds
+   * no ctx.
+   *
+   * The seam for an engine that writes the Data realm directly rather than
+   * through a service, inside `runAs`. Scoping a client by hand from
+   * `principal()` misses the two things only the app's own hook knows: which
+   * tenant's database under `strategy database`, and the claims a resolver adds
+   * under `strategy row` — without which every row a tenant owns is refused.
+   *
+   * The client is leased from the tenant pool for as long as `fn` runs, and no
+   * longer, so it must not be kept. An app with no Litestone client gets
+   * `fn(app.db)`.
+   */
+  withDb: <T>(fn: (db: unknown) => T | Promise<T>) => Promise<T>
+
+  /**
+   * An Observer, called once for each tenant client the app opens under
+   * `createApp({ tenants })`, with the tenant it serves. What a plugin taps a
+   * tenant's writes through, since there is no one app client to tap. Register
+   * before the first request: a client already opened is not replayed. A throw
+   * is logged, never propagated. Answers a function that stops the calls.
+   */
+  onTenantClient: (observer: (client: unknown, tenantId: string) => void) => () => void
 
   // App-level hooks — applied to every service call
   hooks:     (map: HookMap) => void
@@ -970,6 +997,11 @@ export function createApp(opts: AppOptions = {}): App {
   // ── App-level hooks ──────────────────────────────────────────────────
   let appHooks: HookMap = {}
 
+  // The around hook that puts `ctx.locals.db` on a call, once installed below —
+  // what `withDb` runs outside one.
+  let dataHook: import('./hooks.ts').AroundHook | null = null
+  const tenantClientObservers = new Set<(client: unknown, tenantId: string) => void>()
+
   // ── Build the app object ─────────────────────────────────────────────
   const app: App = {
     config,
@@ -1187,6 +1219,25 @@ export function createApp(opts: AppOptions = {}): App {
 
     principal(): import('../auth/types.ts').SessionContext | null {
       return requestMeta()?.user ?? null
+    },
+
+    async withDb<T>(fn: (db: unknown) => T | Promise<T>): Promise<T> {
+      if (!dataHook) return fn(app.db)
+      // The context a transport would build for an internal call: the principal
+      // in scope and nothing a request carries. A resolver reads the tenant off
+      // the request meta `runAs` set, as it does for a job's own service calls.
+      const ctx = {
+        app, auth: { user: app.principal() }, locals: {}, client: inheritedClient(),
+        route: {}, query: {}, directives: {}, reserved: {}, data: null, id: null,
+      } as unknown as ServiceContext
+      let out!: T
+      await dataHook(ctx, async () => { out = await fn(ctx.locals.db) })
+      return out
+    },
+
+    onTenantClient(observer) {
+      tenantClientObservers.add(observer)
+      return () => { tenantClientObservers.delete(observer) }
     },
 
     tenant(): string | null {
@@ -1577,15 +1628,18 @@ export function createApp(opts: AppOptions = {}): App {
   // than per app, so `withTenantDb` resolves it and assigns the same
   // `ctx.locals.db`. Installing both would leave the assignment to hook order.
   if (opts.tenants) {
-    app.hooks({ around: { all: [withTenantDb(opts.tenants, opts.principal)] } })
+    dataHook = withTenantDb(opts.tenants, opts.principal)
+    app.hooks({ around: { all: [dataHook] } })
     Object.defineProperty(app, TENANT_REGISTRY, { value: opts.tenants })
+    Object.defineProperty(app, TENANT_CLIENT_OBSERVERS, { value: tenantClientObservers })
     // Parked where `junction principal` can read it back. A resolver is wired
     // in application code, so nothing about a file tree can answer which one an
     // app ended up with — and that is the input every tenancy predicate in the
     // committed access snapshot compares against (`FJS-514`).
     if (opts.principal) Object.defineProperty(app, PRINCIPAL_RESOLVER, { value: opts.principal })
   } else if (db && typeof (db as { $setAuth?: unknown }).$setAuth === 'function') {
-    app.hooks({ around: { all: [withLitestoneDb(db as never, opts.principal)] } })
+    dataHook = withLitestoneDb(db as never, opts.principal)
+    app.hooks({ around: { all: [dataHook] } })
     // Where a write came from, for the audit trail. Not a decision either: the
     // trail recorded who and what and nothing about the request, so an audit
     // row and the log lines from the same request could not be joined.

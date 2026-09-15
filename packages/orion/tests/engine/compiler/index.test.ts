@@ -39,7 +39,7 @@ const ALL_KNOWN = new Set([
   "http.request", "data.transform", "io.slack",
   "flow.each", "flow.merge", "flow.delay", "flow.wait",
   "data.code", "data.template", "data.parse", "expr.pipeline",
-  "http.respond", "subflow.enrich_lead",
+  "http.respond", "subflow.enrich_lead", "job.dispatch", "notify",
 ])
 
 const registry: IPluginRegistry = {
@@ -764,50 +764,59 @@ describe("Step 9b — validateNodeModes", () => {
     expect(compiler.compile(flow).ok).toBe(true)
   })
 
-  test("ai embed passes", () => {
-    const flow: Flow = {
-      ...baseFlow(),
-      nodes: {
-        "start": triggerNode(),
-        "model": { id: "model", type: "ai", config: {
-          mode:  { type: "literal", value: "embed" },
-          input: { type: "ref",     path: "$.trigger.body.text" },
-        }},
-      },
-      edges: [edge("e1", "start", "model")],
+  test("an ai mode other than complete is refused — the app's models only complete", () => {
+    for (const mode of ["embed", "classify", "extract"]) {
+      const flow: Flow = {
+        ...baseFlow(),
+        nodes: {
+          "start": triggerNode(),
+          "model": { id: "model", type: "ai", config: {
+            mode:   { type: "literal", value: mode },
+            prompt: { type: "ref",     path: "$.trigger.body.text" },
+          }},
+        },
+        edges: [edge("e1", "start", "model")],
+      }
+      expect(compiler.compile(flow).ok).toBe(false)
     }
-    expect(compiler.compile(flow).ok).toBe(true)
+  })
+})
+
+// ─── JOBS AND NOTIFICATIONS ──────────────────
+
+describe("job.dispatch and notify name what the host has", () => {
+  const flowWith = (id: string, type: string, config: NodeDefinition["config"]): Flow => ({
+    ...baseFlow(),
+    nodes: { "start": triggerNode(), [id]: { id, type, config } },
+    edges: [edge("e1", "start", id)],
+  })
+  const codes = (result: ReturnType<Compiler["compile"]>) => result.ok ? [] : result.errors.map(e => e.code)
+  const lit   = (value: unknown) => ({ type: "literal" as const, value })
+
+  test("a job or a notification computed at run time does not compile", () => {
+    expect(codes(compiler.compile(flowWith("d", "job.dispatch", { job: { type: "ref", path: "$.trigger.body.job" } }))))
+      .toEqual(["INVALID_APP_ACTION"])
+    expect(codes(compiler.compile(flowWith("n", "notify", { notification: { type: "ref", path: "$.trigger.body.n" }, to: lit({ id: 1 }) }))))
+      .toEqual(["INVALID_APP_ACTION"])
   })
 
-  test("ai classify passes", () => {
-    const flow: Flow = {
-      ...baseFlow(),
-      nodes: {
-        "start": triggerNode(),
-        "model": { id: "model", type: "ai", config: {
-          mode:       { type: "literal", value: "classify" },
-          prompt:     { type: "ref",     path: "$.trigger.body.text" },
-          categories: { type: "literal", value: ["positive", "neutral", "negative"] },
-        }},
-      },
-      edges: [edge("e1", "start", "model")],
-    }
-    expect(compiler.compile(flow).ok).toBe(true)
+  test("orion's own jobs are refused, with no catalog to ask", () => {
+    const result = compiler.compile(flowWith("d", "job.dispatch", { job: lit("orion.run") }))
+    expect(codes(result)).toEqual(["INVALID_APP_ACTION"])
   })
 
-  test("ai extract passes", () => {
-    const flow: Flow = {
-      ...baseFlow(),
-      nodes: {
-        "start": triggerNode(),
-        "model": { id: "model", type: "ai", config: {
-          mode:   { type: "literal", value: "extract" },
-          prompt: { type: "ref",     path: "$.trigger.body.text" },
-        }},
-      },
-      edges: [edge("e1", "start", "model")],
-    }
-    expect(compiler.compile(flow).ok).toBe(true)
+  test("against a catalog, an unknown name is refused naming what there is — orion's own jobs left out", () => {
+    const typed = new Compiler(registry, {
+      jobs:          { names: () => ["leads.touch", "orion.sweep"] },
+      notifications: { names: () => ["LeadAssigned"] },
+    })
+    const job = typed.compile(flowWith("d", "job.dispatch", { job: lit("leads.tuoch") }))
+    expect(codes(job)).toEqual(["UNKNOWN_JOB"])
+    if (!job.ok) expect(job.errors[0]!.message).toMatch(/names job "leads.tuoch", which this app does not have \(it has: leads.touch\)$/)
+
+    expect(codes(typed.compile(flowWith("n", "notify", { notification: lit("LeadAsigned"), to: lit({ id: 1 }) })))).toEqual(["UNKNOWN_NOTIFICATION"])
+    expect(typed.compile(flowWith("d", "job.dispatch", { job: lit("leads.touch") })).ok).toBe(true)
+    expect(typed.compile(flowWith("n", "notify", { notification: lit("LeadAssigned"), to: lit({ id: 1 }) })).ok).toBe(true)
   })
 })
 

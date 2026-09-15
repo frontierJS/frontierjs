@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-43 model(s) · 20 enum(s) · 2 database(s) · 2 value set(s)
+51 model(s) · 24 enum(s) · 2 database(s) · 2 value set(s)
 audit → logger · main → sqlite
 ```
 
@@ -24,6 +24,8 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `CartStatus` | `abandoned` · `open` · `ordered` |
 | `CustomFieldType` | `number` · `text` |
 | `DiscountKind` | `fixed` · `percent` |
+| `FlowCredentialAuth` | `api_key` · `bearer` · `hmac` · `none` |
+| `FlowStatus` | `active` · `archived` · `draft` · `paused` |
 | `InvoiceStatus` | `draft` · `issued` · `paid` · `void` |
 | `JournalSource` | `payroll` · `sale` |
 | `LedgerAccount` | `discountsAllowed` · `netPayControl` · `niControl` · `payeControl` · `pensionControl` · `receivables` · `sales` · `shippingIncome` · `taxPayable` · `wagesExpense` |
@@ -36,7 +38,9 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `PayRunStatus` | `approved` · `calculated` · `draft` · `paid` |
 | `PlanInterval` | `monthly` · `yearly` |
 | `RateKind` | `employeePension` · `employerNI` · `employerPension` · `incomeTax` |
+| `RunStatus` | `cancelled` · `completed` · `failed` · `pending` · `running` · `waiting` |
 | `Size` | `l` · `m` · `one` · `s` · `xl` · `xs` · `xxl` |
+| `StepStatus` | `completed` · `failed` · `pending` · `running` · `skipped` |
 | `StockMovementKind` | `adjusted` · `damaged` · `received` · `returned` · `sold` |
 | `SubscriptionStatus` | `active` · `cancelled` · `pastDue` · `trialing` |
 | `VerificationPurpose` | `emailVerify` · `oauthLink` · `passwordReset` |
@@ -272,6 +276,94 @@ table `employee` · db `main` · gate `5.5.5.5`
 @@check(endedOn IS NULL OR startedOn < endedOn)
 ```
 
+### `Flow`
+
+table `flow` · db `main` · gate `4.4.4.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `currentVersion` | `Int` | yes | — | `@allow(write: status == null \|\| status != 'active')` |
+| `description` | `String` | yes | — | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `layout` | `FlowLayout` | — | — | relation |
+| `maxWrites` | `Int` | no | `1000` | — |
+| `name` | `String` | no | — | **required on write** |
+| `ownerId` | `String` | no | — | **required on write** |
+| `runsPerMinute` | `Int` | yes | — | — |
+| `status` | `FlowStatus` | no | `'draft'` | — |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` | — |
+| `versions` | `FlowVersion[]` | — | — | relation |
+
+```
+@@index(ownerId)
+@@index(status)
+@@allow('create', true)
+@@deny('create', ownerId != null && ownerId != auth().id)
+@@deny('create', status != null && status != 'draft')
+@@allow('update', ownerId == auth().id)
+transition status.activate: draft, paused → active @gate(5)
+transition status.archive: active, draft, paused → archived
+transition status.pause: active → paused
+transition status.restore: archived → draft
+```
+
+### `FlowCredential`
+
+table `flow_credential` · db `main` · gate `5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `address` | `String` | no | — | **required on write** |
+| `auth` | `FlowCredentialAuth` | no | `'none'` | — |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `encoding` | `String` | yes | `'json'` | — |
+| `header` | `String` | yes | — | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `name` | `String` | no | — | unique · **required on write** |
+| `provider` | `String` | no | — | **required on write** |
+| `secret` | `String` | yes | — | @encrypted |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` | — |
+
+### `FlowLayout`
+
+table `flow_layout` · db `main` · gate `4.4.4.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `flow` | `Flow` | — | — | relation |
+| `flowId` | `String` | no | — | unique · **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `layout` | `Json` | no | `'{}'` | — |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` | — |
+
+```
+@@allow('create', flow.ownerId == auth().id)
+@@allow('delete', flow.ownerId == auth().id)
+@@allow('update', flow.ownerId == auth().id)
+```
+
+### `FlowVersion`
+
+table `flow_version` · db `main` · gate `4.4.9.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `authorId` | `String` | yes | — | — |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `definition` | `Json` | no | — | **required on write** |
+| `flow` | `Flow` | — | — | relation |
+| `flowId` | `String` | no | — | **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `runs` | `Run[]` | — | — | relation |
+| `version` | `Int` | no | — | **required on write** |
+
+```
+@@unique(flowId, version)
+@@allow('create', flow.ownerId == auth().id)
+@@deny('create', authorId != null && authorId != auth().id)
+```
+
 ### `InventoryMovement`
 
 table `inventory_movement` · db `main` · gate `5.5.9.9`
@@ -394,6 +486,24 @@ table `journal_line` · db `main` · gate `5.8.9.9`
 ```
 @@index(entryId)
 @@check(amount != 0)
+```
+
+### `KvEntry`
+
+table `kv_entry` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `expiresAt` | `DateTime` | yes | — | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `key` | `String` | no | — | **required on write** |
+| `scope` | `String` | no | — | **required on write** |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` | — |
+| `value` | `Json` | no | — | **required on write** |
+
+```
+@@unique(key, scope)
+@@index(expiresAt)
 ```
 
 ### `LoginChallenge`
@@ -894,6 +1004,63 @@ table `product_variant` · db `main` · gate `0.4.4.5` · @@softDelete(cascade)
 @@index(productId)
 ```
 
+### `Run`
+
+table `run` · db `main` · gate `4.8.8.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `actorId` | `String` | yes | — | — |
+| `context` | `Json` | yes | — | @encrypted |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `currentStage` | `Int` | no | `0` | — |
+| `endedAt` | `DateTime` | yes | — | — |
+| `error` | `String` | yes | — | — |
+| `flowVersion` | `FlowVersion` | — | — | relation |
+| `flowVersionId` | `String` | no | — | **required on write** |
+| `heartbeatAt` | `DateTime` | yes | — | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `startedAt` | `DateTime` | yes | — | — |
+| `status` | `RunStatus` | no | `'pending'` | — |
+| `steps` | `RunStep[]` | — | — | relation |
+| `trigger` | `Json` | yes | — | — |
+| `waits` | `Wait[]` | — | — | relation |
+
+```
+@@index(flowVersionId, startedAt)
+@@index(status, createdAt)
+@@index(status, heartbeatAt)
+transition status.cancel: pending, running, waiting → cancelled
+transition status.complete: running → completed
+transition status.fail: pending, running, waiting → failed
+transition status.resume: waiting → running
+transition status.start: pending → running
+transition status.suspend: pending, running → waiting
+```
+
+### `RunStep`
+
+table `run_step` · db `main` · gate `4.8.9.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `attempts` | `Int` | no | `0` | — |
+| `durationMs` | `Int` | yes | — | — |
+| `error` | `String` | yes | — | — |
+| `fromCache` | `Boolean` | no | `0` | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `logs` | `Json` | yes | — | — |
+| `nodeId` | `String` | no | — | **required on write** |
+| `output` | `Json` | yes | — | — |
+| `run` | `Run` | — | — | relation |
+| `runId` | `String` | no | — | **required on write** |
+| `startedAt` | `DateTime` | yes | — | — |
+| `status` | `StepStatus` | no | — | **required on write** |
+
+```
+@@unique(nodeId, runId)
+```
+
 ### `Session`
 
 table `session` · db `main` · gate `8`
@@ -1042,4 +1209,22 @@ table `verification` · db `main` · gate `8`
 ```
 @@index(expiresAt)
 @@index(purpose, identifier)
+```
+
+### `Wait`
+
+table `wait` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `nodeId` | `String` | no | — | **required on write** |
+| `resumeKey` | `String` | no | — | unique · **required on write** |
+| `run` | `Run` | — | — | relation |
+| `runId` | `String` | no | — | **required on write** |
+| `timeoutAt` | `DateTime` | yes | — | — |
+
+```
+@@index(timeoutAt)
 ```
