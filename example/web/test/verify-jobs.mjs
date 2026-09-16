@@ -404,8 +404,9 @@ const expected = {
     // Every schedule, by name. Two of these are billing's — a subscription
     // renews on a clock and an unpaid one is chased on another — and they
     // are here for the same reason as the other three: a schedule that
-    // stops being registered is nothing happening.
-    names: ['dun-subscriptions', 'release-holds', 'renew-subscriptions',
+    // stops being registered is nothing happening. `orion.sweep` is orion's,
+    // installed with it: the pass that re-dispatches a run whose job was lost.
+    names: ['dun-subscriptions', 'orion.sweep', 'release-holds', 'renew-subscriptions',
             'retention', 'sweep-abandoned'],
     cron:  '0 3 * * *',
     holds: '*/5 * * * *',

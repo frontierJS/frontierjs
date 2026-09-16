@@ -71,7 +71,7 @@ model Lead {
 // ─── DB ───────────────────────────────────────────────────────────────────────
 
 const gate = new GatePlugin({
-  async getLevel(user: unknown) {
+  getLevel(user: unknown) {
     if (!user) return LEVELS.STRANGER
     return LEVELS.USER
   },

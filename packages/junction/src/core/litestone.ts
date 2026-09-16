@@ -704,7 +704,11 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       //
       // $setAuth is guarded so plain (non-litestone) clients — adapted by
       // createBaseService — pass through without per-user scoping.
-      const scopedDb: LitestoneClient = ctx.auth.user && typeof baseDb.$setAuth === 'function'
+      // `in` before `typeof`: a system client has no `$setAuth`, and a Litestone
+      // client THROWS on a property it lacks, so a hook that put `asSystem()`
+      // on `ctx.locals.db` — having graded the caller itself — made every
+      // derived CRUD verb a 500. Such a client is used as the hook left it.
+      const scopedDb: LitestoneClient = ctx.auth.user && '$setAuth' in baseDb && typeof baseDb.$setAuth === 'function'
         ? baseDb.$setAuth(toDataPrincipal(ctx.auth.user))
         : baseDb
 

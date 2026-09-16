@@ -2,6 +2,28 @@
 
 Newest first. What this app built and what building it found; live state is `PROJECT_STATE.md`, framework defects are `../ISSUES.md`.
 
+## 2026-09-15 — staff draft automations, and an administrator watches theirs
+
+`db/schema.lite` narrows orion's USER(4) create to staff —
+`extend model Flow { @@deny('create', auth().isStaff != true) }` — because a storefront shopper
+grades 4 exactly as staff do ([`FJS-1169`](../ISSUES.md#fjs-1169)), and the Automations link
+shows for `isStaff` rather than level 4. `verify:automations` asserts Robin sees no link and is
+refused a draft, Sam drafts one, and Alex activates Sam's flow and watches its run arrive on the
+open runs screen and complete — the screen half of
+[`FJS-1170`](../ISSUES.md#fjs-1170), which the row policy reading `auth().level` closed. `verify:ui`'s
+palette row expects the five commands `ord` matches (`FJS-1168`).
+
+## 2026-09-15 — `verify:automations`
+
+The drive for orion's screens (`DRIVES.md`), and a nav link to them at USER(4). `joinChannels`
+joins orion's `flows` and `runs`, so a run started by a write elsewhere reaches an open runs
+screen. **Found by it**: five framework defects (`FJS-1162`–`FJS-1166`), and that orion's runs
+and flows were readable by every USER(4) — here a shopper read another customer's row out of
+`/api/runs` that `/api/customers/:id` refused her ([`FJS-1167`](../ISSUES.md#fjs-1167)). Ruled
+[`FJS-D295`](../DECISIONS.md#fjs-d295) and fixed in orion; the drive now asserts staff and a
+shopper read nothing of the administrator's flow or its run. Alongside
+it, `verify:ui`'s palette row turned out stale ([`FJS-1168`](../ISSUES.md#fjs-1168)).
+
 ## 2026-09-15 — automations
 
 Orion is installed. `db/schema.lite` imports `@frontierjs/orion/orion.lite`, so each shop's

@@ -922,7 +922,7 @@ export interface GateConfig {
 }
 
 export declare class GatePlugin extends Plugin {
-  constructor(opts?: { getLevel?: (user: LitestoneAuth | null, model: string) => number | Promise<number> })
+  constructor(opts?: { getLevel?: (user: LitestoneAuth | null, model: string) => number })
 }
 
 export declare function parseGateString(str: string): GateConfig

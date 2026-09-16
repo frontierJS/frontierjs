@@ -1,0 +1,43 @@
+<script>
+  // form-unshown.mesa — a refusal naming a field the form does not draw.
+  //
+  // `only` narrows what a generated form shows and not what the record holds,
+  // so a save can be refused over a column with no box on screen. Both forms
+  // below draw `title` alone and refuse the same way; they differ only in which
+  // field the refusal names.
+  import Form from '../../../components/forms/Form.mesa'
+  import { formFieldList } from '@frontierjs/sierra/field-rules'
+
+  const FIELDS = {
+    title: { type: 'string', required: true, title: 'Title' },
+    limit: { type: ['integer', 'null'], minimum: 1, title: 'Limit' },
+  }
+
+  const RESOURCE = {
+    context:     { model: 'Flow', service: 'flows', idField: 'id' },
+    fields:      FIELDS,
+    formFields:  (opts) => formFieldList(FIELDS, opts),
+    options:     async () => ({ options: [], total: 0, truncated: false }),
+    make:        () => ({ title: '', limit: 0 }),
+    validate:    () => [],
+    // The shape `toFieldErrors` answers for a 400: per-field messages and no
+    // form-level sentence, which is what left the second form silent.
+    fieldErrors: (err) => ({
+      fields:  Object.fromEntries((err.errors ?? []).map(e => [e.field, e.message])),
+      message: '',
+    }),
+    service: {},
+  }
+
+  const refuse = (field, message) => () => {
+    throw Object.assign(new Error('Validation failed'), { errors: [{ field, message }] })
+  }
+</script>
+
+<div id="shown">
+  <Form resource={RESOURCE} only={['title']} onsubmit={refuse('title', 'Title is taken')} />
+</div>
+
+<div id="unshown">
+  <Form resource={RESOURCE} only={['title']} onsubmit={refuse('limit', 'Limit must be at least 1')} />
+</div>

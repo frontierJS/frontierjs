@@ -164,6 +164,9 @@ export function compare(L, op, R, affL = null, affR = null) {
  *   `affinityOf`    (node) → 'NUMERIC' | 'TEXT' | 'BLOB' | null
  *   `resolvePath`   (node) → value, for a one-hop read. Default null.
  *   `resolveCheck`  (node) → boolean, for `check(field)`. Default true.
+ *   `claimOf`       field → the value `auth().field` reads. Default: the
+ *                   principal's own property. Litestone answers `level` here,
+ *                   which is graded per model and carried by no principal.
  *
  * @returns the EXPRESSION's value, which is a three-valued truth for every node
  *   that compares or combines — and the column's own value for a bare `field`,
@@ -188,6 +191,7 @@ export function evaluate(node, env = {}) {
     affinityOf   = () => null,
     resolvePath  = () => null,
     resolveCheck = () => true,
+    claimOf      = (field) => auth?.[field] ?? null,
   } = env
 
   const ev = (n) => evaluate(n, env)
@@ -205,7 +209,7 @@ export function evaluate(node, env = {}) {
     case 'now':     return now
 
     case 'auth':
-      return node.field ? (auth?.[node.field] ?? null) : auth
+      return node.field ? claimOf(node.field) : auth
 
     // The other half of the same sentence. `create` has no WHERE to put a CASE
     // in, so a ternary landing only in the SQL compiler would be decided one
@@ -218,7 +222,7 @@ export function evaluate(node, env = {}) {
       if (op === 'in') {
         const listOf = (n) => {
           if (n.type === 'list') return n.items
-          const v = n.type === 'auth'  ? (n.field ? auth?.[n.field] : auth?.id)
+          const v = n.type === 'auth'  ? (n.field ? claimOf(n.field) : auth?.id)
                   : n.type === 'field' ? read(n.name)
                   : ev(n)
           // A create may carry the array as written; a row read back has been
@@ -257,7 +261,7 @@ export function evaluate(node, env = {}) {
       const probe = nullTest(left, right) ?? nullTest(right, left)
       if (probe) {
         const v = probe.type === 'auth'
-          ? (probe.field ? (auth?.[probe.field] ?? null) : auth)
+          ? (probe.field ? claimOf(probe.field) : auth)
           : ev(probe)
         const absent = v === null || v === undefined
         return op === '==' ? absent : !absent

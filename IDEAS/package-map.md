@@ -65,7 +65,7 @@ a comment the ladder could not express. It shipped as seed syntax
 
 | Name | Realm | What it is | Source |
 | --- | --- | --- | --- |
-| **`compass`** | Data + UI | The offline/sync engine — client-side SQLite (OPFS / wa-sqlite), mutation queue, local gate evaluation, `@@sync` conflict policy. Its own package because "one engine on both sides" is the strongest structural advantage FJS holds over Prisma and Drizzle. | `offline-first-and-release.md` |
+| ~~offline/sync engine~~ | Data + UI | **No package, ruled 2026-09-15 (`FJS-D297`).** One engine on both sides is the advantage; a package is not how it lands. Offline is heading for the default and nothing that is the default is severable, so it is core and decomposes by owner: local policy evaluation is `@frontierjs/toolbelt` and already shipped, `@@sync` and a browser storage backend are Litestone's, the queue and its replay are Sierra's (`FJS-D138` already holds pending writes as intent), and carrying them is Junction's. **Homestead** is the name of the work, not of a module. | `offline-first-and-release.md` · `DECISIONS.md` |
 | **`@frontierjs/mcp`** | API | The agent surface — an MCP server derived from the seed, with the gate as the permission model and tool visibility computed per session level. **Named plainly, ruled 2026-09-10 (`FJS-D258`)**: a metaphor names an organ that owns a realm, and this owns none — it is the API realm spoken to an agent. `herald` is withdrawn. | `agent-surface.md` · `DECISIONS.md` |
 | **`marshal`** | Data | Compliance from the seed — `@pii` / `@retain`, the data map, DSAR, erasure cascade, and a permission diff on every pull request. | `compliance-from-the-seed.md` |
 | **`lexicon`** | UI | i18n. **V2 — ruled 2026-08-15 (`FJS-D12`).** Its design question is answered without the package existing: `@label` stays a default English string and the key is DERIVED (`Model.field.label`), so the schema never becomes a catalog. It was never a gate on `foundry` either — a generator authors no string. Alpha owes it six constraints, not a build; when it is built, three things are reserved for it — a seed-derived `strings.snapshot.md`, `db.$setLocale()` as a client flavor, and per-locale prerender. **The interface tier is open as `FJS-D254`** — the ruling reaches strings the schema derives and not the ones authored in a `.mesa` file. | `lexicon.md` · `ecosystem-gaps.md` tier-1 item 4 · `DECISIONS.md` |
@@ -121,7 +121,8 @@ a comment the ladder could not express. It shipped as seed syntax
 - `IDEAS/agent-surface.md`, `IDEAS/compliance-from-the-seed.md` — the two proposals
   that had no home before this file
 - `IDEAS/live-queries.md` — query-scoped subscriptions; the WS implementation is
-  interim and `compass` supersedes it
+  interim and a query over a local database supersedes it (the Homestead work,
+  `FJS-D297`)
 - `IDEAS/command-surface.md` — **no package, and the finding is the reverse of most
   rows here.** Sized against oclif, `fli`'s authoring model is ahead and its
   *distribution* model is the gap: a package cannot ship a command, so the CLI's tree

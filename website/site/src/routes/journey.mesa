@@ -120,7 +120,7 @@ publishes: 0
 
 <div class="container pagenote">
   <span>Every name here is a real function — see the bridge index in <code>CLAUDE.md</code>.</span>
-  <span><a class="link" href="/showroom5/">&larr; All eight packages</a></span>
+  <span><a class="link" href="/showroom5/">&larr; Every package</a></span>
 </div>
 
 <JourneyBoard client:load />

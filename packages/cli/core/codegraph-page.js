@@ -335,6 +335,15 @@ const TILE_ALPHA  = 0.82
 const LABEL_ALPHA = 0.25
 const HALO_ALPHA  = 0.5
 const LABEL_MAX   = 22
+// Corner rounding on a tile. Any CSS length; rem tracks the page's type scale.
+// Clamped to half a tile at draw time, past which a square is a circle.
+const TILE_RADIUS = '0.25rem'
+// A hidden ATTRIBUTE is display:none, whose computed width is 'auto', so the
+// ruler is laid out and invisible instead — it is measured, not read.
+const ruler = document.body.appendChild(document.createElement('i'))
+ruler.style.cssText = 'position:absolute;visibility:hidden;height:0'
+const cssPx = len => { ruler.style.width = len; const v = parseFloat(getComputedStyle(ruler).width); return Number.isFinite(v) ? v : 0 }
+const tile = (x, y, w, h, r) => { ctx.beginPath(); r > 0 && ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); ctx.fill() }
 function drawLabels() {
   ctx.save()
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round'
@@ -355,6 +364,7 @@ function drawLabels() {
 
 function draw() {
   const g = B >= 10 ? 2 : B >= 6 ? 1 : 0, inner = B - g, qa = Math.ceil(inner / 2), qb = inner - qa
+  const r = Math.min(cssPx(TILE_RADIUS), inner / 2)
   ctx.fillStyle = C.surface; ctx.fillRect(0, 0, B * L.w, B * L.h)
   ctx.globalAlpha = TILE_ALPHA
   for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) {
@@ -362,11 +372,14 @@ function draw() {
     // a dot marks an unfilled slot on a curve; between package squares the ground is only a gap
     if (i < 0) { if (state.layout !== 'packages') { ctx.fillStyle = C.empty; ctx.fillRect(bx + inner / 2 - 1, by + inner / 2 - 1, 2, 2) } continue }
     const f = files[i]
-    if (!lit(f)) { ctx.fillStyle = C.na; ctx.fillRect(bx, by, inner, inner); continue }
+    if (!lit(f)) { ctx.fillStyle = C.na; tile(bx, by, inner, inner, r); continue }
     if (state.view === 'all') {
+      // the tile is rounded, not each quadrant: clip once, fill four squares
+      ctx.save(); ctx.beginPath(); r > 0 && ctx.roundRect ? ctx.roundRect(bx, by, inner, inner, r) : ctx.rect(bx, by, inner, inner); ctx.clip()
       METRICS.forEach((m, q) => { ctx.fillStyle = colorOf(f, m); ctx.fillRect(bx + (q % 2) * qa, by + (q >> 1) * qa, q % 2 ? qb : qa, q >> 1 ? qb : qa) })
+      ctx.restore()
     } else {
-      ctx.fillStyle = colorOf(f, state.view); ctx.fillRect(bx, by, inner, inner)
+      ctx.fillStyle = colorOf(f, state.view); tile(bx, by, inner, inner, r)
     }
   }
   ctx.globalAlpha = 1
@@ -387,7 +400,10 @@ function draw() {
   for (const i of new Set([state.pinned, state.hover])) {
     const cell = L.where.get(i)
     if (!cell) continue
-    ctx.strokeStyle = C.ink; ctx.lineWidth = 2; ctx.strokeRect(cell[0] * B - 1.5, cell[1] * B - 1.5, inner + 3, inner + 3)
+    ctx.strokeStyle = C.ink; ctx.lineWidth = 2; ctx.beginPath()
+    const rx = cell[0] * B - 1.5, ry = cell[1] * B - 1.5
+    r > 0 && ctx.roundRect ? ctx.roundRect(rx, ry, inner + 3, inner + 3, r + 1.5) : ctx.rect(rx, ry, inner + 3, inner + 3)
+    ctx.stroke()
   }
 }
 

@@ -740,7 +740,7 @@ function makeApiCoreGateTs() {
 
 import { GatePlugin, LEVELS } from '@frontierjs/litestone'
 
-export async function getLevel(user: unknown) {
+export function getLevel(user: unknown) {
   const u = user as { isAdmin?: boolean; isOwner?: boolean; isSystemAdmin?: boolean } | null
   if (!u)               return LEVELS.STRANGER
   if (u.isSystemAdmin)  return LEVELS.SYSADMIN

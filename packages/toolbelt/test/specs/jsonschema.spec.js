@@ -89,6 +89,36 @@ test('jsonschema: a foreign key is null, never 0', function () {
   assert.equal(make().quantity, 0, 'a plain integer still gets its blank')
 })
 
+test('jsonschema: a nullable number or boolean with no default is null, and a required one keeps its blank', function () {
+  // `runsPerMinute Int? @gte(1)` seeded 0, and a form showing only `name`
+  // could not submit: the resource refused a value nobody typed.
+  const make = createMakeFromSchema({
+    runsPerMinute: { type: ['integer', 'null'], minimum: 1 },
+    ratio:         { anyOf: [{ type: 'number' }, { type: 'null' }] },
+    archived:      { type: ['boolean', 'null'] },
+    note:          { type: ['string', 'null'] },
+    quantity:      { type: 'integer' },
+    live:          { type: 'boolean' },
+    limit:         { type: ['integer', 'null'], default: 5 },
+  })
+  assert.deepEqual(make(), { runsPerMinute: null, ratio: null, archived: null, note: '', quantity: 0, live: false, limit: 5 })
+})
+
+test('jsonschema: a NOT NULL column the caller is not asked for and has no default is left for the server', function () {
+  // `ownerId String @default(auth().id)`: out of create-mode required, no JSON
+  // default, not nullable. Seeded '', it reached the boundary as an owner of ''.
+  const properties = {
+    name:    { type: 'string' },
+    ownerId: { type: 'string' },
+    note:    { type: ['string', 'null'] },
+    status:  { type: 'string', default: 'draft' },
+  }
+  assert.deepEqual(createMakeFromSchema(properties, { required: ['name'] })(),
+    { name: '', note: '', status: 'draft' })
+  // Without `required` there is nothing to derive it from, so nothing changes.
+  assert.deepEqual(Object.keys(createMakeFromSchema(properties)()), ['name', 'ownerId', 'note', 'status'])
+})
+
 test('jsonschema: a date-time is left undefined rather than guessed', function () {
   const make = createMakeFromSchema({ dueAt: { type: 'string', format: 'date-time' } })
   assert.ok('dueAt' in make(), 'the key exists')

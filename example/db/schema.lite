@@ -192,6 +192,16 @@ import "@frontierjs/junction/metrics.lite"
 import "@frontierjs/orion/orion.lite"
 import "./user.lite"
 
+// Who drafts an automation. Orion creates a flow at USER(4), and a shopper who
+// registered on the storefront grades 4 exactly as staff do — so without this a
+// shopper could draft flows in the shop's own file (`FJS-1169`). A draft reaches
+// nobody else, and activating one is ADMINISTRATOR(5); this narrows who may start
+// one to the people `isStaff` already names. A gate is per MODEL and single, so
+// the narrowing is a policy (Invariant 6).
+extend model Flow {
+  @@deny('create', auth().isStaff != true)
+}
+
 // A claim a caller with NO SESSION holds, resolved per request off a declared
 // header. It is on no row, so `@@auth User` cannot name it, and `Cart`'s
 // `@@allow('read', token == auth().cartToken)` is a policy over it. Declared

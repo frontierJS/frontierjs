@@ -80,8 +80,8 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `VerificationPurpose` | enum |
 | `MetricType` | enum |
 | `FlowStatus` | enum |
-| `RunStatus` | enum |
-| `StepStatus` | enum |
+| `FlowRunStatus` | enum |
+| `FlowStepStatus` | enum |
 | `FlowCredentialAuth` | enum |
 | `Brand` | enum |
 | `Size` | enum |
@@ -122,8 +122,8 @@ validates, and a select that silently drops an option.
 - `VerificationPurpose` — `passwordReset`, `emailVerify`, `oauthLink`
 - `MetricType` — `counter`, `gauge`, `histogram`
 - `FlowStatus` — `draft`, `active`, `paused`, `archived`
-- `RunStatus` — `pending`, `running`, `waiting`, `completed`, `failed`, `cancelled`
-- `StepStatus` — `pending`, `running`, `completed`, `failed`, `skipped`
+- `FlowRunStatus` — `pending`, `running`, `waiting`, `completed`, `failed`, `cancelled`
+- `FlowStepStatus` — `pending`, `running`, `completed`, `failed`, `skipped`
 - `FlowCredentialAuth` — `none`, `bearer`, `api_key`, `hmac`
 - `Brand` — `frontierjs`, `junction`, `litestone`
 - `Size` — `one`, `xs`, `s`, `m`, `l`, `xl`, `xxl`
@@ -351,7 +351,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `string` | — | — | — | — |
 | `flowVersionId` | `string` | yes | — | — | — |
-| `status` | `RunStatus` = `"pending"` | — | — | — | — |
+| `status` | `FlowRunStatus` = `"pending"` | — | — | — | — |
 | `trigger` | `json`? | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `context` | `json`? | — | — | `x-sortable: "encrypted"` `x-filterable: "encrypted"` `x-aggregatable` | — |
 | `currentStage` | `integer` = `0` | — | — | — | — |
@@ -373,7 +373,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `id` | `string` | — | — | — | — |
 | `runId` | `string` | yes | — | — | — |
 | `nodeId` | `string` | yes | — | — | — |
-| `status` | `StepStatus` | yes | — | — | — |
+| `status` | `FlowStepStatus` | yes | — | — | — |
 | `attempts` | `integer` = `0` | — | — | — | — |
 | `fromCache` | `boolean` = `false` | — | — | — | — |
 | `startedAt` | `string`? | — | — | `format: "date-time"` | — |

@@ -59,7 +59,7 @@ await run('gate-getlevel', async () => {
   const schema = `model Post { id Int @id; title String \n @@gate("2.4.4.6") }`
   const db = await createClient({
     schema, db: ':memory:',
-    plugins: [new GatePlugin({ getLevel: async () => { calls++; return 5 } })],
+    plugins: [new GatePlugin({ getLevel: () => { calls++; return 5 } })],
   })
   const scoped = db.$setAuth({ id: 1 })
   await scoped.post.create({ data: { title: 'x' } })

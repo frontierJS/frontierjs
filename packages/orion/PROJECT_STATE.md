@@ -1,6 +1,6 @@
 # Project state — @frontierjs/orion
 
-**Phases 1 to 5 of `IDEAS/orion-port.md` are done and phase 6 is built but not browser-proved · private, unpublished.**
+**Phases 1 to 6 of `IDEAS/orion-port.md` are done, and phase 7's `example` drive passes · private, unpublished.**
 
 ## What is real
 
@@ -40,11 +40,14 @@
   and `strategy row`, proved through the plugin with every landing paired against
   the other tenant.
 - Screens under `web/`, mounted into `example/` at `/automations/` by one file:
-  flows, a flow, runs, a run, credentials. They build; no drive has run them.
+  flows, a flow, runs, a run, credentials, driven by `verify:automations` —
+  including an administrator watching a run on a staff member's flow arrive live.
+- Reads by the owner and an administrator both through `orion.lite`'s row
+  policies, the administrator's via `auth().level` (`FJS-D296`).
 
 ## What is not
 
-- **A browser drive of the screens**, and the canvas. The screens edit a
-  definition as JSON; `mockup/ui/` is the specification for the rest.
+- **The canvas.** The screens edit a definition as JSON; `mockup/ui/` is the
+  specification for the rest.
+- **The basecamp automation**, phase 7's second half.
 - **Cancelling a run that is queued or running** ([`FJS-1157`](../../ISSUES.md#fjs-1157)).
-- **A drive.** Nothing installs orion into `example/` yet, so no drive runs it.

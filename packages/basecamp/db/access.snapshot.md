@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-51 models · 1 view · 52 gated · 0 unrestricted
-37 with row policies · 10 with protected fields · 21 declared moves · 10 @system · 0 @seals
+59 models · 1 view · 60 gated · 0 unrestricted
+45 with row policies · 13 with protected fields · 31 declared moves · 10 @system · 0 @seals
 ```
 
 ## Gates
@@ -45,10 +45,15 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `FeatureFlag` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `FlagOverride` | 2 READER | 4 USER | 4 USER | 4 USER |
 | `fleetByProvider` *(view)* | 2 READER | — *no writes* | — *no writes* | — *no writes* |
+| `Flow` | 4 USER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `FlowCredential` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `FlowLayout` | 4 USER | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `FlowVersion` | 4 USER | 4 USER | 9 LOCKED | 8 SYSTEM |
 | `HubConfig` | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN | 7 SYSADMIN |
 | `Invitation` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Job` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `JobRun` | 2 READER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `KvEntry` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `LoginChallenge` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `MetricHour` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `MetricPoint` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -63,6 +68,8 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Recipe` | 4 USER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `RecipeRun` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
 | `RegistryImage` | 2 READER | 8 SYSTEM | 8 SYSTEM | 5 ADMINISTRATOR |
+| `Run` | 4 USER | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `RunStep` | 4 USER | 8 SYSTEM | 9 LOCKED | 8 SYSTEM |
 | `Secret` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Server` | 2 READER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `ServerEvent` | 2 READER | 4 USER | 8 SYSTEM | 8 SYSTEM |
@@ -71,6 +78,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `User` | 4 USER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `Verification` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Volume` | 2 READER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `Wait` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `Workspace` | 1 VISITOR | 1 VISITOR | 5 ADMINISTRATOR | 6 OWNER |
 | `WorkspaceMember` | 1 VISITOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 
@@ -258,6 +266,50 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 - deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
+### `Flow`
+
+- allow **read** — `ownerId == auth().id || auth().level >= 5`
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- allow **create** — `true`
+- deny **create** — `ownerId != null && ownerId != auth().id`
+- deny **create** — `status != null && status != 'draft'`
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- allow **update** — `ownerId == auth().id`
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+
+### `FlowCredential`
+
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+
+### `FlowLayout`
+
+- allow **read** — `flow.ownerId == auth().id || auth().level >= 5`
+- deny **read** — `!check(flow, 'read')` — "Outside your workspaceId"
+- allow **create** — `flow.ownerId == auth().id`
+- deny **create** — `!check(flow, 'read')` — "Outside your workspaceId"
+- allow **update** — `flow.ownerId == auth().id`
+- deny **update** — `!check(flow, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(flow, 'read')` — "Outside your workspaceId"
+- allow **delete** — `flow.ownerId == auth().id`
+- deny **delete** — `!check(flow, 'read')` — "Outside your workspaceId"
+
+### `FlowVersion`
+
+- allow **read** — `flow.ownerId == auth().id || auth().level >= 5`
+- deny **read** — `!check(flow, 'read')` — "Outside your workspaceId"
+- allow **create** — `flow.ownerId == auth().id`
+- deny **create** — `authorId != null && authorId != auth().id`
+- deny **create** — `!check(flow, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(flow, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(flow, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(flow, 'read')` — "Outside your workspaceId"
+
 ### `Invitation`
 
 - deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
@@ -281,6 +333,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **update** — `!check(job, 'read')` — "Outside your workspaceId"
 - deny **post-update** — `!check(job, 'read')` — "Outside your workspaceId"
 - deny **delete** — `!check(job, 'read')` — "Outside your workspaceId"
+
+### `KvEntry`
+
+- deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
+- deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
 ### `Network`
 
@@ -348,6 +408,24 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **post-update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 - deny **delete** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 
+### `Run`
+
+- allow **read** — `actorId == auth().id || auth().level >= 5`
+- deny **read** — `!check(flowVersion, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(flowVersion, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(flowVersion, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(flowVersion, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(flowVersion, 'read')` — "Outside your workspaceId"
+
+### `RunStep`
+
+- allow **read** — `run.actorId == auth().id || auth().level >= 5`
+- deny **read** — `!check(run, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(run, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(run, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(run, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(run, 'read')` — "Outside your workspaceId"
+
 ### `Secret`
 
 - deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
@@ -397,6 +475,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
 - deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
 
+### `Wait`
+
+- deny **read** — `!check(run, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(run, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(run, 'read')` — "Outside your workspaceId"
+- deny **post-update** — `!check(run, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(run, 'read')` — "Outside your workspaceId"
+
 ### `WorkspaceMember`
 
 - allow **read** — `userId == auth().id`
@@ -418,10 +504,13 @@ rather than refusing the row.
 | `Credential` | `value` | `@guarded` |
 | `Credential` | `accessToken` | `@secret` |
 | `Credential` | `refreshToken` | `@secret` |
+| `Flow` | `currentVersion` | `@allow('write', status == null || status != 'active')` |
+| `FlowCredential` | `secret` | `@encrypted` |
 | `Invitation` | `token` | `@guarded` |
 | `LoginChallenge` | `value` | `@guarded` |
 | `OauthFlow` | `state` | `@guarded` |
 | `OauthFlow` | `verifier` | `@guarded` |
+| `Run` | `context` | `@encrypted` |
 | `Secret` | `data` | `@encrypted` |
 | `Server` | `enrollTokenHash` | `@guarded` |
 | `Session` | `token` | `@guarded` |
@@ -463,10 +552,20 @@ caller at once. Everything reachable from the target seals with it.
 | `Deployment` | `status` | `fail` | pending, building → failed | **application** | — | — |
 | `Deployment` | `status` | `cancel` | pending, building → cancelled | caller | — | — |
 | `Deployment` | `status` | `rollback` | success → rolled_back | caller | 5 ADMINISTRATOR | — |
+| `Flow` | `status` | `activate` | draft, paused → active | caller | 5 ADMINISTRATOR | — |
+| `Flow` | `status` | `pause` | active → paused | caller | — | — |
+| `Flow` | `status` | `archive` | draft, active, paused → archived | caller | — | — |
+| `Flow` | `status` | `restore` | archived → draft | caller | — | — |
 | `Job` | `status` | `start` | pending, failed → running | caller | — | — |
 | `Job` | `status` | `idle` | running → pending | caller | — | — |
 | `Job` | `status` | `fail` | running → failed | caller | — | — |
 | `Job` | `status` | `cancel` | pending, running, failed → cancelled | caller | — | — |
+| `Run` | `status` | `start` | pending → running | caller | — | — |
+| `Run` | `status` | `suspend` | pending, running → waiting | caller | — | — |
+| `Run` | `status` | `resume` | waiting → running | caller | — | — |
+| `Run` | `status` | `complete` | running → completed | caller | — | — |
+| `Run` | `status` | `fail` | pending, running, waiting → failed | caller | — | — |
+| `Run` | `status` | `cancel` | pending, running, waiting → cancelled | caller | — | — |
 | `Server` | `status` | `reboot` | online, unreachable → pending | caller | — | — |
 | `Server` | `status` | `drain` | online → draining | caller | 5 ADMINISTRATOR | — |
 | `Server` | `status` | `undrain` | draining → online | caller | 5 ADMINISTRATOR | — |

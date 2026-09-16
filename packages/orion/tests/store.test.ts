@@ -76,7 +76,8 @@ const registry: INodeRegistry = { get: (type) => IMPLS.find(i => i.type === type
 async function pendingRun(env: any, trigger: unknown = { body: { amount: 5 } }) {
   const flow    = await env.system.flow.create({ data: { name: "f", ownerId: USER.id } })
   const version = await env.system.flowVersion.create({ data: { flowId: flow.id, version: 1, definition: {} } })
-  const run     = await env.system.run.create({ data: { flowVersionId: version.id, trigger } })
+  // The runner records the flow's owner as the run's actor, and that is who reads it.
+  const run     = await env.system.run.create({ data: { flowVersionId: version.id, trigger, actorId: USER.id } })
   return { flow, version, run }
 }
 
@@ -291,6 +292,8 @@ describe("LitestoneExecutionStore", () => {
     const inspector = await env.actingAs(USER).run.findFirst({ where: { id: run.id } })
     expect(inspector.status).toBe("waiting")
     expect("context" in inspector).toBe(false)
+    // The owner reads their run and another member at the same level reads none of it (`FJS-D295`).
+    expect(await env.actingAs({ id: "u-other", role: "member" }).run.findFirst({ where: { id: run.id } })).toBeNull()
 
     // A different store is a different process: nothing but the row carries over.
     const resumed = await new LitestoneExecutionStore(env.system).getContext(run.id)

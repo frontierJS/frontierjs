@@ -11,7 +11,7 @@ without a schema change you meant to make is a shipped security bug.
 
 ```
 51 models · 1 view · 52 gated · 0 unrestricted
-16 with row policies · 24 with protected fields · 25 declared moves · 8 @system · 1 @seals
+18 with row policies · 24 with protected fields · 25 declared moves · 8 @system · 1 @seals
 ```
 
 ## Gates
@@ -116,19 +116,23 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 ### `Flow`
 
+- allow **read** — `ownerId == auth().id || auth().level >= 5`
 - allow **create** — `true`
 - deny **create** — `ownerId != null && ownerId != auth().id`
 - deny **create** — `status != null && status != 'draft'`
+- deny **create** — `auth().isStaff != true`
 - allow **update** — `ownerId == auth().id`
 
 ### `FlowLayout`
 
+- allow **read** — `flow.ownerId == auth().id || auth().level >= 5`
 - allow **create** — `flow.ownerId == auth().id`
 - allow **update** — `flow.ownerId == auth().id`
 - allow **delete** — `flow.ownerId == auth().id`
 
 ### `FlowVersion`
 
+- allow **read** — `flow.ownerId == auth().id || auth().level >= 5`
 - allow **create** — `flow.ownerId == auth().id`
 - deny **create** — `authorId != null && authorId != auth().id`
 
@@ -167,6 +171,14 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 - allow **read** — `auth().isStaff`
 - allow **read** — `userId == auth().id`
+
+### `Run`
+
+- allow **read** — `actorId == auth().id || auth().level >= 5`
+
+### `RunStep`
+
+- allow **read** — `run.actorId == auth().id || auth().level >= 5`
 
 ### `Subscription`
 

@@ -1,5 +1,22 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-15 — the examples' `getLevel` is synchronous
+
+The README and `example/` resolvers dropped `async`, which litestone now refuses
+([`FJS-D296`](../../DECISIONS.md#fjs-d296)). None of them awaited anything.
+
+## 2026-09-15 — `withDb` hands over its principal, and a derived verb reads a system client
+
+**`app.withDb(fn)` calls `fn(db, user)`**, where `user` is the principal the client is scoped
+to with the resolver's claims applied. `$readAs` takes its subject as an argument, and the one
+`principal()` answers lacks what a resolver added, so under `strategy row` a question about
+somebody's standing was refused every tenant-scoped row; `tests/with-db.test.ts` asserts the
+claimed principal reads its own tenant's row and the bare one does not. **`getTable` probes
+`'$setAuth' in` before `typeof`**: a system client has no `$setAuth` and a Litestone client throws
+on a property it lacks, so a hook that graded a caller itself and put `asSystem()` on
+`ctx.locals.db` made every derived CRUD verb a 500 (`FJS-673`'s shape). Such a client is now used as
+the hook left it. Both for orion's read rule ([`FJS-D295`](../../DECISIONS.md#fjs-d295)).
+
 ## 2026-09-15 — `app.withDb` and `app.onTenantClient`
 
 **Work that holds no ctx gets the client a service call would.** `app.withDb(fn)` runs the app's

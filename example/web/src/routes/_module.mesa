@@ -239,6 +239,12 @@ siteName: Kitchen sink
       {#if session.level >= 5}
         <a class="navlink" id="nav-reports" href="/reports/" aria-current={(page.route, isActive('/reports/')) ? 'page' : null}>Reports</a>
       {/if}
+      <!-- Orion's screens, mounted from the package (automations.mount.js). For
+           staff, who are the people db/schema.lite lets draft a flow; a shopper
+           grades the same 4 and may not (FJS-1169). Activating is the move at 5. -->
+      {#if session.user?.isStaff}
+        <a class="navlink" id="nav-automations" href="/automations/" aria-current={(page.route, isActive('/automations/')) ? 'page' : null}>Automations</a>
+      {/if}
       <a class="navlink" href="/settings/"  aria-current={(page.route, isActive('/settings/')) ? 'page' : null}>Settings</a>
       {#if session.user}
         <a class="navlink" id="nav-account" href="/account/" aria-current={(page.route, isActive('/account/')) ? 'page' : null}>Account</a>

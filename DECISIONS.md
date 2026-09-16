@@ -856,6 +856,14 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d296"></a>2026-09-15 · `FJS-D296` — A row policy reads the caller's level as `auth().level`: the grade `GatePlugin`'s `getLevel(auth, model)` gives for the model whose policy is being asked, carried by no principal. `getLevel` is therefore synchronous, and a Promise is refused by name at the first grade. Orion's read policies become `owner == auth().id || auth().level >= 5`, and the administrator's system-read path in its services is deleted — amending `FJS-D295`'s mechanism, not its rule.
+
+Asked during `FJS-1170`, in two parts. **Where the fix lives:** a level readable in a rule was picked over a junction seam letting a service grade its own broadcasts (a second grader beside `$readAs`, fixing orion alone) and over accepting that an administrator's runs screen moves on a reload. **How the level reaches a rule:** a synchronous `getLevel` was picked over resolving every level a schema names before each table call and in `$readAs`, which keeps `getLevel` async at the price of a second ordering rule a new read path can miss.
+
+`FJS-D295` had the rule right and could not express it: *an administrator* is the app's own mapping, which a policy could not name, so orion graded it in a service and read as system — a path junction's fan-out never takes, so a run on somebody else's flow never reached an administrator's open screen. The two compilers are synchronous and read `ctx.auth`, so a level resolved asynchronously would have been present on some paths and absent on others. All twelve async `getLevel`s in the tree, the scaffold's among them, awaited nothing: a level grades the principal in hand, and what it depends on is resolved onto that principal a layer up (`FJS-D113`). `level` is a framework claim, answered by `claimValue` in `policy.js` for both halves, and a schema naming it installs the gate as a `@@gate` does; an `@@auth` model with its own `level` column beside such a policy is refused, because one spelling would name two values.
+
+Orion's `level` option still grades an administrator ACTING on somebody else's flow, which writes as system (`FJS-D289`), and a `data.code` save. The host passes the same mapping to both — `example` passes `shopGateLevel` to its `GatePlugin` and to `orion()` — and a host that passes different ones is graded two ways.
+
 ### <a id="fjs-d293"></a>2026-09-15 · `FJS-D293` — An orion named event is emitted by the app's own code, `app.orion.emit(name, payload)`, and orion ships no service for it; an app wanting it over HTTP wraps it in a method of its own and grades that.
 
 Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (an `events` service with `emit`, open to `USER(4)`), **C** (an `events` service with `emit`, gated at `ADMINISTRATOR(5)`).
@@ -5045,6 +5053,12 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d295"></a>2026-09-15 · `FJS-D295` — A flow, its versions and layout, a run and its steps are read by the flow's owner and by an administrator, and by no other USER. The owner reads through row policies on the row's own owner (`Flow.ownerId`, `Run.actorId`, and one hop for the rest); an administrator reads through the services, which grade the caller with the app's own mapping and read as system with protected columns stripped — `FJS-D289`'s rule for writing, applied to reading. A model trigger records the row as the OWNER reads it (`$readAs`), and a row the owner may not read starts nothing.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (ADMINISTRATOR(5) reads all three, with the trigger recorded as the owner reads it. Automations become an administrator's screen; staff keep drafting through the services and read nothing back), **C** (orion ships no read rule beyond the gate, and a host whose USER is wider than its staff adds its own `@@allow('read', …)` with `extend model`).
+
+The paper's recommendation, taken as written: B and C both still leave a run holding columns its readers may not read, and C makes every host rediscover the hole; A follows the owner-or-administrator rule the services already use for every write, so a screen's reads and writes agree about who a flow belongs to.
+
 ### <a id="fjs-d294"></a>2026-09-15 · `FJS-D294` — Orion is tenant-aware before it has screens: a run records its tenant, its job carries it, the store and the runner reach that tenant's database, and activation, the poll and the sweep walk every tenant, under both `strategy database` and `strategy row`. The screens follow, installed into `example/`.
 
 Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (the screens first, installed into a harness app inside the package with no tenancy; tenancy after, before phase 7's drive), **C** (row tenancy only for now, and install into `basecamp` first; database tenancy later).
@@ -6697,8 +6711,8 @@ costs nothing today and is what admits a rebase later: Replicache and Zero
 replay pending mutations on top of each new server state, and replay needs an
 intent to replay. That direction is not taken here, because re-executing a
 mutation in the browser means the gate, the row policies and the validators in
-the browser, which is `compass` (`IDEAS/offline-first-and-release.md`) and not
-this ruling.
+the browser, which is the Homestead work ([`FJS-D297`](#fjs-d297),
+`IDEAS/offline-first-and-release.md`) and not this ruling.
 
 **What this deliberately does not do.** No differential dataflow — the
 incremental list logic is already the win that engine buys. No cursor: paging
@@ -11537,6 +11551,55 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d297"></a>2026-09-15 · `FJS-D297` — offline-first is core and is decomposed by owner. There is no offline package: the six pieces have six existing homes, and **Homestead** is the name of the work, not of a module.
+
+`IDEAS/package-map.md` tier 2 proposed one package holding client SQLite, the
+mutation queue, local gate evaluation and a conflict policy, on the argument that
+one engine on both sides is this framework's strongest structural advantage. The
+advantage is real and the packaging does not follow from it.
+
+**It fails the severability test, and the test is the standing adjudication**
+(`PHILOSOPHY.md` § IV, batteries vs. smallness): a battery may be large but must
+have one owner and one seam and come out without surgery on the core. Offline is
+heading for the DEFAULT, and nothing that is the default is severable — so it is
+core, and a package would be the shape that says otherwise. The roster entry gave
+it two realms besides, which is a seat `Litestone ← Junction ← Sierra` does not
+have: above Sierra it cannot reach the Data client, below Litestone it cannot
+reach the store.
+
+**Each piece already has an owner, and one of them has already shipped.**
+
+- *Evaluating a declared policy against a record in the browser* — `@frontierjs/toolbelt`, shipped as `/predicate` and `/gate`, below the graph so a browser may have them (`FJS-D26`). It arrived to answer `@required(where: …)` on a form and not for offline at all.
+- *The `@@sync` conflict declaration* — Litestone. It is `.lite` syntax and the parser is the only thing that can hold it.
+- *Resolving two versions into one* — Litestone. The policy is declared in the seed, so what enforces it is the Data boundary (Invariant 6).
+- *A database in the browser* — Litestone, as a storage backend behind a dynamic import. Litestone is the `.lite` language plus a SQLite client; OPFS is that client over different storage, which is a driver and not a package. The wasm byte cost is what a subpath entry point is for.
+- *The queue of pending writes and their replay* — Sierra. `FJS-D138` already owns the client data lifecycle and already stores optimism as INTENT rather than as a resulting value, stated there as what admits a replay later. A second package holding pending client writes would be a second owner of one thing (Invariant 4).
+- *Carrying queued writes up and changes down* — Junction. It owns the transport, the WebSocket-with-HTTP fallback, and the per-recipient graded broadcast. A sync channel is a channel.
+
+Caravan is named only if a server-side reconcile turns out to want a job, which
+nothing yet says it does.
+
+**What this changes is the roadmap and not only the packaging.** As one package
+the work is a single XL bet that stays unstarted; as six pieces, one is already
+shipped, three are S or M on top of machinery that exists, and only the browser
+database is large. Offline-first can therefore arrive the way everything else
+here has — one owner at a time — which is the only way a default ever gets built.
+
+**Homestead is a milestone, not a module.** It names the body of work across
+those four packages so a roadmap, a branch and a conversation have a word.
+Nothing imports it, no directory carries it, no `package.json` names it, and it
+stops being said once the pieces have landed. The word is chosen for what the
+result is rather than for what the code does — an app that holds its own ground
+with nothing else reachable, which is `PHILOSOPHY.md` § VI's *your application
+remains a file tree, a binary, and a database you own*.
+
+The name reaches back: [`FJS-D138`](#fjs-d138)'s sentence about what it declined
+to do, and the references in `IDEAS/live-queries.md`, `IDEAS/time-travel.md`,
+`IDEAS/package-map.md` and `IDEAS/overview.md`, are all edited to it. Nothing
+shipped under the old name and no app could have depended on it, so it is a
+rename and not an alias (root `CLAUDE.md` § Evolution policy).
+
 
 ### <a id="fjs-d287"></a>2026-09-14 · `FJS-D287` — Litestone's tokenizer moves into `toolbelt/predicate`, and litestone and orion both import it.
 

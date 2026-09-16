@@ -45,7 +45,7 @@
 //   const db = createClient('./app.db', './schema.lite', {
 //     plugins: [
 //       new GatePlugin({
-//         getLevel: async (user, model) => {
+//         getLevel: (user, model) => {
 //           if (!user) return LEVELS.STRANGER
 //           if (user.isSystemAdmin) return LEVELS.SYSADMIN   // ← the new level
 //           if (user.role === 'admin') return LEVELS.ADMINISTRATOR
@@ -137,14 +137,27 @@ function buildAccessMap(schema) {
 // getLevel() is called at most once per model per request — cached on ctx.auth.
 // Clamp to 0–7: user code can return SYSADMIN(7) via user.isSystemAdmin.
 // Only the runtime (asSystem) can set SYSTEM(8).
+//
+// SYNCHRONOUS, and a Promise is refused by name (`FJS-D296`). A row policy
+// reads `auth().level`, and both policy compilers run synchronously inside a
+// statement being built — so an async resolver would give a policy a level on
+// some paths and none on others. A level grades the principal in hand; looking
+// something up about a caller is the principal resolver's job, a layer up.
 
-const SYSTEM_RESOLVER = async () => 8
+const SYSTEM_RESOLVER = () => 8
 
 function makeLevelCache(getLevel, auth) {
   const cache = new Map()
-  return async (model) => {
+  return (model) => {
     if (!cache.has(model)) {
-      const level = await getLevel(auth, model)
+      const level = getLevel(auth, model)
+      if (level != null && typeof level.then === 'function')
+        throw new Error(
+          `GatePlugin: getLevel returned a Promise for "${model}". A level grades the ` +
+          `principal it is handed and must be answered synchronously, because a row ` +
+          `policy reads it as auth().level while a statement is being built. Put what ` +
+          `the level depends on onto the principal where the session is resolved.`
+        )
       cache.set(model, Math.max(0, Math.min(7, level ?? 0)))
     }
     return cache.get(model)
@@ -244,7 +257,7 @@ export class GatePlugin extends Plugin {
     if (!gate) return
     const required  = gate[op]
     if (required == null) return
-    const userLevel = await this._resolver(ctx)(model)
+    const userLevel = this._resolver(ctx)(model)
     checkLevel(required, userLevel, model, op)
   }
 
@@ -266,7 +279,7 @@ export class GatePlugin extends Plugin {
       const gate = this._accessMap[m]
       if (!gate) continue
       const required = gate[op] ?? gate.create
-      const level    = await resolve(m)
+      const level    = resolve(m)
       checkLevel(required, level, m, op)
     }
   }
@@ -281,7 +294,7 @@ export class GatePlugin extends Plugin {
       const gate = this._accessMap[m]
       if (!gate) continue
       const required = gate[op] ?? gate.update
-      const level    = await resolve(m)
+      const level    = resolve(m)
       checkLevel(required, level, m, op)
     }
   }

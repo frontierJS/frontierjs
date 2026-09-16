@@ -425,9 +425,15 @@ export interface App {
    *
    * The client is leased from the tenant pool for as long as `fn` runs, and no
    * longer, so it must not be kept. An app with no Litestone client gets
-   * `fn(app.db)`.
+   * `fn(app.db, principal())`.
+   *
+   * `user` is the principal the client is scoped to, claims included. A
+   * question the client answers about somebody ELSE's standing —
+   * `db.$readAs(accessor, row, toDataPrincipal(user))` — needs it, and
+   * `principal()` does not carry what the resolver added, so under `strategy
+   * row` it would be refused every tenant-scoped row.
    */
-  withDb: <T>(fn: (db: unknown) => T | Promise<T>) => Promise<T>
+  withDb: <T>(fn: (db: unknown, user: import('../auth/types.ts').SessionContext | null) => T | Promise<T>) => Promise<T>
 
   /**
    * An Observer, called once for each tenant client the app opens under
@@ -1221,8 +1227,8 @@ export function createApp(opts: AppOptions = {}): App {
       return requestMeta()?.user ?? null
     },
 
-    async withDb<T>(fn: (db: unknown) => T | Promise<T>): Promise<T> {
-      if (!dataHook) return fn(app.db)
+    async withDb<T>(fn: (db: unknown, user: import('../auth/types.ts').SessionContext | null) => T | Promise<T>): Promise<T> {
+      if (!dataHook) return fn(app.db, app.principal())
       // The context a transport would build for an internal call: the principal
       // in scope and nothing a request carries. A resolver reads the tenant off
       // the request meta `runAs` set, as it does for a job's own service calls.
@@ -1231,7 +1237,7 @@ export function createApp(opts: AppOptions = {}): App {
         route: {}, query: {}, directives: {}, reserved: {}, data: null, id: null,
       } as unknown as ServiceContext
       let out!: T
-      await dataHook(ctx, async () => { out = await fn(ctx.locals.db) })
+      await dataHook(ctx, async () => { out = await fn(ctx.locals.db, (ctx.auth.user ?? null) as import('../auth/types.ts').SessionContext | null) })
       return out
     },
 

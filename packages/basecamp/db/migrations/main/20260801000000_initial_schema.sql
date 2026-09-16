@@ -89,6 +89,50 @@ CREATE TABLE IF NOT EXISTS "metric_series" (
 CREATE INDEX IF NOT EXISTS "idx_metric_series_name" ON "metric_series" ("name");
 CREATE INDEX IF NOT EXISTS "idx_metric_series_lastSeenAt" ON "metric_series" ("lastSeenAt");
 
+CREATE TABLE IF NOT EXISTS "flow" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "name" TEXT NOT NULL,
+  "description" TEXT,
+  "status" TEXT NOT NULL DEFAULT 'draft',
+  "currentVersion" INTEGER,
+  "ownerId" TEXT NOT NULL,
+  "runsPerMinute" INTEGER,
+  "maxWrites" INTEGER NOT NULL DEFAULT 1000,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  "workspaceId" TEXT NOT NULL,
+  CHECK ("status" IN ('draft', 'active', 'paused', 'archived'))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_flow_status" ON "flow" ("status");
+CREATE INDEX IF NOT EXISTS "idx_flow_ownerId" ON "flow" ("ownerId");
+
+CREATE TABLE IF NOT EXISTS "flow_credential" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "name" TEXT NOT NULL UNIQUE,
+  "provider" TEXT NOT NULL,
+  "address" TEXT NOT NULL,
+  "auth" TEXT NOT NULL DEFAULT 'none',
+  "header" TEXT,
+  "encoding" TEXT DEFAULT 'json',
+  "secret" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  "workspaceId" TEXT NOT NULL,
+  CHECK ("auth" IN ('none', 'bearer', 'api_key', 'hmac'))
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "kv_entry" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "scope" TEXT NOT NULL,
+  "key" TEXT NOT NULL,
+  "value" TEXT NOT NULL,
+  "expiresAt" TEXT,
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  "workspaceId" TEXT NOT NULL,
+  UNIQUE ("scope", "key")
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_kv_entry_expiresAt" ON "kv_entry" ("expiresAt");
+
 CREATE TABLE IF NOT EXISTS "account" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "type" TEXT NOT NULL DEFAULT 'organization',
@@ -214,6 +258,25 @@ CREATE TABLE IF NOT EXISTS "metric_hour" (
   FOREIGN KEY ("seriesId") REFERENCES "metric_series" ("id") ON DELETE CASCADE
 ) STRICT;
 
+CREATE TABLE IF NOT EXISTS "flow_version" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "flowId" TEXT NOT NULL,
+  "version" INTEGER NOT NULL,
+  "definition" TEXT NOT NULL,
+  "authorId" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  UNIQUE ("flowId", "version"),
+  FOREIGN KEY ("flowId") REFERENCES "flow" ("id") ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "flow_layout" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "flowId" TEXT NOT NULL UNIQUE,
+  "layout" TEXT NOT NULL DEFAULT '{}',
+  "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  FOREIGN KEY ("flowId") REFERENCES "flow" ("id") ON DELETE CASCADE
+) STRICT;
+
 CREATE TABLE IF NOT EXISTS "user" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "email" TEXT NOT NULL UNIQUE,
@@ -276,6 +339,26 @@ CREATE TABLE IF NOT EXISTS "blueprint_param" (
   FOREIGN KEY ("blueprintId") REFERENCES "blueprint" ("id") ON DELETE CASCADE
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_blueprint_param_blueprintId" ON "blueprint_param" ("blueprintId");
+
+CREATE TABLE IF NOT EXISTS "run" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "flowVersionId" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'pending',
+  "trigger" TEXT,
+  "context" TEXT,
+  "currentStage" INTEGER NOT NULL DEFAULT 0,
+  "actorId" TEXT,
+  "startedAt" TEXT,
+  "endedAt" TEXT,
+  "error" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  "heartbeatAt" TEXT,
+  CHECK ("status" IN ('pending', 'running', 'waiting', 'completed', 'failed', 'cancelled')),
+  FOREIGN KEY ("flowVersionId") REFERENCES "flow_version" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_run_flowVersionId_startedAt" ON "run" ("flowVersionId", "startedAt");
+CREATE INDEX IF NOT EXISTS "idx_run_status_createdAt" ON "run" ("status", "createdAt");
+CREATE INDEX IF NOT EXISTS "idx_run_status_heartbeatAt" ON "run" ("status", "heartbeatAt");
 
 CREATE TABLE IF NOT EXISTS "credential" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
@@ -615,6 +698,34 @@ CREATE TABLE IF NOT EXISTS "registry_image" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_registry_image_workspaceId" ON "registry_image" ("workspaceId");
 CREATE INDEX IF NOT EXISTS "idx_registry_image_workspaceId_repository" ON "registry_image" ("workspaceId", "repository");
+
+CREATE TABLE IF NOT EXISTS "run_step" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "runId" TEXT NOT NULL,
+  "nodeId" TEXT NOT NULL,
+  "status" TEXT NOT NULL,
+  "attempts" INTEGER NOT NULL DEFAULT 0,
+  "fromCache" INTEGER NOT NULL DEFAULT 0,
+  "startedAt" TEXT,
+  "durationMs" INTEGER,
+  "output" TEXT,
+  "error" TEXT,
+  "logs" TEXT,
+  CHECK ("status" IN ('pending', 'running', 'completed', 'failed', 'skipped')),
+  UNIQUE ("runId", "nodeId"),
+  FOREIGN KEY ("runId") REFERENCES "run" ("id") ON DELETE CASCADE
+) STRICT;
+
+CREATE TABLE IF NOT EXISTS "wait" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "resumeKey" TEXT NOT NULL UNIQUE,
+  "runId" TEXT NOT NULL,
+  "nodeId" TEXT NOT NULL,
+  "timeoutAt" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  FOREIGN KEY ("runId") REFERENCES "run" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_wait_timeoutAt" ON "wait" ("timeoutAt");
 
 CREATE TABLE IF NOT EXISTS "server_event" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),

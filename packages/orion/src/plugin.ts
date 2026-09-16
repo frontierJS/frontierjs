@@ -32,7 +32,9 @@
 import { generateJsonSchema } from "@frontierjs/litestone/jsonschema"
 import { createConduit, type ConduitOptions } from "@frontierjs/conduit"
 import { redactSecrets } from "@frontierjs/toolbelt/redact"
-import type { App, Plugin, TransportContext } from "@frontierjs/junction"
+import { camel } from "@frontierjs/toolbelt/inflect"
+import { toDataPrincipal } from "@frontierjs/junction"
+import type { App, Plugin, SessionContext, TransportContext } from "@frontierjs/junction"
 
 import { PluginRegistry } from "./engine/plugins"
 import type { PluginManifest } from "./engine/plugins"
@@ -96,6 +98,8 @@ export interface JunctionActor {
   db:     unknown
   userId: string
   tenant: string | null
+  /** The principal `db` is scoped to, claims included — what `$readAs` is asked about. */
+  user:   SessionContext
 }
 
 // What `@frontierjs/notifications` puts on the app, stated so orion needs no
@@ -205,7 +209,7 @@ export function orion(options: OrionOptions = {}): Plugin {
           if (actorId === null) return Promise.reject(new Error("the run records no owner"))
           return app.runAs(actorId, { tenant }, (session) => {
             if (!session) throw new Error(`no user "${actorId}"`)
-            return app.withDb((client) => fn({ db: client, userId: String(actorId), tenant } satisfies JunctionActor))
+            return app.withDb((client, user) => fn({ db: client, userId: String(actorId), tenant, user: user ?? session } satisfies JunctionActor))
           })
         },
         // The owner's client is what a model node writes through, so it is what the
@@ -214,6 +218,14 @@ export function orion(options: OrionOptions = {}): Plugin {
         inTransaction: <T>(actor: unknown, fn: (txActor: unknown) => Promise<T>) => {
           const { db: client, ...rest } = actorOf(actor)
           return (client as { $transaction: (fn: (tx: unknown) => Promise<T>) => Promise<T> }).$transaction((tx) => fn({ ...rest, db: tx }))
+        },
+        // The owner's own client grades the row, with the claims the app resolves
+        // for them; an undecidable policy throws there, and a throw is a refusal.
+        readAs: async (actor, model, record) => {
+          const { db: client, user } = actorOf(actor)
+          try {
+            return await (client as { $readAs(a: string, r: unknown, p: unknown): Promise<unknown> }).$readAs(camel(model), record, toDataPrincipal(user))
+          } catch { return null }
         },
         onTriggerError:    (err, at) => app.logger.warn(`[orion] flow "${at.flowId}" did not start: ${(err as Error).message}`),
         onActivationError: (flowId, error) => app.logger.warn(`[orion] flow "${flowId}" is active and did not activate: ${error}`),

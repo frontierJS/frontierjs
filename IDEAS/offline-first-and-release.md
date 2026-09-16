@@ -18,21 +18,70 @@ FJS should be **offline-first**, **small and portable**, **FOSS**, and
 **self-hostable**. These are not features to add later — they are constraints that
 shape Deployment (Release) and bundling from the start.
 
-## Where this stands today: nothing
+## Where this stands today: re-probed, and it has moved
 
-Probed 2026-08-02, all negative:
+**Re-probed 2026-09-15, and the 2026-08-02 answer no longer holds.** Three of the
+four parts `IDEAS/package-map.md` listed as one offline engine have moved, and
+**none of them moved for offline** — each was built to settle a different problem and landed
+here as a side effect. A survey written in prose has no generator, so this one
+goes stale the way the last one did; every claim below names the file it was read
+from, so the next reader re-probes instead of trusting.
 
-- No service worker, PWA manifest, precache, or workbox anywhere in
-  `packages/sierra/src` or `packages/cli/commands`.
-- No client-side cache, no mutation queue, no `navigator.onLine` handling in
-  `packages/sierra/src/junction/index.js` or `packages/junction/src/client/`.
-  `localStorage` is used only to hold the auth token.
-- No `bun build --compile` / standalone-binary path in `fli`.
-- The string `offline` occurs once in the whole UI stack, at
-  `packages/sierra/src/junction/index.js:56` — a WebSocket status label in a doc
-  comment.
+**Local gate and policy evaluation — shipped.** `packages/toolbelt/src/predicate/`
+is the `.lite` expression language whole: tokenizer, parser, and an evaluator
+answering a declared expression against one record in JavaScript, in SQLite's
+three-valued logic and with SQLite's comparison rules. Beside it
+`packages/toolbelt/src/gate/` is the access ladder and its grader. Both sit below
+the dependency graph (`FJS-D26`), which is what makes them reachable from a
+browser at all. **The safety argument is already paid for**, and it is the part
+that would otherwise have had to be invented here: it is a MOVE rather than a
+second implementation, and the two compilations of a row policy — into SQL and
+into JavaScript — are held together by an oracle (`verifyRowPolicies`, and
+`test/policy-interpreters.test.ts` asking both halves the same predicate over the
+same rows). Drift between a server rule and its client copy is the failure mode
+offline-first normally owns, and it now has an owner that is not this document.
 
-Greenfield. But the substrate is unusually well-suited, which is the point.
+**The mutation queue — half of it, and the half that was hard.** `FJS-D138` built
+the client data lifecycle: a node per row keyed by Model, a list as a view over
+it, and **optimism as an overlay of INTENT rather than of the resulting value**.
+The ruling states the reason in its own words — a replay needs an intent to
+replay — and names the boundary it declined to cross: re-executing a mutation in
+the browser means the gate, the row policies and the validators in the browser,
+*"which is the Homestead work … and not this ruling."* **That sentence has gone out of date in
+one direction only.** The substrate it named as absent arrived six weeks later;
+the ruling's own refusal still stands, because storing an intent is not replaying
+one. `packages/toolbelt/src/match/` is the third piece, already written and
+already shared with jetty: does this record still belong in this query's results,
+with `null` meaning ask the server.
+
+**The installable shell — refereed, not written.**
+`packages/sierra/src/postbuild/manifest.js` grades whether a browser will install
+a build, case for case against Chrome's own installability error ids. The app owns
+`public/manifest.webmanifest`; Sierra owns the verdict. There is still no service
+worker and no precache anywhere in `packages/sierra/src`, so the shell itself is
+unwritten — but the floor under it has a referee rather than silence.
+
+**Client-side SQLite, a conflict declaration, and the standalone binary — still
+nothing.** No OPFS and no wa-sqlite; no sync or conflict attribute in
+`packages/litestone/src/core/parser.js`; no `bun build --compile` path in `fli`.
+`navigator.onLine` appears nowhere in `packages/junction/src/client/` or
+`packages/sierra/src/junction/`, and `localStorage` still holds the auth token and
+nothing else.
+
+So: **less greenfield than it was, and greenfield where the work is.** What
+arrived is the part that is hard to get right and cheap to get subtly wrong; what
+remains is mostly labor. The status in the frontmatter stays `proposed` because
+nothing in this document was built — the substrate came to meet it.
+
+**And the shape of the remaining work changed with it.** Ruled 2026-09-15
+(`FJS-D297`): there is no offline package. Offline is heading for the default and
+nothing that is the default is severable, so it is core, and each piece goes to
+the owner it already has — policy evaluation to `@frontierjs/toolbelt` where it
+is, `@@sync` and a browser storage backend to Litestone, the queue and its replay
+to Sierra beside `FJS-D138`'s intent overlay, and the carrying to Junction. The
+body of work has a name, **Homestead**, and the name is a milestone rather than a
+module: nothing imports it, no directory carries it, and it stops being said once
+the pieces have landed.
 
 ---
 
@@ -74,27 +123,14 @@ frameworks can answer that question at all.
 
 ## What the design has to answer
 
-### Sync, and where conflict policy lives
+### The engine's own questions have moved
 
-**Ruling needed: conflict resolution must be a schema concern.** If a Model cannot
-declare something like `@@sync(lww)` / `@@conflict(...)` / "server wins" / "not
-syncable", then every app hand-rolls merge logic — which is exactly the glue FJS
-exists to eliminate. This is the one place where offline-first could quietly
-betray the framework's own thesis, so it should be settled before anything is
-built.
-
-Related, unanswered: does the mutation queue replay *operations* or *rows*? Do
-gates re-evaluate at replay time against the level the user has **then**, or the
-level they had when queueing? (Latter is surprising; former can silently drop
-queued work — either way it needs to be a documented ruling, not an accident.)
-
-### Shipping gates to an untrusted client
-
-Local gate enforcement means shipping the trust hierarchy and policy predicates to
-the browser. It is *safe* — the server re-checks, that boundary does not move —
-but it is **disclosure**: policy predicates can name columns and business rules.
-Needs an explicit ruling, plus probably a per-Model opt-out, rather than a silent
-default.
+Everything the client engine has to answer — the conflict vocabulary, what a
+queue replays, which gate level grades a replayed write, whether a predicate
+crosses to the browser, and what happens to a `File` in a queued write — is
+`IDEAS/homestead.md`, together with the build order. What stays here is the
+vision those answers serve, and the Release half, which is a different realm and
+a different lifecycle.
 
 ### Release artifacts
 
@@ -168,6 +204,7 @@ rewritten.
 
 ## See also
 
+- `IDEAS/homestead.md` — **the engine and its build order**, lifted out of this paper
 - `IDEAS/slices.md` — slices contributing to a release is the shared open question
 - `PHILOSOPHY.md` — the axioms these constraints should be reconciled against
 - `packages/jetty/` — the existing offline-shell + relay prior art

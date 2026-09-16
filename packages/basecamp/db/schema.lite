@@ -519,6 +519,20 @@ extend model MetricSeries { @@tenant(none) }
 extend model MetricPoint  { @@tenant(none) }
 extend model MetricHour   { @@tenant(none) }
 
+// Orion's flows and runs (`FJS-D269`). A flow is a workspace's automation, run
+// as the member who owns it, so everything it writes and reads is graded at that
+// member's standing in that workspace — `auth().level` in orion's read policies
+// is `basecampGateLevel`, the same grade the gate uses (`FJS-D296`).
+//
+// The three roots carry the workspace and the rest are scoped through them:
+// a version, a layout and a run hang off a flow, a step and a wait off a run.
+// Row tenancy stamps the column from the member's claim, so nothing here
+// names it.
+import "@frontierjs/orion/orion.lite"
+extend model Flow           { workspaceId String }
+extend model FlowCredential { workspaceId String }
+extend model KvEntry        { workspaceId String }
+
 extend model Credential {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@log(audit)

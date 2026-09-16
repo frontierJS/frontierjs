@@ -185,9 +185,9 @@ describe('ambiguity resolves to nothing', () => {
 describe('a pick off the menu', () => {
   test('a pick answers where the words missed — paired with the same words unpicked', () => {
     expect(ask('question', { kind: 'attribute', about: 'invoice', words: 'due date' }).verdict).toBe('unhomed')
-    const r = ask('question', { kind: 'attribute', about: 'invoice', words: 'due date', pick: 'Invoice.dueAt' })
+    const r = ask('question', { kind: 'attribute', about: 'invoice', words: 'due date', pick: 'Invoice.dueOn' })
     expect(r.verdict).toBe('exists')
-    expect(r.facts[0]).toMatchObject({ target: 'Invoice.dueAt', tier: 'pick' })
+    expect(r.facts[0]).toMatchObject({ target: 'Invoice.dueOn', tier: 'pick' })
   })
 
   test('the verdict is still the resolver’s: a picked @immutable field is declined for an edit', () => {

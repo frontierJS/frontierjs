@@ -128,7 +128,7 @@ export const tree = {
       file: "src/routes/showroom5.mesa",
       companion: "src/routes/showroom5.meta.js",
       layout: "src/routes/_module.mesa",
-      meta: JSON.parse("{\"title\":\"FrontierJS — the stack\",\"description\":\"Eight packages, one vocabulary. Every feature each one ships, and what it replaces.\",\"render\":\"static\",\"publishes\":0}"),
+      meta: JSON.parse("{\"title\":\"FrontierJS — the stack\",\"description\":\"Twenty packages, one vocabulary. Every feature each one ships, and what it replaces.\",\"render\":\"static\",\"publishes\":0}"),
       params: [],
       children: [],
     },

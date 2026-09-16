@@ -735,6 +735,13 @@ model Post {
 ```
 auth()                    — current auth object (null if unauthenticated)
 auth().field              — field on auth object
+auth().level              — the level the gate grades the caller at for THIS
+                            model — `getLevel(auth, model)`, carried by no
+                            principal, so `ownerId == auth().id || auth().level >= 5`
+                            is *the owner or an administrator* in the app's own
+                            terms, in a query and a broadcast alike (FJS-D296).
+                            A schema naming it installs the gate; an @@auth
+                            column named `level` beside it is refused
 auth() != null            — authenticated check
 now()                     — current UTC timestamp
 check(field)              — delegates to the related model's ROW POLICY and to
@@ -845,9 +852,10 @@ through `emitTransitionEvent` and a bulk write reaches none.
 Refused at client build unless the claim is one of four things (`FJS-666`, ruled
 `FJS-D181`):
 
-  the framework's eight   `id` · `capabilities` · and the six `FrontierGateGetLevel`
+  the framework's nine    `id` · `capabilities` · the six `FrontierGateGetLevel`
                           reads — `role` `isAdmin` `isOwner` `isSystemAdmin`
-                          `verifiedAt` `activatedAt`. A standing is not a column
+                          `verifiedAt` `activatedAt` — and `level`, the grade
+                          itself. A standing is not a column
   the `@@auth` model      its own field names, which is what `sessionFields` carries
   `tenancy { claim }`     the one claim the schema declares
   `createClient({ claims })`  a claim resolved PER REQUEST — on no row, in no schema
@@ -956,7 +964,7 @@ class MyPlugin extends Plugin {
 import { GatePlugin, LEVELS } from '@frontierjs/litestone'
 
 new GatePlugin({
-  async getLevel(user, model) {
+  getLevel(user, model) {
     if (!user)               return LEVELS.STRANGER
     if (user.isSystemAdmin)  return LEVELS.SYSADMIN
     if (user.role === 'admin') return LEVELS.ADMINISTRATOR
@@ -986,6 +994,10 @@ new GatePlugin({
 ```
 
 `getLevel()` clamped to 0–7. `asSystem()` sets level 8 unconditionally.
+**`getLevel()` is synchronous** — a Promise is refused by name at the first
+grade, because a row policy reads the level as `auth().level` while a statement
+is being built (`FJS-D296`). What a level depends on is put on the principal
+where the session is resolved.
 
 **A schema declaring any `@@gate` auto-installs `GatePlugin({ getLevel: FrontierGateGetLevel })`** if the app supplies none — a declared-but-unenforced gate is fail-open. In that resolver, an **absent** `verifiedAt`/`activatedAt` means "the app does not model this stage" and is NOT an objection; only `null` grades down. Explicit standing (`isSystemAdmin`/`isOwner`/`isAdmin`) is checked before the lifecycle. `role` is the one field read for PRESENCE rather than for a value — no role is CREATOR(3), any role is USER(4) — because the ladder cannot rank what an app puts in that column. Junction's `sessionGateLevel()` is the same BINDING, not a copy: both are `gradeStanding` from `@frontierjs/toolbelt/gate`, which also owns `LEVELS`, `LEVEL_NAMES` and `levelPasses`. It was a hand copy on both sides and it drifted on exactly the `role` branch (`FJS-520`, ruled `FJS-D197`).
 

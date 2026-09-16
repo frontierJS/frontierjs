@@ -1,5 +1,47 @@
 # Changes — @frontierjs/orion
 
+## 2026-09-15 — an administrator reads through the row policies
+
+[`FJS-D296`](../../DECISIONS.md#fjs-d296), closing [`FJS-1170`](../../ISSUES.md#fjs-1170).
+`orion.lite`'s read policies are `owner == auth().id || auth().level >= 5`, and the services'
+administrator read path — `isAdministrator`, `readerOf`, `shown` and the before/after hooks on
+`find` and `get` — is deleted: every read is the caller's own client, so a protected column is
+stripped by the boundary rather than by this package. **A run on somebody else's flow now reaches
+an administrator's live runs screen**, since junction's fan-out grades a recipient with `$readAs`
+against the same policy; `services.test.ts` asserts the fan-out's verdict for an administrator, a
+manager graded 5 by the app's mapping alone, and another USER, and is red with the Run policy
+reverted. The suite's app passes one mapping to its `GatePlugin` and to `orion({ level })`, as a
+host must: `level` still grades an administrator acting on another person's flow.
+
+## 2026-09-15 — a flow and its runs are read by their owner and an administrator
+
+[`FJS-D295`](../../DECISIONS.md#fjs-d295), closing [`FJS-1167`](../../ISSUES.md#fjs-1167).
+`orion.lite` reads `Flow`, `FlowVersion`, `FlowLayout`, `Run` and `RunStep` through a policy on
+the row's own owner, so another USER reads none of them and a move they ask for is a 404 rather
+than a 403. An administrator reads through the services: `readerOf(ctx)` for orion's own methods,
+and a before hook that hands the model service's `find` and `get` the system client, with every
+protected column stripped from the answer. **A model trigger records the row as the flow's owner
+reads it** — the runner's new `readAs` port, which the plugin answers with `$readAs` on the owner's
+client and the principal `app.withDb` now hands over — and a row the owner may not read starts
+nothing. Open beside it: an administrator's runs screen does not move for another owner's run
+([`FJS-1170`](../../ISSUES.md#fjs-1170)), and a shopper in `example` may still draft a flow
+([`FJS-1169`](../../ISSUES.md#fjs-1169)).
+
+## 2026-09-15 — driven in a browser, and what that found
+
+Phase 7's drive, `example`'s `verify:automations`, runs the screens against a real shop: a flow
+drafted in the drawer, a refused definition shown with the compiler's sentence, an activation, a
+Customer created elsewhere starting a run that arrives on the open runs screen, the note it
+wrote read back off the customer, and staff offered no move and refused one. Two defects here
+([`FJS-1165`](../../ISSUES.md#fjs-1165)): **a patch may carry the model's `@version` column**,
+which the catalog dropped as `readOnly` while the Data boundary demanded it, so no flow could
+patch a versioned model; and **`model.remove` is litestone's `remove`**, where it was `delete`,
+the purge that destroys a `@@softDelete` row. **`flows` and `runs` name a channel**
+([`FJS-1166`](../../ISSUES.md#fjs-1166)), their own service name, because the engine writes every
+run through the system client and junction broadcasts such a write only on a named channel; the
+host joins it. The same drive found three defects below orion, filed against their packages.
+**Open: who may read a run** ([`FJS-1167`](../../ISSUES.md#fjs-1167), question 24).
+
 ## 2026-09-15 — screens, installed into `example`
 
 The rest of phase 6, on the two things it stood on. `web/` holds orion's screens as `.mesa`

@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { createClient, createTenantRegistry } from '../../litestone/src/index.js'
-import { createApp, createService, createStubAuth } from '../index.ts'
+import { createApp, createService, createStubAuth, toDataPrincipal } from '../index.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
 
 const USERS = createStubAuth({ users: [{ id: 'u1', role: 'member' }, { id: 'u2', role: 'member' }] })
@@ -111,5 +111,32 @@ describe('app.withDb under strategy row', () => {
     }))
     expect(seen.map((d: any) => [d.workspaceId, d.title])).toEqual([['w1', 'stamped']])
     expect((await db.asSystem().doc.findMany({})).length).toBe(2)
+  })
+
+  test('fn is handed the principal the client is scoped to, claim included, which $readAs needs', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: `
+      tenancy { strategy row  column workspaceId  claim workspaceId }
+      model Doc {
+        id          Int    @id @default(autoincrement())
+        workspaceId String
+        title       String
+      }` })
+    const mine   = await db.asSystem().doc.create({ data: { workspaceId: 'w1', title: 'mine' } })
+    const theirs = await db.asSystem().doc.create({ data: { workspaceId: 'w2', title: 'theirs' } })
+    const app = createApp({ db, auth: USERS, principal: async (ctx: ServiceContext) => {
+      const tenant = (ctx.app as any).tenant()
+      return tenant ? { workspaceId: tenant } : {}
+    } })
+    await app._startForTest()
+
+    const out = await app.runAs('u1', { tenant: 'w1' }, () => app.withDb(async (scoped: any, user: any) => ({
+      claim:  user?.workspaceId,
+      mine:   (await scoped.$readAs('doc', mine, toDataPrincipal(user)))?.title ?? null,
+      theirs: (await scoped.$readAs('doc', theirs, toDataPrincipal(user)))?.title ?? null,
+      bare:   (await scoped.$readAs('doc', mine, toDataPrincipal(app.principal()!)))?.title ?? null,
+    })))
+    // The last is the principal without the resolver's claim: refused its own
+    // tenant's row, which is why the callback is handed the claimed one.
+    expect(out).toEqual({ claim: 'w1', mine: 'mine', theirs: null, bare: null })
   })
 })

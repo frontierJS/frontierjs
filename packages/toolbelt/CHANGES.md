@@ -1,5 +1,23 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-15 — `/predicate`'s evaluator takes a `claimOf`
+
+`evaluate(node, { claimOf })` answers `auth().field`, defaulting to the principal's own property.
+Litestone passes one that answers `level` from its gate
+([`FJS-D296`](../../DECISIONS.md#fjs-d296)), because the grade is per model and on no principal;
+without the hook the JS half read `auth().level` as absent while the SQL half graded it.
+
+## 2026-09-15 — `make()` seeds nothing nobody chose
+
+[`FJS-1162`](../../ISSUES.md#fjs-1162). A nullable number or boolean with no default is `null`
+rather than `0` or `false`, and given the create-mode `required`, a NOT NULL column that is
+neither required nor defaulted is left out of the record, because the server fills it. Both
+were values a form that did not show the field went on to send: `runsPerMinute Int? @gte(1)`
+seeded `0` and the resource refused a record whose every visible control was valid, and
+`ownerId String @default(auth().id)` seeded `''`, so the stamp never applied. The second rule is
+DERIVED from the three facts litestone already emits, so it needs no new key; a caller that
+passes no `required` keeps the old seeding. Two specs, each red with its branch disabled.
+
 ## 2026-09-14 — `/datetime` gains the plain-date half
 
 `FJS-D288`. A day in no zone — what a `String @date` column holds, and what a

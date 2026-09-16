@@ -270,7 +270,7 @@ const unhomed = (fact, why, matches = []) => ({
 })
 
 // Words that found nothing are not evidence the thing is absent: the index has
-// no synonyms, so "due date" misses `dueAt` and "private note" misses `notes`.
+// no synonyms, so "due date" misses `dueOn` and "private note" misses `notes`.
 // Run 2 measured 21 confident wrong answers built on a miss. `needs us` is only
 // answered from a POSITIVE fact — a state machine absent, two known states with
 // no edge, a declaration the model lacks.

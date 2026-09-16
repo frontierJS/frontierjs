@@ -5583,29 +5583,43 @@ export function makeEachBlock(data, option) {
     }
   }
 
-  // Rebind: called by runtime when signal value updates so pattern vars stay live.
-  // For destructure patterns we rebuild the destructure assignment.
-  // For plain item/index: the runtime always calls setItem/setIndex — no custom rebind needed.
-  const rebind = isDestructure
-    ? xNode('rebind-destruct', { pat: destructurePattern, indexName }, (w, n) => {
-        if (n.indexName)
-          w.write(`(_$$item, _${n.indexName}) => { const ${n.pat} = _$$item; ${n.indexName}=_${n.indexName}; }`)
-        else
-          w.write(`(_$$item) => { const ${n.pat} = _$$item; }`)
-      })
-    : null
+  // A destructured item is read THROUGH the item signal. An unkeyed row is
+  // rebound in place when its position gets a new item, and a `const` pattern
+  // taken once at the top of the row kept the first item's values for the life
+  // of the row — `{#each moves as [name, label]}` went on drawing the move it
+  // was built with. Each pattern name is a read of `$$patN()`, which
+  // destructures the current item, so every expression that names one tracks it.
+  let patNames = []
+  let patFn = null
+  if (isDestructure) {
+    try {
+      const fn = acorn.parseExpressionAt(`(${destructurePattern}) => 0`, 0, { ecmaVersion: 'latest' })
+      const names = new Set()
+      const add = (p) => {
+        if (!p) return
+        if (p.type === 'Identifier') names.add(p.name)
+        else if (p.type === 'AssignmentPattern') add(p.left)
+        else if (p.type === 'RestElement') add(p.argument)
+        else if (p.type === 'ArrayPattern') p.elements.forEach(add)
+        else if (p.type === 'ObjectPattern') p.properties.forEach((prop) => add(prop.value || prop.argument || prop.key))
+      }
+      fn.params.forEach(add)
+      patNames = [...names]
+    } catch (e) {
+      assert(false, `Wrong #each pattern '${destructurePattern}' in '${data.value}': ${e.message}`)
+    }
+    this._eachPatternSeq = (this._eachPatternSeq ?? 0) + 1
+    patFn = `$$pat${this._eachPatternSeq}`
+  }
+
+  const rebind = null
 
   // Temporarily register item/index as signal-getter accessors so template
   // expressions inside the each block get rewritten correctly.
   const prevAccessors = this.accessors ? { ...this.accessors } : null
   if (this.accessors) {
     if (isDestructure) {
-      // Extract all identifiers from the destructure pattern and register them
-      // as passthrough (they're plain let vars inside makeItem, not signals)
-      const patVars = [...destructurePattern.matchAll(/\b([a-zA-Z_$][\w$]*)\b/g)]
-        .map(m => m[1])
-        .filter(n => n !== 'undefined' && n !== 'null')
-      patVars.forEach(n => { this.accessors[n] = n })  // passthrough — no signal wrapping
+      patNames.forEach(n => { this.accessors[n] = `${patFn}().${n}` })
       this.accessors['$$item'] = '$$item()'
     } else {
       this.accessors[itemName] = `${itemName}()`
@@ -5613,12 +5627,10 @@ export function makeEachBlock(data, option) {
     if (indexName) this.accessors[indexName] = `${indexName}()`
   }
 
-  // For destructure: tell buildBlock the itemName in the block fn is $$item
-  // and that the pattern vars are destructured from it at the top of the block
   const blockEachOpts = isDestructure
     ? { rebind, itemName: '$$item', indexName,
-        blockPrefix: xNode('destruct-prefix', { pat: destructurePattern }, (w, n) => {
-          w.writeLine(`const ${n.pat} = $$item();`)
+        blockPrefix: xNode('destruct-prefix', { pat: destructurePattern, fn: patFn, names: patNames }, (w, n) => {
+          w.writeLine(`const ${n.fn} = () => { const ${n.pat} = $$item(); return { ${n.names.join(', ')} }; };`)
         })
       }
     : { rebind, itemName, indexName }
@@ -8454,6 +8466,8 @@ function _isReactive(expr, opaqueRe) {
   // rendered its first value and ignored every later one: the frozen-argument
   // bug the getters exist to prevent, arriving through the fix for FJS-339.
   if (/\$\$arg\d+\(\)/.test(expr)) return true
+  // The same shape for a destructured {#each} item, read as `$$pat1().name`.
+  if (/\$\$pat\d+\(\)/.test(expr)) return true
   // Bare no-arg call: identifier immediately followed by () — signal getter
   // pattern. Kept below the analysis rule rather than replaced by it: a getter
   // reached through a snippet parameter or an each binding is named by no

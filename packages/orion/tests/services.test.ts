@@ -21,8 +21,9 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
+import { GatePlugin } from "../../litestone/src/index.js"
 import { createTestEnv } from "../../testing/src/index.ts"
-import { channels, createApp, createStubAuth, request, sessionGateLevel } from "../../junction/index.ts"
+import { channels, createApp, createStubAuth, request, sessionGateLevel, toDataPrincipal } from "../../junction/index.ts"
 import { createCaravan } from "../../caravan/src/index"
 import { orion } from "../src/plugin"
 import type { Runner } from "../src/runner"
@@ -34,12 +35,18 @@ let app:    any
 let dir:    string
 let runner: Runner
 
+const appLevel = (u: any) => u?.role === "manager" ? 5 : sessionGateLevel(u)
+
 const TOKEN = { user: "test-token-u-user", other: "test-token-u-other", admin: "test-token-u-admin", sys: "test-token-u-sys", manager: "test-token-u-manager" }
 
 beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "orion-services-"))
+  // One mapping for both halves, as `example` passes `shopGateLevel` to each:
+  // the gate grades the Data boundary and `auth().level`, orion's `level` an
+  // administrator acting through system (`FJS-D296`).
   env = await createTestEnv({
     schema: APP, encryptionKey: KEY, claims: [], listen: true,
+    plugins: [new GatePlugin({ getLevel: appLevel })],
     api: ({ db }: any) => {
       const built = createApp({
         db,
@@ -54,7 +61,7 @@ beforeAll(async () => {
       })
       built.configure(createCaravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 }))
       built.configure(channels())
-      built.configure(orion({ plugins: [suiteNodes()], level: (u) => u.role === "manager" ? 5 : sessionGateLevel(u) }))
+      built.configure(orion({ plugins: [suiteNodes()], level: appLevel }))
       return built
     },
   })
@@ -113,8 +120,9 @@ describe("flows: a USER drafts, an administrator activates, the owner runs", () 
     expect(activated.status).toBe(200)
     expect(activated.body).toMatchObject({ status: "active", activation: { webhooks: [], events: [] } })
 
-    // By hand, as the owner (`FJS-D292`), and not by another USER.
-    expect((await call(TOKEN.other, `/flows/${id}`, "run", { payload: {} })).status).toBe(403)
+    // By hand, as the owner (`FJS-D292`), and not by another USER — who cannot
+    // read the flow at all, so the refusal does not say it exists (`FJS-D295`).
+    expect((await call(TOKEN.other, `/flows/${id}`, "run", { payload: {} })).status).toBe(404)
     const started = await call(TOKEN.user, `/flows/${id}`, "run", { payload: { n: 1 } })
     expect(started.status).toBe(200)
     const run = await settled((started.body as any).runId)
@@ -131,7 +139,7 @@ describe("flows: a USER drafts, an administrator activates, the owner runs", () 
 
   test("only the owner or an administrator changes a flow; an administrator's version names them", async () => {
     const id = await draft(TOKEN.user, manual(count("a")))
-    expect((await call(TOKEN.other, `/flows/${id}`, "save", { definition: manual(count("b")) })).status).toBe(403)
+    expect((await call(TOKEN.other, `/flows/${id}`, "save", { definition: manual(count("b")) })).status).toBe(404)
 
     const saved = await call(TOKEN.admin, `/flows/${id}`, "save", { definition: manual(count("b")) })
     expect(saved.body).toEqual({ flowId: id, version: 2, current: true })
@@ -224,10 +232,13 @@ describe("flows: a USER drafts, an administrator activates, the owner runs", () 
   test("the layout is the owner's to move", async () => {
     const id = await draft(TOKEN.user, manual(count("a")))
     expect((await call(TOKEN.user, `/flows/${id}`, "layout")).body).toEqual({ flowId: id, layout: {} })
-    expect((await call(TOKEN.other, `/flows/${id}`, "saveLayout", { layout: { a: { x: 1, y: 2 } } })).status).toBe(403)
+    expect((await call(TOKEN.other, `/flows/${id}`, "saveLayout", { layout: { a: { x: 1, y: 2 } } })).status).toBe(404)
     await call(TOKEN.user, `/flows/${id}`, "saveLayout", { layout: { a: { x: 1, y: 2 } } })
     await call(TOKEN.user, `/flows/${id}`, "saveLayout", { layout: { a: { x: 3, y: 4 } } })
-    expect((await call(TOKEN.other, `/flows/${id}`, "layout")).body).toEqual({ flowId: id, layout: { a: { x: 3, y: 4 } } })
+    // Read by the owner and an administrator, and by nobody else (`FJS-D295`).
+    expect((await call(TOKEN.user, `/flows/${id}`, "layout")).body).toEqual({ flowId: id, layout: { a: { x: 3, y: 4 } } })
+    expect((await call(TOKEN.admin, `/flows/${id}`, "layout")).body).toEqual({ flowId: id, layout: { a: { x: 3, y: 4 } } })
+    expect((await call(TOKEN.other, `/flows/${id}`, "layout")).status).toBe(404)
   })
 })
 
@@ -241,7 +252,7 @@ describe("runs", () => {
     const waiting = await settled(runId)
     const key     = waiting.waits[0].resumeKey
 
-    expect((await call(TOKEN.other, `/runs/${runId}`, "cancel")).status).toBe(403)
+    expect((await call(TOKEN.other, `/runs/${runId}`, "cancel")).status).toBe(404)
     const cancelled = await call(TOKEN.user, `/runs/${runId}`, "cancel")
     expect(cancelled.status).toBe(200)
     expect(cancelled.body).toMatchObject({ status: "cancelled", error: "cancelled by u-user" })
@@ -262,9 +273,48 @@ describe("runs", () => {
     await call(TOKEN.admin, `/flows/${id}`, "pause")
   })
 
-  test("a run's history is read at USER(4) and written by nothing but the engine", async () => {
+  test("a run's history is written by nothing but the engine", async () => {
     expect((await http().post("/runs").auth(TOKEN.admin).send({ status: "completed" })).status).toBe(405)
     expect((await http().get("/runs")).status).toBe(401)
+  })
+
+  test("a run, its steps and its flow are read by the owner and an administrator, and by no other USER (`FJS-D295`)", async () => {
+    const id    = await draft(TOKEN.user, manual(create("c", "Lead", obj({ name: "read back" }))), "readers")
+    await call(TOKEN.admin, `/flows/${id}`, "activate")
+    const runId = ((await call(TOKEN.user, `/flows/${id}`, "run", {})).body as any).runId
+    await settled(runId, ["completed", "failed"])
+
+    const ids  = (res: any) => ((res.body as any).data ?? res.body).map((r: any) => r.id)
+    const read = async (token: string) => ({
+      flows:     ids(await http().get("/flows").auth(token)).includes(id),
+      flow:      (await http().get(`/flows/${id}`).auth(token)).status,
+      runs:      ids(await http().get("/runs").auth(token)).includes(runId),
+      run:       (await http().get(`/runs/${runId}`).auth(token)).status,
+      steps:     (await call(token, `/runs/${runId}`, "steps")).status,
+      versions:  (await call(token, `/flows/${id}`, "versions")).status,
+    })
+
+    expect(await read(TOKEN.user)).toEqual({ flows: true, flow: 200, runs: true, run: 200, steps: 200, versions: 200 })
+    expect(await read(TOKEN.admin)).toEqual({ flows: true, flow: 200, runs: true, run: 200, steps: 200, versions: 200 })
+    expect(await read(TOKEN.other)).toEqual({ flows: false, flow: 404, runs: false, run: 404, steps: 404, versions: 404 })
+
+    // A write the engine makes reaches a screen through junction's fan-out,
+    // which grades each recipient with `$readAs` rather than a query. It reads
+    // the same policy, so the administrator's live screen moves for a run on
+    // somebody else's flow, and another USER's does not (`FJS-1170`).
+    const row     = await env.system.run.findFirst({ where: { id: runId } })
+    const graded  = (user: Record<string, unknown>) => env.db.$readAs("run", row, toDataPrincipal(user as never))
+    expect((await graded({ userId: "u-admin", role: "admin", isAdmin: true }))?.id).toBe(runId)
+    expect((await graded({ userId: "u-manager", role: "manager" }))?.id).toBe(runId)
+    expect(await graded({ userId: "u-other", role: "member" })).toBeNull()
+
+    // Read on the administrator's own client, so a protected column is stripped
+    // the way it is for anybody who is not system.
+    const asAdmin = await http().get(`/runs/${runId}`).auth(TOKEN.admin)
+    expect("context" in (asAdmin.body as any)).toBe(false)
+    const listed  = ((await http().get("/runs").auth(TOKEN.admin)).body as any).data
+    expect(listed.every((r: any) => !("context" in r))).toBe(true)
+    await call(TOKEN.admin, `/flows/${id}`, "pause")
   })
 })
 

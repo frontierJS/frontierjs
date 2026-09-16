@@ -1,5 +1,12 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-15 — a resource's `make()` is handed the create-mode `required`
+
+[`FJS-1162`](../../ISSUES.md#fjs-1162). `createMakeFromSchema` takes it as a fifth argument and
+the resource passes the model definition's own, so toolbelt's `make()` can tell a column the
+caller leaves blank from one the server fills. Found by orion's create-flow drawer, whose form
+could not submit.
+
 ## 2026-09-15 — a package's routes, mounted by one file
 
 `FJS-D282`. `automations.mount.js` in an app's routes directory default-exports a directory — in

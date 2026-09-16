@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-51 model(s) · 35 enum(s) · 2 database(s)
+59 model(s) · 39 enum(s) · 2 database(s)
 audit → logger · main → sqlite
 ```
 
@@ -35,6 +35,10 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `DeployStatus` | `building` · `cancelled` · `failed` · `pending` · `rolled_back` · `success` |
 | `EnvironmentTier` | `development` · `preview` · `production` · `staging` · `test` |
 | `FlagType` | `boolean` · `variant` |
+| `FlowCredentialAuth` | `api_key` · `bearer` · `hmac` · `none` |
+| `FlowRunStatus` | `cancelled` · `completed` · `failed` · `pending` · `running` · `waiting` |
+| `FlowStatus` | `active` · `archived` · `draft` · `paused` |
+| `FlowStepStatus` | `completed` · `failed` · `pending` · `running` · `skipped` |
 | `JobKind` | `one_shot` · `scheduled` · `triggered` · `workflow` |
 | `JobStatus` | `cancelled` · `failed` · `pending` · `running` |
 | `MetricType` | `counter` · `gauge` · `histogram` |
@@ -780,6 +784,122 @@ table `flag_override` · db `main` · gate `2.4.4.4`
 @@deny('update', !check(flag, 'read'))
 ```
 
+### `Flow`
+
+table `flow` · db `main` · gate `4.4.4.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `currentVersion` | `Int` | yes | — | `@allow(write: status == null \|\| status != 'active')` |
+| `description` | `String` | yes | — | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `layout` | `FlowLayout` | — | — | relation |
+| `maxWrites` | `Int` | no | `1000` | — |
+| `name` | `String` | no | — | **required on write** |
+| `ownerId` | `String` | no | — | **required on write** |
+| `runsPerMinute` | `Int` | yes | — | — |
+| `status` | `FlowStatus` | no | `'draft'` | — |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` | — |
+| `versions` | `FlowVersion[]` | — | — | relation |
+| `workspaceId` | `String` | no | — | **required on write** |
+
+```
+@@index(ownerId)
+@@index(status)
+@@allow('create', true)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('create', ownerId != null && ownerId != auth().id)
+@@deny('create', status != null && status != 'draft')
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@allow('read', ownerId == auth().id || auth().level >= 5)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@allow('update', ownerId == auth().id)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+transition status.activate: draft, paused → active @gate(5)
+transition status.archive: active, draft, paused → archived
+transition status.pause: active → paused
+transition status.restore: archived → draft
+```
+
+### `FlowCredential`
+
+table `flow_credential` · db `main` · gate `5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `address` | `String` | no | — | **required on write** |
+| `auth` | `FlowCredentialAuth` | no | `'none'` | — |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `encoding` | `String` | yes | `'json'` | — |
+| `header` | `String` | yes | — | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `name` | `String` | no | — | unique · **required on write** |
+| `provider` | `String` | no | — | **required on write** |
+| `secret` | `String` | yes | — | @encrypted |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` | — |
+| `workspaceId` | `String` | no | — | **required on write** |
+
+```
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+```
+
+### `FlowLayout`
+
+table `flow_layout` · db `main` · gate `4.4.4.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `flow` | `Flow` | — | — | relation |
+| `flowId` | `String` | no | — | unique · **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `layout` | `Json` | no | `'{}'` | — |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` | — |
+
+```
+@@allow('create', flow.ownerId == auth().id)
+@@deny('create', !check(flow, 'read'))
+@@allow('delete', flow.ownerId == auth().id)
+@@deny('delete', !check(flow, 'read'))
+@@deny('post-update', !check(flow, 'read'))
+@@allow('read', flow.ownerId == auth().id || auth().level >= 5)
+@@deny('read', !check(flow, 'read'))
+@@allow('update', flow.ownerId == auth().id)
+@@deny('update', !check(flow, 'read'))
+```
+
+### `FlowVersion`
+
+table `flow_version` · db `main` · gate `4.4.9.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `authorId` | `String` | yes | — | — |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `definition` | `Json` | no | — | **required on write** |
+| `flow` | `Flow` | — | — | relation |
+| `flowId` | `String` | no | — | **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `runs` | `Run[]` | — | — | relation |
+| `version` | `Int` | no | — | **required on write** |
+
+```
+@@unique(flowId, version)
+@@allow('create', flow.ownerId == auth().id)
+@@deny('create', !check(flow, 'read'))
+@@deny('create', authorId != null && authorId != auth().id)
+@@deny('delete', !check(flow, 'read'))
+@@deny('post-update', !check(flow, 'read'))
+@@allow('read', flow.ownerId == auth().id || auth().level >= 5)
+@@deny('read', !check(flow, 'read'))
+@@deny('update', !check(flow, 'read'))
+```
+
 ### `HubConfig`
 
 table `hub_config` · db `main` · gate `7`
@@ -903,6 +1023,30 @@ table `job_run` · db `main` · gate `2.8`
 @@deny('post-update', !check(job, 'read'))
 @@deny('read', !check(job, 'read'))
 @@deny('update', !check(job, 'read'))
+```
+
+### `KvEntry`
+
+table `kv_entry` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `expiresAt` | `DateTime` | yes | — | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `key` | `String` | no | — | **required on write** |
+| `scope` | `String` | no | — | **required on write** |
+| `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` | — |
+| `value` | `Json` | no | — | **required on write** |
+| `workspaceId` | `String` | no | — | **required on write** |
+
+```
+@@unique(key, scope)
+@@index(expiresAt)
+@@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
+@@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('read', auth().workspaceId == null || workspaceId != auth().workspaceId)
+@@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
 ### `LoginChallenge`
@@ -1243,6 +1387,75 @@ table `registry_image` · db `main` · gate `2.8.8.5`
 @@deny('update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 ```
 
+### `Run`
+
+table `run` · db `main` · gate `4.8.8.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `actorId` | `String` | yes | — | — |
+| `context` | `Json` | yes | — | @encrypted |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `currentStage` | `Int` | no | `0` | — |
+| `endedAt` | `DateTime` | yes | — | — |
+| `error` | `String` | yes | — | — |
+| `flowVersion` | `FlowVersion` | — | — | relation |
+| `flowVersionId` | `String` | no | — | **required on write** |
+| `heartbeatAt` | `DateTime` | yes | — | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `startedAt` | `DateTime` | yes | — | — |
+| `status` | `FlowRunStatus` | no | `'pending'` | — |
+| `steps` | `RunStep[]` | — | — | relation |
+| `trigger` | `Json` | yes | — | — |
+| `waits` | `Wait[]` | — | — | relation |
+
+```
+@@index(flowVersionId, startedAt)
+@@index(status, createdAt)
+@@index(status, heartbeatAt)
+@@deny('create', !check(flowVersion, 'read'))
+@@deny('delete', !check(flowVersion, 'read'))
+@@deny('post-update', !check(flowVersion, 'read'))
+@@allow('read', actorId == auth().id || auth().level >= 5)
+@@deny('read', !check(flowVersion, 'read'))
+@@deny('update', !check(flowVersion, 'read'))
+transition status.cancel: pending, running, waiting → cancelled
+transition status.complete: running → completed
+transition status.fail: pending, running, waiting → failed
+transition status.resume: waiting → running
+transition status.start: pending → running
+transition status.suspend: pending, running → waiting
+```
+
+### `RunStep`
+
+table `run_step` · db `main` · gate `4.8.9.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `attempts` | `Int` | no | `0` | — |
+| `durationMs` | `Int` | yes | — | — |
+| `error` | `String` | yes | — | — |
+| `fromCache` | `Boolean` | no | `0` | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `logs` | `Json` | yes | — | — |
+| `nodeId` | `String` | no | — | **required on write** |
+| `output` | `Json` | yes | — | — |
+| `run` | `Run` | — | — | relation |
+| `runId` | `String` | no | — | **required on write** |
+| `startedAt` | `DateTime` | yes | — | — |
+| `status` | `FlowStepStatus` | no | — | **required on write** |
+
+```
+@@unique(nodeId, runId)
+@@deny('create', !check(run, 'read'))
+@@deny('delete', !check(run, 'read'))
+@@deny('post-update', !check(run, 'read'))
+@@allow('read', run.actorId == auth().id || auth().level >= 5)
+@@deny('read', !check(run, 'read'))
+@@deny('update', !check(run, 'read'))
+```
+
 ### `Secret`
 
 table `secret` · db `main` · gate `5` · @@softDelete
@@ -1495,6 +1708,29 @@ table `volume` · db `main` · gate `2.5.5.5`
 @@deny('post-update', !check(server, 'read'))
 @@deny('read', !check(server, 'read'))
 @@deny('update', !check(server, 'read'))
+```
+
+### `Wait`
+
+table `wait` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `nodeId` | `String` | no | — | **required on write** |
+| `resumeKey` | `String` | no | — | unique · **required on write** |
+| `run` | `Run` | — | — | relation |
+| `runId` | `String` | no | — | **required on write** |
+| `timeoutAt` | `DateTime` | yes | — | — |
+
+```
+@@index(timeoutAt)
+@@deny('create', !check(run, 'read'))
+@@deny('delete', !check(run, 'read'))
+@@deny('post-update', !check(run, 'read'))
+@@deny('read', !check(run, 'read'))
+@@deny('update', !check(run, 'read'))
 ```
 
 ### `Workspace`

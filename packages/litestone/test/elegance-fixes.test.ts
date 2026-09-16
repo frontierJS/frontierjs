@@ -63,7 +63,7 @@ describe('default gate enforcement', () => {
 
   it('a user-supplied GatePlugin overrides the default resolver', async () => {
     const db = await fresh({
-      plugins: [new GatePlugin({ getLevel: async () => LEVELS.SYSADMIN })],
+      plugins: [new GatePlugin({ getLevel: () => LEVELS.SYSADMIN })],
     })
     const row = await db.lead.create({ data: { name: 'Acme' } })  // anonymous but resolver says 7
     expect(row.name).toBe('Acme')

@@ -2,7 +2,7 @@
  * app.ts
  *
  * An app with orion installed, for the suites that need the app's own models:
- * two models gated differently beside orion's, the catalog read off
+ * two models gated differently and a versioned, soft-deleting one beside orion's, the catalog read off
  * litestone's own JSON Schema, a Caravan queue over a real jobs file, and the
  * actor a principal-scoped client graded by litestone's default resolver. So a
  * refusal a suite asserts is the Data boundary's.
@@ -31,13 +31,31 @@ model Lead {
   name      String
   tier      String?
   internal  String? @guarded
+  // Read by an administrator alone, so a row one writes is not the row a USER reads.
+  score     Int?    @allow('read', auth().isAdmin == true)
   @@gate("4.4.4.4")
+}
+
+// Read at ADMINISTRATOR, so a USER's flow cannot hear one written.
+model Memo {
+  id    Int    @id
+  body  String
+  @@gate("5.5.5.5")
 }
 
 model Invoice {
   id     Int  @id
   total  Int
   @@gate("4.5.5.5")
+}
+
+model Note {
+  id        Int       @id
+  body      String
+  version   Int       @version
+  deletedAt DateTime?
+  @@gate("4.4.4.4")
+  @@softDelete
 }
 `
 

@@ -302,6 +302,9 @@
   const _auto = auto ?? !$slots.default
   const generated = _auto ? (resource?.formFields?.({ only, except }) ?? []) : []
   const rendered  = generated.filter(f => f.control)
+  // Every control this form draws is a generated one, so a field missing from
+  // `rendered` is on no screen at all. With children, a child may be drawing it.
+  const _generatedOnly = _auto && !$slots.default
 
   // A `readOnly` field is not one of them: `@system`, `@computed`, `@generated`
   // and `@from` are the schema saying this value is not the caller's to write,
@@ -599,7 +602,14 @@
       // form must stop accepting a submit whatever else it shows.
       if (mapped.committed) committed = true
       _server   = mapped.fields  ?? {}
-      formError = mapped.message ?? ''
+      // A message for a field this form does not draw has no box to sit under,
+      // so it is said at the top. Otherwise `only` narrowing a form past a
+      // column the record still carries — a nullable seed, a server rule — is
+      // a submit that does nothing and shows nothing.
+      const unshown = _generatedOnly
+        ? Object.entries(_server).filter(([name, m]) => m && !rendered.some(f => f.name === name)).map(([, m]) => m)
+        : []
+      formError = [mapped.message, ...unshown].filter(Boolean).join(' ')
       _recompute()
       onerror?.(err)
       return { ok: false }

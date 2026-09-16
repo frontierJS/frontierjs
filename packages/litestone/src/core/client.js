@@ -10877,12 +10877,14 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // untouched: no gate declared, no gate enforced.
   //
   // A @@transitions clause carrying @gate(N) needs a level resolver for the
-  // same reason, so it triggers the same auto-install.
+  // same reason, so it triggers the same auto-install — and so does a policy
+  // reading `auth().level`, which without one is absent for every caller: an
+  // allow on it never holds and a deny on it always fires (`FJS-D296`).
   let effectivePlugins = plugins ?? []
   const _anyGates = schema.models.some(m => m.attributes?.some(a =>
     a.kind === 'gate' ||
     (a.kind === 'transitions' && Object.values(a.transitions).some(t => t.gate != null))
-  ))
+  )) || authClaimsUsed(schema).has('level')
   if (_anyGates && !effectivePlugins.some(p => p instanceof GatePlugin)) {
     effectivePlugins = [...effectivePlugins, new GatePlugin({ getLevel: FrontierGateGetLevel })]
   }

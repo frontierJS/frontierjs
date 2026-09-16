@@ -166,10 +166,31 @@ the plan, module by module, and the rulings it rests on are
   HOST's Vite root, where `@` is the host's `src/`, so every import in `web/` is
   relative or a package name. The services are reached by their default names,
   so a host that renames one has screens that 404.
-- **Who is an administrator is the app's mapping, passed as `orion({ level })`.**
-  The default is `sessionGateLevel`, which grades a bare `role` USER(4); an app
-  whose Data boundary grades roles its own way — `example`'s `shopGateLevel` —
-  must pass it or its administrators are refused by the services (`FJS-1161`).
+- **Who is an administrator is the app's mapping, and the host passes it TWICE.**
+  Its `GatePlugin({ getLevel })` grades every read — `orion.lite`'s policies read
+  `auth().level` (`FJS-D296`) — and `orion({ level })` grades an administrator
+  acting on another person's flow through system, and a `data.code` save. The
+  `level` default is `sessionGateLevel`, which grades a bare `role` USER(4), so
+  an app grading roles its own way — `example`'s `shopGateLevel` — passes it to
+  both or reads and writes disagree about who an administrator is (`FJS-1161`).
+- **Every read is the caller's own client** (`FJS-D295`, `FJS-D296`). The owner
+  and an administrator both arrive through the row policies, so a query, a
+  broadcast and a protected column agree. A read in `services.ts` through
+  `systemOf` hands an administrator `Run.context` decrypted and another USER
+  every row.
+- **A trigger's row is the owner's view of it.** The runner asks `readAs` before
+  a model trigger starts a run, and a row the owner may not read starts nothing,
+  so a flow cannot hear about rows its owner cannot see. A new trigger that
+  carries a row goes through the same port.
+- **A run reaches a screen only through a channel the host joins.** The engine
+  writes every `Run` through the system client, and junction broadcasts a write
+  no service call made only on a channel the service NAMES — so `flows` and
+  `runs` declare their own service name, and a host that does not join them has
+  a runs screen that moves on a reload. Renaming a service renames its channel.
+- **A model node's write is the app's own verb.** `model.remove` is litestone's
+  `remove`, which soft-deletes a `@@softDelete` model — `delete` is the purge —
+  and a patch may name the model's `x-version` column, which the Data boundary
+  requires on a versioned model and update mode marks `readOnly`.
 - **A run job's failure to find a run is silent by design.** A terminal run, a
   missing run and a waiting run with no key all return without error, because
   each is a replay or a job that outlived its row, and a throw would spend
@@ -179,5 +200,7 @@ the plan, module by module, and the rulings it rests on are
 
 `bun run test` from this directory, then `bun run typecheck`. A change to the
 store or to what a context holds reruns `bun run bench`, and a number that moved
-goes into `IDEAS/orion-port.md` § Data, dated. No drive yet: the engine has no
-host until phase 4 installs it into `example/`.
+goes into `IDEAS/orion-port.md` § Data, dated. A change to a screen, a service,
+a node's write or what a run broadcasts then runs `example`'s
+`verify:automations`, which is the only place the routes are compiled by a host
+and a run reaches an open screen.

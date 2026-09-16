@@ -70,6 +70,9 @@ const PRINCIPALS = [
   { label: 'member',   p: { id: 'u1', role: 'member', teamIds: ['u1', 'u2'] } },
   { label: 'admin',    p: { id: 'u9', role: 'admin',  teamIds: [] } },
   { label: 'noclaims', p: { id: 'u1' } },
+  // `auth().level` is graded rather than read, so it needs a principal the
+  // shipped resolver grades above the others.
+  { label: 'standing', p: { id: 'u2', isAdmin: true, teamIds: [] } },
 ]
 
 // One row per expression FORM the policy language can produce. Adding a form to
@@ -106,6 +109,10 @@ const FORMS = [
   `qty in [1, 5, 9]`,
   `ownerId in auth().teamIds`,
   `auth().id in editorIds`,
+  // the gate's grade, which no principal carries (`FJS-D296`)
+  `auth().level >= 5`,
+  `ownerId == auth().id || auth().level >= 5`,
+  `auth().level == null`,
 ]
 
 describe('one predicate, two interpreters', () => {

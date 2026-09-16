@@ -70,6 +70,11 @@ model Flow {
   // status rule a flow created `active` never passes the activation gate.
   // The gate is the whole answer to who creates; the denies only narrow what.
   @@allow('create', true)
+  // The owner and an administrator READ a flow (`FJS-D295`). The gate cannot say
+  // it: a host's USER(4) may be wider than the people who own automations —
+  // `example` grades its shoppers 4 — and `auth().level` is the host's own grade
+  // (`FJS-D296`), so a broadcast reaches an administrator the way a query does.
+  @@allow('read', ownerId == auth().id || auth().level >= 5)
   // Only the owner edits, an administrator included (`FJS-D289`): an edit
   // changes what the owner's standing does. An administrator activating or
   // pausing somebody else's flow goes through the flows service, which grades
@@ -99,7 +104,9 @@ model FlowVersion {
   runs        Run[]
 
   @@gate("4.4.9.8")
-  // A version is an edit, so it is the owner's (`FJS-D289`).
+  // A version is an edit, so it is the owner's (`FJS-D289`), and a definition is
+  // read by the owner of its flow, like the flow (`FJS-D295`).
+  @@allow('read',   flow.ownerId == auth().id || auth().level >= 5)
   @@allow('create', flow.ownerId == auth().id)
   @@deny('create', authorId != null && authorId != auth().id)
   @@unique([flowId, version])
@@ -114,12 +121,16 @@ model FlowLayout {
   updatedAt DateTime  @updatedAt
 
   @@gate("4.4.4.5")
-  @@allow('create,update,delete', flow.ownerId == auth().id)   // FJS-D289
+  @@allow('read',                 flow.ownerId == auth().id || auth().level >= 5)   // FJS-D295
+  @@allow('create,update,delete', flow.ownerId == auth().id)                        // FJS-D289
 }
 
 // ─── Runs ────────────────────────────────────────────────────────────────────
 
-enum RunStatus {
+// Named for the package rather than for the model: an app's own schema shares
+// one namespace with this file, and `basecamp` already declares a run status
+// and a step status of its own.
+enum FlowRunStatus {
   pending
   running
   // Suspended at a `flow.wait`; the context holds everything a resume needs.
@@ -133,7 +144,7 @@ model Run {
   id             String     @id @default(uuid())
   flowVersionId  String
   flowVersion    FlowVersion @relation(fields: [flowVersionId], references: [id], onDelete: Cascade)
-  status         RunStatus  @default(pending)
+  status         FlowRunStatus @default(pending)
   trigger        Json?
   // The resume checkpoint, rewritten once per stage — the engine's hot path.
   // Encrypted and hidden below system, because it holds every value every step
@@ -160,6 +171,10 @@ model Run {
 
   // Read by the inspector at USER(4); written by nothing but the engine.
   @@gate("4.8.8.8")
+  // By the owner the run acted as, which is the flow's owner at dispatch and
+  // immutable after, and by an administrator (`FJS-D295`). A run's trigger is the
+  // row as that owner read it, so the owner is the reader it was recorded for.
+  @@allow('read', actorId == auth().id || auth().level >= 5)
   // The engine writes through asSystem(), which does not consult this, so it
   // binds the engine only through the store suite that grades every status
   // write against it. What it gives the host is x-transitions for `cancel`.
@@ -178,7 +193,7 @@ model Run {
   @@index([status, heartbeatAt])
 }
 
-enum StepStatus { pending running completed failed skipped }
+enum FlowStepStatus { pending running completed failed skipped }
 
 // One node's outcome in one run, written once when the run ends and never
 // amended. No @@log: a run already IS a record, and an audit row per step would
@@ -188,7 +203,7 @@ model RunStep {
   runId       String
   run         Run         @relation(fields: [runId], references: [id], onDelete: Cascade)
   nodeId      String
-  status      StepStatus
+  status      FlowStepStatus
   attempts    Int         @default(0)
   fromCache   Boolean     @default(false)
   startedAt   DateTime?
@@ -199,6 +214,9 @@ model RunStep {
 
   // Update is 9 because a step is history; delete is 8 so retention can run.
   @@gate("4.8.9.8")
+  // A step's output is the row as the owner read it, read by that owner and an
+  // administrator (`FJS-D295`).
+  @@allow('read', run.actorId == auth().id || auth().level >= 5)
   @@unique([runId, nodeId])
 }
 

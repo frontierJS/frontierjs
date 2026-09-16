@@ -67,6 +67,7 @@ beforeAll(async () => {
   })
   app.services.register(createService({ name: "leads",    model: "Lead",    db: env.db }))
   app.services.register(createService({ name: "invoices", model: "Invoice", db: env.db }))
+  app.services.register(createService({ name: "memos",    model: "Memo",    db: env.db }))
   app.configure(createCaravan({ db: join(dir, "jobs.db"), pollInterval: 20, heartbeat: 100, lease: 2_000, cleanupAfter: 0 }))
   app.configure(channels())
   const send = async (m: any) => { mailed.push({ to: m.to, subject: m.subject }); return { id: String(mailed.length), message: "captured" } }
@@ -172,6 +173,45 @@ describe("a model trigger", () => {
     await Bun.sleep(300)
     expect(await runsOf(flowId)).toHaveLength(0)
     runner.deactivate(flowId)
+  })
+
+  test("the trigger holds the row as the flow's OWNER reads it, not as its writer did (`FJS-D295`)", async () => {
+    const heard = async (owner: string) => {
+      const flow = chain([])
+      flow.nodes.t = { id: "t", type: "trigger.model", config: { model: lit("Lead"), on: lit(["create"]) } }
+      const flowId = await activeFlow(env.system, flow, owner)
+      await runner.activate(flowId)
+      return flowId
+    }
+    const byUser  = await heard("u-user")
+    const byAdmin = await heard("u-admin")
+
+    expect((await http().post("/leads").auth("test-token-u-admin").send({ name: "Scored", score: 7 })).status).toBe(201)
+    const [userRun]  = await until(async () => { const r = await runsOf(byUser);  return r.length > 0 && r }, "the USER's flow")
+    const [adminRun] = await until(async () => { const r = await runsOf(byAdmin); return r.length > 0 && r }, "the administrator's flow")
+
+    expect(userRun.trigger.record).toMatchObject({ name: "Scored" })
+    expect("score" in userRun.trigger.record).toBe(false)
+    expect(adminRun.trigger.record).toMatchObject({ name: "Scored", score: 7 })
+    for (const id of [byUser, byAdmin]) runner.deactivate(id)
+  })
+
+  test("a row the owner may not read starts nothing, and the same write starts an owner who may", async () => {
+    const heard = async (owner: string) => {
+      const flow = chain([])
+      flow.nodes.t = { id: "t", type: "trigger.model", config: { model: lit("Memo"), on: lit(["create"]) } }
+      const flowId = await activeFlow(env.system, flow, owner)
+      await runner.activate(flowId)
+      return flowId
+    }
+    const byUser  = await heard("u-user")
+    const byAdmin = await heard("u-admin")
+
+    expect((await http().post("/memos").auth("test-token-u-admin").send({ body: "private" })).status).toBe(201)
+    await until(async () => { const r = await runsOf(byAdmin); return r.length > 0 && r }, "the administrator's flow")
+    await Bun.sleep(300)
+    expect(await runsOf(byUser)).toHaveLength(0)
+    for (const id of [byUser, byAdmin]) runner.deactivate(id)
   })
 
   test("a model trigger naming a model the app does not have does not activate", async () => {

@@ -1,5 +1,22 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-15 — a policy reads `auth().level`, and `getLevel` is synchronous
+
+[`FJS-D296`](../../DECISIONS.md#fjs-d296). `auth().level` is the grade `getLevel(auth, model)`
+gives for the model whose policy is asked — carried by no principal, so a session stating
+`level: 7` grades at whatever the resolver says. Both compilers ask one function,
+`claimValue` in `core/policy.js`, which reads the gate plugin's own per-flavor cache, so
+`ownerId == auth().id || auth().level >= 5` answers a query, a create, a `check()` delegation
+(with the PARENT's grade) and `$readAs` alike. A schema naming it installs the gate as a
+`@@gate` does, and an `@@auth` model with a `level` column beside such a policy is refused.
+**`getLevel` answers synchronously** and a Promise is refused by name at the first grade: the
+compilers run while a statement is being built, and all twelve async resolvers in the tree
+awaited nothing. `verifyRowPolicies` grades a level-reading policy at the gate's floor rather
+than at the synthetic SYSADMIN it uses to clear gates, which would admit every row.
+`test/level-claim.test.ts` and three new forms plus a graded principal in
+`test/policy-interpreters.test.ts`; each red with its half disabled — the claim, the JS half's
+claim reader, and the auto-install.
+
 ## 2026-09-14 — the tokenizer is toolbelt's, with the grammar
 
 `FJS-D287`. `tokenize`, `TK` and `ParseError` moved to

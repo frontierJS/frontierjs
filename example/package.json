@@ -21,6 +21,7 @@
     "verify:support": "node web/test/verify-support.mjs",
     "verify:export": "node web/test/verify-export.mjs",
     "verify:reports": "node web/test/verify-reports.mjs",
+    "verify:automations": "node web/test/verify-automations.mjs",
     "verify:values": "node web/test/verify-values.mjs",
     "verify:live": "node web/test/verify-live.mjs",
     "verify:jobs": "node web/test/verify-jobs.mjs",

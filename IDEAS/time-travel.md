@@ -112,7 +112,7 @@ Every database has backups and several have temporal tables. What is different h
   says which columns may never appear.
 - **The Data realm is a file.** SQLite makes "snapshot the whole application state"
   a copy, which is what removes the need for a bespoke history mechanism — the same
-  property `compass` relies on (`IDEAS/offline-first-and-release.md`).
+  property the offline work relies on (`IDEAS/offline-first-and-release.md`).
 
 ## What it unblocks
 
@@ -290,7 +290,7 @@ hatch is that the snapshot is a file — pipe it wherever you already send files
   write path
 - `ISSUES.md` § Closed `FJS-074` — the bulk-write audit gap
 - `IDEAS/compliance-from-the-seed.md` — `marshal`, the same log read for audit
-- `IDEAS/offline-first-and-release.md` — `compass`, which relies on the same
+- `IDEAS/offline-first-and-release.md` — the offline work, which relies on the same
   the-database-is-a-file property
 - `CLAUDE.md` § Live hazards — the logger buffers ~1s and flushes on exit; a probe
   that reads immediately reports 0 rows and is the source of `ISSUES.md` `FJS-071`

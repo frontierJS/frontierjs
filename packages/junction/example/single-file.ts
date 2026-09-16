@@ -126,7 +126,7 @@ model Lead {
 const log = createLogger({ ns: 'demo' })
 
 const gate = new GatePlugin({
-  async getLevel(user: unknown) {
+  getLevel(user: unknown) {
     if (!user) return LEVELS.STRANGER
     if ((user as { role?: string }).role === 'admin') return LEVELS.ADMINISTRATOR
     return LEVELS.USER

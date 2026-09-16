@@ -534,6 +534,13 @@ what proves the screens.
 `DRIVES.md`'s tables, then one real automation in basecamp. Anything orion needs
 and cannot express is filed against the framework, per the README.
 
+*Status 2026-09-15: the `example` half is done.* `verify:automations` passes 37
+assertions and has a row in both tables. Building it found `FJS-1162`–`FJS-1166`,
+all fixed — two in orion's model nodes, a missing channel, and three below orion
+(toolbelt's `make()`, `<Form>`, mesa's `{#each}`) — and `FJS-1167`, which
+question 24 ruled (`FJS-D295`: the owner or an administrator) and is closed. The
+basecamp automation is not started.
+
 ---
 
 ## Open questions
@@ -768,4 +775,25 @@ and cannot express is filed against the framework, per the README.
     screens the tenancy work reopens, since every read they make crosses the
     tenant boundary; A costs the most before a pixel, and it is the work every
     host needs.
-
+- ~~**24 — Who may read a run, its steps and a flow?**~~ **Answered 2026-09-15 (`FJS-D295`): A — the owner or an administrator. A row policy on the row's own owner (`Run.actorId`, and `RunStep` one hop through `run`, `Flow.ownerId`), and an administrator reads through the services, which grade the caller and read as system — `FJS-D289`'s rule for writing, applied to reading. The trigger is recorded as the OWNER reads the row (`$readAs`), so an owner does not see a column only the writer could.** (`FJS-1167`) `Run` reads at
+  USER(4) and `RunStep` too, with no row policy, and a model trigger records the
+  row as the WRITER read it. `Flow` reads at 4 with none either. Orion's gates
+  assume USER means a member of the organization; `example` grades its shoppers
+  4 on purpose, so measured there a shopper reads another customer's whole row
+  out of `/runs` while `GET /customers/9` answers her 404. A broadcast on `runs`
+  is graded by the same rule, so it reaches exactly who a GET does.
+  - **A** — the owner or an administrator. A row policy on the row's own owner
+    (`Run.actorId`, and `RunStep` one hop through `run`, `Flow.ownerId`), and an
+    administrator reads through the services, which grade the caller and read as
+    system — `FJS-D289`'s rule for writing, applied to reading. The trigger is
+    recorded as the OWNER reads the row (`$readAs`), so an owner does not see a
+    column only the writer could.
+  - **B** — ADMINISTRATOR(5) reads all three, with the trigger recorded as the
+    owner reads it. Automations become an administrator's screen; staff keep
+    drafting through the services and read nothing back.
+  - **C** — orion ships no read rule beyond the gate, and a host whose USER is
+    wider than its staff adds its own `@@allow('read', …)` with `extend model`.
+  - **Recommend A** — B and C both still leave a run holding columns its readers
+    may not read, and C makes every host rediscover the hole; A follows the
+    owner-or-administrator rule the services already use for every write, so a
+    screen's reads and writes agree about who a flow belongs to.

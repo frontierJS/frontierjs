@@ -341,6 +341,7 @@ name when it declares none.
   - `import` — standing 4 or above — declared `gate: 4`
   - `layout` — standing 4 or above — declared `gate: 4`
   - `saveLayout` — standing 4 or above — declared `gate: 4`
+- **broadcasts on** — `flows`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -759,6 +760,7 @@ name when it declares none.
   - `steps` — standing 4 or above — declared `gate: 4`
   - `cancel` — standing 4 or above — declared `gate: 4`
   - `metrics` — standing 4 or above — declared `gate: 4`
+- **broadcasts on** — `runs`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

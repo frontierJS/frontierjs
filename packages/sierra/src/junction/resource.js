@@ -187,9 +187,12 @@ export {
  *        Columns that are a relation's local key — `x-relations[].fields`. A
  *        belongsTo is emitted as a plain integer, so this cannot be derived
  *        from `properties` alone.
+ * @param {string[]} [required]
+ *        The create-mode `required`, so a NOT NULL column nobody demands of
+ *        the caller — a server-filled default — is not seeded.
  */
-export function createMakeFromSchema(properties, skip, resolve = resolveRef, foreignKeys) {
-  return makeFromSchema(properties, { skip, resolve, foreignKeys })
+export function createMakeFromSchema(properties, skip, resolve = resolveRef, foreignKeys, required) {
+  return makeFromSchema(properties, { skip, resolve, foreignKeys, required })
 }
 
 // ── createStore ───────────────────────────────────────────────────────────────
@@ -636,7 +639,9 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     // belongsTo's local key is emitted as a plain integer — so the FK columns
     // have to be handed to make() rather than spotted in `properties`.
     const fkFields = (modelDef?.['x-relations'] ?? []).flatMap(r => r?.fields ?? [])
-    make = createMakeFromSchema(modelDef?.properties ?? modelDef, undefined, undefined, fkFields)
+    // `required` is what separates a column the caller leaves blank from one
+    // the server fills, which make() must not seed.
+    make = createMakeFromSchema(modelDef?.properties ?? modelDef, undefined, undefined, fkFields, modelDef?.properties ? modelDef.required : undefined)
   } else {
     make = (spec) => Object.assign({}, spec)
   }

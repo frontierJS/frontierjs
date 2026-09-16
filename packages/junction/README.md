@@ -1147,7 +1147,7 @@ const SCHEMA = `
 const db = await createClient({
   schema: SCHEMA,
   db:     './app.db',
-  plugins: [new GatePlugin({ async getLevel(user) {
+  plugins: [new GatePlugin({ getLevel(user) {
     if (!user) return LEVELS.STRANGER
     return (user as { role: string }).role === 'admin' ? LEVELS.ADMINISTRATOR : LEVELS.USER
   }})],

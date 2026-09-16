@@ -1,5 +1,15 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-15 — a destructured `{#each}` item follows its row
+
+[`FJS-1164`](../../ISSUES.md#fjs-1164). An unkeyed row is rebound in place when its position
+gets a new item, and a destructured item was a `const` taken once when the row was built, so
+`{#each moves as [name, label]}` kept drawing the first item. Each pattern name now reads
+through a per-row `$$patN()` over the item signal, the names come off acorn rather than a regex,
+and `_isReactive` treats the read as reactive, as it already did `$$argN()`. Found on orion's
+flow page, which offered *Activate* on an active flow. `runtime/specs/each-destructure.spec.mjs`
+carries a whole-item row and a keyed row as controls.
+
 ## 2026-09-13 — `AGENTS.md` ships
 
 A compressed reference for an agent writing `.mesa` (`FJS-D163`). Mesa ships no generated syntax

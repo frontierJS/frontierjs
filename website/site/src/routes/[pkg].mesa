@@ -3,7 +3,7 @@ render: static
 publishes: 0
 ---
 <!--
-  One package, prerendered. Eight of these come out of the build, from
+  One package, prerendered. One of these per entry in packages.js, from
   `[pkg].meta.js` reading `website/packages.js`.
 
   ── Why `publishes: 0` is here ────────────────────────────────────────────

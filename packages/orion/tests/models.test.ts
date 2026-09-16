@@ -100,6 +100,33 @@ describe("a model node writes as the flow's owner", () => {
     expect(await env.system.lead.findFirst({ where: { id: lead.id } })).toBeNull()
   })
 
+  test("a patch on a @version model carries the revision it read, and a stale one is refused", async () => {
+    const note = await env.system.note.create({ data: { body: "draft" } })
+    const patch = (version: number) => activeFlow(env.system, chain([
+      { id: "p", type: "model.patch", config: { model: lit("Note"), id: lit(note.id), data: obj({ body: `v${version}`, version }) } },
+    ]), "u-user")
+
+    const fresh = await settled(await host.runner.start(await patch(note.version), {}))
+    expect(fresh.status).toBe("completed")
+    expect((await env.system.note.findFirst({ where: { id: note.id } })).body).toBe(`v${note.version}`)
+
+    const stale = await settled(await host.runner.start(await patch(note.version), {}))
+    expect(stale.status).toBe("failed")
+    expect(stale.error).toMatch(/version/i)
+  })
+
+  test("remove on a @@softDelete model soft-deletes, as the app's own remove does", async () => {
+    const note   = await env.system.note.create({ data: { body: "kept" } })
+    const flowId = await activeFlow(env.system, chain([
+      { id: "r", type: "model.remove", config: { model: lit("Note"), id: lit(note.id) } },
+    ]), "u-user")
+    const run = await settled(await host.runner.start(flowId, {}))
+
+    expect(run.status).toBe("completed")
+    expect(await env.system.note.findFirst({ where: { id: note.id } })).toBeNull()
+    expect((await env.system.note.findFirst({ where: { id: note.id }, withDeleted: true }))?.deletedAt).toBeTruthy()
+  })
+
   test("a step's output is the row as the owner reads it, so a protected column is not in run history", async () => {
     const lead   = await env.system.lead.create({ data: { name: "Guarded", internal: "credit score 812" } })
     const flowId = await activeFlow(env.system, chain([

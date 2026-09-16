@@ -1004,6 +1004,7 @@ export function renderHtml(model) {
     ciSection(model),
     registerSection(model),
     packageSection(model),
+    featureSection(model),
     driveSection(model),
     proofSection(model),
     portSection(model),
@@ -1195,6 +1196,55 @@ function packageSection(model) {
   return section('packages', 'Packages', 'a member is a directory with a package.json',
     `<p class="note">Depends-on lists workspace siblings only, which is the dependency direction drawn from the files rather than asserted.</p>` +
     table(['Package', 'Version', 'Depends on', 'Test'], rows))
+}
+
+// ─── every capability, in one scroll ──────────────────────────────────────────
+//
+// A package plate answers *what does THIS one do*. Nothing answered *what does
+// the framework do*, so the question was asked of the hand-written marketing
+// copy, which had gone fourteen packages stale without anything saying so.
+//
+// It invents nothing: the rows are the same `topics` and `sections` a plate
+// shows, flattened. A package with neither is a row saying so, because
+// undocumented and absent look identical from anywhere else.
+
+function featureSection(model) {
+  const rows = []
+  let n = 0
+
+  const label = (p) => p.name ?? p.folder
+
+  for (const p of model.packages.slice().sort((a, b) => label(a).localeCompare(label(b)))) {
+    const topics   = p.topics ?? []
+    const sections = p.sections ?? []
+    n += topics.length + sections.length
+
+    if (!topics.length && !sections.length) {
+      rows.push(`<tr data-row>
+        <td class="m">${esc(label(p))}</td>
+        <td class="m sub" colspan="3"><span class="chip c-stop">no docs/ and no README headings</span></td>
+      </tr>`)
+      continue
+    }
+
+    const cells = [
+      ...topics.map(t => ({ what: t.title, says: t.claim, where: t.file })),
+      // `folder` is a directory name rather than a path, so a heading says which
+      // FILE it is in and the Package column says which package's.
+      ...sections.map(s => ({ what: s.title, says: s.claim || s.code, where: 'README.md' })),
+    ]
+
+    for (const [i, c] of cells.entries()) rows.push(`<tr data-row>
+      <td class="m">${i ? '' : esc(label(p))}</td>
+      <td class="m">${esc(c.what)}</td>
+      <td class="m sub">${esc(c.says)}</td>
+      <td class="m sub">${esc(c.where)}</td>
+    </tr>`)
+  }
+
+  return section('features', 'Every capability', `${n} across ${model.packages.length} packages · read, never invented`,
+    `<p class="note">One row per file under a package's <code>docs/</code> and per <code>##</code> heading in its README — the two places a capability is already written down. A package that documents itself in one README contributes headings; one that writes a file per feature contributes files; a package with neither contributes a finding.</p>` +
+    table(['Package', 'Capability', 'The first thing it says', 'Where'], rows))
 }
 
 function driveSection(model) {

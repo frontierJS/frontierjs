@@ -25,7 +25,9 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `CustomFieldType` | `number` · `text` |
 | `DiscountKind` | `fixed` · `percent` |
 | `FlowCredentialAuth` | `api_key` · `bearer` · `hmac` · `none` |
+| `FlowRunStatus` | `cancelled` · `completed` · `failed` · `pending` · `running` · `waiting` |
 | `FlowStatus` | `active` · `archived` · `draft` · `paused` |
+| `FlowStepStatus` | `completed` · `failed` · `pending` · `running` · `skipped` |
 | `InvoiceStatus` | `draft` · `issued` · `paid` · `void` |
 | `JournalSource` | `payroll` · `sale` |
 | `LedgerAccount` | `discountsAllowed` · `netPayControl` · `niControl` · `payeControl` · `pensionControl` · `receivables` · `sales` · `shippingIncome` · `taxPayable` · `wagesExpense` |
@@ -38,9 +40,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `PayRunStatus` | `approved` · `calculated` · `draft` · `paid` |
 | `PlanInterval` | `monthly` · `yearly` |
 | `RateKind` | `employeePension` · `employerNI` · `employerPension` · `incomeTax` |
-| `RunStatus` | `cancelled` · `completed` · `failed` · `pending` · `running` · `waiting` |
 | `Size` | `l` · `m` · `one` · `s` · `xl` · `xs` · `xxl` |
-| `StepStatus` | `completed` · `failed` · `pending` · `running` · `skipped` |
 | `StockMovementKind` | `adjusted` · `damaged` · `received` · `returned` · `sold` |
 | `SubscriptionStatus` | `active` · `cancelled` · `pastDue` · `trialing` |
 | `VerificationPurpose` | `emailVerify` · `oauthLink` · `passwordReset` |
@@ -299,8 +299,10 @@ table `flow` · db `main` · gate `4.4.4.5`
 @@index(ownerId)
 @@index(status)
 @@allow('create', true)
+@@deny('create', auth().isStaff != true)
 @@deny('create', ownerId != null && ownerId != auth().id)
 @@deny('create', status != null && status != 'draft')
+@@allow('read', ownerId == auth().id || auth().level >= 5)
 @@allow('update', ownerId == auth().id)
 transition status.activate: draft, paused → active @gate(5)
 transition status.archive: active, draft, paused → archived
@@ -340,6 +342,7 @@ table `flow_layout` · db `main` · gate `4.4.4.5`
 ```
 @@allow('create', flow.ownerId == auth().id)
 @@allow('delete', flow.ownerId == auth().id)
+@@allow('read', flow.ownerId == auth().id || auth().level >= 5)
 @@allow('update', flow.ownerId == auth().id)
 ```
 
@@ -362,6 +365,7 @@ table `flow_version` · db `main` · gate `4.4.9.8`
 @@unique(flowId, version)
 @@allow('create', flow.ownerId == auth().id)
 @@deny('create', authorId != null && authorId != auth().id)
+@@allow('read', flow.ownerId == auth().id || auth().level >= 5)
 ```
 
 ### `InventoryMovement`
@@ -1021,7 +1025,7 @@ table `run` · db `main` · gate `4.8.8.8`
 | `heartbeatAt` | `DateTime` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
 | `startedAt` | `DateTime` | yes | — | — |
-| `status` | `RunStatus` | no | `'pending'` | — |
+| `status` | `FlowRunStatus` | no | `'pending'` | — |
 | `steps` | `RunStep[]` | — | — | relation |
 | `trigger` | `Json` | yes | — | — |
 | `waits` | `Wait[]` | — | — | relation |
@@ -1030,6 +1034,7 @@ table `run` · db `main` · gate `4.8.8.8`
 @@index(flowVersionId, startedAt)
 @@index(status, createdAt)
 @@index(status, heartbeatAt)
+@@allow('read', actorId == auth().id || auth().level >= 5)
 transition status.cancel: pending, running, waiting → cancelled
 transition status.complete: running → completed
 transition status.fail: pending, running, waiting → failed
@@ -1055,10 +1060,11 @@ table `run_step` · db `main` · gate `4.8.9.8`
 | `run` | `Run` | — | — | relation |
 | `runId` | `String` | no | — | **required on write** |
 | `startedAt` | `DateTime` | yes | — | — |
-| `status` | `StepStatus` | no | — | **required on write** |
+| `status` | `FlowStepStatus` | no | — | **required on write** |
 
 ```
 @@unique(nodeId, runId)
+@@allow('read', run.actorId == auth().id || auth().level >= 5)
 ```
 
 ### `Session`

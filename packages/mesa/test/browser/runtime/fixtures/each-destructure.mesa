@@ -1,0 +1,33 @@
+<script>
+  // each-destructure.mesa — {#each} over a destructured item, four ways.
+  //
+  // An unkeyed row is REBOUND in place when its position gets a new item. The
+  // pattern names used to be a `const` taken once at the top of the row, so
+  // they kept the first item for the life of the row. Found on orion's flow
+  // page, whose buttons are `{#each moves as [name, label, variant]}` over a
+  // `$:` list: after activating, the page still offered Activate. The whole-item
+  // and keyed rows are the controls — each was already correct.
+  let status = 'draft'
+  $: moves = status === 'draft' ? [['activate', 'Activate'], ['archive', 'Archive']] : [['pause', 'Pause'], ['archive', 'Archive']]
+  let plain = [['a', 'A'], ['b', 'B']]
+</script>
+
+<div id="derived">
+  {#each moves as [name, label]}<button type="button" id={'m-' + name}>{label}</button>{/each}
+</div>
+
+<div id="plain">
+  {#each plain as [id, label]}<span id={'p-' + id}>{label}</span>{/each}
+</div>
+
+<div id="whole">
+  {#each plain as p}<span id={'w-' + p[0]}>{p[1]}</span>{/each}
+</div>
+
+<div id="keyed">
+  {#each plain as [id, label] (id)}<span id={'k-' + id}>{label}</span>{/each}
+</div>
+
+<output id="status">{status}</output>
+<button type="button" id="move" on:click={() => status = 'active'}>move</button>
+<button type="button" id="swap" on:click={() => plain = [['c', 'C'], ['b', 'B']]}>swap</button>

@@ -177,6 +177,14 @@ library, and a marketplace install for an extension with no publisher account.
 Both now say what you actually do. No network is a named skip;
 `FJS_REQUIRE_REGISTRY=1` makes it fatal.
 
+**The set of packages is checked too.** The build refuses a publishable
+`@frontierjs/*` that no entry in `packages.js` describes — the hole is silent
+otherwise: the build is green, the stack page looks complete, and the only
+symptom is a visitor who never learns the thing exists. Fourteen of them sat
+that way. Holding one back is a named entry with a reason in
+`site/src/data/packages.js`, and a `private` package needs none, since its own
+manifest already says so.
+
 Do not write a version number on this page. The root README's
 [Publishing status](../README.md#publishing-status) is the list, and a number in
 marketing copy is a second origin nothing regenerates — this file is where the

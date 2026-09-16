@@ -18,6 +18,7 @@ import { createService, createBaseService } from '../src/core/service.ts'
 import { gateAuth, autoValidate, liftReservedQuery, resetReservedQueryChecks } from '../src/core/litestone.ts'
 import { toFrameworkError } from '../src/core/errors.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
+import { createApp, createStubAuth } from '../index.ts'
 
 type AnyClient = Record<string, never> & {
   asSystem(): Record<string, { create(a: unknown): Promise<unknown> }>
@@ -867,5 +868,34 @@ describe('a $merge payload reaches the Data boundary and is graded there', () =>
     // needs to mark the right box once a typed column renders as a fieldset.
     expect(mapped.data?.[0]?.path).toEqual(['typ', 'theme'])
     expect(mapped.data?.[0]?.message).toMatch(/null would delete 'theme'/)
+  })
+})
+
+describe('a hook that hands a derived verb the system client', () => {
+  // A service that grades a caller itself and reads for them as system — orion's
+  // administrator reading somebody else's runs — puts `asSystem()` on
+  // `ctx.locals.db`. The derived `find` probed it with `typeof $setAuth`, which a
+  // system client answers by throwing.
+  test('the derived find reads through it, and the same find without the hook is the policy', async () => {
+    const db: any = await createClient({ db: ':memory:', claims: [], schema: `
+      model Note {
+        id      Int    @id @default(autoincrement())
+        ownerId String
+        @@allow('read', ownerId == auth().id)
+      }` })
+    await db.asSystem().note.create({ data: { ownerId: 'u2' } })
+    const app = createApp({ db, auth: createStubAuth({ users: [{ id: 'u1', role: 'member' }] }) })
+    let lift = false
+    app.services.register(createService({
+      name: 'notes', model: 'Note',
+      hooks: { before: { find: [(ctx: ServiceContext) => { if (lift) ctx.locals.db = (ctx.locals.db as any).asSystem() }] } },
+    }))
+    await app._startForTest()
+
+    const asU1 = () => app.runAs('u1', () => app.service('notes').find({}))
+    const rows = (v: any) => Array.isArray(v) ? v : v.data
+    expect(rows(await asU1())).toHaveLength(0)
+    lift = true
+    expect(rows(await asU1())).toHaveLength(1)
   })
 })

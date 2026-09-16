@@ -47,6 +47,7 @@ Rules:
 ```
 auth()                — current auth object (null if unauthenticated)
 auth().field          — field on auth object (e.g. auth().id, auth().role)
+auth().level          — the gate's grade for THIS model, getLevel(auth, model); on no principal
 auth() != null        — authenticated check
 now()                 — current UTC timestamp, ONE instant per evaluation
 check(field)          — delegates to related model's read policy
@@ -120,7 +121,7 @@ The set has four sources:
 
 | | |
 | --- | --- |
-| **the framework's eight** | `id` and `capabilities`, plus the six the default gate resolver grades a caller by — `role`, `isAdmin`, `isOwner`, `isSystemAdmin`, `verifiedAt`, `activatedAt`. A standing is not a column: an app whose ladder tops out at `isAdmin` has no such field on `User`, because auth puts it on the session |
+| **the framework's nine** | `id` and `capabilities`, the six the default gate resolver grades a caller by — `role`, `isAdmin`, `isOwner`, `isSystemAdmin`, `verifiedAt`, `activatedAt` — and `level`, the grade itself. A standing is not a column: an app whose ladder tops out at `isAdmin` has no such field on `User`, because auth puts it on the session |
 | **the `@@auth` model's columns** | whatever your app carries onto the session out of its own principal row — `isStaff`, `plan` |
 | **`tenancy { claim }`** | the tenant claim, named by the tenancy block |
 | **a top-level `claim`** | a claim resolved PER REQUEST — a cart token, an impersonation. It is on no row, so nothing can derive it: the schema names it, the app resolves the value |
@@ -150,7 +151,7 @@ createClient() was passed no claims. …
 ```
 
 Mark your principal model `@@auth` to switch it on, or declare a `claim`. Either
-one is a statement about what the principal carries, and so is `claims: []` — the framework's eight and nothing else — where leaving the option
+one is a statement about what the principal carries, and so is `claims: []` — the framework's nine and nothing else — where leaving the option
 off is silence.
 
 ### An absent claim is UNKNOWN, in both halves
@@ -583,7 +584,7 @@ the default resolver entirely:
 import { GatePlugin, LEVELS } from '@frontierjs/litestone'
 
 const gate = new GatePlugin({
-  async getLevel(user, model) {
+  getLevel(user, model) {
     if (!user)                return LEVELS.STRANGER       // 0 — unauthenticated
     if (user.isSysAdmin)      return LEVELS.SYSADMIN       // 7
     if (user.role === 'admin') return LEVELS.ADMINISTRATOR  // 5
@@ -594,6 +595,20 @@ const gate = new GatePlugin({
 
 const db = await createClient({ plugins: [gate], ... })
 ```
+
+`getLevel` answers **synchronously**, and a Promise is refused by name at the
+first grade. The same answer is what a row policy reads as `auth().level`, so
+*the owner or an administrator* is one rule in the app's own terms, and a
+broadcast grades it exactly as a query does:
+
+```
+@@allow('read', ownerId == auth().id || auth().level >= 5)
+```
+
+The level is the grade for the model whose policy is being asked, which is not
+the model a `check()` delegated from. It is carried by no principal — a session
+stating `level: 7` grades at whatever `getLevel` says — and a level that depends
+on something looked up belongs on the principal where the session is resolved.
 
 ### Levels
 

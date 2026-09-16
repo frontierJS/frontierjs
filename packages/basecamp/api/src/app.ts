@@ -24,6 +24,7 @@ import {
 import { conduit }           from '@frontierjs/conduit'
 import { createSQLiteStore } from '@frontierjs/conduit/stores/sqlite'
 import { createCaravan }     from '@frontierjs/caravan'
+import { orion }             from '@frontierjs/orion/plugin'
 
 import { env }                       from './core/env.ts'
 import { buildProviders }            from './providers/index.ts'
@@ -40,7 +41,8 @@ import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
 import { apiKeyGuard, apiKeyUsage }       from './services/api-keys/scopes.ts'
 import { slugify }                        from './core/resource.ts'
-import { roleForLevel }                   from './core/gate.ts'
+import { basecampGateLevel, roleForLevel } from './core/gate.ts'
+import { basecampNodes }                  from './core/automations.ts'
 import { restoreSchedules }          from './services/jobs/job-schedule.ts'
 import { workspaceChannelName, workspaceIdFromChannel } from './channels.ts'
 
@@ -331,6 +333,14 @@ export async function buildBasecampApp(
     db: dbPath.replace('.db', '-jobs.db'),
   })
   app.configure(queue)
+
+  // ── Orion — a workspace's automations ─────────────────────────────────
+  // AFTER Caravan: a run is one job, and its handler has to be registered
+  // before the queue starts. `level` is the same grade the Data boundary's gate
+  // uses, so an administrator acting on another member's flow is graded as the
+  // policies grade them (`FJS-D296`). `basecamp.page` is how a flow reaches a
+  // NotificationChannel — through `core/delivery.ts`, not a copy of it.
+  app.configure(orion({ level: basecampGateLevel, plugins: [basecampNodes(app)] }))
 
   // ── Mail ──────────────────────────────────────────────────────────────
   // AFTER conduit: the mailer sends through app.conduit, and junction checks

@@ -1,5 +1,36 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-15 — a codegraph tile's corners are one constant
+
+`TILE_RADIUS` in `core/codegraph-page.js` is the corner rounding, `0.25rem`, and it takes any CSS
+length — measured through a laid-out ruler element rather than parsed, so `rem` tracks the page's own
+type scale. It is clamped to half a tile, past which a square is a circle, and the 2×2 view clips its
+four quadrants to the tile rather than rounding each one. The PNG is untouched: at one pixel a tile
+there is no corner to round.
+
+## 2026-09-15 — `fli ws:atlas --as=report` lists every capability in one scroll
+
+A package plate answered *what does this one do* and nothing answered *what does the framework do*,
+so the question kept being asked of the website's hand-written copy — which had gone fourteen
+packages stale with nothing saying so. The report grew a section: 312 rows across 23 packages, one
+per file under a package's `docs/` and one per `##` heading in its README, flattened from the same
+`topics` and `sections` a plate already shows. It invents nothing, so a wrong row is a wrong
+document. A package with neither is a row saying so, because *undocumented* and *absent* look
+identical from anywhere else.
+
+## 2026-09-15 — the scaffolded `getLevel` is synchronous
+
+`fli new`'s `api/src/core/gate.ts` exports `function getLevel`, not `async function`: litestone
+refuses a Promise from a gate resolver ([`FJS-D296`](../../DECISIONS.md#fjs-d296)), because a row
+policy reads the level as `auth().level`.
+
+## 2026-09-15 — the intent pick test names `Invoice.dueOn`
+
+[`FJS-1171`](../../ISSUES.md#fjs-1171). `tests/intent.test.js` reads `example`'s real schema, and
+`Invoice.dueAt` became `dueOn` there; the pick asked for a field that no longer existed and the
+verdict was `unhomed` on every run. The paired unpicked ask still misses, which is what the test
+is for.
+
 ## 2026-09-14 — the codegraph page copies its map as a PNG
 
 **Copy image** puts the map on the clipboard as a PNG, as drawn — view, layout, kinds, filter and an

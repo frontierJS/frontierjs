@@ -1,6 +1,6 @@
 ---
 title: "FrontierJS — the stack"
-description: "Eight packages, one vocabulary. Every feature each one ships, and what it replaces."
+description: "Twenty packages, one vocabulary. Every feature each one ships, and what it replaces."
 render: static
 publishes: 0
 ---
@@ -31,7 +31,7 @@ publishes: 0
 
 <div class="container intro">
   <p class="eyebrow">The stack</p>
-  <h1>Eight pieces. One vocabulary.</h1>
+  <h1>Twenty pieces. One vocabulary.</h1>
   <p class="pitch">
     Each stands alone — Litestone with any server, Mesa with any bundler. Together they
     share one model: <strong>Data &rarr; API &rarr; UI</strong>, seeded by a single schema.
@@ -195,10 +195,12 @@ h1 { font-size: clamp(1.8rem, 4.4vw, 2.6rem); line-height: 1.06; letter-spacing:
   border-left: 3px solid var(--rule-strong);
 }
 .map a:hover { border-color: var(--rule-strong); }
-.map a.d { border-left-color: var(--color-primary); }
-.map a.a { border-left-color: var(--color-info); }
-.map a.u { border-left-color: var(--color-success); }
-.map a.t { border-left-color: var(--color-warning); }
+.map a.primary   { border-left-color: var(--color-primary); }
+.map a.info      { border-left-color: var(--color-info); }
+.map a.success   { border-left-color: var(--color-success); }
+.map a.warning   { border-left-color: var(--color-warning); }
+.map a.secondary { border-left-color: var(--color-secondary); }
+.map a.muted     { border-left-color: var(--color-muted); }
 .map b { display: block; font-size: .88rem; color: var(--ink); }
 .map span { display: block; font-size: .73rem; color: var(--ink-mute); margin-top: .1rem; }
 

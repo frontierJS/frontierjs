@@ -1,5 +1,14 @@
 # Changes
 
+## 2026-09-15 — a refusal over a field the form does not draw is said at the top
+
+[`FJS-1163`](../../ISSUES.md#fjs-1163). `only` narrows what a generated form shows and not what
+its record holds, so a save can be refused over a column with no box; the message went to that
+field and nothing appeared. A form whose every control is generated now puts such a message in
+its alert. A form with children cannot know what a child draws and is unchanged.
+`test/browser/specs/form-unshown.spec.mjs` asserts the pair: a drawn field keeps its message
+beside it and out of the alert.
+
 ## 2026-09-13 — `Code`, a code block with a copy button
 
 `<Code text="…" />` draws `<pre class="code">` with `CopyButton` in its top corner; `language`

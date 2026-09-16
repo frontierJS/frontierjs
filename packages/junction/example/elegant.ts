@@ -78,7 +78,7 @@ const db = await createClient<Db>({
     }
   `,
   plugins: [new GatePlugin({
-    async getLevel(user) {
+    getLevel(user) {
       if (!user) return LEVELS.STRANGER
       return (user as { role?: string }).role === 'admin' ? LEVELS.ADMINISTRATOR : LEVELS.USER
     },

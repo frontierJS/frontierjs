@@ -113,6 +113,9 @@ const TYPE_DEFAULTS = {
  * @param {string[]} [opts.foreignKeys=[]] — columns that are a relation's local
  *        key (`x-relations[].fields`). A `belongsTo` is emitted as a plain
  *        integer, so this cannot be derived from `properties` alone.
+ * @param {string[]} [opts.required] — the create-mode definition's `required`.
+ *        Given, a column that is neither nullable, required nor defaulted is
+ *        left out of the record, because the server fills it.
  * @returns {(spec?: object) => object}
  */
 export function createMakeFromSchema(properties, opts = {}) {
@@ -120,9 +123,11 @@ export function createMakeFromSchema(properties, opts = {}) {
     skip        = ['id', 'createdAt', 'updatedAt'],
     resolve     = undefined,
     foreignKeys = [],
+    required    = undefined,
   } = opts
 
   const fkFields = new Set(foreignKeys)
+  const demanded = Array.isArray(required) ? new Set(required) : null
   const fieldDefaults = {}
 
   for (const [key, raw] of Object.entries(properties ?? {})) {
@@ -177,13 +182,30 @@ export function createMakeFromSchema(properties, opts = {}) {
       continue
     }
 
-    let type = def.type
-    if (!type && def.anyOf) type = def.anyOf.find(t => t.type !== 'null')?.type
-    if (Array.isArray(type)) type = type.find(t => t !== 'null')
+    // Nullability is read off the RAW schema, because the deref has already
+    // followed the non-null branch of an `anyOf`.
+    const { type, nullable } = fieldShape(raw, resolve)
+
+    // NOT NULL, not demanded of the caller, and no default the client can see:
+    // the server supplies it — `@default(auth().id)`, `uuid()`, a copied
+    // sibling. A blank seeded here is a value, so the stamp never applies and
+    // the row is written with `''` for its owner, or a policy over that column
+    // refuses a form whose every visible control is valid.
+    if (demanded && !nullable && !demanded.has(key)) continue
 
     // A date-time is left undefined rather than guessed at.
     if (type === 'string' && def.format === 'date-time') {
       fieldDefaults[key] = undefined
+      continue
+    }
+
+    // A nullable number or boolean the caller did not fill is null, for the
+    // foreign key's reason: `0` and `false` are values nobody chose, and a
+    // form that does not show the field sends them. `Int? @gte(1)` then
+    // refuses a record whose every visible control is valid. A string keeps
+    // its `''`, which `normalizeBlanks` already turns back into null.
+    if (nullable && (type === 'integer' || type === 'number' || type === 'boolean')) {
+      fieldDefaults[key] = null
       continue
     }
 

@@ -100,7 +100,7 @@ const db = await createClient({
   schema: SCHEMA,
   plugins: [
     new GatePlugin({
-      async getLevel(user, model) {
+      getLevel(user, model) {
         if (!user)             return LEVELS.STRANGER
         if (!user.verifiedAt)  return LEVELS.VISITOR
 

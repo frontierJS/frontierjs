@@ -124,6 +124,14 @@ export interface RunnerOptions {
    * `$transaction`, which a litestone host's is.
    */
   inTransaction?: <T>(actor: unknown, fn: (txActor: unknown) => Promise<T>) => Promise<T>
+  /**
+   * A written row as the actor may read it, or null (`FJS-D295`). A model trigger
+   * starts its flow with the row as the flow's OWNER reads it, and not at all
+   * when the owner may not read it: the run acts as the owner, and its trigger is
+   * read back by the owner. Without it the trigger is the row as its writer read
+   * it, which is every column the writer could see.
+   */
+  readAs?: (actor: unknown, model: string, record: unknown) => Promise<unknown | null>
   /** The Caravan queue runs go on. Default: `orion`. */
   queue?:   string
   /** How long a pending run may sit before the sweep dispatches it again. Default: 60s. */
@@ -604,8 +612,21 @@ export function createRunner(opts: RunnerOptions) {
         record:     event.result ?? event.record ?? null,
         ...(event.transition ? { transition: event.transition } : {}),
       }
-      start(flowId, trigger, { tenant }).catch((err) => opts.onTriggerError?.(err, { flowId, trigger }))
+      startFromWrite(flowId, trigger, tenant).catch((err) => opts.onTriggerError?.(err, { flowId, trigger }))
     }
+  }
+
+  // The row goes into the run as its owner reads it, and a row the owner may not
+  // read starts nothing (`FJS-D295`). Asked before the run exists, so a refused
+  // row leaves no run behind to be read.
+  async function startFromWrite(flowId: string, trigger: { model: string; record: unknown }, tenant: string | null) {
+    if (!opts.readAs || trigger.record === null) return start(flowId, trigger, { tenant })
+    const ownerId = await withSystem(host, tenant, async (db) =>
+      (await db.flow.findFirst({ where: { id: flowId }, select: { ownerId: true } }))?.ownerId as string | undefined)
+    if (!ownerId) return
+    const record = await withActor(ownerId, tenant, (actor) => opts.readAs!(actor, trigger.model, trigger.record))
+    if (record === null || record === undefined) return
+    return start(flowId, { ...trigger, record }, { tenant })
   }
 
   /**

@@ -16,6 +16,9 @@
  * system client once this file has graded them; anybody else is refused. A run
  * started here acts as the flow's owner like every other (`FJS-D276`).
  *
+ * `flows` and `runs` broadcast on a channel named for the service; the host
+ * joins its connections to it, as it does for its own services.
+ *
  * The run metrics are a method on `runs` rather than a `metrics` service,
  * because `/metrics` is junction's own route.
  */
@@ -72,6 +75,14 @@ export function createOrionServices(deps: {
   const systemOf = (ctx: ServiceContext): Client => clientOf(ctx).asSystem()
   const tenantOf = (ctx: ServiceContext) => ({ tenant: (ctx.locals.tenantId as string | undefined) ?? null })
 
+  // ─── who reads ─────────────────────────────────────────────────────────────
+  //
+  // Every read is the caller's own client. A flow, its versions and layout, a run
+  // and its steps are read by their owner and by an administrator, and the row
+  // policies say both — `auth().level` is the app's own grade (`FJS-D295`,
+  // `FJS-D296`) — so a query, a broadcast and a protected column agree with no
+  // help from this file.
+
   async function readableFlow(ctx: ServiceContext, id: unknown) {
     const flow = await clientOf(ctx).flow.findFirst({ where: { id } })
     if (!flow) throw new NotFound(`No flow '${id}'`)
@@ -124,8 +135,12 @@ export function createOrionServices(deps: {
   // ─── flows ─────────────────────────────────────────────────────────────────
 
   if (names.flows !== false) services.push(createService({
-    name:  names.flows,
-    model: "Flow",
+    name:    names.flows,
+    model:   "Flow",
+    // Named, so a write made outside this service — an activation another
+    // instance polls in, a status the engine moves — reaches a screen. Joining
+    // it is the host's decision; a broadcast is graded per recipient.
+    channel: names.flows,
     methods: [
       "find", "get", "create", "patch", "remove",
       ...signedIn("save", "versions", "activate", "pause", "archive", "restore", "run", "dryRun", "export", "import", "layout", "saveLayout"),
@@ -301,6 +316,10 @@ export function createOrionServices(deps: {
   if (names.runs !== false) services.push(createService({
     name:    names.runs,
     model:   "Run",
+    // Every Run row is written by the engine through the system client, which
+    // no service call announces, and junction broadcasts such a write only on a
+    // channel the service names. Without it a runs screen never moves.
+    channel: names.runs,
     methods: ["find", "get", ...signedIn("steps", "cancel", "metrics")],
 
     /** What each node did. Written when the run ends, so a run still going has none. */

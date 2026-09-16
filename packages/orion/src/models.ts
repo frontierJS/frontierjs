@@ -25,7 +25,7 @@ import type { IModelActions, IModelCatalog, ModelWrite } from "./engine/ports"
 // ─── the catalog ─────────────────────────────────────────────────────────────
 
 interface SchemaDocument {
-  $defs?: Record<string, { properties?: Record<string, { readOnly?: boolean }> }>
+  $defs?: Record<string, { properties?: Record<string, { readOnly?: boolean }>; "x-version"?: string }>
 }
 
 /**
@@ -35,18 +35,22 @@ interface SchemaDocument {
  */
 export function modelCatalog(docs: { create: object; update: object; models: string[] }): IModelCatalog {
   const known = new Set(docs.models)
-  const writable = (doc: SchemaDocument, model: string) => new Set(
-    Object.entries(doc.$defs?.[model]?.properties ?? {})
-      .filter(([, prop]) => !prop.readOnly)
-      .map(([name]) => name),
-  )
+  // The `@version` column is readOnly and is the one an update must send back:
+  // the Data boundary refuses a patch without it, so a catalog that dropped it
+  // made every versioned model unpatchable from a flow.
+  const writable = (doc: SchemaDocument, model: string, mode: "create" | "update") => {
+    const def = doc.$defs?.[model]
+    const names = Object.entries(def?.properties ?? {}).filter(([, prop]) => !prop.readOnly).map(([name]) => name)
+    if (mode === "update" && def?.["x-version"]) names.push(def["x-version"])
+    return new Set(names)
+  }
   const cache = new Map<string, ReadonlySet<string>>()
 
   return {
     fields(model, mode) {
       if (!known.has(model)) return undefined
       const key = `${mode}:${model}`
-      if (!cache.has(key)) cache.set(key, writable((mode === "create" ? docs.create : docs.update) as SchemaDocument, model))
+      if (!cache.has(key)) cache.set(key, writable((mode === "create" ? docs.create : docs.update) as SchemaDocument, model, mode))
       return cache.get(key)
     },
   }
@@ -58,7 +62,7 @@ export function modelCatalog(docs: { create: object; update: object; models: str
 interface WritableTable {
   create(args: { data: ModelWrite }): Promise<unknown>
   update(args: { where: Record<string, unknown>; data: ModelWrite }): Promise<unknown>
-  delete(args: { where: Record<string, unknown> }): Promise<unknown>
+  remove(args: { where: Record<string, unknown> }): Promise<unknown>
 }
 
 interface WritableClient {
@@ -107,9 +111,11 @@ export function litestoneModelActions(
       const { client, accessor, table } = resolve(actor, model)
       return table.update({ where: rowWhere(client, accessor, model, id), data })
     },
+    // `remove`, never `delete`: on a `@@softDelete` model `delete` is the purge,
+    // and a flow removing a row must not destroy what the app's own remove keeps.
     remove(actor, model, id) {
       const { client, accessor, table } = resolve(actor, model)
-      return table.delete({ where: rowWhere(client, accessor, model, id) })
+      return table.remove({ where: rowWhere(client, accessor, model, id) })
     },
   }
 }

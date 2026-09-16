@@ -219,11 +219,11 @@ refuses to broadcast rather than leaking by default.
 
 ---
 
-## Interaction with `compass`
+## Interaction with a local database
 
-If the offline engine lands (`IDEAS/offline-first-and-release.md`,
-`IDEAS/package-map.md`), the *right* live query is a reactive query over the local
-SQLite with sync in the background — the local-first model — where matching, sorting
+If the offline work lands — **Homestead**, decomposed by owner rather than built as
+a package (`FJS-D297`, `IDEAS/offline-first-and-release.md`) — the *right* live query
+is a reactive query over the local SQLite with sync in the background — the local-first model — where matching, sorting
 and paging are all just a query re-run against a database that happens to be in the
 browser. That is a strictly better implementation and it makes the matcher above
 redundant.
@@ -344,7 +344,7 @@ result deserves its own noun. It probably does not.
 
 ## See also
 
-- `IDEAS/package-map.md` — `compass`, and where a local-first implementation lands
+- `IDEAS/package-map.md` — where a local-first implementation lands, and why it is no package
 - `IDEAS/offline-first-and-release.md` — the same seam from the offline direction
 - `website/projects.json` — the Convex entry, which records the trade this refines
 - `packages/junction/src/client/index.ts` — `resource()`, `Store`, the three defects

@@ -31,6 +31,10 @@
 //                SHAPED per recipient, so a shopper receives their own orders
 //                and nobody else's, and an anonymous connection receives none.
 //   customers    Customer, same shape, same treatment.
+//   flows, runs  orion's (`@frontierjs/orion`), which names its channels for
+//                its services. A run is written by the engine and no service
+//                call announces it, so without the join the runs screen only
+//                moves on a reload. Both read at USER(4).
 //
 // ─── The one channel that is not a service's ──────────────────────────────
 //
@@ -42,7 +46,7 @@
 import type { App } from '@frontierjs/junction'
 
 /** Channels every connection joins, whoever is on the other end. */
-export const OPEN_CHANNELS = ['orders', 'products', 'customers'] as const
+export const OPEN_CHANNELS = ['orders', 'products', 'customers', 'flows', 'runs'] as const
 
 /** The in-app notification channel for one person. `@frontierjs/notifications`
  *  owns this spelling; it is repeated here and nowhere else. */

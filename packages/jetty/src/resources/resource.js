@@ -139,6 +139,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     make = createMakeFromSchema(modelDef?.properties ?? modelDef, {
       resolve:     (ref) => resolveAgainst(schema, ref),
       foreignKeys: fkFields,
+      required:    modelDef?.properties ? modelDef.required : undefined,
     })
   } else {
     make = (spec) => Object.assign({}, spec)

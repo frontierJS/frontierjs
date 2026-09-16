@@ -106,14 +106,15 @@ const ALL_OPS = ['read', 'create', 'update', 'post-update', 'delete']
 //
 // The set has four sources and no fifth is possible:
 //
-//   the fixed eight    names this package itself reads off the principal, so no
-//                      app spells them: `id` (`auth()` bare IS the id),
-//                      `capabilities` (the grid, `FJS-D151`), and the six
-//                      `FrontierGateGetLevel` grades a caller by — `role`,
-//                      `isAdmin`, `isOwner`, `isSystemAdmin`, `verifiedAt`,
-//                      `activatedAt` (`src/plugins/gate.js`). A standing is not
-//                      a column: an app whose ladder tops out at `isAdmin` has
-//                      no such field on `User` and auth puts it on the session
+//   the fixed nine     names this package itself reads, so no app spells them:
+//                      `id` (`auth()` bare IS the id), `capabilities` (the
+//                      grid, `FJS-D151`), the six `FrontierGateGetLevel` grades
+//                      a caller by — `role`, `isAdmin`, `isOwner`,
+//                      `isSystemAdmin`, `verifiedAt`, `activatedAt`
+//                      (`src/plugins/gate.js`) — and `level`, the grade itself,
+//                      which is on no principal (`claimValue`). A standing is
+//                      not a column: an app whose ladder tops out at `isAdmin`
+//                      has no such field on `User` and auth puts it on the session
 //   the @@auth model   whatever an app puts on the session out of its own
 //                      principal row — `isStaff`, `role`
 //   tenancy { claim }  the one claim the schema itself declares
@@ -137,7 +138,24 @@ const FRAMEWORK_CLAIMS = [
   // rather than imported from the plugin because the plugin is optional and
   // this list is about what a schema may NAME, not about what is installed.
   'role', 'isAdmin', 'isOwner', 'isSystemAdmin', 'verifiedAt', 'activatedAt',
+  // The gate's grade for the model the rule belongs to — `claimValue` below.
+  'level',
 ]
+
+// ─── The claim no principal carries ──────────────────────────────────────────
+//
+// `auth().level` is the standing the gate grades this caller at for THIS model —
+// `getLevel(auth, model)` through the plugin's own cache, so a policy and a
+// `@@gate` cannot disagree about who an administrator is (`FJS-D296`). It is not
+// a property of the principal: the app's resolver derives it, per model, which
+// is why both compilers ask here rather than reading `ctx.auth`. Without a gate
+// resolver there is no level, and a schema naming one installs the gate for
+// that reason (`client.js`).
+export function claimValue(ctx, field, modelName) {
+  if (field == null)     return ctx.auth?.id ?? null
+  if (field === 'level') return typeof ctx.levelFor === 'function' ? ctx.levelFor(modelName, ctx) : null
+  return ctx.auth?.[field] ?? null
+}
 
 export function buildClaimSet(schema, declared = null) {
   const names     = new Map()
@@ -148,6 +166,14 @@ export function buildClaimSet(schema, declared = null) {
   // open a client off schema.lite and cannot see the app's createClient call,
   // so before this every such tool refused a schema naming one (`FJS-772`).
   const schemaClaims = schema?.claims ?? []
+
+  // A column named `level` on the principal's model and the gate's grade would
+  // be one spelling for two values, and the policy would read the grade while
+  // its author meant the column.
+  if (authModel?.fields?.some(f => f.name === 'level') && authClaimsUsed(schema).has('level'))
+    throw new Error(
+      `@@auth ${authModel.name} declares a field named 'level', and a policy reads auth().level — ` +
+      `which is the level the gate grades the caller at, not that column. Rename the field.`)
 
   for (const n of FRAMEWORK_CLAIMS) names.set(n, 'the framework')
   if (authModel) for (const f of authModel.fields ?? []) names.set(f.name, `@@auth ${authModel.name}`)
@@ -1043,7 +1069,7 @@ function encodedCompare(node, params, ctx, modelName, relationMap) {
     `may be compared against an encoded column`)
 
   const raw = other.type === 'literal' ? other.value
-            : other.type === 'auth'    ? (other.field ? (ctx.auth?.[other.field] ?? null) : (ctx.auth?.id ?? null))
+            : other.type === 'auth'    ? claimValue(ctx, other.field, modelName)
             : other.type === 'now'     ? ctx._now
             : undefined
   if (raw === undefined) throw new Error(
@@ -1062,7 +1088,7 @@ function encodedCompare(node, params, ctx, modelName, relationMap) {
 // reaching here is an auth value, a literal or the clock.
 function scalarOperand(node, ctx, modelName, relationMap) {
   switch (node.type) {
-    case 'auth':    return node.field ? (ctx.auth?.[node.field] ?? null) : (ctx.auth?.id ?? null)
+    case 'auth':    return claimValue(ctx, node.field, modelName)
     case 'literal': return node.value
     case 'now':     return ctx._now
     default:        return null
@@ -1153,7 +1179,7 @@ function compileSql(node, params, ctx, modelName, op, policyMap, schema, relatio
       return pathSql(node, modelName, schema, relationMap)
 
     case 'auth':
-      params.push(node.field ? (ctx.auth?.[node.field] ?? null) : (ctx.auth?.id ?? null))
+      params.push(claimValue(ctx, node.field, modelName))
       return '?'
 
     case 'now':
@@ -1199,7 +1225,7 @@ function compileSql(node, params, ctx, modelName, op, policyMap, schema, relatio
         const items = right.type === 'list'
           ? right.items
           : right.type === 'auth'
-            ? (right.field ? ctx.auth?.[right.field] : ctx.auth?.id)
+            ? claimValue(ctx, right.field, modelName)
             : undefined
         const list = Array.isArray(items) ? items : items == null ? [] : [items]
         if (!list.length) return '0'
@@ -1216,12 +1242,12 @@ function compileSql(node, params, ctx, modelName, op, policyMap, schema, relatio
 
       // auth() == null  /  auth() != null
       if (left.type === 'auth' && right.type === 'literal' && right.value === null) {
-        const val = left.field ? (ctx.auth?.[left.field] ?? null) : (ctx.auth?.id ?? null)
+        const val = claimValue(ctx, left.field, modelName)
         params.push(val)
         return node.op === '==' ? '? IS NULL' : '? IS NOT NULL'
       }
       if (right.type === 'auth' && left.type === 'literal' && left.value === null) {
-        const val = right.field ? (ctx.auth?.[right.field] ?? null) : (ctx.auth?.id ?? null)
+        const val = claimValue(ctx, right.field, modelName)
         params.push(val)
         return node.op === '==' ? '? IS NULL' : '? IS NOT NULL'
       }
@@ -1454,6 +1480,7 @@ export function evalJs(node, ctx, data, modelName, policyMap, relationMap, op = 
     // why neither could move and why both are injected here.
     resolvePath:  (n) => evalPath(n, ctx, data, modelName, relationMap),
     resolveCheck: (n) => evalCheck(n, ctx, data, modelName, policyMap, relationMap, op),
+    claimOf:      (field) => claimValue(ctx, field, modelName),
   })
 }
 

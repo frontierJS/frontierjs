@@ -729,8 +729,16 @@ export async function createTestEnv(opts = {}) {
               if (s) stored.set(_rowId(schema, model.name, row), s)
             }
 
+            // A synthetic SYSADMIN clears every gate, and it is also what
+            // `auth().level` reads, where it would admit every row and grade
+            // nothing. A policy naming the level runs at the gate's own floor
+            // instead, and the expectation is graded at the same one, or the two
+            // halves of this comparison hold different principals (`FJS-D296`).
+            const level = rules.some(r => _readsLevel(r.expr)) ? (gate?.[op] ?? 0) : 7
+            ctx.levelFor = () => level
+
             let admitted
-            try { admitted = await _runPolicyOp(op, await env.atLevel(7, who), acc, schema, model, [...stored.values()]) }
+            try { admitted = await _runPolicyOp(op, await env.atLevel(level, who), acc, schema, model, [...stored.values()]) }
             catch (err) {
               mismatches.push({
                 model: model.name, op, got: 'error', row: null,
@@ -2502,6 +2510,12 @@ async function _ensureParent(schema, model, field, value, chain) {
 // are reported as not-graded BY NAME, because *skipped* and *graded, and every
 // row landed on one side* read identically from the summary and only one of
 // them is a broken policy.
+function _readsLevel(node) {
+  if (!node || typeof node !== 'object') return false
+  if (node.type === 'auth' && node.field === 'level') return true
+  return Object.values(node).some(v => (Array.isArray(v) ? v.some(_readsLevel) : _readsLevel(v)))
+}
+
 function _hasCheckNode(node) {
   if (!node || typeof node !== 'object') return false
   if (node.type === 'check' || node.type === 'path') return true

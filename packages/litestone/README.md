@@ -717,7 +717,7 @@ model Post {
 import { GatePlugin, LEVELS } from '@frontierjs/litestone'
 
 const gate = new GatePlugin({
-  async getLevel(user, model) {
+  getLevel(user, model) {
     if (!user)               return LEVELS.STRANGER       // 0
     if (user.role === 'admin') return LEVELS.ADMINISTRATOR  // 5
     return LEVELS.USER                                    // 4

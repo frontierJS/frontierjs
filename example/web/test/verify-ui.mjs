@@ -901,9 +901,11 @@ const expected = {
   'palette.opensOnCtrlK': { open: true, focused: 'INPUT' },
   // `Reports` matches on its SUBTITLE — "What the shop took, by order state" —
   // which is the palette ranking by where the match is rather than on the label
-  // alone. A route added with a subtitle that mentions an existing noun lands
-  // here, so the expectation is the three the box really offers.
-  'palette.filters':      { query: 'ord', options: ['Orders', 'New order', 'Reports'] },
+  // alone. `Account` matches the letters of "recovery codes" in its subtitle and
+  // `Sign in` the "ord" of "password", and both are the matcher doing its job.
+  // A command added with text that holds the query lands here, so the
+  // expectation is what the box really offers.
+  'palette.filters':      { query: 'ord', options: ['Orders', 'New order', 'Reports', 'Account', 'Sign in with an email and password'] },
   'palette.runsCommand':  { path: '/orders/', open: false },
 
   'consoleErrors': [],
