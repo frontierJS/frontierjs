@@ -68,6 +68,10 @@ The cost is that it needs Docker and several minutes per application, where
 `fetch.mjs` needs a URL — so a fetched entry and a booted entry are not the same
 kind of fixture and the directory should say which each one is.
 
+**This corpus is schemas to READ.** Products to BUILD are
+`IDEAS/stressors.md`, which asks a different question with the whole stack as the
+instrument; Chatwoot is in both, for different reasons.
+
 ---
 
 ## Readable today — probed 2026-08-30

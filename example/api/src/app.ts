@@ -362,10 +362,13 @@ app.configure(exportPlugin())
 // `app.jobs` directly, so it works whether or not an app published that
 // surface.
 //
-// Opt-in rather than on in development, because 8503 is a GLOBAL tooling port
-// (packages/cli/core/ports.js § the tooling block) — one console at a time, so
-// running this beside basecamp's is a collision rather than two consoles.
-// DEVTOOLS_PORT moves it for the case where somebody wants both.
+// `bun run api` sets DEVTOOLS=1, so the console is up for anyone running this
+// app. The flag stays rather than becoming unconditional because 8503 is a
+// GLOBAL tooling port (packages/cli/core/ports.js § the tooling block) — one
+// console at a time, so running this beside basecamp's is a collision rather
+// than two consoles, and a held port is fatal at boot rather than quiet
+// (`FJS-420`). DEVTOOLS_PORT moves it for the case where somebody wants both;
+// a drive spawning `api/index.ts` directly inherits neither and binds nothing.
 //
 // Safe to leave wired: the plugin refuses to bind under NODE_ENV=production
 // with no auth gate rather than serving request params and a retry button to

@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "bun run api & bun run web & wait",
     "stop": "pkill -f 'bun.*api/inde[x].ts'; pkill -f 'vite.*web/config/vite.confi[g].js'; true",
-    "api": "bun run api/index.ts",
+    "api": "DEVTOOLS=1 bun run api/index.ts",
     "db:seed": "bun run db/seed.ts",
     "verify:tenants": "bun web/test/verify-tenants.mjs",
     "web": "vite -c web/config/vite.config.js",

@@ -1,6 +1,7 @@
 ---
 title: Reports
 ---
+
 <script>
   // What the shop took, by order state.
   //
@@ -81,6 +82,7 @@ title: Reports
   // The one derived number on the page, and it is a SUM OF THE PROJECTION rather
   // than of the orders — three rows added up, not eight. Re-deriving it from
   // `Order` would be a second answer to a question the view already answers.
+  console.log(rows())
   $: banked = (rows() ?? []).reduce((n, r) => n + (r.total ?? 0), 0)
   $: placed = (rows() ?? []).reduce((n, r) => n + (r.orders ?? 0), 0)
 </script>

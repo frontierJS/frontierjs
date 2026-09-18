@@ -64,7 +64,24 @@ export async function createSqliteWasmEngine({ load, vfs = DEFAULT_VFS, capacity
     '  That is what a main-thread build looks like: OPFS sync access handles exist only in a\n' +
     '  dedicated worker, so a client built here would answer every read and persist nothing.')
 
-  const pool = await sqlite3.installOpfsSAHPoolVfs({ name: vfs, initialCapacity: capacity })
+  // An OPFS access handle is EXCLUSIVE to one holder in the whole origin, and
+  // the pool opens `capacity` of them at install. So a second tab — or a worker
+  // the page before this one left running — makes every one of those opens fail
+  // with `NoModificationAllowedError`, which sqlite-wasm logs per handle and
+  // then reports as `removeVfs() failed with no recovery strategy`: six lines
+  // naming a cleanup path, none naming the holder. Caught here so the thing
+  // that throws says who has it.
+  let pool
+  try {
+    pool = await sqlite3.installOpfsSAHPoolVfs({ name: vfs, initialCapacity: capacity })
+  } catch (err) {
+    if (err?.name !== 'NoModificationAllowedError') throw err
+    throw new Error(
+      `[Litestone] the OPFS pool '${vfs}' is held by something else in this origin.\n` +
+      '  Its access handles are exclusive and there is exactly one holder: another tab with this\n' +
+      '  app open, or a worker a previous page left alive. Close the other tab and reload.',
+      { cause: err })
+  }
 
   return {
     name: `sqlite-wasm/${vfs}`,

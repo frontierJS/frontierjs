@@ -309,6 +309,9 @@ is a result and the stream is not.
   the precedent for "outside" exists.
 - **Interaction:** pairs with item 11 — a stream that cannot be rate-limited is worse
   than no stream.
+- **Answered 2026-09-18** in `IDEAS/chat-surface.md` § Part 1: outside the envelope,
+  by a method that DECLARES it streams — the pipeline runs before the first token and
+  `protect()` runs per frame, so `kind` stays two-valued. Still a ruling, still unbuilt.
 
 ### 13. Security advisories and dependency posture — **the audit half shipped**
 
@@ -522,7 +525,7 @@ than re-derived — the boundary is ours, the vendor is the app's.
 | Missing | Shape | Verdict |
 | --- | --- | --- |
 | A cache an app can share between nodes | Junction's cache is `bun:sqlite`, which is right for one box and wrong for two. The multi-node story ends here the way § 3's ended at the second machine | in-house driver seam; Redis is not HTTP, so Conduit cannot carry it |
-| Vectors and embeddings | `vector` returns 0 hits across `IDEAS/`. An embedding is a column with a distance comparison, which is `IDEAS/declared-semantics.md`'s family, and `ai/index.ts` already refuses to name a vendor | in-house column type; the model that produces the embedding is a Conduit target already |
+| Vectors and embeddings | An embedding is a column with a distance comparison, which is `IDEAS/declared-semantics.md`'s family, and `ai/index.ts` already refuses to name a vendor. **Argued 2026-09-18** in `IDEAS/chat-surface.md` § Part 2, where the claim is that the gate and the row policies apply to retrieval for free | in-house column type; the model that produces the embedding is a Conduit target already |
 | Secrets at rest | `defineEnv` validates and `/redact` hides, and `@encrypted` covers columns. Nothing encrypts a `.env` or rotates an app secret; `IDEAS/release-transitions.md` reaches for `sops` and does not own it | Deployment realm, in-house — an app secret is a Release fact |
 | Maintenance mode | `fli deploy` mints a Release and swaps; there is no *this app is down on purpose* state. Absent, a deploy that must pause serving has to be done by stopping a container, which the journal then reads as a crash | in-house, and it is a transition rather than a flag. **Built — `IDEAS/release-transitions.md` § Phase 3b** (`fli deploy:pause`), and it was not small: the enum it adds needed a migration path `deploy.db` had never had |
 

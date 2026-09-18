@@ -38,6 +38,13 @@ export default {
   // query rather than a replay of the exact list that was asked for last.
   offline: { db: true },
 
+  // The toolbar in the corner, dev server only — routes, live stores, the call
+  // feed and the N+1 warning. Its only source of data is junction's own
+  // `devtools()` plugin on 8503, which `bun run api` turns on here, so the
+  // block is the opt-in: declaring it is what injects the script, and an app
+  // without a console must not have a toolbar retrying a socket nobody holds.
+  devtools: {},
+
   junction: {
     // Same origin as the page while Vite proxies /api and /ws. An API on its own
     // origin, or a build a native shell bundles, is named at build time with
@@ -45,5 +52,15 @@ export default {
     url:       import.meta.env?.VITE_API_URL ?? (typeof location !== 'undefined' ? location.origin : 'http://localhost:8010'),
     apiPrefix: '/api',
     tokenKey:  'shop_token',
+    // Every call logged to the browser console — `{ request }` on the way out,
+    // `{ response }` with its duration coming back, both transports. It is the
+    // answer the toolbar's feed cannot give: junction's telemetry event carries
+    // no payload, so the console on 8503 knows a call happened and not what it
+    // returned.
+    //
+    // Opt-in per app and not per dev session, because devtools retains every
+    // object logged: on a socket-heavy screen each response stays reachable for
+    // the life of the tab, which skews a memory profile taken beside it.
+    debug: true,
   },
 }

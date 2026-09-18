@@ -1,5 +1,21 @@
 # Changes — example
 
+## 2026-09-17 — the devtools console is on when you run the app
+
+`bun run api` sets `DEVTOOLS=1`, so the call feed, `/metrics`, readiness and the job queue are at
+`http://localhost:8503` without anyone remembering a flag. The flag itself stays rather than becoming
+unconditional: 8503 is a global tooling port, so one console at a time, and a held one is fatal at
+boot (`FJS-420`) — a drive that spawns `api/index.ts` directly inherits nothing and binds nothing.
+
+The toolbar in the corner comes back with it: `web/config/sierra.config.js` declares `devtools: {}`,
+which is the whole opt-in — sierra injects the bootstrap only when the block exists, because the
+toolbar's only source of data is that console, and an app without one gets a socket retrying nothing.
+
+Response bodies come from `junction: { debug: true }` beside it, not from the panel: the telemetry
+event the feed is built on carries no payload, and the browser's own Network tab already holds the
+frames. `_wrapDebug` logs `{ request }` and `{ response }` with a duration per call, which is the
+thing neither surface gave.
+
 ## 2026-09-16 — a screen the device has never opened
 
 `verify:shell` signs in and then opens `/inventory` **offline, for the first time

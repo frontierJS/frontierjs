@@ -1,5 +1,31 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-17 — Studio's principal note follows the principal picker into the rail
+
+The auth note explains what `--gate` and a missing per-request claim mean for the picker beside it.
+Collapsed, the picker is gone and the paragraph stayed, wrapping one word per line down a 3rem rail.
+It hides with `#authSelect`.
+
+## 2026-09-17 — the OPFS pool names the tab that is holding it
+
+An access handle is exclusive to one holder in the whole ORIGIN, and the pool opens `capacity` of
+them at install — so a second tab fails every open, and what the page printed was
+`NoModificationAllowedError` six times followed by `removeVfs() failed with no recovery strategy`: a
+cleanup path, naming nothing that would let anyone act on it. Sierra then fell back to the list cache
+and said the database did not open. `createSqliteWasmEngine` catches that one error name and rethrows
+saying another tab or a worker a previous page left alive is holding the pool, with the DOMException
+kept as `cause`; every other install failure is untouched, which is the half `engine-seam.test.ts`
+grades beside it.
+
+Reported from a real session, and it was exactly that — two tabs of the same app. `FJS-1179` closed
+the NAVIGATION case (the worker is released on `pagehide`); two live tabs is the platform, and what
+was missing was the sentence saying so.
+
+Beside it, `loadComputedFields` builds its specifier with `pathToFileURL` and carries
+`/* @vite-ignore */`. A relative path made its first segment the URL's hostname, and the template
+literal made every app whose graph reaches `core/client.js` print two resolver warnings about a line
+that only runs on a server.
+
 ## 2026-09-16 — `tenancy { strategy row }` scopes a unique, instead of reporting it
 
 A `@unique` on a tenant-scoped model was unique across the whole installation: two tenants could

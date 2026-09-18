@@ -212,3 +212,53 @@ describe('the browser graph', () => {
     expect(offenders).toEqual([])
   })
 })
+
+// ─── the pool has one holder ───────────────────────────────────────────────
+//
+// An OPFS access handle is exclusive to one holder per ORIGIN, so a second tab
+// fails every one of the pool's `capacity` opens. sqlite-wasm reports that as
+// `NoModificationAllowedError` per handle and then as `removeVfs() failed with
+// no recovery strategy` — a cleanup path, with nothing naming the holder, and
+// the message the page ends up printing is the cleanup one.
+describe('OPFS pool contention', () => {
+  it('names the other holder rather than reporting a cleanup failure', async () => {
+    const { createSqliteWasmEngine } = await import('../src/engines/sqlite-wasm.js')
+
+    const denied = Object.assign(new Error('No modification allowed'), {
+      name: 'NoModificationAllowedError',
+    })
+
+    const load = async () => ({
+      default: async () => ({
+        installOpfsSAHPoolVfs: async () => { throw denied },
+        oo1: {},
+      }),
+    })
+
+    const err = await createSqliteWasmEngine({ load, vfs: 'fjs' }).then(
+      () => null,
+      (e: Error) => e,
+    )
+
+    expect(err).toBeTruthy()
+    expect(err!.message).toContain("the OPFS pool 'fjs' is held by something else")
+    expect(err!.message).toContain('another tab')
+    // The DOMException is kept, because a bug report needs the original name.
+    expect((err as Error & { cause?: Error }).cause).toBe(denied)
+  })
+
+  it('lets every other install failure through untouched', async () => {
+    const { createSqliteWasmEngine } = await import('../src/engines/sqlite-wasm.js')
+
+    const boom = new Error('wasm fetch failed')
+    const load = async () => ({
+      default: async () => ({
+        installOpfsSAHPoolVfs: async () => { throw boom },
+        oo1: {},
+      }),
+    })
+
+    const err = await createSqliteWasmEngine({ load }).then(() => null, (e: Error) => e)
+    expect(err).toBe(boom)
+  })
+})

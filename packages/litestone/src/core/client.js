@@ -7,7 +7,7 @@
 
 import { openDatabase } from './engine.js'
 import { applyBusyTimeout, busyTimeoutFor, validateBusyTimeout } from './pragmas.js'
-import { resolve, join, dirname, extname, tmpdir,
+import { resolve, join, dirname, extname, tmpdir, pathToFileURL,
          existsSync, mkdirSync, mkdtempSync, statSync } from '#host'
 import { resolveAnchor, noteMintedDirectory } from './db-path.js'
 import { parse, parseFile } from './parser.js'
@@ -1625,7 +1625,12 @@ async function loadComputedFields(computedInput) {
   // Otherwise treat as a file path
   const abs = resolve(computedInput)
   try {
-    const mod = await import(`file://${abs}`)
+    // `pathToFileURL` rather than `file://` + the path: a relative path makes
+    // its first segment the URL's HOSTNAME, which is a different file or none.
+    // `@vite-ignore` because a bundler cannot analyze a computed specifier and
+    // warns about this one in every app whose graph reaches this file — the
+    // path form is a server's, and a browser refuses it at `pathToFileURL`.
+    const mod = await import(/* @vite-ignore */ pathToFileURL(abs).href)
     return mod.default ?? mod
   } catch (e) {
     throw new Error(`Failed to load computed functions file: ${abs}\n  ${e.message}`)

@@ -195,6 +195,72 @@ and the server still re-checks.** Electric's pivot landed on exactly that
 arrangement from the other direction, which is the strongest available evidence
 that FJS's Data boundary is not the part to soften for offline.
 
+## 5. Dolt — version control as a SQL surface, not as a CLI
+
+**Added 2026-09-18, and it opens the same way both sections above did.** Grepped
+before writing: this repository cites Dolt in **one sentence**, in
+`release-transitions.md` § *What was falsified*, for the narrow claim that
+database state can participate in a rollback. **Confidence: read from Dolt's own
+documentation and its blog on the date above, not from its tree.** Every
+specific below is a lead to verify (`VERIFYING.md`).
+
+Dolt is a MySQL-compatible database with a git commit graph inside it, over
+prolly trees inherited from Noms. The storage bet is the wrong one for here and
+is dismissed below. **What is worth the hour is the interface decision**: every
+git noun is exposed as a system table or a stored procedure — a commit log you
+`SELECT` from, a diff per table, a blame per row, conflicts per model — so
+version control reaches anything that can speak to the database, rather than
+anything that can run a binary on the machine holding it.
+
+### The reading list, and what each is evidence of
+
+| Mechanism | Evidence of |
+| --- | --- |
+| **Cell-level three-way merge** | **The finding, and it has its own record** — a merge with a BASE decides per cell with no clock ruling, which is cheaper than the per-column timestamps `homestead.md` priced. `IDEAS/conflict-as-data.md` |
+| **Conflicts as a relation** | Conflict as a queryable state with a count beside it, and a merge that lands rather than blocking. The same design CouchDB reaches at the document level, at a granularity a SQL app can act on |
+| **`AS OF` on an ordinary query** | **Time travel is worth more as a read than as a restore.** `time-travel.md` is written entirely as operator commands — checkpoint, log, restore. The question a person actually has is *what did this row say on Tuesday*, asked from the app, by somebody who will never open a terminal |
+| **Blame per row** | A projection this repository could already write and has not. `@@log(audit)` holds who set what and when, per field, redacted; *who set the value this row holds now* is a query over it and a Studio panel, with no new storage |
+| **Branch as a session-scoped database** | `USE db/feature`, and the whole application runs against it unchanged. `sandboxes.md` (4.25) reaches the same shape from tenancy, and Dolt is evidence that the session-selection half works — lead |
+| **A data change that is reviewed before it lands** | Fork, diff, pull request, merge — for rows. `studio-access-and-drift.md` is the record with the gap: Studio writes production data with no review step anywhere |
+| **`dolt_query_catalog`** | Named queries stored and versioned beside the data they read. `tenant-authored-queries.md` and `stored-templates.md` — lead |
+| **`dolt_tests`** | Assertions stored beside the data and versioned with the schema, run by a CI verb. FJS is partly ahead — `verifyGateLadder` and `litestone mutate` are executed rather than described — but those live in a suite, and Dolt's live in the thing being graded. `specifications.md` — lead |
+| **Prolly trees** | What cell-level history costs. Dolt is *"slower on write by design"* and wants RAM at 10–20% of disk, by its own account in `release-transitions.md`'s reading |
+| **Data bounties** | A market for data work, run on pull requests and paid by cells edited. Ran for about three years and was discontinued — evidence about the market, not about the mechanism |
+
+### What it changes
+
+**1. Where the time-travel verbs live.** `time-travel.md` proposes `fli
+db:checkpoint`, `db:log` and `db:restore`. Dolt's arrangement is the argument
+that the verbs belong one realm lower — on the Data boundary, where the API
+realm, the UI realm and the MCP surface each get them without coining anything —
+and that `fli` is then one caller among several rather than the only one. That
+is Invariant 4 applied to a feature that has not been built yet, which is the
+cheap moment to apply it.
+
+**2. Blame is already affordable and is not filed.** Every input exists. What is
+missing is the projection and a place to show it, and the place exists too —
+Studio has a drive and a panel vocabulary already.
+
+**3. A branch costs a file copy here and a storage engine there.** This is the
+one place where FJS's *the database is a file you own* is a straightforward
+advantage over the project being read: Dolt built prolly trees partly to make
+branching cheap, and `cp` is cheaper. What Dolt supplies is the missing half —
+how a SESSION selects which one it is talking to without a single query in the
+application changing.
+
+**4. Reviewing a data change is a workflow, not a feature.** Nothing in it needs
+a new storage primitive once 3 is true: the edit lands on a copy, the diff is
+rendered against the parent, and merging is the approval.
+
+### What is NOT changed by any of it
+
+**The storage engine, and the noun.** FJS's versioning noun is the **Release**,
+not the commit, and a Release already spans the artifact, the schema and the
+config — which is more than a commit graph over rows can say. Everything above
+is a projection over the audit trail and the file, at no engine cost. A database
+that keeps every version of every cell is a different product with a different
+price, and `DECISIONS.md` has already bought the other one.
+
 ## Already read, so not restated here
 
 `live-queries.md` reads Remult (a per-connection query registry, correct and
@@ -225,4 +291,5 @@ nobody.
 - `IDEAS/slices.md` — the design whose mechanism already exists elsewhere
 - `IDEAS/permission-sets.md` — the gap Ash has from the other side
 - `IDEAS/agent-surface.md` — 4.2, and its approval-gate half
+- `IDEAS/conflict-as-data.md` — § 5's one finding, argued as a design
 - `IDEAS/coherence-review.md` — the inward-facing equivalent of this file

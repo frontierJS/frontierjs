@@ -715,8 +715,8 @@ The candidates, ranked by what this framework already owns:
 | `refuse` | the write carries the revision it was made against and is refused if the row moved | almost nothing — `@version` crosses as `x-version`, `FJS-D138` already stores the revision a write was against, and `@@transitions` is already a compare-and-swap |
 | `append` | there is no collision, by construction — a scan, a count line, a ledger row | nothing to build: the declaration IS the implementation. It is also the principled answer rather than the cheap one — Weidner's first rule is that an operation which ADDS a unique new thing wants a set of unique things, and concurrent additions then cannot conflict at all |
 | `lww` | last write wins, for the whole row | a ruling on whose clock, which has one defensible answer — server receipt, never the device. **And it is the one candidate with an argument against it**: Weidner's *independent operations should act on independent state* (`IDEAS/prior-art.md` § 4) says a row-wide winner discards an edit to a column nobody contested |
-| `field` | last write wins per COLUMN, so two people editing different fields both win | per-field metadata. **Not a refinement of `lww` but the correction of it** — if this framework does timestamps at all, this is the shape. Triplit resolves per property and Figma does the same |
-| `manual` | both versions are kept until something resolves them | the most: conflict storage, a screen, a resolution path. CouchDB keeps conflicting revisions on the document — lead |
+| `field` | last write wins per COLUMN, so two people editing different fields both win | ~~per-field metadata~~ — **struck 2026-09-18**: a three-way comparison against the revision the write was made against produces the same outcome and dates nothing, so this needs no metadata and no ruling about whose clock (`IDEAS/conflict-as-data.md`). **Not a refinement of `lww` but the correction of it** — if this framework resolves per column at all, this is the shape. Triplit resolves per property and Figma does the same |
+| `manual` | both versions are kept until something resolves them | ~~the most: conflict storage, a screen, a resolution path~~ — **struck 2026-09-18**: a conflict is a Model here, so the storage IS the declaration, the screen is generated and the resolution path is an ordinary write (`IDEAS/conflict-as-data.md`). Still the largest of the set, and its silent failure is a pile-up nothing counts. CouchDB keeps conflicting revisions on the document; Dolt keeps them as a queryable relation with a count beside it, which is the better lead |
 | `crdt` | values merge by type | out of scope. ElectricSQL built it and abandoned it |
 
 **`append` and `refuse` are BUILT** (`FJS-D304`), and what each does is only ever
@@ -744,6 +744,12 @@ understand inside and out, it will be a hard fix.*
 
 **Owners:** Litestone. **Answers:** Q4, which follows from `FJS-D298`. **Size:** M–L.
 **Ships:** conflict as a declared outcome rather than an accident.
+
+**The mechanism is argued in `IDEAS/conflict-as-data.md`** — a three-way
+comparison against the revision the held write was made against, and a conflict
+kept as a relation rather than thrown as an exception. It is read from Dolt, it
+needs no clock ruling, and it is what struck the `field` and `manual` costs in
+the table above.
 
 **One footgun to carry in from the start**: a concurrent delete beside a
 property update produces a row that is neither — Weidner's example is an item
@@ -888,4 +894,5 @@ following the declaration rather than by adding one.
 - `DECISIONS.md` § `FJS-D297` — why there is no offline package, and what Homestead names
 - `DECISIONS.md` § `FJS-D138` — the client data lifecycle; the intent overlay phase 1 builds on
 - `IDEAS/live-queries.md` — the live-query surface phase 4 is the destination of
+- `IDEAS/conflict-as-data.md` — phase 5's mechanism, read from Dolt
 - `IDEAS/package-map.md` — the roster row this work was decomposed out of
