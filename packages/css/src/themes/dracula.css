@@ -1,0 +1,90 @@
+/*
+ * dracula.css
+ * The Dracula palette — violet primary, pink secondary, six vivid accents on
+ * a blue-black ground.
+ *
+ * Like basecamp.css this overrides the neutrals AND the brand hues: the
+ * accents ARE the identity here, not a tint on top of one.
+ */
+
+.theme-dracula {
+  /*
+   * Tells the UA to render native form controls, scrollbars, and the
+   * <select> dropdown dark. Without it those stay light and the theme only
+   * looks dark until you focus an input.
+   */
+  color-scheme: dark;
+
+  /*
+   * The lightness window for a tone used as TEXT, inverted. On a light
+   * surface such a tone is clamped DARK; here it has to be clamped light,
+   * and nothing in CSS can work that out — see tokens.css and tones.css.
+   * Any theme that sets `color-scheme: dark` needs this pair too.
+   */
+  --tone-l-min: 0.74;
+  --tone-l-max: 1;
+
+  /* ── Accents ───────────────────────────────────────────────────────
+   * The upstream palette verbatim. They need no correction as a FILL —
+   * chip.css derives chip text from the fill's luminance — and as TEXT they
+   * go through --tone-ink, which is why `muted` may stay the low-contrast
+   * comment blue (3.03:1 raw against --surface) without failing AA.
+   */
+  --color-primary:   #bd93f9;  /* purple  */
+  --color-secondary: #ff79c6;  /* pink    */
+  --color-muted:     #6272a4;  /* comment */
+  --color-info:      #8be9fd;  /* cyan    */
+  --color-success:   #50fa7b;  /* green   */
+  --color-warning:   #ffb86c;  /* orange  */
+  --color-danger:    #ff5555;  /* red     */
+
+  /* ── Surfaces ──────────────────────────────────────────────────────
+   * The editor background is the page ground, so it maps to
+   * --surface-sunken: frame.css paints .screen with it. The card sits one
+   * step up and the elevated surface one above that.
+   */
+  --surface:        #282a36;
+  --surface-raised: #343746;
+  --surface-sunken: #21222c;
+
+  --topbar-bg:      #21222c;
+  --sidebar-bg:     #21222c;
+  --dialog-bg:      #2c2e3b;
+
+  /* ── Ink ───────────────────────────────────────────────────────────
+   * --ink is the upstream foreground. The two steps below it are NOT the
+   * upstream comment color: #6272a4 is 2.51:1 on --surface-raised, and
+   * --ink-mute is body text (placeholders, table headers, field hints) held
+   * to 4.5:1 on the tightest of the three surfaces.
+   *
+   * Both are that same comment blue scaled uniformly in linear RGB — the
+   * operation chip.css uses to cap a fill — so the chromaticity is exact
+   * and only the lightness moves. --ink-soft is targeted at 7:1 and
+   * --ink-mute at the AA floor, which keeps the ramp three steps rather
+   * than collapsing the two into one.
+   *
+   *   --ink        #f8f8f2   11.06:1 on raised
+   *   --ink-soft   #adc7ff    6.96:1
+   *   --ink-mute   #8a9fe3    4.58:1
+   */
+  --ink:      #f8f8f2;
+  --ink-soft: #adc7ff;
+  --ink-mute: #8a9fe3;
+
+  /*
+   * The upstream "current line" as a rule, and a step above it for the
+   * strong one. Solid rather than translucent because these are picked
+   * against a ground that only spans #21222c–#343746.
+   */
+  --rule:        #44475a;
+  --rule-strong: #565a72;
+
+  /*
+   * The default shadows are near-black at 4–10% alpha and invisible against
+   * a #282a36 surface. Dark UIs need markedly more opacity to read as
+   * elevation at all.
+   */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}

@@ -1,0 +1,83 @@
+/*
+ * twilight.css
+ * The Twilight palette — warm sand primary on a near-black warm ground,
+ * muted olive and clay accents. Low-chroma where dracula is vivid.
+ */
+
+.theme-twilight {
+  /*
+   * Tells the UA to render native form controls, scrollbars, and the
+   * <select> dropdown dark. Without it those stay light and the theme only
+   * looks dark until you focus an input.
+   */
+  color-scheme: dark;
+
+  /*
+   * The lightness window for a tone used as TEXT, inverted. On a light
+   * surface such a tone is clamped DARK; here it has to be clamped light,
+   * and nothing in CSS can work that out — see tokens.css and tones.css.
+   * Any theme that sets `color-scheme: dark` needs this pair too.
+   */
+  --tone-l-min: 0.74;
+  --tone-l-max: 1;
+
+  /* ── Accents ───────────────────────────────────────────────────────
+   * The upstream syntax colors, used as tones. They are deliberately
+   * desaturated, which is what makes this theme a different look rather
+   * than dracula with the hues rotated; as TEXT they pass through
+   * --tone-ink, so the darker ones are lifted into the window rather than
+   * failing AA.
+   */
+  --color-primary:   #cda869;  /* sand   */
+  --color-secondary: #9b859d;  /* mauve  */
+  --color-muted:     #5f5a60;  /* stone  */
+  --color-info:      #7587a6;  /* slate  */
+  --color-success:   #8f9d6a;  /* olive  */
+  --color-warning:   #f9ee98;  /* straw  */
+  --color-danger:    #cf6a4c;  /* clay   */
+
+  /* ── Surfaces ──────────────────────────────────────────────────────
+   * Warm near-black. The hue is the only thing separating this ground from
+   * dark.css's neutral one, so the three steps keep the same red-over-blue
+   * bias rather than being desaturated toward gray as they lighten.
+   */
+  --surface:        #1e1c1a;
+  --surface-raised: #282624;
+  --surface-sunken: #141210;
+
+  --topbar-bg:      #141210;
+  --sidebar-bg:     #141210;
+  --dialog-bg:      #232120;
+
+  /* ── Ink ───────────────────────────────────────────────────────────
+   * --ink is the upstream foreground. The steps below are the upstream
+   * comment gray (#5f5a60, 2.24:1 on --surface-raised and unusable as body
+   * text) scaled uniformly in linear RGB, so the hue is exact and only the
+   * lightness moves. --ink-soft targets 7:1 and --ink-mute the AA floor,
+   * measured against --surface-raised — the tightest of the three.
+   *
+   *   --ink        #f8f8f8   14.20:1 on raised
+   *   --ink-soft   #b7adb8    6.95:1
+   *   --ink-mute   #938c94    4.61:1
+   */
+  --ink:      #f8f8f8;
+  --ink-soft: #b7adb8;
+  --ink-mute: #938c94;
+
+  /*
+   * Translucent white: a rule composited over whatever is beneath it stays
+   * correct on all three surfaces, where a solid gray picked against
+   * --surface reads too heavy on --surface-sunken.
+   */
+  --rule:        rgba(255, 255, 255, 0.08);
+  --rule-strong: rgba(255, 255, 255, 0.15);
+
+  /*
+   * The default shadows are near-black at 4–10% alpha and invisible against
+   * a #1e1c1a surface. Dark UIs need markedly more opacity to read as
+   * elevation at all.
+   */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}

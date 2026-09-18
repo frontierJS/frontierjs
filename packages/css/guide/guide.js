@@ -207,6 +207,8 @@ const THEMES = {
   basecamp: { name: 'Basecamp', description: 'Deep blue-black, cool neutrals, six accent hues.' },
   notebook: { name: 'Notebook', description: 'Muted ink on warm paper.' },
   press:    { name: 'Press',    description: 'Newsprint: serif headlines, mono body, hard shadows.' },
+  dracula:  { name: 'Dracula',  description: 'Violet and pink on blue-black, six vivid accents.' },
+  twilight: { name: 'Twilight', description: 'Warm sand on near-black, muted olive and clay.' },
 }
 
 /*

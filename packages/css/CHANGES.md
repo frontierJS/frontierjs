@@ -1,5 +1,20 @@
 # Changes — @frontierjs/css
 
+## 2026-09-18 — `dracula.css` and `twilight.css`
+
+Two dark themes, both full-surface like `basecamp.css`: accents, three surfaces, the
+ink ramp, rules and shadows. The accents are each palette's own colors verbatim —
+a tone used as a fill is safe by construction through `chip.css`, and as text it goes
+through `--tone-ink` — but the INK ramp is not: both upstream comment colors are body
+text here (placeholder, table header, field hint) at 2.51:1 and 2.24:1 on
+`--surface-raised`. Each is scaled uniformly in linear RGB to 7:1 for `--ink-soft` and
+the AA floor for `--ink-mute`, so the hue is exact and only the lightness moves — the
+same correction `basecamp.css` makes.
+
+Both set `color-scheme: dark` and therefore the inverted `--tone-l-min` / `--tone-l-max`
+pair; without it a tone used as text is clamped toward the dark end of a window fitted
+for a light surface. `contrast` and `code` sweep both themes.
+
 ## 2026-09-14 — `basecamp.css` no longer cites a deleted file
 
 The theme's header pointed at `packages/basecamp/docs/mock/BasecampUI.jsx`, which basecamp deleted.

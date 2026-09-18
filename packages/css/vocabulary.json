@@ -883,7 +883,9 @@
     "theme-basecamp": "A theme",
     "theme-notebook": "A theme",
     "theme-press": "A theme",
-    "theme-field": "A theme"
+    "theme-field": "A theme",
+    "theme-dracula": "A theme",
+    "theme-twilight": "A theme"
   },
   "notATerm": {
     "tone": [

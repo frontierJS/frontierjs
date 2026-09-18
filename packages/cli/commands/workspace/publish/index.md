@@ -6,7 +6,7 @@ examples:
   - fli ws-pub patch
   - fli ws-pub minor --filter fli --filter frontier-core
   - fli ws-pub patch --tag beta
-  - fli ws-pub patch --affected
+  - fli ws-pub patch --all
   - fli ws-pub patch --dry
   - fli ws-pub patch --no-push
   - fli ws-pub --interactive
@@ -62,10 +62,10 @@ flags:
     type: boolean
     description: Do not fail on a version the registry already holds — the recovery flag, for finishing a run that published some of its packages and not others
     defaultValue: false
-  affected:
+  all:
     char: a
     type: boolean
-    description: Only publish packages changed since their own release tag
+    description: Publish every selected package, including ones with no commits since their own release tag
     defaultValue: false
   interactive:
     char: i
@@ -80,6 +80,14 @@ In a single-repo monorepo the bump is ONE commit with one `<name>@<version>` tag
 per released package, and one push at the end. In a multi-repo workspace each
 package is committed, tagged and pushed in its own repo. `ws:pub` detects which
 shape it is in rather than being told.
+
+Only a package with commits since its own `<name>@<version>` tag is released. A
+version spent on a package nothing has touched cannot be taken back, and a run
+that publishes sixteen identical tarballs looks exactly like one that worked.
+`--all` turns that off and publishes everything selected — what to reach for
+when a republish is the point, after a failed run or a packaging fix that
+changed no source. A package that has never been released has no tag and is
+always affected.
 
 A package marked `private` in its `package.json` is skipped — npm refuses it,
 and a failed publish aborts the run before anything is pushed.
@@ -164,10 +172,16 @@ if (flag['changed-only']) {
   }
 }
 
-if (flag.affected) {
+// A package with no commits since its own tag is held back by DEFAULT, because
+// the version it would spend buys nothing and the republish is not reversible.
+// The sibling `ws:*` commands ask for that filter with `--affected`; here the
+// cost of the wrong answer is a burned version rather than a wasted test run,
+// so the filter is the default and `--all` is what turns it off.
+if (!flag.all) {
   const before = packages.length
   packages = packages.filter(({ dir, pkg }) => context.git.pkgState(pkg.name, dir).affected)
-  log.info(`--affected: ${packages.length} of ${before} package(s) have changes since their own tag`)
+  if (packages.length < before)
+    log.info(`${before - packages.length} package(s) have no commits since their own tag — holding back (--all publishes them)`)
 }
 
 if (!packages.length) {

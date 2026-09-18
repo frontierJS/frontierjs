@@ -581,6 +581,90 @@ button:is(.badge, .pill) { appearance: none; cursor: pointer }
   --shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.6), 0 10px 30px -20px rgba(0, 0, 0, 0.9);
 }
 }
+@layer themes {
+.theme-dracula {
+  
+  color-scheme: dark;
+
+  
+  --tone-l-min: 0.74;
+  --tone-l-max: 1;
+
+  
+  --color-primary:   #bd93f9;  
+  --color-secondary: #ff79c6;  
+  --color-muted:     #6272a4;  
+  --color-info:      #8be9fd;  
+  --color-success:   #50fa7b;  
+  --color-warning:   #ffb86c;  
+  --color-danger:    #ff5555;  
+
+  
+  --surface:        #282a36;
+  --surface-raised: #343746;
+  --surface-sunken: #21222c;
+
+  --topbar-bg:      #21222c;
+  --sidebar-bg:     #21222c;
+  --dialog-bg:      #2c2e3b;
+
+  
+  --ink:      #f8f8f2;
+  --ink-soft: #adc7ff;
+  --ink-mute: #8a9fe3;
+
+  
+  --rule:        #44475a;
+  --rule-strong: #565a72;
+
+  
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.5), 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+}
+@layer themes {
+.theme-twilight {
+  
+  color-scheme: dark;
+
+  
+  --tone-l-min: 0.74;
+  --tone-l-max: 1;
+
+  
+  --color-primary:   #cda869;  
+  --color-secondary: #9b859d;  
+  --color-muted:     #5f5a60;  
+  --color-info:      #7587a6;  
+  --color-success:   #8f9d6a;  
+  --color-warning:   #f9ee98;  
+  --color-danger:    #cf6a4c;  
+
+  
+  --surface:        #1e1c1a;
+  --surface-raised: #282624;
+  --surface-sunken: #141210;
+
+  --topbar-bg:      #141210;
+  --sidebar-bg:     #141210;
+  --dialog-bg:      #232120;
+
+  
+  --ink:      #f8f8f8;
+  --ink-soft: #b7adb8;
+  --ink-mute: #938c94;
+
+  
+  --rule:        rgba(255, 255, 255, 0.08);
+  --rule-strong: rgba(255, 255, 255, 0.15);
+
+  
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+}
 @layer tones {
 @property --bg-mix {
   syntax:   "*";
@@ -5273,7 +5357,7 @@ border-top:1px solid var(--rule);margin-top:var(--space-2xl)}
       <p class="text-xs text-muted">Headings from <a class="link" href="packages/css/README.md">packages/css/README.md</a>, each with the first thing it says.</p>
 </section><section class="atlas-block" data-block>
   <h3 class="h6">What the source is made of <span class="pill">5</span></h3>
-  <div class="cluster gap-2xs"><span class="chip">a11y <span class="pill">2</span></span><span class="chip">components <span class="pill">20</span></span><span class="chip">foundation <span class="pill">6</span></span><span class="chip">patterns <span class="pill">9</span></span><span class="chip">themes <span class="pill">10</span></span></div>
+  <div class="cluster gap-2xs"><span class="chip">a11y <span class="pill">2</span></span><span class="chip">components <span class="pill">20</span></span><span class="chip">foundation <span class="pill">6</span></span><span class="chip">patterns <span class="pill">9</span></span><span class="chip">themes <span class="pill">12</span></span></div>
       <p class="text-xs text-muted">Directories under <code>packages/css/src/</code> with the files in each, of 97 tracked in the package. Structure, not features — the answer to <em>where does this live</em>.</p>
 </section><section class="atlas-block" data-block>
   <h3 class="h6">Crossings <span class="pill">3</span></h3>

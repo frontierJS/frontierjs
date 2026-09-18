@@ -114,7 +114,7 @@ inheritance.
 
 `theme-default` · `theme-sunset` · `theme-forest` · `theme-midnight` ·
 `theme-dark` · `theme-elite` · `theme-basecamp` · `theme-notebook` ·
-`theme-press` · `theme-field`
+`theme-press` · `theme-field` · `theme-dracula` · `theme-twilight`
 
 A theme overrides tokens, not just colors. **A theme ships no selector** —
 that is the contract, and it decides what a look can be: if a design needs a

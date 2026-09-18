@@ -1,5 +1,19 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-18 — `ws:pub` holds back a package nothing has touched
+
+`--affected` was the flag that limited a release to packages with commits since
+their own `<name>@<version>` tag, and the release everybody ran did not pass it:
+a bare `fli ws:pub patch` bumped and published all eighteen public packages,
+sixteen of them identical to what the registry already held. A version spent on
+an unchanged package cannot be taken back, and a run that publishes sixteen
+no-op tarballs looks exactly like one that worked. The filter is now the
+default and `--all` (`-a`, the flag `--affected` held) turns it off, for the
+republish that IS the point — a failed run finished by hand, or a packaging fix
+that changed no source. The sibling `ws:run` and `ws:version` keep `--affected`
+as an opt-in, because there the wrong answer costs a wasted test run rather
+than a burned version.
+
 ## 2026-09-17 — `--fix` says why a generator would not run
 
 `fli test:snapshots --fix` printed `could not be regenerated` and the rerun
