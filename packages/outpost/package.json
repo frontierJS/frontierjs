@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/outpost",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "The process a fleet server runs — Basecamp's hands on a machine",
   "type": "module",
   "bin": {

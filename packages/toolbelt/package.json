@@ -1,6 +1,6 @@
 {
   "name": "@frontierjs/toolbelt",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "FrontierJS pure-function kits — zero dependencies, no I/O, importable from any package",
   "type": "module",
   "scripts": {
