@@ -7,7 +7,7 @@ examples:
   - fli ask "Explain async/await in 2 sentences"
   - fli ask "Review this code" --file ./myfile.js
   - fli ask --system "You are a SQL expert" "How do I index a join?"
-  - fli ask "Summarize this" --file ./notes.md --model claude-opus-4-6
+  - fli ask "Summarize this" --file ./notes.md --model claude-opus-5
 args:
   -
     name: prompt
@@ -18,7 +18,7 @@ flags:
     char: m
     type: string
     description: Claude model to use
-    defaultValue: claude-sonnet-4-6
+    defaultValue: claude-sonnet-5
   system:
     char: s
     type: string
@@ -38,10 +38,12 @@ flags:
 <script>
 import { existsSync, readFileSync } from 'fs'
 import { resolve } from 'path'
+import { execFileSync } from 'child_process'
 </script>
 
 Ask Claude a question directly from the terminal. Streams the response as it arrives.
-Requires `ANTHROPIC_API_KEY` in your environment or `.env` file.
+Uses `ANTHROPIC_API_KEY` from your environment or `.env`, falling back to the OAuth
+profile `ant auth login` writes. A Claude.ai subscription is not an API credential.
 
 ```js
 // ─── Resolve prompt ───────────────────────────────────────────────────────────
@@ -71,11 +73,38 @@ if (flag.dry) {
   return
 }
 
-// ─── Check for API key ────────────────────────────────────────────────────────
-const apiKey = process.env.ANTHROPIC_API_KEY
-if (!apiKey) {
-  log.error('ANTHROPIC_API_KEY is not set')
-  log.info('Add it to your .env or run: export ANTHROPIC_API_KEY=sk-...')
+// ─── Resolve credentials ──────────────────────────────────────────────────────
+// Three sources, in the order the Anthropic SDKs use. An OAuth token travels on
+// Authorization: Bearer and needs the oauth beta header, so a key swap alone is
+// not enough — x-api-key with a Bearer token is a 401 that names neither.
+let authHeaders = null
+
+if (process.env.ANTHROPIC_API_KEY) {
+  authHeaders = { 'x-api-key': process.env.ANTHROPIC_API_KEY }
+} else if (process.env.ANTHROPIC_AUTH_TOKEN) {
+  authHeaders = {
+    'authorization':  `Bearer ${process.env.ANTHROPIC_AUTH_TOKEN}`,
+    'anthropic-beta': 'oauth-2025-04-20',
+  }
+} else {
+  try {
+    // Without --access-token this prints JSON, not a bare token.
+    const token = execFileSync('ant', ['auth', 'print-credentials', '--access-token'], {
+      encoding: 'utf8',
+      stdio:    ['ignore', 'pipe', 'ignore'],
+    }).trim()
+    if (token) authHeaders = {
+      'authorization':  `Bearer ${token}`,
+      'anthropic-beta': 'oauth-2025-04-20',
+    }
+  } catch {}
+}
+
+if (!authHeaders) {
+  log.error('No Anthropic credentials found')
+  log.info('Run: ant auth login   (Console account, no key to manage)')
+  log.info('Or add ANTHROPIC_API_KEY to your .env')
+  log.info('A Claude.ai Pro/Max subscription does not work here — this is the API.')
   return
 }
 
@@ -94,8 +123,8 @@ const res = await fetch('https://api.anthropic.com/v1/messages', {
   method:  'POST',
   headers: {
     'Content-Type':      'application/json',
-    'x-api-key':         apiKey,
     'anthropic-version': '2023-06-01',
+    ...authHeaders,
   },
   body: JSON.stringify(body),
 })

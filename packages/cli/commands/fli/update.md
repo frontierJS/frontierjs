@@ -1,6 +1,6 @@
 ---
 title: fli:update
-description: Pull latest fli from the repo, install deps, and link the global binary
+description: Bring this fli up to date — from npm when it was installed, from the checkout when it was linked
 alias: update
 examples:
   - fli update
@@ -10,20 +10,20 @@ examples:
   - fli update --branch main
 flags:
   branch:
-    description: Specific branch to pull (defaults to current)
+    description: Specific branch to pull (defaults to current) — a linked checkout only
   link:
     type: boolean
-    description: Run bun link after install (use --no-link to skip)
+    description: Run bun link after install (use --no-link to skip) — a linked checkout only
     defaultValue: true
   install:
     type: boolean
-    description: Run bun install after pull (use --no-install to skip)
+    description: Run bun install after pull (use --no-install to skip) — a linked checkout only
     defaultValue: true
 ---
 
 <script>
 import { execSync } from 'child_process'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 
 // Walk up from `start` looking for a .git directory. Returns the directory
@@ -49,20 +49,76 @@ const isLinked = () => {
     return false
   }
 }
+
+// Which package manager put a GLOBAL fli on this machine, read off where it
+// sits. Derived rather than asked, because the person running this is the one
+// least likely to remember — and answered as `null` rather than guessed: an
+// upgrade run through the wrong manager installs a second copy and leaves the
+// one on PATH exactly where it was.
+const globalManagerFor = (dir) => {
+  const path = dir.replace(/\\/g, '/')
+  if (path.includes('/.bun/install/global/')) return 'bun'
+  if (/\/lib\/node_modules\//.test(path))    return 'npm'
+  return null
+}
+
+// What this build of fli calls itself. Read after an upgrade too — the install
+// path does not move, so the same file answers before and after, and a version
+// that did not change is the whole verdict on whether anything happened.
+const installedVersion = (dir) => {
+  try { return JSON.parse(readFileSync(resolve(dir, 'package.json'), 'utf8')).version || '' }
+  catch { return '' }
+}
 </script>
 
-Update fli to the latest version from the repo. Designed for the FJS
-monorepo layout where fli lives at `packages/cli` — finds the repo root,
-pulls there, installs deps from the repo root (so workspace hoisting works),
-then re-links the global binary from fli's own package directory.
+Bring this fli up to date. There are two ways one gets onto a machine and the
+command reads which it is rather than being told: **a linked checkout**, where
+fli lives inside a git repo (the FJS monorepo, at `packages/cli`) — pull at the
+repo root, install there so workspace hoisting works, and re-link the global
+binary from fli's own directory; or **an install from npm**, where the upgrade
+is the manager's and the only question is which manager put it there, answered
+from where it sits.
+
+Neither one touches an APP's `@frontierjs/*` dependencies. That is `bun update`
+in the app, and it is a different decision — the framework version an app builds
+against is committed in its lockfile, where the version of the tool you type is
+not.
 
 ```js
 const fliRoot = global.fliRoot
 const repoRoot = findRepoRoot(fliRoot)
 
+// ─── installed from npm ───────────────────────────────────────────────────────
+// No git above fli means nobody linked it: this copy came from the registry and
+// the upgrade belongs to whichever manager installed it.
 if (!repoRoot) {
-  log.error(`No git repo found above ${fliRoot}`)
-  log.info('fli:update needs fli to live inside a git checkout.')
+  const manager = globalManagerFor(fliRoot)
+  const before  = installedVersion(fliRoot)
+
+  if (!manager) {
+    log.error(`Not a git checkout, and not a global install this recognizes: ${fliRoot}`)
+    log.info('Upgrade it with whichever installed it:')
+    log.info('  bun add -g @frontierjs/cli@latest')
+    log.info('  npm install -g @frontierjs/cli@latest')
+    return
+  }
+
+  const command = manager === 'bun'
+    ? 'bun add -g @frontierjs/cli@latest'
+    : 'npm install -g @frontierjs/cli@latest'
+
+  log.info(`version:   ${before || '(unknown)'} at ${fliRoot}`)
+  log.info(`installed by ${manager} — upgrading from npm`)
+  await context.exec({ command, dry: flag.dry })
+
+  if (flag.dry) return
+
+  // The install path does not move, so the same package.json answers again.
+  // Said either way round: an upgrade that changed nothing must not read as one
+  // that worked.
+  const after = installedVersion(fliRoot)
+  if (after && after !== before) log.success(`fli ${before || '?'} → ${after}`)
+  else log.info(`Already the latest — still ${after || before || '(unknown)'}`)
   return
 }
 

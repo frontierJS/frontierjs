@@ -1,5 +1,35 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-18 — `fli ask` takes the current Sonnet, and an OAuth profile
+
+The default model was `claude-sonnet-4-6`, a generation behind and priced at
+$3/$15 against Sonnet 5's $2/$10 for the same 1M context; the `--model` example
+named an equally stale Opus. Credentials were `ANTHROPIC_API_KEY` or a refusal,
+so the machine that had run `ant auth login` — no key to manage, the Console
+account the SDKs already read — was told to export one. It now resolves in the
+order the SDKs use: the key, `ANTHROPIC_AUTH_TOKEN`, then the stored profile's
+access token. An OAuth token travels on `Authorization: Bearer` with the
+`oauth-2025-04-20` beta header rather than `x-api-key`, so sending one the old
+way is a 401 that names neither the header nor the token. The refusal says a
+Claude.ai subscription is not an API credential, because that is the guess
+somebody makes once and cannot check.
+
+## 2026-09-18 — `fli update` upgrades an fli that came from npm
+
+`fli update` only knew the shape this repo's contributors have: fli inside a git
+checkout, pulled and re-linked. Anyone who installed it the documented way — `bun
+add -g @frontierjs/cli` — got *No git repo found above …* and a suggestion that
+fli must live in a checkout, which is a refusal to do the one thing the command
+is named for. It reads which shape it is in instead, derived from whether there
+is a `.git` above fli and, failing that, from where the package sits: a
+`.bun/install/global/` path is bun's, a `lib/node_modules/` path is npm's, and
+anything else is REFUSED with both commands printed rather than guessed at — an
+upgrade run through the wrong manager installs a second copy and leaves the one
+on PATH exactly where it was. The version is read before and after from the same
+`package.json`, so an upgrade that changed nothing does not read as one that
+worked. No second command (`self:update`) for the same sentence: which install
+shape you have is derivable, and a name you have to choose between is not.
+
 ## 2026-09-18 — `ws:pub` asks about npm once, where the answer still costs nothing
 
 `--interactive` carried two things: a bump menu per package, and the pause the
