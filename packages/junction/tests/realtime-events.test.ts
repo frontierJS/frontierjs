@@ -19,7 +19,8 @@
 // were found by driving the real client against a real server.
 
 import { describe, test, expect, mock } from 'bun:test'
-import { createService, callService, AUTO_EVENT_MAP } from '../src/core/service.ts'
+import { createService, callService } from '../src/core/service.ts'
+import { AUTO_EVENT_MAP }             from '../src/core/events.ts'
 import { publish } from '../src/transport/channels.ts'
 import { createJunctionClient } from '../src/client/index.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'

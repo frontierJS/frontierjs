@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 51 models · 2 databases
+-- 53 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -387,6 +387,30 @@ CREATE TABLE IF NOT EXISTS "plan" (
   "active" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   CHECK ("interval" IN ('monthly', 'yearly'))
+) STRICT;
+
+-- A stocktake: somebody walks the stockroom and writes down what is on the
+-- shelf, and the difference posts to the ledger when the sheet is closed.
+-- 
+-- ─── Why the key is a uuid and the ledger's is an Int ─────────────────────
+-- 
+-- A count names the sheet it belongs to. In a stockroom the sheet is made on
+-- the same phone, in the same minute, with no signal — so at the moment the
+-- first count is written there IS no server id, because nothing has been
+-- inserted anywhere. `@default(uuid())` puts the key in the browser's hands:
+-- `x-mint` crosses with the schema, sierra states the key on the create, and
+-- the count that follows references a sheet the server has never heard of and
+-- is still correct when both writes drain.
+-- 
+-- `InventoryMovement` keeps `Int @id` and is right to: nothing references a
+-- movement, so nobody ever needs its key before the server has one. The
+-- difference is the relation, which is exactly what the advisor's
+-- `sync-reference-to-a-server-assigned-id` grades.
+CREATE TABLE IF NOT EXISTS "stocktake_sheet" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "closedAt" TEXT,
+  "note" TEXT,
+  "startedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 
 -- Somebody this shop employs.
@@ -832,6 +856,26 @@ CREATE TABLE IF NOT EXISTS "inventory_movement" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_inventory_movement_variantId" ON "inventory_movement" ("variantId");
 CREATE INDEX IF NOT EXISTS "idx_inventory_movement_reference_kind" ON "inventory_movement" ("reference", "kind");
+
+-- One shelf, counted once.
+-- 
+-- Append-only in spirit and by gate: a second look at the same shelf is a
+-- second count, not an edit of the first. That is what makes `server` an
+-- honest collision policy here — two people counting one shelf produce two
+-- rows, which is the truth about what happened.
+CREATE TABLE IF NOT EXISTS "stocktake_count" (
+  "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
+  "sheetId" TEXT NOT NULL,
+  "variantId" INTEGER NOT NULL,
+  "counted" INTEGER NOT NULL,
+  "expected" INTEGER NOT NULL,
+  "damage" TEXT,
+  "note" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  FOREIGN KEY ("sheetId") REFERENCES "stocktake_sheet" ("id") ON DELETE CASCADE,
+  FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_stocktake_count_sheetId" ON "stocktake_count" ("sheetId");
 
 -- What was bought, at the price it was bought for.
 -- 

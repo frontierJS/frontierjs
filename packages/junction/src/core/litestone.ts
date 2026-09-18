@@ -39,7 +39,7 @@ import { toBulkFailure, partitionBulk, BULK_FAILURES, type BulkFailure } from '.
 import { singularize } from '@frontierjs/toolbelt/inflect'
 import { gradeStanding, levelPasses, LEVELS } from '@frontierjs/toolbelt/gate'
 import type { GradableUser } from '@frontierjs/toolbelt/gate'
-import { normalizeOrderBy, type SortParam } from './sort.ts'
+import { normalizeOrderBy, normalizeSelect, type SortParam, type SelectParam } from './query-values.ts'
 
 // Module augmentation: typing ctx.locals.db without forcing a hard
 // Litestone dependency on junction core. Apps using the litestone
@@ -377,20 +377,12 @@ function translateOps(ops: Record<string, unknown>): Record<string, unknown> {
   return result
 }
 
-// The spellings are `core/sort.ts`'s, because the browser client asks the same
-// question of the same value — it has to place a pushed row in a list it cannot
-// re-query — and two readings of `-createdAt` is two orders for one list.
-const parseSort = normalizeOrderBy
-
-type SelectParam = string | string[]
-
-function parseSelect(select: SelectParam): Record<string, boolean> {
-  const fields = Array.isArray(select) ? select : select.split(',')
-  return fields.reduce(
-    (acc, f) => ({ ...acc, [f.trim()]: true }),
-    {} as Record<string, boolean>
-  )
-}
+// The spellings are `core/query-values.ts`'s, because two other ends ask the
+// same question of the same value — the browser client places a pushed row in a
+// list it cannot re-query, and Sierra's offline read asks SQLite directly — and
+// two readings of `-createdAt` is two orders for one list.
+const parseSort   = normalizeOrderBy
+const parseSelect = normalizeSelect
 
 type PopulateParam = string | string[]
 
@@ -2348,9 +2340,11 @@ export function autoSort(accessorOpt: string | undefined) {
 // level at the data layer, but an anonymous request that gets that far fails as
 // a policy error, not a 401. This rejects it at the API boundary instead.
 //
-// Only the anonymous case is derivable here: whether an AUTHENTICATED user
-// clears level 4 depends on the app's own getLevel(), which Junction cannot
-// see. That check stays where it belongs, in the data layer.
+// For the CRUD verbs only the anonymous case is answered here: how far above
+// `read` a caller stands is the data layer's, and re-deciding it would be a
+// second reading of the model's own gate. A method that DECLARES a level is the
+// one place a number is compared, and the number comes from the same mapping —
+// `callerGateLevel` asks the client (`FJS-1161`).
 
 const GATE_OPS = { read: 'read', create: 'create', update: 'update', delete: 'delete' } as const
 export type GateOp = keyof typeof GATE_OPS
@@ -2513,6 +2507,47 @@ export function gateLevels(client: unknown, accessor: string): Record<GateOp, nu
   return _gateLevels(client, accessor)
 }
 
+// ─── Who the APP says this caller is ─────────────────────────────────────
+//
+// **The mapping is declared once and this asks it.** An app maps its own
+// standing onto the 0–7 scale in `GatePlugin({ getLevel })`, and that is the
+// mapping the Data boundary grades every read and write with. Grading a caller
+// HERE with `sessionGateLevel` is a second answer to the same question, and the
+// two disagree exactly where an app's standing is not a column on the session:
+// measured on basecamp, whose level comes from a `WorkspaceMember` row, an
+// `admin` of the workspace is ADMINISTRATOR(5) to the schema and CREATOR(3)
+// here, so `flows.save` — a method gated at 4 — refused a caller every model in
+// the app admits (`FJS-1161`).
+//
+// `sessionGateLevel` stays as the answer for a client that cannot grade: a
+// schema declaring no `@@gate` installs no plugin, and a service over no
+// Litestone client at all still declares method gates (`FJS-1087`). It is the
+// same grader that client would have auto-installed, so nothing changes for an
+// app that maps nothing of its own.
+function askLevel(db: unknown, accessor: string | undefined, subject: unknown[]): number | null {
+  // `in` rather than a property read: a Litestone client THROWS on an unknown
+  // property, so the probe is itself a throwing expression (`FJS-673`).
+  if (!db || typeof db !== 'object' || !('$levelOf' in db)) return null
+  const fn = (db as Record<string, unknown>).$levelOf
+  if (typeof fn !== 'function') return null
+  return (fn as (...a: unknown[]) => number | null).call(db, accessor, ...subject) ?? null
+}
+
+/** What the app grades THIS call's caller at — the client is already scoped to them. */
+export function callerGateLevel(db: unknown, accessor: string | undefined, session: unknown): number {
+  return askLevel(db, accessor, []) ?? sessionGateLevel(session as GradableUser)
+}
+
+/**
+ * The same question about somebody who is not this client's principal — a
+ * broadcast recipient. `$readAs`'s asymmetry, for `$readAs`'s reason.
+ */
+export function principalGateLevel(
+  db: unknown, accessor: string | undefined, principal: unknown, session: unknown,
+): number {
+  return askLevel(db, accessor, [principal]) ?? sessionGateLevel(session as GradableUser)
+}
+
 /** Whether a method name is one of the CRUD verbs `gateAuth` grades by operation. */
 export function isCrudGatedMethod(method: string): boolean {
   return method in OP_FOR_METHOD
@@ -2597,10 +2632,16 @@ export function gateAuthAround(
           // presence check, exactly as `find` is: how far above `read` a caller
           // stands is the Data boundary's to answer, and re-deciding it here
           // would be a second reading of the model's own gate.
-          if (grade.graded && !levelPasses(need, sessionGateLevel(ctx.auth.user)))
-            throw new Forbidden(
-              `'${ctx.service}.${method}' requires level ${need}, ` +
-              `caller has level ${sessionGateLevel(ctx.auth.user)}`)
+          //
+          // The level comes from the client the caller was scoped to, so the
+          // number this refusal names is the number every read and write in the
+          // call would have been graded with.
+          if (grade.graded) {
+            const has = callerGateLevel(ctx.locals.db, accessor ?? ctx.service, ctx.auth.user)
+            if (!levelPasses(need, has))
+              throw new Forbidden(
+                `'${ctx.service}.${method}' requires level ${need}, caller has level ${has}`)
+          }
         }
       }
     }

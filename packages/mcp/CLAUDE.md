@@ -58,14 +58,43 @@ grading on any keyword in it, and which three it may grade on is the design.
   evidence.
 - **This is an affordance** (Invariant 6). Nothing here is a boundary, and no
   caller of it may treat it as one.
+- **junction has already read the body by the time a route handler runs.**
+  `transport/http.ts` parses every matched request before dispatch and `body.ts`
+  reads `req.arrayBuffer()` with no clone, so `ctx.$raw.$req` is a spent Request.
+  Handed to the MCP transport it answers `400 Parse error: Invalid JSON`, which
+  names JSON and not the cause. `replayBody` rebuilds from `ctx.rawBody`; never
+  pass `$req` through.
+- **There is no `app.db` under `tenancy { strategy database }`.** One
+  `ctx.locals.db` cannot be many databases, so a tenant app has no app-wide
+  client — `example` is that shape. `registry.schema` is the declared way to read
+  declarations without rows; opening a tenant would make listing tools CREATE a
+  database file.
+- **A tool name may not contain a dot.** `^[a-zA-Z0-9_-]{1,128}$`, and a failure
+  invalidates the whole list rather than the one tool. `toolName` owns it, in the
+  PROJECTION rather than at the transport, so one spelling exists — and two
+  methods deriving one name are both withheld rather than one silently winning.
+- **The keep-alive has to be under the app's idle timeout.** The SDK's SSE
+  interval defaults to 15s and Bun's idle timeout to 10s, so the stream dies five
+  seconds before the frame that would have saved it. Measured both ways.
+- **The SDK validates the argument and it is STRICTER than the boundary.**
+  `fromJsonSchema` installs a default validator when none is passed, so a tool
+  argument is graded before `run()` is reached — a second engine over one schema.
+  Measured: `total: "2500"` against an `Int` is refused here and coerced by the
+  Data boundary, so the surface refuses a payload the app would have accepted.
+  Safe (it admits nothing) and self-correcting (the message names the field), but
+  it is a second rule and that is the open question, not a settled design.
 
 ## Which drive proves a change
 
-There is no drive. That is the biggest thing wrong with this package: `CHANGES.md`
-carries two measured tables and a claim that no credential column appears in any
-tool schema, and nothing regenerates or regrades any of them. `bun run test` is
-all there is, and the gap is named in
-`PROJECT_STATE.md`. A change to `describe()`, to `generateJsonSchema`'s keywords
-or to `@frontierjs/toolbelt/gate` can move this package's answers with nothing
-here failing — run `packages/junction`, `packages/litestone` and
-`packages/toolbelt` too.
+`bun run test` — and `tests/plugin.test.ts` is the half that matters, because it
+is the only thing that runs a real Junction app, a real Litestone client and a
+real port together. Both crossings this package lives on are invisible from
+either side alone: what junction did to the request body before the handler saw
+it, and whether the level a route reads is the level the boundary grades with.
+
+**What is still ungated is every NUMBER.** `CHANGES.md` and `PROJECT_STATE.md`
+carry a measured table against `example` and nothing regenerates it, so a change
+to `describe()`, to `generateJsonSchema`'s keywords or to
+`@frontierjs/toolbelt/gate` can move every figure with this suite green. Run
+`packages/junction`, `packages/litestone` and `packages/toolbelt` too, and read
+`PROJECT_STATE.md` § Next item 1.

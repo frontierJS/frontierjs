@@ -44,8 +44,8 @@ export type { Service, ServiceDefinition, ServiceDefinitionValue, BaseServiceOpt
 // `$orderBy` and leaves it raw on `ctx.directives`, so a service that wants to
 // honor it has to parse the same three spellings — and doing that by hand in
 // a service is how the grammar ends up with a second definition.
-export { normalizeOrderBy, comparatorFor, compareValues } from './src/core/sort.ts'
-export type { SortParam, OrderBy } from './src/core/sort.ts'
+export { normalizeOrderBy, normalizeSelect, comparatorFor, compareValues } from './src/core/query-values.ts'
+export type { SortParam, SelectParam, OrderBy } from './src/core/query-values.ts'
 
 // ─── Hooks ────────────────────────────────────────────────────────────────
 export {
@@ -133,7 +133,7 @@ export type { Schema, FieldDef, SchemaOptions, CompiledSchema, ValidationResult,
 export { createLitestoneBase, parseQuery as parseLitestoneQuery, parseWhere,
          findWindow,
          deriveModelName, accessorCandidates, withLitestoneDb,
-         sessionGateLevel, toDataPrincipal, LEVELS,
+         sessionGateLevel, callerGateLevel, principalGateLevel, toDataPrincipal, LEVELS,
          applyClaims, membershipClaim, MEMBERSHIP, tenantOf,
          jsonSchemaToJunctionSchema }                              from './src/core/litestone.ts'
 export type { GradableUser } from './src/core/litestone.ts'

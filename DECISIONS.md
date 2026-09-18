@@ -221,6 +221,43 @@ in that app offers a method its policy allows and a LOCKED gate refuses, so `9`
 against `levelPasses` versus a bare `>=` is a distinction `example` cannot draw,
 and the fixture carrying that one shape is the surface's first test.
 
+  *Amended 2026-09-16, on building the transport.* **The first transport is an
+  HTTP endpoint mounted as a Junction plugin, not a stdio process, and `stdio
+  first` is struck.** This ruling and `PROJECT_STATE.md` both said stdio, on the
+  reasoning that it is what an MCP server ships first. Probing says a boot here
+  is not a read-only act: stdio carries no request, so the process has to boot
+  the app, which starts a SECOND Caravan worker on `jobs.db` claiming the shop's
+  payroll and dunning jobs, runs the migration differ against the database, and
+  dies whole when any plugin's `boot()` fails — all three observed. Two processes
+  is also two event buses, so an agent's write reaches no open tab, and a session
+  revoked mid-episode closes a socket that process does not hold. Mounted inside
+  the API none of it is true, and the argument is this ruling's own one-execution-path
+  clause taken one process further: it already refused a second execution path
+  through `bridge.toContext()`, and a second PROCESS is the larger version of
+  the same thing. *Paved road vs. the workaround* is the adjudication and it cuts
+  against the ecosystem's habit: stdio is how an MCP server is usually shipped,
+  one-app-one-process is how this framework is built, and a stdio entry point can
+  later be a thin client of the endpoint rather than a second boot. **`@modelcontextprotocol/server@2.0.0`
+  is the dependency and it was probed rather than assumed**: its core transport
+  is Web-standard — `handleRequest(req: Request): Promise<Response>`, the shape a
+  Junction raw route already returns — and the Node `IncomingMessage`/`ServerResponse`
+  one is the wrapper over it.
+
+  *Amended the same day.* **The grading reads four inputs and this ruling named
+  three.** `describe().methodGates` is the fourth: `gateAuthAround` grades a
+  custom verb through `customMethodGrade`, which is a declared `gate:` where the
+  service wrote one, otherwise the model's read gate as a PRESENCE check, and
+  nothing where the model declares no `@@gate`. Reading three where the boundary
+  reads four is how a list offers what the boundary refuses, and the *narrowing
+  is all CRUD* amendment above is superseded by it in part: a custom method on a
+  gated model is not ungraded, it requires a session. **`customMethodGrade` is
+  imported from Junction rather than restated** — it is a pure function of two
+  plain records, and a fifth copy of a gate rule is what `FJS-D197` exists to
+  refuse. The figures move again with it: over `example`, 44 services and 248
+  methods answer 54 tools at STRANGER, 142 at USER, 245 at STAFF, and none
+  withheld from every standing. Two of the three counts in the paragraph above
+  are superseded twice over — once by this, once by the app growing.
+
 ### <a id="fjs-d250"></a>2026-09-08 · `FJS-D250` — A co-located route part is named whatever the app likes, and a prefix that names a folder must name ITS folder. `fli check` grades the claim, never the convention.
 
 `FJS-D117` asked whether a co-located part carries its folder in its NAME and
@@ -855,6 +892,73 @@ read→create→update→delete, read defaults to STRANGER.
 *Lives in:* `packages/litestone/docs/access-control.md`, parser `parseGateArg()`.
 
 ## Access control
+
+### <a id="fjs-d303"></a>2026-09-16 · `FJS-D303` — Q4 — does a policy predicate cross to the browser, and for which Models — The boolean stays the default and shipping the predicate is something a Model opts into.
+
+Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **B** was picked over **A** (the predicate text crosses for every Model, since the server re-checks and the disclosure is mostly of rules a determined reader could infer from the UI).
+
+The paper's recommendation, taken as written: strictness follows cost (§ IV), and the cost differs per Model, because a predicate can name a column whose reader was never meant to know it exists. It should not become a second declaration, though: a Model that declares `@@sync` has already said it will be evaluated with no server reachable, which is the same statement, so the disclosure follows from the sync declaration and nothing new is coined.
+
+### <a id="fjs-d309"></a>2026-09-16 · `FJS-D309` — A device's local database is a CACHE of what the server already answered, so a read of it is replayed and never re-graded: sierra reads it through `asSystem()`, and its rows go when the identity does.
+
+Decided while building `FJS-D307`'s storage swap — `sierra/src/junction/local-db.js`.
+
+**The doctrinal answer is to enforce the gate locally, and the code had already
+decided otherwise.** `list-cache.js` replays the rows a gate let this caller read
+without re-grading them, and clears on identity change. The local database holds
+exactly the same rows, put there by exactly the same successful reads, so it is
+read back on exactly the same terms.
+
+What decides it is that re-grading would be done by the WRONG grader. A litestone
+client with no resolver auto-installs `FrontierGateGetLevel`, and an app's own is
+a different function: measured on `example`, the two grade one account 3 and 4,
+and `Order` is `@@gate("0.4.4.5")`. A local read graded that way shows a different
+list from the server's with nothing raised, which is the failure mode this whole
+body of work exists to avoid — a screen that is quietly wrong offline.
+
+Invariant 6 is untouched. The server enforces regardless and `x-gate` on the
+client has always been an affordance; nothing here is the authority for anything.
+What the device holds is bounded by what the server chose to send, and `@@sync`
+still decides which models have a table at all (`FJS-D298`).
+
+**The bound is real and is stated rather than hidden**: a query run locally is
+not narrowed by whatever a service added on the way out — a forced tenant column,
+a filter a method applied — so an offline answer can include rows that same query
+would not have returned online, though never a row this caller was not already
+given. An app for which that difference matters is an app whose service is doing
+access control a policy should be doing, which `@@allow` and Invariant 6 already
+have an answer for.
+
+*Lives in:* `packages/sierra/src/junction/local-db.js`, `junction/index.js`
+§ `_tokenChanged`.
+
+### <a id="fjs-d310"></a>2026-09-16 · `FJS-D310` — Under `tenancy { strategy row }`, a `@unique` on a scoped model is SCOPED rather than reported: the tenant column is prepended to the constraint, and a field-level one is lifted to a table constraint. `@unique(global)` / `@@unique([…], global: true)` is the opt-out and coins nothing new. A model scoped through a PARENT keeps the warning.
+
+Asked as `FJS-1159`. **A** — the tenancy block scopes them — was picked over **B**, a declared `@@unique([…], tenant: true)` expanded with the rest of the block, and **C**, an `extend model` that widens a unique it inherits.
+
+**The declaration is usually made somewhere that cannot fix it.** `@frontierjs/orion` ships `FlowCredential.name @unique` and `KvEntry @@unique([scope, key])`; a host adds `workspaceId` with `extend model`, and no edit either of them can make repairs the index — the fragment does not know the column's name and the host cannot rewrite an inherited constraint. That is a property of every package that ships a schema fragment, not of orion, so **C** fixes one app at a time and leaves the class open. **B** is expressible in a fragment and was the close call; it was declined because forgetting it leaves the defect, and the defect is silent in the direction that matters — the second tenant is refused by a message naming a value they may not read, which `docs/access-control.md` says a refusal must never do.
+
+**What makes A cost nothing is that the exception already had a word.** `@unique(global)` was added for exactly the constraints that are deliberately installation-wide — a token, a public subdomain — so the language could already say the thing the rewrite must not touch. Making the default correct needed no new vocabulary, which is the whole of why the ruling is not a coinage.
+
+Derived rather than restated: the column is stated once, in the block, beside the `@@deny` and the `@default(auth().<claim>)` the same desugar already writes. Prepending rather than appending is not cosmetic — every read under row tenancy filters on the tenant first, so it is the prefix the index should lead with.
+
+**Two edges, both stated rather than discovered.** A model scoped THROUGH A PARENT carries no tenant column, and which parent to scope by is undecidable when it has two, so it is still reported with the same three ways out — the warning survives for exactly the case nothing can derive. And a field-level `@unique` becomes a table constraint, which moves the DECLARATION: `upsertMany({ conflictTarget: ['name'] })` no longer matches an index and SQLite refuses it by name, while `findUnique({ where: { name } })` still answers at most one row on a tenant-scoped client, because the deny filters it.
+
+The artefact that makes it visible is `db/ddl.snapshot.sql`, which is committed and CI-gated, plus an announcement naming every constraint the block scoped — `name String @unique` builds an index over two columns and the line itself cannot show it.
+
+### <a id="fjs-d308"></a>2026-09-16 · `FJS-D308` — What level a caller stands at is ASKED of the Data boundary and graded in one place: `db.$levelOf(accessor?, principal?)`, the app's own `getLevel` read through the client. Junction's custom-method gate and its gate-mode broadcast grading both call it; `sessionGateLevel` stays as the answer for a client with no mapping to ask, and `createApp({ level })` is declined.
+
+Asked as `FJS-1161`. **A** — junction asks the database client for the caller's level — was picked over **B**, `createApp({ level })`, an app-level option read by the method gate and handed to every plugin that grades a caller.
+
+Both fix the defect; they differ in how many places an app then states its mapping. The app already passes `getLevel` to `GatePlugin` because it has to — that is what grades every read and write — so **B** is a SECOND declaration of the same function, and an app that passes two of them is graded two ways with nothing saying so. The option was already spreading on that reasoning: `@frontierjs/auth` takes `services: { level }` and orion takes `orion({ level })`, and a third copy is the shape the ruling stops. **A** also reaches further for free: the same seam answers the broadcast fan-out, where `sessionGateLevel` was the grader for a count-only `changed` and refused every member of a tenanted app whose standing is a membership row.
+
+The mapping is a fact about the APP, and the Data boundary is where the app already declared it, so this is `FJS-D296`'s direction one layer up: the policy asks the gate for a level, and now so does the API. `$levelOf` is the seventh `$`-sibling and keeps their contract — every flavor answers the same for the same subject — with one asymmetry stated: the principal is OPTIONAL, because the common caller holds the asker's own scoped client and is asking about the caller it was scoped to, which is what picks up the gate's per-request cache. `$readAs` has no such caller and takes its subject always.
+
+**`null` means *I cannot grade* and never a level.** A schema declaring no `@@gate` installs no plugin, and a service over no Litestone client still declares method gates (`FJS-1087`); both fall back to `sessionGateLevel`, which is the resolver such a schema would have auto-installed — so an app that maps nothing of its own is unchanged.
+
+What this does NOT do is make a gate the whole permission model. A gate is the FLOOR (`FJS-D197`); who may act on a particular row is the row policy, and what a member holds is the capability grid (`FJS-D146`). What was wrong was that the floor was measured with a different ruler at each boundary.
+
+The nine questions were answered after the code was written, which is named here rather than hidden: it passes all nine, and *can this be wrong without anything saying so* is answered by pairing both directions — a mapping grading a caller HIGHER than the shipped grader was a false 403, one grading them LOWER was a method open to somebody the app does not call an administrator, and only the first is a refusal anybody notices.
 
 ### <a id="fjs-d296"></a>2026-09-15 · `FJS-D296` — A row policy reads the caller's level as `auth().level`: the grade `GatePlugin`'s `getLevel(auth, model)` gives for the model whose policy is being asked, carried by no principal. `getLevel` is therefore synchronous, and a Promise is refused by name at the first grade. Orion's read policies become `owner == auth().id || auth().level >= 5`, and the administrator's system-read path in its services is deleted — amending `FJS-D295`'s mechanism, not its rule.
 
@@ -2474,6 +2578,108 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d307"></a>2026-09-16 · `FJS-D307` — Q9 — what fills the local database, and which source answers a read — B's read path, plus a declared PREFETCH: a screen or a resource says which queries it must have before it needs them, and warming them is an ordinary read through B's own mechanism
+
+Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **C** was picked over **A** (a replica. A declared subset of the server's rows is kept current by a change feed over the existing WebSocket, and every read goes local, always, reachable or not), **B** (a cache that fills itself. A read goes to the server when it answers and the rows are written locally as they pass; with no server the same query runs against what is there. Nothing new is declared).
+
+The paper's recommendation, taken as written: **B alone does not ship the promise.** A stocktake in a basement can only query rows somebody happened to open earlier, and *which screens did I visit before I lost signal* is not a thing a person can predict or a developer can test. **A is a distributed-systems project**: a change feed, a subset language, an invalidation story — and it re-opens the axis `FJS-D298` deliberately closed, because *this Model is replicated to the device* is a statement about DIRECTION, which `@@sync`'s argument is not allowed to also mean. C is B's mechanism with one declaration that names exactly the thing a reader can predict — *this screen works offline* — and it composes with what phase 3 already built, since sierra's list cache (`FJS-D300`) is B with the wrong storage engine underneath it. The upgrade path to A stays open: a prefetch that runs on a schedule is a poor replica, and the day an app needs a real one, C's declaration is the subset language A would have had to invent.
+
+**Note, same day — the prerequisite the question named was already built.** The
+paper said all three options first needed *a set of writes run in ONE worker
+message inside a single transaction*, and that nothing shipped without it.
+`createMany` and `upsertMany` are that verb, they have always crossed the worker
+proxy, and nothing had to be written: 2,000 rows in 67 ms against 9.23 ms each
+one at a time, because an autocommit INSERT over OPFS is one filesystem sync.
+Batched, a browser matches `bun:sqlite` to within a rounding error, and the
+worker round trip — the thing that looked like the cost — is 0.18 ms. So the
+ruling stands and the work it was thought to be blocked on does not exist.
+
+What C actually needs first is the SCHEMA a device is given, and that follows
+from two rulings rather than being open: shipping the app's `.lite` source would
+undo `FJS-D204`'s prose stripping and hand over the row policies `FJS-D303` made
+opt-in, so a device gets a projection of the PARSED tree. `createClient({ parsed })`
+already takes one and `createBrowserClient` now does too.
+
+**Built the same day, as `litestone/src/device-schema.js`** — a filter answering
+the `@@sync` models plus what they reference, 53 models to 3 over `example`. It
+settles the reading of `FJS-D303` that mattered here: the opt-in that ruling
+requires IS the `@@sync` declaration, so a kept model's policies cross with it
+and no second attribute is coined.
+
+### <a id="fjs-d306"></a>2026-09-16 · `FJS-D306` — What `FJS-D26` licenses is a substrate package that DEPENDS on nothing, not one that computes nothing it is not given. An ambient capability is allowed per file and per capability, named with its reason in `scripts/ci-allowances.json`; the dependency half stays absolute and has no allowance.
+
+CI's `hygiene` phase stated the substrate rule as *every export is a pure
+function: same input, same output*, and refused `@frontierjs/toolbelt/ids` on two
+counts — it reads a clock and it is nondeterministic. Both are true, and both are
+the kit's JOB: an id generator that answered the same id twice would be a defect.
+
+**The rule had conflated two claims.** What Invariant 1's exemption actually rests
+on is *depends on nothing* — that is what lets litestone and mesa import toolbelt
+without routing around `Litestone ← Junction ← Sierra`, and an added dependency
+breaks it with no consumer's suite going red. *Computes nothing it is not given*
+rode along as the same sentence and is a different, weaker idea. `/ids` is the
+first kit where they come apart, and it comes apart cleanly:
+`crypto.getRandomValues` is present identically in Bun, Node and a browser, so it
+costs the license nothing — and being present on both ends is the very property
+that made ids a kit rather than a copy on each side (`IDEAS/homestead.md` phase 2:
+a row written with no server reachable is named by its children before any
+INSERT, so both ends mint and both must mint the same way).
+
+The alternative was injection, the shape `/datetime` next door already uses —
+`createDatetime({ timeZone, now })`. It is right there and it is wrong here: it
+would move *use `getRandomValues`, never `node:crypto`* out of one file and into
+every caller, which is the duplication the kit was extracted to end, and a `ulid`
+built from an injected `now` is sortable only when the caller remembers to pass
+one.
+
+**The allowance is keyed by capability, not by file**, so a kit allowed its
+entropy is not thereby allowed a clock, a `fetch` or a runtime import — and an
+entry whose file stopped using the capability is reported stale, the rule
+`generatedIgnored` already follows. Both failure paths were run before this
+landed. Overrides § V's *is the complexity the problem's* for the narrow case
+where the answer is *the problem's, and the rule could not say so*.
+
+*Lives in:* `scripts/ci.mjs` § substrate purity, `scripts/ci-allowances.json`
+§ `substrateAmbient`.
+
+### <a id="fjs-d305"></a>2026-09-16 · `FJS-D305` — Q7 — what is the database in the browser — Wa-sqlite over OPFS: the same SQL Litestone already writes, the same DDL, the same gates compiled the same way. ~1.2MB of wasm, loaded behind a dynamic import so only an app that reads offline pays.
+
+Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **A** was picked over **B** (IndexedDB plus `@frontierjs/toolbelt/predicate`, which is already here and already evaluates a `.lite` expression against a record on screen. No wasm and no new bytes; every query is a scan this framework writes by hand, and `@@index`, `groupBy` and `@@fts` mean nothing locally), **C** (both, chosen per app: B as the floor, A as an opt-in for an app whose offline reads are real queries).
+
+**Note, 2026-09-16 — the ruling stands and two of its numbers do not.** What was
+decided is A over B and C: a real SQL engine in the browser rather than a second
+query implementation. The headline's *~1.2MB of wasm* is the RAW size of
+wa-sqlite's asyncify build, which the OPFS path does not need; measured per file
+and brotli'd the way a CDN sends them, the sync build with `AccessHandlePoolVFS`
+is **254 kB** (`IDEAS/homestead.md` phase 4).
+
+**And the package named in the headline cannot be the one.** `wa-sqlite`'s API is
+`async` on every path in BOTH builds — `sqlite3.step` is declared
+`async function`, because the shape is uniform across the asyncify and plain
+builds. Litestone's internals call `.get()` and `.all()` from roughly 270 sites
+without awaiting, so such an engine hands back a pending Promise where a row
+belongs: truthy, object-shaped, and thrown by nothing. A filter stops filtering
+and nothing says so. SQLite's own build exposes a SYNCHRONOUS `oo1` API over the
+`opfs-sahpool` VFS and is the engine the seam is built for
+(`@sqlite.org/sqlite-wasm`, 489 kB brotli as published, against 254 kB — the
+difference is the price of an engine Litestone can drive at all). The seam
+refuses a non-synchronous engine by name at registration
+(`packages/litestone/src/core/engine.js`).
+
+The paper's recommendation, taken as written: B is the one that looks cheap and is not: *one engine on both sides* is the claim phase 4 exists to make, and a second query implementation is a second set of answers to *what does this filter mean*, which is the failure `/query` and `/predicate` were both extracted to stop. C is B plus A plus the seam between them. What A costs is bytes, which is Q6's question and is why that one is ruled first — and the dynamic import means an app that never declares `@@sync` on a read path loads none of it.
+
+### <a id="fjs-d304"></a>2026-09-16 · `FJS-D304` — Q8 — which `@@sync` values ship next, and in which order — `append` and `refuse` next, and nothing else until an app asks. `append` is the shape the stocktake already is and its declaration IS its implementation; `refuse` is already enforced at the Data boundary through `@version` and merely unnamed.
+
+Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **A** was picked over **B** (`field` next, because if this framework does timestamps at all that is the correct shape, and shipping `lww` first would ship the one candidate with a written argument against it), **C** (the whole set at once, so the vocabulary stops being a table in a paper).
+
+The paper's recommendation, taken as written: both of A's values are stated by the schema's author and READABLE in the schema, where every timestamp policy is supplied by a library and has to be trusted; Weidner's warning about behavior that comes from a library you do not understand is the argument, and it generalizes past CRDTs. C would ship values that parse and resolve nothing, which phase 1 already refused once. B is right that `field` beats `lww` and that is a reason to skip `lww`, not a reason to do `field` before the two that cost nothing.
+
+### <a id="fjs-d298"></a>2026-09-16 · `FJS-D298` — Q1 — what does a Model declare about sync, and what does silence mean — `@@sync(<policy>)` from a closed set, with no default: a Model that declares nothing is not syncable, and an offline client refuses to queue a write against it.
+
+Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **A** was picked over **B** (every Model is syncable under a server-wins default, and `@@sync` exists only to widen that to last-write-wins or a manual merge).
+
+The paper's recommendation, taken as written: fail closed, the way the Data boundary already does for access (Invariant 6). Under B a Model nobody thought about loses a row with nothing said, which is the failure § V asks about last; under A the author says the word once, and the append-only Model that most field capture actually is says it in passing.
 
 ### <a id="fjs-d288"></a>2026-09-14 · `FJS-D288` — A day an app BILLS on is a plain date in a `String @date` column, and a zone is spent only where an instant and a day have to cross. The kit grows four plain-date functions; `DateTime @zoned` stays unbuilt until a second app wants it.
 
@@ -5052,6 +5258,24 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d301"></a>2026-09-16 · `FJS-D301` — Q5 — what happens to a `File` column in a queued mutation — Two queues. The mutation carries a reference the CLIENT minted and drains through the ordinary path; a second queue owns the upload, with its own local table, its own retry and objects that are immutable once named.
+
+Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **B** was picked over **A** (one queue. The bytes ride with the mutation, and a write with a photograph on it is a write like any other).
+
+The paper's recommendation, taken as written: it is what PowerSync, and every SDK that has had to do this, arrived at, and FJS is already built that way on the server: a `File` column stores a reference and `FileStorage` owns the bytes. Under A a 4MB photograph blocks a 200-byte correction behind it in a FIFO, and a half-sent upload has to be resumable inside a queue whose other entries are rows.
+
+### <a id="fjs-d300"></a>2026-09-16 · `FJS-D300` — Q3 — at replay, which gate level is a queued mutation graded against — The level the caller has at replay.
+
+Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **A** was picked over **B** (the level they had when the mutation was queued, carried with it).
+
+The paper's recommendation, taken as written: the server re-checks on its own reading of the caller regardless (Invariant 6), so B is a fiction the boundary overrules anyway. What A costs is queued work that disappears, so this ruling only lands with its artifact attached: a mutation refused at replay is surfaced as a rejected item somebody can see and retry, never dropped silently.
+
+### <a id="fjs-d299"></a>2026-09-16 · `FJS-D299` — Q2 — does the queue replay operations or rows — Operations: the mutation's intent, replayed against whatever the server state is at replay time.
+
+Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **A** was picked over **B** (rows: the resulting record, reconciled field by field against the server's copy).
+
+The paper's recommendation, taken as written: `FJS-D138` already chose it for the overlay and stated the reason, that a replay needs an intent to replay, so B would make the store hold two representations of one pending write. B also cannot express a compare-and-swap: `@@transitions` is one, and a row replay would trample a state machine that moved underneath it.
 
 ### <a id="fjs-d295"></a>2026-09-15 · `FJS-D295` — A flow, its versions and layout, a run and its steps are read by the flow's owner and by an administrator, and by no other USER. The owner reads through row policies on the row's own owner (`Flow.ownerId`, `Run.actorId`, and one hop for the rest); an administrator reads through the services, which grade the caller with the app's own mapping and read as system with protected columns stripped — `FJS-D289`'s rule for writing, applied to reading. A model trigger records the row as the OWNER reads it (`$readAs`), and a row the owner may not read starts nothing.
 
@@ -9664,6 +9888,12 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d302"></a>2026-09-16 · `FJS-D302` — Q6 — what is the byte budget, and what does a build do when it exceeds it — A ceiling with a baseline that ratchets down only, the way `scripts/typecheck-baselines.json` already works (Invariant 14) — an app adopts whatever it costs today and cannot get worse.
+
+Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **C** was picked over **A** (a stated ceiling in `sierra.config.js`, and a build that exceeds it FAILS. One number, enforced where the number is knowable), **B** (the build REPORTS the total and grades nothing; the budget lives in the vision paper as an intention).
+
+The paper's recommendation, taken as written: B is what exists now and it is why there has never been a budget: a number nothing enforces is a number nobody reads. A is the right shape and the wrong default, because a ceiling a framework picks is wrong for every app and the first thing anybody does is raise it. C is the mechanism this repo already trusts for exactly this failure — it makes *worse* the thing that fails, which is the only claim a framework can make about an app's bytes without knowing the app.
 
 ### <a id="fjs-d282"></a>2026-09-14 · `FJS-D282` — A package contributes routes to a host's Sierra app by the host adding one file under its own routes that points at the package's route directory, and the file-tree router follows it.
 

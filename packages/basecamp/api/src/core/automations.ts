@@ -15,18 +15,20 @@
 // **A dry run pages nobody** (`FJS-D283`): it answers which channel it would
 // have reached, and the channel's `lastDeliveryAt` does not move.
 
-import type { JunctionActor } from '@frontierjs/orion/plugin'
-import type { BasecampApp } from '../app.ts'
+import type { JunctionActor, INodeImplementation, NodeContext, NodeResult, PluginManifest } from '@frontierjs/orion/plugin'
+import type { BasecampApp } from '../basecamp.types.ts'
 import { deliverToChannel, type Message } from './delivery.ts'
-
-type NodeResult = { ok: true; data: unknown } | { ok: false; error: string; retry?: boolean }
 
 const SEVERITIES = ['info', 'warning', 'critical'] as const
 
-export function basecampNodes(app: BasecampApp) {
-  const page = {
+// Typed against orion's own contribution shape rather than inferred: an object
+// literal gives `category: string`, which is not the union, and the mismatch
+// surfaces at `orion({ plugins })` as a structural error about a field nobody
+// got wrong.
+export function basecampNodes(app: BasecampApp): { manifest: PluginManifest; implementations: INodeImplementation[] } {
+  const page: INodeImplementation = {
     type: 'basecamp.page',
-    async execute(ctx: { config: Record<string, unknown>; actor?: unknown; dryRun?: boolean }): Promise<NodeResult> {
+    async execute(ctx: NodeContext): Promise<NodeResult> {
       const actor = ctx.actor as JunctionActor | undefined
       if (!actor) return { ok: false, error: 'basecamp.page runs inside a flow, as its owner' }
       const db = actor.db as any
@@ -72,7 +74,7 @@ export function basecampNodes(app: BasecampApp) {
       id: 'basecamp', name: 'Basecamp', version: '0.0.0',
       nodes: [{
         type:        'basecamp.page',
-        category:    'data' as const,
+        category:    'data',
         label:       'Page a channel',
         description: "Posts to one of this workspace's notification channels — Slack, PagerDuty or a webhook — as the flow's owner.",
         configSchema: {

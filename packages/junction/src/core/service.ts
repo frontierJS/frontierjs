@@ -26,7 +26,7 @@ import { wrapResult, isServiceResult, resultData } from './envelope.ts'
 // litestone imports createService (used only inside functions) and this
 // module imports createLitestoneBase (used only inside createBaseService).
 import { createSchema } from './schema.ts'
-import { isPublishHook } from '../transport/channels.ts'
+import { AUTO_EVENT_MAP, isPublishHook } from './events.ts'
 import {
   createLitestoneBase, autoValidate, validateInput, gateAuthAround, autoFilter, autoSort, liftReservedQuery,
   markDerived, isDerivedHook,
@@ -461,21 +461,6 @@ export interface HookTelemetryEvent {
   durationMs:   number
   status:       'ok' | 'error'
   error?:       { name: string; message: string }
-}
-
-// Auto-event names for the CRUD write methods.
-//
-// Exported because the channel publisher must agree with it. It didn't: this
-// map produced 'posts:created' on app.events while publish() derived its own
-// name straight from ctx.method and put 'posts create' on the wire. The browser
-// client listens for the past-tense form, so every WS consumer was matching
-// names the server never sent. One map, both emitters.
-export const AUTO_EVENT_MAP: Record<string, string> = {
-  create:  'created',
-  update:  'updated',
-  patch:   'patched',
-  remove:  'removed',
-  restore: 'restored',
 }
 
 const CRUD_METHODS = new Set(['find', 'get', 'aggregate', 'create', 'update', 'patch', 'remove', 'restore'])

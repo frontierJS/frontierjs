@@ -33,9 +33,9 @@
 //   //   { type: 'event', event: 'deployments created', data: { id: '...', ... } }
 
 import { createPresenceTracker } from './presence.ts'
-import { AUTO_EVENT_MAP }       from '../core/service.ts'
+import { AUTO_EVENT_MAP, markPublishHook } from '../core/events.ts'
 import { unwrapResult }         from '../core/envelope.ts'
-import { resolveAccessor, toDataPrincipal, readGateLevel, sessionGateLevel } from '../core/litestone.ts'
+import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel } from '../core/litestone.ts'
 import { wsSend }               from './send-queue.ts'
 import type { ServiceContext } from './bridge.ts'
 import type { IAuth }          from '../auth/types.ts'
@@ -333,8 +333,8 @@ function warnRefusedAll(label: string, accessor: string, size: number, hint = ''
  *
  * Keyed on the principal's VALUE instead, because that is what decides the
  * answer: `$readAs` grades the gate, the row policy and the field policies out
- * of the principal's own fields, and `sessionGateLevel` reads five more of
- * them. Two principals that serialize identically cannot be graded
+ * of the principal's own fields, and the app's own `getLevel` reads whatever
+ * else it grades a standing by. Two principals that serialize identically cannot be graded
  * differently — which is the property a hash would only approximate, and is why
  * this is a full canonical string rather than a digest.
  *
@@ -449,9 +449,8 @@ export async function gradeRecipients(
   // different tenant in each. Without a resolver the inner map has exactly one
   // entry and this is the flat map it used to be.
   // The principal is carried beside its key, because the key is now a string
-  // and the grading needs the value: `toDataPrincipal` in row mode and
-  // `sessionGateLevel` in gate mode both read the session's own fields. Any
-  // member of a cohort will do — they serialized identically.
+  // and the grading needs the value: both modes build a Data-realm principal
+  // out of it. Any member of a cohort will do — they serialized identically.
   const byPrincipal = new Map<unknown, { user: unknown; byClaims: Map<string, ClaimGroup> }>()
   const seen = new Set<Connection>()
   let live = 0
@@ -473,15 +472,6 @@ export async function gradeRecipients(
 
   const out: Cohort[] = []
   for (const [key, group] of byPrincipal) for (const { claims, conns } of group.byClaims.values()) {
-    if (mode === 'gate') {
-      // The gate alone. Nothing here is a row, so there is no policy to ask and
-      // no field to shape — the question is whether this caller may read the
-      // model at all.
-      if (sessionGateLevel(key === ANON ? null : (group.user as never)) < (readLevel as number)) continue
-      out.push({ conns, frame: encodeEventFrame(event, payload) })
-      continue
-    }
-    let visible: unknown
     // `toDataPrincipal` for the reason the Bridge index gives it: a
     // `SessionContext` puts the id at `userId` and litestone's `auth()` reads
     // `.id`, so handing the session straight over compares every row policy
@@ -494,6 +484,20 @@ export async function gradeRecipients(
     // channel, and the principal was built where the channel was not known.
     const base = key === ANON ? null : toDataPrincipal(group.user as never)
     const who  = claims ? { ...(base as object ?? {}), ...claims } : base
+
+    if (mode === 'gate') {
+      // The gate alone. Nothing here is a row, so there is no policy to ask and
+      // no field to shape — the question is whether this caller may read the
+      // model at all. Graded by the APP's own mapping through the Data boundary
+      // (`FJS-1161`), off the same principal the row path grades with: a
+      // standing that is not a column on the session — a membership row, a
+      // workspace role — is invisible to `sessionGateLevel` and is most of what
+      // decides a level in a tenanted app.
+      if (principalGateLevel(db, accessor, who, group.user) < (readLevel as number)) continue
+      out.push({ conns, frame: encodeEventFrame(event, payload) })
+      continue
+    }
+    let visible: unknown
     try { visible = await db.$readAs(accessor, payload, who) }
     catch { continue }                      // undecidable: refuse, never widen
     if (!visible) continue                  // the gate or a policy said no
@@ -1570,17 +1574,6 @@ function _mergeCallHeaders(
 // Event name defaults to '<service> <method>' e.g. 'notes created'.
 // Override: publish(fn, 'note:published')
 
-// Every hook `publish()` ever produced. A service that declares `channel:` is
-// already announced by callService, so a publish hook on the same service sends
-// the frame a second time — and a name check cannot tell the two apart, because
-// an app is free to call its own hook `publish`. Marking is what makes the
-// conflict detectable (FJS-045).
-const _publishHooks = new WeakSet<Function>()
-
-export function isPublishHook(fn: unknown): boolean {
-  return typeof fn === 'function' && _publishHooks.has(fn as Function)
-}
-
 export function publish<T = unknown>(
   fn:     PublishFn<T>,
   event?: string
@@ -1622,6 +1615,5 @@ export function publish<T = unknown>(
     await manager.publish(eventName, payload, ctx, fn)
   }
 
-  _publishHooks.add(hook)
-  return hook
+  return markPublishHook(hook)
 }

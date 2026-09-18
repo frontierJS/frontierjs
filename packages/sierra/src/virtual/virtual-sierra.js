@@ -377,6 +377,23 @@ function generateVirtualSierra(config, tableOutput, sierraConfigPath, sierraCont
     lines.push(``)
   }
 
+  // The device's own database — only when the app asked for one, because it is
+  // 868 kB of wasm and a worker. The URLs are the build's (`local-db-plugin.js`
+  // puts the files there); nothing is fetched until the first read that needs
+  // it, so an app that is never offline pays for the two lines below and
+  // nothing else.
+  if (sierraContext?.deviceSchema && config.offline && config.offline !== true && config.offline.db) {
+    lines.push(`// ── The device's own database (offline: { db: true }) ──────────`)
+    lines.push(`import { configureLocalDb } from '@frontierjs/sierra/junction'`)
+    lines.push(
+      `configureLocalDb(${JSON.stringify({
+        schemaUrl: '/fjs-device-schema.json',
+        wasmUrl:   '/fjs-sqlite/index.js',
+        ...(typeof config.offline.db === 'object' ? config.offline.db : {}),
+      })})`)
+    lines.push(``)
+  }
+
   // Analytics wiring — only if configured
   if (config.analytics) {
     lines.push(`// ── Analytics ──────────────────────────────────────────────────`)

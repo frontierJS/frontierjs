@@ -590,6 +590,25 @@ export interface LitestoneClient {
    */
   $readGrading(accessor: string): 'open' | 'graded'
   /**
+   * What level the app grades a caller at for one model — `getLevel(auth, model)`,
+   * asked rather than re-derived.
+   *
+   * The seventh sibling. The mapping from an app's own standing onto the 0–7
+   * scale is declared once, in `GatePlugin({ getLevel })`, and a layer that
+   * grades with the shipped `gradeStanding` instead answers a different number
+   * for the same caller: an `admin` of a workspace was ADMINISTRATOR(5) at the
+   * Data boundary and CREATOR(3) at a Junction method gate (`FJS-1161`).
+   *
+   * The principal is OPTIONAL, which is where it parts company with `$readAs`:
+   * omitted, it answers about the principal this client is scoped to, which is
+   * what picks up the gate's per-request cache. An accessor naming no model —
+   * and an omitted one — grades with a `null` model, for a modelless service.
+   *
+   * `null` means *this client cannot grade* — a schema declaring no `@@gate`
+   * installs no plugin — and never a level.
+   */
+  $levelOf(accessor?: string, principal?: unknown): number | null
+  /**
    * The `@@scope` names declared on a model → the predicate as source text.
    *
    * The published list `$checkWhere` validates a `where: { $scope }` against, so

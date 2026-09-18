@@ -4,7 +4,7 @@ import type { JSONSchema }            from "../types"
 import type { NodeTypeDescriptor, PluginManifest, PluginEntry } from "./types"
 import { BUILTIN_DESCRIPTORS, BUILTIN_FUNCTION_NAMES } from "./builtins"
 
-export type { NodeTypeDescriptor, PluginManifest, PluginEntry } from "./types"
+export type { NodeTypeDescriptor, NodeCategory, PluginManifest, PluginEntry } from "./types"
 
 // ─────────────────────────────────────────────
 // PLUGIN REGISTRY

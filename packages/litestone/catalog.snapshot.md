@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**102 words** — 12 declarations · 63 field attributes · 27 model attributes.
+**103 words** — 12 declarations · 63 field attributes · 28 model attributes.
 
 ## Declarations
 
@@ -111,6 +111,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@external` | Shape the table |  |  |  |  |
 | `@@noStrict` | Shape the table |  |  |  |  |
 | `@@fts` | Shape the table | ([field, …][, tokenize: unicode61\|ascii\|porter\|trigram]) | in a model | tokenize: unicode61 · ascii · porter · trigram |  |
+| `@@sync` | Wire it to the app | (policy) |  | policy: server · append · refuse |  |
 | `@@capabilities` | Decide who may | [(all)] |  | scope: all |  |
 | `@@extensible` | Shape the table | (column, declaredBy: Model[, max: { kind: N }]) |  |  |  |
 | `@@softDelete` | Shape the table | [(cascade)] |  | mode: cascade |  |
@@ -175,3 +176,6 @@ Shapes the parser accepts and something later refuses.
 | `index-another-index-already-covers` | info | an index a longer one already answers |
 | `declared-and-unreferenced` | info | a declaration nothing references |
 | `materialized-view-full-refresh` | info | a materialized view is rebuilt in full on every row written to its sources |
+| `sync-reference-to-a-server-assigned-id` | warn | a queued write references a model whose id only the server can assign |
+| `sync-file-with-no-key-to-attach-to` | warn | a syncable model carries bytes and has no key a client can state |
+| `sync-required-file` | warn | a required File on a syncable model cannot be written offline |

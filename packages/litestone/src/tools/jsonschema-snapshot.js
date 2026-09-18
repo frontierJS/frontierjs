@@ -241,6 +241,13 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
     if (def['x-gate'])        meta.push(`gate \`${Object.entries(def['x-gate']).map(([op, lvl]) => `${op}:${lvl}`).join(' ')}\``)
     if (def['x-version'])     meta.push(`version field \`${def['x-version']}\``)
     if (def['x-soft-delete']) meta.push(`soft delete \`${def['x-soft-delete']}\``)
+    // `@@sync` and the key the CLIENT mints for it. Both decide what a browser
+    // does with no server reachable — whether a write is held at all, and what a
+    // held one means — so a model losing either is a behavior change the diff of
+    // this file has to show. `x-sync` absent is the refusal (`FJS-D298`), which
+    // is why silence here is meaningful rather than merely empty.
+    if (def['x-sync'])        meta.push(`sync \`${def['x-sync']}\``)
+    if (def['x-mint'])        meta.push(`client mints \`${def['x-mint'].field}\` with \`${def['x-mint'].kind}()\``)
     if (def.additionalProperties === false) meta.push('closed (`additionalProperties: false`)')
     // Said on the definition rather than left to be inferred from a gate of 9
     // on three operations: a projection is read-only because it is a

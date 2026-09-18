@@ -1,5 +1,91 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-17 — `core/service.ts` and `transport/channels.ts` no longer import each other
+
+Two symbols held a runtime import cycle shut: `AUTO_EVENT_MAP`, which names a mutation's event and
+was declared in the service layer and read by the publisher, and `isPublishHook`, which marks the
+hooks `publish()` made and was declared in the transport layer and read by the service. Both are
+facts the two layers have to AGREE on, so both belong below them — `src/core/events.ts` imports
+nothing, and `publish()` marks its hook through `markPublishHook` rather than a `WeakSet` two files
+away.
+
+Nothing moved on the published surface: neither symbol is exported from the package. Found by drawing
+it — `fli project:codegraph`'s cycle view reported a 32-file knot here, of which 28 files were joined
+by TYPE edges alone, which tsc erases. The runtime ring was four files and seven edges
+(`FJS-1181`).
+
+## 2026-09-16 — `core/sort.ts` → `core/query-values.ts`, and `parseSelect` joins it
+
+The module is named for what it holds: the two directive VALUES that have several legal spellings.
+`@frontierjs/toolbelt/directives` says which `$` names exist and reads them off a wire, and states
+that it deliberately does not fix these two shapes — only a query builder can. This is that answer,
+and `parseSelect` was a private copy of half of it inside `core/litestone.ts`.
+
+**A third end asks now**, which is what forced it: Sierra's offline read hands a device's own SQLite
+the caller's directives, and it was spelling `-id` itself. The translation is one function or it is
+a list that sorts two ways (`FJS-1179`).
+
+`normalizeOrderBy`, `normalizeSelect`, `comparatorFor` and `compareValues` are re-exported from
+`@frontierjs/junction/client` — reached through the package root, they would pull Bun's transport
+into a browser.
+
+## 2026-09-16 — a caller's level comes from the app's mapping, not from a second grader
+
+`gateAuthAround` graded a declared method gate with `sessionGateLevel`, and the channels fan-out
+graded a count-only `changed` the same way. Both now ask the Data boundary — `callerGateLevel` and
+`principalGateLevel` over litestone's new `db.$levelOf` (`FJS-1161`, ruled `FJS-D308`).
+
+**The two graders disagree exactly where an app's standing is not a column on the session.** In a
+tenanted app it is a membership row: basecamp grades a workspace `admin` at ADMINISTRATOR(5) and the
+shipped `gradeStanding` grades the same session CREATOR(3), so `flows.save` — declared at 4 — refused
+a caller every model in the app admits, and the 403 named a number nothing in the app had written.
+The refusal now names the number the call would have been graded with the whole way down.
+
+**The broadcast half is the same defect through a different door.** A bulk write announces a COUNT,
+which names no row, so there is nothing for `$readAs` to grade and the gate is the whole verdict —
+which meant every member of a tenanted app was below the read gate by the shipped grader's reckoning
+and received nothing. That path now builds the same principal the row path does, claims merged, and
+grades it with the app's own mapping.
+
+**`sessionGateLevel` stays and is not deprecated**: it is the answer for a client that cannot grade —
+no `@@gate` means no plugin, and a service over no model still declares gates (`FJS-1087`) — and it
+is the resolver such a schema auto-installs, so an app that maps nothing of its own is unchanged.
+`createApp({ level })` is declined for the reason in the ruling: the app already passes `getLevel` to
+`GatePlugin`, and a second declaration of it is two answers to one question.
+
+## 2026-09-16 — a per-call `idempotencyKey`, and the header the server was already waiting for
+
+`create`, `patch`, `remove`, `invoke` and `call` take an optional `CallOptions` argument whose one
+field is `idempotencyKey`. **The custom-method pair matters as much as CRUD**: a real app writes
+most of its verbs as `service.invoke('adjust', …)`, which is the shape `example`'s own inventory
+screen uses, so a key reaching CRUD alone would have reached the queue's test case and not the
+feature. On the HTTP path it is MERGED with `X-Service-Method` rather than replacing it — that
+header is what the bridge dispatches a custom method on, and an options object written in its place
+would turn every invoke into a plain create, with no error anywhere and simply the wrong verb. It travels as an `Idempotency-Key` header over HTTP and in `meta.headers` over the
+socket. Omitted, nothing changes: no header is stated and the server claims nothing, so an app that
+passes none is on exactly the path it was on before.
+
+**The server needed no change.** `idempotency-key` has been in `PROTOCOL_CALL_HEADERS` all along —
+merged from a socket frame whether or not the app declared any call headers — and `callService`
+claims it and answers the first call's result without running the pipeline. What was missing was any
+way for a browser to state one PER CALL: `setCallHeader` is client-wide, and over the socket only
+those client-wide headers travelled.
+
+**It is a third parameter rather than a key on `QueryDirectives`** because that is the closed
+`$`-table and says what to fetch (Invariant 10); a key is transport.
+
+Needed by anything that re-sends a write nobody can say arrived — which `example`'s `verify:offline`
+measured is a real state and not a hypothetical: a socket that has not noticed the network is gone
+carries a call that lands minutes later with the screen never told, so a re-send without a key
+writes the row twice. It is the first piece of the Homestead queue (`IDEAS/homestead.md` phase 1),
+where the key is also the queue entry's own primary key.
+
+**Both transports are tested, because they disagreed by construction** — the HTTP path had
+`opts.header` at the request level and nothing above it, the socket path had no per-call header at
+all, and a test over either one alone would pass against a client that could only do the other. The
+fallback is asserted on its own: a `_wsCall` with no socket must reach HTTP with the key intact,
+since that is the path a queue drains on after an outage.
+
 ## 2026-09-15 — the examples' `getLevel` is synchronous
 
 The README and `example/` resolvers dropped `async`, which litestone now refuses

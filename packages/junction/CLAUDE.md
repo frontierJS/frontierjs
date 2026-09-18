@@ -35,6 +35,11 @@ src/
                     `type` in the seed, any method) both compile through
                     jsonSchemaToJunctionSchema → createSchema
     envelope.ts     the result envelope — one module, one owner
+    events.ts       the broadcast vocabulary — AUTO_EVENT_MAP (what a mutation's
+                    event is CALLED) and the publish-hook mark. Imports NOTHING:
+                    both facts are read on both sides of the service/transport
+                    wall, and while each lived on one side those two modules
+                    imported each other at runtime (`FJS-1181`)
     app-model.ts    ONE walk over a built app, for every register that renders
                     one — describeSurface, describeJobs, describeNotifications,
                     and describeAppModel composing those over
@@ -72,7 +77,7 @@ src/
     errors.ts       named HTTP error classes + `retryable`
     schema.ts       request validation from the generated JSON Schema
     loader.ts       auto-discovers *.service.ts (factory must be create*Service)
-    rate-limit.ts, idempotency.ts, metrics.ts, sort.ts, diagnostics.ts,
+    rate-limit.ts, idempotency.ts, metrics.ts, query-values.ts, diagnostics.ts,
     field-errors.ts, config-scope.ts, services-dir.ts, env.ts, logger.ts
   config/index.ts   loadConfig — junction.config.js onto AppConfig
 
@@ -955,8 +960,21 @@ src/
   is how the app's own actionable sentence — *pass X-Workspace-Id or
   ?workspace_id=* — reaches a framework refusal that could not otherwise know
   it; `tenantFrom` is the only thing that knows where a tenant is named.
-- **`sessionGateLevel()` is a hand copy** of the same function in Litestone
-  (which cannot import Junction). Change one, change both. `toDataPrincipal()` is
+- **What level a caller stands at is the APP's mapping, and this package asks
+  for it rather than grading a session** (`FJS-D308`). `callerGateLevel(db,
+  accessor, user)` is the one probe — `db.$levelOf` at the Data boundary, where
+  `GatePlugin({ getLevel })` already declared the mapping — and
+  `principalGateLevel` is the same question about a broadcast recipient. Two
+  callers: the custom-method gate and the channels fan-out's gate mode, where a
+  count-only `changed` names no row so the gate is the whole verdict.
+  **`sessionGateLevel` is the fallback and not a second grader**: it answers for
+  a client with no mapping to ask, which is the resolver such a schema
+  auto-installs anyway. The two disagree wherever a standing is not a column on
+  the session — a membership row, a workspace role — which is every tenanted app:
+  basecamp graded a workspace `admin` ADMINISTRATOR(5) at the Data boundary and
+  CREATOR(3) here, and refused a caller every model admits (`FJS-1161`). It is
+  `@frontierjs/toolbelt/gate`'s `gradeStanding` under the name this package has
+  always exported, not a copy of litestone's (`FJS-D197`). `toDataPrincipal()` is
   the other half of that boundary — `userId` → `id`, without which every
   `@@allow(... auth().id)` matches nothing, silently.
 - **`before: { all: [...] }` applies to every method**, machine-facing endpoints included.
@@ -1043,7 +1061,7 @@ src/
   guessing, once per burst. With no `match` every event applies, which is the old
   behavior and the one every non-Sierra caller still gets.
 - **A push is also PLACED, and a page past the first refuses one.** `orderBy`
-  decides where the row goes (`core/sort.ts`, which is `parseSort` — one reading
+  decides where the row goes (`core/query-values.ts`, which is `parseSort` — one reading
   of `-createdAt`), and on the first page the row pushed past `limit` belongs to
   page 2. Past page 1 nothing here can know whether a new row belongs on an
   earlier one, so it is refused and counted on `stale`, which a view renders as

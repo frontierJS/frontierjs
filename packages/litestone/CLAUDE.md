@@ -8,7 +8,12 @@ The guiding philosophy: simple, portable, 80/20, production-ready. Litestone han
 
 ## Tech stack
 
-- **Runtime**: Bun (native SQLite, workers, file I/O)
+- **Runtime**: Bun on a server, and **a browser worker over OPFS**. Two seams make
+  that one codebase: `#sql-engine` (`src/core/engine.js`) picks what runs the SQL,
+  `#host` (`src/host/`) picks everything else the runtime provides, and both resolve
+  by CONDITION. The client is unchanged in either — proved on Node against
+  `node:sqlite` by `test/engine-seam.test.ts`, and in Chrome over OPFS by
+  `bun run test:browser`
 - **Language**: JavaScript ESM, no TypeScript
 - **Database**: SQLite (WAL mode, dual read/write connections)
 - **Distribution**: npm `@frontierjs/litestone`
@@ -26,6 +31,12 @@ src/
                      schema grammar over the tokens it hands back
     ddl.js         — AST → CREATE TABLE / INDEX / TRIGGER SQL
     client.js      — createClient(), all table ops, plugins, hooks, events
+    engine.js      — what a SQL engine IS, stated once: `openDatabase(path, opts)`
+                     and `setEngine()`. Every connection this package opens comes
+                     from here, and the CONTRACT IS SYNCHRONOUS — an engine that
+                     answers promises is refused by name at registration, because
+                     `.get()`/`.all()` are called from ~270 sites that do not
+                     await and a pending Promise reads as a row (`FJS-D305`)
     migrate.js     — schema diffing: introspect, buildPristine, diffSchemas
     migrations.js  — file-based migrations: create, apply, status, verify, autoMigrate
     validate.js    — ValidationError, all field validators
@@ -48,7 +59,52 @@ src/
       s3.js        — S3-compatible provider (R2, S3, B2, MinIO)
       local.js     — local filesystem provider (dev)
 
-  drivers/
+  engines/
+    bun-sqlite.js  — the server engine, and the ONLY file in this package that
+                     names `bun:sqlite`. `test/engine-seam.test.ts` asserts the
+                     count is one
+    sqlite-wasm.js — SQLite's own wasm build over the `opfs-sahpool` VFS, for a
+                     browser. Imported by nothing: a host calls
+                     `createSqliteWasmEngine({ load })`, because 868 kB of wasm
+                     is what a dynamic import is for
+    none.js        — what `#sql-engine` resolves to under the `browser` condition,
+                     so a bundler never follows an import into a runtime builtin.
+                     The host registers its own engine and `openDatabase()`
+                     refuses by name until it does
+
+  host/            — what Litestone needs from the runtime that is NOT SQL: a
+                     filesystem, paths, a module resolver, crypto, and the async
+                     context. `#host` picks one by condition. The SECOND seam,
+                     and the division is the useful one — an engine is a choice
+                     an app makes, a host is a fact about where the code runs
+    node.js        — a re-export and nothing else; the server path must not get
+                     slower or stranger to make the browser work
+    browser.js     — paths implemented, a filesystem REFUSED by name, and
+                     @encrypted refused on purpose: decrypting on a device means
+                     the key is on the device.
+                     **A module in the browser graph reaches every host facility
+                     through `#host`, never by the builtin's own name.** A bare
+                     `from 'fs'` is invisible on a server AND under
+                     `--conditions=browser`, because node has `fs` either way;
+                     a BUNDLER replaces it with a proxy that throws on the first
+                     property ACCESS, so the module dies on IMPORT. Graded by
+                     `test/engine-seam.test.ts`, which walks the graph
+
+  browser/         — the browser port's two halves
+    worker.js      — the whole client, in a dedicated worker, which is the only
+                     place OPFS is synchronous. Runs ONE call at a time, and
+                     that is load-bearing: `host/browser.js`'s async-context
+                     shim is a single slot
+    client.js      — the page's proxy over it. `$transaction` is refused by
+                     name — a callback runs on the page, so the write lock would
+                     be held across main-thread turns. It releases the worker on
+                     `pagehide`: an OPFS access handle is exclusive, a navigation
+                     does not end a worker, and two of them over one pool kills
+                     the RENDERER rather than failing (`FJS-1179`)
+
+  drivers/         — a per-MODEL storage driver, which is NOT the engine seam:
+                    `engines/` answers *what runs the SQL*, `drivers/` answers
+                    *where this one model's rows live*
     jsonl.js       — JSONL append-only driver for logs/audit databases
     jsonl-index.js — the SQLite sidecar beside a .jsonl, and the LOCK on that file
 
@@ -74,6 +130,14 @@ src/
     split-worker.js — Bun worker for parallel shard execution
     run.js         — standalone entrypoint (used by CLI)
 
+  device-schema.js — the schema a DEVICE gets: a filter over the parsed tree
+                     answering the `@@sync` models plus what they reference.
+                     A FILTER and not an emitter, which is what makes it unable
+                     to carry a comment or a model by accident — and every cut
+                     is graded `lost`/`changed`/`noted` beside the tree. The
+                     `database` blocks come out: `db:` overrides `main` and
+                     nothing else, so a second block keeps a server path a
+                     browser refuses
   release.js       — the release surface + classifyPivot(): can N-1 and N serve
                      one database at once? Never imported by production code
   tenant.js        — createTenantRegistry()
@@ -205,12 +269,13 @@ Type?      — optional (nullable)
 @id                              primary key (auto-increment for Int)
 @unique                          UNIQUE constraint
 @unique(global)                  …and under `tenancy { strategy row }`, one that is deliberately
-                                 unique across the WHOLE INSTALLATION rather than per tenant. Only
-                                 meaningful there, and only to silence the warning: a unique on a
-                                 tenant-scoped model whose columns carry neither the tenant column
-                                 nor a key reaching a scoped model is reported, because two tenants
-                                 then cannot hold the same value and the refusal names it to the
-                                 second. A token or a public subdomain is legitimately global
+                                 unique across the WHOLE INSTALLATION rather than per tenant — the
+                                 OPT-OUT, and the only thing that keeps a constraint installation-wide
+                                 on a scoped model. A bare `@unique` there is SCOPED: the block
+                                 prepends the tenant column, so `slug String @unique` builds
+                                 `UNIQUE (workspaceId, slug)` and the field-level attribute is lifted
+                                 to a table constraint (`FJS-1159`). Only meaningful under row
+                                 tenancy. A token or a public subdomain is legitimately global
 @default(value)                  literal, now(), uuid(), ulid(), cuid(), nanoid()
 @default(auth().field)           stamp from ctx.auth at write time (runtime-only)
 @default(fieldName)              copy sibling field value on create
@@ -678,6 +743,20 @@ db.$readGrading('product') // 'open' | 'graded' — whether $readAs can ever
                            // 'graded': the other siblings answer {} because
                            // *I cannot judge this* is not *this is wrong*, and
                            // here it is a permission, so it falls the other way
+db.$levelOf('order')       // the level THIS client's principal is graded at for
+                           // Order — the app's own getLevel(auth, model), asked
+                           // rather than re-derived (FJS-D308). SEVENTH sibling,
+                           // and the one that takes its subject OPTIONALLY: the
+                           // common caller holds the scoped client of the caller
+                           // it is asking about, which is what picks up the
+                           // gate's per-request cache. $levelOf('order', who)
+                           // grades somebody else, as $readAs does. Per MODEL,
+                           // because getLevel is; an accessor naming no model
+                           // grades with a null model. `null` means *I cannot
+                           // grade* — no @@gate means no plugin — and never a
+                           // level: junction's method gate and its gate-mode
+                           // broadcast grading fall back to the shipped grader
+                           // there, which is what such a schema auto-installs
 db.$protectedFields('secret')
                            // { data: 'encrypted' } — which columns must never be
                            // written down in plain text, and which protection
@@ -1425,6 +1504,20 @@ to every row in the tenant. Two rules per scoped model, because create and read
 want opposite answers about an absent value — `checkCreatePolicy` runs before
 the `@default(auth().<claim>)` stamp, so an omitted column on create is
 legitimate and a row holding no tenant on read belongs to nobody.
+
+**And it takes the UNIQUES.** The deny guards reads; a `@unique` guards writes,
+and on a scoped model a bare one was unique across the whole installation — two
+tenants unable to both hold `launch`, the second refused by a message naming a
+value it may not read (`FJS-1159`). The tenant column is PREPENDED, which is also
+the prefix every read under row tenancy filters on first, and a field-level
+`@unique` is lifted to a table constraint because a column cannot carry a
+two-column UNIQUE. `@unique(global)` / `@@unique([…], global: true)` is the
+opt-out and existed before this, which is why the change costs no new word.
+**Only where the model carries the column** — one scoped through a PARENT has
+none, and which parent to scope by is not decidable when a model has two, so
+those keep the warning. Both halves are announced, since `name String @unique`
+now builds an index over two columns and the line cannot show it;
+`db/ddl.snapshot.sql` is the artefact.
 
 **A stamped column is `readOnly` in the generated JSON Schema**, with
 `x-litestone-kind: 'tenancy'` — `@system`'s treatment for `@system`'s reason:

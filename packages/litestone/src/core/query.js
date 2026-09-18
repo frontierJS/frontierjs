@@ -1724,8 +1724,9 @@ function _sqlLit(val) {
 //
 // They live here rather than in client.js because `generateJsonSchema` answers
 // the same question to the BROWSER and may not import the query client — that
-// pulls in `bun:sqlite`, and sierra's build runs in plain Node. One owner, two
-// readers (Invariant 4).
+// reaches `core/engine.js`, whose `#sql-engine` resolves to `bun:sqlite` under
+// every condition but `browser`, and sierra's build runs in plain Node. One
+// owner, two readers (Invariant 4).
 
 // Which keys of a model may appear in a where, split by WHY not — the sibling of
 // sortableKeysFor, and the same reason for existing: a caller that refuses has to

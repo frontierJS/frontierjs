@@ -27,7 +27,7 @@ title: Inventory
   import { movements }       from '../../resources/InventoryMovement.mesa'
   import { productVariants } from '../../resources/ProductVariant.mesa'
   import { session } from '@/session.js'
-  import { toFieldErrors, useStore, getClient } from '@frontierjs/sierra/junction'
+  import { toFieldErrors, useStore } from '@frontierjs/sierra/junction'
 
   import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Button        from '@frontierjs/ui/components/forms/Button.mesa'
@@ -48,7 +48,13 @@ title: Inventory
 
   $: (session.user, session.level)
 
-  const inventory = () => getClient().service('inventory')
+  // The RESOURCE's service proxy, not `getClient().service(…)`. Both reach the
+  // same server method; only this one passes through the resource pipeline, and
+  // that is where a write the network could not carry is held and replayed —
+  // `InventoryMovement` declares `@@sync(server)`, and a correction is made in a
+  // stockroom with one bar of signal. The raw client is the escape hatch, and
+  // taking it costs the queue along with the hooks.
+  const inventory = () => movements.service
 
   // The ledger goes through the resource's STORE — `find` over the model, live
   // like every other list in this app. The LEVELS do not and cannot: they are
@@ -62,19 +68,41 @@ title: Inventory
   let loading     = true
   let error       = null
 
+  // ─── two reads, and they fail SEPARATELY ────────────────────────────────
+  //
+  // They used to be one `try`, with `levels` first. That is fine on a network
+  // and wrong with none: `levels` is a computed answer nothing can keep — a
+  // join across two tables and a clock — so it throws, and the ledger below it
+  // was never even asked for. The screen then showed nothing at all, when half
+  // of it was on the device the whole time (`IDEAS/homestead.md` phase 3).
+  //
+  // The ledger is `InventoryMovement`, which declares `@@sync`, so its last
+  // list is kept and `load()` answers with it when the call cannot arrive.
   async function load() {
     if (session.level < 5) { loading = false; return }
     error = null
+    const failures = []
+
     try {
       const r = await inventory().invoke('levels', null, {})
       levels      = r?.rows ?? []
       holdMinutes = r?.holdMinutes ?? 0
+    } catch (e) {
+      levels = []
+      failures.push(e.message)
+    }
+
+    try {
       await movements.load({}, { limit: 40, orderBy: '-id' })
     } catch (e) {
-      error = e.message
-    } finally {
-      loading = false
+      failures.push(e.message)
     }
+
+    // Only when BOTH went. One of the two answering is a screen that works,
+    // and an alert over a working table is how an app teaches people to ignore
+    // its alerts.
+    if (failures.length === 2) error = failures[0]
+    loading = false
   }
 
   // Re-run when the session arrives. Sierra resolves `session` asynchronously,

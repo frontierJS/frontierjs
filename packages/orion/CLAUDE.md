@@ -43,7 +43,7 @@ the plan, module by module, and the rulings it rests on are
 | `web/routes.js` | the directory a host mounts — `export { default } from '@frontierjs/orion/routes'` in a `*.mount.js` (`FJS-D282`) |
 | `web/routes/` | the screens: flows, a flow, runs, a run, credentials, and the section layout |
 | `web/resources/` | `Flow.mesa`, `Run.mesa`, `FlowCredential.mesa` — the resources the screens read through |
-| `mockup/ui/` | the React builder and inspector, a specification for phase 6's screens and not a source |
+| `mockup/ui/components/` | four files, the specification for what phase 6 has not built and not a source: `flow-editor.jsx` (the canvas), `nodes.jsx` (the per-node inspector), `node-types.js` (`NODE_CONFIG_FIELDS` and `schemaToFields` — `ENODE_TYPES` beside them is ported), `pages.jsx` (metrics, templates, plugins, the run filter bar). **It does not run** — no `package.json`, no vite — so it is read, never driven |
 
 ## What bites here
 
@@ -172,7 +172,14 @@ the plan, module by module, and the rulings it rests on are
   acting on another person's flow through system, and a `data.code` save. The
   `level` default is `sessionGateLevel`, which grades a bare `role` USER(4), so
   an app grading roles its own way — `example`'s `shopGateLevel` — passes it to
-  both or reads and writes disagree about who an administrator is (`FJS-1161`).
+  both or reads and writes disagree about who an administrator is. **Junction is
+  no longer a third**: a declared method gate is graded by the same
+  `GatePlugin` mapping now, asked through `db.$levelOf` (`FJS-D308`), so a host
+  whose standing is a membership row is no longer refused at the API by a level
+  nothing in it wrote (`FJS-1161`). What is left here is the two paths that
+  reach NO client scoped to the caller — a system write and a compile-time
+  refusal — which is why `orion({ level })` survives and why collapsing it into
+  one option is a separate question.
 - **Every read is the caller's own client** (`FJS-D295`, `FJS-D296`). The owner
   and an administrator both arrive through the row policies, so a query, a
   broadcast and a protected column agree. A read in `services.ts` through

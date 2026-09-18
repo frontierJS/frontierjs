@@ -282,7 +282,7 @@ export function packageDirs(root) {
   const seen = new Set()
 
   const add = (name, dir) => {
-    const key = `${name} ${dir}`
+    const key = `${name}\x00${dir}`
     if (!name || seen.has(key)) return
     seen.add(key)
     out.push({ name, dir })
@@ -317,7 +317,7 @@ function escapeRe(s)    { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') }
 
 /** A markdown row's cells, respecting an escaped pipe inside one. */
 export function splitRow(line) {
-  const ESC = ' '
+  const ESC = '\x00'
   return line.replace(/\\\|/g, ESC).split('|').slice(1, -1)
     .map(c => c.split(ESC).join('|'))
 }

@@ -19,14 +19,14 @@
  *
  * ── The curve is the module's, not a copy ──────────────────────────────────
  *
- * `gilbert`, `gridFor`, `coreLayout` and `packageGrid` are serialized into the script with
+ * `gilbert`, `gridFor`, `coreLayout`, `packageGrid` and `depthLayout` are serialized into the script with
  * `toString()`, and every band, score, label and hotspot is computed in node,
  * so the page cannot lay out or grade a file differently from the PNG beside it.
  */
 
 import {
-  gilbert, gridFor, coreLayout, packageGrid, coreRegions, tileBands, scoreOf, isHotspot, bandLabels, paletteCss, themesIn,
-  KINDS, TONES, QUADRANTS, MORE, STRONG, TESTED_BAND, HALF_LIFE_DAYS, SCORE_RAMP, SCORE_STEPS, SCORE_WARN, SCORE_MAX,
+  gilbert, gridFor, coreLayout, packageGrid, depthLayout, coreRegions, tileBands, scoreOf, isHotspot, bandLabels, paletteCss, themesIn,
+  KINDS, TONES, QUADRANTS, MORE, STRONG, TESTED_BAND, COGNITIVE, HALF_LIFE_DAYS, SCORE_RAMP, SCORE_STEPS, SCORE_WARN, SCORE_MAX,
 } from './codegraph.js'
 
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
@@ -48,6 +48,8 @@ const MORE_KEY = {
   age:    'Last commit. Strong is recent.',
   churn:  'Commits over its life.',
   tested: 'Strong is untested.',
+  cycle:  'Files in its import cycle. Grey is in none.',
+  cognitive: 'Its hardest function. Grey is unparsed.',
 }
 
 export function renderPage(model, { css, theme, all = false, name }) {
@@ -56,9 +58,10 @@ export function renderPage(model, { css, theme, all = false, name }) {
   const data = {
     name, head: model.head, builtAt: model.builtAt, halfLife: HALF_LIFE_DAYS,
     commits: model.commits, sweeps: model.sweeps, sweepLimit: model.sweepLimit,
-    reports: model.reports, labels: bandLabels(), tones: TONES, kinds: KINDS, all,
+    reports: model.reports, labels: bandLabels(), tones: TONES, kinds: KINDS, all, parser: model.parser ?? null,
     core, uses: coreUses(model.uses, core), quadrants: QUADRANTS, strong: STRONG,
     more: MORE, testedBands: [...new Set(Object.values(TESTED_BAND))].sort(),
+    cognitiveCuts: COGNITIVE,
     scoreSteps: SCORE_RAMP.length, scoreWarn: SCORE_WARN, scoreMax: SCORE_MAX, scoreCuts: SCORE_STEPS,
     rows: model.files.map(f => {
       const b = tileBands(f)
@@ -69,7 +72,8 @@ export function renderPage(model, { css, theme, all = false, name }) {
               t?.level ?? null, t?.from ?? null, t?.from === 'lcov' ? t.pct : t?.refs ?? null, f.exposure,
               b.heat, b.blast, b.complexity, b.exposure, hot ? 1 : 0, hot && b.blast >= STRONG - 1 ? 1 : 0,
               round1(f.age), f.churn, round1(f.created),
-              s && round1(s.value), s && s.step, s && s.levels.map(round1),
+              s && round1(s.value), s && s.step, s && s.levels.map(round1), f.depth, f.cycle,
+              f.bytes, f.fns, f.cognitive, f.worst && [f.worst.name, f.worst.line, f.worst.cyclo, f.worst.nest, f.worst.lines],
               ...MORE.map(m => b[m])]
     }),
   }
@@ -115,6 +119,7 @@ export function renderPage(model, { css, theme, all = false, name }) {
           <div class="cluster gap-2xs" role="group" aria-label="Layout" id="layouts">
             <button class="btn outlined" data-layout="core" aria-pressed="true">core at center</button>
             <button class="btn outlined" data-layout="packages" aria-pressed="false">each package</button>
+            <button class="btn outlined" data-layout="depth" aria-pressed="false">by depth</button>
             <button class="btn outlined" data-layout="path" aria-pressed="false">path order</button>
           </div>
           <button class="btn outlined" id="copy" title="Copy the map as it is drawn now, as a PNG">copy image</button>
@@ -178,7 +183,7 @@ export function renderPage(model, { css, theme, all = false, name }) {
     </section>`,
     `<section class="pane"><dl class="facts divided" id="method"></dl></section>`,
     '</main>',
-    `<script>const D = ${json}\n${gilbert.toString()}\n${gridFor.toString()}\n${coreLayout.toString()}\n${packageGrid.toString()}\n${SCRIPT}</script>`,
+    `<script>const D = ${json}\n${gilbert.toString()}\n${gridFor.toString()}\n${coreLayout.toString()}\n${packageGrid.toString()}\n${depthLayout.toString()}\n${SCRIPT}</script>`,
     '</body></html>',
     '',
   ].join('\n')
@@ -224,6 +229,12 @@ const STYLE = `
 #more-menu { z-index: 3; min-width: 16rem; }
 /* .popover sets display, which beats the user agent's [hidden] — a closed menu drew over the kinds */
 #more-menu[hidden] { display: none; }
+.cg-tune { display: grid; gap: var(--space-2xs); }
+.cg-tune canvas { width: 100%; height: 64px; display: block; border-radius: var(--card-radius); background: var(--surface-sunken); }
+.cg-cuts { display: grid; gap: 2px; }
+.cg-cut { display: grid; grid-template-columns: 6.5rem 1fr 3rem; align-items: center; gap: var(--space-2xs); }
+.cg-cut input { width: 100%; accent-color: var(--color-danger); }
+.cg-cut output { text-align: right; font-variant-numeric: tabular-nums; }
 #more-menu .item { cursor: pointer; }
 #more-menu .item[aria-checked="true"] .item-title { font-weight: 600; }
 #more-menu .item:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
@@ -243,20 +254,21 @@ const STYLE = `
 // ─── script ───────────────────────────────────────────────────────────────────
 
 const SCRIPT = String.raw`
-const COLS = ['path', 'kind', 'region', 'heat', 'usedBy', 'usedAcross', 'complexity', 'lines', 'level', 'from', 'detail', 'exposure', 'bHeat', 'bBlast', 'bCx', 'bExp', 'hot', 'critical', 'age', 'churn', 'created', 'score', 'bScore', 'levels', 'bAge', 'bChurn', 'bTested']
+const COLS = ['path', 'kind', 'region', 'heat', 'usedBy', 'usedAcross', 'complexity', 'lines', 'level', 'from', 'detail', 'exposure', 'bHeat', 'bBlast', 'bCx', 'bExp', 'hot', 'critical', 'age', 'churn', 'created', 'score', 'bScore', 'levels', 'depth', 'cycle', 'bytes', 'fns', 'cognitive', 'worst', 'bAge', 'bChurn', 'bTested', 'bCycle', 'bCognitive']
 const files = D.rows.map((r, i) => Object.fromEntries([['i', i], ...COLS.map((c, k) => [c, r[k]])]))
 const METRICS = D.quadrants
 const BANDS = Array.from({ length: D.strong + 1 }, (_, b) => b)
 const STEPS = Array.from({ length: D.scoreSteps }, (_, s) => s)
-const BAND_KEY = { heat: 'bHeat', blast: 'bBlast', complexity: 'bCx', exposure: 'bExp', score: 'bScore', age: 'bAge', churn: 'bChurn', tested: 'bTested' }
-const NAME = { heat: 'Heat', blast: 'Blast radius', complexity: 'Complexity', exposure: 'Exposure', score: 'Score', age: 'Age', churn: 'Churn', tested: 'Tested' }
+const BAND_KEY = { heat: 'bHeat', blast: 'bBlast', complexity: 'bCx', exposure: 'bExp', score: 'bScore', age: 'bAge', churn: 'bChurn', tested: 'bTested', cycle: 'bCycle', cognitive: 'bCognitive' }
+const NAME = { heat: 'Heat', blast: 'Blast radius', complexity: 'Complexity', exposure: 'Exposure', score: 'Score', age: 'Age', churn: 'Churn', tested: 'Tested', cycle: 'Import cycle', cognitive: 'Hardest function' }
 const $ = id => document.getElementById(id)
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
 const n = x => x.toLocaleString()
+const fmtBytes = b => b == null ? '–' : b < 1024 ? b + ' B' : b < 1048576 ? (b / 1024).toFixed(1) + ' kB' : (b / 1048576).toFixed(1) + ' MB'
 const fmtDays = a => a == null ? 'never committed' : a < 1 ? 'today' : a < 2 ? 'yesterday' : a < 60 ? Math.round(a) + ' days ago' : Math.round(a / 30.4) + ' months ago'
 const store = { get: k => { try { return localStorage.getItem(k) } catch { return null } }, set: (k, v) => { try { localStorage.setItem(k, v) } catch {} } }
 
-const state = { layout: 'core', view: 'score', q: '', kinds: new Set(D.all ? D.kinds : ['source']), focus: null, hover: -1, pinned: -1 }
+const state = { cuts: D.cognitiveCuts.slice(), layout: 'core', view: 'score', q: '', kinds: new Set(D.all ? D.kinds : ['source']), focus: null, hover: -1, pinned: -1 }
 const cv = $('cv'), ctx = cv.getContext('2d'), tip = $('tip'), stage = $('stage')
 let L = null, B = 8, C = {}
 
@@ -275,13 +287,24 @@ function readColors() {
   for (const m of [...METRICS, ...D.more]) C[m] = BANDS.map(b => token(m + '-' + b))
   C.score = STEPS.map(s => token('score-' + s))
 }
-const colorOf = (f, m) => { const b = f[BAND_KEY[m]]; return b == null ? C.na : C[m][b] }
+// Every band is graded in node, so the page cannot disagree with the PNG — with
+// one exception, and it is deliberate: the cognitive cuts are the newest and
+// least calibrated numbers here, and the question they answer (where does this
+// project fall off) is answered by MOVING them and watching. So this one metric
+// is re-banded in the browser from state.cuts, which start at the shipped
+// values; nothing else is, and the map a PNG draws is still the shipped reading.
+const bandOf = (f, m) => m === 'cognitive'
+  ? (f.cognitive == null ? null : state.cuts.filter(t => f.cognitive > t).length)
+  : f[BAND_KEY[m]]
+const colorOf = (f, m) => { const b = bandOf(f, m); return b == null ? C.na : C[m][b] }
+const cutLabels = cuts => [...cuts.map(t => '\u2264' + t), '>' + cuts[cuts.length - 1]]
 
 function layout() {
   const list = files.filter(f => state.kinds.has(f.kind))
   let w, h, cells
   if (state.layout === 'core') ({ w, h, cells } = coreLayout(list, D.core, D.uses))
   else if (state.layout === 'packages') ({ w, h, cells } = packageGrid(list))
+  else if (state.layout === 'depth') ({ w, h, cells } = depthLayout(list))
   else { ({ w, h } = gridFor(list.length)); cells = gilbert(w, h).slice(0, list.length) }
   const at = new Int32Array(w * h).fill(-1)
   list.forEach((f, d) => { const [x, y] = cells[d]; at[y * w + x] = f.i })
@@ -299,11 +322,13 @@ function layout() {
 // where the first folder alone would name two squares mesa.
 const LABEL_ROOT = 'packages/'
 function labelsFor(list, cells, w, at, everyRegion) {
-  const groups = new Map()
+  const groups = new Map(), totals = new Map()
   list.forEach((f, d) => {
     if (!everyRegion && !f.region.startsWith(LABEL_ROOT)) return
-    if (!groups.has(f.region)) groups.set(f.region, [])
+    if (!groups.has(f.region)) { groups.set(f.region, []); totals.set(f.region, { bytes: 0, lines: 0, fns: 0 }) }
     groups.get(f.region).push(cells[d])
+    const t = totals.get(f.region)
+    t.bytes += f.bytes ?? 0; t.lines += f.lines ?? 0; t.fns += f.fns ?? 0
   })
   const regionAt = (x, y) => { const i = at[y * w + x]; return i < 0 ? null : files[i].region }
   return [...groups].map(([region, cs]) => {
@@ -314,7 +339,12 @@ function labelsFor(list, cells, w, at, everyRegion) {
     while (lo > 0 && regionAt(lo - 1, y) === region) lo--
     while (hi < w - 1 && regionAt(hi + 1, y) === region) hi++
     const inPackages = region.startsWith(LABEL_ROOT) ? region.slice(LABEL_ROOT.length) : region
-    return { name: everyRegion ? inPackages : inPackages.split('/')[0], n: cs.length, x: (lo + hi + 1) / 2, y: y + 0.5, run: hi - lo + 1 }
+    // The totals belong to the square, so they are shown where a square IS one:
+    // in the packages layout. Elsewhere a region is a stripe of the curve and a
+    // number under its name would be read as belonging to the tiles beside it.
+    const t = totals.get(region)
+    const sub = everyRegion ? cs.length + ' files · ' + fmtBytes(t.bytes) + (t.fns ? ' · ' + n(t.fns) + ' fn' : '') : null
+    return { name: everyRegion ? inPackages : inPackages.split('/')[0], sub, n: cs.length, x: (lo + hi + 1) / 2, y: y + 0.5, run: hi - lo + 1 }
   })
 }
 const lit = f => (!state.q || f.path.toLowerCase().includes(state.q)) && (!state.focus || f.region === state.focus)
@@ -358,6 +388,17 @@ function drawLabels() {
     ctx.lineWidth = Math.max(2, px / 5)
     ctx.globalAlpha = HALO_ALPHA; ctx.strokeText(t.name, t.x * B, t.y * B)
     ctx.globalAlpha = LABEL_ALPHA; ctx.fillText(t.name, t.x * B, t.y * B)
+    // the totals ride under the name at two thirds of it, and are dropped rather
+    // than shrunk further — a line nobody can read is noise over the tiles
+    if (t.sub && px >= 13) {
+      const sp = px * 0.62
+      ctx.font = '500 ' + sp + 'px ' + C.font
+      if (ctx.measureText(t.sub).width <= t.run * B * 0.95) {
+        ctx.lineWidth = Math.max(2, sp / 5)
+        ctx.globalAlpha = HALO_ALPHA; ctx.strokeText(t.sub, t.x * B, t.y * B + px * 0.92)
+        ctx.globalAlpha = LABEL_ALPHA; ctx.fillText(t.sub, t.x * B, t.y * B + px * 0.92)
+      }
+    }
   }
   ctx.restore()
 }
@@ -370,7 +411,7 @@ function draw() {
   for (let y = 0; y < L.h; y++) for (let x = 0; x < L.w; x++) {
     const bx = x * B, by = y * B, i = L.at[y * L.w + x]
     // a dot marks an unfilled slot on a curve; between package squares the ground is only a gap
-    if (i < 0) { if (state.layout !== 'packages') { ctx.fillStyle = C.empty; ctx.fillRect(bx + inner / 2 - 1, by + inner / 2 - 1, 2, 2) } continue }
+    if (i < 0) { if (state.layout !== 'packages' && state.layout !== 'depth') { ctx.fillStyle = C.empty; ctx.fillRect(bx + inner / 2 - 1, by + inner / 2 - 1, 2, 2) } continue }
     const f = files[i]
     if (!lit(f)) { ctx.fillStyle = C.na; tile(bx, by, inner, inner, r); continue }
     if (state.view === 'all') {
@@ -408,7 +449,7 @@ function draw() {
 }
 
 function testedWords(f) {
-  if (f.level == null) return f.kind === 'source' ? 'no executable lines' : 'not source'
+  if (f.level == null) return isCode(f) ? 'no executable lines' : 'not code'
   if (f.from === 'lcov') return f.level + ' · ' + f.detail + '% of lines (coverage report)'
   return f.level + (f.level === 'tested' ? ' · named by ' + f.detail + ' test file' + (f.detail === 1 ? '' : 's') : f.level === 'partly' ? ' · imported by a tested file, counted as half' : ' · no test names it')
 }
@@ -434,15 +475,119 @@ function renderReadout() {
     row('tested', testedWords(f)) +
     row('age', 'last commit ' + fmtDays(f.age)) +
     row('churn', f.churn + ' commit' + (f.churn === 1 ? '' : 's') + ' over its life') +
+    row('cognitive', f.worst
+      ? '<strong>' + esc(f.worst[0]) + '()</strong> at ' + f.cognitive + ' · ' + f.worst[2] + ' branches, ' + f.worst[3] + ' deep, ' + f.worst[4] + ' lines (line ' + f.worst[1] + ') · ' + n(f.fns) + ' function' + (f.fns === 1 ? '' : 's') + ' in the file'
+      : !D.parser ? 'no typescript installed in this project'
+      : /[.]([cm]?[jt]sx?)$/.test(f.path) ? 'no function long enough to read'
+      : 'the parser does not read .' + f.path.split('.').pop()) +
+    row('cycle', f.cycle == null ? 'not source' : f.cycle > 1 ? 'knotted with ' + (f.cycle - 1) + ' other file' + (f.cycle === 2 ? '' : 's') : 'none') +
+    (f.bytes == null ? '' : plain('Size', fmtBytes(f.bytes))) +
+    (f.depth == null ? '' : plain('Depth', f.depth === 0 ? 'imports nothing here' : f.depth + ' layer' + (f.depth === 1 ? '' : 's') + ' of code beneath it')) +
     plain('Created', fmtDays(f.created)) +
     '</dl>' +
     (state.pinned === i && state.hover < 0 ? '<p class="text-xs text-muted">Pinned. Click the tile again to release.</p>' : '')
 }
 
+// ─── the cognitive cuts, moved by hand ───────────────────────────────────────
+//
+// A threshold is a claim about where a project falls off, and no list of four
+// numbers argues for itself. The strip is the DISTRIBUTION — one bar per
+// doubling, because the values run 1 to 4730 and a linear axis is one bar and
+// 60 empty ones — so the drop-offs are visible before anything is dragged; the
+// handles then say what each cut costs. The map redraws live, which is the
+// whole point: a cut is right when the picture stops changing much as you
+// cross it.
+const TUNER = '<div class="cg-tune">' +
+  '<canvas id="cut-hist" height="64" aria-hidden="true"></canvas>' +
+  '<div class="cg-cuts" id="cut-rows"></div>' +
+  '<div class="cluster gap-2xs"><button class="btn outlined btn-sm" id="cut-reset">reset</button>' +
+  '<span class="text-xs text-muted" id="cut-note"></span></div></div>'
+
+// asked on first use, not at module scope: the list it reads is declared with
+// the page's other lists, further down
+let cutCeil = 0
+const CUT_MAX = () => cutCeil || (cutCeil = parsed.reduce((m, f) => Math.max(m, f.cognitive), 16))
+const toSlider = v => Math.round(Math.log2(Math.max(1, v)) * 100)
+const fromSlider = v => Math.max(1, Math.round(2 ** (v / 100)))
+
+function mountTuner() {
+  const rows = $('cut-rows')
+  rows.innerHTML = state.cuts.map((t, i) =>
+    '<label class="cg-cut"><span class="text-xs text-muted">band ' + i + ' ends</span>' +
+    '<input type="range" id="cut-' + i + '" min="0" max="' + toSlider(CUT_MAX()) + '" step="1" value="' + toSlider(t) + '">' +
+    '<output class="text-xs" id="cut-out-' + i + '">' + t + '</output></label>').join('')
+  for (let i = 0; i < state.cuts.length; i++) {
+    $('cut-' + i).addEventListener('input', ev => {
+      const cuts = state.cuts.slice()
+      cuts[i] = fromSlider(Number(ev.target.value))
+      // a cut may not pass its neighbours, or a band would hold nothing and the
+      // ramp would read as a color with no meaning
+      for (let k = i - 1; k >= 0; k--) cuts[k] = Math.min(cuts[k], cuts[k + 1] - 1)
+      for (let k = i + 1; k < cuts.length; k++) cuts[k] = Math.max(cuts[k], cuts[k - 1] + 1)
+      state.cuts = cuts
+      for (let k = 0; k < cuts.length; k++) { $('cut-out-' + k).textContent = cuts[k]; if (k !== i) $('cut-' + k).value = toSlider(cuts[k]) }
+      onCuts()
+    })
+  }
+  $('cut-reset').addEventListener('click', () => { state.cuts = D.cognitiveCuts.slice(); syncControls(); redraw() })
+  drawHist()
+  noteCuts()
+}
+
+function noteCuts() {
+  const shipped = state.cuts.join(',') === D.cognitiveCuts.join(',')
+  $('cut-note').textContent = shipped ? 'the shipped cuts' : 'moved from ' + D.cognitiveCuts.join(' · ') + ' — the PNG still draws the shipped reading'
+}
+
+function onCuts() {
+  // the ramp counts and the strip both follow the cuts, and so does the map
+  const box = $('scales-more').querySelector('.cg-ramp')
+  if (box) {
+    const labels = cutLabels(state.cuts)
+    const ems = box.querySelectorAll('em')
+    BANDS.forEach(b => { if (ems[b]) ems[b].textContent = labels[b] })
+    BANDS.forEach(b => { const e = ems[BANDS.length + b]; if (e) e.textContent = n(parsed.filter(f => bandOf(f, 'cognitive') === b).length) })
+  }
+  drawHist()
+  noteCuts()
+  draw()
+  renderReadout()
+}
+
+function drawHist() {
+  const cv2 = $('cut-hist')
+  if (!cv2) return
+  const dpr = window.devicePixelRatio || 1
+  const w = cv2.clientWidth || 260, h = 64
+  cv2.width = Math.round(w * dpr); cv2.height = Math.round(h * dpr)
+  const g = cv2.getContext('2d')
+  g.setTransform(dpr, 0, 0, dpr, 0, 0)
+  g.clearRect(0, 0, w, h)
+  const top = Math.ceil(Math.log2(CUT_MAX())) + 1
+  const buckets = new Array(top).fill(0)
+  for (const f of parsed) buckets[Math.min(top - 1, Math.floor(Math.log2(Math.max(1, f.cognitive))))]++
+  const peak = Math.max(1, ...buckets)
+  const bw = w / top
+  for (let i = 0; i < top; i++) {
+    const mid = 2 ** i
+    g.fillStyle = C.cognitive[state.cuts.filter(t => mid > t).length]
+    const bh = Math.round((buckets[i] / peak) * (h - 12))
+    g.fillRect(i * bw, h - bh, Math.max(1, bw - 1), bh)
+  }
+  g.strokeStyle = C.ink; g.globalAlpha = 0.5; g.lineWidth = 1
+  g.beginPath()
+  for (const t of state.cuts) { const x = (Math.log2(Math.max(1, t)) + 1) * bw; g.moveTo(x, 0); g.lineTo(x, h) }
+  g.stroke()
+  g.globalAlpha = 0.6; g.fillStyle = C.ink; g.font = '10px ' + C.font; g.textBaseline = 'top'
+  g.fillText('1', 1, 1)
+  g.textAlign = 'right'; g.fillText(String(CUT_MAX()), w - 1, 1)
+  g.textAlign = 'left'; g.globalAlpha = 1
+}
+
 function renderScales() {
   const ramp = (label, m) => '<div class="cg-scale"><span class="text-muted">' + label + '</span><div class="cg-ramp" style="--n:' + BANDS.length + '">' +
     BANDS.map(b => '<i style="--c:var(--tile-' + m + '-' + b + ')"></i>').join('') + BANDS.map(b => '<em>' + D.labels[m][b] + '</em>').join('') + '</div></div>'
-  const count = STEPS.map(s => source.filter(f => f.bScore === s).length)
+  const count = STEPS.map(s => code.filter(f => f.bScore === s).length)
   $('scales').innerHTML =
     '<div class="cg-scale"><span class="text-muted">Score<br>files per step</span><div class="cg-heatbar" style="--n:' + STEPS.length + '">' +
       STEPS.map(s => '<i style="--c:var(--tile-score-' + s + ')" title="' + D.labels.score[s] + '"></i>').join('') +
@@ -452,10 +597,21 @@ function renderScales() {
     METRICS.map(m => ramp(NAME[m], m)).join('')
 }
 
+// Two readings and they are not the same question. The facts tile answers what
+// the PROJECT ships, which is source alone; every list answers what is risky in
+// the tree, which includes the code built on it — a hot untested file in
+// basecamp is worth the same look, and dropping it from the tables would be the
+// only place on the page where a file is graded and then hidden.
+const isCode = f => f.kind === 'source' || f.kind === 'private'
 const source = files.filter(f => f.kind === 'source')
-const scored = source.filter(f => f.score != null).sort((a, b) => b.score - a.score)
-const hot = source.filter(f => f.hot).sort((a, b) => b.score - a.score)
-const used = source.filter(f => f.usedBy).sort((a, b) => b.usedBy - a.usedBy || b.usedAcross - a.usedAcross || (a.path < b.path ? -1 : 1))
+const code   = files.filter(isCode)
+// the files the tuner's strip is a distribution OF. Declared here with the
+// other lists rather than beside the tuner, where it would read before isCode
+// exists and take the whole script down with it
+const parsed = code.filter(f => f.cognitive != null)
+const scored = code.filter(f => f.score != null).sort((a, b) => b.score - a.score)
+const hot = code.filter(f => f.hot).sort((a, b) => b.score - a.score)
+const used = code.filter(f => f.usedBy).sort((a, b) => b.usedBy - a.usedBy || b.usedAcross - a.usedAcross || (a.path < b.path ? -1 : 1))
 
 function renderFacts() {
   const cx = source.reduce((s, f) => s + (f.complexity ?? 0), 0), ex = source.reduce((s, f) => s + (f.exposure ?? 0), 0)
@@ -489,7 +645,7 @@ function renderTables() {
   const by = new Map()
   for (const f of files) { if (!by.has(f.region)) by.set(f.region, []); by.get(f.region).push(f) }
   const rows = [...by].map(([name, fs]) => {
-    const s = fs.filter(f => f.kind === 'source')
+    const s = fs.filter(isCode)
     const cx = s.reduce((a, f) => a + (f.complexity ?? 0), 0), ex = s.reduce((a, f) => a + (f.exposure ?? 0), 0)
     return { name, n: fs.length, s: s.length, pct: cx ? ex / cx : 0, hot: s.filter(f => f.hot).length, warm: s.filter(f => f.bHeat >= D.strong - 1).length }
   }).sort((a, b) => b.n - a.n)
@@ -511,8 +667,10 @@ function syncControls() {
   $('more').textContent = (extra ? state.view : 'more') + ' ▾'
   const ramp = m => '<div class="cg-scale"><span class="text-muted">' + NAME[m] + '</span><div class="cg-ramp" style="--n:' + (m === 'tested' ? D.testedBands : BANDS).length + '">' +
     (m === 'tested' ? D.testedBands : BANDS).map(b => '<i style="--c:var(--tile-' + m + '-' + b + ')"></i>').join('') +
-    (m === 'tested' ? D.testedBands : BANDS).map(b => '<em>' + D.labels[m][b] + '</em>').join('') + '</div></div>'
-  $('scales-more').innerHTML = extra ? ramp(state.view) : ''
+    (m === 'tested' ? D.testedBands : BANDS).map(b => '<em>' + (m === 'cognitive' ? cutLabels(state.cuts)[b] : D.labels[m][b]) + '</em>').join('') +
+    (m === 'cognitive' ? BANDS.map(b => '<em>' + n(parsed.filter(f => bandOf(f, 'cognitive') === b).length) + '</em>').join('') : '') + '</div></div>'
+  $('scales-more').innerHTML = extra ? ramp(state.view) + (state.view === 'cognitive' ? TUNER : '') : ''
+  if (state.view === 'cognitive') mountTuner()
   for (const b of $('layouts').children) b.setAttribute('aria-pressed', b.dataset.layout === state.layout)
   for (const b of $('kinds').children) b.setAttribute('aria-pressed', state.kinds.has(b.dataset.kind))
   for (const tr of $('regions').tBodies[0].rows) tr.setAttribute('aria-selected', String(tr.dataset.region === state.focus))

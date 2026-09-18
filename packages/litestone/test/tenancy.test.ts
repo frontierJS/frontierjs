@@ -687,3 +687,143 @@ model Post { id Int @id @default(autoincrement())  title String }
     release()
   })
 })
+
+// ─── a unique is scoped per tenant ───────────────────────────────────────────
+//
+// `FJS-1159`. The tenant column is stated once, in the block, and a schema
+// FRAGMENT can never name it — orion ships `FlowCredential.name @unique`, the
+// host adds the column with `extend model`, and no edit either can make fixes
+// the index. So the desugar prepends the column the way it already prepends a
+// deny, and `@unique(global)` — which existed before this — is the opt-out.
+//
+// **Every claim is a pair**, because a constraint that is per-tenant and one
+// that is not applied at all are the same observation from one side: two
+// tenants CAN hold the value, and one tenant still CANNOT hold it twice.
+
+const UNIQ_SCHEMA = `
+tenancy {
+  strategy row
+  column   workspaceId
+  claim    workspaceId
+}
+
+model User {
+  id          String @id @default(uuid())
+  workspaceId String
+  @@auth
+  @@tenant(none)
+}
+
+model Site {
+  id          String  @id @default(uuid())
+  workspaceId String
+  slug        String  @unique
+  // Deliberately across the whole installation — a public subdomain.
+  host        String? @unique(global)
+  // Nullable and unique: legal as a single constraint, and two NULLs are
+  // distinct to it. The rewrite must not quietly change that.
+  alias       String? @unique
+  note        String  @default("n")
+  @@unique([slug, note])
+}
+
+// Scoped through its parent and carrying no column of its own: nothing here can
+// say WHICH parent to scope by, so this one is still reported.
+model Page {
+  id     String @id @default(uuid())
+  siteId String
+  site   Site   @relation(fields: [siteId], references: [id])
+  path   String @unique
+}
+`
+
+describe('a unique on a tenant-scoped model', () => {
+  const asOwner = (db: any, ws: string) => db.$setAuth({ id: `u-${ws}`, workspaceId: ws })
+
+  const client = async () => createClient({ schema: UNIQ_SCHEMA, db: ':memory:' })
+
+  it('takes the tenant column, so two tenants hold the same value', async () => {
+    const db = await client()
+    await asOwner(db, 'w1').site.create({ data: { slug: 'launch' } })
+    const other = await asOwner(db, 'w2').site.create({ data: { slug: 'launch' } })
+    expect(other.slug).toBe('launch')
+    expect(other.workspaceId).toBe('w2')
+    db.$close()
+  })
+
+  it('…and one tenant still cannot hold it twice — the pair', async () => {
+    // Without this the rewrite is indistinguishable from dropping the
+    // constraint, which is the way this fix fails.
+    const db = await client()
+    await asOwner(db, 'w1').site.create({ data: { slug: 'launch' } })
+    await expect(asOwner(db, 'w1').site.create({ data: { slug: 'launch' } })).rejects.toThrow()
+    db.$close()
+  })
+
+  it('leaves `global` alone, in both directions', async () => {
+    const db = await client()
+    await asOwner(db, 'w1').site.create({ data: { slug: 'a', host: 'shop.example' } })
+    // The whole installation, which is what the word says.
+    await expect(asOwner(db, 'w2').site.create({ data: { slug: 'b', host: 'shop.example' } }))
+      .rejects.toThrow()
+    const ok = await asOwner(db, 'w2').site.create({ data: { slug: 'b', host: 'other.example' } })
+    expect(ok.host).toBe('other.example')
+    db.$close()
+  })
+
+  it('keeps a nullable unique nullable — two rows may leave it unset', async () => {
+    // Lifting `alias String? @unique` into `[workspaceId, alias]` would be a
+    // parse error without `nullsDistinct`, and enforcing it would refuse the
+    // second row that simply has no alias. The declaration says what the
+    // author's did.
+    const db = await client()
+    await asOwner(db, 'w1').site.create({ data: { slug: 'a' } })
+    await asOwner(db, 'w1').site.create({ data: { slug: 'b' } })
+    await asOwner(db, 'w1').site.create({ data: { slug: 'c', alias: 'home' } })
+    await expect(asOwner(db, 'w1').site.create({ data: { slug: 'd', alias: 'home' } })).rejects.toThrow()
+    await expect(asOwner(db, 'w2').site.create({ data: { slug: 'e', alias: 'home' } })).resolves.toBeTruthy()
+    db.$close()
+  })
+
+  it('scopes a composite the same way', async () => {
+    const db = await client()
+    await asOwner(db, 'w1').site.create({ data: { slug: 'x', note: 'n' } })
+    const other = await asOwner(db, 'w2').site.create({ data: { slug: 'x', note: 'n' } })
+    expect(other.id).toBeTruthy()
+    await expect(asOwner(db, 'w1').site.create({ data: { slug: 'y', note: 'n' } }))
+      .resolves.toBeTruthy()
+    db.$close()
+  })
+
+  it('rewrites the DECLARATION, so the DDL is the readable artefact', async () => {
+    const r: any = parse(UNIQ_SCHEMA)
+    const site = r.schema.models.find((m: any) => m.name === 'Site')
+    // The field-level `@unique` is LIFTED to a table constraint — a column
+    // cannot carry a two-column UNIQUE.
+    const slug = site.fields.find((f: any) => f.name === 'slug')
+    expect(slug.attributes.some((a: any) => a.kind === 'unique')).toBe(false)
+    const uniques = site.attributes.filter((a: any) => a.kind === 'uniqueIndex').map((a: any) => a.fields)
+    expect(uniques).toContainEqual(['workspaceId', 'slug'])
+    expect(uniques).toContainEqual(['workspaceId', 'slug', 'note'])
+    // `global` is untouched and stays on the field.
+    const host = site.fields.find((f: any) => f.name === 'host')
+    expect(host.attributes.find((a: any) => a.kind === 'unique')?.global).toBe(true)
+  })
+
+  it('says which constraints it scoped, and still reports what it cannot', async () => {
+    const r: any = parse(UNIQ_SCHEMA)
+    const said = (re: RegExp) => (r.warnings ?? []).filter((w: string) => re.test(w))
+
+    const scoped = said(/unique constraint\(s\) are scoped per tenant/)
+    expect(scoped.length).toBe(1)
+    expect(scoped[0]).toContain('Site.slug')
+    expect(scoped[0]).toContain('Site([slug, note])')
+    expect(scoped[0]).not.toContain('Site.host')
+
+    // `Page` carries no `workspaceId`, and which of a model's parents to scope
+    // by is not decidable here — so the warning survives for exactly that case.
+    const reported = said(/scoped through a PARENT are unique/)
+    expect(reported.length).toBe(1)
+    expect(reported[0]).toContain('Page.path')
+  })
+})

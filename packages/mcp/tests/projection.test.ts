@@ -20,7 +20,7 @@ import { describe, test, expect } from 'bun:test'
 import { readFileSync } from 'node:fs'
 import { parse } from '@frontierjs/litestone/parser'
 import { generateJsonSchema } from '@frontierjs/litestone/jsonschema'
-import { projectTools, schemaViews } from '../src/projection.ts'
+import { projectTools, schemaViews, toolName } from '../src/projection.ts'
 import type { ServiceShape } from '../src/projection.ts'
 
 // ─── the fixture, parsed ──────────────────────────────────────────────────────
@@ -70,26 +70,26 @@ describe('a model gate narrows the CRUD verbs', () => {
     // so a caller with no session is refused the LIST as well as the write. The
     // first draft of this test asserted the opposite and the module was right.
     const p = at(0)
-    expect(p.hid('orders.find')).toBe(true)
-    expect(p.why('orders.find')?.needs).toBe(1)
-    expect(p.hid('orders.create')).toBe(true)
-    expect(p.why('orders.create')?.needs).toBe(4)
+    expect(p.hid('orders_find')).toBe(true)
+    expect(p.why('orders_find')?.needs).toBe(1)
+    expect(p.hid('orders_create')).toBe(true)
+    expect(p.why('orders_create')?.needs).toBe(4)
   })
 
   test('the same tools appear for a caller who clears them', () => {
     // The pair. Without this, a projection returning nothing passes above.
     const p = at(4)
-    expect(p.has('orders.create')).toBe(true)
-    expect(p.has('orders.patch')).toBe(true)
-    expect(p.hid('orders.remove')).toBe(true)    // delete: 5
-    expect(at(5).has('orders.remove')).toBe(true)
+    expect(p.has('orders_create')).toBe(true)
+    expect(p.has('orders_patch')).toBe(true)
+    expect(p.hid('orders_remove')).toBe(true)    // delete: 5
+    expect(at(5).has('orders_remove')).toBe(true)
   })
 
   test('read: 1 withholds from a stranger and admits a visitor', () => {
     // The pair for the row above. One rung, and the whole service appears.
-    expect(at(0).hid('orders.find')).toBe(true)
-    expect(at(1).has('orders.find')).toBe(true)
-    expect(at(1).has('orders.get')).toBe(true)
+    expect(at(0).hid('orders_find')).toBe(true)
+    expect(at(1).has('orders_find')).toBe(true)
+    expect(at(1).has('orders_get')).toBe(true)
   })
 })
 
@@ -98,27 +98,27 @@ describe('LOCKED is reachable by nobody — the shape example has not got', () =
   test('a level-9 position admits no standing, SYSTEM included', () => {
     for (const level of [0, 4, 5, 6, 7, 8]) {
       const p = at(level)
-      expect(p.hid('ledger.patch'),  `patch at ${level}`).toBe(true)
-      expect(p.hid('ledger.remove'), `remove at ${level}`).toBe(true)
+      expect(p.hid('ledger_patch'),  `patch at ${level}`).toBe(true)
+      expect(p.hid('ledger_remove'), `remove at ${level}`).toBe(true)
     }
   })
 
   test('and the same model still answers its reads, or the row proves nothing', () => {
     // The pair. A projection that dropped `Ledger` entirely satisfies the test
     // above and is broken.
-    expect(at(5).has('ledger.find')).toBe(true)
-    expect(at(5).has('ledger.get')).toBe(true)
-    expect(at(4).hid('ledger.find')).toBe(true)  // read: 5
+    expect(at(5).has('ledger_find')).toBe(true)
+    expect(at(5).has('ledger_get')).toBe(true)
+    expect(at(4).hid('ledger_find')).toBe(true)  // read: 5
   })
 
   test('create: 8 admits SYSTEM and refuses SYSADMIN', () => {
     // The sentinel that IS reachable: 8 is not a rung, so the highest human
     // standing is refused and only the application itself passes.
-    expect(at(8).has('ledger.create')).toBe(true)
-    expect(at(7).hid('ledger.create')).toBe(true)
-    expect(at(8).why('ledger.create')?.needs).toBe(8)
+    expect(at(8).has('ledger_create')).toBe(true)
+    expect(at(7).hid('ledger_create')).toBe(true)
+    expect(at(8).why('ledger_create')?.needs).toBe(8)
     // The pair, so the row is not satisfied by a projection that hid everything.
-    expect(at(7).has('ledger.find')).toBe(true)
+    expect(at(7).has('ledger_find')).toBe(true)
   })
 })
 
@@ -127,18 +127,18 @@ describe('LOCKED is reachable by nobody — the shape example has not got', () =
 describe('a declared move grades the verb that drives it', () => {
 
   test('a move with no gate of its own takes the model update level', () => {
-    expect(at(0).hid('orders.pay')).toBe(true)
-    expect(at(4).has('orders.pay')).toBe(true)
-    expect(at(4).has('orders.ship')).toBe(true)
-    expect(at(4).why('orders.pay')?.needs).toBe(4)
-    expect(at(4).why('orders.pay')?.verdict).toBe('move-floor')
+    expect(at(0).hid('orders_pay')).toBe(true)
+    expect(at(4).has('orders_pay')).toBe(true)
+    expect(at(4).has('orders_ship')).toBe(true)
+    expect(at(4).why('orders_pay')?.needs).toBe(4)
+    expect(at(4).why('orders_pay')?.verdict).toBe('move-floor')
   })
 
   test('a gated move takes the HIGHER of the two, not its own number', () => {
     // orders.refund — @gate 5 over update 4. The move's number wins.
-    expect(at(4).hid('orders.refund')).toBe(true)
-    expect(at(5).has('orders.refund')).toBe(true)
-    expect(at(5).why('orders.refund')?.needs).toBe(5)
+    expect(at(4).hid('orders_refund')).toBe(true)
+    expect(at(5).has('orders_refund')).toBe(true)
+    expect(at(5).why('orders_refund')?.needs).toBe(5)
   })
 
   test('invoices.void needs 8, because the MODEL is written at 8', () => {
@@ -146,31 +146,31 @@ describe('a declared move grades the verb that drives it', () => {
     // offers this at STAFF, two rungs under what the boundary accepts — the one
     // mistake here that misleads a caller about its own permissions rather than
     // merely wasting a turn.
-    expect(at(5).hid('invoices.void')).toBe(true)
-    expect(at(7).hid('invoices.void')).toBe(true)
-    expect(at(8).has('invoices.void')).toBe(true)
-    expect(at(8).why('invoices.void')?.needs).toBe(8)
+    expect(at(5).hid('invoices_void')).toBe(true)
+    expect(at(7).hid('invoices_void')).toBe(true)
+    expect(at(8).has('invoices_void')).toBe(true)
+    expect(at(8).why('invoices_void')?.needs).toBe(8)
 
     // The negative control for the floor: taking the move's number alone.
     const naive = Math.min(8, 5)
     expect(naive).toBe(5)
-    expect(at(naive).has('invoices.void')).toBe(false)
+    expect(at(naive).has('invoices_void')).toBe(false)
   })
 
   test('a @system move takes the same floor as any move — @system is whose decision, not how senior', () => {
     // `FJS-D150`: the method lifts @system on the CALLER's client, which keeps
     // the gate. Withheld from every standing, `example`'s `invoices.settle`
     // was hidden from the staff who press it.
-    expect(at(3).hid('orders.lapse')).toBe(true)
-    expect(at(4).has('orders.lapse')).toBe(true)
-    expect(at(4).why('orders.lapse')?.verdict).toBe('move-floor')
-    expect(at(4).why('orders.lapse')?.needs).toBe(4)
+    expect(at(3).hid('orders_lapse')).toBe(true)
+    expect(at(4).has('orders_lapse')).toBe(true)
+    expect(at(4).why('orders_lapse')?.verdict).toBe('move-floor')
+    expect(at(4).why('orders_lapse')?.needs).toBe(4)
 
     // The control: on a model written at 8 the same attribute still leaves the
     // move to the application alone, because the FLOOR says so.
-    expect(at(7).hid('invoices.issue')).toBe(true)
-    expect(at(8).has('invoices.issue')).toBe(true)
-    expect(at(8).why('invoices.issue')?.needs).toBe(8)
+    expect(at(7).hid('invoices_issue')).toBe(true)
+    expect(at(8).has('invoices_issue')).toBe(true)
+    expect(at(8).why('invoices_issue')?.needs).toBe(8)
   })
 })
 
@@ -178,9 +178,9 @@ describe('what the seed does not say is labelled, not guessed', () => {
 
   test('a custom method backed by no declared move stays visible and is marked', () => {
     const p = at(0)
-    expect(p.has('carts.checkout')).toBe(true)
-    expect(p.why('carts.checkout')?.verdict).toBe('ungraded')
-    expect(p.why('carts.checkout')?.needs).toBe(null)
+    expect(p.has('carts_checkout')).toBe(true)
+    expect(p.why('carts_checkout')?.verdict).toBe('ungraded')
+    expect(p.why('carts_checkout')?.needs).toBe(null)
   })
 
   test('carts at STRANGER is CORRECT and a fix must not tighten it', () => {
@@ -188,8 +188,8 @@ describe('what the seed does not say is labelled, not guessed', () => {
     // `example`'s verify:cart exists to prove it. A rule that withheld
     // everything at level 0 would read as a tightening and break the storefront.
     const p = at(0)
-    expect(p.has('carts.find')).toBe(true)
-    expect(p.has('carts.open')).toBe(true)
+    expect(p.has('carts_find')).toBe(true)
+    expect(p.has('carts_open')).toBe(true)
     expect(p.withheld.filter(t => t.service === 'carts')).toEqual([])
   })
 
@@ -199,11 +199,11 @@ describe('what the seed does not say is labelled, not guessed', () => {
     const p = at(0)
     const graded = p.tools.filter(t => t.verdict === 'model-gate' || t.verdict === 'move-floor')
     const open   = p.tools.filter(t => t.verdict === 'ungraded')
-    // Spans models on purpose: `recordTracking` is a custom method on the most
-    // heavily gated model here and still ungraded, because it drives no declared
-    // move. Ungraded is about the METHOD, never about the model's own rules.
-    expect(open.map(t => t.name).sort())
-      .toEqual(['carts.checkout', 'carts.open', 'shipments.recordTracking'])
+    // Only `Cart` earns it, and it earns it by declaring no `@@gate` at all —
+    // which is what `customMethodGrade` calls `unchecked`. A custom method on a
+    // GATED model is never ungraded: it takes that model's read gate as a
+    // presence check, which is the row below.
+    expect(open.map(t => t.name).sort()).toEqual(['carts_checkout', 'carts_open'])
     // And a graded tool with no NUMBER is exactly a model that declares no
     // gate — asserted as a set against the schema rather than by naming the
     // models, or the row goes stale the moment the fixture grows one.
@@ -212,6 +212,57 @@ describe('what the seed does not say is labelled, not guessed', () => {
     expect(nullNeeds).toEqual(ungatedModels.filter(m => nullNeeds.includes(m)))
     expect(nullNeeds.every(m => ungatedModels.includes(m as string))).toBe(true)
   })
+
+  test('a custom method on a gated model needs a SESSION, and no more than one', () => {
+    // The API boundary's own rule, which this module read none of for its whole
+    // first life: `gateAuthAround` grades a custom verb through
+    // `customMethodGrade`, and with nothing declared that is the model's read
+    // gate as a PRESENCE check — 401 for a stranger, and then no comparison at
+    // all. `shipments.recordTracking` is on `Order`, whose read is 1.
+    expect(at(0).hid('shipments_recordTracking')).toBe(true)
+    expect(at(1).has('shipments_recordTracking')).toBe(true)
+    expect(at(1).why('shipments_recordTracking')?.verdict).toBe('method-floor')
+
+    // The level is NOT compared, so `needs` states no number. A projection that
+    // reported the read gate here would be claiming a requirement the boundary
+    // never holds anyone to.
+    expect(at(1).why('shipments_recordTracking')?.needs).toBe(null)
+
+    // The pair that makes the refusal evidence: the SAME caller, one rung up,
+    // is admitted — and so is every rung above it, because presence is all
+    // there is to clear.
+    for (const level of [1, 2, 3, 4, 5, 6, 7, 8]) {
+      expect(at(level).has('shipments_recordTracking'), `level ${level}`).toBe(true)
+    }
+
+    // And the control one model over: `Cart` declares no gate, so the identical
+    // shape of method is `unchecked` and a stranger keeps it. Without this row,
+    // a rule that refused every custom method at level 0 passes the above.
+    expect(at(0).has('carts_checkout')).toBe(true)
+  })
+
+  test('a DECLARED method gate is compared, where the floor is not', () => {
+    // The other half of `customMethodGrade`, and the only place a number is
+    // graded on a custom verb. `example` declares exactly one — `payments.start`
+    // at 0 — so the fixture states the shape rather than borrowing it.
+    const services = [
+      { name: 'reports', model: 'Cart', methods: ['summarize'], methodGates: { summarize: 5 } },
+    ]
+    const hid = (level: number) =>
+      projectTools(services, VIEWS, level).withheld.some(t => t.name === 'reports_summarize')
+
+    expect(hid(4)).toBe(true)
+    expect(hid(5)).toBe(false)
+    const row = projectTools(services, VIEWS, 5).tools.find(t => t.name === 'reports_summarize')
+    expect(row?.verdict).toBe('method-gate')
+    expect(row?.needs).toBe(5)
+
+    // The control: `Cart` declares no `@@gate`, so WITHOUT the declaration this
+    // same method is open to a stranger. The refusal above is the declaration's
+    // and nothing else's.
+    const undeclared = [{ name: 'reports', model: 'Cart', methods: ['summarize'] }]
+    expect(projectTools(undeclared, VIEWS, 0).tools.some(t => t.name === 'reports_summarize')).toBe(true)
+  })
 })
 
 // ─── the controls ─────────────────────────────────────────────────────────────
@@ -219,7 +270,7 @@ describe('what the seed does not say is labelled, not guessed', () => {
 describe('the projection was really built', () => {
 
   test('every declared method lands in exactly one of the two lists', () => {
-    const declared = SERVICES.flatMap(s => s.methods.map(m => `${s.name}.${m}`))
+    const declared = SERVICES.flatMap(s => s.methods.map(m => toolName(s.name, m)))
     for (const level of [0, 4, 5, 8]) {
       const p    = projectTools(SERVICES, VIEWS, level)
       const seen = [...p.tools, ...p.withheld].map(t => t.name)
@@ -243,7 +294,7 @@ describe('the projection was really built', () => {
     // which is why `example`'s @@gate 9 models never reach the gate at all.
     const narrowed = [{ name: 'ledger', model: 'Ledger', methods: ['find', 'get'] }]
     const p = projectTools(narrowed, VIEWS, 8)
-    expect([...p.tools, ...p.withheld].map(t => t.name)).toEqual(['ledger.find', 'ledger.get'])
+    expect([...p.tools, ...p.withheld].map(t => t.name)).toEqual(['ledger_find', 'ledger_get'])
   })
 })
 
@@ -266,7 +317,7 @@ describe('the model name a service STATES may not be a model', () => {
     const p = projectTools(AS_JUNCTION_REPORTS_IT, VIEWS, 0)
     expect(p.tools.map(t => t.name)).toEqual([])
     expect(p.withheld.map(t => t.name).sort())
-      .toEqual(['orders.create', 'orders.find', 'orders.pay', 'orders.refund'])
+      .toEqual(['orders_create', 'orders_find', 'orders_pay', 'orders_refund'])
     // And the row says which definition decided, not the name that was stated.
     expect(p.withheld[0]?.model).toBe('Order')
   })
@@ -275,8 +326,8 @@ describe('the model name a service STATES may not be a model', () => {
     // The pair. The assertion above passes against a projection that withheld
     // everything for any reason at all.
     const p4 = projectTools(AS_JUNCTION_REPORTS_IT, VIEWS, 4)
-    expect(p4.tools.map(t => t.name).sort()).toEqual(['orders.create', 'orders.find', 'orders.pay'])
-    expect(p4.withheld.map(t => t.name)).toEqual(['orders.refund'])   // @gate 5
+    expect(p4.tools.map(t => t.name).sort()).toEqual(['orders_create', 'orders_find', 'orders_pay'])
+    expect(p4.withheld.map(t => t.name)).toEqual(['orders_refund'])   // @gate 5
     expect(projectTools(AS_JUNCTION_REPORTS_IT, VIEWS, 5).withheld).toEqual([])
   })
 
@@ -311,14 +362,14 @@ describe('a tool says what to send, or says nothing', () => {
   const tool = (level: number, name: string) => at(level).why(name)
 
   test('create takes the create view; patch takes an id and the update view', () => {
-    const create = tool(4, 'orders.create')
+    const create = tool(4, 'orders_create')
     expect(create?.input.source).toBe('create-mode')
     const cprops = Object.keys((create?.input.schema?.properties ?? {}) as object)
     expect(cprops).toContain('reference')
     expect(cprops).toContain('total')
     expect(create?.input.schema?.required).toContain('reference')
 
-    const patch = tool(4, 'orders.patch')
+    const patch = tool(4, 'orders_patch')
     expect(patch?.input.source).toBe('update-mode')
     const pprops = (patch?.input.schema?.properties ?? {}) as Record<string, any>
     expect(Object.keys(pprops).sort()).toEqual(['data', 'id'])
@@ -330,14 +381,14 @@ describe('a tool says what to send, or says nothing', () => {
 
   test('get, remove and restore take one identifier', () => {
     for (const m of ['get', 'remove']) {
-      const t = tool(5, `orders.${m}`)
+      const t = tool(5, `orders_${m}`)
       expect(t?.input.source, m).toBe('id')
       expect(Object.keys((t?.input.schema?.properties ?? {}) as object)).toEqual(['id'])
     }
   })
 
   test('find takes filters plus the directive table, read off the kit', () => {
-    const t = tool(1, 'orders.find')
+    const t = tool(1, 'orders_find')
     expect(t?.input.source).toBe('query')
     const props = (t?.input.schema?.properties ?? {}) as Record<string, any>
     expect(Object.keys(props).sort()).toEqual(['directives', 'query'])
@@ -349,21 +400,42 @@ describe('a tool says what to send, or says nothing', () => {
     expect(names.some(n => n.startsWith('$'))).toBe(false)
   })
 
-  test('a custom method with a declared type gets that type', () => {
-    const t = tool(4, 'shipments.recordTracking')
+  test('a custom method takes the id AND the declared type, because call() takes both', () => {
+    // `ServiceCaller.call(name, id, data, opts)` is the one dispatch path for
+    // every non-CRUD verb, so a tool describing only the payload describes a
+    // call nobody can make: it has the tracking code and no way to name the
+    // order. The declared type is `data`, not the whole argument.
+    const t     = tool(4, 'shipments_recordTracking')
+    const props = (t?.input.schema?.properties ?? {}) as Record<string, { properties?: object }>
     expect(t?.input.source).toBe('declared-type')
-    expect(Object.keys((t?.input.schema?.properties ?? {}) as object)).toEqual(['trackingCode'])
-    // A declared `type` already closes itself, which is what an MCP input is.
+    expect(Object.keys(props)).toEqual(['id', 'data'])
+    expect(Object.keys(props.data.properties ?? {})).toEqual(['trackingCode'])
     expect(t?.input.schema?.additionalProperties).toBe(false)
-    expect(t?.input.schema?.required).toEqual(['trackingCode'])
   })
 
-  test('a custom method with nothing declared says nothing, and says so', () => {
-    // The pair with the row above: same shape of method, opposite answer,
-    // because one is written down in the seed and the other is not.
-    const t = tool(0, 'carts.checkout')
-    expect(t?.input.source).toBe(null)
-    expect(t?.input.schema).toBe(null)
+  test('a move takes an id and nothing else', () => {
+    // The seed says this outright by declaring the transition on the model: a
+    // move acts on one row and its rules live in `@@transitions`. Before this
+    // the whole move half of the list carried no argument schema at all, so
+    // `orders.refund` was visible, correctly graded, and uncallable.
+    const t = tool(5, 'orders_refund')
+    expect(t?.input.source).toBe('id')
+    expect(Object.keys((t?.input.schema?.properties ?? {}) as object)).toEqual(['id'])
+    expect(t?.input.schema?.required).toEqual(['id'])
+  })
+
+  test('a custom method with nothing declared still says where the id goes', () => {
+    // The pair with the two rows above: same dispatch, and the half the seed is
+    // silent about stays open rather than being guessed shut. `additionalProperties`
+    // is still false because `call()`'s own shape IS known — it is `data`'s
+    // contents that are not, and a closed `data` would make the method
+    // uncallable rather than merely undescribed.
+    const t     = tool(0, 'carts_checkout')
+    const props = (t?.input.schema?.properties ?? {}) as Record<string, { properties?: object }>
+    expect(t?.input.source).toBe('call-args')
+    expect(Object.keys(props)).toEqual(['id', 'data'])
+    expect(props.data.properties).toBeUndefined()
+    expect(t?.input.schema?.required).toBeUndefined()
   })
 
   test('null rather than an empty object schema', () => {
@@ -391,7 +463,7 @@ describe('a protected column never reaches a tool description', () => {
     // The pair, and the row that makes the one above evidence. A projection
     // emitting no schema for `Credential` at all satisfies the absence test and
     // is broken — which is `FJS-976`'s own lesson one realm over.
-    const create = at(8).why('credentials.create')
+    const create = at(8).why('credentials_create')
     expect(create?.input.source).toBe('create-mode')
     const props = Object.keys((create?.input.schema?.properties ?? {}) as object)
     expect(props).toContain('label')
@@ -409,5 +481,111 @@ describe('a protected column never reaches a tool description', () => {
       return generateJsonSchema(schema as never, opts as never)
     }) as never)
     expect(Object.keys(viaSystem.create.Credential.properties as object)).not.toContain('value')
+  })
+})
+
+// ─── the name, and what a client will accept ──────────────────────────────────
+
+describe('a tool name is one an MCP client will take', () => {
+
+  test('the separator is an underscore, because a dot is refused outright', () => {
+    // `^[a-zA-Z0-9_-]{1,128}$`. A dot does not narrow the list, it makes the
+    // whole list invalid — so the projection's own spelling has to be the legal
+    // one rather than something a transport rewrites on the way out.
+    const legal = /^[a-zA-Z0-9_-]{1,128}$/
+    const p = at(8)
+    for (const t of [...p.tools, ...p.withheld]) {
+      expect(legal.test(t.name), t.name).toBe(true)
+    }
+    expect(toolName('orders', 'refund')).toBe('orders_refund')
+  })
+
+  test('the structured halves survive, so nothing has to parse the name back apart', () => {
+    const t = at(5).why('orders_refund')
+    expect(t?.service).toBe('orders')
+    expect(t?.method).toBe('refund')
+  })
+
+  test('two methods that derive one name are BOTH withheld, and reported', () => {
+    // A dot is not the only illegal character, so two names can meet after the
+    // replacement. Keeping either one is the failure: an agent calls the name
+    // and which method runs is whichever the client happened to keep.
+    const clash = [
+      { name: 'pay.runs', model: 'Cart', methods: ['calculate'] },
+      { name: 'pay',      model: 'Cart', methods: ['runs_calculate'] },
+    ]
+    const p = projectTools(clash, VIEWS, 8)
+    expect(p.collisions).toEqual([
+      { name: 'pay_runs_calculate', methods: ['pay.runs.calculate', 'pay.runs_calculate'] },
+    ])
+    expect(p.tools.some(t => t.name === 'pay_runs_calculate')).toBe(false)
+
+    // The control: one of the two alone is an ordinary tool. Without this row a
+    // rule that dropped every tool would pass.
+    const alone = projectTools([clash[0]], VIEWS, 8)
+    expect(alone.collisions).toEqual([])
+    expect(alone.tools.some(t => t.name === 'pay_runs_calculate')).toBe(true)
+  })
+})
+
+// ─── the schema an agent is actually handed ───────────────────────────────────
+
+describe('an argument schema resolves on its own', () => {
+
+  test('an enum field carries its values rather than a ref into a document that is gone', () => {
+    // A model `$def` is LIFTED out of the generated document to become one
+    // tool's input, and `#/$defs/OrderStatus` resolves against the root — which
+    // is then the tool schema itself. Left alone the agent gets a pointer to
+    // nothing, and no error either.
+    const status = ((at(8).why('orders_create')?.input.schema?.properties ?? {}) as Record<string, { enum?: string[]; $ref?: string }>).status
+    expect(status.$ref).toBeUndefined()
+    expect(status.enum).toContain('refunded')
+  })
+
+  test('no ref anywhere in any tool schema points outside that schema', () => {
+    // The catch-all: inlining covers enums, and a `Json @type(T)` still emits a
+    // ref. Whatever survives must be carried in with its definition.
+    for (const t of at(8).tools) {
+      const schema = t.input.schema
+      if (!schema) continue
+      const defs = (schema.$defs ?? {}) as Record<string, unknown>
+      const refs: string[] = []
+      ;(function walk(n: unknown): void {
+        if (Array.isArray(n)) return n.forEach(walk)
+        if (!n || typeof n !== 'object') return
+        for (const [k, v] of Object.entries(n)) {
+          if (k === '$ref' && typeof v === 'string') refs.push(v)
+          else walk(v)
+        }
+      })(schema)
+      for (const ref of refs) {
+        const name = /^#\/\$defs\/(.+)$/.exec(ref)?.[1]
+        expect(name && name in defs, `${t.name} → ${ref}`).toBe(true)
+      }
+    }
+  })
+
+  test('a money column says it is minor units, because the integer alone is a trap', () => {
+    // `{"type":"integer","x-money":{}}` reads as an ordinary number, and the
+    // mistake that shape invites is a factor of a hundred on somebody's refund.
+    const total = ((at(8).why('orders_create')?.input.schema?.properties ?? {}) as Record<string, { description?: string }>).total
+    expect(total.description).toContain('minor units')
+    // The SCALE is deliberately absent — the generator declines to resolve it
+    // because JPY has none and KWD has three, and a number right two thirds of
+    // the time is worse than no number.
+    expect(total.description).not.toContain('100')
+  })
+
+  test('the model access rules do not ride along in the argument schema', () => {
+    // `x-gate` and `x-transitions` are the model's ACCESS RULES. The projection
+    // already answered that question by deciding whether this tool is listed at
+    // all, and `x-transitions` is the largest keyword on the page — paid for in
+    // the context window of every call.
+    const schema = at(8).why('orders_create')?.input.schema as Record<string, unknown>
+    expect(Object.keys(schema).some(k => k.startsWith('x-'))).toBe(false)
+    // The pair: the definition the GATE is read from still carries it, because
+    // annotating the generator's own object in place would have stripped the
+    // rule out from under the grading.
+    expect(DEFS.Order['x-gate']?.read).toBe(1)
   })
 })

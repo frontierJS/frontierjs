@@ -29,10 +29,32 @@
   "bin": {
     "litestone": "./src/tools/cli.js"
   },
+  "imports": {
+    "#sql-engine": {
+      "browser": "./src/engines/none.js",
+      "default": "./src/engines/bun-sqlite.js"
+    },
+    "#host": {
+      "browser": "./src/host/browser.js",
+      "default": "./src/host/node.js"
+    }
+  },
   "exports": {
     ".": {
       "import": "./src/index.js",
       "types": "./src/index.d.ts"
+    },
+    "./engine": {
+      "import": "./src/core/engine.js"
+    },
+    "./browser": {
+      "import": "./src/browser/client.js"
+    },
+    "./browser/worker": {
+      "import": "./src/browser/worker.js"
+    },
+    "./engines/sqlite-wasm": {
+      "import": "./src/engines/sqlite-wasm.js"
     },
     "./migrate": {
       "import": "./src/core/migrate.js"
@@ -42,6 +64,9 @@
     },
     "./parser": {
       "import": "./src/core/parser.js"
+    },
+    "./device-schema": {
+      "import": "./src/device-schema.js"
     },
     "./import": {
       "import": "./src/import/index.js"
@@ -88,6 +113,7 @@
     "test": "bun test test/",
     "test:watch": "bun test --watch test/",
     "test:smoke": "bun test test/cli-smoke.test.ts",
+    "test:browser": "node test/browser/verify-browser-client.mjs",
     "bench": "bun bench/audit-bench.mjs",
     "bench:core": "bun bench/audit-bench.mjs baseline",
     "bench:ablation": "bun bench/ablation.mjs",
@@ -107,5 +133,8 @@
   "types": "./src/index.d.ts",
   "dependencies": {
     "@frontierjs/toolbelt": "workspace:*"
+  },
+  "devDependencies": {
+    "@sqlite.org/sqlite-wasm": "^3.53.4-build1"
   }
 }

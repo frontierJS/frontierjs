@@ -29,3 +29,4 @@ test/fixtures/corpus/gaps.json
 # generated files only. Point FJS_CORPUS_LOCAL at the directory holding it.
 # This rule stays as a guard against dropping it back in.
 test/fixtures/corpus/maidtech.lite
+test/browser/dist/

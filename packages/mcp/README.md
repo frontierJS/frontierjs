@@ -4,11 +4,36 @@
 is the permission model, and tool visibility is computed per standing rather than
 described in a prompt.
 
-**Status: the projection ships; the transport does not.** What is here answers
-*which tools may this standing see, and what decided each* — `projectTools()`.
-There is no stdio or HTTP server yet, so this package cannot be pointed at an
-agent. Ruled as `@frontierjs/mcp` in `DECISIONS.md` (`FJS-D258`); the design is
+**Status: an agent can reach your app.** `mcpPlugin()` mounts an MCP endpoint
+inside the API you are already running, and `projectTools()` is what it serves —
+*which tools may this standing see, and what decided each*. Ruled as
+`@frontierjs/mcp` in `DECISIONS.md` (`FJS-D258`); the design is
 `IDEAS/agent-surface.md`.
+
+## Mounting it
+
+```js
+import { mcpPlugin } from '@frontierjs/mcp'
+
+app.configure(mcpPlugin())          // POST/GET/DELETE at {apiPrefix}/mcp
+```
+
+That is the whole setup. There is nothing to declare: the tool list is your
+services, the arguments are your schema, and what a caller may reach is the gate
+they are already graded by. A caller with no session is a stranger and sees a
+stranger's tools.
+
+| Option | Default | What it is |
+| --- | --- | --- |
+| `path` | `/mcp` | mounted under the app's own `apiPrefix` |
+| `name` · `version` | `frontierjs` · `0.0.0` | what the server calls itself to a client |
+| `keepAliveMs` | `5000` | **must be under your `http.idleTimeout`**, which defaults to Bun's 10s — the SDK's own default is 15s, so the event stream would die before its first keep-alive |
+
+**A tool call goes through `app.service(name)`**, with the caller bound at
+Junction's `CALL_OPTIONS_AT`. It is the same execution path an HTTP or WebSocket
+call takes — the same hooks, the same transaction, the same announcement — so
+there is no second boundary to keep in step with the first, and nothing an agent
+does is invisible to a browser tab watching the same rows.
 
 ## Why the scoping is the interesting half
 
@@ -58,12 +83,13 @@ Each tool also carries its argument schema and where that came from:
 | `declared-type` | the `type T { … }` the service named for this method (`describe().inputs`) |
 | `id` | one identifier — `get`, `remove`, `restore` |
 | `query` | filters plus the directive names, read off `@frontierjs/toolbelt/directives` |
+| `call-args` | `call(id, data)`'s shape, where the seed describes no payload — `data` stays open rather than guessed shut |
 | `null` | nothing in the seed describes one |
 
 `input.schema` is **`null`** rather than `{}` where the source is null. An empty
 object schema accepts anything, which is a claim; null is the absence of one, and
-an agent handed `{}` will send something and be refused. Over `example`: 162 of
-209 tools carry a schema and 47 do not.
+an agent handed `{}` will send something and be refused. Over `example`: 236 of
+248 tools carry a schema.
 
 Every answer carries what decided it:
 
@@ -71,7 +97,9 @@ Every answer carries what decided it:
 | --- | --- |
 | `model-gate` | the model's `@@gate` position for this operation |
 | `move-floor` | `max(model update, the move's own @gate)` — a `@system` move included, since `@system` says whose decision it is and not how senior the caller must be (`FJS-D150`) |
-| `ungraded` | nothing in the seed says; permissive, and labelled |
+| `method-gate` | the level the service declared for this custom method (`methods: [{ method, gate }]`) |
+| `method-floor` | a SESSION is required and the level is not compared — the API boundary's rule for a custom verb on a gated model. `needs` is `null`, because naming the read gate would state a requirement nobody is held to |
+| `ungraded` | nothing says; permissive, and labelled |
 
 **`ungraded` is not grouped with the two that cleared a number.** *Nothing
 refused this* and *a rule allowed it* are different facts, and only one is

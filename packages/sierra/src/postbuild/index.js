@@ -15,7 +15,8 @@
  *   7. deferJS       — defer script tags in index.html
  *   8. theme         — the pre-paint theme script (if config.theme)
  *   9. manifest      — can a browser install this build (if it links a manifest)
- *  10. plugins       — run user-supplied post-build plugin functions
+ *  10. offlineShell   — sw.js + a precached shell (if config.offline)
+ *  11. plugins       — run user-supplied post-build plugin functions
  */
 
 import { move404, NOT_FOUND_URL } from './move-404.js'
@@ -28,6 +29,7 @@ import { deferJsLoading } from './defer-js.js'
 import { injectThemeScript } from './inject-theme.js'
 import { generateMarkdownPages } from './markdown-pages.js'
 import { gradeManifest } from './manifest.js'
+import { writeOfflineShell } from './offline-shell.js'
 
 /**
  * Run the full post-build pipeline.
@@ -148,7 +150,13 @@ export async function runPostBuild(config, routeTable, outDir, root, prerendered
     console.warn(`\n  [Sierra] ${manifest.file} will not install: ${p.message} (${p.code})`)
   }
 
-  // 11. User plugins
+  // 11. The offline shell. AFTER the manifest and after every step that
+  // rewrites a page, because the precache list is a digest of what is on disk
+  // and a later rewrite would leave the shell holding a page nobody serves.
+  const rShell = await writeOfflineShell(config.offline, outDir, root)
+  if (rShell) results.push(rShell)
+
+  // 12. User plugins
   for (const plugin of config.plugins ?? []) {
     if (typeof plugin.closeBundle === 'function') {
       await plugin.closeBundle({ outDir, root, config, routeTable })

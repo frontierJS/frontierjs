@@ -40,6 +40,21 @@ const KEYWORDS = new Set([
 ])
 
 // ─── Gate level names ─────────────────────────────────────────────────────────
+// What `@@sync` may say about a collision, and the set stays closed: a policy
+// that parses and resolves nothing reads exactly like one that works
+// (`IDEAS/homestead.md` § The `@@sync` vocabulary, `FJS-D304`). Each of these
+// three does something different to a HELD write — an online write is untouched
+// by all of them.
+//
+//   server  the operation replays against whatever the row holds by then, so the
+//           revision the device read is DROPPED from the held write
+//   append  rows are only ever added, so only a create may be held at all; a
+//           held patch or remove is refused by name
+//   refuse  the held write carries the revision it was made against and the Data
+//           boundary refuses it if the row moved — which is why this one needs
+//           an `@version` column and is refused below without one
+export const SYNC_POLICIES = new Set(['server', 'append', 'refuse'])
+
 // The 0–9 scale, by name — `@@gate`'s named form and `@@transitions`' per-move
 // `@gate()` both read it, so a level can never mean two things. It used to be a
 // copy of the runtime's, described here as mirroring it; the mirror is what
@@ -2303,6 +2318,28 @@ class Parser {
         this.eat(TK.RPAREN)
         return { kind: 'trait', name: traitName }
       }
+      case 'sync': {
+        // @@sync(server) — this model's rows may be written with no server
+        // reachable, and the queue that holds such a write replays it when one
+        // is (`FJS-D298`).
+        //
+        // The argument is the COLLISION policy and nothing else. Whether a
+        // model leaves the device, and in which direction, is a second question
+        // this attribute has not been asked (`IDEAS/homestead.md`).
+        //
+        // There is no default: a model that says nothing is not syncable and an
+        // offline client refuses to queue a write against it. The refusal is
+        // the point — a model nobody thought about loses a row otherwise, with
+        // nothing said.
+        this.eat(TK.LPAREN)
+        const policyToken = this.eat(TK.IDENT)
+        this.eat(TK.RPAREN)
+        if (!SYNC_POLICIES.has(policyToken.value))
+          throw new ParseError(
+            `@@sync: unknown policy "${policyToken.value}". Valid: ${[...SYNC_POLICIES].join(', ')}`,
+            policyToken)
+        return { kind: 'sync', policy: policyToken.value }
+      }
       default:
         throw new ParseError(`Unknown model attribute '@@${name}'`, this.peek())
     }
@@ -2911,9 +2948,44 @@ export const TRAIT_FORBIDDEN_MODEL_ATTRS = new Set(['id', 'map', 'db', 'fts'])
 // Attributes a model may legitimately carry more than one of. Everything else
 // is a single answer, so a second one is two answers and is refused rather than
 // silently won by whichever the merge put last.
+// How an attribute's ANSWER reads in a refusal. Single-valued attributes carry
+// their argument under several key names, so this prefers whichever is there
+// and falls back to naming the attribute alone where it takes no argument.
+function attrAnswer(attr, at = '@@') {
+  // A value arrives under whichever key its own parse arm chose, and `@default`
+  // wraps its own in `{ kind, value }`. Anything still not a scalar after that
+  // is an argument with no short spelling — a field list, a policy expression —
+  // and saying "the first" beats printing a structure into a sentence.
+  const raw = attr.value ?? attr.policy ?? attr.name ?? attr.text ?? attr.format ?? attr.field
+  const v   = raw && typeof raw === 'object' && 'value' in raw ? raw.value : raw
+  const tag = `${at}${typedAttr(attr.kind)}`
+  return v === undefined || v === null || typeof v === 'object'
+    ? `the first ${tag}`
+    : `${tag}(${JSON.stringify(v)})`
+}
+
+// These are PARSE KINDS and not the words a reader types, which is the trap
+// this list has already fallen into twice: `@@unique` parses as `uniqueIndex`
+// and field `@allow` as `fieldAllow`, so an entry spelled the readable way
+// matches nothing and the rule silently stops applying. `repeatable-attrs`
+// in the suite parses each of these twice and fails on a kind no parse emits.
 export const REPEATABLE_MODEL_ATTRS = new Set([
-  'allow', 'deny', 'index', 'unique', 'check', 'trait',
+  'allow', 'deny', 'index', 'uniqueIndex', 'check', 'scope', 'trait',
 ])
+
+// Field attributes a field may legitimately carry more than one of. No field in
+// this workspace or the imported corpus carries a repeated attribute at all, so
+// this one is here on the argument and on the suite: `@allow('read', …)` beside
+// `@allow('write', …)` is two operations, not two answers.
+export const REPEATABLE_FIELD_ATTRS = new Set(['fieldAllow'])
+
+// What a reader TYPED, where the parse kind is not the word. `@@unique` parses
+// as `uniqueIndex`, and a refusal naming that spells a word nobody can write —
+// which is how `REPEATABLE_MODEL_ATTRS` came to list 'unique', a kind that
+// never occurs, and so refused a legitimate second `@@unique` on an extend
+// while letting every real duplicate through ([FJS-1174](ISSUES.md#fjs-1174)).
+const TYPED_AS = { uniqueIndex: 'unique' }
+export const typedAttr = (kind) => TYPED_AS[kind] ?? kind
 
 /**
  * Splice every `extend model X` into the `model X` it names.
@@ -2967,7 +3039,7 @@ function resolveExtends(schema) {
     for (const attr of ext.attributes) {
       if (!REPEATABLE_MODEL_ATTRS.has(attr.kind) && hostAttrs.has(attr.kind)) {
         errors.push(
-          `extend model '${ext.name}': @@${attr.kind} is already declared by the model, ` +
+          `extend model '${ext.name}': @@${typedAttr(attr.kind)} is already declared by the model, ` +
           `and it takes one answer. Change it where the model is declared, or drop it here.`
         )
         continue
@@ -3771,11 +3843,24 @@ function expandTenancy(schema) {
   // *must name the tenant column* rule would have reported ten correct
   // declarations and been switched off.
   //
-  // A warning rather than an error: the global reading is legitimate (a token,
-  // a public subdomain), and `@unique(global)` / `@@unique([…], global: true)`
-  // is how a schema says it meant that. Named all three ways out, the way the
-  // `@@softDelete` cascade footgun does, because forgetting the column and
-  // meaning it look identical from here.
+  // **The constraint is SCOPED rather than reported, wherever that is
+  // derivable** (`FJS-1159`). The tenant column is stated once, in this block,
+  // and a schema FRAGMENT can never name it — `@frontierjs/orion` ships
+  // `FlowCredential.name @unique`, the host adds the column with `extend model`,
+  // and no edit either of them can make fixes the index. So the desugar takes
+  // the uniques the way it already takes the denies and the `@default` stamp:
+  // the tenant column is PREPENDED, which is also the prefix every read under
+  // row tenancy filters on first.
+  //
+  // `@unique(global)` / `@@unique([…], global: true)` is the opt-out and it
+  // already existed — the exception has had a word for longer than the default
+  // has been right, which is what makes this cost no new vocabulary.
+  //
+  // **Only where the model carries the column itself.** `scopedSet` also holds
+  // the models scoped THROUGH A PARENT, which declare no tenant column at all —
+  // prepending it there emits DDL naming a column that does not exist. Those
+  // keep the warning, and it is the same warning as before: which parent to
+  // scope by is a choice this cannot make, since a model may have two.
   const fkColumnsOf = (model) => {
     const out = new Map()
     for (const f of model.fields) {
@@ -3788,30 +3873,67 @@ function expandTenancy(schema) {
   }
 
   const crossTenantUniques = []
+  const scopedUniques      = []
   for (const model of schema.models) {
     if (!scopedSet.has(model.name)) continue
     const fks    = fkColumnsOf(model)
     const perTenant = (cols) =>
       cols.includes(t.column) || cols.some(c => scopedSet.has(fks.get(c)))
+    // The model's OWN column, not the fixpoint: a delegated model is scoped and
+    // has nothing to prepend.
+    const carries = model.fields.some(f => f.name === t.column)
 
-    for (const f of model.fields) {
-      const u = f.attributes.find(a => a.kind === 'unique')
-      if (u && !u.global && !perTenant([f.name]))
-        crossTenantUniques.push(`${model.name}.${f.name}`)
-    }
+    // The table-level half first, in place. The field-level half PUSHES a table
+    // constraint, and a `for…of` over an array being pushed to visits what it
+    // pushed — harmless, since a rewritten one is `perTenant` and skipped, but
+    // the order of `model.attributes` is what the DDL emits, so the two stay
+    // separate rather than interleaved.
     for (const a of model.attributes) {
       if (a.kind !== 'uniqueIndex' && a.kind !== 'partialUnique') continue
       if (a.global || perTenant(a.fields)) continue
-      crossTenantUniques.push(`${model.name}([${a.fields.join(', ')}])`)
+      if (!carries) { crossTenantUniques.push(`${model.name}([${a.fields.join(', ')}])`); continue }
+      scopedUniques.push(`${model.name}([${a.fields.join(', ')}])`)
+      a.fields    = [t.column, ...a.fields]
+      a.generated = 'tenancy'
     }
+
+    const lifted = []
+    for (const f of model.fields) {
+      const u = f.attributes.find(a => a.kind === 'unique')
+      if (!u || u.global || perTenant([f.name])) continue
+      if (!carries) { crossTenantUniques.push(`${model.name}.${f.name}`); continue }
+      scopedUniques.push(`${model.name}.${f.name}`)
+      f.attributes.splice(f.attributes.indexOf(u), 1)
+      lifted.push({
+        kind: 'uniqueIndex', fields: [t.column, f.name], global: false, generated: 'tenancy',
+        // A single `@unique` over an optional column is legal and two NULLs are
+        // distinct to it; a COMPOSITE naming one is a parse error unless the
+        // schema says it meant that. The rewrite must not change what the
+        // author declared, so it says it for them.
+        nullsDistinct: f.type.optional === true,
+      })
+    }
+    model.attributes.push(...lifted)
   }
+
+  // Said out loud, because `name String @unique` in a fragment now builds an
+  // index over two columns and the line itself cannot show it. `ddl.snapshot.sql`
+  // is where the result is readable.
+  if (scopedUniques.length)
+    warnings.push(
+      `tenancy: ${scopedUniques.length} unique constraint(s) are scoped per tenant — ${scopedUniques.join(', ')}. ` +
+      `Each builds a UNIQUE over '${t.column}' and the columns declared, so two tenants may hold the same value ` +
+      `and one tenant may not hold it twice. Mark one global (@unique(global) / @@unique([…], global: true)) to ` +
+      `keep it unique across the whole installation.`
+    )
 
   if (crossTenantUniques.length)
     warnings.push(
-      `tenancy: ${crossTenantUniques.length} unique constraint(s) on tenant-scoped models are unique across ALL ` +
-      `tenants — ${crossTenantUniques.join(', ')}. Two tenants cannot hold the same value, and the refusal names ` +
-      `it to the second. Add '${t.column}' to the constraint, or a key reaching a scoped model, ` +
-      `or mark it global (@unique(global) / @@unique([…], global: true)) to say it spans tenants on purpose.`
+      `tenancy: ${crossTenantUniques.length} unique constraint(s) on models scoped through a PARENT are unique ` +
+      `across ALL tenants — ${crossTenantUniques.join(', ')}. These carry no '${t.column}' of their own, and which ` +
+      `parent to scope by is not decidable here — a model may have two. Two tenants cannot hold the same value, ` +
+      `and the refusal names it to the second. Add a key reaching a scoped model to the constraint, give the model ` +
+      `the '${t.column}' column, or mark it global (@unique(global) / @@unique([…], global: true)).`
     )
 
   if (!scoped.length)
@@ -5244,6 +5366,23 @@ function validate(schema) {
   // database's TEXT column cannot say whether it holds a date. A required column
   // is the other half: it is stamped at create, so every row is born deleted and
   // invisible to every read, or the create is refused outright.
+  // `@@sync(refuse)` names a revision, and the revision is `@version`. Without
+  // that column there is nothing for a held write to carry and nothing for the
+  // boundary to compare, so the policy is indistinguishable from `server` while
+  // claiming the opposite — the exact shape `FJS-D304` closed the set to avoid.
+  // Refused here rather than advised for the same reason `@@softDelete` is: the
+  // attribute names a column, and a model without it has already lost.
+  for (const model of schema.models) {
+    const sync = model.attributes.find(a => a.kind === 'sync')
+    if (sync?.policy !== 'refuse') continue
+    if (!model.fields.some(f => f.attributes.some(a => a.kind === 'version')))
+      errors.push(
+        `Model '${model.name}': @@sync(refuse) needs an @version field and this model has none. ` +
+        `The policy means a held write carries the revision it was made against and is refused if the ` +
+        `row moved — with no @version there is no revision, so every held write would apply to whatever ` +
+        `is there, which is @@sync(server). Add: version Int @version, or say @@sync(server).`)
+  }
+
   for (const model of schema.models) {
     if (!model.attributes.some(a => a.kind === 'softDelete')) continue
     const field = model.fields.find(f => f.name === 'deletedAt')
@@ -6214,6 +6353,42 @@ function validate(schema) {
     }
   }
 
+  // ── a single-valued attribute, answered twice ───────────────────────────────
+  //
+  // Every consumer reads a model attribute with `.find(a => a.kind === …)`, so
+  // a second one is not merged and not preferred — it is ignored, in source
+  // order, with nothing said. The shape that bites is somebody TIGHTENING a
+  // gate by writing the stricter one underneath the old one: the schema reads
+  // as tightened and the boundary is unchanged ([FJS-1174](ISSUES.md#fjs-1174)).
+  //
+  // The refusal names the word as typed and both answers, because *declared
+  // twice* is not useful on its own — what the reader needs is which of the two
+  // has been in force.
+  for (const model of schema.models) {
+    const seenModel = new Map()
+    for (const attr of model.attributes ?? []) {
+      if (REPEATABLE_MODEL_ATTRS.has(attr.kind)) continue
+      const first = seenModel.get(attr.kind)
+      if (first === undefined) { seenModel.set(attr.kind, attr); continue }
+      errors.push(
+        `Model '${model.name}': @@${typedAttr(attr.kind)} is declared twice and it takes one answer. ` +
+        `${attrAnswer(first)} is the one in force; ${attrAnswer(attr)} is ignored. Keep one.`)
+    }
+
+    for (const field of model.fields ?? []) {
+      const seenField = new Map()
+      for (const attr of field.attributes ?? []) {
+        if (REPEATABLE_FIELD_ATTRS.has(attr.kind)) continue
+        const first = seenField.get(attr.kind)
+        if (first === undefined) { seenField.set(attr.kind, attr); continue }
+        errors.push(
+          `Model '${model.name}', field '${field.name}': @${typedAttr(attr.kind)} is declared twice and ` +
+          `it takes one answer. ${attrAnswer(first, '@')} is the one in force; ${attrAnswer(attr, '@')} is ` +
+          `ignored. Keep one.`)
+      }
+    }
+  }
+
   // ── @allow / @@deny validation ──────────────────────────────────────────────
   for (const model of schema.models) {
     for (const attr of model.attributes) {
@@ -6602,10 +6777,7 @@ function validate(schema) {
 //   functions.lite:  function slug(...) { ... }
 //   enums.lite:      enum Plan { ... }
 
-import { readFileSync } from 'fs'
-import { resolve, dirname, isAbsolute } from 'path'
-import { createRequire } from 'node:module'
-import { pathToFileURL } from 'node:url'
+import { readFileSync, resolve, dirname, isAbsolute, createRequire, pathToFileURL } from '#host'
 
 // ─── Where an import points ───────────────────────────────────────────────────
 //

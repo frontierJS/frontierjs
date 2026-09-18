@@ -24,6 +24,20 @@ export default {
     key:     'shop_theme',
   },
 
+  // The app opens with no network: sierra writes `sw.js` from what this build
+  // emitted and registers it from every page (`IDEAS/homestead.md` phase 3).
+  // Opt-in with one word, because a service worker is the longest-lived thing a
+  // build can leave on somebody's device.
+  //
+  // It answers for precached files and for navigations, and for nothing else —
+  // `/api` and `/ws` are never in its path, so a read is never served from a
+  // cache the live layer does not know about. A write made offline is the
+  // pending queue's job (`FJS-D298`), not this.
+  // `db: true` adds the device's own SQLite beside the shell — the `@@sync`
+  // models in a worker over OPFS (`FJS-D307`), so a read offline is a real
+  // query rather than a replay of the exact list that was asked for last.
+  offline: { db: true },
+
   junction: {
     // Same origin as the page while Vite proxies /api and /ws. An API on its own
     // origin, or a build a native shell bundles, is named at build time with

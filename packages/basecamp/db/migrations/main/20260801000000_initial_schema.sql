@@ -108,7 +108,7 @@ CREATE INDEX IF NOT EXISTS "idx_flow_ownerId" ON "flow" ("ownerId");
 
 CREATE TABLE IF NOT EXISTS "flow_credential" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
-  "name" TEXT NOT NULL UNIQUE,
+  "name" TEXT NOT NULL,
   "provider" TEXT NOT NULL,
   "address" TEXT NOT NULL,
   "auth" TEXT NOT NULL DEFAULT 'none',
@@ -118,7 +118,8 @@ CREATE TABLE IF NOT EXISTS "flow_credential" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   "workspaceId" TEXT NOT NULL,
-  CHECK ("auth" IN ('none', 'bearer', 'api_key', 'hmac'))
+  CHECK ("auth" IN ('none', 'bearer', 'api_key', 'hmac')),
+  UNIQUE ("workspaceId", "name")
 ) STRICT;
 
 CREATE TABLE IF NOT EXISTS "kv_entry" (
@@ -129,7 +130,7 @@ CREATE TABLE IF NOT EXISTS "kv_entry" (
   "expiresAt" TEXT,
   "updatedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   "workspaceId" TEXT NOT NULL,
-  UNIQUE ("scope", "key")
+  UNIQUE ("workspaceId", "scope", "key")
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_kv_entry_expiresAt" ON "kv_entry" ("expiresAt");
 

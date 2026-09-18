@@ -9,8 +9,10 @@
  * are still graded, for the page's `more` views. The four packages that matter
  * most sit at the center, one per quadrant, and every other package is laid as
  * a block beside the one it imports most (`coreLayout`); the page can switch to
- * plain path order along a generalized Hilbert curve. Everything is read
- * statically: no parser, no test run.
+ * plain path order along a generalized Hilbert curve. Nothing is executed: no
+ * test run, no build. A PARSER is used where the project being drawn has one —
+ * `core/functions.js` reads the functions inside a file — and where it does
+ * not, every other reading still holds and `cognitive` is null rather than 0.
  *
  * ── Not a snapshot ─────────────────────────────────────────────────────────
  *
@@ -38,6 +40,7 @@ import { execFileSync }                                     from 'node:child_pro
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, posix, resolve, relative, isAbsolute, sep } from 'node:path'
 import { allocate }                                         from '@frontierjs/toolbelt/units'
+import { PARSABLE, measureFunctions, worstFunction }        from './functions.js'
 import { encodePng }                                        from './png.js'
 
 // ─── the rules ────────────────────────────────────────────────────────────────
@@ -56,6 +59,13 @@ export const BLAST         = [0, 3, 15]
 export const INDENT_SUM    = [100, 400, 1600]
 export const AGE_DAYS      = [7, 30, 90]
 export const CHURN_COMMITS = [0, 3, 7]
+// How many files are in the import cycle. A pair is the mildest thing this can
+// say and still be true, so it is band 0 rather than absent.
+export const CYCLE_SIZE    = [2, 4, 12]
+// The worst function in the file, on the cognitive reading. Sonar calls 15 the
+// point where one function is too complex; that sits inside band 1, so a file
+// holding one such function reads warm rather than red.
+export const COGNITIVE     = [10, 30, 100]
 export const COVERED_PCT   = 80
 
 // One commit counts 1 on its day and half as much every HALF_LIFE_DAYS after, so
@@ -76,7 +86,23 @@ const LOCKFILE     = /^(bun\.lockb?|package-lock\.json|yarn\.lock|pnpm-lock\.yam
 // which package reads most used.
 const EXAMPLE      = /(^|\/)(examples?|website)\//
 
-export const KINDS = ['source', 'example', 'test', 'doc', 'config', 'generated', 'asset']
+export const KINDS = ['source', 'private', 'example', 'test', 'doc', 'config', 'generated', 'asset']
+
+// Code in a package this workspace does not PUBLISH. It is graded exactly like
+// source — it is code, and its risk is real — and it is a different answer to
+// *what is this project*: basecamp and orion build on the framework rather than
+// ship as it, so counting them under source overstates what a release contains.
+// Derived from the manifest's own `private`, never a list of names, so orion
+// crosses the moment it publishes — which is the day it IS the framework. The
+// ROOT manifest is private too and means something else there (nobody publishes
+// a workspace), so it is not a package for this.
+export const CODE_KINDS = ['source', 'private']
+export const isCode = file => file != null && (file.kind === 'source' || file.kind === 'private')
+
+/** The package directories whose manifest says `private`, the root's excluded. */
+export function unpublishedDirs(manifests) {
+  return new Set(manifests.filter(m => m.json?.private && posix.dirname(m.path) !== '.').map(m => posix.dirname(m.path)))
+}
 
 export function kindOf(path) {
   const base = posix.basename(path)
@@ -147,7 +173,7 @@ export const heatOf = (times = [], nowSeconds) =>
 /** Complexity no test covers, or null where coverage has no answer. */
 export function exposureOf(file) {
   const t = file.tested
-  if (file.kind !== 'source' || file.complexity == null || !t?.level) return null
+  if (!isCode(file) || file.complexity == null || !t?.level) return null
   const covered = t.from === 'lcov' ? t.pct / 100 : COVERAGE[t.level]
   return Math.round(file.complexity * (1 - covered))
 }
@@ -310,6 +336,142 @@ export function referenceGraph(texts, { isSource, regionOf, packages = new Map()
   return graph
 }
 
+// ─── the import graph ─────────────────────────────────────────────────────────
+//
+// `referenceGraph` answers *who names this file* and is loose on purpose: a
+// string that looks like a path counts, wherever it sits. That is the right
+// reading for a usedBy tally and the wrong one for a layer, because a layer is
+// a claim about what must be correct beneath a file. Measured over this repo,
+// the loose reading fused 99 files into one cycle out of two comments and a
+// string literal — `toolbelt → junction` and `litestone → junction`, both
+// impossible, and both the kind of edge a picture of the stack is built on.
+//
+// So this reads STATEMENTS: import, export-from, dynamic import, require.
+// Comments go first, and a specifier that resolves to nothing in this tree is
+// dropped — an npm dependency is not part of this repo's shape.
+
+const IMPORT_EXT = ['', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mesa', '/index.ts', '/index.js', '/index.mjs', '/index.mesa']
+
+const IMPORTS = [
+  // the clause may span lines and holds no quote, so it cannot run past its own statement
+  { re: /(?:^|[\n;])[ \t]*import[ \t]+(type[ \t]+)?[^'";]*?from[ \t]*['"]([^'"]+)['"]/g, type: 1, spec: 2 },
+  { re: /(?:^|[\n;])[ \t]*import[ \t]*['"]([^'"]+)['"]/g, spec: 1 },
+  { re: /(?:^|[\n;])[ \t]*export[ \t]+(type[ \t]+)?(?:\*|\{[^}]*\})[^'";]*?from[ \t]*['"]([^'"]+)['"]/g, type: 1, spec: 2 },
+  // A dynamic import and a TYPE QUERY are the same eight characters, and the
+  // second — `import('./app.ts').App` in a type position — is erased by tsc.
+  // They part on what follows: a member access that is not a call. Measured:
+  // 187 of these in this repo and every one a type (App, SessionContext,
+  // ILogger), against 920 real dynamic imports, every one awaited.
+  { re: /\bimport[ \t]*\([ \t]*['"]([^'"]+)['"][ \t]*\)([ \t]*\.[ \t]*[A-Za-z_$][\w$]*)?/g, spec: 1, query: 2 },
+  { re: /\brequire[ \t]*\([ \t]*['"]([^'"]+)['"]/g, spec: 1 },
+]
+
+/**
+ * Comments blanked to spaces, strings left whole. Every line the house writes
+ * as a comment is a candidate fake edge — the doc block at the top of
+ * `@frontierjs/email-kit` shows four import lines nobody runs.
+ */
+export function stripComments(text) {
+  let out = '', i = 0, quote = null
+  while (i < text.length) {
+    const c = text[i], d = text[i + 1]
+    if (quote) {
+      if (c === '\\') { out += text.slice(i, i + 2); i += 2; continue }
+      if (c === quote) quote = null
+      out += c; i++; continue
+    }
+    if (c === '/' && d === '*') { const e = text.indexOf('*/', i + 2), chunk = text.slice(i, e < 0 ? text.length : e + 2); out += chunk.replace(/[^\n]/g, ' '); i += chunk.length; continue }
+    if (c === '/' && d === '/') { const e = text.indexOf('\n', i), end = e < 0 ? text.length : e; out += ' '.repeat(end - i); i = end; continue }
+    if (c === '"' || c === "'" || c === '`') quote = c
+    out += c; i++
+  }
+  return out
+}
+
+/** `from → Map(to → typeOnly)` over files this tree holds. Statements only. */
+export function importGraph(texts, { isFile, packages = new Map() }) {
+  const has = c => IMPORT_EXT.map(e => c + e).find(isFile)
+  const inPackage = spec => {
+    const seg = spec.split('/'), name = spec.startsWith('@') ? seg.slice(0, 2).join('/') : seg[0]
+    const pkg = packages.get(name)
+    if (!pkg) return null
+    const sub = spec.slice(name.length + 1)
+    const at  = rel => posix.normalize(posix.join(pkg.dir, rel))
+    const target = exportTarget(pkg.exports, sub ? './' + sub : '.')
+    if (target) return has(at(target)) ?? null
+    return sub ? has(at(sub)) ?? has(at('src/' + sub)) ?? null
+               : (pkg.main && has(at(pkg.main))) ?? has(at('index')) ?? has(at('src/index')) ?? null
+  }
+  const graph = new Map()
+  for (const [from, text] of texts) {
+    const src = stripComments(text), edges = new Map()
+    for (const { re, type, spec, query } of IMPORTS) {
+      for (const m of src.matchAll(re)) {
+        const s = m[spec]
+        const isType = Boolean(type && m[type]) || Boolean(query && m[query] && src[m.index + m[0].length] !== '(')
+        const to = s.startsWith('.') ? has(posix.normalize(posix.join(posix.dirname(from), s))) : inPackage(s)
+        if (!to || to === from) continue
+        // imported both ways, the value import is what the runtime does
+        edges.set(to, (edges.get(to) ?? isType) && isType)
+      }
+    }
+    graph.set(from, edges)
+  }
+  return graph
+}
+
+/**
+ * `path → { depth, cycle }` over an import graph. **Depth is the LONGEST path
+ * down**, not the shortest: what a file sits on is the whole tower, and the
+ * shortest route understates every one of them. `cycle` is how many files are
+ * in this file's import cycle, 1 for a file in none — the count is what makes
+ * a knot readable at a glance, and collapsing each cycle to one node first is
+ * what keeps the longest path finite.
+ */
+export function layerGraph(graph, isNode = () => true) {
+  const nodes = [...graph.keys()].filter(isNode)
+  const at = new Map(nodes.map((p, i) => [p, i]))
+  const out = nodes.map(p => [...graph.get(p).keys()].filter(q => at.has(q)).map(q => at.get(q)))
+
+  // Tarjan, iterative: a workspace is deep enough to blow the call stack.
+  const index = new Array(nodes.length).fill(-1), low = new Array(nodes.length).fill(0), open = new Array(nodes.length).fill(false)
+  const comp = new Array(nodes.length).fill(-1), stack = []
+  let counter = 0, groups = 0
+  for (const start of nodes.keys()) {
+    if (index[start] >= 0) continue
+    const work = [[start, 0]]
+    while (work.length) {
+      const frame = work[work.length - 1], v = frame[0]
+      if (frame[1] === 0) { index[v] = low[v] = counter++; stack.push(v); open[v] = true }
+      let descended = false
+      for (let i = frame[1]; i < out[v].length; i++) {
+        const w = out[v][i]
+        if (index[w] < 0) { frame[1] = i + 1; work.push([w, 0]); descended = true; break }
+        if (open[w]) low[v] = Math.min(low[v], index[w])
+      }
+      if (descended) continue
+      if (low[v] === index[v]) { let w; do { w = stack.pop(); open[w] = false; comp[w] = groups } while (w !== v); groups++ }
+      work.pop()
+      if (work.length) { const u = work[work.length - 1][0]; low[u] = Math.min(low[u], low[v]) }
+    }
+  }
+  const size = new Array(groups).fill(0)
+  for (const c of comp) size[c]++
+
+  const edges = Array.from({ length: groups }, () => new Set())
+  for (const v of nodes.keys()) for (const w of out[v]) if (comp[v] !== comp[w]) edges[comp[v]].add(comp[w])
+  const depth = new Array(groups).fill(-1)
+  const walk = c => {
+    if (depth[c] >= 0) return depth[c]
+    depth[c] = 0
+    for (const d of edges[c]) depth[c] = Math.max(depth[c], walk(d) + 1)
+    return depth[c]
+  }
+  for (let c = 0; c < groups; c++) walk(c)
+
+  return new Map(nodes.map((p, i) => [p, { depth: depth[comp[i]], cycle: size[comp[i]] }]))
+}
+
 // ─── collect ──────────────────────────────────────────────────────────────────
 
 /**
@@ -326,7 +488,7 @@ export function regionReader(paths) {
   }
 }
 
-export function collectCodegraph({ root, now = Date.now() }) {
+export function collectCodegraph({ root, now = Date.now(), ts = null }) {
   const git   = (...args) => execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', maxBuffer: 1 << 29 })
   const paths = git('ls-files', '-z').split('\0').filter(Boolean).sort()
   const known = new Set(paths)
@@ -341,14 +503,19 @@ export function collectCodegraph({ root, now = Date.now() }) {
   const manifests = []
   for (const p of paths) {
     const kind = kindOf(p)
-    let complexity = null, lines = null
+    let complexity = null, lines = null, bytes = null, fns = null, worst = null
     try {
       const full = join(root, p)
-      if (!ASSET.test(p) && statSync(full).size < BINARY_LIMIT) {
+      bytes = statSync(full).size
+      if (!ASSET.test(p) && bytes < BINARY_LIMIT) {
         const buf = readFileSync(full)
         if (!buf.subarray(0, 8000).includes(0)) {
           const text = buf.toString('utf8')
           ;({ sum: complexity, lines } = indentSum(text))
+          if (ts && PARSABLE.test(p) && (kind === 'source' || kind === 'test')) {
+            const found = measureFunctions(ts, p, text)
+            if (found) { fns = found.length; worst = worstFunction(found) }
+          }
           if (kind === 'source' || kind === 'test') texts.set(p, text)
           if (posix.basename(p) === 'package.json') { try { manifests.push({ path: p, json: JSON.parse(text) }) } catch {} }
         }
@@ -362,6 +529,11 @@ export function collectCodegraph({ root, now = Date.now() }) {
       age:     at == null ? null : Math.max(0, (now / 1000 - at) / 86400),
       created: first == null ? null : Math.max(0, (now / 1000 - first) / 86400),
       churn:   history.churn.get(p) ?? 0,
+      bytes,
+      fns,
+      // the file is as hard to read as its hardest function
+      cognitive: worst ? worst.cognitive : null,
+      worst,
       heat:    Math.round(heatOf(history.times.get(p), now / 1000) * 100) / 100,
       complexity, lines,
       tested: kind === 'source' ? { level: 'untested', from: 'refs', refs: 0 } : null,
@@ -372,10 +544,18 @@ export function collectCodegraph({ root, now = Date.now() }) {
 
   // references — who names a file. A test makes it tested and one hop further
   // partly; a source file makes it used, and across a region, shared.
-  const graph = referenceGraph(texts, { isSource: p => files.get(p)?.kind === 'source', regionOf, packages: packageIndex(manifests) })
+  // A package this workspace does not publish is code built ON the project
+  // rather than the project, so its source answers to `private` instead. Asked
+  // after the walk, because the manifest saying so is read during it, and only
+  // where the answer would have been source: a test in basecamp is still a test.
+  const unpublished = unpublishedDirs(manifests)
+  for (const f of files.values()) if (f.kind === 'source' && unpublished.has(f.region)) f.kind = 'private'
+
+  const packages = packageIndex(manifests)
+  const graph = referenceGraph(texts, { isSource: p => isCode(files.get(p)), regionOf, packages })
   const uses = {}
   for (const [from, names] of graph) {
-    if (files.get(from).kind !== 'source') continue
+    if (!isCode(files.get(from))) continue
     const region = files.get(from).region
     for (const n of names) {
       const f = files.get(n)
@@ -395,6 +575,16 @@ export function collectCodegraph({ root, now = Date.now() }) {
     for (const n of names) { const t = files.get(n).tested; if (t.level === 'untested') t.level = 'partly' }
   }
 
+  // layers — how deep the tower under a source file goes, and what is knotted.
+  // Source only: a test importing the thing it tests is not a layer of it.
+  const sourceTexts = new Map([...texts].filter(([p]) => isCode(files.get(p))))
+  const layers = layerGraph(importGraph(sourceTexts, { isFile: p => files.has(p), packages }))
+  for (const f of files.values()) {
+    const l = layers.get(f.path)
+    f.depth = l ? l.depth : null
+    f.cycle = l ? l.cycle : null
+  }
+
   // coverage — a report wins for every file it names
   const reports = []
   for (const report of findReports(root)) {
@@ -405,7 +595,7 @@ export function collectCodegraph({ root, now = Date.now() }) {
       const abs = isAbsolute(r.file) ? r.file : resolve(base, r.file)
       const rel = relative(root, abs).split(sep).join('/')
       const f   = files.get(rel)
-      if (!f || f.kind !== 'source') continue
+      if (!isCode(f)) continue
       covered++
       newest = Math.max(newest, f.committedAt ?? 0)
       const pct = r.found ? Math.round(r.hit / r.found * 1000) / 10 : null
@@ -422,6 +612,8 @@ export function collectCodegraph({ root, now = Date.now() }) {
     head:   git('rev-parse', '--short', 'HEAD').trim(),
     builtAt: Math.round(now / 1000),
     commits: history.commits, sweeps: history.sweeps, sweepLimit,
+    // named so a picture with no cognitive band is explainable rather than just empty
+    parser: ts ? (ts.version ? 'typescript ' + ts.version : 'typescript') : null,
     reports,
     uses,
     files: [...files.values()],
@@ -625,17 +817,49 @@ export function packageGrid(files) {
   return { w: plan.w, h: plan.h, cells, boxes: plan.boxes }
 }
 
+/**
+ * One band per layer of the import graph, the deepest at the top, a blank row
+ * between them. A layer is *how many files must be correct beneath this one*,
+ * so the picture is the stack itself: the app's entry sits alone on the top
+ * row, and the bottom band is everything that imports nothing.
+ *
+ * The bands are wildly uneven — 344 files on one layer and 1 on another here —
+ * so a layer wraps over as many rows as it needs at a shared width, and every
+ * width is searched for the squarest picture, the way `packageGrid` does.
+ * Files keep path order inside a layer, which keeps a package in one run and
+ * so keeps the labels readable. A file with no depth (not source) is left out
+ * by the caller's filter, never placed at 0. The page serializes this.
+ */
+export function depthLayout(files) {
+  const by = new Map()
+  files.forEach((f, k) => { const d = f.depth ?? 0; if (!by.has(d)) by.set(d, []); by.get(d).push(k) })
+  const layers = [...by.keys()].sort((a, b) => b - a).map(d => by.get(d))
+  const rows = w => layers.reduce((sum, ks) => sum + Math.ceil(ks.length / w), 0) + layers.length - 1
+  let w = Math.max(1, Math.ceil(Math.sqrt(files.length)))
+  for (let c = w + 1; c <= Math.max(w, files.length); c++) {
+    const [a, b] = [Math.max(c, rows(c)), Math.max(w, rows(w))]
+    if (a < b || (a === b && c * rows(c) < w * rows(w))) w = c
+  }
+  const cells = new Array(files.length)
+  let y = 0
+  for (const ks of layers) {
+    ks.forEach((k, n) => { cells[k] = [n % w, y + Math.floor(n / w)] })
+    y += Math.ceil(ks.length / w) + 1
+  }
+  return { w, h: Math.max(1, y - 1), cells }
+}
+
 // ─── bands per file ───────────────────────────────────────────────────────────
 
 /** The reading order of a tile's quadrants: top left, top right, bottom left, bottom right. */
 export const QUADRANTS = ['heat', 'blast', 'complexity', 'exposure']
 
 /** Graded like a quadrant and drawn one at a time, behind the page's `more`. */
-export const MORE = ['age', 'churn', 'tested']
+export const MORE = ['age', 'churn', 'tested', 'cycle', 'cognitive']
 
 /** A band per metric, 0 to STRONG; `null` where the metric does not apply. */
 export function tileBands(file) {
-  const source = file.kind === 'source'
+  const source = isCode(file)
   return {
     heat:       band(file.heat ?? 0, HEAT),
     blast:      source ? band(file.usedBy ?? 0, BLAST) : null,
@@ -644,6 +868,10 @@ export function tileBands(file) {
     age:        file.age == null ? null : STRONG - band(file.age, AGE_DAYS),
     churn:      band(file.churn, CHURN_COMMITS),
     tested:     file.tested?.level ? TESTED_BAND[file.tested.level] : null,
+    // a file in no cycle is not a quiet cycle; it has no answer here
+    cycle:      file.cycle > 1 ? band(file.cycle, CYCLE_SIZE) : null,
+    // null where nothing parsed it — a file nobody read is not a quiet file
+    cognitive:  file.cognitive == null ? null : band(file.cognitive, COGNITIVE),
   }
 }
 
@@ -671,7 +899,7 @@ export const SCORE_WARN  = 5
 
 /** `{ value, step, levels: [exposure, heat, blast] }`, or null for a file that is not scored. */
 export function scoreOf(file) {
-  if (file.kind !== 'source' || file.exposure == null) return null
+  if (!isCode(file) || file.exposure == null) return null
   const levels = [LEVEL.exposure(file.exposure), LEVEL.heat(file.heat ?? 0), LEVEL.blast(file.usedBy ?? 0)]
   const value  = levels[0] * (1 + levels[1]) * (1 + levels[2])
   return { value, step: band(value, SCORE_STEPS), levels }
@@ -686,7 +914,7 @@ export function scoreOf(file) {
 
 export const TONES = {
   heat: 'info', blast: 'primary', complexity: 'warning', exposure: 'danger',
-  age:  'success', churn: 'info', tested: 'danger',
+  age:  'success', churn: 'info', tested: 'danger', cycle: 'warning', cognitive: 'danger',
 }
 export const MIX   = [10, 40, 70, 100]
 export const STRONG = MIX.length - 1
@@ -695,7 +923,7 @@ export const STRONG = MIX.length - 1
 // than next to untested, which is the one worth seeing from across the room.
 export const TESTED_BAND = { tested: 0, partly: 1, untested: STRONG }
 
-for (const [name, t] of Object.entries({ HEAT, BLAST, INDENT_SUM, AGE_DAYS, CHURN_COMMITS }))
+for (const [name, t] of Object.entries({ HEAT, BLAST, INDENT_SUM, AGE_DAYS, CHURN_COMMITS, CYCLE_SIZE, COGNITIVE }))
   if (t.length !== STRONG) throw new Error(`${name} has ${t.length} thresholds; MIX has ${MIX.length} steps, so it needs ${STRONG}`)
 
 // The score is one tone, danger, over eight steps: [mix over the ground %, hue
@@ -805,7 +1033,7 @@ const colorOf = (palette, metric, b) => rgb(b == null ? palette.na : palette[met
 /** Source in the top two bands of both heat and exposure — changing now, and untested. */
 export function isHotspot(file) {
   const b = tileBands(file)
-  return file.kind === 'source' && b.heat >= STRONG - 1 && b.exposure >= STRONG - 1
+  return isCode(file) && b.heat >= STRONG - 1 && b.exposure >= STRONG - 1
 }
 
 /** What each band means, in words, off the same thresholds that grade it. */
@@ -820,6 +1048,8 @@ export function bandLabels() {
     age:        [`>${AGE_DAYS.at(-1)}d`, ...AGE_DAYS.slice().reverse().map(d => `≤${d}d`)],
     churn:      [...churn, `${CHURN_COMMITS.at(-1) + 1}+`],
     tested:     Array.from(MIX, (_, b) => Object.keys(TESTED_BAND).find(k => TESTED_BAND[k] === b) ?? null),
+    cognitive:  upTo(COGNITIVE),
+    cycle:      ['a pair', ...CYCLE_SIZE.slice(1).map((t, i) => `${CYCLE_SIZE[i] + 1}–${t}`), `${CYCLE_SIZE.at(-1) + 1}+`],
     score:      upTo(SCORE_STEPS),
   }
 }
@@ -915,7 +1145,7 @@ export function codegraphJson(model) {
     ...model,
     rules: {
       sweepShare: SWEEP_SHARE, heat: HEAT, halfLifeDays: HALF_LIFE_DAYS, blast: BLAST, indentSum: INDENT_SUM,
-      coverage: COVERAGE, ageDays: AGE_DAYS, churnCommits: CHURN_COMMITS, coveredPct: COVERED_PCT,
+      coverage: COVERAGE, ageDays: AGE_DAYS, churnCommits: CHURN_COMMITS, coveredPct: COVERED_PCT, cycleSize: CYCLE_SIZE, cognitive: COGNITIVE,
       score: { max: SCORE_MAX, steps: SCORE_STEPS, warnFrom: SCORE_WARN },
       tones: TONES, mix: MIX, quadrants: QUADRANTS, more: MORE,
     },

@@ -1,5 +1,30 @@
 # Changes — Basecamp
 
+## 2026-09-16 — orion is installed, and its uniques are per workspace
+
+`@frontierjs/orion` is wired in: `db/schema.lite` imports `orion.lite` and extends `Flow`,
+`FlowCredential` and `KvEntry` with `workspaceId`, `api/src/app.ts` configures
+`orion({ level: basecampGateLevel, plugins: [basecampNodes(app)] })`, and `api/src/core/automations.ts`
+contributes one node — `basecamp.page`, a thin door onto `core/delivery.ts`, so a flow can reach a
+`NotificationChannel` without a second copy of the per-kind table.
+
+**The automation is the one an operator wants: a failed release pages the workspace's ops channel.**
+People were already told (`deployment-run.job.ts` sends `deploy_failed`); a channel was reached only
+by a metric alert rule, so a failed release reached no Slack, no PagerDuty and no webhook at all.
+`api/test/automation.test.ts` runs it with nothing standing in for the app — the release fails
+through the real job, and the page leaves through conduit to a receiver on a real port.
+
+**Two framework defects came out of installing it**, which is what this app is for. A workspace
+`admin` is ADMINISTRATOR(5) to every model here and was CREATOR(3) to junction's method gate, so
+`flows.save` refused a caller the schema admits (`FJS-1161`, ruled `FJS-D308`). And orion's
+`FlowCredential.name` was unique across ALL workspaces, so the second one to want a credential called
+`crm` was refused by a message naming a value it may not read (`FJS-1159`, ruled `FJS-D310`); the
+`tenancy` block scopes it now, and the migration carries `UNIQUE ("workspaceId", "name")`.
+
+The install is not finished — the seed does not reach orion's tables, `db/schema.d.ts` and the three
+junction snapshots are stale, and `verifyTenantIsolation` cannot seed a `Flow` on either side of its
+own row policy.
+
 ## 2026-09-14 — a date reads the same for every operator
 
 Twenty-one screens and widgets each carried a `when` over `toLocaleString()`,

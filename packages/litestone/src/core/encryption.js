@@ -7,7 +7,7 @@
 // this step, so a policy naming an encrypted column compared plaintext against
 // stored bytes and denied every row to everyone (FJS-214).
 
-import { createCipheriv, createDecipheriv, randomBytes, createHmac } from 'crypto'
+import { createCipheriv, createDecipheriv, randomBytes, createHmac } from '#host'
 
 // ─── Encryption ───────────────────────────────────────────────────────────────
 // Three modes, along one axis — can the value be read back?
@@ -55,7 +55,6 @@ const HASH_PREFIX_2   = 'v2h.'
 const GCM_IV_LEN      = 12
 const GCM_TAG_LEN     = 16
 const HMAC_ALG        = 'sha256'
-const KID_SALT        = Buffer.from('litestone/kid/v1')
 const KID_LEN         = 8
 
 // Domain separation. The IV and the digest are both HMACs of the same plaintext
@@ -63,12 +62,22 @@ const KID_LEN         = 8
 // and a @hashed field's stored digest would be the same 12/32 bytes of the same
 // function — and the IV travels in the clear inside the payload, which would hand
 // out a prefix of the digest for free.
-const IV_SALT         = Buffer.from('litestone/iv/v1')
-const HASH_SALT       = Buffer.from('litestone/hash/v1')
+//
+// Built on FIRST USE rather than at module scope. `Buffer` is a node global and
+// this module is in the browser client's import graph, so three `Buffer.from`
+// calls beside the constants made merely IMPORTING Litestone throw in a browser
+// — before any encrypted column existed to refuse. Memoized, so a server pays
+// one allocation for the life of the process; the refusal a browser gets now
+// comes from `#host`'s crypto, which names @encrypted and says why.
+
+const salt = (() => {
+  const cache = {}
+  return (name) => (cache[name] ??= Buffer.from(`litestone/${name}/v1`))
+})()
 
 /** Which key this is, said in a way that is not the key. */
 export function keyId(key) {
-  return createHmac(HMAC_ALG, Buffer.concat([Buffer.from(key), KID_SALT]))
+  return createHmac(HMAC_ALG, Buffer.concat([Buffer.from(key), salt('kid')]))
     .digest('hex').slice(0, KID_LEN)
 }
 
@@ -231,7 +240,7 @@ export function verifiesAs(value, key, mode) {
 // scheme — a blind index leaks exactly the same fact — and it is why this is opt-in
 // per field rather than the default.
 function deriveIv(plaintext, key) {
-  return createHmac(HMAC_ALG, Buffer.concat([Buffer.from(key), IV_SALT]))
+  return createHmac(HMAC_ALG, Buffer.concat([Buffer.from(key), salt('iv')]))
     .update(String(plaintext)).digest().subarray(0, GCM_IV_LEN)
 }
 
@@ -249,7 +258,7 @@ export function encryptDeterministic(plaintext, key) {
 // so nothing here has a partner function elsewhere in this file.
 export function hashField(plaintext, key) {
   if (plaintext == null) return plaintext
-  const hmac = createHmac(HMAC_ALG, Buffer.concat([Buffer.from(key), HASH_SALT]))
+  const hmac = createHmac(HMAC_ALG, Buffer.concat([Buffer.from(key), salt('hash')]))
     .update(String(plaintext)).digest('base64url')
   return HASH_PREFIX_2 + keyId(key) + '.' + hmac
 }

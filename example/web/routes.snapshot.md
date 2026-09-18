@@ -11,7 +11,7 @@ the diff: a URL that changed without a change you meant to make is a link
 somebody else already published.
 
 ```
-32 routes · 2 layouts · target spa · trailing slash always
+33 routes · 2 layouts · target spa · trailing slash always
 ```
 
 ## Routes
@@ -51,6 +51,7 @@ column is what the page DECLARED, already merged down the layout chain.
 | `/settings/` | `src/routes/settings/index.mesa` | `src/routes/_module.mesa` | — |
 | `/settings/fields/` | `src/routes/settings/fields.mesa` | `src/routes/_module.mesa` | — |
 | `/sign-in/` | `src/routes/sign-in/index.mesa` | `src/routes/_module.mesa` | — |
+| `/stocktake/` | `src/routes/stocktake/index.mesa` | `src/routes/_module.mesa` | — |
 | `/subscriptions/` | `src/routes/subscriptions/index.mesa` | `src/routes/_module.mesa` | — |
 | `/subscriptions/:id/` | `src/routes/subscriptions/[id].mesa` | `src/routes/_module.mesa` | `id` |
 | `/users/` | `src/routes/users/index.mesa` | `src/routes/_module.mesa` | — |
@@ -91,6 +92,7 @@ this section exists to show.
 - `/settings/` — siteName: `Kitchen sink` · title: `Settings`
 - `/settings/fields/` — siteName: `Kitchen sink` · title: `Customer fields`
 - `/sign-in/` — siteName: `Kitchen sink` · title: `Sign in`
+- `/stocktake/` — siteName: `Kitchen sink` · title: `Stocktake`
 - `/subscriptions/` — siteName: `Kitchen sink` · title: `Subscriptions`
 - `/subscriptions/:id/` — siteName: `Kitchen sink` · title: `Subscription`
 - `/users/` — siteName: `Kitchen sink` · title: `Users`
@@ -101,4 +103,4 @@ Every `_module.mesa` reached by a route. One that is here and wraps nothing
 you expected is a directory boundary in the wrong place.
 
 - `../../packages/orion/web/routes/_module.mesa` — 5 routes: `/automations/`, `/automations/credentials/`, `/automations/flows/:flowId/`, `/automations/runs/`, `/automations/runs/:runId/`
-- `src/routes/_module.mesa` — 27 routes: `/`, `/account/`, `/cart/`, `/customers/`, `/inventory/`, `/invoices/`, `/invoices/:id/`, `/orders/`, `/orders/:id/`, `/orders/create/`, `/payroll/`, `/payroll/:id/`, `/people/`, `/people/:id/`, `/plans/`, `/plans/:id/`, `/products/`, `/products/:id/`, `/products/create/`, `/reports/`, `/reset/`, `/settings/`, `/settings/fields/`, `/sign-in/`, `/subscriptions/`, `/subscriptions/:id/`, `/users/`
+- `src/routes/_module.mesa` — 28 routes: `/`, `/account/`, `/cart/`, `/customers/`, `/inventory/`, `/invoices/`, `/invoices/:id/`, `/orders/`, `/orders/:id/`, `/orders/create/`, `/payroll/`, `/payroll/:id/`, `/people/`, `/people/:id/`, `/plans/`, `/plans/:id/`, `/products/`, `/products/:id/`, `/products/create/`, `/reports/`, `/reset/`, `/settings/`, `/settings/fields/`, `/sign-in/`, `/stocktake/`, `/subscriptions/`, `/subscriptions/:id/`, `/users/`

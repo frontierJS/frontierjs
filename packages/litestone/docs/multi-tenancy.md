@@ -272,26 +272,30 @@ Deploy (via app), LogLine (via deploy).
 
 ### A `@unique` is not scoped for you
 
-The desugar guards **reads**. A `@unique` guards **writes**, and nothing above
-touches it — so on a scoped model this is unique across the whole installation:
+The desugar guards **reads**. A `@unique` guards **writes**, and it is taken by
+the same block — the tenant column is **prepended**, so this builds
+`UNIQUE (workspaceId, slug)`:
 
 ```lite
 model Post {
   id          Int    @id
   workspaceId Int
-  slug        String @unique      // ← two tenants cannot both hold "launch"
+  slug        String @unique      // ← UNIQUE (workspaceId, slug)
 }
 ```
 
-Two costs, and the second is the sharper one. Tenants collide on values that
-should be theirs alone — a slug, an email, an SKU, an order number — and the
-refusal carries the value, which tells the second tenant that a row they may not
-read exists. That is exactly what `docs/access-control.md` says a refusal must
-never do.
+It used to be reported and left alone, and the second cost was the sharper one:
+tenants collided on values that should be theirs alone — a slug, an email, an
+SKU, an order number — and the refusal carried the value, telling the second
+tenant that a row they may not read exists. That is exactly what
+`docs/access-control.md` says a refusal must never do. Reporting it was also
+unanswerable from the place it is usually declared: a schema **fragment** a
+package ships cannot name your tenant column, so neither the package nor the app
+could fix the index by editing anything (`FJS-1159`).
 
-The parser reports it, and the test is **transitive**: a unique is per-tenant if
-its columns carry the tenant column **or** a key reaching a model that is itself
-scoped. Both of these are already correct and are not reported —
+The rewrite is **skipped where it is already right**, and the test is
+**transitive**: a unique is per-tenant if its columns carry the tenant column
+**or** a key reaching a model that is itself scoped. Both of these are untouched —
 
 ```lite
 @@unique([workspaceId, slug])     // names the column
@@ -309,9 +313,16 @@ token String @unique(global)
 @@unique([hostname], global: true)
 ```
 
-It changes no DDL and appears in no snapshot. It is a statement to the reader and
-to the parser, and it is the difference between a warning you answered and a
-warning you learned to scroll past.
+That is the opt-out, and it is the only thing that keeps a constraint
+installation-wide on a scoped model.
+
+**Two things the rewrite does not do.** A model scoped through a **parent**
+carries no tenant column of its own, and which parent to scope by is not
+decidable — a model may have two — so those are still reported, with the same
+three ways out. And the column is prepended to the **declaration**, which means a
+field-level `@unique` is lifted to a table constraint: `db/ddl.snapshot.sql` is
+where the result is readable, and an `upsertMany({ conflictTarget })` naming the
+old columns alone no longer matches an index, which SQLite refuses by name.
 
 ---
 

@@ -24,5 +24,20 @@
 
   import { createResource } from '@frontierjs/sierra/junction'
 
-  export const movements = createResource('inventory', { model: 'InventoryMovement' })
+  // ─── offlineQuery — what a stockroom must already have ────────────────────
+  //
+  // The ledger the /inventory/ screen opens on, warmed at boot and on every
+  // reconnect so the screen has it the FIRST time it is opened with no network
+  // (`FJS-D307`). The cache underneath only ever remembers a read that arrived,
+  // which means it can only answer a question somebody already asked — and
+  // *which screens did I visit before I lost signal* is not something a person
+  // in a basement can have planned.
+  //
+  // The directives are the screen's own, character for character. The cache is
+  // keyed by the QUESTION, so a warm under a different `limit` fills a slot that
+  // screen never reads, and nothing about the app looks wrong until the outage.
+  export const movements = createResource('inventory', {
+    model:        'InventoryMovement',
+    offlineQuery: { directives: { limit: 40, orderBy: '-id' } },
+  })
 </script>

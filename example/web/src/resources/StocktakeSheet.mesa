@@ -1,0 +1,24 @@
+<script module>
+  // web/src/resources/StocktakeSheet.mesa — the Resource layer.
+  //
+  // `model:` is stated because the service is `stocktake-sheets`, which
+  // singularizes to `stocktake-sheet` — not the PascalCase name any model
+  // declares (Invariant 2).
+  //
+  // ─── Why this file has no markup half ─────────────────────────────────────
+  //
+  // A sheet is two optional fields and a clock. There is no form worth
+  // generating: starting one is a button, and the screen at /stocktake/ is
+  // where it lives.
+  //
+  // What matters here is that a screen reaches the shelf through THIS accessor
+  // rather than `getClient().service('stocktake-sheets')`. The queue that holds
+  // a write with no server reachable lives in the resource pipeline, and the
+  // raw client has no hooks, no field rules and no `x-mint`, so a create
+  // through it would reach the server with no key and the counts behind it
+  // would reference nothing.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const sheets = createResource('stocktake-sheets', { model: 'StocktakeSheet' })
+</script>

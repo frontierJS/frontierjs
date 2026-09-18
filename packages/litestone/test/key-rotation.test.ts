@@ -29,6 +29,8 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createClient } from '../src/index.js'
+import { readFileSync } from 'fs'
+import { createHmac }   from 'crypto'
 import { parseEnvelope, keyId, encryptField, decryptField, makeKeyring, verifiesAs, hashField }
   from '../src/core/encryption.js'
 
@@ -49,6 +51,36 @@ model Secret {
 
 const open = (opts: Record<string, unknown> = {}) =>
   createClient({ schema: SCHEMA, db: ':memory:', encryptionKey: K1, ...opts })
+
+// ─── the salts are on disk, so they are pinned ───────────────────────────────
+//
+// `keyId`, a deterministic field's IV and a `@hashed` digest are each an HMAC
+// under a domain-separating salt, and the RESULTS are stored — in the envelope
+// of every encrypted value an app has ever written. Change a salt and every one
+// of those becomes undecryptable, on a deploy, with nothing raised until a read.
+//
+// Every other test here computes `keyId()` on both sides, so all of them would
+// pass against a changed salt. These are the literal bytes. They were built at
+// module scope until the browser client needed this module to import where
+// `Buffer` does not exist; they are built lazily now, which is a refactor that
+// could have moved them and had nothing to say so.
+
+describe('the domain-separating salts never move', () => {
+  test('the three salt strings are exactly what shipped', () => {
+    const src = readFileSync(new URL('../src/core/encryption.js', import.meta.url), 'utf8')
+    expect(src).toContain('`litestone/${name}/v1`')
+    for (const name of ['kid', 'iv', 'hash']) expect(src).toContain(`salt('${name}')`)
+  })
+
+  test('a key id is the HMAC under the kid salt, computed independently', () => {
+    // Recomputed here from the primitives rather than read from the module, so
+    // this fails if the salt, the algorithm or the truncation changes.
+    const key = buf(K1)
+    const expected = createHmac('sha256', Buffer.concat([Buffer.from(key), Buffer.from('litestone/kid/v1')]))
+      .digest('hex').slice(0, 8)
+    expect(keyId(key)).toBe(expected)
+  })
+})
 
 // ─── the envelope names its key ──────────────────────────────────────────────
 

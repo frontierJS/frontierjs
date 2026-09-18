@@ -10,7 +10,7 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-51 models · 1 view · 52 gated · 0 unrestricted
+53 models · 1 view · 54 gated · 0 unrestricted
 18 with row policies · 24 with protected fields · 25 declared moves · 8 @system · 1 @seals
 ```
 
@@ -68,6 +68,8 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Session` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `ShippingMethod` | 0 STRANGER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `StockReservation` | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
+| `StocktakeCount` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 9 LOCKED |
+| `StocktakeSheet` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 9 LOCKED |
 | `Subscription` | 1 VISITOR | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `TaxRate` | 0 STRANGER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `User` | 4 USER | 4 USER | 4 USER | 5 ADMINISTRATOR |

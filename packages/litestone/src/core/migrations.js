@@ -6,10 +6,17 @@
 //   status(db, dir)                      → show applied + pending migrations
 //   verify(db, parseResult, dir)         → check live db against pristine schema
 
-import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, statSync } from 'fs'
+// `#host` and not `fs`, which is the seam `FJS-D305` rests on: this module is
+// in the browser client's import graph, and a bare `fs` there is a module a
+// bundler replaces with something that throws on the first property ACCESS —
+// so merely importing this file took the whole local database down, and the
+// page said only that it had fallen back to the list cache (`FJS-1179`). The
+// browser half answers `existsSync` with false, which is the true answer for a
+// device that has no migrations directory.
+import { readFileSync, writeFileSync, readdirSync, mkdirSync, existsSync, statSync } from '#host'
 import { resolve, join } from 'path'
 import { slug } from '@frontierjs/toolbelt/inflect'
-import { Database } from 'bun:sqlite'
+import { openDatabase } from './engine.js'
 import {
   introspect, buildPristine, buildPristineForDatabase, diffSchemas,
   generateMigrationSQL, summarizeDiff, checksum, splitStatements, normalizeTableDdl,
@@ -170,7 +177,7 @@ export function buildShadow(dir = './migrations') {
   const js    = files.filter(f => f.endsWith('.js'))
   if (js.length) return { ok: false, reason: 'js-migrations', files: js, schema: null }
 
-  const db = new Database(':memory:')
+  const db = openDatabase(':memory:')
   try {
     for (const file of files) {
       for (const stmt of migrationStatements(join(resolve(dir), file))) {
@@ -202,7 +209,7 @@ export function historyGap(parseResult, dir = './migrations', { pluralize = fals
   // caller reading `.ok` on it would fold it into one of the other two.
   if (!shadow.ok) return { unknown: true, reason: shadow.reason, file: shadow.file, error: shadow.error, files: shadow.files, message: shadowRefusal(shadow) }
 
-  const pristineDb = new Database(':memory:')
+  const pristineDb = openDatabase(':memory:')
   let pristine
   try {
     pristine = buildPristineForDatabase(pristineDb, parseResult, dbName)
@@ -298,7 +305,7 @@ function createAgainstHistory(parseResult, dbName, label, dir, { pluralize = fal
   const shadow = buildShadow(dir)
   if (!shadow.ok) return { created: false, blocked: true, message: shadowRefusal(shadow) }
 
-  const pristineDb = new Database(':memory:')
+  const pristineDb = openDatabase(':memory:')
   let pristineSchema
   try {
     pristineSchema = buildPristineForDatabase(pristineDb, parseResult, dbName)
@@ -653,7 +660,7 @@ export function status(db, dir = './migrations') {
 // Returns: { state: 'in-sync' | 'pending' | 'drift', ... }
 
 export function verify(db, parseResult, dir = './migrations', { pluralize = false } = {}) {
-  const pristineDb     = new Database(':memory:')
+  const pristineDb     = openDatabase(':memory:')
   const pristineSchema = buildPristine(pristineDb, parseResult)
   pristineDb.close()
 
@@ -870,7 +877,7 @@ export function autoMigrate(db, parseResultOrSchema, { pluralize = false, force 
       continue
     }
 
-    const pristineDb = new Database(':memory:')
+    const pristineDb = openDatabase(':memory:')
     pristineDb.run('PRAGMA foreign_keys = ON')
 
     try {

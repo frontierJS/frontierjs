@@ -1,0 +1,18 @@
+<script module>
+  // web/src/resources/StocktakeCount.mesa — the Resource layer.
+  //
+  // The child of `StocktakeSheet`, and the reason both models declare
+  // `@default(uuid())`: a count is written on the same phone, in the same
+  // minute, as the sheet it belongs to, with nothing reachable. The browser
+  // states both keys, so `sheetId` here names a sheet the server has never
+  // heard of and is still correct when the two writes drain in order.
+  //
+  // No markup half. A count is entered on /stocktake/ against a shelf the
+  // person is standing in front of, with the expected number already on screen
+  // — a generated form over the row would ask for `expected` as if it were an
+  // opinion.
+
+  import { createResource } from '@frontierjs/sierra/junction'
+
+  export const counts = createResource('stocktake-counts', { model: 'StocktakeCount' })
+</script>

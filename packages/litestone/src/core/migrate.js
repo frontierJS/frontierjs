@@ -15,7 +15,9 @@
 //                  add/drop/reorder a UNIQUE the table declares itself
 
 import { generateDDL, generateDDLForDatabase, generateTableDDL, generateIndexDDL, generateModelDDL, generateViewDDL, modelToTableName , detectM2MPairs, generateJoinTableDDL, isStoredField } from './ddl.js'
-import { createHash } from 'crypto'
+// `#host`, for the reason `drivers/jsonl.js` says: a bare node builtin in this
+// graph throws when the module is merely imported in a browser (`FJS-1179`).
+import { createHash } from '#host'
 
 // ─── Introspect ───────────────────────────────────────────────────────────────
 // Works on any db handle with .prepare() (Bun Database).

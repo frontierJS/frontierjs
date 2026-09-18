@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Studio's Explore panel, which also places a word into your schema and shows you
 the diff first.
 
-**102 words** — 12 declarations · 63 field attributes · 27 model attributes.
+**103 words** — 12 declarations · 63 field attributes · 28 model attributes.
 
 ## Index
 
@@ -42,7 +42,7 @@ the diff first.
 - *Identify a row* — [`@@id`](#id-model)
 - *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model)
 - *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@export`](#export-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
-- *Wire it to the app* — [`@@auth`](#auth-model) · [`@@log`](#log-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
+- *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@log`](#log-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
 ## Declarations
 
@@ -1585,6 +1585,21 @@ model Example {
 
 ### Wire it to the app
 
+#### `@@sync` `(policy)` <a id="sync-model"></a>
+
+This model's rows may be written with no server reachable: the client holds the write and replays it when one is. The argument is the COLLISION policy and nothing else — whether a model leaves the device, and in which direction, is a separate question this attribute has not been asked. All three policies behave identically on a reachable network; each decides what happens to a write nobody is standing over when it lands. `server` drops the revision the device read, so the replay applies to whatever the row holds by then. `append` says rows are only ever added, which is what makes a collision impossible rather than resolved — a held patch, remove or restore is refused by name. `refuse` carries the revision and the Data boundary refuses the replay if the row moved, which is why it needs an @version column and is refused without one. There is no default and silence is not permission: a model that declares nothing is not syncable, and an offline client refuses to queue a write against it by name rather than dropping it, because a model nobody thought about would otherwise lose a row with nothing said. It crosses to the browser as `x-sync`, and its ABSENCE is what a client reads as a refusal.
+
+```lite
+model Example {
+  id Int @id
+  version Int @version
+  @@sync(server)
+}
+```
+
+- **`policy`** — `server` · `append` · `refuse`
+- **See also** — [`@@gate`](#gate-model) · [`@version`](#version-field) · [`@@transitions`](#transitions-model)
+
 #### `@@auth` <a id="auth-model"></a>
 
 This model is the principal auth() reads. One per schema; @scoped resolves against it.
@@ -1776,3 +1791,15 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 ### `materialized-view-full-refresh` — a materialized view is rebuilt in full on every row written to its sources
 
 *info*. @@refreshOn installs INSERT, UPDATE and DELETE triggers on each source table, and each one runs DELETE + the whole @@sql again. SQLite fires a row trigger per row, so the cost is one full recomputation per row written, inside the writing transaction.
+
+### `sync-reference-to-a-server-assigned-id` — a queued write references a model whose id only the server can assign
+
+*warn*. @@sync says a write may be made with no server reachable. Two of them in one session is the ordinary case — a parent and then its children — and the child has to name a parent that has no id yet, because the id is assigned by the INSERT that has not happened. Unless the parent declares an id the client can mint, there is nothing to write in the foreign key.
+
+### `sync-file-with-no-key-to-attach-to` — a syncable model carries bytes and has no key a client can state
+
+*warn*. A write held on a device is replayed in two halves — the row, then its bytes as a patch naming that row. The patch needs an id, and a model whose @id only the server assigns has none until the row has landed, so a write carrying a file is not held at all.
+
+### `sync-required-file` — a required File on a syncable model cannot be written offline
+
+*warn*. The row half of a held write replays WITHOUT its bytes — that is what makes a small correction independent of a large photograph. A File column that is required therefore has no value on the replayed create, and the boundary refuses the row the device thought it had saved.

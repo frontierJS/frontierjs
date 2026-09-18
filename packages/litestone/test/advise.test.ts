@@ -398,6 +398,113 @@ describe('a @@deny with no @@allow', () => {
   })
 })
 
+describe('sync-reference-to-a-server-assigned-id', () => {
+  const ID = 'sync-reference-to-a-server-assigned-id'
+
+  const pair = (parentId: string, childSync = '@@sync(server)') => `
+    model Session {
+      ${parentId}
+      lines  Line[]
+      @@sync(server)
+    }
+    model Line {
+      id        Int     @id
+      sessionId String
+      session   Session @relation(fields: [sessionId], references: [id])
+      ${childSync}
+    }`
+
+  test('fires when both are syncable and the parent id is the server to assign', () => {
+    const out = findings(pair('id String @id'), ID)
+    expect(out.length).toBe(1)
+    expect(out[0].model).toBe('Session')
+    expect(out[0].field).toBe('id')
+    expect(out[0].severity).toBe('warn')
+    // The message has to name the column there is nothing to put in, or a
+    // reader has the diagnosis and not the place.
+    expect(out[0].message).toContain('sessionId')
+  })
+
+  test('every generated id default clears it', () => {
+    for (const fn of ['uuid()', 'ulid()', 'cuid()', 'nanoid()'])
+      expect(findings(pair(`id String @id @default(${fn})`), ID)).toEqual([])
+  })
+
+  test('a parent that is not syncable is silent — it cannot be made offline at all', () => {
+    expect(findings(`
+      model Session {
+        id    String @id
+        lines Line[]
+      }
+      model Line {
+        id        Int     @id
+        sessionId String
+        session   Session @relation(fields: [sessionId], references: [id])
+        @@sync(server)
+      }`, ID)).toEqual([])
+  })
+
+  test('a syncable model with no child referencing it is silent', () => {
+    expect(findings(`
+      model Movement {
+        id       Int @id
+        quantity Int
+        @@sync(server)
+      }`, ID)).toEqual([])
+  })
+
+  test('the back-reference does not fire a second time', () => {
+    // Session.lines is the same relation from the end that carries no foreign
+    // key, so a walk that read both sides would report one problem twice.
+    expect(findings(pair('id String @id'), ID).length).toBe(1)
+  })
+})
+
+describe('the two rules a File on a syncable model earns', () => {
+  const FILE_KEYLESS = 'sync-file-with-no-key-to-attach-to'
+  const FILE_REQUIRED = 'sync-required-file'
+
+  test('bytes with no key to attach to — the write is not held at all', () => {
+    // The bytes replay as a patch NAMING the row, and offline there is no row
+    // and no id. Nothing here is a syntax error and the model works perfectly
+    // on a network, which is why it is a rule and not a refusal.
+    const out = findings(`
+      model Count { id Int @id  damage File?  @@sync(server) }`, FILE_KEYLESS)
+    expect(out.length).toBe(1)
+    expect(out[0].field).toBe('damage')
+    expect(out[0].message).toContain('@default(uuid())')
+  })
+
+  test('a mintable key clears it', () => {
+    expect(findings(`
+      model Count { id String @id @default(uuid())  damage File?  @@sync(server) }`,
+      FILE_KEYLESS)).toEqual([])
+  })
+
+  test('without @@sync it is silent — nothing is replayed', () => {
+    expect(findings('model Count { id Int @id  damage File? }', FILE_KEYLESS)).toEqual([])
+  })
+
+  test('a required File cannot survive a replay', () => {
+    // The row half goes without its bytes, so the create arrives with nothing
+    // in the column — which is the whole reason the two halves are separable.
+    const out = findings(`
+      model Count { id String @id @default(uuid())  damage File  @@sync(server) }`, FILE_REQUIRED)
+    expect(out.length).toBe(1)
+    expect(out[0].field).toBe('damage')
+  })
+
+  test('optional is the spelling that works, and is silent', () => {
+    expect(findings(`
+      model Count { id String @id @default(uuid())  damage File?  @@sync(server) }`,
+      FILE_REQUIRED)).toEqual([])
+  })
+
+  test('a required File on a model that is not syncable is nobody\'s business', () => {
+    expect(findings('model Count { id Int @id  damage File }', FILE_REQUIRED)).toEqual([])
+  })
+})
+
 describe('the rule set', () => {
   test('every rule has an id, a severity and a title', () => {
     for (const r of RULES) {

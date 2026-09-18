@@ -210,8 +210,22 @@ core/
   codegraph.js  a project drawn as one tile per tracked file — heat and blast
                 radius on top, complexity and exposure (complexity no test
                 covers) below, and a score folding three of them — for
-                `project:codegraph`. Age, churn and tested are still graded, for
-                the page's `more`. NOT a snapshot: heat reads a clock and TESTED
+                `project:codegraph`. Age, churn, tested and cycle are still
+                graded, for the page's `more`. **`source` is what the project
+                SHIPS**: source in a package the workspace does not publish is
+                the kind `private` — graded and scored like source, counted as
+                source nowhere — read off that manifest's own field rather than
+                a list of names, so orion crosses back the day it publishes. **TWO graphs and they answer
+                different questions**: `referenceGraph` is *who names this file*
+                and counts any path-shaped string wherever it sits, which is
+                right for a usedBy tally; `importGraph` reads STATEMENTS with
+                comments blanked, because a layer is a claim about what must be
+                correct beneath a file and the loose reading fused 99 files into
+                one cycle out of two comments — `toolbelt → junction`, which
+                Invariant 1 forbids. `layerGraph` turns the second into a
+                `depth` (the LONGEST path down; a cycle collapses to one node
+                first, or the longest path is infinite) and a `cycle` count.
+                NOT a snapshot: heat reads a clock and TESTED
                 may come from a `coverage/lcov.info` nobody commits. Bands are
                 fixed thresholds, never the project's own percentiles, or every
                 badge would draw the same complexity. A separate collection from
@@ -225,6 +239,17 @@ core/
                 import resolves through that package's own `package.json`
                 (`exportTarget`), never a guessed folder — the guess dropped every
                 `@frontierjs/junction` import in the repo
+  functions.js  what is INSIDE a file — every function with its cyclomatic and
+                cognitive complexity, its nesting and its length, for
+                `codegraph.js`. The parser is the PROJECT's: `fli` is global, so
+                a dependency of the app is not beside the CLI, and this resolves
+                the way `app-schema.js` does — *installed HERE* (the directory
+                under the project's node_modules, read through its own
+                manifest), never `require.resolve`, which bun answers from its
+                global cache and memoizes (`FJS-666`). No parser is not a
+                failure: `cognitive` is null, every other reading holds, and the
+                page says which of the three reasons it was — because *quiet*
+                and *nobody read this* must not draw the same tile
   codegraph-page.js the codegraph model as one page; reads no files. `gilbert`,
                 `gridFor` and `coreLayout` are serialized into its script with
                 `toString()` and every band and score is graded in node, so the
@@ -1020,6 +1045,13 @@ rather than inputs.
 `bun run test`. A change to a scaffold is proved by scaffolding into a temp
 directory and running what comes out. A change to `core/checks.js` also needs
 `node scripts/ci.mjs --fast`, because the repo is its other caller.
+
+**The codegraph page has its own drive and it is not in `test`**: `bun run
+test:browser:codegraph` writes the page and opens it. `tests/codegraph.test.js`
+asserts its script PARSES, which is a different question from whether it runs —
+a `const` read before its declaration and a backtick in a comment inside the
+`String.raw` block each render a page that draws its tiles and has a dead
+control on it.
 
 **The GUI has its own drive and it is not in `test`**: `bun run test:browser`
 (`tests/browser/`, one spec per panel, over mesa's harness by relative path)

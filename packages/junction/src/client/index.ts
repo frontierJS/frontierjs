@@ -31,7 +31,14 @@ import { encodeQueryString } from '@frontierjs/toolbelt/query'
 import { directiveParams as toDirectiveParams } from '@frontierjs/toolbelt/directives'
 import { isListResult, wrapResult, ResultShapeError, type ListResult, type ServiceResult } from '../core/envelope.ts'
 import type { QueryDirectives } from '../core/directives.ts'
-import { comparatorFor } from '../core/sort.ts'
+import { comparatorFor } from '../core/query-values.ts'
+
+// Re-exported rather than reached for through the package root, which is the
+// SERVER entry: a browser importing it pulls Bun's transport in. Sierra's
+// offline read is the third caller of these (`FJS-1179`) and the only one on
+// the far side of a package boundary.
+export { normalizeOrderBy, normalizeSelect, comparatorFor, compareValues } from '../core/query-values.ts'
+export type { SortParam, SelectParam, OrderBy } from '../core/query-values.ts'
 export type { ListResult, ServiceResult }
 export { ResultShapeError }
 
@@ -252,6 +259,30 @@ class EventEmitter {
   }
 }
 
+/**
+ * The option as an HTTP header, and the only place that spelling is written.
+ * The socket path builds the same name into `meta.headers`, so a rename is one
+ * edit rather than two that can disagree.
+ */
+const _callHeader = (opts?: CallOptions) =>
+  opts?.idempotencyKey ? { header: { 'Idempotency-Key': opts.idempotencyKey } } : {}
+
+/**
+ * What a caller states about ONE call, as opposed to about the data or the
+ * query — so it is a third parameter rather than a key on `QueryDirectives`,
+ * which is the closed `$`-table and describes what to fetch.
+ *
+ * `idempotencyKey` is claimed by `callService` on the server, which answers the
+ * FIRST call's result without running the pipeline — no hook, no write, no
+ * announcement. That is what makes a write safe to send again when nobody can
+ * say whether the first one arrived: a socket that has not noticed the network
+ * is gone carries a call that lands minutes later, and a caller that re-sends
+ * without a key writes the row twice.
+ */
+export interface CallOptions {
+  idempotencyKey?: string
+}
+
 // ─── ServiceProxy ─────────────────────────────────────────────────────────
 // Generic T = the model type. Defaults to Record<string,unknown> for JS users.
 // Usage: client.service<Lead>('leads')
@@ -364,11 +395,15 @@ export class ServiceProxy<
   }
 
   // create(data, params?) → T
-  async create(data: Partial<T> & Record<string, unknown>, params?: QueryDirectives): Promise<T> {
+  async create(
+    data: Partial<T> & Record<string, unknown>,
+    params?: QueryDirectives,
+    opts?: CallOptions
+  ): Promise<T> {
     if (this._client._wsReady && !_hasFiles(data)) {
-      return this._client._wsCall(this.name, 'create', null, data) as Promise<T>
+      return this._client._wsCall(this.name, 'create', null, data, null, opts) as Promise<T>
     }
-    return this._client._request('POST', this._base, data) as Promise<T>
+    return this._client._request('POST', this._base, data, _callHeader(opts)) as Promise<T>
   }
 
   // patch(id, data, params?)    → T
@@ -382,29 +417,35 @@ export class ServiceProxy<
   async patch(
     id: string | number,
     data: Partial<T> & Record<string, unknown>,
-    params?: QueryDirectives
+    params?: QueryDirectives,
+    opts?: CallOptions
   ): Promise<T>
   async patch(
     query: Record<string, unknown>,
     data: Partial<T> & Record<string, unknown>,
-    params?: QueryDirectives
+    params?: QueryDirectives,
+    opts?: CallOptions
   ): Promise<ListResult<T>>
   async patch(
     idOrQuery: string | number | Record<string, unknown>,
     data: Partial<T> & Record<string, unknown>,
-    params?: QueryDirectives
+    params?: QueryDirectives,
+    opts?: CallOptions
   ): Promise<T | ListResult<T>> {
     if (typeof idOrQuery === 'object') {
       const qs = buildQueryString(idOrQuery, params)
-      return this._client._request('PATCH', `${this._base}${qs}`, data) as Promise<ListResult<T>>
+      return this._client._request(
+        'PATCH', `${this._base}${qs}`, data, _callHeader(opts)
+      ) as Promise<ListResult<T>>
     }
     if (this._client._wsReady && !_hasFiles(data)) {
-      return this._client._wsCall(this.name, 'patch', idOrQuery, data) as Promise<T>
+      return this._client._wsCall(this.name, 'patch', idOrQuery, data, null, opts) as Promise<T>
     }
     return this._client._request(
       'PATCH',
       `${this._base}/${idOrQuery}`,
-      data
+      data,
+      _callHeader(opts)
     ) as Promise<T>
   }
 
@@ -414,34 +455,44 @@ export class ServiceProxy<
   // Rows, not ids: a filtered remove deletes one row at a time and each one
   // answers itself, so a subscriber has the record it lost rather than a key to
   // go and look one up that is no longer there.
-  async remove(id: string | number, params?: QueryDirectives): Promise<T>
-  async remove(query: Record<string, unknown>, params?: QueryDirectives): Promise<ListResult<T>>
+  async remove(id: string | number, params?: QueryDirectives, opts?: CallOptions): Promise<T>
+  async remove(
+    query: Record<string, unknown>, params?: QueryDirectives, opts?: CallOptions
+  ): Promise<ListResult<T>>
   async remove(
     idOrQuery: string | number | Record<string, unknown>,
-    params?: QueryDirectives
+    params?: QueryDirectives,
+    opts?: CallOptions
   ): Promise<T | ListResult<T>> {
     if (typeof idOrQuery === 'object') {
       const qs = buildQueryString(idOrQuery, params)
-      return this._client._request('DELETE', `${this._base}${qs}`) as Promise<ListResult<T>>
+      return this._client._request(
+        'DELETE', `${this._base}${qs}`, undefined, _callHeader(opts)
+      ) as Promise<ListResult<T>>
     }
     if (this._client._wsReady) {
-      return this._client._wsCall(this.name, 'remove', idOrQuery, null) as Promise<T>
+      return this._client._wsCall(this.name, 'remove', idOrQuery, null, null, opts) as Promise<T>
     }
-    return this._client._request('DELETE', `${this._base}/${idOrQuery}`) as Promise<T>
+    return this._client._request(
+      'DELETE', `${this._base}/${idOrQuery}`, undefined, _callHeader(opts)
+    ) as Promise<T>
   }
 
   // restore(id, params?) → T
   // restore(query, params?) → T[]
-  async restore(id: string | number, params?: QueryDirectives): Promise<T>
-  async restore(query: Record<string, unknown>, params?: QueryDirectives): Promise<T[]>
+  async restore(id: string | number, params?: QueryDirectives, opts?: CallOptions): Promise<T>
+  async restore(
+    query: Record<string, unknown>, params?: QueryDirectives, opts?: CallOptions
+  ): Promise<T[]>
   async restore(
     idOrQuery: string | number | Record<string, unknown>,
-    params?: QueryDirectives
+    params?: QueryDirectives,
+    opts?: CallOptions
   ): Promise<T | T[]> {
     if (typeof idOrQuery === 'object') {
       const qs = buildQueryString(idOrQuery, params)
       return this._client._request('PUT', `${this._base}${qs}`, undefined, {
-        header: { 'x-service-method': 'restore' }
+        header: { 'x-service-method': 'restore', ..._callHeader(opts).header }
       }) as Promise<T[]>
     }
     // Prefer the socket, like find/get/create/patch/remove. This was the one
@@ -450,10 +501,10 @@ export class ServiceProxy<
     // automatically" (README). The bulk form above stays HTTP: a query-shaped
     // restore travels in the URL.
     if (this._client._wsReady) {
-      return this._client._wsCall(this.name, 'restore', idOrQuery, null) as Promise<T>
+      return this._client._wsCall(this.name, 'restore', idOrQuery, null, null, opts) as Promise<T>
     }
     return this._client._request('PUT', `${this._base}/${idOrQuery}`, undefined, {
-      header: { 'x-service-method': 'restore' }
+      header: { 'x-service-method': 'restore', ..._callHeader(opts).header }
     }) as Promise<T>
   }
 
@@ -478,7 +529,8 @@ export class ServiceProxy<
     name: string,
     id?: string | number | null,
     data?: Record<string, unknown> | null,
-    query?: Record<string, unknown>
+    query?: Record<string, unknown>,
+    opts?: CallOptions
   ): Promise<unknown> {
     // Same rule as CRUD: the socket when it is there, HTTP when it is not.
     // This used to be unconditionally HTTP, which made a custom method the only
@@ -489,7 +541,7 @@ export class ServiceProxy<
     // socket, so a payload carrying one goes over HTTP exactly as create and
     // patch do.
     if (this._client._wsReady && !_hasFiles(data ?? {})) {
-      return this._client._wsCall(this.name, name, id ?? null, data ?? null, query)
+      return this._client._wsCall(this.name, name, id ?? null, data ?? null, query, opts)
     }
     // A COLLECTION-level call — `id` omitted or null — posts to the service
     // root. The server has always supported it: the bridge dispatches on the
@@ -504,11 +556,15 @@ export class ServiceProxy<
     // into the `$`-prefixed directive syntax. A custom method declares its own query
     // vocabulary; the bridge still splits `$` keys off as directives if the
     // caller uses them.
+    // The method header and the per-call one are merged rather than one
+    // replacing the other: `_callHeader` answers `{ header: {…} }`, so spreading
+    // its object alone would drop `X-Service-Method` and the bridge would
+    // dispatch a custom method as a plain create.
     return this._client._request(
       'POST',
       `${path}${_plainQuery(query)}`,
       data ?? {},
-      { header: { 'X-Service-Method': name } }
+      { header: { 'X-Service-Method': name, ..._callHeader(opts).header } }
     )
   }
 
@@ -517,9 +573,10 @@ export class ServiceProxy<
   call(
     method: string,
     id?: string | number | null,
-    data?: Record<string, unknown> | null
+    data?: Record<string, unknown> | null,
+    opts?: CallOptions
   ): Promise<unknown> {
-    return this._client._wsCall(this.name, method, id ?? null, data ?? null)
+    return this._client._wsCall(this.name, method, id ?? null, data ?? null, null, opts)
   }
 
   // ── Internal: receive push events from WS ────────────────────────────
@@ -1450,7 +1507,7 @@ export class JunctionClient extends EventEmitter {
     // in it, which is the same silent-wrong-data class one step along.
     //
     // Sorting is answerable here: `orderBy` is the caller's own, and
-    // `core/sort.ts` reads it the way the server does. **Paging is not.**
+    // `core/query-values.ts` reads it the way the server does. **Paging is not.**
     // Nothing in a browser can know whether a new row belongs on page 3 without
     // asking, so a list past the first page does not guess: the row is refused
     // and `stale` counts it, for a view to render as *3 new — refresh*. A list
@@ -2102,11 +2159,12 @@ export class JunctionClient extends EventEmitter {
     method: string,
     id: string | number | null,
     data: Record<string, unknown> | null,
-    query?: Record<string, unknown> | null
+    query?: Record<string, unknown> | null,
+    opts?: CallOptions
   ): Promise<unknown> {
     // Fall back to HTTP if WS is not ready
     if (!this._wsReady || !this._ws) {
-      return this._httpFallback(service, method, id, data, query ?? null)
+      return this._httpFallback(service, method, id, data, query ?? null, opts)
     }
 
     return new Promise((resolve, reject) => {
@@ -2152,7 +2210,13 @@ export class JunctionClient extends EventEmitter {
       // authenticated at upgrade. The server merges only the names the app
       // declared in `http.callHeaders`, so a frame naming Authorization
       // changes nothing.
-      const extraHeaders = this._extraHeaders()
+      // The per-call key goes in with them, and the server takes it whether or
+      // not the app declared any call headers: `idempotency-key` is one of
+      // Junction's own protocol headers, always mergeable.
+      const extraHeaders = {
+        ...this._extraHeaders(),
+        ...(opts?.idempotencyKey ? { 'idempotency-key': opts.idempotencyKey } : {}),
+      }
       if (Object.keys(extraHeaders).length > 0)      meta.headers = extraHeaders
 
       this._ws!.send(
@@ -2173,7 +2237,8 @@ export class JunctionClient extends EventEmitter {
     method: string,
     id: string | number | null,
     data: Record<string, unknown> | null,
-    query: Record<string, unknown> | null = null
+    query: Record<string, unknown> | null = null,
+    opts?: CallOptions
   ): Promise<unknown> {
     const svc = this.service(service)
     switch (method) {
@@ -2187,20 +2252,20 @@ export class JunctionClient extends EventEmitter {
         // forwarded verbatim rather than parsed back and re-emitted.
         return svc.get(id!, undefined, query ?? undefined)
       case 'create':
-        return svc.create(data ?? {})
+        return svc.create(data ?? {}, undefined, opts)
       case 'patch':
-        return svc.patch(id!, data ?? {})
+        return svc.patch(id!, data ?? {}, undefined, opts)
       case 'remove':
-        return svc.remove(id!)
+        return svc.remove(id!, undefined, opts)
       case 'restore':
-        return svc.restore(id!)
+        return svc.restore(id!, undefined, opts)
       default:
         // Anything else is a custom method, and invoke() is the HTTP form of
         // one. This used to call svc.call(), which is _wsCall() — and _wsCall
         // routes here when the socket is down, so a custom method with no
         // connection recursed between the two forever. Async recursion, so no
         // stack overflow to tell you: the call simply never settled.
-        return svc.invoke(method, id!, data)
+        return svc.invoke(method, id!, data, undefined, opts)
     }
   }
 

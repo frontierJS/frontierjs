@@ -1,5 +1,22 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-16 — `/ids`, because both ends mint now
+
+The generators behind `@default(uuid()|ulid()|cuid()|nanoid())` were `litestone/src/core/ids.js`
+and had two callers, both on a server: the SQLite client at insert time and the jsonl driver. A
+third appeared with offline writes — a row created with no server reachable is referenced by its
+children before any INSERT has happened, so the BROWSER has to state the key, and a browser cannot
+import litestone. Three fillers cannot each own the answer, so the table moved here and litestone
+re-exports it.
+
+**Randomness is `crypto.getRandomValues` and may not be `node:crypto`.** The originals imported
+`randomBytes`; a bundle that merely mentions such a file is dead at PARSE, before a line of it runs.
+The spec asserts the file names no node builtin, because that failure has no symptom worth reading.
+
+`mintId(kind)` is the kit's own addition and answers `null` for a kind it has no generator for —
+the caller is a client deciding whether it CAN state a key, and *no* is an answer rather than a
+fault.
+
 ## 2026-09-15 — `/predicate`'s evaluator takes a `claimOf`
 
 `evaluate(node, { claimOf })` answers `auth().field`, defaulting to the principal's own property.

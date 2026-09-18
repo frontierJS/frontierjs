@@ -1,5 +1,37 @@
 # Changes — @frontierjs/orion
 
+## 2026-09-16 — the mockup is cut to what is still owed
+
+`mockup/ui/` was 11 files and 14,908 lines; seven of them, 6,378 lines, are deleted. Each was
+retired by something that now exists rather than by judgement: `settings.jsx` (3,485) is the
+accounts, workspaces, members, invites and system-admin surface, which [`FJS-D269`](../../DECISIONS.md#fjs-d269)
+made the HOST app's and not orion's; `primitives.jsx` is `@frontierjs/ui`; `mock.js` is the schema
+and `tests/fixtures/`; `api.js` is a REST client against `/api/executions`, a noun this package no
+longer has; `tokens.js` is a color palette Invariant 13 forbids outright; `app.jsx` and
+`index.html` are sierra's routing and `_module.mesa`.
+
+What remains is the four files that are the ONLY statement of something unbuilt — the canvas, the
+per-node inspector, and the screens `pages.jsx` describes that `web/routes/` does not answer.
+`node-types.js` stays for the 108 lines beside the ported `ENODE_TYPES`: `NODE_CONFIG_FIELDS` is
+the inspector's field list per node type, and nothing else holds it.
+
+The three keepers still import the deleted files, which costs nothing and is the measurement worth
+recording: **the mockup has no `package.json` and no vite config, so it has never been runnable**
+and is a document that happens to be written in JSX. It is not a member of the workspace and is in
+no `nonMembers` allowance, because there is nothing for CI to grade.
+
+## 2026-09-16 — a host can TYPE the nodes it contributes
+
+`@frontierjs/orion/plugin` re-exports `PluginManifest`, `NodeTypeDescriptor`, `NodeCategory`,
+`INodeImplementation`, `NodeContext` and `NodeResult`. They are declared under `src/engine/`, which
+an app may not import — the boundary test forbids it — so a host writing `orion({ plugins: [...] })`
+had nothing to name and wrote its manifest as an object literal. TypeScript then infers
+`category: string`, which is not the union, and the whole contribution fails to assign at the
+`orion()` call with a hundred-line structural error about a field nobody got wrong. Found writing
+basecamp's `basecamp.page` node.
+
+Nothing about the shape changed; the types were simply unreachable.
+
 ## 2026-09-15 — an administrator reads through the row policies
 
 [`FJS-D296`](../../DECISIONS.md#fjs-d296), closing [`FJS-1170`](../../ISSUES.md#fjs-1170).

@@ -15,9 +15,11 @@ import {
   gilbert, parseGitLog, indentSum, kindOf, band, parseLcov, collectCodegraph, heatOf, exposureOf, scoreOf, LEVEL,
   tileBands, badgeCells, renderBadge, renderMap, regionReader, gridFor, AGE_DAYS, HALF_LIFE_DAYS, SCORE_RAMP, SCORE_WARN,
   themesIn, themeTokens, mixOklab, turnOklch, deltaOklab, scoreRamp, paletteFrom, paletteCss, isHotspot, bandLabels, MIX, TONES, STRONG, QUADRANTS, MORE,
-  exportTarget, packageIndex, referenceGraph, coreRegions, coreLayout, packageGrid,
+  exportTarget, packageIndex, referenceGraph, coreRegions, coreLayout, packageGrid, depthLayout, unpublishedDirs, isCode,
+  importGraph, layerGraph, stripComments, CYCLE_SIZE, COGNITIVE,
 } from '../core/codegraph.js'
 import { renderPage } from '../core/codegraph-page.js'
+import { typeScriptAt, measureFunctions, worstFunction, PARSABLE } from '../core/functions.js'
 import { ownStyleBundle } from '../core/assets.js'
 import { encodePng } from '../core/png.js'
 
@@ -188,7 +190,7 @@ test('band thresholds are exclusive below and the last one is strong', () => {
   expect(tileBands({ age: AGE_DAYS[0] + 0.1, churn: 0, complexity: null, tested: null }).age).toBe(STRONG - 1)
   // not source: blast radius and exposure do not apply, and a file with no commits is cold
   expect(tileBands({ age: null, churn: 0, complexity: null, tested: null }))
-    .toEqual({ heat: 0, blast: null, complexity: null, exposure: null, age: null, churn: 0, tested: null })
+    .toEqual({ heat: 0, blast: null, complexity: null, exposure: null, age: null, churn: 0, tested: null, cycle: null, cognitive: null })
   expect(Object.keys(tileBands({}))).toEqual([...QUADRANTS, ...MORE])
 })
 
@@ -472,6 +474,20 @@ describe('page', () => {
     expect(renderPage(model, { css: CSS, theme: 'light', name: 'demo', all: true })).toContain('"all":true')
   })
 
+  test('every layout the buttons offer is a function the page carries', () => {
+    const layouts = [...page.matchAll(/data-layout="(\w+)"/g)].map(m => m[1])
+    expect(layouts).toContain('depth')
+    expect(script).toContain(depthLayout.toString())
+    // the rows carry what that layout places by, and the cycle band the more menu colors by
+    const D = new Function(`${script.split('\n')[0]}; return D`)()
+    const cols = script.match(/^const COLS = (\[.*\])$/m)[1]
+    const at = new Function(`return ${cols}`)()
+    expect(at).toContain('depth')
+    expect(at).toContain('bCycle')
+    expect(D.rows[0].length).toBe(at.length)
+    expect(D.more).toContain('cycle')
+  })
+
   test('the script parses', () => {
     expect(() => new Function(script)).not.toThrow()
   })
@@ -668,5 +684,284 @@ describe('core neighborhoods', () => {
     const two = coreLayout(huge, ['a', 'b', 'c', 'd'], { big: { a: 1 } })
     expect(two.splits).toBe(1)
     expect(new Set(two.cells.map(([x, y]) => y * two.w + x)).size).toBe(huge.length)
+  })
+})
+
+// ─── the import graph ─────────────────────────────────────────────────────────
+
+test('a comment naming a module is not an import', () => {
+  const texts = new Map([
+    ['a.js', "// import x from './b.js'\n/* import './c.js' */\nimport y from './d.js'\n"],
+    ['b.js', ''], ['c.js', ''], ['d.js', ''],
+  ])
+  const g = importGraph(texts, { isFile: p => texts.has(p) })
+  expect([...g.get('a.js').keys()]).toEqual(['d.js'])
+})
+
+test('a string holding a comment marker survives the strip', () => {
+  expect(stripComments("const u = 'http://x/y' // gone\n").trim()).toBe("const u = 'http://x/y'")
+})
+
+test('every statement form is read, and a type import is marked as one', () => {
+  const texts = new Map([
+    ['a.ts', [
+      "import a from './b.js'",
+      "import type { T } from './c.js'",
+      "export { z } from './d.js'",
+      "const e = await import('./e.js')",
+      "const f = require('./f.js')",
+      "import './g.js'",
+    ].join('\n')],
+    ...['b', 'c', 'd', 'e', 'f', 'g'].map(n => [n + '.js', '']),
+  ])
+  const edges = importGraph(texts, { isFile: p => texts.has(p) }).get('a.ts')
+  expect([...edges.keys()].sort()).toEqual(['b.js', 'c.js', 'd.js', 'e.js', 'f.js', 'g.js'])
+  expect(edges.get('c.js')).toBe(true)
+  expect(edges.get('b.js')).toBe(false)
+})
+
+test('a type query is not a dynamic import, and the awaited one still is', () => {
+  const texts = new Map([
+    ['a.ts', "let x: import('./b.js').App\nconst y = await import('./c.js')\nimport('./d.js').then(m => m)\n"],
+    ['b.js', ''], ['c.js', ''], ['d.js', ''],
+  ])
+  const edges = importGraph(texts, { isFile: p => texts.has(p) }).get('a.ts')
+  // all three are edges — a type is a compile-time dependency — and only the first is erased at runtime
+  expect([...edges.keys()].sort()).toEqual(['b.js', 'c.js', 'd.js'])
+  expect(edges.get('b.js')).toBe(true)
+  expect(edges.get('c.js')).toBe(false)
+  expect(edges.get('d.js')).toBe(false)
+})
+
+test('a bare specifier resolves through the package own exports, and an npm one is dropped', () => {
+  const packages = packageIndex([{ path: 'packages/kit/package.json', json: { name: '@x/kit', exports: { './parse': './src/parse.js' } } }])
+  const texts = new Map([['app.js', "import { p } from '@x/kit/parse'\nimport React from 'react'\n"], ['packages/kit/src/parse.js', '']])
+  const g = importGraph(texts, { isFile: p => texts.has(p), packages })
+  expect([...g.get('app.js').keys()]).toEqual(['packages/kit/src/parse.js'])
+})
+
+test('depth is the longest path down, never the shortest', () => {
+  // a → b → c → d and a → d: the short way is one hop and a still sits on three
+  const g = new Map([
+    ['a', new Map([['b', false], ['d', false]])],
+    ['b', new Map([['c', false]])],
+    ['c', new Map([['d', false]])],
+    ['d', new Map()],
+  ])
+  const l = layerGraph(g)
+  expect([l.get('a').depth, l.get('b').depth, l.get('c').depth, l.get('d').depth]).toEqual([3, 2, 1, 0])
+  expect([...l.values()].every(v => v.cycle === 1)).toBe(true)
+})
+
+test('a cycle counts its files and cannot make the longest path infinite', () => {
+  const g = new Map([
+    ['a', new Map([['b', false]])],
+    ['b', new Map([['c', false]])],
+    ['c', new Map([['a', false], ['d', false]])],
+    ['d', new Map()],
+  ])
+  const l = layerGraph(g)
+  expect([l.get('a').cycle, l.get('b').cycle, l.get('c').cycle, l.get('d').cycle]).toEqual([3, 3, 3, 1])
+  expect([l.get('a').depth, l.get('d').depth]).toEqual([1, 0])
+})
+
+test('a pair is the mildest cycle band and a file in none has no band', () => {
+  expect(tileBands({ heat: 0, churn: 0, complexity: null, tested: null, cycle: 1 }).cycle).toBe(null)
+  expect(tileBands({ heat: 0, churn: 0, complexity: null, tested: null, cycle: 2 }).cycle).toBe(0)
+  expect(tileBands({ heat: 0, churn: 0, complexity: null, tested: null, cycle: CYCLE_SIZE.at(-1) + 1 }).cycle).toBe(STRONG)
+})
+
+test('the depth layout stacks a band per layer, deepest at the top, one blank row between', () => {
+  const files = [
+    { path: 'top.js', depth: 2 },
+    ...Array.from({ length: 5 }, (_, i) => ({ path: 'mid' + i + '.js', depth: 1 })),
+    ...Array.from({ length: 9 }, (_, i) => ({ path: 'leaf' + i + '.js', depth: 0 })),
+  ]
+  const { w, h, cells } = depthLayout(files)
+  expect(cells.length).toBe(files.length)
+  const rowOf = d => cells[d][1]
+  // the deepest file is alone on the top row, and every shallower file is below it
+  expect(rowOf(0)).toBe(0)
+  expect(Math.min(...files.map((_, d) => rowOf(d)).slice(1))).toBeGreaterThan(0)
+  // a layer never shares a row with another layer
+  const layerAtRow = new Map()
+  files.forEach((f, d) => { const r = rowOf(d); expect(layerAtRow.get(r) ?? f.depth).toBe(f.depth); layerAtRow.set(r, f.depth) })
+  // and no two files land on one cell
+  expect(new Set(cells.map(c => c.join(','))).size).toBe(files.length)
+  expect(cells.every(([x, y]) => x < w && y < h)).toBe(true)
+})
+
+test('the depth layout keeps path order inside a layer', () => {
+  const files = Array.from({ length: 6 }, (_, i) => ({ path: 'f' + i + '.js', depth: 0 }))
+  const { cells } = depthLayout(files)
+  const seen = cells.map(([x, y], d) => [y, x, d]).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(c => c[2])
+  expect(seen).toEqual([0, 1, 2, 3, 4, 5])
+})
+
+test('the collected model carries a depth and a cycle count per source file', () => {
+  const root = mkdtempSync(join(tmpdir(), 'codegraph-depth-'))
+  try {
+    const git = (...a) => execFileSync('git', ['-C', root, ...a], { encoding: 'utf8' })
+    git('init', '-q')
+    git('config', 'user.email', 'a@b.c'); git('config', 'user.name', 'T')
+    writeFileSync(join(root, 'leaf.js'), 'export const x = 1\n')
+    writeFileSync(join(root, 'mid.js'), "import { x } from './leaf.js'\nexport const y = x\n")
+    writeFileSync(join(root, 'top.js'), "import { y } from './mid.js'\n// import { x } from './leaf.js'\nconsole.log(y)\n")
+    writeFileSync(join(root, 'ring-a.js'), "import './ring-b.js'\n")
+    writeFileSync(join(root, 'ring-b.js'), "import './ring-a.js'\n")
+    git('add', '-A'); git('commit', '-qm', 'one')
+    const at = p => collectCodegraph({ root }).files.find(f => f.path === p)
+    expect(at('leaf.js').depth).toBe(0)
+    expect(at('mid.js').depth).toBe(1)
+    expect(at('top.js').depth).toBe(2)
+    expect(at('leaf.js').cycle).toBe(1)
+    expect(at('ring-a.js').cycle).toBe(2)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+// ─── what the project ships, and what is built on it ──────────────────────────
+
+test('a package the workspace does not publish is read off its own manifest, never a list of names', () => {
+  const dirs = unpublishedDirs([
+    { path: 'package.json', json: { name: 'ws', private: true } },
+    { path: 'packages/app/package.json', json: { name: '@x/app', private: true } },
+    { path: 'packages/kit/package.json', json: { name: '@x/kit' } },
+  ])
+  // the root says private too and means something else there: nobody publishes a workspace
+  expect([...dirs]).toEqual(['packages/app'])
+})
+
+test('source in an unpublished package is private, and everything else keeps its kind', () => {
+  const root = mkdtempSync(join(tmpdir(), 'codegraph-private-'))
+  try {
+    const git = (...a) => execFileSync('git', ['-C', root, ...a], { encoding: 'utf8' })
+    git('init', '-q')
+    git('config', 'user.email', 'a@b.c'); git('config', 'user.name', 'T')
+    const write = (rel, text) => { mkdirSync(dirname(join(root, rel)), { recursive: true }); writeFileSync(join(root, rel), text) }
+    write('package.json', JSON.stringify({ name: 'ws', private: true, workspaces: ['packages/*'] }))
+    write('packages/kit/package.json', JSON.stringify({ name: '@x/kit' }))
+    write('packages/kit/src/index.js', 'export const k = 1\n')
+    write('packages/app/package.json', JSON.stringify({ name: '@x/app', private: true }))
+    write('packages/app/src/main.js', "import { k } from '@x/kit'\nexport const m = k\n")
+    write('packages/app/tests/main.test.js', "import { m } from '../src/main.js'\n")
+    write('packages/app/README.md', '# app\n')
+    git('add', '-A'); git('commit', '-qm', 'one')
+    const model = collectCodegraph({ root })
+    const kind = p => model.files.find(f => f.path === p).kind
+    expect(kind('packages/kit/src/index.js')).toBe('source')
+    expect(kind('packages/app/src/main.js')).toBe('private')
+    expect(kind('packages/app/tests/main.test.js')).toBe('test')
+    expect(kind('packages/app/README.md')).toBe('doc')
+    // private is CODE: it is graded, and what it imports counts as used
+    const app = model.files.find(f => f.path === 'packages/app/src/main.js')
+    const kit = model.files.find(f => f.path === 'packages/kit/src/index.js')
+    expect(isCode(app)).toBe(true)
+    expect(app.exposure).not.toBeNull()
+    expect(app.depth).toBe(1)
+    expect(kit.usedBy).toBe(1)
+  } finally { rmSync(root, { recursive: true, force: true }) }
+})
+
+// ─── what is inside a file ────────────────────────────────────────────────────
+
+// the parser is the PROJECT's, and this repo has one — a tree without is the other test below
+const ts = await typeScriptAt(process.cwd().replace(/\/packages\/cli$/, ''))
+
+describe('functions', () => {
+
+  test('the parser is found in the project, never beside the CLI', async () => {
+    expect(ts).not.toBeNull()
+    expect(await typeScriptAt(mkdtempSync(join(tmpdir(), 'codegraph-bare-')))).toBeNull()
+  })
+
+  test('nesting costs more than the same decisions written flat', () => {
+    const flat = `function a(x) {
+      if (x === 1) return 1
+      if (x === 2) return 2
+      if (x === 3) return 3
+      return 0
+    }`
+    const deep = `function b(x) {
+      if (x) {
+        for (const i of x) {
+          if (i) return i
+        }
+      }
+      return 0
+    }`
+    const f = measureFunctions(ts, 'a.ts', flat)[0]
+    const d = measureFunctions(ts, 'b.ts', deep)[0]
+    // same three decisions each, and cyclomatic cannot tell them apart
+    expect(f.cyclo).toBe(4)
+    expect(d.cyclo).toBe(4)
+    expect(f.cognitive).toBe(3)       // 1 + 1 + 1
+    expect(d.cognitive).toBe(6)       // 1 + 2 + 3
+    expect(d.nest).toBe(3)
+    expect(f.nest).toBe(1)
+  })
+
+  test('a function is named by whatever declares it, and a one-liner is not a function anybody reads', () => {
+    const src = `
+      export function named() { if (1) return 2
+        return 3 }
+      const assigned = (a) => { if (a) return 1
+        return 0 }
+      const obj = { method() { if (1) return 1
+        return 0 } }
+      const tiny = x => x + 1
+    `
+    const found = measureFunctions(ts, 'n.ts', src)
+    expect(found.map(f => f.name).sort()).toEqual(['assigned', 'method', 'named'])
+  })
+
+  test('the worst function is the file reading, and the hardest one wins', () => {
+    const src = `
+      function easy() { if (1) return 1
+        return 0 }
+      function hard(x) { for (const a of x) { for (const b of a) { if (b) return b } }
+        return null }
+    `
+    const found = measureFunctions(ts, 'w.ts', src)
+    const worst = worstFunction(found)
+    expect(worst.name).toBe('hard')
+    expect(worstFunction([])).toBeNull()
+    expect(worst.cognitive).toBeGreaterThan(found.find(f => f.name === 'easy').cognitive)
+  })
+
+  test('a syntax error answers nothing rather than throwing, and a .mesa is not offered to it', () => {
+    expect(PARSABLE.test('a.mesa')).toBe(false)
+    expect(PARSABLE.test('a.ts')).toBe(true)
+    expect(PARSABLE.test('a.mjs')).toBe(true)
+    // tsc parses loosely and recovers, so the contract is only that it cannot throw
+    expect(() => measureFunctions(ts, 'broken.ts', 'function ( { { {')).not.toThrow()
+  })
+
+  test('a collected file carries its hardest function, its size, and a band for it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'codegraph-fns-'))
+    try {
+      const git = (...a) => execFileSync('git', ['-C', root, ...a], { encoding: 'utf8' })
+      git('init', '-q')
+      git('config', 'user.email', 'a@b.c'); git('config', 'user.name', 'T')
+      writeFileSync(join(root, 'deep.js'), `export function knot(x) {
+  for (const a of x) { for (const b of a) { for (const c of b) { if (c) return c } } }
+  return null
+}
+`)
+      git('add', '-A'); git('commit', '-qm', 'one')
+      const withParser = collectCodegraph({ root, ts }).files.find(f => f.path === 'deep.js')
+      expect(withParser.worst.name).toBe('knot')
+      expect(withParser.cognitive).toBe(10)          // 1 + 2 + 3 + 4
+      expect(withParser.fns).toBe(1)
+      expect(withParser.bytes).toBeGreaterThan(0)
+      expect(tileBands(withParser).cognitive).toBe(band(10, COGNITIVE))
+
+      // with no parser every other reading holds and this one is ABSENT, never 0
+      const without = collectCodegraph({ root }).files.find(f => f.path === 'deep.js')
+      expect(without.cognitive).toBeNull()
+      expect(without.worst).toBeNull()
+      expect(tileBands(without).cognitive).toBeNull()
+      expect(without.complexity).toBe(withParser.complexity)
+      expect(without.bytes).toBe(withParser.bytes)
+    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 })

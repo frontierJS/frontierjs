@@ -16,7 +16,7 @@
 // beats the declaration, which beats the default. A caller passing nothing gets
 // what the seed says.
 
-import { resolve, join, dirname } from 'path'
+import { resolve, join, dirname } from '#host'
 
 const DEFAULTS = {
   dir:      'tenants',

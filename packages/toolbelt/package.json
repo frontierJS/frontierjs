@@ -27,6 +27,10 @@
     "./glow": "./src/glow/glow.js",
     "./history": "./src/history/history.js",
     "./hooks": "./src/hooks/hooks.js",
+    "./ids": {
+      "types": "./src/ids/ids.d.ts",
+      "default": "./src/ids/ids.js"
+    },
     "./inflect": "./src/inflect/inflect.js",
     "./json": "./src/json/json.js",
     "./jsonschema": "./src/jsonschema/jsonschema.js",

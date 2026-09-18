@@ -25,7 +25,7 @@
 //   await tenants.query(db => db.user.count())
 //   await tenants.migrate()
 
-import { Database }        from 'bun:sqlite'
+import { openDatabase }   from './core/engine.js'
 import { applyBusyTimeout, busyTimeoutFor } from './core/pragmas.js'
 import { existsSync, unlinkSync, mkdirSync } from 'fs'
 import { resolve, join, dirname } from 'path'
@@ -253,7 +253,7 @@ CREATE TABLE IF NOT EXISTS tenants (
 `
 
 function openRegistry(path, busyTimeout) {
-  const db = new Database(path)
+  const db = openDatabase(path)
   db.run('PRAGMA journal_mode = WAL')
   db.run('PRAGMA foreign_keys = ON')
   applyBusyTimeout(db, busyTimeout)
@@ -485,7 +485,7 @@ class TenantRegistry {
       return this.#open(id)
     }
 
-    const raw = new Database(path)
+    const raw = openDatabase(path)
     raw.run('PRAGMA journal_mode = WAL')
     raw.run('PRAGMA foreign_keys = ON')
     applyBusyTimeout(raw, this.#busyTimeout)
@@ -704,7 +704,7 @@ class TenantRegistry {
 
     const results = await this.#fanOut(ids, async (id) => {
       const path   = this.#dbPath(id)
-      const raw    = new Database(path)
+      const raw    = openDatabase(path)
       applyBusyTimeout(raw, this.#busyTimeout)
       try {
         // await BEFORE closing — previously this fired-and-forgot the promise,

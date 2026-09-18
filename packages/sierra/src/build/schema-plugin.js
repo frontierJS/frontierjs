@@ -71,7 +71,7 @@ async function loadLitestone(root, warn, schemaPath) {
   // and JSON-schema generator have no driver dependency, so they are imported
   // by subpath. That is also why the failure used to look like a resolution
   // problem: the package resolved fine and then threw on `bun:`.
-  const SUBPATHS = { parse: './parser', json: './jsonschema' }
+  const SUBPATHS = { parse: './parser', json: './jsonschema', device: './device-schema' }
   const tried = []
 
   // Walk up from the app root looking for the package.
@@ -107,7 +107,18 @@ async function loadLitestone(root, warn, schemaPath) {
               import(pathToFileURL(parserAbs).href),
               import(pathToFileURL(jsonAbs).href),
             ])
-            return { parse, parseFile, generateJsonSchema }
+
+            // The schema a DEVICE gets, if this litestone has one. Optional by
+            // subpath rather than by version: an older one simply answers no
+            // device schema, and `offline: { db: true }` is then refused for
+            // want of it rather than shipping a database with no tables.
+            let deviceSchema = null
+            const deviceRel = pick(SUBPATHS.device)
+            if (deviceRel) {
+              const deviceAbs = resolve(pkgDir, deviceRel)
+              if (existsSync(deviceAbs)) ({ deviceSchema } = await import(pathToFileURL(deviceAbs).href))
+            }
+            return { parse, parseFile, generateJsonSchema, deviceSchema }
           }
         }
 
@@ -305,7 +316,22 @@ export async function generateSchemas(schemaPath, warn, root = process.cwd()) {
   const models = [...(result.schema?.models ?? []), ...(result.schema?.views ?? [])]
     .map(m => m.name).filter(Boolean)
 
-  return { defs, models, updatePatch, readPatch }
+  // The schema a DEVICE is given — the `@@sync` models and what they reference,
+  // filtered out of this same parse result. Never the `.lite` source: shipping
+  // that would undo the prose stripping below and hand over every model in the
+  // app. Computed whether or not `offline: { db: true }` is set, because it is
+  // a filter over a tree that is already in hand; what the flag decides is
+  // whether it is EMITTED (`build/local-db-plugin.js`).
+  let device = null
+  if (typeof litestone.deviceSchema === 'function') {
+    try {
+      device = litestone.deviceSchema(result)
+    } catch (err) {
+      warn?.(`the device schema could not be built, so offline reads have no tables: ${err.message}`)
+    }
+  }
+
+  return { defs, models, updatePatch, readPatch, device }
 }
 
 /**
@@ -361,6 +387,8 @@ export function schemaPlugin(config, sierraContext) {
       sierraContext.schemaModels = generated?.models ?? null
       sierraContext.schemaUpdate = generated?.updatePatch ?? null
       sierraContext.schemaRead   = generated?.readPatch ?? null
+      sierraContext.deviceSchema = generated?.device?.parsed ?? null
+      sierraContext.deviceModels = generated?.device?.models ?? null
       sierraContext.schemaPath   = schemaPath
 
       if (generated) {
@@ -389,7 +417,9 @@ export function schemaPlugin(config, sierraContext) {
         sierraContext.schemaDefs   = generated?.defs   ?? null
         sierraContext.schemaModels = generated?.models ?? null
         sierraContext.schemaUpdate = generated?.updatePatch ?? null
-      sierraContext.schemaRead   = generated?.readPatch ?? null
+        sierraContext.schemaRead   = generated?.readPatch ?? null
+        sierraContext.deviceSchema = generated?.device?.parsed ?? null
+        sierraContext.deviceModels = generated?.device?.models ?? null
 
         // virtual:sierra embeds the schemas, so it has to be rebuilt. A full
         // reload rather than an HMR update: make() defaults are read when a

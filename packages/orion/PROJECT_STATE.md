@@ -47,7 +47,9 @@
 
 ## What is not
 
-- **The canvas.** The screens edit a definition as JSON; `mockup/ui/` is the
-  specification for the rest.
+- **The canvas**, and **the per-node inspector** — the screens edit a definition
+  as JSON. `mockup/ui/components/` is the specification for both, plus the
+  metrics, templates and plugins screens; everything in it the port superseded
+  is deleted, so what is left is what is owed.
 - **The basecamp automation**, phase 7's second half.
 - **Cancelling a run that is queued or running** ([`FJS-1157`](../../ISSUES.md#fjs-1157)).

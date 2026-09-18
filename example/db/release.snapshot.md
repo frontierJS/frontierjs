@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-51 model(s) · 24 enum(s) · 2 database(s) · 2 value set(s)
+53 model(s) · 24 enum(s) · 2 database(s) · 2 value set(s)
 audit → logger · main → sqlite
 ```
 
@@ -1124,6 +1124,39 @@ table `stock_reservation` · db `main` · gate `5.8.8.8`
 @@unique(cartId, variantId)
 @@index(variantId, expiresAt)
 ```
+
+### `StocktakeCount`
+
+table `stocktake_count` · db `main` · gate `5.5.5.9`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `counted` | `Int` | no | — | **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `damage` | `File` | yes | — | — |
+| `expected` | `Int` | no | — | **required on write** |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `note` | `String` | yes | — | — |
+| `sheet` | `StocktakeSheet` | — | — | relation |
+| `sheetId` | `String` | no | — | **required on write** |
+| `variant` | `ProductVariant` | — | — | relation |
+| `variantId` | `Int` | no | — | **required on write** |
+
+```
+@@index(sheetId)
+```
+
+### `StocktakeSheet`
+
+table `stocktake_sheet` · db `main` · gate `5.5.5.9`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `closedAt` | `DateTime` | yes | — | — |
+| `counts` | `StocktakeCount[]` | — | — | relation |
+| `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
+| `note` | `String` | yes | — | — |
+| `startedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 
 ### `Subscription`
 

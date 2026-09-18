@@ -20,7 +20,8 @@
 //
 // ─── What this is NOT ─────────────────────────────────────────────────────
 //
-// **It is not a substitute for not contending.** `bun:sqlite` is synchronous, so
+// **It is not a substitute for not contending.** The engine contract is
+// synchronous (`core/engine.js`), so
 // a connection waiting on the lock blocks the thread it is on — in a single
 // process that is the event loop, and a five-second wait is five seconds of a
 // server answering nobody. Worse, it can deadlock outright: the waiter blocks
@@ -134,7 +135,7 @@ export function validateBusyTimeout(config, knownDbNames = []) {
 }
 
 /**
- * Apply the wait. Every `new Database(...)` in this package calls this.
+ * Apply the wait. Every `openDatabase(...)` in this package calls this.
  *
  * Takes the raw handle rather than a wrapper, because the sites that need it
  * most are the ones that never build a wrapper — the JSONL companion index, the

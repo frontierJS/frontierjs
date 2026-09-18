@@ -81,7 +81,12 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           each reading is called; the heartbeat pushes through app.metrics.record
           core/alerting.ts is the alert comparison, pure — no db, no clock, no app
           core/delivery.ts is the ONE owner of how a NotificationChannel is
-          reached; `channels.test` and the alert evaluator are its two callers
+          reached; `channels.test`, the alert evaluator and the `basecamp.page`
+          flow node are its callers
+          core/automations.ts is what this app contributes to orion — one node,
+          `basecamp.page`, which reads the channel as the FLOW'S OWNER and hands
+          it to core/delivery.ts. A dry run answers which channel it would have
+          reached and moves no `lastDeliveryAt`
           core/credentials.ts owns both conduit ref forms — `secret:<id>` and
           `env:<NAME>`; a target carries the ref, never the material
           core/session-auth.ts projects this app's OWN User columns onto the

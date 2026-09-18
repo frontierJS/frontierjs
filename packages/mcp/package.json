@@ -1,13 +1,14 @@
 {
   "name": "@frontierjs/mcp",
   "version": "0.0.1",
-  "description": "An MCP surface for a FrontierJS app, derived from db/schema.lite — the gate is the permission model",
+  "description": "An MCP surface for a FrontierJS app, derived from db/schema.lite \u2014 the gate is the permission model",
   "type": "module",
   "license": "MIT",
   "main": "./index.ts",
   "exports": {
     ".": "./index.ts",
-    "./projection": "./src/projection.ts"
+    "./projection": "./src/projection.ts",
+    "./plugin": "./src/plugin.ts"
   },
   "keywords": [
     "frontierjs",
@@ -19,7 +20,8 @@
     "@frontierjs/junction": "^0.1.0"
   },
   "dependencies": {
-    "@frontierjs/toolbelt": "^0.1.0"
+    "@frontierjs/toolbelt": "^0.1.0",
+    "@modelcontextprotocol/server": "^2.0.0"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

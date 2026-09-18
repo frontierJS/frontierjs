@@ -20,6 +20,7 @@
 
 import { parseGateString } from '../plugins/gate.js'
 import { authClaimsUsed }   from './policy.js'
+import { ID_GENERATORS }   from './ids.js'
 
 // ─── The visibility table ─────────────────────────────────────────────────────
 //
@@ -130,6 +131,14 @@ function isStandingModel(model, schema) {
   const spansTenants = tenant?.mode === 'none'
   const carriesClaim = (model.fields ?? []).some(f => f.name === claim)
   return spansTenants && carriesClaim ? 'claim' : null
+}
+
+/** The single `@id` a client can state, or null. The offline rules all ask it. */
+function mintableIdField(model) {
+  const ids = (model.fields ?? []).filter(f => has(f, 'id'))
+  if (ids.length !== 1) return null
+  const gen = (ids[0].attributes ?? []).find(a => a.kind === 'default')?.value
+  return gen?.kind === 'call' && ID_GENERATORS[gen.fn] ? ids[0] : null
 }
 
 export const RULES = [
@@ -519,6 +528,106 @@ export const RULES = [
           model: view.name, field: null,
           message: `${view.name} is @@materialized on ${sources}. The refresh is a full rebuild — DELETE plus the whole @@sql — and it runs once per ROW written to ${view.refreshOn.length > 1 ? 'any of those tables' : 'that table'}, synchronously, inside the write's own transaction. A createMany of 10,000 rows therefore re-aggregates ${view.refreshOn.length > 1 ? 'the sources' : 'the source'} 10,000 times. That is the right trade where the sources take single writes and a stale answer is unacceptable, and the wrong one wherever bulk writes or a large source table are ordinary — there, drop @@refreshOn and keep @@materialized — the table is then rebuilt only when db.${view.name}.refresh() is called, which is the same aggregate at a cost somebody chose — or drop @@materialized and read the plain view.`,
         })
+      }
+      return out
+    },
+  },
+
+  {
+    id:       'sync-reference-to-a-server-assigned-id',
+    severity: 'warn',
+    title:    'a queued write references a model whose id only the server can assign',
+    blurb:    '@@sync says a write may be made with no server reachable. Two of them in one session is the ' +
+              'ordinary case — a parent and then its children — and the child has to name a parent that ' +
+              'has no id yet, because the id is assigned by the INSERT that has not happened. Unless the ' +
+              'parent declares an id the client can mint, there is nothing to write in the foreign key.',
+    run(schema) {
+      const out = []
+      const models = schema.models ?? []
+      const byName = new Map(models.map(m => [m.name, m]))
+
+      for (const child of models) {
+        if (!modelAttr(child, 'sync')) continue
+        for (const f of child.fields ?? []) {
+          // The OWNING side only — the back-reference carries no foreign key, so
+          // it is the same relation read from the end that has nothing to write.
+          const rel = (f.attributes ?? []).find(a => a.kind === 'relation' && a.fields?.length)
+          if (!rel || f.type?.kind !== 'relation') continue
+
+          const parent = byName.get(f.type.name)
+          // A parent that is not syncable cannot be made offline at all, so it
+          // already exists and already has an id. Nothing is owed here.
+          if (!parent || !modelAttr(parent, 'sync')) continue
+          if (mintableIdField(parent)) continue
+
+          const idField = (parent.fields ?? []).find(x => has(x, 'id'))
+          out.push({
+            model: parent.name, field: idField?.name ?? 'id',
+            message: `${parent.name} declares @@sync and ${child.name}.${f.name} references it, but ` +
+              `${parent.name}.${idField?.name ?? 'id'} is assigned by the server. A ${child.name} made in ` +
+              `the same offline session has nothing to put in ${rel.fields.join(', ')}, because the ` +
+              `${parent.name} it belongs to is still in the queue. Declare an id the client can mint — ` +
+              `${idField?.name ?? 'id'} String @id @default(uuid()) — and both writes drain in order with ` +
+              `the reference already correct. Keep it as it stands only where a ${parent.name} is never ` +
+              `created offline, which @@sync on it says is not the case.`,
+          })
+        }
+      }
+      return out
+    },
+  },
+
+  {
+    id:       'sync-file-with-no-key-to-attach-to',
+    severity: 'warn',
+    title:    'a syncable model carries bytes and has no key a client can state',
+    blurb:    'A write held on a device is replayed in two halves — the row, then its bytes as a patch ' +
+              'naming that row. The patch needs an id, and a model whose @id only the server assigns has ' +
+              'none until the row has landed, so a write carrying a file is not held at all.',
+    run(schema) {
+      const out = []
+      for (const model of schema.models ?? []) {
+        if (!modelAttr(model, 'sync')) continue
+        if (mintableIdField(model)) continue
+        for (const f of model.fields ?? []) {
+          if (f.type?.name !== 'File') continue
+          out.push({
+            model: model.name, field: f.name,
+            message: `${model.name} declares @@sync and ${model.name}.${f.name} is a File, but this ` +
+              `model's key is the server's to assign. The bytes are replayed as a patch naming the row, ` +
+              `and offline there is no row and no id — so a write carrying ${f.name} is not held, and ` +
+              `fails the way it would with no @@sync at all. Give the model an id the client can mint — ` +
+              `id String @id @default(uuid()) — or accept that this model's files need a network.`,
+          })
+        }
+      }
+      return out
+    },
+  },
+
+  {
+    id:       'sync-required-file',
+    severity: 'warn',
+    title:    'a required File on a syncable model cannot be written offline',
+    blurb:    'The row half of a held write replays WITHOUT its bytes — that is what makes a small ' +
+              'correction independent of a large photograph. A File column that is required therefore ' +
+              'has no value on the replayed create, and the boundary refuses the row the device thought ' +
+              'it had saved.',
+    run(schema) {
+      const out = []
+      for (const model of schema.models ?? []) {
+        if (!modelAttr(model, 'sync')) continue
+        for (const f of model.fields ?? []) {
+          if (f.type?.name !== 'File' || isOptional(f) || hasDefault(f)) continue
+          out.push({
+            model: model.name, field: f.name,
+            message: `${model.name}.${f.name} is a required File on a model that declares @@sync. A held ` +
+              `write replays the row first and its bytes after, so the create arrives with no ${f.name} ` +
+              `and is refused — offline, this model cannot be created at all. Make it optional, which is ` +
+              `the truth about a row whose photograph is still on the phone, or drop @@sync from a model ` +
+              `whose whole point is the file.`,
+          })
+        }
       }
       return out
     },

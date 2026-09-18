@@ -119,6 +119,47 @@ export function initSession(client) {
   })
 }
 
+/* ─── the session this device last resolved ────────────────────────────────
+ *
+ * Phase 3 of the Homestead work (`IDEAS/homestead.md`). `refresh()` asks the
+ * server who this token is, and with no server it used to answer *nobody* — so
+ * an app that opens offline opens SIGNED OUT, every gated screen says
+ * "administrators only", and nothing on the device is reachable. Measured:
+ * `verify:shell` read an empty inventory screen with a full cache behind it.
+ *
+ * So the last answer is kept and restored when the question could not be
+ * asked. **It is safe because a client-side level was never the enforcement**
+ * (Invariant 6): `x-gate` is an affordance, every request is graded again on
+ * arrival, and a device replaying a remembered level gets exactly the same
+ * refusals it would get without one. What it buys is a screen that offers the
+ * controls a person had a minute ago instead of hiding the app from its owner.
+ *
+ * `localStorage` rather than IndexedDB: this is one small object that has to be
+ * readable before the first paint decides what to render, and the async open is
+ * the thing that would make it late.
+ *
+ * Keyed by the CREDENTIAL, so a different token never inherits this one's
+ * answer — and cleared by `clear()`, which is what a 401 and a sign-out both
+ * go through.
+ */
+const REMEMBERED = 'fjs:session'
+
+function rememberSession(me, level) {
+  try { localStorage.setItem(REMEMBERED, JSON.stringify({ me, level, at: Date.now() })) }
+  catch { /* a private window remembers nothing, which is its own answer */ }
+}
+
+function recallSession() {
+  try {
+    const raw = localStorage.getItem(REMEMBERED)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
+function forgetSession() {
+  try { localStorage.removeItem(REMEMBERED) } catch { /* nothing to forget */ }
+}
+
 /** Ask the server who this token is. Safe to call at any time. */
 export async function refresh() {
   if (!_client) return null
@@ -133,6 +174,7 @@ export async function refresh() {
     // answering 0 would hide every gated control in an app that never asked to
     // be graded here.
     _w.level = typeof me?.level === 'number' ? me.level : null
+    rememberSession(me, _w.level)
     return me
   } catch (err) {
     // 401 is the ordinary answer to a token that expired or was issued by a
@@ -140,6 +182,20 @@ export async function refresh() {
     if (err?.code === 401 || err?.status === 401) {
       clear()
       return null
+    }
+    // The server did not answer. A remembered session is restored rather than
+    // leaving the app signed out — see REMEMBERED above for why that is safe.
+    // Only on SILENCE: any answer, including a 403, is the server speaking and
+    // is not something a copy may override.
+    const code = err?.code ?? err?.status
+    if (code === undefined || code === null || code === 408) {
+      const kept = recallSession()
+      if (kept?.me) {
+        _w.user  = kept.me
+        _w.level = typeof kept.level === 'number' ? kept.level : null
+        _w.error = null
+        return kept.me
+      }
     }
     _w.error = err?.message ?? String(err)
     return null
@@ -254,6 +310,9 @@ export async function signOut() {
 
 /** Drop what we know locally. The client's own token is cleared by signOut. */
 function clear() {
+  // Both directions: a 401 and a sign-out are the two ways a session ends, and
+  // a remembered copy that outlived either would sign somebody back in.
+  forgetSession()
   _w.user  = null
   // A half-finished attempt does not survive a sign-out or a 401. Left set, a
   // signed-out page renders a code box for a ticket the server has forgotten.

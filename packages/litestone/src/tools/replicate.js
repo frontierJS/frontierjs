@@ -10,7 +10,7 @@
 import { spawn, spawnSync } from 'child_process'
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'fs'
 import { resolve } from 'path'
-import { Database } from 'bun:sqlite'
+import { openDatabase } from '../core/engine.js'
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
 
@@ -106,7 +106,7 @@ function buildYaml(targets, opts) {
 
 function checkWalMode(dbPath) {
   try {
-    const db = new Database(dbPath, { readonly: true })
+    const db = openDatabase(dbPath, { readonly: true })
     const { journal_mode } = db.query('PRAGMA journal_mode').get()
     db.close()
     return journal_mode === 'wal'

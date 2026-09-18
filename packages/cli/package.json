@@ -19,6 +19,7 @@
     "test:steps": "bun test tests/zz-steps.test.js",
     "test:deploy": "bun test tests/deploy-helpers.test.js tests/deploy-dispatch.test.js",
     "typecheck": "node ../../scripts/typecheck.mjs",
+    "test:browser:codegraph": "bun tests/browser/codegraph.mjs",
     "test:browser": "node tests/browser/run.mjs"
   },
   "_built": "2026-04-13",

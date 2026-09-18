@@ -257,7 +257,37 @@ function hygiene() {
 
   if (!unexpected.length) ok(`${ignoredSource.length} ignored source file(s), all accounted for`)
 
+  searchableSource()
   substratePurity()
+}
+
+// ─── phase 1a · searchable source ───────────────────────────
+// The other way a source file goes missing, and the quieter one: a NUL byte
+// anywhere in it makes grep, ripgrep and every tool that sniffs for binary skip
+// the file entirely, without saying so. It compiles, it runs, its tests pass —
+// and it answers no repo-wide search, so every audit and every survey of the
+// tree is silently short by one file.
+//
+// Found by a survey that counted nine files importing `bun:sqlite` and missed
+// the tenth: `litestone/src/testdb.js` held a literal NUL as a template-key
+// separator. `packages/cli/core/proofs.js` held two more. Both wanted `'\\x00'`,
+// which is the same byte at runtime and ordinary text on disk.
+function searchableSource() {
+  const tracked = git(['ls-files']).split('\n').filter(Boolean).filter(isSourcePath)
+  const blind = []
+  for (const path of tracked) {
+    let buf
+    try { buf = readFileSync(join(ROOT, path)) } catch { continue }
+    if (buf.includes(0)) blind.push(path)
+  }
+  for (const path of blind) {
+    fail(
+      `a NUL byte makes this file invisible to search: ${path}\n` +
+      `      grep and ripgrep treat it as binary and skip it with no message, so the file answers\n` +
+      `      no repo-wide search. Write the byte as the escape '\\x00' — same value, ordinary text.`
+    )
+  }
+  if (!blind.length) ok(`${tracked.length} source file(s) are searchable`)
 }
 
 // ─── phase 1b · substrate purity ────────────────────────────
@@ -284,6 +314,7 @@ const AMBIENT = [
 ]
 
 function substratePurity() {
+  const ambientAllowed = []
   for (const pkg of SUBSTRATE) {
     const from = problems.length
     const manifestPath = join(ROOT, pkg, 'package.json')
@@ -309,11 +340,20 @@ function substratePurity() {
       const raw  = readFileSync(file, 'utf8')
       const code = stripStrings(stripComments(raw))
 
+      const allowed = (allowances.substrateAmbient ?? {})[rel] ?? {}
       for (const [pattern, why] of AMBIENT) {
-        if (pattern.test(code)) fail(
+        if (!pattern.test(code)) continue
+        // Keyed by CAPABILITY, not by file. A kit allowed its entropy is not
+        // thereby allowed a clock, a network call or a runtime import, which is
+        // the version of this list that stops meaning anything.
+        if (allowed[why]) { ambientAllowed.push(`${rel} ${why}`); continue }
+        fail(
           `${rel} ${why}\n` +
-          `      Every export in a substrate package is a pure function: same input, same output.\n` +
-          `      The purity is not a house style, it is the license to be imported from anywhere.`
+          `      Every export in a substrate package computes from its arguments: same input, same\n` +
+          `      output. Where that is the wrong shape — an id generator's job is a different answer\n` +
+          `      each call — name the file and the capability under substrateAmbient in\n` +
+          `      scripts/ci-allowances.json, with the reason (FJS-D306). The DEPENDENCY half of this\n` +
+          `      rule has no allowance: depending on nothing is the license itself.`
         )
       }
 
@@ -327,9 +367,22 @@ function substratePurity() {
       }
     }
 
+    // An allowance that no longer describes the file is the way this list rots:
+    // it reads as a standing exception for a capability nobody uses any more,
+    // and the next person to add one copies it. Same rule generatedIgnored has.
+    for (const [rel, caps] of Object.entries(allowances.substrateAmbient ?? {})) {
+      if (!rel.startsWith(pkg + '/')) continue
+      for (const why of Object.keys(caps)) {
+        if (!ambientAllowed.includes(`${rel} ${why}`)) note(
+          `substrateAmbient allowance is stale — ${rel} no longer ${why}. Remove the entry.`)
+      }
+    }
+
     // Only when the package IS clean: a summary that says so under three
     // failures reads as though the failures belong to something else.
-    if (clean(from)) ok(`${pkg} — ${files.length} source file(s), no dependency and no ambient capability`)
+    if (clean(from)) ok(
+      `${pkg} — ${files.length} source file(s), no dependency` +
+      (ambientAllowed.length ? `, ${ambientAllowed.length} named ambient allowance(s)` : ' and no ambient capability'))
   }
 }
 

@@ -187,7 +187,8 @@ describe('schema.lite', () => {
   test('parses with no errors and no warnings', () => {
     const r = parseFile(SCHEMA)
     expect(r.errors ?? []).toEqual([])
-    // One standing warning, about something deliberate, and matched by SHAPE
+    // Two standing warnings, each about something deliberate, and matched by
+    // SHAPE
     // rather than counted — the point of the assertion is that a warning nobody
     // expected still fails, and a count alone would either admit any second one
     // or have to be edited every time a third arrives.
@@ -199,11 +200,22 @@ describe('schema.lite', () => {
     //              PARENT and they are AND'd, so naming one relation drops the
     //              other — measured, nine rules across seven models.
     //
+    //   uniques    two of orion's constraints are scoped per tenant by the
+    //              desugar (`FJS-1159`) — `FlowCredential.name` and
+    //              `KvEntry([scope, key])`. The fragment declares them and
+    //              cannot name this app's tenant column, so the block does it;
+    //              said out loud because `name String @unique` builds an index
+    //              over two columns and the line cannot show it. `db/ddl.snapshot.sql`
+    //              is where the result is readable.
+    //
     // `WorkspaceMember: has @@deny and no @@allow` used to be the second, and
     // was retired by declaring the policy — see the block at the foot of this
     // file.
     const warnings = (r.warnings ?? []) as string[]
-    const known = [/^tenancy: \d+ model\(s\) carry no 'workspaceId'/]
+    const known = [
+      /^tenancy: \d+ model\(s\) carry no 'workspaceId'/,
+      /^tenancy: \d+ unique constraint\(s\) are scoped per tenant/,
+    ]
     for (const re of known)
       expect({ re: String(re), matched: warnings.filter(w => re.test(w)).length })
         .toEqual({ re: String(re), matched: 1 })

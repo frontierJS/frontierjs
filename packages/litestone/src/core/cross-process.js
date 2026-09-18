@@ -36,8 +36,7 @@
 // **One machine.** Two processes sharing a FILE. A second machine shares no
 // file and hears nothing, which is stated rather than approximated.
 
-import { watch } from 'node:fs'
-import { dirname } from 'node:path'
+import { watch, dirname } from '#host'
 
 export const EVENTS_TABLE = '_litestone_events'
 

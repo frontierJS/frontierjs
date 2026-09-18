@@ -162,24 +162,39 @@ describe('a release that fails pages the channel the flow names', () => {
     await sys.server.update({ where: { id: box.id }, data: { status: 'draining' } })
     queue.resume()
 
-    const failed = await until(() => sys.deployment.findUnique({ where: { id: deployment.id } }), (d: any) => d?.status === 'failed')
-    expect(failed.status).toBe('failed')
+    try {
+      const failed = await until(() => sys.deployment.findUnique({ where: { id: deployment.id } }), (d: any) => d?.status === 'failed')
+      expect(failed.status).toBe('failed')
 
-    const runs = await until(runsOf, (r: any[]) => r.length > runsBefore && r.every(x => ['completed', 'failed'].includes(x.status)))
-    const run  = runs.find((r: any) => (r.trigger as any)?.record?.id === deployment.id)
-    expect(run?.status).toBe('completed')
-    // Run as the flow's owner, in the workspace the release belongs to.
-    expect(run?.actorId).toBe(admin.userId)
-    expect(run?.steps.find((s: any) => s.nodeId === 'page')?.output).toEqual({ channel: 'ops', sent: true })
+      // **One release is SEVERAL runs.** The trigger is every `update` to a
+      // Deployment and a release moves through `building` before it lands, so
+      // the flow starts once per move and the edge condition skips all but the
+      // last. Waiting for *a* terminal run finds the `building` one, whose
+      // `page` step is correctly `skipped` — which is the automation working
+      // and reads as it failing.
+      const run = await until(
+        async () => (await runsOf()).find((r: any) =>
+          r.trigger?.record?.id === deployment.id && r.trigger?.record?.status === 'failed'),
+        (r: any) => ['completed', 'failed'].includes(r?.status))
+      expect(run?.status).toBe('completed')
+      // Run as the flow's owner, in the workspace the release belongs to.
+      expect(run?.actorId).toBe(admin.userId)
+      expect(run?.steps.find((s: any) => s.nodeId === 'page')?.output).toEqual({ channel: 'ops', sent: true })
+      expect((await runsOf()).length).toBeGreaterThan(runsBefore)
 
-    // The receiver's own log: one page, to the ops channel, naming the release.
-    const pages = await until(async () => received.slice(pagesBefore), (p) => p.length >= 1)
-    expect(pages.map(p => p.path)).toEqual(['/ops'])
-    expect(JSON.stringify(pages[0].body)).toContain(`Release failed: ${image}`)
-    expect(JSON.stringify(pages[0].body)).toContain(`basecamp:deploy:${deployment.id}`)
+      // The receiver's own log: one page, to the ops channel, naming the release.
+      const pages = await until(async () => received.slice(pagesBefore), (p) => p.length >= 1)
+      expect(pages.map(p => p.path)).toEqual(['/ops'])
+      expect(JSON.stringify(pages[0].body)).toContain(`Release failed: ${image}`)
+      expect(JSON.stringify(pages[0].body)).toContain(`basecamp:deploy:${deployment.id}`)
 
-    expect((await sys.notificationChannel.findUnique({ where: { id: channel.id } })).lastDeliveryAt).not.toBeNull()
-    await sys.server.update({ where: { id: box.id }, data: { status: 'online' } })
+      expect((await sys.notificationChannel.findUnique({ where: { id: channel.id } })).lastDeliveryAt).not.toBeNull()
+    } finally {
+      // In a `finally` because the machine is shared: a failure here would
+      // otherwise leave every later release refused for a reason that belongs
+      // to this test.
+      await sys.server.update({ where: { id: box.id }, data: { status: 'online' } })
+    }
   }, 30_000)
 
   test('a release that succeeds starts the flow and pages nobody', async () => {
@@ -229,5 +244,37 @@ describe('a flow reaches only what its owner can', () => {
     const found = await env.as(outsider).service('flows').find({})
     const rows  = Array.isArray(found) ? found : found?.data ?? []
     expect(rows.some((f: any) => f.id === flowId)).toBe(false)
+  })
+})
+
+// ─── one name per workspace ──────────────────────────────────────────────────
+
+describe('orion\'s own uniques are per workspace', () => {
+
+  test('both workspaces name a credential `crm`, and neither may name it twice', async () => {
+    // `FJS-1159`, in the app that found it. `db/orion.lite` declares
+    // `name String @unique` and cannot name this app's tenant column; the
+    // `tenancy` block prepends it, so the index is `(workspaceId, name)`.
+    // Without that the second workspace is refused, by a message naming a value
+    // it may not read.
+    const sys = env.system as any
+    const mk  = (w: any, name: string) => sys.flowCredential.create({ data: {
+      workspaceId: w.id, name, provider: 'http', address: 'https://crm.example', auth: 'none' } })
+
+    await mk(ws, 'crm')
+    await mk(other, 'crm')
+    // The pair: still one per workspace, or the rewrite is indistinguishable
+    // from dropping the constraint.
+    await expect(mk(ws, 'crm')).rejects.toThrow()
+  })
+
+  test('…and a flow\'s key-value store is the same shape', async () => {
+    const sys = env.system as any
+    const mk  = (w: any) => sys.kvEntry.create({ data: {
+      workspaceId: w.id, scope: 'global', key: 'last-release', value: { at: 1 } } })
+
+    await mk(ws)
+    await mk(other)
+    await expect(mk(ws)).rejects.toThrow()
   })
 })

@@ -5,11 +5,10 @@
 //   Soft delete:       models with deletedAt field get auto-filtering + soft ops
 //   Statement cache:   compiled statements reused across calls via wrapDb()
 
-import { Database }     from 'bun:sqlite'
+import { openDatabase } from './engine.js'
 import { applyBusyTimeout, busyTimeoutFor, validateBusyTimeout } from './pragmas.js'
-import { resolve, join, dirname, extname } from 'path'
-import { tmpdir } from 'os'
-import { existsSync, mkdirSync, mkdtempSync, statSync } from 'fs'
+import { resolve, join, dirname, extname, tmpdir,
+         existsSync, mkdirSync, mkdtempSync, statSync } from '#host'
 import { resolveAnchor, noteMintedDirectory } from './db-path.js'
 import { parse, parseFile } from './parser.js'
 import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField } from './ddl.js'
@@ -1744,7 +1743,7 @@ function needsHandler(modelName, field, needs) {
 // into someone else's transaction. What changes is that the second caller waits
 // instead of being silently enrolled in a transaction it cannot see.
 
-import { AsyncLocalStorage } from 'node:async_hooks'
+import { AsyncLocalStorage } from '#host'
 
 // The txState objects the CURRENT async context has an open transaction on.
 // A Set because a callback may hold transactions on more than one client.
@@ -9437,7 +9436,7 @@ function openSqliteConnections(absPath, busyTimeout) {
 
   let rawWriteDb
   try {
-    rawWriteDb = new Database(absPath)
+    rawWriteDb = openDatabase(absPath)
   } catch (err) {
     if (err?.code === 'SQLITE_CANTOPEN') {
       const hint = absPath === ':memory:'
@@ -9469,7 +9468,7 @@ function openSqliteConnections(absPath, busyTimeout) {
   // :memory: databases cannot be opened as a separate read-only connection —
   // reuse the write connection for reads instead.
   const isMemory = absPath === ':memory:'
-  const rawReadDb = isMemory ? rawWriteDb : new Database(absPath, { readonly: true })
+  const rawReadDb = isMemory ? rawWriteDb : openDatabase(absPath, { readonly: true })
   if (!isMemory) {
     // Same order as the writer, and for the same reason: a reader does not
     // queue behind a writer in WAL, but it does during a checkpoint and on the
@@ -9534,7 +9533,7 @@ function resolveAccessConfig(accessConfig, readOnly, schema) {
 // `database is locked` and cannot ever get it (`FJS-958`). Reads succeed
 // throughout, so the shape looks correct until something writes.
 //
-// ':memory:' is excluded from the grouping: every `new Database(':memory:')` is
+// ':memory:' is excluded from the grouping: every `openDatabase(':memory:')` is
 // a database of its own, so those names really are separate files and sharing
 // one handle would put two schemas' tables in it.
 function buildDbRegistry(schema, dbPath, dbOverrides, accessConfig, inMemory = false, anchor = null, busyTimeout = null) {
@@ -10350,7 +10349,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       const absPath = conn.absPath
       if (absPath !== ':memory:' && (nameCount.get(absPath) ?? 0) < 2) {
         try {
-          const { statSync } = await import('fs')
+          const { statSync } = await import('#host')
           if (statSync(absPath).size > 8192) continue   // clearly not empty
         } catch {}
       }
@@ -11925,6 +11924,50 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     return 'open'
   }
 
+  // ─── $levelOf ───────────────────────────────────────────────────────────
+  //
+  // $levelOf(accessor?, principal?) → 0–8, or null where this client cannot
+  // grade anyone.
+  //
+  // **What level does the app grade this caller at.** The seventh sibling, and
+  // the one that exists because the mapping is declared ONCE — in
+  // `GatePlugin({ getLevel })` — and every other realm was re-deriving it. A
+  // level is a fact about the APP's own standing (a membership row, a role
+  // column, a workspace), so a layer that grades with the shipped `gradeStanding`
+  // instead answers a different number for the same caller: measured on
+  // basecamp, an `admin` of a workspace is ADMINISTRATOR(5) to the Data boundary
+  // and CREATOR(3) to a Junction method gate, so a caller the schema admits was
+  // refused at the API with a level nothing in the app had written (`FJS-1161`).
+  //
+  // Per MODEL, because `getLevel(auth, model)` is — an app may grade the same
+  // caller differently for two models. An accessor that names no model, and an
+  // omitted one, pass `null` as the model, which is what a modelless service
+  // asking about its own caller has to mean.
+  //
+  // The principal is OPTIONAL, which is where it parts company with `$readAs`:
+  // the commonest caller holds the asker's own scoped client and is asking about
+  // the caller it was scoped to, and answering that off this client's own
+  // principal is what picks up the gate's per-request cache. State one to grade
+  // somebody else — a broadcast recipient — exactly as `$readAs` does.
+  //
+  // **`null` is *I cannot grade*, not a level.** A schema declaring no `@@gate`
+  // installs no plugin, so there is no mapping to ask and no number that would
+  // be honest; the caller decides what to do with that, and inventing a default
+  // here is the failure this replaces.
+  //
+  // Each flavor binds its OWN ctx rather than reading `ctx.auth`, which is a
+  // getter over the call in progress (`FJS-722`) and refuses outside a table
+  // method — so the omitted-principal form has nothing to read unless the
+  // flavor states it.
+  function $levelOfAs(ownCtx) {
+    return function $levelOf(accessor, ...principal) {
+      const modelName = modelForAccessor(accessor)?.name ?? null
+      const forCtx    = principal.length ? ctxForPrincipal(principal[0]) : ownCtx
+      if (typeof forCtx.levelFor !== 'function') return null
+      return forCtx.levelFor(modelName, forCtx)
+    }
+  }
+
   // ─── $capabilitiesFor ───────────────────────────────────────────────────
   //
   // $capabilitiesFor(principal) → { held, unknown, byModel }
@@ -12518,7 +12561,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       })
     }
 
-    const sysOwnProps = ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$readAs', '$readGrading', '$softDelete', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const sysOwnProps = ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$readAs', '$readGrading', '$levelOf', '$softDelete', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: sys$lock, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
@@ -12540,6 +12583,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$primaryKey') return $primaryKey
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$readAs')          return $readAs
+      if (prop === '$levelOf')         return $levelOfAs(sysCtx)
       if (prop === '$readGrading')     return $readGrading
         if (prop === '$softDelete') return softDeleteInfo()
         if (prop === '$scopes') return $scopes
@@ -12646,7 +12690,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       })
     }
 
-    const authOwnProps = ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$readAs', '$readGrading', '$softDelete', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
+    const authOwnProps = ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$readAs', '$readGrading', '$levelOf', '$softDelete', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
     const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
@@ -12665,6 +12709,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$primaryKey') return $primaryKey
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$readAs')          return $readAs
+      if (prop === '$levelOf')         return $levelOfAs(authCtx)
       if (prop === '$readGrading')     return $readGrading
         if (prop === '$softDelete')     return softDeleteInfo()
         if (prop === '$scopes')         return $scopes
@@ -12714,7 +12759,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     scopedFlavor.tables = rawTables
     sCtx.tables = rawTables
     const tables = installScopesLazy(rawTables, () => sCtx)
-    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$readAs', '$readGrading', '$softDelete', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$readAs', '$readGrading', '$levelOf', '$softDelete', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const target = {
       $scopedBy: (b) => _makeScopedProxy({ ...overrides, scopedBy: { ...(overrides.scopedBy ?? {}), ...(b ?? {}) } }),
       $setAuth:  (u) => _makeScopedProxy({ ...overrides, auth: u }),
@@ -12740,6 +12785,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$primaryKey') return $primaryKey
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$readAs')          return $readAs
+      if (prop === '$levelOf')         return $levelOfAs(sCtx)
       if (prop === '$readGrading')     return $readGrading
         if (prop === '$softDelete') return softDeleteInfo()
         if (prop === '$scopes') return $scopes
@@ -12925,7 +12971,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     return result
   }
 
-  const rootOwnProps = ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$readAs', '$readGrading', '$scopes', '$audit', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
+  const rootOwnProps = ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$readAs', '$readGrading', '$levelOf', '$scopes', '$audit', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
   clientProxy = new Proxy({ sql, query, $transaction, $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
@@ -12960,6 +13006,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       if (prop === '$primaryKey')      return $primaryKey
       if (prop === '$capabilitiesFor') return $capabilitiesFor
       if (prop === '$readAs')          return $readAs
+      if (prop === '$levelOf')         return $levelOfAs(ctx)
       if (prop === '$readGrading')     return $readGrading
       if (prop === '$scopes')         return $scopes
       if (prop === '$checkOrderBy')   return $checkOrderBy

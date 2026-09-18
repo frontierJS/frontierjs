@@ -2380,6 +2380,19 @@ model InventoryMovement {
   
   @@gate("5.5.9.9")
   
+  /// A correction is made where the stock is — in a stockroom, on a phone, with
+  /// one bar of signal — so a write to this ledger may be held on the device and
+  /// replayed when a server is reachable again (`FJS-D298`).
+  ///
+  /// `append` is the collision policy, and here it is a statement of fact rather
+  /// than a resolution: a movement is APPENDED, so two people counting the same
+  /// shelf produce two movements, which is the truth about what happened. There
+  /// is no collision to resolve, which is the strongest thing this attribute can
+  /// say (`FJS-D304`). It also means only a create may be held — a held patch on
+  /// a ledger row is refused by name, because editing history is not what this
+  /// table does.
+  @@sync(append)
+  
   /// The stock ledger of one variant. `Restrict`, so it is also what stands
   /// between a variant and deletion — a check that scans the whole ledger.
   @@index([variantId])
@@ -2390,6 +2403,101 @@ model InventoryMovement {
   /// reports it — neither column is a foreign key, which is the whole of why
   /// this one had to be found by reading the query.
   @@index([reference, kind])
+}
+
+/// A stocktake: somebody walks the stockroom and writes down what is on the
+/// shelf, and the difference posts to the ledger when the sheet is closed.
+///
+/// ─── Why the key is a uuid and the ledger's is an Int ─────────────────────
+///
+/// A count names the sheet it belongs to. In a stockroom the sheet is made on
+/// the same phone, in the same minute, with no signal — so at the moment the
+/// first count is written there IS no server id, because nothing has been
+/// inserted anywhere. `@default(uuid())` puts the key in the browser's hands:
+/// `x-mint` crosses with the schema, sierra states the key on the create, and
+/// the count that follows references a sheet the server has never heard of and
+/// is still correct when both writes drain.
+///
+/// `InventoryMovement` keeps `Int @id` and is right to: nothing references a
+/// movement, so nobody ever needs its key before the server has one. The
+/// difference is the relation, which is exactly what the advisor's
+/// `sync-reference-to-a-server-assigned-id` grades.
+model StocktakeSheet {
+  id         String            @id @default(uuid())
+
+  /// Open while this is null. A state machine would be two more words for one
+  /// bit, and closing is a one-way door a service verb owns.
+  closedAt   DateTime?
+
+  note       String?           @length(0, 200)
+  startedAt  DateTime          @default(now())
+
+  counts     StocktakeCount[]
+
+  /// read/create/update at 5, delete LOCKED. A sheet is an administrator's
+  /// record of what was on the shelf, and it is never deleted — a miscount is
+  /// corrected by another count, which is the same argument the ledger makes.
+  @@gate("5.5.5.9")
+
+  /// The whole point: the sheet is created where the stock is.
+  @@sync(server)
+}
+
+/// One shelf, counted once.
+///
+/// Append-only in spirit and by gate: a second look at the same shelf is a
+/// second count, not an edit of the first. That is what makes `server` an
+/// honest collision policy here — two people counting one shelf produce two
+/// rows, which is the truth about what happened.
+model StocktakeCount {
+  id         String            @id @default(uuid())
+
+  sheetId    String
+  /// Cascade, unlike the ledger's Restrict: a sheet is the counts, so there is
+  /// no such thing as a count whose sheet is gone. Nothing deletes a sheet
+  /// today — the gate is 9 — and the rule is declared for the day something
+  /// does.
+  sheet      StocktakeSheet    @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+
+  variantId  Int               @label("Variant")
+  variant    ProductVariant    @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  /// What is actually on the shelf.
+  counted    Int               @gte(0)
+
+  /// What the system thought, copied at the moment of counting. A receipt
+  /// rather than a sum: recomputing it at close would compare against a shelf
+  /// that has moved since, and the gap is the whole finding.
+  expected   Int
+
+  /// A photograph of what is wrong with it — a crushed box, a leaking bottle.
+  ///
+  /// OPTIONAL, and the advisor refuses the other spelling on a syncable model:
+  /// a held write replays the row first and its bytes after, so a required File
+  /// would arrive as a create with nothing in this column and be refused. The
+  /// truth about a count made in a stockroom is that its photograph is still on
+  /// the phone, and `File?` is how that is said.
+  damage     File?             @accept("image/png, image/jpeg, image/webp")
+
+  note       String?           @length(0, 200)
+  createdAt  DateTime          @default(now())
+
+  @@gate("5.5.5.9")
+
+  /// One shelf counted once is a row that is added and never edited — a
+  /// miscount is corrected by counting again, which is the same argument the
+  /// sheet's own `delete LOCKED` makes one model up. So `append` (`FJS-D304`):
+  /// there is no collision to resolve, and a held patch is refused by name.
+  ///
+  /// The photograph is the exception that proves it. `damage` drains through
+  /// the ATTACHMENT queue as a patch naming this row (`FJS-D301`), and that is
+  /// not a second writer — it is the bytes of a row this device created,
+  /// arriving late. It goes through the raw client and never through the write
+  /// queue, which is why `append` does not refuse it.
+  @@sync(append)
+
+  /// The read: every count on one sheet.
+  @@index([sheetId])
 }
 
 /// Which side of the books a journal line lands on.

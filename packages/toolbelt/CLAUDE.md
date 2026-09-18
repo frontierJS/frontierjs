@@ -34,6 +34,17 @@ src/cron/            what a five-field cron expression ADMITS — a Set per
                      timer looks, stays with each scheduler: `cronMatches` takes
                      clock parts rather than a `Date`. Ships a `.d.ts` — both
                      callers are TypeScript
+src/ids/             the generators behind `@default(uuid()|ulid()|cuid()|
+                     nanoid())`, plus `mintId(kind)`. Two callers were on a
+                     server — litestone's SQLite client at insert time and its
+                     jsonl driver — and the third is a BROWSER: a row written
+                     with no server reachable is referenced by its children
+                     before any INSERT has happened, so the client states the
+                     key. `crypto.getRandomValues` and never `node:crypto`,
+                     which parses on a server and kills a bundle at PARSE.
+                     `mintId` answers null for a kind it has no generator for,
+                     because the caller is deciding whether it CAN. Ships a
+                     `.d.ts` — sierra reads it
 src/units/           a magnitude with a unit, as a person reads it. Bytes:
                      binary steps, familiar labels, adaptive precision — four
                      callers had four copies and two answers (`FJS-408`).

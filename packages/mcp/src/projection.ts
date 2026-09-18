@@ -38,6 +38,13 @@
 import { levelPasses, canAtLevel } from '@frontierjs/toolbelt/gate'
 import { modelName }               from '@frontierjs/toolbelt/inflect'
 import { DIRECTIVE_PARAMS }        from '@frontierjs/toolbelt/directives'
+// The one rule this module may not own a copy of. `gateAuthAround` asks
+// `customMethodGrade` what stands between a caller and a custom method, and a
+// projection that answered that question a second way would be the fifth copy
+// of a gate rule in this repo — which is the disease `FJS-D197` named. It is a
+// pure function of two plain records, so importing it costs the fixture
+// nothing.
+import { customMethodGrade }       from '@frontierjs/junction/litestone'
 
 // ─── what it reads ────────────────────────────────────────────────────────────
 
@@ -79,6 +86,17 @@ export interface ServiceShape {
    * written down; 7 of `example`'s 38 services declare any.
    */
   inputs?: Record<string, string>
+  /**
+   * The level a custom method declared in `methods: [{ method, gate }]`, keyed
+   * by method — `describe().methodGates`.
+   *
+   * The fourth input, and the projection ran without it for its whole first
+   * life. A method that declares a number is the ONE place the API boundary
+   * compares a caller's standing on a custom verb, and reading three inputs
+   * where the boundary reads four is how a tool list offers what the boundary
+   * refuses.
+   */
+  methodGates?: Record<string, number>
 }
 
 // ─── what it answers ──────────────────────────────────────────────────────────
@@ -91,10 +109,25 @@ export interface ServiceShape {
 export type Verdict =
   | 'model-gate'    // the model's @@gate position for this operation
   | 'move-floor'    // max(model update, the move's own @gate), @system or not
-  | 'ungraded'      // nothing in the seed says; permissive by Invariant 6
+  | 'method-gate'   // the level the service declared for this custom method
+  | 'method-floor'  // a SESSION is required and the level is not compared
+  | 'ungraded'      // nothing says; permissive by Invariant 6
 
 export interface Tool {
-  /** `orders.refund` — the name an agent calls. */
+  /**
+   * `orders_refund` — the name an agent calls.
+   *
+   * An underscore rather than the dot this app writes everywhere else, because
+   * a tool name is matched against `^[a-zA-Z0-9_-]{1,128}$` and a dot is
+   * refused: the whole list would be rejected, not the one tool. It is derived
+   * here rather than mapped at the transport so that one name exists — a
+   * projection that answered `orders.refund` and a transport that offered
+   * `orders_refund` is two vocabularies for one thing, and the second is the
+   * only one anybody can call.
+   *
+   * `service` and `method` beside it are the structured truth; nothing should
+   * parse this back apart.
+   */
   name:    string
   service: string
   method:  string
@@ -121,6 +154,7 @@ export type InputSource =
   | 'declared-type'   // the `type T { … }` the service named for this method
   | 'id'              // one identifier
   | 'query'           // filters plus the directive table
+  | 'call-args'       // `call(id, data)`'s shape, with the payload undescribed
   | null              // nothing in the seed describes it
 
 export interface ToolInput {
@@ -146,13 +180,36 @@ export interface Projection {
    * operator has to be able to ask.
    */
   unresolved: string[]
+  /**
+   * Tool names more than one method derives, and the methods that derived them.
+   *
+   * Every colliding tool is held out of `tools` rather than the loser being
+   * dropped. Two tools under one name is a list an agent cannot use correctly:
+   * it calls the name and which method runs is decided by whichever one the
+   * client happened to keep. Fail closed and report — the other way fails open
+   * and says nothing.
+   */
+  collisions: Array<{ name: string; methods: string[] }>
+}
+
+/**
+ * The MCP name for one method.
+ *
+ * `^[a-zA-Z0-9_-]{1,128}$` is the whole rule and a dot fails it, so the
+ * separator this framework uses everywhere else cannot be used here. Anything
+ * else outside the set is replaced rather than deleted, so two names that
+ * differed only by an illegal character still differ — and if a replacement or
+ * the length cap does make two names meet, `projectTools` refuses both.
+ */
+export function toolName(service: string, method: string): string {
+  return `${service}_${method}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 128)
 }
 
 // CRUD verbs graded by the model's own gate. `aggregate` is a read and `restore`
 // is an update; both are in the kit's map, and both are here because a verb this
 // set omits falls through to the custom path and is graded as a move that does
 // not exist.
-const CRUD = new Set([
+export const CRUD = new Set([
   'find', 'get', 'aggregate',
   'create', 'update', 'patch', 'upsert', 'restore',
   'remove',
@@ -266,12 +323,122 @@ export function schemaViews(
   schema:   unknown,
   generate: (schema: unknown, opts: Record<string, unknown>) => unknown,
 ): SchemaViews {
-  const at = (mode: string) => defsOf(generate(schema, { mode, audience: 'client' }))
+  // `inlineEnums` is not a style preference. A model's `$def` is lifted OUT of
+  // the generated document to become one tool's input schema, and a `$ref` to
+  // `#/$defs/OrderStatus` resolves against the document ROOT — which, once
+  // lifted, is the tool schema itself. Left alone, every enum field points at a
+  // definition the agent was never given: no values, and no error either.
+  // `attachRefs` below is the same repair for the refs inlining does not cover.
+  const at = (mode: string) => defsOf(generate(schema, { mode, audience: 'client', inlineEnums: true }))
   return {
     full:   at('full') as Record<string, ModelDef>,
     create: at('create'),
     update: at('update'),
   }
+}
+
+// ─── from a `$def` to a tool's argument schema ────────────────────────────────
+
+/**
+ * What a `@money` column means, in words an agent can act on.
+ *
+ * The column is a whole number of MINOR units and nothing in the generated
+ * schema says so: `total` arrives as `{"type":"integer","x-money":{}}`, which
+ * reads as an ordinary integer. The mistake that shape invites is a factor of a
+ * hundred on a refund, in the direction of the customer's money.
+ *
+ * The SCALE is deliberately not stated. `jsonschema.js` declines to resolve it
+ * — JPY has no minor unit and KWD has three — and a number that is right two
+ * thirds of the time is worse here than an absent one. So the description says
+ * which currency when the column states one, names the sibling column when the
+ * currency is per row, and otherwise says only what is certainly true.
+ */
+function moneyNote(x: unknown): string {
+  const spec = (x ?? {}) as { currency?: string; field?: string }
+  if (spec.currency) return `A whole number of ${spec.currency} minor units, not a decimal amount.`
+  if (spec.field)    return `A whole number of minor units, not a decimal amount. The currency is in this row's \`${spec.field}\`.`
+  return 'A whole number of minor units (the app\'s default currency), not a decimal amount.'
+}
+
+/**
+ * Turn one model definition into a tool's argument schema.
+ *
+ * Three things happen and each is a defect if it does not:
+ *
+ *   1. `x-money` becomes a `description`, because the keyword means nothing to
+ *      an MCP client and the integer alone is a trap.
+ *   2. Every `x-` keyword is then dropped. They are Litestone's vocabulary for
+ *      a Litestone reader; `x-gate` and `x-transitions` in particular are the
+ *      model's ACCESS RULES, and an argument schema is not where a caller's
+ *      permissions belong — the projection already answered that question by
+ *      deciding whether this tool is in the list at all. `x-transitions` is
+ *      also the largest keyword on the page, paid for in the context window of
+ *      every call.
+ *   3. Whatever `$ref`s survive are carried in with their definitions.
+ *
+ * The clone is not optional: these objects are the generator's, shared with
+ * `views.full`, which is what GRADES. Annotating in place would strip `x-gate`
+ * off the definition the gate is read from.
+ */
+function toolSchema(def: JsonSchemaObject | undefined, all: Record<string, JsonSchemaObject>): JsonSchemaObject | null {
+  if (!def) return null
+  return attachRefs(rewrite(def), all)
+}
+
+function rewrite(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(rewrite)
+  if (!node || typeof node !== 'object') return node
+
+  const out: JsonSchemaObject = {}
+  const src = node as JsonSchemaObject
+  for (const [key, value] of Object.entries(src)) {
+    if (key === 'x-money') {
+      const note = moneyNote(value)
+      out.description = typeof src.description === 'string' ? `${src.description} ${note}` : note
+      continue
+    }
+    if (key.startsWith('x-')) continue
+    if (key === 'description' && typeof out.description === 'string') continue  // moneyNote already merged it
+    out[key] = rewrite(value)
+  }
+  return out
+}
+
+/**
+ * Carry in the definitions a lifted schema still points at.
+ *
+ * Walks its own output, because a definition pulled in can name another —
+ * a `Json @type(T)` whose field is itself typed. A ref naming something the
+ * document does not define is left alone rather than faked: a dangling ref is
+ * at least visible, where an invented `{}` accepts anything.
+ */
+function attachRefs(schema: unknown, all: Record<string, JsonSchemaObject>): JsonSchemaObject {
+  const needed: Record<string, JsonSchemaObject> = {}
+  const seen   = new Set<string>()
+
+  const visit = (node: unknown): void => {
+    if (Array.isArray(node)) return node.forEach(visit)
+    if (!node || typeof node !== 'object') return
+    for (const [key, value] of Object.entries(node as JsonSchemaObject)) {
+      if (key === '$ref' && typeof value === 'string') {
+        const name = /^#\/(?:\$defs|definitions)\/(.+)$/.exec(value)?.[1]
+        if (name && !seen.has(name)) {
+          seen.add(name)
+          const target = all[name]
+          if (target) {
+            needed[name] = rewrite(target) as JsonSchemaObject
+            visit(needed[name])
+          }
+        }
+        continue
+      }
+      visit(value)
+    }
+  }
+
+  visit(schema)
+  const out = schema as JsonSchemaObject
+  return Object.keys(needed).length ? { ...out, $defs: { ...(out.$defs as object ?? {}), ...needed } } : out
 }
 
 /** One identifier, for `get`, `remove` and `restore`. */
@@ -314,6 +481,52 @@ function findInput(): JsonSchemaObject {
 }
 
 /**
+ * `call(name, id, data, opts)`'s two arguments, as one object schema.
+ *
+ * A MOVE takes an id and is required to: it acts on one row, and the seed says
+ * so by declaring the transition on that model. It takes no payload unless the
+ * service declared an input type — `example` states this outright, that its four
+ * order moves take an id and nothing else, because a move's rules live in
+ * `@@transitions` where every other rule about the row lives.
+ *
+ * A custom method that declared no input type is the one shape the seed is
+ * silent about, and `data` is left a free-form object rather than omitted, for
+ * the same reason `find`'s `query` is: the Data boundary refuses an unknown key
+ * by name, so an open object costs a refusal where a CLOSED one costs a method
+ * that cannot be called at all. `id` is optional there — a custom verb over a
+ * collection is an ordinary shape.
+ */
+function callInput(views: SchemaViews, declared: string | undefined, isMove: boolean): ToolInput {
+  const idProp = (ID_INPUT.properties as Record<string, unknown>).id
+  const data   = declared
+    ? toolSchema(views.full[declared] as JsonSchemaObject | undefined, views.full as Record<string, JsonSchemaObject>)
+    : null
+
+  if (isMove && !data) {
+    return { schema: ID_INPUT, source: 'id' }
+  }
+
+  // `$defs` belongs on the root of the schema that carries the `$ref`, and the
+  // root is this wrapper rather than the declared type.
+  const { $defs, ...body } = (data ?? {}) as JsonSchemaObject
+  return {
+    schema: {
+      type: 'object',
+      properties: {
+        id: idProp,
+        data: data
+          ? body
+          : { type: 'object', description: 'The payload for this method. Nothing in the seed describes its shape; an unknown key is refused by name at the Data boundary.' },
+      },
+      ...(isMove ? { required: ['id'] } : {}),
+      additionalProperties: false,
+      ...($defs ? { $defs } : {}),
+    },
+    source: data ? 'declared-type' : 'call-args',
+  }
+}
+
+/**
  * The argument schema for one tool.
  *
  * Every branch either names a source or answers null. There is no fallback that
@@ -325,14 +538,14 @@ function inputFor(
   model:    string | null,
   views:    SchemaViews,
   declared: string | undefined,
+  kind:     Tool['kind'],
 ): ToolInput {
-  if (declared) {
-    // The `type T { … }` the service named for this method. Already an object
-    // schema with `required` and `additionalProperties: false` — which is what
-    // an MCP input schema is.
-    const t = views.full[declared] as JsonSchemaObject | undefined
-    return t ? { schema: t, source: 'declared-type' } : { schema: null, source: null }
-  }
+  // Everything that is not a CRUD verb is dispatched through
+  // `ServiceCaller.call(name, id, data, opts)`, so both halves of that signature
+  // have to reach the tool schema. A move whose input named only its declared
+  // type, or nothing at all, described a call an agent cannot make: it has the
+  // payload and no way to say WHICH ROW.
+  if (kind !== 'crud') return callInput(views, declared, kind === 'move')
 
   if (method === 'find')                            return { schema: findInput(), source: 'query' }
   if (method === 'get' || method === 'remove' || method === 'restore')
@@ -341,16 +554,20 @@ function inputFor(
   if (!model) return { schema: null, source: null }
 
   if (method === 'create') {
-    const c = views.create[model]
+    const c = toolSchema(views.create[model], views.create)
     return c ? { schema: c, source: 'create-mode' } : { schema: null, source: null }
   }
 
   if (method === 'patch' || method === 'update' || method === 'upsert') {
-    const u = views.update[model]
+    const u = toolSchema(views.update[model], views.update)
     if (!u) return { schema: null, source: null }
     // The caller signature is `patch(id, data, opts)`, so the tool takes both.
     // `data` is the update view minus `id`, which that view carries.
     const { id: _id, ...rest } = (u.properties ?? {}) as Record<string, unknown>
+    // `$defs` rides on the ROOT of a schema, and the root here is the wrapper
+    // rather than the model — a ref left behind on the inner object resolves
+    // against a document that no longer has the definitions.
+    const { $defs } = u as { $defs?: object }
     return {
       schema: {
         type: 'object',
@@ -360,6 +577,7 @@ function inputFor(
         },
         required: ['id', 'data'],
         additionalProperties: false,
+        ...($defs ? { $defs } : {}),
       },
       source: 'update-mode',
     }
@@ -398,43 +616,100 @@ export function projectTools(
       // `model` rather than `svc.model`, so the row says which definition
       // graded it. `null` is a service over no model at all, which is a whole
       // category — `revenue`, `shopfront` — and not an error.
-      const base = {
-        name: `${svc.name}.${method}`, service: svc.name, method, model,
-        input: inputFor(method, model, views, svc.inputs?.[method]),
+      const ident = {
+        name: toolName(svc.name, method), service: svc.name, method, model,
       }
 
       if (CRUD.has(method)) {
         // `canAtLevel` owns the method→position map and the sentinels.
         const need = gradedNeed(gate, method)
         const ok   = canAtLevel(gate ?? null, method, level)
-        const row  = { ...base, kind: 'crud' as const, verdict: 'model-gate' as const, needs: need }
+        const row  = {
+          ...ident, kind: 'crud' as const, verdict: 'model-gate' as const, needs: need,
+          input: inputFor(method, model, views, svc.inputs?.[method], 'crud'),
+        }
         ;(ok ? tools : withheld).push(row)
         continue
       }
 
-      const move = declaredMove(def, method)
+      // Two checks stand in front of one custom verb and they are enforced by
+      // different realms, so both are read and the STRICTER wins:
+      //
+      //   the API boundary   `customMethodGrade` — a declared `gate:`, else the
+      //                      model's read gate as a PRESENCE check
+      //   the Data boundary  the move's own floor, when the method drives one
+      //
+      // `@system` is not part of either. It says whose DECISION a move is, and
+      // the method that lifts it does so on the caller's client with
+      // `{ system: true }`, which keeps the gate and every row policy
+      // (`FJS-D150`). Withholding a `@system` move from every standing hid
+      // `example`'s `invoices.settle` from the staff who press it.
+      const move     = declaredMove(def, method)
+      const api      = customMethodGrade(method, svc.methodGates ?? {}, (gate ?? null) as never)
+      const moveNeed = move ? moveFloor(gate, move) : null
 
-      if (!move) {
-        // Rule 3. Nothing declared — permissive, and LABELLED so. An operator
-        // reading this list can see which of their verbs the seed says nothing
-        // about, which is the list worth shortening.
-        tools.push({ ...base, kind: 'custom', verdict: 'ungraded', needs: null })
+      // Only a number the boundary COMPARES goes in here. `floor` is deliberately
+      // absent: its level is the model's read gate and nothing is graded against
+      // it, so carrying it as `needs` would state a requirement no caller is
+      // actually held to — the one mistake this module is arranged against.
+      const compared: Array<[Verdict, number]> = []
+      if (api.source === 'declared' && typeof api.level === 'number') compared.push(['method-gate', api.level])
+      if (moveNeed !== null)                                          compared.push(['move-floor', moveNeed])
+
+      const top      = compared.sort((a, b) => b[1] - a[1])[0] ?? null
+      const presence = api.source === 'floor' && (api.level ?? 0) > 0
+      const kind     = move ? 'move' as const : 'custom' as const
+      const base     = { ...ident, kind, input: inputFor(method, model, views, svc.inputs?.[method], kind) }
+
+      if (top && top[1] > 0) {
+        const [verdict, needs] = top
+        const ok = levelPasses(needs, level)
+        ;(ok ? tools : withheld).push({ ...base, verdict, needs })
         continue
       }
 
-      // `@system` is not part of the grade. It says whose DECISION a move is,
-      // and the method that lifts it does so on the caller's client with
-      // `{ system: true }`, which keeps the gate and every row policy
-      // (`FJS-D150`) — so the floor is the move's, as for any other. Withholding
-      // it from every standing hid `invoices.settle` from the staff who press it.
-      const need = moveFloor(gate, move)
-      const ok   = need === null ? true : levelPasses(need, level)
-      const row  = { ...base, kind: 'move' as const, verdict: 'move-floor' as const, needs: need }
-      ;(ok ? tools : withheld).push(row)
+      if (presence) {
+        // A session, and nothing more. `gateAuthAround` answers 401 here and
+        // never compares a level: how far above `read` a caller stands is the
+        // Data boundary's question. Level 0 is the only thing a projection can
+        // read as *no session*.
+        const ok = level > 0
+        ;(ok ? tools : withheld).push({ ...base, verdict: 'method-floor', needs: null })
+        continue
+      }
+
+      // Nothing declared — permissive, and LABELLED so. An operator reading this
+      // list can see which of their verbs nothing says anything about, which is
+      // the list worth shortening.
+      tools.push({ ...base, verdict: top ? top[0] : 'ungraded', needs: top ? top[1] : null })
     }
   }
 
-  return { level, tools, withheld, unresolved }
+  return { level, ...refuseCollisions(tools), withheld, unresolved }
+}
+
+/**
+ * Hold back every tool whose name another tool also derived.
+ *
+ * Only the offered list is checked. A withheld tool is not on offer, so two of
+ * them sharing a name is nothing an agent can call; reporting it would be a
+ * finding about rows nobody can reach.
+ */
+function refuseCollisions(tools: Tool[]): { tools: Tool[]; collisions: Projection['collisions'] } {
+  const byName = new Map<string, Tool[]>()
+  for (const tool of tools) {
+    const seen = byName.get(tool.name)
+    seen ? seen.push(tool) : byName.set(tool.name, [tool])
+  }
+
+  const collisions: Projection['collisions'] = []
+  for (const [name, group] of byName) {
+    if (group.length > 1) collisions.push({ name, methods: group.map(t => `${t.service}.${t.method}`) })
+  }
+  if (!collisions.length) return { tools, collisions }
+
+  const refused = new Set(collisions.map(c => c.name))
+  return { tools: tools.filter(t => !refused.has(t.name)), collisions }
 }
 
 /** The number a CRUD verb clears, for disclosure. `null` where none is declared. */

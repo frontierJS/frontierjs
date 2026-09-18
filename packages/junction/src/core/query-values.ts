@@ -1,14 +1,26 @@
-// ─── sort.ts — what `orderBy` means, once ────────────────────────────────────
+// ─── query-values.ts — what a directive's VALUE means, once ──────────────────
 //
-// Two halves of one question, and they are here together because they are asked
-// from opposite ends of the wire:
+// `@frontierjs/toolbelt/directives` says which `$` names exist and reads them
+// off a wire; it deliberately does not fix the SHAPE of the two that have
+// several legal spellings, because only a query builder can say which. This is
+// that answer, and it is here rather than inside one caller because it is asked
+// from opposite ends of the wire — and from a third end since the device grew a
+// database of its own:
 //
 //   normalizeOrderBy  — the three spellings a caller may write → one list.
 //                       `parseSort` (core/litestone.ts) is this function; the
 //                       server compiles the result into SQL.
-//   comparatorFor     — that same list → a comparator over records, for the
-//                       browser client, which has to place a pushed row in a
-//                       list it cannot re-query.
+//   normalizeSelect   — a comma-joined string or a list of names → the map a
+//                       query builder takes. `parseSelect` is this function.
+//   comparatorFor     — that same orderBy list → a comparator over records, for
+//                       the browser client, which has to place a pushed row in
+//                       a list it cannot re-query.
+//
+// **A caller that spells one of these itself is a second answer to a settled
+// question, and it fails where nothing is watching**: Sierra's offline read
+// handed SQLite the wire's own `-id` and every read of a sorted list threw,
+// which the list cache underneath then answered — a feature that was off and
+// green (`FJS-1179`).
 //
 // This module imports nothing. That is deliberate: the browser client bundles
 // it, and `core/litestone.ts` — the other caller — reaches the Data realm.
@@ -51,6 +63,24 @@ export function normalizeOrderBy(sort: SortParam): OrderBy {
   return Object.entries(sort).map(([field, dir]) => ({
     [field]: (dir === 1 || dir === 'asc') ? 'asc' as const : 'desc' as const,
   }))
+}
+
+export type SelectParam = string | string[]
+
+/**
+ * `'id,name'` or `['id', 'name']` → `{ id: true, name: true }`.
+ *
+ * The map is what every query builder here takes, and the string is what a URL
+ * carries, so the two spellings meet exactly once.
+ */
+export function normalizeSelect(select: SelectParam): Record<string, boolean> {
+  const fields = Array.isArray(select) ? select : String(select).split(',')
+  const out: Record<string, boolean> = {}
+  for (const f of fields) {
+    const name = f.trim()
+    if (name) out[name] = true
+  }
+  return out
 }
 
 // SQLite's storage-class order: NULL < INTEGER/REAL < TEXT < BLOB. A Boolean is

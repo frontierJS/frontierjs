@@ -302,6 +302,16 @@ export const tree = {
       children: [],
     },
   {
+      id: "stocktake",
+      path: "/stocktake/",
+      file: "src/routes/stocktake/index.mesa",
+      companion: null,
+      layout: "src/routes/_module.mesa",
+      meta: JSON.parse("{\"siteName\":\"Kitchen sink\",\"title\":\"Stocktake\",\"isIndex\":true}"),
+      params: [],
+      children: [],
+    },
+  {
       id: "subscriptions",
       path: "/subscriptions/",
       file: "src/routes/subscriptions/index.mesa",
@@ -366,6 +376,7 @@ export const components = {
   'settings': () => import('../src/routes/settings/index.mesa'),
   'settings.fields': () => import('../src/routes/settings/fields.mesa'),
   'sign-in': () => import('../src/routes/sign-in/index.mesa'),
+  'stocktake': () => import('../src/routes/stocktake/index.mesa'),
   'subscriptions': () => import('../src/routes/subscriptions/index.mesa'),
   'subscriptions.[id]': () => import('../src/routes/subscriptions/[id].mesa'),
   'users': () => import('../src/routes/users/index.mesa'),
@@ -418,6 +429,7 @@ export const all = [
   "/settings/",
   "/settings/fields/",
   "/sign-in/",
+  "/stocktake/",
   "/subscriptions/",
   "/subscriptions/:id/",
   "/users/"
@@ -453,6 +465,7 @@ export const published = [
   "/settings/",
   "/settings/fields/",
   "/sign-in/",
+  "/stocktake/",
   "/subscriptions/",
   "/subscriptions/:id/",
   "/users/"
@@ -480,6 +493,7 @@ export const indexed = [
   "/settings/",
   "/settings/fields/",
   "/sign-in/",
+  "/stocktake/",
   "/subscriptions/",
   "/users/"
 ]

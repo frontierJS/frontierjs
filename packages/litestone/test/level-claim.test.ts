@@ -119,3 +119,66 @@ describe('getLevel is synchronous', () => {
     db.$close()
   })
 })
+
+// ─── $levelOf ────────────────────────────────────────────────────────────────
+//
+// The same grade, asked from outside — the seam Junction's method gate reads
+// (`FJS-1161`), so a level compared at the API boundary is the one the Data
+// boundary would have used. Each claim pairs the app's own mapping with the
+// shipped grader's answer for the same caller, because a seam that answered
+// `gradeStanding` all along passes any test written against a session-shaped
+// principal.
+describe('$levelOf', () => {
+  it('answers the app mapping for the principal the client is scoped to', async () => {
+    const db = await seeded()
+    // The shipped grader reads `role` for PRESENCE and answers USER(4) for
+    // both of these; the app's mapping is what separates them.
+    expect(db.$setAuth({ id: 'u9', role: 'boss' }).$levelOf('note')).toBe(LEVELS.ADMINISTRATOR)
+    expect(db.$setAuth({ id: 'u1', role: 'clerk' }).$levelOf('note')).toBe(LEVELS.USER)
+    expect(db.$setAuth(null).$levelOf('note')).toBe(LEVELS.STRANGER)
+    db.$close()
+  })
+
+  it('grades a stated principal instead, which is how a broadcast recipient is asked', async () => {
+    const db = await seeded()
+    const asClerk = db.$setAuth({ id: 'u1', role: 'clerk' })
+    expect(asClerk.$levelOf('note', { id: 'u9', role: 'boss' })).toBe(LEVELS.ADMINISTRATOR)
+    expect(asClerk.$levelOf('note', null)).toBe(LEVELS.STRANGER)
+    // Stated is not the same as omitted: `null` is a stranger, absent is me.
+    expect(asClerk.$levelOf('note')).toBe(LEVELS.USER)
+    db.$close()
+  })
+
+  it('is per model, and an accessor naming none grades with a null model', async () => {
+    const perModel = (user: any, model: string) =>
+      user?.role === 'boss' && model === 'Note' ? LEVELS.ADMINISTRATOR : LEVELS.READER
+    const db = await seeded(OWNER_OR_ADMIN, perModel)
+    const boss = db.$setAuth({ id: 'u9', role: 'boss' })
+    expect(boss.$levelOf('note')).toBe(LEVELS.ADMINISTRATOR)
+    // A modelless service asking about its own caller — and a name no model
+    // answers to — are the same question, and neither may invent a model.
+    expect(boss.$levelOf('reports')).toBe(LEVELS.READER)
+    expect(boss.$levelOf()).toBe(LEVELS.READER)
+    db.$close()
+  })
+
+  it('answers SYSTEM for a system client and the same number on every flavor', async () => {
+    const db = await seeded()
+    expect(db.asSystem().$levelOf('note')).toBe(8)
+    // The subject decides, never which flavor was asked.
+    const who = { id: 'u9', role: 'boss' }
+    expect(db.asSystem().$levelOf('note', who)).toBe(LEVELS.ADMINISTRATOR)
+    expect(db.$levelOf('note', who)).toBe(LEVELS.ADMINISTRATOR)
+    expect(db.$setAuth({ id: 'u1' }).$levelOf('note', who)).toBe(LEVELS.ADMINISTRATOR)
+    db.$close()
+  })
+
+  it('answers null where there is no mapping to ask', async () => {
+    // No @@gate and nothing reading `auth().level`, so no plugin is installed:
+    // *I cannot grade* rather than a level nobody declared.
+    const db = await createClient({ schema: 'model Note { id String @id }', db: ':memory:' })
+    expect(db.$levelOf('note')).toBeNull()
+    expect(db.$setAuth({ id: 'u1', isAdmin: true }).$levelOf('note')).toBeNull()
+    db.$close()
+  })
+})

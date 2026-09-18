@@ -56,9 +56,16 @@ if (flag.all && (as === 'badge' || as === 'json')) {
 }
 
 const root = global.projectRoot ?? process.cwd()
+
+// The parser is the PROJECT's, never this package's — `fli` is global, so a
+// dependency of the app is not beside the CLI. Absent, every other reading holds
+// and the functions inside a file go ungraded rather than graded 0.
+const { typeScriptAt } = await import(resolve(global.fliRoot, 'core/functions.js'))
+const ts = await typeScriptAt(root)
+
 let model
 try {
-  model = collectCodegraph({ root })
+  model = collectCodegraph({ root, ts })
 } catch (err) {
   log.error(`Could not read ${root} as a git project — ${String(err.message).split('\n')[0]}`)
   process.exitCode = 1
@@ -100,6 +107,22 @@ const warn   = source.filter(f => (scoreOf(f)?.step ?? 0) >= SCORE_WARN).length
 echo(`  ✓  ${outPath.replace(root + '/', '')}`)
 if (as === 'map' || as === 'page') echo(`  ${flag.all ? `every file drawn (${model.files.length})` : `${source.length} source file(s) drawn — --all for all ${model.files.length}`}`)
 echo(`  ${model.files.length} file(s) · ${source.length} source · ${cx ? Math.round(ex / cx * 100) : 0}% of source complexity untested · ${warn} scoring over ${SCORE_STEPS[SCORE_WARN - 1]} · ${model.commits} commit(s), ${model.sweeps} sweep(s) over ${model.sweepLimit} files left out`)
+
+const parsed = model.files.filter(f => f.cognitive != null)
+if (parsed.length) {
+  const worst = parsed.reduce((a, f) => f.cognitive > a.cognitive ? f : a)
+  const fns = parsed.reduce((sum, f) => sum + (f.fns ?? 0), 0)
+  echo(`  ${fns} function(s) read in ${parsed.length} file(s) · hardest is ${worst.worst.name}() in ${worst.path} at ${worst.cognitive}`)
+} else {
+  echo('  functions: no typescript installed in this project — complexity is the indent reading alone')
+}
+
+// what is built on this project rather than shipped by it, named so a count that moved is explainable
+const priv = model.files.filter(f => f.kind === 'private')
+if (priv.length) {
+  const by = [...priv.reduce((m, f) => m.set(f.region, (m.get(f.region) ?? 0) + 1), new Map())].sort((a, b) => b[1] - a[1])
+  echo(`  ${priv.length} private · ${by.map(([r, n]) => `${r} ${n}`).join(' · ')} — unpublished packages, graded but not counted as source`)
+}
 
 for (const r of model.reports) {
   const when = new Date(r.madeAt * 1000).toISOString().slice(0, 10)
@@ -154,13 +177,42 @@ wrong at once: a tested file scores 0 however hot it is. Eight steps break at
 shows the multiplication.
 
 The same page draws the 2×2 tile, each quadrant alone, and — under **more** — the
-age of the last commit, lifetime churn and tested. It lists the highest scores
+age of the last commit, lifetime churn, tested, and the size of the file's import
+cycle. It lists the highest scores
 and the widest blast radii, isolates a package from its table, filters by path,
-switches kinds and theme, and can re-lay the map two other ways: **each
+switches kinds and theme, and can re-lay the map three other ways: **each
 package**, where every package is a square of its own, largest first, named, with
-its files in path order inside it; and **path order**, where files run along a
+its files in path order inside it; **by depth**, one band per layer of the import
+graph with the deepest at the top; and **path order**, where files run along a
 generalized Hilbert curve. It is one HTML file with the stylesheet
 inlined, so it opens from disk with no network.
+
+## The stack: depth and cycles
+
+A file's **depth** is how many layers of code sit beneath it — the *longest*
+route down its imports, because what a file rests on is the whole tower and the
+shortest route understates it. A file that imports nothing here is 0. This is
+read from import STATEMENTS alone, never from a string that looks like a path: a
+comment naming a module is not a dependency, and counting one fused 99 files of
+this repo into a single cycle that does not exist.
+
+A **cycle** is the set of files that import each other, directly or around a
+ring. Each one collapses to a single node before depth is measured, or the
+longest path has no end. The count is how many files are in the knot, so a pair
+is the mildest thing the band can say and a file in no cycle has no band at all.
+
+## What ships, and what is built on it
+
+`source` is what this project ships. Source inside a package the workspace does
+not publish — read off that manifest's own `private`, never a list of names — is
+**private** instead: code built ON the project rather than by it, which in this
+repo is basecamp and orion. It is graded exactly like source and it does not
+count as source, because a headline that folds an application into the framework
+is describing a release nobody makes. Only the answer that would have been
+`source` moves, so a test there is still a test.
+
+Its toggle is off by default. Every list and every score step still counts it —
+a hot untested file is worth the same look wherever it lives.
 
 ## What is measured, and where it is guessed
 

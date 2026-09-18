@@ -48,6 +48,16 @@ import { conduitOutbound, flowCredentialResolver } from "./outbound"
 import { litestoneHost } from "./tenancy"
 import { createOrionServices, type OrionServiceNames } from "./services"
 
+// What a HOST needs to type a contribution, re-exported from the one entry
+// point it imports. Without them an app writes its manifest as an object
+// literal and TypeScript infers `category: string`, which is not the union —
+// so the contribution fails to assign at `orion({ plugins })` and the sentence
+// is a hundred-line structural mismatch about a field nobody got wrong. They
+// are declared in `engine/` and reachable only from there, which the boundary
+// test forbids an app from importing.
+export type { PluginManifest, NodeTypeDescriptor, NodeCategory } from "./engine/plugins"
+export type { INodeImplementation, NodeContext, NodeResult } from "./engine/executor"
+
 // ─── options ─────────────────────────────────────────────────────────────────
 
 export interface OrionOptions {

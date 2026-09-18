@@ -53,8 +53,8 @@
 // compaction rebuilds this index rather than deleting it (`rebuildIndex`), so
 // nothing separates the database from its WAL. The order is the ruling.
 
-import { existsSync, readFileSync } from 'fs'
-import { Database } from 'bun:sqlite'
+import { existsSync, readFileSync } from '#host'
+import { openDatabase } from '../core/engine.js'
 import { applyBusyTimeout } from '../core/pragmas.js'
 
 /** SQLite type per `.lite` scalar, for the index's own columns. */
@@ -102,7 +102,7 @@ export function indexShapeFor(model) {
  * the right trade for a row that is fire-and-forget by construction.
  */
 export function openIndexDb(indexPath, busyTimeout = null) {
-  const db = new Database(indexPath)
+  const db = openDatabase(indexPath)
 
   // ── The upgrade, and why it may fail without failing the open ────────────
   //

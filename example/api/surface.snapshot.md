@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-42 services · 46 routes · 13 plugins · prefix /api
+44 services · 46 routes · 13 plugins · prefix /api
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -51,7 +51,7 @@ and what it does.
 | `subscriptions.resume` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `subscriptions.changePlan` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (17)
+### A service hook runs in front of the body (18)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -76,6 +76,7 @@ name, and is as unread as the body.
 | `payRuns.calculateNow` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
 | `payRuns.revert` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
 | `payRuns.pay` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
+| `stocktakeSheets.close` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
 
 ## App hooks
 
@@ -817,6 +818,40 @@ name when it declares none.
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `stocktakeCounts` · model `StocktakeCount`
+
+- **methods** — `find`, `get`, `create`, `patch`
+- **also answers to** — `stocktake-counts`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `stocktakeSheets` · model `StocktakeSheet`
+
+- **methods** — `find`, `get`, `create`, `patch`, `close`
+- **custom methods** — `close`
+- **also answers to** — `stocktake-sheets`
+- **who may call** —
+  - `close` — **any signed-in caller** — floor, read gate 5; standing not graded; then `transactionScope`
+- **transactional** — `close`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` → `transactionScope` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |

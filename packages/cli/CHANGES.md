@@ -1,5 +1,124 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-17 — the cognitive cuts are moved by hand, over the distribution they cut
+
+A threshold is a claim about where a project falls off, and four numbers do not argue for themselves.
+Picking **cognitive** from `more` now brings a strip and three sliders: the strip is the distribution,
+one bar per doubling — the values run 1 to 4730, and on a linear axis that is one bar and sixty empty
+ones — so the drop-offs are visible before anything is dragged. Dragging then says what each cut
+costs: the band counts, the strip and the map all redraw live, which is the whole point, since a cut
+is right when the picture stops changing much as you cross it. A cut cannot pass its neighbours, and
+**reset** returns the shipped `10 · 30 · 100`.
+
+This is the one metric re-banded in the browser, and the page says so: the PNG still draws the shipped
+reading. Every other band is graded in node, so the page cannot lay out or grade a file differently
+from the picture beside it.
+
+**And the page has a drive now** (`test:browser:codegraph`, a row in `DRIVES.md`). Both ways this page
+has broken were invisible to everything that existed: a `const` read before its declaration, and a
+backtick inside a comment inside the `String.raw` block, which closed the literal. Each rendered a
+page that draws its tiles, looks right, and has a dead control on it — and the suite only ever asserted
+that the script PARSES. Twelve assertions: the map, all four layouts, the `more` menu, the sliders
+moving the bands, the strip and the map repainting, reset, and no page errors. Both of those defects
+were caught by writing it.
+
+
+## 2026-09-17 — the codegraph reads the functions inside a file, borrowing the project's own parser
+
+A file is not where complexity lives. `client.js` is large because ONE function in it is 1342
+branches deep, and *big file* and *one monster* take different work — so `core/functions.js` reads
+functions: **cyclomatic** (decisions plus one), **cognitive** (a decision costs 1 plus however deep it
+is nested, so ten flat guards are cheap and three loops inside each other are not), max nesting, and
+lines. A one-line arrow is not counted: it puts the median at 1 and buries the file under its own map
+callbacks. The cognitive measure is an approximation of Sonar's and says so — no recursion increment,
+and an `else if` costs what an `if` costs.
+
+**This package gained no dependency and its tarball no bytes.** The TypeScript parser is looked for in
+the PROJECT being drawn, under the rule `core/app-schema.js` already states for a shipped `.lite` —
+*installed HERE*, not *resolvable from here*, because bun's `require.resolve` falls back to its global
+install cache and memoizes the answer (`FJS-666`). `fli new` already writes `typescript` into every
+scaffolded app, so the fallback is for a project that is not one. Measured on this repo: 260 ms to
+load, 3.2 s to parse 1687 files, 30 442 functions read.
+
+**The fallback cannot hide, which is the condition for having one.** A file nothing parsed has
+`cognitive: null` — no band, grey tile, and a readout saying which of the three reasons it was (no
+parser here, the parser reads no `.mesa`, or nothing long enough to call a function). Complexity
+itself is untouched: it stays the indent reading on every file, in every project, so the absolute
+bands still mean one thing. `cognitive` is a metric of its own behind `more`, banded on
+`COGNITIVE = [10, 30, 100]` — Sonar calls 15 the point where one function is too complex, which sits
+inside band 1, so a file holding one reads warm rather than red.
+
+Also: every file carries its **bytes** now, and the *each package* layout writes each square's totals
+under its name — `102 files · 1.2 MB · 4,310 fn`. Only there: elsewhere a region is a stripe of the
+curve, and a number under its name would read as belonging to the tiles beside it.
+
+
+## 2026-09-17 — a type query is not a dynamic import
+
+`import('./app.ts').App` in a type position and `await import('./app.ts')` are the same eight
+characters, and the codegraph's import reader counted both as a runtime edge. They part on what
+follows — a member access that is not a call — which is now how it reads them. Measured: 187 of these
+in this repo and every one a type (`App`, `SessionContext`, `ILogger`), against 920 real dynamic
+imports, every one awaited.
+
+What it was hiding: junction's 32-file knot is 28 files joined by TYPE edges alone, which tsc erases.
+Its runtime ring is **4 files and 7 edges** — `litestone ⇄ service ⇄ channels`, plus `bridge`. Depth
+and the page's cycle band are unchanged, because a compile-time dependency is still a dependency;
+what moved is what the `typeOnly` flag on an edge means, and it was wrong on every one of them.
+
+
+## 2026-09-17 — the codegraph separates what the project ships from what is built on it
+
+A kind, `private`: source in a package this workspace does not publish. basecamp and orion are code
+built ON the framework rather than code that ships as it, and counting them under `source` was
+overstating what a release contains — measurably, not academically. Source falls 932 → 662, and the
+headline it carries moves with it: **34% of source complexity untested becomes 9%**, and files
+scoring over 9 fall from 47 to 18. Both of those numbers were mostly the two applications.
+
+Derived from the manifest's own `private`, never a list of names, so orion crosses back the day it
+publishes — which is the day it IS the framework. The root manifest is private too and means
+something else there (nobody publishes a workspace), so it is not a package for this. It is asked
+only where the answer would have been source, so a test in basecamp is still a test and its README is
+still a doc.
+
+`private` is CODE, not a second `example`: it is graded, scored, and counted as use, because a hot
+untested file is worth the same look wherever it lives. So the page splits its two readings — the
+facts tile answers *what does this project ship* from source alone, while every list and every score
+step counts both, since a file that is graded and then hidden is the one shape the page did not have.
+The chip is off by default, and the echo line names each unpublished package with its count.
+
+
+## 2026-09-16 — the codegraph reads imports, and draws the stack they make
+
+`core/codegraph.js` gained a second graph. `referenceGraph` answers *who names this file* and stays
+loose on purpose — a string that looks like a path counts, wherever it sits — which is right for a
+usedBy tally and wrong for a layer. `importGraph` reads statements instead: import, export-from,
+dynamic import and require, comments blanked first, and a specifier resolving to nothing in this tree
+dropped. Measured over this repo the difference is not a rounding: the loose reading gives 2715
+edges, 21 cycles and one **99-file** knot spanning toolbelt, litestone, junction and auth; the
+statement reading gives **2227 edges (221 type-only) and 8 cycles, the biggest 32 files**. The fake
+knot was two comments and a string literal — `toolbelt → junction` and `litestone → junction`, both
+of which Invariant 1 forbids.
+
+`layerGraph` grades that graph into a `depth` and a `cycle` count per source file. Depth is the
+**longest** path down, not the shortest, because what a file sits on is the whole tower; each cycle
+collapses to one node first, which is what keeps the longest path finite. This repo runs 23 layers
+deep, from `toolbelt/inflect` to `basecamp/api/index.ts`, and 48 files sit in a cycle.
+
+The page shows both. **by depth** is a fourth layout — one band per layer, the deepest at the top, so
+the picture is the stack itself: the app's entry alone on the top row, 344 files that import nothing
+spread over the bottom seven. **cycle** joins age, churn and tested behind `more`, graded on
+`CYCLE_SIZE`, with a pair as the mildest thing it can say and still be true; a file in no cycle has
+no band rather than a quiet one. The readout names both per tile.
+
+## 2026-09-16 — two NUL bytes removed from `core/proofs.js`
+
+`splitRow`'s escape sentinel and the runnable-key separator were written as literal NUL bytes. grep
+and ripgrep treat a file holding one as binary and skip it with no message, so the module behind
+`fli proves` — the one that reads `DRIVES.md` — answered no repo-wide search at all. Written as
+`'\x00'` now: same byte at runtime, ordinary text on disk. CI's `hygiene` phase grades every tracked
+source file for it, so this cannot come back silently.
+
 ## 2026-09-15 — a codegraph tile's corners are one constant
 
 `TILE_RADIUS` in `core/codegraph-page.js` is the corner rounding, `0.25rem`, and it takes any CSS

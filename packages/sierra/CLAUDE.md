@@ -69,7 +69,15 @@ src/
     static-data-plugin.js  dev only — a prerendered route's load(), run in Node
     mesa-plugin.js       Mesa compilation + reactivity hints
     scanner-plugin.js    runs the scanner
-    schema-plugin.js     .lite → client-side model schemas
+    schema-plugin.js     .lite → client-side model schemas, and the DEVICE
+                         schema litestone's `deviceSchema()` filters out of the
+                         same parse result
+    local-db-plugin.js   the bytes a local database needs: the app's own
+                         `@sqlite.org/sqlite-wasm` copied into the output and
+                         the device schema emitted beside it. The entry is
+                         copied as `.js` — a dynamic `import()` of a `.mjs` a
+                         host serves as anything but JavaScript is refused
+                         outright, with nothing said
     slot-rewrite.js      compile-time slot rewriting
     prerender.js         routes declaring `render: static` → HTML
     island-bundle.js     one chunk per island the static build needs
@@ -88,10 +96,64 @@ src/
     field-rules.js       schema → field rules; the control table and the
                          registry over it; toFieldErrors. LEAF: no client import
     schema-registry.js   modelNameFor / schemaFor
+    pending.js           the writes this device made and the server has not
+                         confirmed — queue-first, cleared on an ACK and never on
+                         a send, drained on the socket's `connect`. Held only for
+                         a model that declares `@@sync`. Owns `unreachable`, the
+                         question *did the server hear this*
+    list-cache.js        what a screen last saw, so an outage is not an empty
+                         page. Answers on SILENCE and never on a refusal, keyed
+                         by the QUESTION rather than the model, and only for a
+                         model that declared `@@sync` — rows on a disk outlive
+                         the session, so it is the app's word
+    local-db.js          the device's own SQLite as the read store, when the
+                         app says `offline: { db: true }` (`FJS-D307`). Writes
+                         through on a successful load and answers the catch
+                         BEFORE the list cache, because SQL can answer a
+                         question this screen never asked — but an EMPTY
+                         answer defers to the cache, which may hold the server's
+                         own answer to the same question, where a device holds
+                         nothing until a write-through has landed. Read through
+                         `asSystem()`: a cache replays what the server already
+                         gave this caller and does not re-decide it (`FJS-D309`).
+                         **`orderBy` and `select` are translated by junction and
+                         may not be spelled here** — SQLite throws on the wire's
+                         `-id`, and the throw fell through to the cache, so the
+                         whole feature was off and green (`FJS-1179`)
+    local-db-open.js     one line, its own module — `new Worker(new URL(…))` is
+                         a STATIC signal, so written inline it put the whole
+                         litestone client in every app. The build stubs this
+                         out when no database was asked for
+    local-db-worker.js   the worker body: litestone's, under a relative path a
+                         bundler can resolve
+    offline.js           the reads a screen must already HOLD — a resource's
+                         `offlineQuery`, warmed at boot and on every `connect`
+                         (`FJS-D307`). Writes through `find` and never `load`,
+                         because a warm runs under a question nobody is looking
+                         at and `load` sets the store the screen is rendering.
+                         Keyed by `listKey`, the cache's own function: a second
+                         derivation would fill a slot nothing reads and say
+                         nothing until the outage. **The same rows go into the
+                         device's tables when an app has them, and that is the
+                         whole of hydration** — no second option, because the
+                         rows and the model are already in scope. `kept` is in
+                         the report because the cache answers the declared
+                         question whether or not a row ever reached the device
+    attachments.js       the BYTES, which are not a row (`FJS-D301`) — its own
+                         IndexedDB DATABASE, so a quota failure cannot take the
+                         writes down with it. Drains AFTER pending.js, as an
+                         ordinary patch naming the row, which is why it only
+                         works on a key the browser minted. Imported dynamically
+                         by pending.js so the dependency stays one-way
 
   islands/loader.js      — find island markers in prerendered HTML and mount
   postbuild/             — sitemap, redirects, llms.txt, 404, theme, defer, markdown,
-                           and manifest.js: can a browser INSTALL the build
+                           manifest.js: can a browser INSTALL the build, and
+                           offline-shell.js: sw.js + a precache list derived
+                           from what this build emitted (`offline: true`).
+                           Sierra writes that one because only the build knows
+                           its own hashes; the app writes its manifest because
+                           a manifest is a declaration
   devtools/  presence/  theme/  analytics/  fetch/  virtual/
   components/            — RouterView.mesa, ChainRenderer.mesa
 ```
@@ -630,7 +692,7 @@ for a whole-call concern like a loading flag.
 **One word each.** `params` is path captures, `locals` is scratch, and the second
 argument to `find`/`load`/`getOptions` — like the field on the hook context and
 junction's own `QueryDirectives` (`FJS-290`) — is **`directives`** (Invariant 10).
-`optionsQuery`, `detailQuery` and `listQuery` all take `{ query, directives }`, declared beside
+`optionsQuery`, `detailQuery`, `listQuery` and `offlineQuery` all take `{ query, directives }`, declared beside
 the model rather than at every call site (`FJS-D114`) — and `listQuery` reaches `list()` alone, never a
 bare `find()`, because a default filter there would narrow every picker and job in silence. The write is
 `save(data, { mode })`, the one owner of create-or-patch, which `<Form>` calls

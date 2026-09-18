@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "The kitchen sink \u2014 one shop-ops app exercising as much of FrontierJS as a single app can.",
+  "description": "The kitchen sink — one shop-ops app exercising as much of FrontierJS as a single app can.",
   "scripts": {
     "dev": "bun run api & bun run web & wait",
     "stop": "pkill -f 'bun.*api/inde[x].ts'; pkill -f 'vite.*web/config/vite.confi[g].js'; true",
@@ -38,6 +38,8 @@
     "verify:money": "node web/test/verify-money.mjs",
     "verify:views": "bun web/test/verify-views.mjs",
     "verify:stock": "node web/test/verify-stock.mjs",
+    "verify:offline": "node web/test/verify-offline.mjs",
+    "verify:shell": "node web/test/verify-shell.mjs",
     "verify:widget": "node web/test/verify-widget.mjs",
     "dev:widgets": "cd widgets && vite -c config/vite.config.js",
     "build:widgets": "cd widgets && bunx sierra widgets --config config/sierra.config.js",
@@ -69,6 +71,7 @@
     "@frontierjs/conduit": "workspace:*",
     "@frontierjs/css": "workspace:*",
     "@frontierjs/email-kit": "workspace:*",
+    "@frontierjs/jetty": "workspace:*",
     "@frontierjs/junction": "workspace:*",
     "@frontierjs/litestone": "workspace:*",
     "@frontierjs/mesa": "workspace:*",
@@ -77,7 +80,7 @@
     "@frontierjs/sierra": "workspace:*",
     "@frontierjs/toolbelt": "workspace:*",
     "@frontierjs/ui": "workspace:*",
-    "@frontierjs/jetty": "workspace:*"
+    "@sqlite.org/sqlite-wasm": "^3.53.4-build1"
   },
   "devDependencies": {
     "vite": "^8.0.3"

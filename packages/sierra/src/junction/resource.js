@@ -149,7 +149,108 @@ import { singularize } from '@frontierjs/toolbelt/inflect'
 import { humanize } from '@frontierjs/toolbelt/inflect'
 import { runPhase, runAroundHooks, mergeHooks, hookContext, answered } from '@frontierjs/toolbelt/hooks'
 import { createMakeFromSchema as makeFromSchema } from '@frontierjs/toolbelt/jsonschema'
+import { mintId } from '@frontierjs/toolbelt/ids'
 import { createList } from './list.js'
+import { pendingQueue, unreachable } from './pending.js'
+import { attachmentQueue } from './attachments.js'
+import { listCache, listKey } from './list-cache.js'
+import { declareOffline }      from './offline.js'
+import { writeThrough, readLocal, localDbConfigured } from './local-db.js'
+
+/**
+ * The methods a queue may NOT hold. A read has nothing to replay, and replaying
+ * one on reconnect would answer a caller that stopped waiting.
+ *
+ * Stated as the exclusion rather than the inclusion, because the set that is
+ * left over is the interesting one: a CUSTOM method is in it, and the client
+ * cannot tell a custom read from a custom write — only the server's method
+ * policy knows. Including them is the lesser wrong of the two. Most of what a
+ * real app writes is a custom verb (`inventory.invoke('adjust', …)` is the one
+ * `example` drives), so excluding them would leave the queue covering the part
+ * of an app that needs it least; and a custom READ that gets queued costs one
+ * wasted call on reconnect, against a custom WRITE left out costing the row.
+ */
+const NEVER_QUEUED = new Set(['find', 'get'])
+
+// The verbs `@@sync(append)` refuses to HOLD. Built-in and mutating: each one
+// names a row that already exists. `create` appends by definition and a custom
+// method is the app's own word, which this layer cannot read.
+const APPEND_REFUSES = new Set(['patch', 'remove', 'restore'])
+
+/**
+ * The write as the QUEUE should hold it, which is where `@@sync`'s argument
+ * finally means something (`FJS-D304`).
+ *
+ * The version rides on every patch by the time this is reached — the resource
+ * stamps it from the record the caller last read, so that a stale edit is
+ * refused at the Data boundary. That is right for a write somebody is standing
+ * over, and it is the WRONG default for a held one: under `server` the whole
+ * declaration is *replay this against whatever the row holds by then*, and a
+ * carried revision turns that into a refusal the person who made the write is
+ * no longer there to answer. `example`'s own ledger says so in the schema — a
+ * replayed movement runs against whatever the shelf holds by then.
+ *
+ * So `server` DROPS it and `refuse` keeps it, which is the only difference
+ * between the two and the reason `refuse` is a word at all. Anything else is
+ * left exactly as the hooks produced it.
+ */
+function _heldData(data, policy, versionOf) {
+  if (policy !== 'server' || !versionOf) return data
+  if (!data || typeof data !== 'object' || !(versionOf in data)) return data
+  const { [versionOf]: _dropped, ...rest } = data
+  return rest
+}
+
+/** A held write a model whose rows are only ever appended cannot express. */
+function _appendOnly(model, method) {
+  const err = new Error(
+    `[Sierra] ${model}.${method}() cannot be held: this model declares @@sync(append), which says its ` +
+    `rows are only ever added — that is what makes an offline collision impossible rather than resolved. ` +
+    `A held ${method} is a second writer editing a row, which the declaration says does not happen. ` +
+    `Change the write to a create, or declare @@sync(server) or @@sync(refuse) and say what a collision does.`)
+  err.code = 'APPEND_ONLY'
+  err.model = model
+  err.method = method
+  return err
+}
+
+/**
+ * Does this payload carry bytes?
+ *
+ * A queued `File` is the second half of phase 2 — the blob has to outlive the
+ * tab in its own store and the multipart request has to be built at drain — so
+ * phase 1 sends such a write straight through rather than storing a reference
+ * to bytes nothing will ever upload.
+ */
+function _carriesFile(data) {
+  return Object.keys(_filesIn(data)).length > 0
+}
+
+/**
+ * The fields of a payload whose value is BYTES — `{ field: Blob }`.
+ *
+ * `File` extends `Blob`, so the Blob test alone would do; both are named
+ * because a runtime with one global and not the other is the ordinary case on
+ * a server render, and `instanceof` against an undefined global throws.
+ */
+function _filesIn(data) {
+  const out = {}
+  if (!data || typeof data !== 'object') return out
+  for (const [k, v] of Object.entries(data)) {
+    if ((typeof File !== 'undefined' && v instanceof File) ||
+        (typeof Blob !== 'undefined' && v instanceof Blob)) out[k] = v
+  }
+  return out
+}
+
+/** The same payload with the bytes taken out — what the row half replays. */
+function _withoutFiles(data, files) {
+  const keys = Object.keys(files)
+  if (!keys.length) return data
+  const out = { ...data }
+  for (const k of keys) delete out[k]
+  return out
+}
 
 // Re-exported so `sierra/junction` stays the one import for resource work.
 export {
@@ -404,6 +505,13 @@ export function resetResourcesForIdentityChange() {
  *                  `{ directives: { orderBy: 'name', limit: 500 } }`.
  *   listQuery    — what `list()` starts on, under the URL or the caller. It
  *                  reaches `list()` alone and never a bare `find()`/`load()`.
+ *   offlineQuery — the one question this resource must already HOLD when there
+ *                  is no server (`FJS-D307`). Warmed at boot and on every
+ *                  reconnect, into the same cache an arriving `load()` fills,
+ *                  under the same key — so the declared question is answerable
+ *                  offline and a different one is not. Only for a model that
+ *                  declared `@@sync`: writing rows to a device is a disclosure
+ *                  and the app's word is what permits it (`FJS-D298`).
  *
  * ── opts.columns ───────────────────────────────────────────────────────────
  * The `columns()` options this model's tables take when a caller states none —
@@ -489,7 +597,7 @@ export function resetResourcesForIdentityChange() {
  * for the resource that is merely misspelt.
  */
 export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
-  let serviceName, model, optionsQuery, detailQuery, listQuery, columnDefaults, initialHooks, schema, idField, opts
+  let serviceName, model, optionsQuery, detailQuery, listQuery, offlineQuery, columnDefaults, initialHooks, schema, idField, opts
 
   if (typeof nameOrSpec === 'string') {
     serviceName = nameOrSpec
@@ -523,6 +631,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     optionsQuery = opts.optionsQuery
     detailQuery  = opts.detailQuery
     listQuery    = opts.listQuery
+    offlineQuery = opts.offlineQuery
     columnDefaults = opts.columns
   } else {
     // object form
@@ -532,6 +641,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     optionsQuery = opts.optionsQuery
     detailQuery  = opts.detailQuery
     listQuery    = opts.listQuery
+    offlineQuery = opts.offlineQuery
     columnDefaults = opts.columns
     initialHooks = opts.hooks        ?? {}
     schema       = opts.schema
@@ -692,6 +802,18 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   function rulesFor(method) {
     return method === 'patch' ? updateFields : fields
   }
+  // What this model said about being written with no server reachable. The
+  // ABSENCE is the refusal (`FJS-D298`): a model that declares nothing is not
+  // syncable and its writes are not held, so silence costs a failure the person
+  // sees rather than a row nobody knows was lost.
+  const syncPolicy = schema?.['x-sync'] ?? null
+
+  // How this model's key is made when the CALLER makes it — `{ field, kind }`,
+  // or null where only the server can key it. Crossed only for a model that
+  // declares `@@sync`, because stating the key is what offline creates need and
+  // nothing else does.
+  const mint = modelDef?.['x-mint'] ?? null
+
   const relations = schema ? buildRelations(modelDef)   : {}
   const gate      = schema ? buildGate(modelDef)        : null
   const stateSpec = schema ? buildTransitions(modelDef) : null
@@ -958,15 +1080,106 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         if (known != null) ctx.data = { ...ctx.data, [versionOf]: known }
       }
 
+      // ── the key, if the caller is the one who makes it ───────────────────
+      //
+      // Minted BEFORE the queue entry and before the send, and on every create
+      // rather than only on one that turns out to be held: the id is what a
+      // child write references, and a screen cannot know whether its parent
+      // reached the server before it needs one. Minting only when a send fails
+      // would make the id's origin depend on the network, which is the one
+      // thing an offline app may not have vary.
+      //
+      // A caller who stated the key keeps it. That is the same rule the server
+      // follows for a create that carries one.
+      if (mint && method === 'create' && ctx.data?.[mint.field] == null) {
+        const minted = mintId(mint.kind)
+        // Null is a generator this client does not have — a schema minted by a
+        // newer litestone than the bundle. The create goes on without a key and
+        // the server assigns one, which is what happens with no `x-mint` at all.
+        if (minted != null) ctx.data = { ...ctx.data, [mint.field]: minted }
+      }
+
+      // ── the queue, if this model asked for one ───────────────────────────
+      //
+      // Queue-FIRST: the entry is written before the call goes out, not in a
+      // catch after it fails (`IDEAS/homestead.md` phase 1). A catch-based
+      // queue has two routes to the server with a seam between them, and the
+      // seam is where a write goes twice or not at all.
+      //
+      // What is stored is what the hooks produced — coerced, blank-stripped,
+      // validated, version-stamped — because that is what a replay must send.
+      // Recording the caller's raw payload would replay a different write.
+      //
+      // ── and the bytes, which are not a row ───────────────────────────────
+      //
+      // `FJS-D301`: two queues. The row half replays WITHOUT the bytes, and a
+      // second queue owns each file as a patch naming the row it belongs to.
+      // A 4MB photograph behind a 200-byte correction in one FIFO makes the
+      // small write wait on exactly the connection that cannot carry the large
+      // one, and a refused row and a half-sent upload want different rules.
+      //
+      // The row has to EXIST before its bytes can name it, which is why this
+      // needs an id and why it only works on a model whose key the browser
+      // minted. Without one there is nothing to attach to, so the write is not
+      // queued at all and fails the way it did before any of this — the
+      // schema advisor is what says so ahead of time.
+      //
+      // ── and what the POLICY means, which is only ever about a HELD write ──
+      //
+      // `FJS-D304`. All three behave identically on a reachable network; what
+      // they decide is the write nobody is standing over when it lands.
+      //
+      // `append` — rows are only ever added, which is what makes the collision
+      // impossible rather than resolved. So a held `patch`, `remove` or
+      // `restore` is refused by name: each one is unambiguously *edit a row
+      // that is already there*, which the declaration says does not happen.
+      //
+      // **A CUSTOM method is not refused, and that is not laxity.** `example`
+      // writes its ledger through `adjust()` — a verb that computes a delta and
+      // APPENDS a movement — and refusing it broke the offline drive on the
+      // very model whose schema says `append` is a statement of fact. Sierra
+      // cannot see what a custom method does; a rule over one is a rule about
+      // something this layer does not know, which is the same error as an
+      // advisor rule guessing at a service. The built-in verbs are the ones
+      // whose meaning IS fixed, and those are the ones judged.
+      //
+      // (The attachment queue is untouched either way — it patches through the
+      // raw client, because the bytes of a row THIS device created arriving
+      // late are not a second writer.)
+      if (syncPolicy === 'append' && APPEND_REFUSES.has(method))
+        throw _appendOnly(model, method)
+
+      const files = syncPolicy && !NEVER_QUEUED.has(method) ? _filesIn(ctx.data) : {}
+      const rowId = ctx.id ?? (mint ? ctx.data?.[mint.field] : null)
+      const attachable = !Object.keys(files).length || rowId != null
+
+      const held = syncPolicy && !NEVER_QUEUED.has(method) && attachable
+        ? await pendingQueue().add({
+            service: serviceName, model, method, id: ctx.id,
+            data: _heldData(_withoutFiles(ctx.data, files), syncPolicy, versionOf),
+          })
+        : null
+
+      // Queue-first here too, and settled by the SAME acknowledgement that
+      // settles the row: the call below still carries the bytes, so a working
+      // network is one multipart request exactly as it was. The split is what
+      // happens when that request could not arrive.
+      const parked = held
+        ? await Promise.all(Object.entries(files).map(([field, blob]) =>
+            attachmentQueue().add({ service: serviceName, model, id: rowId, field, blob })))
+        : []
+
       // network call
       const proxy = client.service(serviceName)
+      const callOpts = held ? { idempotencyKey: held.key } : undefined
+      try {
       switch (method) {
         case 'find':    ctx.result = await proxy.find(ctx.query, ctx.directives);          break
         case 'get':     ctx.result = await proxy.get(ctx.id ?? ctx.query, ctx.directives); break
-        case 'create':  ctx.result = await proxy.create(ctx.data);          break
-        case 'patch':   ctx.result = await proxy.patch(ctx.id, ctx.data);   break
-        case 'remove':  ctx.result = await proxy.remove(ctx.id);            break
-        case 'restore': ctx.result = await proxy.restore(ctx.id);           break
+        case 'create':  ctx.result = await proxy.create(ctx.data, undefined, callOpts);       break
+        case 'patch':   ctx.result = await proxy.patch(ctx.id, ctx.data, undefined, callOpts); break
+        case 'remove':  ctx.result = await proxy.remove(ctx.id, undefined, callOpts);         break
+        case 'restore': ctx.result = await proxy.restore(ctx.id, undefined, callOpts); break
         // A custom service method — anything the server declared that is not
         // CRUD. invoke() applies the same transport rule as every other service
         // call: the socket when one is connected, HTTP when it is not.
@@ -975,8 +1188,56 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         // WS-or-nothing by name, and with no socket it recursed inside the
         // client and never settled. `call` is still on the proxy below for a
         // caller that wants to force the socket.
-        default:        ctx.result = await proxy.invoke(method, ctx.id, ctx.data, ctx.query); break
+        default:        ctx.result = await proxy.invoke(method, ctx.id, ctx.data, ctx.query, callOpts); break
       }
+      } catch (err) {
+        // The server ANSWERED and refused: this write will not get better by
+        // being sent again, so it leaves the queue and the caller hears the
+        // refusal it would have heard with no queue at all.
+        if (held && !unreachable(err)) {
+          await pendingQueue().reject(held.key, err)
+          // The bytes go with the refusal. They were parked against a row the
+          // boundary has declined, so replaying them would patch a row that
+          // does not exist — and `rejected` is where somebody can see it.
+          for (const a of parked) await attachmentQueue().reject(a.key, err)
+          throw err
+        }
+        // It never arrived, or it timed out and nobody can say. The entry
+        // stays and the next `connect` drains it. The caller is told — with
+        // `queued` on the error, so a screen can say *held on this device*
+        // rather than *failed* — because resolving successfully here would be
+        // claiming the server has a row it may not have (`FJS-D300`).
+        if (held) {
+          await pendingQueue().defer(held.key, err)
+          for (const a of parked) await attachmentQueue().defer(a.key, err)
+          throw Object.assign(
+            new Error(
+              `[${serviceName}] ${method} could not reach the server and is held on this device` +
+              `${pendingQueue().durable ? '' : ' — in memory only, so a reload loses it'}.`
+            ),
+            // `data` is what was held, and for a create on a model that mints
+            // its own key that is the ROW — the only copy of it anywhere, since
+            // the server has never seen it. A screen whose next act references
+            // this row has nowhere else to read the key from.
+            // `attachments` is how many of this write's files are being held
+            // separately — a screen saying *1 write held* while a photograph is
+            // also waiting is understating what has not arrived.
+            { queued: true, key: held.key, data: ctx.data, attachments: parked.length,
+              durable: pendingQueue().durable, cause: err },
+          )
+        }
+        throw err
+      }
+
+      // The server acknowledged it. This is the ONLY place an entry clears: a
+      // call can leave on a socket that has not noticed the network is gone and
+      // arrive minutes later, so clearing on SEND would count that as delivered
+      // (measured — `example`'s `verify:offline`).
+      if (held) await pendingQueue().settle(held.key)
+      // The bytes travelled on that same request, so the acknowledgement covers
+      // them. Settling here and not on the send is the phase 1 rule applied to
+      // the other queue.
+      for (const a of parked) await attachmentQueue().settle(a.key)
 
       // The write LANDED. Everything below this line can still throw, and a
       // caller told only that the call failed presses Save again and makes a
@@ -1136,11 +1397,79 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // that dropped the filtered column, a filter over a relation — reloads rather
   // than being guessed at.
   let _loadIssued = 0
+
+  /**
+   * When the rows on screen were last answered by the SERVER, or null when they
+   * are this load's own. A screen showing a list it could not refresh can say
+   * so — *as of 14:02, from this device* — which is the difference between an
+   * app that is honest about an outage and one that looks broken.
+   */
+  let _cachedAt = null
+
   async function load(query, directives) {
     const stamp = ++_loadIssued
-    const rows  = await junctionResource.load(query ?? {}, directives)
-    if (stamp === _loadIssued) _rememberRows(rows)
-    return rows
+    // Only a model that declared `@@sync` is kept on the device at all: putting
+    // rows a gate let this caller read onto disk outlives the session, so it is
+    // the app's word rather than the framework's default (`list-cache.js`).
+    const key = syncPolicy ? listKey(serviceName, query ?? {}, directives ?? null) : null
+    try {
+      const rows = await junctionResource.load(query ?? {}, directives)
+      if (stamp === _loadIssued) {
+        _rememberRows(rows)
+        _cachedAt = null
+        if (key) listCache().remember(key, rows).catch(() => {})
+        // And into the device's own tables, where a query engine can answer a
+        // question nobody asked before the outage (`FJS-D307`). Not awaited:
+        // the rows are already in hand and the screen is not waiting on a disk.
+        if (key && localDbConfigured()) writeThrough(model, rows).catch(() => {})
+      }
+      return rows
+    } catch (err) {
+      // Only silence, never a refusal. A 403 means this caller may not read
+      // these rows NOW, and answering it from a copy taken when they could is
+      // the one thing a cache here must never do.
+      if (!key || !unreachable(err)) throw err
+
+      // SQL first, because it can answer a question this screen has never asked
+      // — a different filter, a different page, a different sort — where the
+      // cache below can only replay the exact one it was given.
+      //
+      // **An EMPTY local answer defers, and that is not the same rule.** `null`
+      // is *this device cannot answer*; `[]` is a table that has no rows for
+      // this question, which is what a device looks like before a write-through
+      // has landed — and on screen it is indistinguishable from a list that is
+      // genuinely empty. The cache underneath may hold the server's own answer
+      // to this exact question, so it is asked before an empty table is
+      // rendered as the answer.
+      const local = localDbConfigured()
+        ? await readLocal(model, query ?? {}, directives)
+        : null
+
+      if (local?.length) {
+        if (stamp === _loadIssued) {
+          junctionResource.store.set(local)
+          _cachedAt = Date.now()
+        }
+        return local
+      }
+
+      const hit = await listCache().recall(key)
+      if (!hit) {
+        // The device answered nothing and nothing remembers the question. An
+        // empty table is still a better answer than a throw when the model is
+        // one the device keeps at all.
+        if (local) return local
+        throw err
+      }
+      if (stamp === _loadIssued) {
+        // Into the same store the live layer writes, so the screen renders it
+        // the way it renders anything. A second path would be a second shape of
+        // "the rows this list holds".
+        junctionResource.store.set(hit.rows)
+        _cachedAt = hit.at
+      }
+      return hit.rows
+    }
   }
 
   /**
@@ -2250,9 +2579,45 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
     }, listQuery, opts)
   }
 
+  // ── the read this resource must already hold ────────────────────────────
+  //
+  // Registered here rather than at the top because it needs `service.find`,
+  // which is built above — and it is `find` rather than `load` on purpose: a
+  // warm runs under a question nobody is looking at, and `load` writes the
+  // store the screen is rendering (`offline.js`).
+  if (offlineQuery) {
+    if (!syncPolicy) {
+      // Warned rather than thrown, which is what the other refusals in this
+      // file do — a throw in a `<script module>` is a white screen. The
+      // declaration is a contradiction either way: nothing is written to the
+      // device for a model that never said it could be, so warming it would
+      // fill nothing and the outage is where that would be discovered.
+      console.warn(
+        `[Sierra] ${serviceName}: offlineQuery needs @@sync on model ${model}.\n` +
+        `  Rows are only kept on a device for a model that declared it — putting what a gate\n` +
+        `  let this caller read onto disk outlives the session, so it is the schema's word and\n` +
+        `  not a resource option (FJS-D298). Declared here, nothing is held and nothing says so\n` +
+        `  until the screen is opened with no network.`)
+    } else {
+      declareOffline({
+        service:    serviceName,
+        model,
+        find:       (q, d) => service.find(q, d).then(r => r?.data ?? r ?? []),
+        query:      offlineQuery.query,
+        directives: offlineQuery.directives,
+      })
+    }
+  }
+
   return {
     service, store, stale, make, load, save, record, mutate, aggregate, list,
     more, hasMore: junctionResource.hasMore,
+    /**
+     * When the server last answered the rows on screen, or null when the last
+     * load reached it. A number here means the list came off this device
+     * because the call could not arrive.
+     */
+    cachedAt: () => _cachedAt,
     fields, relations, gate, can, transitions, validate, normalize, coerce,
     version, versionField: versionOf, conflict,
     formFields, columns, summary, children, filters, options, sealedFields, requiredFields, declined,
@@ -2278,6 +2643,7 @@ function _emptyResource(name) {
     load:    async () => [],
     more:    async () => [],
     hasMore: () => false,
+    cachedAt: () => null,
     mutate:  (_id, _intent, run) => (run ? run() : noop()),
     record:  () => ({
       id: null,

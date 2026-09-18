@@ -1,0 +1,242 @@
+---
+title: Stocktake
+---
+<script>
+  // The stockroom screen — and the one place in this app where BOTH writes of a
+  // parent/child pair are made with no server reachable.
+  //
+  // ─── What this proves that /inventory/ does not ──────────────────────────
+  //
+  // A correction on /inventory/ is one flat row: `InventoryMovement` declares
+  // `@@sync(server)`, the write is held when the network is gone, and nothing
+  // references it, so its key can be assigned whenever the server sees it.
+  //
+  // A stocktake is a sheet and its counts, written in the same minute in a room
+  // with no signal. The count has to name the sheet BEFORE anything has been
+  // inserted anywhere. That is what `@default(uuid())` on both models buys:
+  // litestone crosses `x-mint` with the schema, sierra states the key on the
+  // create, and `sheet.id` below is a real key the moment `save()` resolves —
+  // whether it reached the server or is sitting in the queue.
+  //
+  // So nothing on this screen knows about the network. There is no "offline
+  // mode", no retry, no draft store. A count is saved the same way whether the
+  // shelf has signal or not, and the difference shows up as a pending badge.
+  //
+  // ─── There is no authorization code here ─────────────────────────────────
+  //
+  // Both models are `@@gate("5.5.5.9")`. The level check decides what to
+  // RENDER; the Data boundary refuses the request regardless (Invariant 6).
+  import { sheets }          from '../../resources/StocktakeSheet.mesa'
+  import { counts }          from '../../resources/StocktakeCount.mesa'
+  import { productVariants } from '../../resources/ProductVariant.mesa'
+  import { session } from '@/session.js'
+  import { useStore } from '@frontierjs/sierra/junction'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Callout       from '@frontierjs/ui/components/display/Callout.mesa'
+  import EmptyState    from '@frontierjs/ui/components/display/EmptyState.mesa'
+  import Input         from '@frontierjs/ui/components/forms/Input.mesa'
+  import Mono          from '@frontierjs/ui/components/display/Mono.mesa'
+  import NumberInput   from '@frontierjs/ui/components/forms/NumberInput.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Select        from '@frontierjs/ui/components/forms/Select.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+  import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
+
+  $: (session.user, session.level)
+
+  const { get: variantRows, unsubscribe: offVariants } = useStore(productVariants.store)
+  $.onDestroy(offVariants)
+
+  let sheet   = null      // the open sheet, or null
+  let lines   = []        // the counts on it, newest last
+  let error   = null
+  let busy    = false
+  let pending = 0         // writes this device is holding
+
+  $: variantOptions = variantRows().map(v => ({ value: v.id, label: v.sku }))
+  $: stockOf = (id) => variantRows().find(v => v.id === Number(id))?.stock ?? 0
+
+  productVariants.load({}, { limit: 500, orderBy: 'sku' }).catch(() => {})
+
+  // A write the network could not carry throws with `queued` on it. That is a
+  // deliberate refusal to resolve — resolving would claim the server has a row
+  // it may not have (`FJS-D300`) — so every call site here decides what a held
+  // write MEANS to it. Here it means: the row is real on this device, keep
+  // going, and say how many are waiting.
+  function held(err) {
+    if (!err?.queued) return false
+    pending += 1
+    return true
+  }
+
+  async function startSheet(e) {
+    e?.preventDefault?.()
+    error = null; busy = true
+    let made = null
+    try {
+      made = await sheets.save({ note: note || undefined })
+    } catch (err) {
+      if (!held(err)) { error = err.message; busy = false; return }
+      // The key is the browser's, so the sheet exists here even though the
+      // create is still in the queue. `err.data` is what was held — the only
+      // copy of the row anywhere, since the server has never seen it.
+      made = err.data
+    } finally {
+      busy = false
+    }
+    if (!made?.id) { error = 'The sheet was made with no key — nothing can reference it.'; return }
+    sheet = made
+    lines = []
+    note  = ''
+  }
+
+  async function addCount(e) {
+    e?.preventDefault?.()
+    if (!sheet || cVariant == null) return
+    error = null; busy = true
+    // The photograph rides along as an ordinary field. On a working network
+    // this is one multipart request; with nothing reachable the resource parks
+    // the bytes in their own queue and replays them as a patch once the row has
+    // landed (`FJS-D301`). Nothing here knows which happened.
+    const shot = cDamage
+    const row = {
+      sheetId:   sheet.id,
+      variantId: Number(cVariant),
+      counted:   Number(cCounted),
+      expected:  stockOf(cVariant),
+      note:      cNote || undefined,
+      ...(shot ? { damage: shot } : {}),
+    }
+    try {
+      const saved = await counts.save(row)
+      lines = [...lines, { ...row, id: saved?.id, sku: skuOf(row.variantId), held: false, shot: !!shot }]
+    } catch (err) {
+      if (!held(err)) { error = err.message; busy = false; return }
+      // A held write says how many of ITS files are waiting separately, so the
+      // badge counts the photograph rather than understating what has not
+      // arrived.
+      pending += err.attachments ?? 0
+      lines = [...lines, { ...row, id: null, sku: skuOf(row.variantId), held: true, shot: !!shot }]
+    } finally {
+      busy = false
+    }
+    cNote = ''
+    cDamage = null
+  }
+
+  async function closeSheet() {
+    if (!sheet) return
+    error = null; busy = true
+    try {
+      const r = await sheets.service.invoke('close', sheet.id, {})
+      toasts.success(`Sheet closed — ${r.posted.length} of ${r.counted} shelves corrected`)
+      sheet = null; lines = []; pending = 0
+    } catch (err) {
+      // A close is NOT held: it reads every count and posts to the ledger, so
+      // it is server work by definition. `close` is not a create either, which
+      // is why nothing queued it — `@@sync` holds writes, and this one has to
+      // see rows the device cannot.
+      error = err.queued
+        ? 'The sheet cannot be closed from here until the counts have reached the server.'
+        : err.message
+    } finally {
+      busy = false
+    }
+  }
+
+  const skuOf = (id) => variantRows().find(v => v.id === Number(id))?.sku ?? `#${id}`
+
+  let note     = ''
+  let cVariant = null
+  let cCounted = 0
+  let cNote    = ''
+  let cDamage  = null
+
+  const countColumns = [
+    { name: 'sku',      label: 'SKU' },
+    { name: 'expected', label: 'Expected', align: 'right' },
+    { name: 'counted',  label: 'Counted',  align: 'right' },
+    { name: 'delta',    label: 'Difference', align: 'right' },
+    { name: 'state',    label: '' },
+  ]
+</script>
+
+<SectionHeader title="Stocktake" level={1} sub="count the room, post the differences" />
+
+{#if session.level < 5}
+  <EmptyState
+    id="stocktake-denied"
+    title="Administrators only"
+    description="A stocktake reads and writes at level 5. The screen is hidden here as an affordance; the Data boundary is what refuses the request."
+  />
+{:else}
+  <Callout>
+    A sheet and its counts are both <Mono>@@sync(server)</Mono> and both carry a key this browser made. Count the room with no signal and every row is real here the moment you enter it — the writes drain in order when a server comes back, and the counts still point at their sheet.
+  </Callout>
+
+  {#if error}
+    <Alert tone="danger" id="stocktake-error">{error}</Alert>
+  {/if}
+
+  {#if pending}
+    <Alert tone="warning" id="stocktake-pending">
+      <span data-pending={String(pending)}>{pending} write{pending === 1 ? '' : 's'} held on this device.</span>
+    </Alert>
+  {/if}
+
+  {#if !sheet}
+    <form class="stack" onsubmit={startSheet}>
+      <Input label="Note" name="note" bind:value={note} id="sheet-note"
+             placeholder="Back room, Tuesday" />
+      <Button type="submit" id="start-sheet" disabled={busy}>Start a sheet</Button>
+    </form>
+  {:else}
+    <p class="text-sm text-muted">
+      Sheet <Mono id="sheet-id">{sheet.id}</Mono>
+    </p>
+
+    <form class="stack" onsubmit={addCount}>
+      <Select label="Shelf" name="variantId" options={variantOptions}
+              bind:value={cVariant} id="count-variant" />
+      <NumberInput label="Counted" name="counted" bind:value={cCounted} id="count-counted" min={0} />
+      <Input label="Note" name="note" bind:value={cNote} id="count-note" />
+      <label class="field-group">
+        <span class="field-label">Photograph the damage</span>
+        <!--
+          Read on CHANGE rather than out of the DOM at submit. A file input is
+          re-created whenever this form re-renders — which it does after every
+          count lands — so a submit handler reaching for the element finds a
+          fresh one holding nothing, and the photograph vanishes with no error.
+        -->
+        <input type="file" id="count-damage" name="damage"
+               accept="image/png,image/jpeg,image/webp"
+               onchange={(e) => { cDamage = e.target.files?.[0] ?? null }} />
+      </label>
+      <Button type="submit" id="add-count" disabled={busy || cVariant == null}>Record the count</Button>
+    </form>
+
+    {#if lines.length}
+      <Table columns={countColumns} rows={lines} striped compact>
+        {#snippet row(r)}
+          <tr class="count-row" data-sku={r.sku} data-sheet={r.sheetId}>
+            <td><Mono>{r.sku}</Mono></td>
+            <td class="num">{r.expected}</td>
+            <td class="num">{r.counted}</td>
+            <td class="num"><strong>{r.counted - r.expected}</strong></td>
+            <td data-shot={r.shot ? 'yes' : 'no'}>
+              {#if r.held}<Pill tone="warning">held</Pill>{/if}
+              {#if r.shot}<Pill tone="info">photo</Pill>{/if}
+            </td>
+          </tr>
+        {/snippet}
+      </Table>
+    {/if}
+
+    <Button id="close-sheet" tone="primary" disabled={busy || !lines.length} onclick={closeSheet}>
+      Close the sheet and post the differences
+    </Button>
+  {/if}
+{/if}

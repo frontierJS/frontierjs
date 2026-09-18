@@ -35,7 +35,7 @@
 // read-gate-0 models on purpose. Those are the `open` rows below.
 
 import { describe, test, expect } from 'bun:test'
-import { createClient } from '../../litestone/src/index.js'
+import { createClient, GatePlugin } from '../../litestone/src/index.js'
 import { createService } from '../src/core/service.ts'
 import { collectMethodGates } from '../src/core/service.ts'
 import type { App } from '../src/core/app.ts'
@@ -65,10 +65,17 @@ const AS: Record<string, unknown> = {
   nobody:  null,
   shopper: { userId: 'u1', userType: 'user',  role: 'user' },
   staff:   { userId: 'u2', userType: 'admin', role: 'admin', isStaff: true, isAdmin: true },
+  // For the app-mapping block below: a standing the shipped grader cannot see.
+  // `role` is read for PRESENCE there, so this is USER(4) to it and whatever
+  // the app's own `getLevel` says to the app.
+  manager: { userId: 'u3', userType: 'user',  role: 'manager' },
 }
 
-async function shop() {
-  const db: any = await createClient({ databases: ':memory:', schema: SCHEMA })
+async function shop(getLevel?: (u: unknown) => number) {
+  const db: any = await createClient({
+    databases: ':memory:', schema: SCHEMA,
+    ...(getLevel ? { plugins: [new GatePlugin({ getLevel })] } : {}),
+  })
   await db.asSystem().order.create({ data: {} })
   await db.asSystem().variant.create({ data: {} })
 
@@ -225,6 +232,95 @@ describe('a method may declare a level above the floor', () => {
       expect(out.ran).toEqual(['ping'])
     }
 
+    await s.close()
+  })
+})
+
+// ─── whose number is it ───────────────────────────────────────────────────────
+//
+// The level a declaration is graded against comes from the APP's own mapping —
+// `GatePlugin({ getLevel })`, asked through `db.$levelOf` — and not from
+// `sessionGateLevel` (`FJS-1161`). The two disagree exactly where a standing is
+// not a column on the session: basecamp's level comes from a `WorkspaceMember`
+// row, so an `admin` of a workspace is ADMINISTRATOR(5) to every model in the
+// schema and CREATOR(3) here, and `flows.save` refused a caller the Data
+// boundary admits.
+//
+// Both directions are asserted, because only one of them is a refusal. A
+// mapping that grades a caller HIGHER than the shipped grader was a false 403;
+// one that grades them LOWER was a method open to somebody the app does not
+// consider an administrator, which no test that only checks the entitled caller
+// can see.
+
+describe('the level is the app’s own, not a second reading of the session', () => {
+
+  /** A shop where the word is `manager` and nothing on the session says admin. */
+  const byRole = (u: any) => !u ? 0 : u.role === 'manager' ? 5 : u.role ? 4 : 0
+
+  test('a caller the app calls a manager passes a gate of 5 — sessionGateLevel says 4', async () => {
+    const s = await shop(byRole)
+    // The control: the shipped grader reads `role` for presence, so this
+    // principal is USER(4) to it and the call was a 403 for its whole life.
+    const { sessionGateLevel } = await import('../src/core/litestone.ts')
+    expect(sessionGateLevel(AS.manager as never)).toBe(4)
+
+    const out = await s.call('manager', 'orders', 'settle')
+    expect(out.status).toBe(200)
+    expect(out.ran).toEqual(['settle'])
+
+    // The pair: a caller the same mapping grades 4 is still refused, so the
+    // gate is being applied rather than skipped.
+    const junior = await s.call('shopper', 'orders', 'settle')
+    expect(junior.status).toBe(403)
+    expect(junior.ran).toEqual([])
+    await s.close()
+  })
+
+  test('…and one the app does NOT, whatever the session says about them', async () => {
+    // `staff` carries `isAdmin`, which the shipped grader reads as 5. This app
+    // grades on `role` alone, so the method stays shut — a mapping that only
+    // ever widened would pass the test above and leave this open.
+    const s = await shop(byRole)
+    const { sessionGateLevel } = await import('../src/core/litestone.ts')
+    expect(sessionGateLevel(AS.staff as never)).toBe(5)
+
+    const out = await s.call('staff', 'orders', 'settle')
+    expect(out.status).toBe(403)
+    expect(out.ran).toEqual([])
+    expect((await s.call('staff', 'orders', 'refund')).status).toBe(200)   // the floor is presence
+    await s.close()
+  })
+
+  test('the refusal names the number the Data boundary would have used', async () => {
+    const s = await shop(byRole)
+    const res = await s.app.http.fetch(new Request('http://localhost/orders/1', {
+      method:  'POST',
+      headers: { 'x-service-method': 'settle', 'content-type': 'application/json',
+                 authorization: 'Bearer staff' },
+      body:    '{}',
+    }))
+    expect(res.status).toBe(403)
+    // 4, not the 5 `sessionGateLevel` grades this session at. An operator reads
+    // this sentence to find the mapping, so the two must be the same number.
+    expect(JSON.stringify(await res.json())).toContain('caller has level 4')
+    await s.close()
+  })
+
+  test('a service over no model is graded by the same mapping', async () => {
+    // There is no floor to fall back on here, so the declaration is the whole
+    // rule and the mapping is the whole of the number.
+    const s = await shop(byRole)
+    expect((await s.call('manager', 'reports', 'payroll')).status).toBe(200)
+    expect((await s.call('staff',   'reports', 'payroll')).status).toBe(403)
+    await s.close()
+  })
+
+  test('an app that maps nothing of its own is unchanged', async () => {
+    // The fallback, stated: with no mapping to ask, the shipped grader answers
+    // — which is the resolver such a schema auto-installs anyway.
+    const s = await shop()
+    expect((await s.call('staff',   'orders', 'settle')).status).toBe(200)
+    expect((await s.call('shopper', 'orders', 'settle')).status).toBe(403)
     await s.close()
   })
 })

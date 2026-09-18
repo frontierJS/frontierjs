@@ -198,14 +198,23 @@ describe('verifyTenantIsolation', () => {
   })
 })
 
-// ─── the write side: a unique that is not per tenant ─────────────────────────
+// ─── the write side: a unique is scoped per tenant ───────────────────────────
 //
 // `verifyTenantIsolation` above executes the READ crossing. A `@unique` is the
-// same boundary from the write side and the desugar never touched it, so on a
-// scoped model an ordinary `slug String @unique` is unique across the whole
-// installation: two tenants cannot both hold "launch", and the second is
+// same boundary from the write side, and the desugar never touched it: on a
+// scoped model an ordinary `slug String @unique` was unique across the whole
+// installation, so two tenants could not both hold "launch" and the second was
 // refused by a message naming the value — telling them a row they may not read
 // exists (`FJS-639`).
+//
+// It is SCOPED now rather than reported (`FJS-1159`): the tenant column is
+// stated once, in the block, and a schema FRAGMENT can never name it, so the
+// desugar prepends it the way it already prepends a deny. `@unique(global)` is
+// the opt-out and existed before this.
+//
+// **What still warns is what cannot be derived** — a model scoped through a
+// PARENT carries no tenant column of its own, and which parent to scope by is
+// not decidable here, since a model may have two.
 //
 // Every case here is a PAIR with a correct schema that must stay silent. A rule
 // that fires on a correct app is a rule people switch off, and the naive form
@@ -220,13 +229,37 @@ describe('a unique that is not per tenant', () => {
     return (r.warnings ?? []).filter(w => w.includes('unique constraint'))
   }
 
-  it('names a bare @unique on a scoped model, and says all three ways out', () => {
+  it('scopes a bare @unique on a scoped model, and says so', () => {
     const w = warn('model Post { id Int @id  workspaceId Int  slug String @unique }')
     expect(w).toHaveLength(1)
+    expect(w[0]).toContain('are scoped per tenant')
     expect(w[0]).toContain('Post.slug')
-    expect(w[0]).toContain('workspaceId')          // add the column
-    expect(w[0]).toContain('reaching a scoped model')  // or a scoped parent
-    expect(w[0]).toContain('global')               // or say you meant it
+    expect(w[0]).toContain('workspaceId')   // the column it was scoped by
+    expect(w[0]).toContain('global')        // …and how to keep it installation-wide
+  })
+
+  it('…and the DECLARATION is what moved, so every reader sees one constraint', () => {
+    // The field-level attribute is LIFTED rather than annotated: a column
+    // cannot carry a two-column UNIQUE, and a reader that kept asking the field
+    // would emit the old index beside the new one.
+    const r    = parse(T + 'model Post { id Int @id  workspaceId Int  slug String @unique }')
+    const post = r.schema.models.find((m: any) => m.name === 'Post')!
+    expect(post.fields.find((f: any) => f.name === 'slug')!
+      .attributes.some((a: any) => a.kind === 'unique')).toBe(false)
+    expect(post.attributes.filter((a: any) => a.kind === 'uniqueIndex').map((a: any) => a.fields))
+      .toEqual([['workspaceId', 'slug']])
+  })
+
+  // The one shape that is still reported, and the reason is that nothing here
+  // can choose: a Volume is scoped through Server, carries no column of its
+  // own, and a model may have two scoped parents.
+  it('reports a model scoped through a PARENT, whose constraint reaches neither', () => {
+    const w = warn(`model Server { id Int @id  workspaceId Int  volumes Volume[] }
+model Volume { id Int @id  serverId Int  name String @unique
+  server Server @relation(fields: [serverId], references: [id]) }`)
+    expect(w).toHaveLength(1)
+    expect(w[0]).toContain('scoped through a PARENT')
+    expect(w[0]).toContain('Volume.name')
   })
 
   it('is silent when the tuple carries the tenant column', () => {

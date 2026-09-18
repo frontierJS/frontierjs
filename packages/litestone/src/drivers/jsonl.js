@@ -16,13 +16,16 @@
 //   Table: <model>_idx  — indexed fields + _offset (byte position in .jsonl)
 //   Created automatically when first record is written.
 
+// `#host` and not `fs`: this module is in the browser client's import graph,
+// where a bundler replaces a bare `fs` with something that throws on the first
+// property ACCESS — so importing this file at all took the local database down
+// before a line of it ran (`FJS-1179`). The browser half refuses each of these
+// by name, which is the honest answer for a driver over a file on a disk.
 import {
   existsSync, mkdirSync, appendFileSync, readFileSync,
-  statSync, openSync, readSync, closeSync } from 'fs'
+  statSync, openSync, readSync, closeSync, dirname } from '#host'
 import { noteMintedDirectory } from '../core/db-path.js'
-import { dirname }    from 'path'
 import { applyBusyTimeout } from '../core/pragmas.js'
-import { Database }   from 'bun:sqlite'
 import { buildWhere } from '../core/query.js'
 import { ID_GENERATORS } from '../core/ids.js'
 import { compactJsonl } from '../tools/retention.js'

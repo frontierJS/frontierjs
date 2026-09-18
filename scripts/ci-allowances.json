@@ -49,6 +49,13 @@
   },
   "//knownPublishedSchemas": "registry phase — a PUBLISHED package whose exported `.lite` the current parser refuses, keyed by name@version so the entry goes stale the moment a corrected copy is published. An app installing that package cannot boot while the tree stays green, because an app in this workspace resolves the package to its own directory and never reads the published bytes. Each entry says why it is still there; the fix is always to publish, never to widen this.",
   "knownPublishedSchemas": {},
+  "//substrateAmbient": "Per-file, per-capability exceptions to the substrate purity rule in scripts/ci.mjs. The DEPENDENCY half of that rule is absolute and has no allowance: zero dependencies is what FJS-D26 grants the import license for. An ambient capability is a narrower question, and the rule was over-broad — an id generator's whole job is a different answer each call (FJS-D306). Key is the file path; each entry maps the exact capability string the rule prints to the reason it is allowed there. A capability not listed still fails, in a file that has an entry for another one.",
+  "substrateAmbient": {
+    "packages/toolbelt/src/ids/ids.js": {
+      "is nondeterministic": "The kit IS the entropy. `crypto.getRandomValues` and `crypto.randomUUID` are the one source present identically in Bun, Node and a browser, which is the property that made this a kit rather than a copy on each end (FJS-D26, FJS-D306): a row written with no server reachable is named by its children before any INSERT, so both ends mint and both must mint the same way. Injecting the randomness instead would move `getRandomValues, never node:crypto` from one file into every caller.",
+      "reads a clock": "`ulid` is a 48-bit millisecond timestamp followed by 80 bits of entropy — the sort order IS the clock, and a ulid generated from an injected `now` would be a ulid only when the caller remembered to pass one."
+    }
+  },
   "//knownAdvisories": "advisories phase — a package `bun audit` advises against that IS reachable from a published package's runtime dependencies, and is known. Each entry says which VERSION is installed at runtime and why the entry exists, because the advisory names a package and a package can be installed twice. An entry is a record that somebody looked, never a reason not to look again.",
   "knownAdvisories": {
     "nanoid": "REAL and open — FJS-475's second half. 3.3.17 installed, advisory is <3.3.18: one patch, reached transitively rather than declared, so it moves when whatever pulls it in is updated. happy-dom, the first half, is fixed — every copy is 20.11.6 and no advisory names it.",

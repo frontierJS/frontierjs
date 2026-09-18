@@ -1,6 +1,201 @@
 # Changes — example
 
+## 2026-09-16 — a screen the device has never opened
+
+`verify:shell` signs in and then opens `/inventory` **offline, for the first time
+in that browser, with the list cache emptied**. Nothing wrote through a `load()`,
+and the cache cannot hold a question nobody asked — so the only thing left that
+can answer is a table the warm filled. Removing the write-through turns it red.
+
+The shell is 880 → **881 kB**; hydration costs 1 kB.
+
+## 2026-09-16 — the stockroom reads from the device's own SQLite
+
+`offline: { db: true }`. The list cache answers the exact question it was given; the ledger at
+`/inventory` is now answered by a query engine, so a filter, a page or a sort nobody asked before the
+outage is still answerable. Costs **880 kB** over the wire against 278 — 341 kB of that is SQLite's
+wasm — recorded in `web/offline-baseline.json` as a deliberate `FJS-D302` ratchet.
+
+**`verify:shell` grades it with the cache emptied.** Every other assertion in that drive passes with
+the database absent, because the cache underneath holds the same rows for the same question: the
+block that matters clears `fjs-lists` with the network already down and asks the screen again. Its
+CDP calls are bounded now, so a renderer that dies fails by name rather than sitting there — which is
+how `FJS-1179` was filed as a hang.
+
+`preview.mjs` serves `.wasm` as `application/wasm`; a browser refuses to stream-compile anything else
+and says so only in the console.
+
 Newest first. What this app built and what building it found; live state is `PROJECT_STATE.md`, framework defects are `../ISSUES.md`.
+
+## 2026-09-16 — the ledger is held before it is needed
+
+`InventoryMovement`'s resource declares `offlineQuery: { directives: { limit: 40,
+orderBy: '-id' } }` — the question `/inventory/` opens on, character for
+character, because the cache is keyed by the QUESTION and a warm under a
+different `limit` fills a slot that screen never reads (`FJS-D307`).
+
+**And `web/src/main.js` imports that resource at boot**, after `virtual:sierra`,
+which is what builds the client every resource is created against. A declaration
+is registered when its module is evaluated and a route's modules are code-split,
+so without the line the screen nobody has opened declares nothing — which is the
+one case the declaration exists for. Which resources are worth the entry chunk is
+the app's decision, so it is a line here rather than a glob in the framework
+(`FJS-1178`). Measured: the shell stayed at 277 kB.
+
+
+## 2026-09-16 — the ledger and the count sheet say `append`
+
+`FJS-D304` gave `@@sync` a word for what both models' comments were already describing in prose.
+`InventoryMovement` and `StocktakeCount` are `@@sync(append)`: a movement and a shelf count are rows
+that are added and never edited, so there is no collision to resolve rather than one resolved by the
+server. `StocktakeSheet` stays `server` — it is closed by a patch.
+
+The offline shell went 276 → **277 kB** and the budget stopped the build (`FJS-D302`), which is the
+mechanism working: the kilobyte is the `APPEND_ONLY` refusal naming the model, the method and what to
+do instead, and paying for it is recorded here rather than absorbed.
+
+## 2026-09-16 — the shell has a number, and wa-sqlite was weighed against it
+
+`web/offline-baseline.json` — **276 kB over the wire** (317 gzip, 982 raw), adopted and now graded on
+every build (`FJS-D302`). A build that grows fails with both numbers.
+
+**And the thing the budget exists to decide was measured** (`wa-sqlite@1.0.0`, `IDEAS/homestead.md`
+phase 4). The figure quoted when `FJS-D305` was ruled — *~1.2MB of wasm* — is the RAW size of the
+asyncify build, which the OPFS path does not need. The engine an app would actually ship is the sync
+build with `AccessHandlePoolVFS`: **254 kB brotli**, smaller than the shell this app already serves.
+The async VFSs cost 349-353 kB, so the VFS choice is a third of the engine's weight and not only a
+correctness question.
+
+The engine does not stay out of the shell either: a dynamic import keeps it off the first visit, but an
+app that reads offline must have it cached before the network goes, so this baseline would roughly
+double. That is the budget working — the doubling is a line in a file somebody approves rather than
+something discovered on a train.
+
+## 2026-09-16 — the shop opens with no network — `verify:shell`
+
+`offline: true` in `web/config/sierra.config.js` is the whole of the app's side. The build now prints
+what it costs: **89 files, 980 kB precached**, which is the byte question in
+`IDEAS/offline-first-and-release.md` becoming a number.
+
+A new drive, `bun run verify:shell` (23 assertions, test tier 7011). It is separate from
+`verify:offline` because a service worker only exists in a BUILD, and registering one against the dev
+server would fight vite's HMR — the trap that drive already spent two wrong conclusions on. So this one
+builds, serves `dist/` through the same `preview.mjs` `verify:build` uses, and drives that.
+
+**Its sharpest assertion is the negative one**: with the network down, a request under `/api` must
+FAIL. A shell that has quietly become a cache in front of the server is worse than an error page, and it
+has no symptom.
+
+**Two findings in `example` itself.**
+
+`/inventory` loaded the computed levels and the ledger in one `try`, levels first. Fine on a network and
+wrong with none: levels is a join and a clock that nothing can keep, so it threw and the ledger below it
+was never asked for — the screen showed nothing when half of it was on the device the whole time. They
+now fail separately, and the alert only appears when both went.
+
+And the drive's rebuild block passed while proving nothing: a reproducible build gives unchanged sources
+the same hashes, so it printed one cache digest twice and called it a new shell. It now writes a real
+file into `public/` for one build — a `.js`, because the shell is code and pages and a `.txt` is
+precached by nothing — and removes it in `finally`.
+
+## 2026-09-16 — and a photograph of the damage, taken where there was no signal
+
+`StocktakeCount.damage` is a `File?`, and `verify:offline` is now **44 assertions**: a count and its
+photograph are made with nothing reachable, the row lands first and the bytes follow as a patch naming
+it, and the assertion is that **a browser decodes what comes back** — a ref with no object behind it
+answers a URL, and a URL is not a photograph.
+
+**`File?` and not `File`, and the advisor is what says so.** A held write replays the row without its
+bytes, so a required column would arrive empty and be refused — offline, the model could not be created
+at all.
+
+**The finding this cost: a `@@sync` model carrying a `File` needs `patch` on its service.** The bytes
+arrive on that verb. `stocktake-counts` was declared append-only — `find`, `get`, `create` — which is
+right about counts and wrong about their photographs: the second half of every held write came back
+405 and the photograph sat in the device's queue with nothing saying why. Worth an `fli check` rule,
+which is the layer that can see a service and a schema at once.
+
+**And the screen reads the file on CHANGE, not out of the DOM at submit.** The form re-renders after
+every count lands, so a submit handler reaching for the input finds a fresh one holding nothing and the
+photograph vanishes with no error. That cost a debugging round.
+
+## 2026-09-16 — a stocktake, counted in a room with no signal
+
+`StocktakeSheet` and `StocktakeCount` — the shape phase 1 could not prove. A correction to the ledger
+is one flat row nothing references, so its key can be assigned whenever the server finally sees it. A
+stocktake is a sheet and its counts, written in the same minute in a stockroom, and the count has to
+name the sheet before anything has been inserted anywhere.
+
+Both declare `String @id @default(uuid())` beside `@@sync(server)`, which is what makes that
+expressible: litestone crosses `x-mint`, sierra states the key on the create, and `/stocktake/`
+advances on a key the browser made rather than on a server answer. `InventoryMovement` keeps `Int @id`
+and is right to — nothing references a movement.
+
+**`verify:offline` is 38 assertions and the new ones are about the REFERENCE**: the id on screen with
+no server reachable is the id the server ends up holding, every count names it, and the counts arrive
+against a sheet that was queued ahead of them. Closing posts one `adjusted` movement per shelf that
+disagreed, and a second close answers 409 — a stocktake posted twice is a shop that has invented
+stock.
+
+**The drive counts one more than the shelf holds, read fresh.** A fixed number passed once and then
+posted nothing on every later run, because the close it had just made had moved the shelf to exactly
+the number it counts — the same non-rerunnable trap phase 0 hit, in a new place.
+
+## 2026-09-16 — the ledger may be written with no server, and `verify:offline` inverted
+
+`InventoryMovement` declares `@@sync(server)`: a correction is made where the stock is, in a
+stockroom on a phone with one bar of signal, so a write to the ledger is held on the device and
+replayed when a server is reachable. It is safe to say on THIS model because a movement is
+appended — two people counting one shelf produce two movements, which is the truth about what
+happened, where two people editing one row would produce a conflict.
+
+**`verify:offline`'s two `LOST` assertions inverted, which is what phase 1 was for.** A correction
+made with the socket severed now arrives once the network returns; and one made in a page that then
+navigated away with the network still down arrives too, which is the assertion an in-memory queue
+cannot pass — it needed real storage, and it is the one that says a phone may sleep in a stockroom.
+
+**The inventory screen moved onto the resource.** It called `getClient().service('inventory')`,
+which reaches the same server method and passes through none of the resource pipeline — so the
+queue never saw the write, and the drive kept reporting a loss with the feature built. The raw
+client is the documented escape hatch and taking it costs the queue along with the hooks; that is a
+capability line, since a replay has to send the post-hook payload and the raw client has none.
+`movements.service` is the same call on the paved road.
+
+## 2026-09-16 — `verify:offline`, and a socket that had not noticed
+
+Phase 0 of the Homestead work (`../IDEAS/homestead.md`): the drive that measures what this app does
+with no server reachable, written before any of the engine exists. `web/test/lib/offline.mjs` puts
+a real Chrome offline over CDP for the duration of a block and restores it on the way out, throw or
+not. 21 assertions, green.
+
+**A write made offline is lost. There is no retry anywhere in the client, and the drive spent two
+wrong conclusions finding that out.** Chrome's `Network.emulateNetworkConditions` refuses new
+connections and carries frames on a socket that is already open, so the first version reported the
+write arriving by itself once the network returned. That looked like a retry. It was the Junction
+client's WebSocket, which is same-origin in dev because the dev server proxies `/api` and `/ws` —
+and the harness severed sockets by ORIGIN, to spare vite's HMR channel, so it skipped the only
+socket that mattered and reported *nothing to cut*. One flawed rule produced two confident
+findings, neither true. Vite's socket is told apart by its subprotocol, `vite-hmr`, and never by
+where it points.
+
+So the drive takes **three readings of one act**, and the contrast is what it is for: with the
+socket severed the correction is lost; with the socket left open the outage is **masked** — the
+write lands when the network returns and the screen is never told anything was wrong; across a
+reload it is lost again. The middle reading is a requirement phase 1 inherits: **a queue entry
+clears on an acknowledgement, never on a send.**
+
+The write is a real one on a real screen — the adjustment form on `/inventory`, whose reason list
+already says *Stocktake correction* — rather than a `fetch` from the page, because a raw fetch
+would still be lost after phase 1 and the control would never invert. It is paired with the same
+submit made with the network up, so *lost* cannot be read off a selector that stopped matching.
+
+**Drive hygiene cost more than the capability.** The first version took one off the same shelf every
+run and the fourth run was refused with `has 0 on hand`, which reads exactly like a lost write; the
+shelf is chosen now — the variant with the most on hand — and the writes are paired, +1 with the
+network up and -1 with it down. A successful adjust reloads the shelves and holds `ajBusy` across
+that reload, so a fill landing mid-re-render sets a variant the option list does not hold yet and
+the submit button stays disabled forever: the fill re-applies inside the enable poll, and each
+offline block waits for the previous write to settle first.
 
 ## 2026-09-15 — staff draft automations, and an administrator watches theirs
 

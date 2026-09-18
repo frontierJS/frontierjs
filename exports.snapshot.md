@@ -194,9 +194,14 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | --- | --- | --- | --- |
 | exports | `. (import)` | `src/index.js` | yes |
 | exports | `. (types)` | `src/index.d.ts` | yes |
+| exports | `./engine (import)` | `src/core/engine.js` | yes |
+| exports | `./browser (import)` | `src/browser/client.js` | yes |
+| exports | `./browser/worker (import)` | `src/browser/worker.js` | yes |
+| exports | `./engines/sqlite-wasm (import)` | `src/engines/sqlite-wasm.js` | yes |
 | exports | `./migrate (import)` | `src/core/migrate.js` | yes |
 | exports | `./migrations (import)` | `src/core/migrations.js` | yes |
 | exports | `./parser (import)` | `src/core/parser.js` | yes |
+| exports | `./device-schema (import)` | `src/device-schema.js` | yes |
 | exports | `./import (import)` | `src/import/index.js` | yes |
 | exports | `./jsonschema (import)` | `src/jsonschema.js` | yes |
 | exports | `./export (import)` | `src/export.js` | yes |
@@ -218,6 +223,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | --- | --- | --- | --- |
 | exports | `.` | `index.ts` | yes |
 | exports | `./projection` | `src/projection.ts` | yes |
+| exports | `./plugin` | `src/plugin.ts` | yes |
 | main | `main` | `index.ts` | yes |
 
 - peers — `@frontierjs/junction`: `^0.1.0`
@@ -326,6 +332,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./glow` | `src/glow/glow.js` | yes |
 | exports | `./history` | `src/history/history.js` | yes |
 | exports | `./hooks` | `src/hooks/hooks.js` | yes |
+| exports | `./ids (types)` | `src/ids/ids.d.ts` | yes |
+| exports | `./ids (default)` | `src/ids/ids.js` | yes |
 | exports | `./inflect` | `src/inflect/inflect.js` | yes |
 | exports | `./json` | `src/json/json.js` | yes |
 | exports | `./jsonschema` | `src/jsonschema/jsonschema.js` | yes |

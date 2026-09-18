@@ -5,7 +5,7 @@ import { existsSync, writeFileSync, readFileSync, statSync, mkdirSync, readdirSy
 import { applyBusyTimeout } from '../core/pragmas.js'
 import { resolve, relative, join, dirname, basename, extname } from 'path'
 import { spawnSync }                                from 'child_process'
-import { Database }                                from 'bun:sqlite'
+import { openDatabase }                           from '../core/engine.js'
 
 // Imports of sibling source files MUST use literal relative specifiers — never
 // `import.meta.dir + path`. Two reasons:
@@ -412,7 +412,7 @@ function openDb(dbPath) {
     console.log(`  ${dim(`db not found — will be created: ${rel(abs)}`)}`)
   ensureParentDir(abs)
   try {
-    const db = new Database(abs)
+    const db = openDatabase(abs)
     applyBusyTimeout(db)
     return db
   } catch (e) {
@@ -507,7 +507,7 @@ function openSqliteDbs(parseResult, cfg) {
       console.log(`  ${dim(`db not found — will be created: ${rel(absPath)}`)}`)
     ensureParentDir(absPath)
     let rawDb
-    try { rawDb = new Database(absPath); applyBusyTimeout(rawDb) }
+    try { rawDb = openDatabase(absPath); applyBusyTimeout(rawDb) }
     catch (e) {
       if (e?.code === 'SQLITE_CANTOPEN') {
         fatal(`unable to open database '${db.name}'\n     path: ${absPath}\n     Check that the parent directory is writable.`)
@@ -713,7 +713,7 @@ async function cmdDryRun(label, cfg) {
     for (const { name, rawDb } of dbs) {
       if (multi) console.log(`  ${dim(`database: ${cyan(name)}`)}`)
 
-      const pristineDb = new Database(':memory:')
+      const pristineDb = openDatabase(':memory:')
       const pristine   = multi
         ? (await import('../core/migrate.js')).buildPristineForDatabase(pristineDb, parseResult, name)
         : buildPristine(pristineDb, parseResult)
@@ -2213,7 +2213,7 @@ async function cmdStudio(cfg) {
   // reading and the caveat are read at different moments otherwise.
   async function diffAgainstSchema(dbName, handle) {
     const { buildPristineForDatabase } = await import('../core/migrate.js')
-    const pristineDb = new Database(':memory:')
+    const pristineDb = openDatabase(':memory:')
     try {
       const pristine = buildPristineForDatabase(pristineDb, parseResult, dbName)
       const live     = introspect(handle)
@@ -3136,7 +3136,7 @@ async function cmdStudio(cfg) {
           for (const [dbName, handle] of Object.entries(rawDbs)) {
             if (!handle) continue
             try {
-              const pristineDb = new Database(':memory:')
+              const pristineDb = openDatabase(':memory:')
               const pristine   = buildPristineForDatabase(pristineDb, parsed, dbName)
               pristineDb.close()
               const live       = introspect(handle)
@@ -3692,9 +3692,8 @@ async function cmdStudio(cfg) {
           const absDb = resolve(srcDb)
           if (!existsSync(absDb)) return json({ error: `DB not found: ${absDb}` }, 404)
           try {
-            const { Database } = await import('bun:sqlite')
             const { introspectSQL } = await import('../transform/framework.js')
-            const tmpDb = new Database(absDb, { readonly: true })
+            const tmpDb = openDatabase(absDb, { readonly: true })
             const rawSchema = introspectSQL(tmpDb)
             const source = {}
             for (const [t] of Object.entries(rawSchema)) {
@@ -5407,7 +5406,6 @@ async function cmdDoctor() {
           // ── DB ─────────────────────────────────────────────────────────────
           // Build list of SQLite databases to check:
           // multi-DB schemas declare them in database blocks; single-DB uses cfg.db
-          const { Database: DB } = await import('bun:sqlite')
           const { status: migStatus } = await import('../core/migrations.js')
           const { buildPristineForDatabase, diffSchemas, introspect } = await import('../core/migrate.js')
           const migrationsBase = resolve(getFlag('migrations') ?? cfg.migrations ?? './migrations')
@@ -5443,7 +5441,7 @@ async function cmdDoctor() {
               info(dbLabel, 'Database not yet created', `Will be created at ${rel(dbPath)}`)
             } else {
               try {
-                const db = new DB(dbPath, { readonly: true })
+                const db = openDatabase(dbPath, { readonly: true })
                 const { page_count } = db.query('PRAGMA page_count').get()
                 const { page_size  } = db.query('PRAGMA page_size').get()
                 db.close()
@@ -5468,7 +5466,7 @@ async function cmdDoctor() {
               )
             } else if (dbPath && existsSync(dbPath)) {
               try {
-                const db2 = new DB(dbPath)
+                const db2 = openDatabase(dbPath)
                 const rows = migStatus(db2, migrationsDir)
                 const pending = rows.filter(r => r.state === 'pending').length
                 const applied = rows.filter(r => r.state === 'applied').length
@@ -5484,7 +5482,7 @@ async function cmdDoctor() {
                 }
 
                 // Schema drift check
-                const pristineDb = new DB(':memory:')
+                const pristineDb = openDatabase(':memory:')
                 const pristine   = buildPristineForDatabase(pristineDb, result, label)
                 pristineDb.close()
                 const live = introspect(db2)
@@ -5774,11 +5772,10 @@ async function cmdIntrospect(dbArg, cfg) {
   // schema with a report glued to the top of it.
   const say      = out ? console.log : console.error
 
-  const { Database: DB }      = await import('bun:sqlite')
   const { introspectToLite }  = await import('./introspect.js')
   const { tierOf }            = await import('../import/tiers.js')
 
-  const db = new DB(abs, { readonly: true })
+  const db = openDatabase(abs, { readonly: true })
   const { lite: liteSchema, gaps, summary } = introspectToLite(db, { camelCase: !noCamel })
   db.close()
 
@@ -6014,7 +6011,6 @@ async function cmdSeed(seederArg, cfg) {
 async function cmdSeedRun(seedName, cfg) {
   header('litestone seed:run')
 
-  const { Database } = await import('bun:sqlite')
   const { readdirSync, readFileSync } = await import('fs')
 
   // User seeds dir — explicit config wins, otherwise ./seeds/.
@@ -6056,7 +6052,7 @@ async function cmdSeedRun(seedName, cfg) {
     // Check which are applied (if db exists)
     const applied = new Set()
     if (dbPath && existsSync(dbPath)) {
-      const raw = new Database(dbPath, { readonly: true })
+      const raw = openDatabase(dbPath, { readonly: true })
       applyBusyTimeout(raw)
       try {
         const rows = raw.query(`SELECT name FROM _litestone_seeds WHERE status = 'applied'`).all()
@@ -6093,7 +6089,7 @@ async function cmdSeedRun(seedName, cfg) {
   console.log(`  ${dim('File:')}     ${seedRef.display}`)
   console.log(`  ${dim('Database:')} ${rel(dbPath)}\n`)
 
-  const raw = new Database(dbPath)
+  const raw = openDatabase(dbPath)
   applyBusyTimeout(raw)
 
   // Ensure tracking table exists

@@ -24,6 +24,7 @@
 // restatement of this file and moves the drift rather than catching it.
 
 import { describe, test, expect } from 'bun:test'
+import { readFileSync } from 'fs'
 import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { parse } from '../src/core/parser.js'
@@ -32,7 +33,7 @@ import { CATALOG, TOP_LEVEL, FIELD_ATTRS, MODEL_ATTRS, lookup, typed, grouped, G
          POSITIONS, POSITION_RULES, positionsOf, probeFor, DOCS, UNDOCUMENTED, docFor,
          SYNONYMS, synonymsFor, bySynonym, TIERS, tierFor } from '../src/core/catalog.js'
 import { TRAIT_FORBIDDEN_FIELD_ATTRS, TRAIT_FORBIDDEN_MODEL_ATTRS,
-         TYPE_FORBIDDEN_FIELD_ATTRS, ALLOWED_TOKENIZERS, ON_DELETE_ACTIONS,
+         TYPE_FORBIDDEN_FIELD_ATTRS, ALLOWED_TOKENIZERS, SYNC_POLICIES, ON_DELETE_ACTIONS,
          DATABASE_DRIVERS } from '../src/core/parser.js'
 
 const PARSER_SRC = readFileSync(fileURLToPath(new URL('../src/core/parser.js', import.meta.url)), 'utf8')
@@ -233,6 +234,54 @@ describe('enumerated argument values', () => {
     expect(names(of('fts', 'model', 'tokenize'))).toEqual([...ALLOWED_TOKENIZERS].sort())
     expect(names(of('relation', 'field', 'onDelete'))).toEqual([...ON_DELETE_ACTIONS].sort())
     expect(names(of('database', 'schema', 'driver'))).toEqual([...DATABASE_DRIVERS].sort())
+    expect(names(of('sync', 'model', 'policy'))).toEqual([...SYNC_POLICIES].sort())
+  })
+
+  // ── and the reason the row above is not enough ──
+  //
+  // That test names its sets BY HAND, so a set the parser grew and the catalog
+  // did not is invisible to it — which is exactly what happened: `@@sync` went
+  // from one policy to three and the catalog kept saying `server`, with 209
+  // tests green. The generic per-value probe below does not catch it either,
+  // for a reason worth stating because its own comment claimed otherwise: it
+  // asks whether every DECLARED value parses and whether an invented one is
+  // refused. A set that grew declares fewer values than exist, and both halves
+  // still pass.
+  //
+  // So the list of sets is derived from the parser's source. A new
+  // `export const X = new Set([…])` there fails this until it is bound above.
+  test('every enumerated set the parser exports is bound by the test above', () => {
+    const parserSrc = readFileSync(new URL('../src/core/parser.js', import.meta.url), 'utf8')
+    const testSrc   = readFileSync(new URL('./catalog.test.ts', import.meta.url), 'utf8')
+
+    const exported = [...parserSrc.matchAll(/^export const ([A-Z][A-Z0-9_]*)\s*=\s*new Set\(/gm)]
+      .map(m => m[1])
+
+    // The control: if the pattern stops matching, this test passes against
+    // nothing at all, which is the failure it exists to prevent.
+    expect(exported.length).toBeGreaterThan(3)
+
+    // Not every exported Set is an argument's value list — some are rules about
+    // the language rather than words a person types after a `(`. Which is which
+    // cannot be read off a name, so the ones that are NOT are named here with a
+    // reason. That is the whole point: a new set fails this test until somebody
+    // classifies it, where the hand-written inclusion list above let one drift
+    // in silence.
+    const NOT_ARGUMENT_VALUES: Record<string, string> = {
+      REPEATABLE_MODEL_ATTRS:      'which model attributes may appear twice — a rule about repetition, not a value',
+      REPEATABLE_FIELD_ATTRS:      'the same, for field attributes',
+      TYPE_FORBIDDEN_FIELD_TYPES:  'what a `type` block may not hold — a restriction, not an enumeration a caller picks from',
+      TYPE_DEFAULT_FORBIDDEN_KINDS: 'which @default kinds a `type` field may not use — the same shape',
+      TRAIT_FORBIDDEN_FIELD_ATTRS: 'what a trait field may not declare — a restriction',
+    }
+
+    const unbound = exported.filter(name =>
+      !(name in NOT_ARGUMENT_VALUES) && !new RegExp(`\\b${name}\\b`).test(testSrc))
+    expect(unbound).toEqual([])
+
+    // And the exclusions stay honest: one naming a set the parser no longer
+    // exports is a line nobody will delete unless something asks.
+    expect(Object.keys(NOT_ARGUMENT_VALUES).filter(n => !exported.includes(n))).toEqual([])
   })
 
   const probeWith = (row: any, v: any, entry: any) => {

@@ -19,7 +19,7 @@
 //            ANONYMOUS with no close, so the client's 4001 branch was dead.
 
 import { describe, test, expect, afterEach } from 'bun:test'
-import { createClient }   from '../../litestone/src/index.js'
+import { createClient, GatePlugin } from '../../litestone/src/index.js'
 import { createApp }      from '../src/core/app.ts'
 import { createService }  from '../src/core/service.ts'
 import { channels }       from '../src/transport/channels.ts'
@@ -64,8 +64,11 @@ function sessionFor(token: string): Session | null {
 const running: Array<{ stop: () => Promise<void> }> = []
 afterEach(async () => { for (const a of running.splice(0)) await a.stop().catch(() => {}) })
 
-async function mkApp(opts: { telemetry?: boolean; second?: boolean } = {}) {
-  const db: any = await createClient({ db: ':memory:', schema: SCHEMA })
+async function mkApp(opts: { telemetry?: boolean; second?: boolean; schema?: string; getLevel?: (u: unknown) => number } = {}) {
+  const db: any = await createClient({
+    db: ':memory:', schema: opts.schema ?? SCHEMA,
+    ...(opts.getLevel ? { plugins: [new GatePlugin({ getLevel: opts.getLevel })] } : {}),
+  })
   const app: any = createApp({
     db,
     logLevel: 'silent',
@@ -209,6 +212,40 @@ describe('a background write is graded like a published one (FJS-672)', () => {
     // gated model, so it is graded by the gate alone.
     expect(user.events.map(e => e.event)).toEqual(['orders changed'])
     expect(anon.events).toEqual([])
+  })
+
+  test('…and it is the APP’s mapping that decides who is above it (FJS-1161)', async () => {
+    // The count-only path is graded by the gate alone, so the NUMBER is the
+    // whole verdict — and it has to be the number the app's own `getLevel`
+    // answers. `u5` carries no `role`, no `isAdmin` and no lifecycle stamp, so
+    // the shipped grader puts them at CREATOR(3) and this model reads at 4;
+    // an app whose standing comes from somewhere else entirely — a membership
+    // row, which is how every tenanted app here grades — says 5.
+    const schema = SCHEMA.replace('@@gate("1.4.4.5")', '@@gate("4.4.4.5")')
+    const membership: Record<string, number> = { '5': 5 }
+    const { db, port } = await mkApp({
+      schema,
+      getLevel: (u: any) => !u ? 0 : membership[String(u.id ?? u.userId)] ?? 1,
+    })
+    const member    = open(port, 'u5')
+    const outsider  = open(port, 'u6')
+    expect(await ready(member)).toBe(true)
+    expect(await ready(outsider)).toBe(true)
+
+    await (db as any).asSystem().order.create({ data: { customerId: '5' } })
+    await settle()
+    member.events.length = 0
+    outsider.events.length = 0
+
+    await (db as any).asSystem().order.updateMany({ where: {}, data: { status: 'paid' } })
+    await settle()
+
+    // The pair: the member is above the read gate by the app's reckoning and
+    // below it by the shipped grader's, and the outsider is below both — so a
+    // mechanism that graded everybody, and one that graded nobody, each fail
+    // one half.
+    expect(member.events.map(e => e.event)).toEqual(['orders changed'])
+    expect(outsider.events).toEqual([])
   })
 
   test('a write through the service is still announced once', async () => {

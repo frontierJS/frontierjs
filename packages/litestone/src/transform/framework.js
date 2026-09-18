@@ -1,4 +1,4 @@
-import { Database } from 'bun:sqlite'
+import { openDatabase } from '../core/engine.js'
 import { parseIndexColumns, indexPredicate } from '../core/migrate.js'
 import workerBundleSource from './split-worker.source.js'
 import { existsSync, copyFileSync, writeFileSync, statSync, unlinkSync, mkdirSync } from 'fs'
@@ -279,7 +279,7 @@ export async function preview(configPath) {
   const resolvedDbPath = resolve(dbPath)
   if (!existsSync(resolvedDbPath)) throw new Error(`Database not found: ${resolvedDbPath}`)
 
-  const db     = new Database(resolvedDbPath, { readonly: true })
+  const db     = openDatabase(resolvedDbPath, { readonly: true })
   const schema = introspectSQL(db)
 
   // Seed row counts from live db
@@ -405,7 +405,7 @@ export async function preview(configPath) {
   }
 
   // Re-read initial counts
-  const db2 = new Database(resolvedDbPath, { readonly: true })
+  const db2 = openDatabase(resolvedDbPath, { readonly: true })
   for (const t of allTables) {
     initialCounts[t] = db2.query(`SELECT COUNT(*) as n FROM "${t}"`).get().n
   }
@@ -506,7 +506,7 @@ function applyPragmas(db) {
 
 function runOne(srcPath, outPath, pipeline, { verbose, suppressWarnings = false }, run) {
   copyFileSync(srcPath, outPath)
-  const db = new Database(outPath)
+  const db = openDatabase(outPath)
   applyPragmas(db)
 
   const schema = introspectSQL(db)
@@ -571,7 +571,7 @@ export async function execute(configPath, { dryRun = false, verbose = true, outp
     throw new Error(`pipeline must be a plain array. Use splitBy = 'table' to fan out.`)
 
   // ── Validate pipeline before touching anything ────────────────────────────
-  const srcDb = new Database(resolvedDbPath, { readonly: true })
+  const srcDb = openDatabase(resolvedDbPath, { readonly: true })
   const schema = introspectSQL(srcDb)
   srcDb.close()
 
@@ -690,7 +690,7 @@ export async function execute(configPath, { dryRun = false, verbose = true, outp
   if (verbose) console.log(`\n${c.dim}Shared pass complete (${sharedMs}ms)${c.reset}`)
 
   // Step 2: read split rows from the already-transformed intermediate db
-  const intDb = new Database(intermediateOut, { readonly: true })
+  const intDb = openDatabase(intermediateOut, { readonly: true })
   let rows  = intDb.query(`SELECT * FROM "${splitBy}"`).all()
   intDb.close()
 
@@ -915,7 +915,7 @@ function writeManifest(path, data) {
 
 async function fileEntry(filePath) {
   try {
-    const db   = new Database(filePath, { readonly: true })
+    const db   = openDatabase(filePath, { readonly: true })
     const tables = db.query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`).all().map(r => r.name)
     const rows = Object.fromEntries(tables.map(t => [t, db.query(`SELECT COUNT(*) as n FROM "${t}"`).get().n]))
     db.close()

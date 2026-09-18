@@ -1,5 +1,133 @@
 # Changes — @frontierjs/mcp
 
+## 2026-09-16 — the transport, mounted inside the app that is already running
+
+`mcpPlugin()` ships. An MCP client can reach a FrontierJS app for the first time:
+`tools/list` is the projection at the caller's own standing, `tools/call` goes
+through `app.service(name)` with `{ auth: { user } }` at Junction's
+`CALL_OPTIONS_AT`, and the Data boundary grades it again on the way through.
+
+**A plugin rather than a stdio process, and the reason is what a boot DOES here.**
+stdio carries no request, so a server spoken to over stdin has to boot the app
+itself — which starts a SECOND Caravan worker on `jobs.db` claiming the shop's
+payroll and dunning jobs, runs the migration differ against the database, and
+dies whole if any plugin's `boot()` fails (measured, on a caravan change in
+flight). Two processes is also two event buses, so an agent's write announces to
+nobody the open tabs are listening to, and a revoked session closes a socket this
+process does not have. Mounted in the API: one boot, one worker, one bus, the
+real `Host`, and the standing re-read per request.
+
+**Three crossings, each of which broke and each of which is now a paired test.**
+
+*The body is gone.* `transport/http.ts` parses every matched request before the
+route handler runs and `body.ts` reads `req.arrayBuffer()` with no clone, so
+handing `ctx.$raw.$req` to a fetch-style handler hands over a spent Request. The
+MCP transport answers `400 Parse error: Invalid JSON`, a message about JSON with
+nothing to do with the JSON. `replayBody` rebuilds it from `ctx.rawBody`;
+measured both ways. **The same mistake is live in
+`junction/src/auth/providers/better-auth.ts:264`** — `auth.handler(ctx.$raw.$req)`
+on `app.post('/auth/{path}')`, offered by `junction init` and exercised by no app
+or test here, so every sign-in through it arrives with an empty body. Filed.
+
+*The keep-alive outlives the socket.* The SDK's SSE interval defaults to 15s and
+`http.idleTimeout` to Bun's 10s: the stream is cut five seconds before the frame
+that would have held it open. Measured — dead at 12s, alive past 13s with the
+interval under the timeout. `keepAliveMs` defaults to 5s here.
+
+*There is no `app.db` under `tenancy { strategy database }`.* `example` is exactly
+that shape, so reading the schema off `app.db` answered null and the endpoint
+would have served a permanent 503 on the flagship app in this repo.
+`registry.schema` is the declared answer and is the right one rather than a
+fallback: opening a tenant to read `@@gate` off a client would make LISTING TOOLS
+create a database file.
+
+**The SDK, probed rather than assumed.** `@modelcontextprotocol/server@2.0.0`'s
+core transport is Web-standard — `handleRequest(req: Request): Promise<Response>`,
+which is the shape a Junction raw route already returns; the Node
+`IncomingMessage`/`ServerResponse` transport is the WRAPPER, not the base.
+`fromJsonSchema` carries a projected schema across — and **installs a default
+validator when none is passed**, which the first draft of this entry claimed it
+did not. So the SDK grades every tool argument before the handler runs: a second
+engine over one schema, and the two disagree. Measured: `total: "2500"` against
+an `Int` column is refused by the surface and COERCED by the Data boundary, so
+the agent path is stricter than the HTTP one. It fails in the safe direction and
+the message names the field, so an agent corrects and retries; whether to pass a
+pass-through validator and leave the grading to the one owner is open, and named
+in `PROJECT_STATE.md`.
+
+**A fourth grading input, which this package read none of for its whole first
+life.** `describe().methodGates` is the level a custom method declared, and
+`gateAuthAround` grades a custom verb through `customMethodGrade` — a declared
+number where there is one, otherwise the model's read gate as a PRESENCE check,
+and nothing at all where the model declares no `@@gate`. Reading three inputs
+where the boundary reads four is how a list offers what the boundary refuses.
+`customMethodGrade` is IMPORTED rather than restated: it is a pure function of two
+plain records, and a fifth copy of a gate rule in this repo is the disease
+`FJS-D197` named. Two verdicts follow it — `method-gate` (a number that is
+compared) and `method-floor` (a session, with the level not compared). `needs`
+stays `null` for the floor, because naming the read gate there would state a
+requirement no caller is held to.
+
+**Four defects in what the projection shipped, all found by trying to serve it.**
+
+- *Every tool name was rejected outright.* A client matches `^[a-zA-Z0-9_-]{1,128}$`
+  and a dot fails it, so `orders.refund` invalidated the whole list rather than
+  the one tool. `orders_refund` now, derived in the projection rather than
+  rewritten at the transport, so one name exists. Two methods deriving one name
+  are BOTH withheld and reported — keeping either is an agent calling a name and
+  the client deciding which method runs.
+- *Every enum pointed at a document that was gone.* A model `$def` is lifted out
+  to become one tool's input, and `#/$defs/OrderStatus` resolves against the root
+  — which is then the tool schema itself. `inlineEnums`, plus a walk that carries
+  in whatever refs survive with their definitions.
+- *Money was an integer with nothing saying so.* `{"type":"integer","x-money":{}}`
+  invites an error of a hundred times on a refund. It becomes a description; the
+  SCALE is deliberately not stated, because the generator declines to resolve it
+  and a number right two thirds of the time is worse than none. 21 of them over
+  `example`, each naming that app's declared currency, and no `x-money` left in
+  any tool schema.
+- *Move tools could not be called.* A move carried no argument schema, so
+  `orders.refund` was listed, correctly graded, and had no way to name a row.
+  Every non-CRUD verb is dispatched through `call(name, id, data, opts)` and its
+  input is now shaped to match: a move takes an id and is required to; a custom
+  method with a declared type takes both; one with nothing declared keeps `data`
+  open rather than guessed shut, which is `find`'s `query` rule.
+
+`x-` keywords are dropped from every tool schema. `x-gate` and `x-transitions`
+are the model's access rules and an argument schema is not where a caller's
+permissions belong — the projection already answered that by deciding whether the
+tool is listed. `x-transitions` was also the largest keyword on the page, paid for
+in the context window of every call.
+
+**Measured over `example` — 44 services, 248 methods.** 54 tools at STRANGER, 88
+at VISITOR, 142 at USER, 245 at STAFF, 248 at SYSTEM; none withheld from
+everybody. Verdicts: 186 model-gate, 12 move-floor, 13 method-gate, 16
+method-floor, 21 ungraded. 236 of 248 carry an argument schema, and no collision.
+The earlier numbers in this file (63/114/196, 157 of 203) are superseded twice
+over — by `methodGates` and by the app itself having grown.
+
+**The credential claim is derived now rather than asserted.** The protected set is
+exactly what `audience: 'client'` and `audience: 'system'` disagree about: 12
+columns across `example` (`Credential.value`, the OAuth tokens, `Session.token`,
+`Cart.token` and the rest), and none reaches any tool schema. A column named
+`secret` does appear — `FlowCredential.secret`, which is `@encrypted` rather than
+`@guarded`, a field a caller WRITES when creating a credential. Encryption at rest
+is not a read policy and the two must not be conflated.
+
+**A real drive, finally.** `tests/plugin.test.ts` boots a real Junction app over a
+real Litestone client on a real port and speaks JSON-RPC to it — 13 rows, every
+visibility one a PAIR a rung apart, and a move that actually moves the row.
+**Two of those rows were one row that claimed the wrong thing**, and driving the
+real shop is what caught it: a withheld tool is not registered for that caller at
+all, so calling it answers the protocol's *unknown tool* — fail-closed, and not
+the boundary. Invariant 6 needs a tool the caller IS offered and the boundary
+still refuses, which is now its own row: `refund` on a PENDING order, a legal
+caller making a legal call on an illegal transition, with the same tool on a paid
+order beside it as the control. That is the gap `PROJECT_STATE.md` had been naming since the package
+existed; what is still ungated is the numbers above, which are a hand measurement
+against `example`.
+
+
 ## 2026-09-12 — `@system` on a move is not a grade
 
 `FJS-1087`. `move-system` withheld every `@system` move from every standing, reading the

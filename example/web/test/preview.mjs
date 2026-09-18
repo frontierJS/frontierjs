@@ -31,10 +31,14 @@ const ROOT = join(HERE, '..', 'dist', 'client')
 const API  = process.env.API_URL ?? 'http://localhost:8110'
 const PORT = Number(process.env.PREVIEW_PORT ?? 8011)
 
+// `.wasm` is here because a browser REFUSES to stream-compile a response that
+// is not `application/wasm` — it falls back to buffering the whole module and
+// compiling it twice, and says so only in the console. The local database's
+// engine is 1.4 MB of it.
 const TYPES = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css',
   '.json': 'application/json', '.svg': 'image/svg+xml', '.txt': 'text/plain',
-  '.xml': 'application/xml', '.ico': 'image/x-icon',
+  '.xml': 'application/xml', '.ico': 'image/x-icon', '.wasm': 'application/wasm',
 }
 
 const server = createServer(async (req, res) => {

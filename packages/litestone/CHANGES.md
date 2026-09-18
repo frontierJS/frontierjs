@@ -1,5 +1,379 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-16 — `tenancy { strategy row }` scopes a unique, instead of reporting it
+
+A `@unique` on a tenant-scoped model was unique across the whole installation: two tenants could
+not both hold `launch`, and the second was refused by a message naming a value they may not read —
+which `docs/access-control.md` says a refusal must never do. The parser reported it and left it
+alone (`FJS-1159`, ruled `FJS-D310`).
+
+**Reporting it was unanswerable from where the declaration usually lives.** `@frontierjs/orion`
+ships `FlowCredential.name @unique`; a host adds `workspaceId` with `extend model`, and no edit
+either can make repairs the index — the fragment does not know the column's name, and `extend model`
+cannot rewrite an inherited constraint. That is every package shipping a schema fragment, not one
+package.
+
+The tenant column is now **prepended** to the constraint, which is also the prefix every read under
+row tenancy filters on first, and a field-level `@unique` is **lifted to a table constraint**,
+because a column cannot carry a two-column UNIQUE. `@unique(global)` / `@@unique([…], global: true)`
+is the opt-out — it existed already, for the token and the public subdomain, which is why making the
+default correct coined no new word.
+
+**Skipped where it is already right**, on the same transitive test as before: a unique naming the
+tenant column, or a key reaching a scoped model, is untouched. **And skipped where it is not
+derivable** — a model scoped through a PARENT carries no tenant column and may have two parents, so
+which to scope by cannot be decided here; those keep the warning with the same three ways out.
+
+**Both halves are announced**, because `name String @unique` now builds an index over two columns
+and the line cannot show it. `db/ddl.snapshot.sql` is where the result is readable. One thing moves
+underfoot: `upsertMany({ conflictTarget: ['name'] })` no longer matches an index and SQLite refuses
+it by name; `findUnique({ where: { name } })` still answers at most one row on a tenant-scoped
+client, because the deny filters it.
+
+## 2026-09-16 — a browser client that lets its worker go, and a graph that never reaches past `#host`
+
+Three defects, one symptom: a page that stopped answering, and a local database that was quietly
+never there (`FJS-1179`).
+
+**`createBrowserClient` releases its worker on `pagehide`.** A navigation does not close a worker,
+and this one holds OPFS access handles that are EXCLUSIVE — so the leaving page's worker is still
+alive while the arriving page's opens, and the two fight over the same pool. Chrome does not report
+that as an error: it kills the RENDERER, taking the page and the app's service worker with it, and
+from the outside the tab simply stops answering, CDP included. `pagehide` rather than `unload`,
+because `unload` does not fire for a page entering the back/forward cache — which is the page whose
+worker outlives it longest — and a call made after the release is rejected by name rather than
+waiting for all time. **`test/browser/` now navigates WITHOUT closing the client first**, which is
+the only thing that grades any of it; the `leave()` helper it used to need is gone.
+
+**`core/migrations.js`, `core/migrate.js` and `drivers/jsonl.js` reached `fs` and `crypto` by their
+own names rather than through `#host`.** On a server that is invisible, and it stays invisible under
+`--conditions=browser`, because node has `fs` either way. A BUNDLER is where it bites: Vite replaces
+a bare node builtin with a proxy that throws on the first property ACCESS, so `import { statSync }
+from 'fs'` throws when the module is merely imported — the worker died before a line of it ran and
+the page reported only that it had fallen back to its cache. `#host` gained `readdirSync`,
+`appendFileSync` and `createHash`, each refused by name on the browser half.
+
+**`engine-seam.test.ts` walks the browser entries' import graph and refuses a bare builtin.** It
+counts the modules it walked, because a graph with nothing wrong and a walk that read nothing are
+one answer otherwise.
+
+## 2026-09-16 — `db.$levelOf()`: the app's own grade, asked rather than re-derived
+
+`$levelOf(accessor?, principal?)` is the seventh `$`-sibling: `getLevel(auth, model)` — the mapping
+an app declares once in `GatePlugin` — readable from outside, on every flavor of client, for the
+same subject.
+
+**It exists because the mapping had no reader and the layers above were each inventing one**
+(`FJS-D308`). A level is a fact about an app's OWN standing, and in a tenanted app that standing is
+a row rather than a column on the session: basecamp reads a `WorkspaceMember`, so an `admin` of a
+workspace is ADMINISTRATOR(5) to every model in the schema and CREATOR(3) to anything grading with
+the shipped `gradeStanding`. Junction's method gate was doing exactly that, and refused a caller
+the Data boundary admits.
+
+**Per MODEL, because `getLevel` is** — an app may legitimately grade one caller differently for two
+models. An accessor naming no model, and an omitted one, grade with a `null` model, which is what a
+modelless service asking about its own caller has to mean.
+
+**The principal is OPTIONAL, which is the one place it parts company with `$readAs`.** The common
+caller holds the scoped client of the caller it is asking about, so omitting it answers off this
+client's own principal and picks up the gate's per-request cache; state one to grade somebody else,
+a broadcast recipient, exactly as `$readAs` does. Each flavor binds its OWN ctx rather than reading
+`ctx.auth`, which is a getter over the call in progress (`FJS-722`) and refuses outside a table
+method — the first build read it and graded every caller a stranger, on every flavor, in silence.
+
+**`null` is *I cannot grade* and never a level.** A schema declaring no `@@gate` installs no plugin,
+so there is no mapping to ask and no honest number; the caller decides. Inventing a default here is
+the failure the seam replaces.
+
+## 2026-09-16 — `deviceSchema()`: the schema a device is given
+
+The browser client takes a parse result (`createClient({ parsed })` always has). This is what makes
+one: a FILTER over the parsed tree that answers the `@@sync` models plus what they reference, exported
+at `@frontierjs/litestone/device-schema`.
+
+**Shipping the app's `.lite` source was never an option**, which is what decides the shape. It would
+undo the prose stripping `FJS-D204` measured at 23 kB — `///` comments address whoever edits the
+schema, and this repo's own quote policy expressions and explain a bearer-token scheme — and it would
+hand a device every model in the app. A filter cannot accidentally carry a comment and cannot
+accidentally carry a model: both are decided by what it copies rather than by what it remembers to
+leave out. Over `example`, 53 models become 3 and 224 kB become 4.5.
+
+**`@@sync` decides the set and nothing else does.** A model declaring it has already said it will be
+read and written with no server reachable, which is the same statement as *this crosses to a device*,
+so there is no second declaration to keep in step. That also settles what looked like an open question:
+the opt-in `FJS-D303` requires for a row policy IS the `@@sync` declaration, so a kept model's policies
+cross with it and a second attribute would be a new word for something already said.
+
+**A relation to a model the device does not get comes out, and its foreign key stays.** `ddl.js` writes
+a `FOREIGN KEY … REFERENCES` out of a relation and SQLite accepts a CREATE TABLE naming a table that
+does not exist, then fails every INSERT against it — so the relation left in builds a device database
+that reads and cannot be written to. `StocktakeCount.variant` is the case: `variantId` is still a
+column, which is what the held write carries and what the server joins on.
+
+**Every cut is graded** — `lost`, `changed`, `noted`, `litestone import`'s own vocabulary for the other
+direction — and returned beside the tree. Over `example` that is 55 notes: 50 models, a view, the
+tenancy block, the two `database` blocks, and the two dropped relations, each naming the column that
+stayed.
+
+**The blocks above a model come out too, and the `database` one is the load-bearing removal.**
+`createClient({ db })` overrides a declared `main` and overrides nothing else, so a SECOND block keeps
+the path it declares — `example`'s is `database audit { driver logger }` over `./db/audit/`, a
+fleet-wide file on a server and a host filesystem path `host/browser.js` refuses by name. `tenancy`
+goes for the same reason and takes `./shops` and the registry path with it.
+
+**The proof is that it BOOTS**, twice. `test/device-schema.test.ts` (27) hands the output to
+`createClient` through a JSON round trip — strictly weaker than the structuredClone the worker uses —
+and writes a row through the relation that stayed, once over a fixture and once over `example`'s own
+53-model schema. `test:browser` then does it in Chrome over OPFS: the same filtered schema opens, a
+stocktake is counted and read back through `include`, and the dropped relation is refused by name.
+
+Two things came out of building it. A projected node had its `comments` key DELETED and `ddl.js` reads
+`model.comments.length` without asking, so the key is emptied rather than removed — which is also the
+reminder that prose reaches a device twice, in the tree and in the CREATE TABLE. And the drive now
+closes a client before navigating away: an OPFS sync access handle is exclusive and the SAH pool
+reserves its whole capacity at install, so the next page's worker raced the departing one and lost with
+`NoModificationAllowedError`.
+
+`FJS-1177` was filed on the way: `@@index([<a relation field>])` parses and builds an index on a string
+constant, because SQLite reads a double-quoted non-column as a literal. The filter drops such an index
+rather than carrying it, which is currently the only thing in the tree that notices.
+
+## 2026-09-16 — `@@sync(append)` and `@@sync(refuse)`
+
+`FJS-D304` ruled these two next; this is what each one DOES, because the risk in shipping a vocabulary
+is the one the closed set exists to prevent — a policy that parses and resolves nothing reads exactly
+like one that works.
+
+**`refuse` names a revision, so it needs the column that holds one.** `@@sync(refuse)` on a model with
+no `@version` is refused at PARSE, on `@@softDelete`'s precedent: the attribute names a column, and
+without it every held write would apply to whatever is there, which is `@@sync(server)` — the policy
+would behave as its own opposite. The message says to add `version Int @version` or to say `server`.
+
+**`append` needs no revision, and that is the control.** Rows are only ever added, so there is no
+collision to resolve rather than one resolved in a particular way. A precondition that fired on all
+three policies would be a rule about nothing.
+
+The set is still closed and `lww`, `manual`, `field` and `crdt` are still refused by name.
+
+**The catalog was a second origin for that set, and a test claimed to be binding them.** `catalog.js`
+hand-wrote `['server']` and went stale the moment the set grew — with 209 tests green, because the one
+that binds the parser's enumerated sets to the catalog **names its three sets by hand**, and the generic
+per-value probe only asks whether every DECLARED value parses and whether an invented one is refused.
+A set that GREW declares fewer values than exist and passes both halves, which is the opposite of what
+that test's own comment claimed it caught.
+
+So the catalog now reads `SYNC_POLICIES` directly — the only import that table has — and a new test
+derives the list of sets from the parser's SOURCE: every `export const X = new Set([…])` must either be
+bound above or be named in `NOT_ARGUMENT_VALUES` with a reason (four are rules about the language rather
+than words a person types). A new set fails until somebody classifies it. Probed by adding one.
+
+## 2026-09-16 — the browser client takes a PARSED schema, and the bulk verbs already crossed
+
+`FJS-D307` ruled how a device gets its rows, and two things needed checking before anything was built.
+Both answers were already in the tree.
+
+**Hydration needed a transaction inside the worker, and `createMany` is it.** `$transaction` is refused
+on a browser client — the callback runs on the page — so this was written down as an owed prerequisite.
+It was not owed: `createMany` and `upsertMany` carry their rows in one call and already cross the worker
+proxy with nothing written. Measured in Chrome: **2,000 rows in 67 ms (0.033 ms each)**, against
+**9.23 ms each** one at a time, because an autocommit INSERT over OPFS is one filesystem sync. That is
+0.3 seconds against 46 for a 5,000-row hydration. **Batched, the browser matches `bun:sqlite` on a
+server** — 0.056 against 0.05 ms — so there is no wasm tax on the write path, only an unbatched-commit
+tax. The worker round trip is 0.18 ms and was never the cost. The `$transaction` refusal now names
+`createMany` instead of deferring to a later phase.
+
+**`createBrowserClient({ schema })` takes a parse result as well as text.** `createClient({ parsed })`
+has always accepted one; this exposes it. Shipping an app's `.lite` source to a device is not an
+option — it would undo the prose stripping `FJS-D204` measured at 23 kB and hand over the row policies
+`FJS-D303` made opt-in — so what a device gets is a projection of the parsed TREE, which is a filter
+rather than an emitter and cannot accidentally carry a comment. The drive round-trips one through JSON,
+strictly weaker than the structuredClone the worker uses, and drives the same client through it.
+
+`test:browser` is 18 assertions now.
+
+## 2026-09-16 — Litestone runs in a browser
+
+Phase 4 of the Homestead work (`IDEAS/homestead.md`, `FJS-D305`). The client, the gates, the policies and the
+SQL are the same ones a server runs; what is new is a second seam and a worker.
+
+**`#host` is the second seam.** `#sql-engine` answers *what runs the SQL*; `#host` (`src/host/`) answers
+everything else the runtime provides — paths, a filesystem, a temp directory, a module resolver, crypto, and
+the async context. Ten modules in the client's graph imported nine node builtins between them; they import
+`#host` now, and it resolves by condition the same way the engine does. The browser half implements the
+paths, REFUSES the filesystem by name, and refuses `@encrypted` on purpose: WebCrypto is asynchronous, and
+decrypting on a device means the key is on the device.
+
+**`src/engines/sqlite-wasm.js`** is SQLite's own wasm build over the `opfs-sahpool` VFS. It is imported by
+nothing — a host calls `createSqliteWasmEngine({ load })` — because 868 kB of wasm is what a dynamic import
+is for, and because WHERE the wasm comes from is the app's decision.
+
+**`src/browser/` is the port, and it is a worker.** OPFS's synchronous access handles exist only in a
+dedicated worker, so the whole client runs there and the page holds a proxy; the round trip hides inside the
+`await` the model API has always required, which is why nothing in `core/client.js` changed. The worker runs
+**one call at a time**, and that is load-bearing rather than cautious: the browser's `AsyncLocalStorage` is a
+single slot, and two overlapping calls would restore each other's store — which looks like a table answering
+as the wrong principal, silently, with rows.
+
+**`$transaction` is refused on a browser client, by name.** The callback runs on the page, so the write lock
+would be held across main-thread turns — across a fetch, a render, or a user who walked away. Phase 4 ships
+READS with no server; an offline write is the pending queue's job (`FJS-D301`).
+
+**The encryption salts are built lazily and now pinned.** Three `Buffer.from` calls sat at module scope, so
+importing the module threw in a browser before any encrypted column existed to refuse. They are memoized
+behind `salt(name)` — and `test/key-rotation.test.ts` now asserts the literal bytes, because every other test
+there computes `keyId()` on both sides and would have passed against a changed salt. A moved salt makes every
+ciphertext an app has ever written undecryptable, on a deploy, with nothing raised until a read.
+
+**Measured afterwards, and it corrects the obvious guess about what a browser database costs.** Inside
+a transaction, SQLite over OPFS writes at 0.056 ms/row against `bun:sqlite`'s 0.05 — there is no wasm tax
+on the write path. A worker round trip is 0.18 ms, 2% of an unbatched create. What costs 165× is one
+durable commit per row: an autocommit INSERT is an OPFS sync. So the thing hydration needs is not fewer
+messages but a transaction that opens and closes INSIDE the worker — 5,000 rows is 46 seconds
+row-at-a-time and 0.3 seconds in one transaction.
+
+**What it weighs**, brotli per file: litestone's client minified is 236 kB, `sqlite3.wasm` 349 kB, SQLite's
+JS API 643 kB raw / 141 kB — **726 kB over the wire**. That is three and a half times `example`'s current
+276 kB shell, not the doubling estimated when the seam was built, because that estimate counted the engine
+and forgot the client goes with it. `FJS-D302`'s ratchet is what puts the number in front of somebody.
+
+**`bun run test:browser`** builds what it serves with `--conditions=browser`, serves it on 7560 and drives a
+real Chrome: relations, a where clause, `groupBy`, an ordered limit, a gate refusal that keeps its `code`
+across `structuredClone`, and — the row the rest exists for — a SECOND page load reading the rows the first
+one wrote.
+
+## 2026-09-16 — the SQL engine becomes a seam, and the client runs on a runtime that is not Bun
+
+Phase 4 of the Homestead work (`IDEAS/homestead.md`, `FJS-D305`). Ten files under `src/` imported
+`bun:sqlite` and wrote `new Database(path)` — ten answers to *what runs the SQL*, agreeing only
+because there was one candidate. `src/core/engine.js` is now the single owner: `openDatabase()` is
+the only way to get a connection, `src/engines/bun-sqlite.js` is the only file that names
+`bun:sqlite`, and `test/engine-seam.test.ts` asserts that count rather than asking a reader to keep
+a convention.
+
+**The contract is SYNCHRONOUS and an engine that is not is refused by name at registration.**
+`.get()` and `.all()` are called from roughly 270 sites inside `core/client.js` alone, none of which
+await, so an engine answering promises hands back a pending Promise where a row belongs: truthy,
+object-shaped, thrown by nothing, and a filter simply stops filtering. Registration is the cheapest
+moment to find that out.
+
+**Which engine is present is resolved by CONDITION, not by a side-effect import.** `#sql-engine` is a
+subpath import in this package's own `package.json`: `engines/bun-sqlite.js` by default,
+`engines/none.js` under `browser`. No entry point has to remember a registration line — which is the
+version of this that breaks, because the entry point somebody adds next is the one that forgets.
+
+**The conformance drive is the part that could not be faked.** A test registering a stub engine
+proves only that the stub was called, so `test/fixtures/second-engine.mjs` spawns NODE — no `Bun`
+global, no `bun:sqlite` — under `--conditions=browser`, registers `node:sqlite` from the outside, and
+drives a real client through relations, includes, `groupBy`, aggregates, a transaction, a soft delete,
+an ordered limit and a gate refusal. All nine pass. `node:sqlite` is a FIXTURE and not a product: this
+package ships no Node engine and promises none.
+
+**`src/testdb.js` held a literal NUL byte** and so was invisible to grep, ripgrep and every tool that
+sniffs for binary — which is why the survey that found nine importers missed the tenth. Written as
+the escape `\x00` now, same value at runtime, and CI's `hygiene` phase grades every tracked source
+file for it.
+
+## 2026-09-16 — two more advisor rules, both about a File a device is holding
+
+`FJS-D301` replays a held write in two halves — the row, then each file as a patch naming that row —
+and two legal schemas cannot survive that. Both are `warn` in `core/advise.js`, and both fire only
+under `@@sync`, because on a network each is the right schema.
+
+`sync-file-with-no-key-to-attach-to` — a `File` on a model whose `@id` only the server assigns. The
+patch needs an id and offline there is none, so a write carrying bytes is not held at all and fails as
+it would with no `@@sync`.
+
+`sync-required-file` — a required `File`. The row half replays WITHOUT its bytes, which is what makes a
+small correction independent of a large photograph, so the create arrives with nothing in the column
+and is refused: offline, that model cannot be created at all. `File?` is the truth about a row whose
+photograph is still on the phone.
+
+Both ask `mintableIdField()`, the same helper `sync-reference-to-a-server-assigned-id` uses, which in
+turn reads `ID_GENERATORS` — so a fifth generator clears all three with no edit.
+
+## 2026-09-16 — `x-mint`, and the generators move to toolbelt
+
+Phase 2 of the Homestead work (`IDEAS/homestead.md`). A row written with no server reachable is
+referenced by its children before any INSERT has happened, so the caller has to be able to state the
+key — and `isServerAssignedId` was right that nobody could, which is why an `@id` with a generated
+default is absent from create mode entirely (`FJS-608`).
+
+**One declaration widens it and it is one already made.** A model that declares `@@sync` has said its
+rows may be written with no server reachable; being able to name such a row is the same statement
+rather than a second one. So for a syncable model with a single generated `@id`, create mode OFFERS
+the column — optional, so a create made on the network omits it and the server assigns it exactly as
+before — and `x-mint` crosses as `{ field, kind }` to say how to fill it. A composite key emits
+nothing: minting one member of a key is not minting the key.
+
+**The two halves are one predicate.** The subtraction and the announcement must agree or a client
+mints a key the boundary then refuses by name, so `mintableId()` is asked by both.
+
+**`core/ids.js` now re-exports `@frontierjs/toolbelt/ids`.** The generators had two callers and both
+were on a server; the browser is the third, and it cannot import this package. What stays here is the
+question only a schema can answer — `isServerAssignedId`.
+
+## 2026-09-16 — the advisor asks whether a syncable model has an id a client can state
+
+Phase 2 of the Homestead work has not started and this is the refusal that has to precede it. A
+model declaring `@@sync` says its rows may be written with no server reachable; two of them in one
+session is the ordinary case — a parent and then its children — and a child made offline has to name
+a parent whose id does not exist yet, because the id is assigned by the INSERT that has not
+happened.
+
+`sync-reference-to-a-server-assigned-id` is a `warn` in `core/advise.js`. It fires where a syncable
+model holds the owning side of a relation to another syncable model whose `@id` is not one of the
+generated defaults, and it names the foreign-key column there is nothing to put in.
+
+**It is an advisor rule and not a parse error, and the file's own header says why**: everything in
+`RULES` parses, measured. `id Int @id` under `@@sync` is legal and is the right schema wherever the
+parent is created on the network — `example`'s `InventoryMovement` is exactly that and is silent
+here — so a refusal would be wrong about the model that shipped last. What makes it an honest
+warning rather than noise is the second condition: the PARENT has to be syncable too, which is the
+author saying they intend to create one offline.
+
+**Mintable is asked of `ID_GENERATORS` rather than of a list written here**, the same table
+`buildAutoIdMap` fills a create from, so `uuid()`, `ulid()`, `cuid()` and `nanoid()` clear it and
+a fifth generator would clear it without an edit.
+
+## 2026-09-16 — `@@sync`, and the absence that is the refusal
+
+[`FJS-D298`](../../DECISIONS.md#fjs-d298), phase 1 of the Homestead work (`IDEAS/homestead.md`).
+A model may declare that its rows can be written with no server reachable: `@@sync(server)`, one
+value, the argument being the COLLISION policy and nothing else — whether a model leaves the device
+and in which direction is a second question this attribute has not been asked. It crosses to the
+browser as `x-sync` in the generated JSON Schema.
+
+**There is no default, and the emitter says nothing rather than something.** A model that declares
+nothing carries no attribute and emits no `x-sync`, which is what a client reads as *not syncable*.
+That is the whole of the design: a default here would make every model in every app silently
+syncable, and what silence costs is a row, reported by nobody.
+
+**The set is closed by NAME.** `@@sync(lww)` is refused with *unknown policy "lww". Valid: server*,
+the rule an unknown `mesa:*` name already follows — because the other candidates (`append`,
+`refuse`, `lww`, `field`, `manual`) have real designs behind them and each needs a second writer
+that does not exist until there is a database on the device. A policy that parses and resolves
+nothing reads exactly like one that works. The candidates and what each would cost here are in
+`IDEAS/homestead.md`.
+
+The catalog is what made this complete rather than merely working: a word the parser accepts needs a
+row, a tier and either a documentation page or a written reason it has none. `@@sync` is
+`situational` and its page is owed with the queue that reads it — a page describing offline writes
+before an app can make one would document a promise.
+
+**Found on the way, and fixed** ([`FJS-1174`](../../ISSUES.md#fjs-1174)): an attribute declared
+twice was not refused and every consumer takes the first, so `@@gate("2")` above `@@gate("9")`
+silently enforced the looser one — the shape somebody writing the stricter gate underneath the old
+one produces. The refusal names both answers, not just the duplication, because *declared twice*
+does not tell a reader which has been running. Field attributes had it too.
+
+**The deeper defect was the list, and it had already fired.** `REPEATABLE_MODEL_ATTRS` holds PARSE
+KINDS, `@@unique` parses as `uniqueIndex`, and the entry spelled `'unique'` matched nothing: it let
+every real duplicate through and refused a legitimate second `@@unique` on an `extend model`, in a
+message naming `@@uniqueIndex` — a word nobody can type. Writing the fix reproduced that same
+mistake twice more before the suite caught it, which is what `test/repeatable-attrs.test.ts` is for:
+it parses every listed kind twice and fails on one no parse emits. Which kinds repeat was measured
+across every `.lite` here and in the imported corpus rather than recalled, and all 28 still parse.
+
 ## 2026-09-15 — a policy reads `auth().level`, and `getLevel` is synchronous
 
 [`FJS-D296`](../../DECISIONS.md#fjs-d296). `auth().level` is the grade `getLevel(auth, model)`

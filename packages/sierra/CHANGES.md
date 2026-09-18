@@ -1,5 +1,366 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-16 — hydration: the warm fills the device, not only the cache
+
+Phase 4's last owing (`IDEAS/homestead.md`). The device was only as full as what
+a screen HAPPENED to read, so somebody who signed in and walked into a basement
+without opening the right screen had an empty database — and `@@sync`'s read
+direction was a claim with nothing behind it.
+
+**`warmOffline()` writes its rows through to the tables.** No new option and no
+new noun: `offlineQuery` already declares exactly the rows a device must hold,
+and the model is in scope where the declaration is made. The alternative —
+a model→service map emitted at build time and a `hydrate:` bound in config —
+would have been a second reader of `src/resources/` beside `fli check`'s and a
+second declaration beside the one that already says what to hold.
+
+The report gains `kept`, because *hydrated* and *hydrated nothing* are otherwise
+one answer: the cache holds the declared question either way, so a screen asking
+exactly that question renders identically with the tables empty.
+
+**Nothing re-warms on sign-in**, and the gap that looks like is not one:
+`setToken` cycles the socket, so `connect` fires and the warm armed on it runs as
+the person who just signed in. A call in the token handler was written, measured
+to be redundant by deleting it, and left deleted. What it was papering over moved
+to where it belongs — `localDb()` waits on a clear in flight, because emptying
+the tables closes the worker holding the OPFS pool and two over one pool kill the
+renderer (`FJS-1179`).
+
+## 2026-09-16 — the local database answers, and `example` turns it on
+
+`FJS-1179`. `offline: { db: true }` was built and off; it is on, and three things had to be true
+first that no unit test could see.
+
+**`readLocal` asks junction what a directive VALUE means.** A screen states `orderBy: '-id'` because
+that is the wire's spelling; SQLite takes `[{ id: 'desc' }]` and throws on the other. Spelled here it
+was a second answer to a settled question — and the throw fell through to the list cache underneath,
+which answers the same question with the same rows, so every sorted list offline was served by the
+cache and the whole feature was off and green. `normalizeOrderBy` and `normalizeSelect` come from
+`@frontierjs/junction/client`, the same functions the server compiles its own SQL from.
+
+**An EMPTY device defers; a device that cannot answer at all still defers.** `[]` is a table with no
+rows for this question, which is what a device looks like before a write-through has landed, and on
+screen it is indistinguishable from a list that is genuinely empty. The cache below may hold the
+server's own answer, so it is asked before nothing is rendered as the answer — and when neither has
+anything, an empty table still beats a throw.
+
+**The engine opens at `configureLocalDb()`, not on the first read that needs it.** A write-through is
+a side effect of a load and is deliberately not awaited, so a page opened and left inside the second
+the worker takes to compile SQLite kept nothing at all.
+
+`example` pays **278 → 880 kB** over the wire for it — 138 kB engine, 341 kB wasm, 123 kB litestone
+client — a deliberate `FJS-D302` ratchet. An app that leaves it off pays 1 kB.
+
+## 2026-09-16 — `offline: { db: true }`: the device's own SQLite as the read store
+
+`FJS-D307`'s storage swap, built and **off**. `list-cache.js` answers the exact
+question it was given; this is a query engine, so any question on a `@@sync`
+model is answerable with no server. `example` does not turn it on yet — with the
+engine live `verify:shell` hangs, which is `FJS-1179`.
+
+**The seam.** `build/local-db-plugin.js` copies SQLite's wasm out of the APP's
+own `@sqlite.org/sqlite-wasm` and emits the device schema litestone's
+`deviceSchema()` makes; `junction/local-db.js` opens the client lazily, writes
+through on a successful `load()` and answers the catch before the list cache
+does; `junction/local-db-worker.js` is the worker body. The app owns the
+dependency because the app pays for it; the build owns the output because only
+the build knows its own layout — the division `postbuild/offline-shell.js`
+already makes for the precache.
+
+**A cache does not re-grade what it was given** (`FJS-D309`). Every row arrived
+in an answer the server gave this caller, so it is read back through
+`asSystem()` and dropped when the identity changes. Re-grading would be done by
+the wrong grader: a local client auto-installs `FrontierGateGetLevel` and an
+app's own resolver is a different function — measured on `example`, 3 against 4
+on one account, with `Order` at `@@gate("0.4.4.5")`.
+
+**Three things were paid for by measuring, and each is now a comment where it
+bites.**
+
+A bundler rewrites `new Worker(new URL(…, import.meta.url))` **and nothing
+else**, so handing `createBrowserClient` a bare URL to construct for itself left
+the built app fetching a file beside its hashed entry chunk that nothing wrote —
+silently, with every read falling through to the list cache, which looks exactly
+like the feature working.
+
+The wasm entry is copied as **`.js`, not `.mjs`**. It is reached by a dynamic
+`import()`, which a browser refuses outright when the response is not a
+JavaScript media type, and `.mjs` is the extension static hosts most often have
+no row for. The `.wasm` beside it travels unrenamed, because the module fetches
+that one itself, by name.
+
+And **that same static signal put the worker in every app**. A bundler emits the
+chunk wherever it sees the pattern, reachable or not, and the service worker
+precaches every `.js` a build emits — so `example` with the database turned OFF
+went 277 → 401 kB. `local-db-open.js` exists to hold that one line, and the
+plugin resolves it to a stub when the app did not ask for a database. With the
+stub the seam costs **1 kB**, which is the baseline's new 278.
+
+**Turned on, it is 880 kB over the wire** — 138 kB engine, 341 kB wasm, 123 kB
+litestone client — against 278. That is `FJS-D302`'s ratchet doing its job: a
+number to agree to rather than inherit.
+
+`tests/local-db.test.js` (15) grades the seam against a stand-in client, in
+pairings: the database answering beside the database declining, since `null`
+means *cannot answer* and must fall through rather than render as an empty list.
+The engine itself is litestone's and is driven in a real browser by that
+package's own `test:browser`.
+
+`verify-shell.mjs` also stopped assuming it was signed out — a session outlives
+the browser profile, so a second run of the drive found no sign-in button and
+reported it as the app being broken.
+
+
+## 2026-09-16 — `offlineQuery`: the read a screen must already hold
+
+`FJS-D307` picked C — the cache in `list-cache.js` plus a DECLARATION. B alone
+only ever answers a question somebody happened to ask earlier, and *which screens
+did I visit before I lost signal* is not a thing a person in a basement can have
+planned.
+
+```js
+export const movements = createResource('inventory', {
+  model:        'InventoryMovement',
+  offlineQuery: { directives: { limit: 40, orderBy: '-id' } },
+})
+```
+
+**It joins `detailQuery` / `optionsQuery` / `listQuery`** — the same
+`{ query, directives }` shape, declared once beside the model. Not called
+`prefetch`: sierra already has one, and it means a speculative preload on a link
+hover. One name for two things is the trap, so the word was rejected rather than
+overloaded.
+
+**Warmed at boot and on every reconnect**, armed exactly as `pending.js` arms its
+drain — `connect` rather than `navigator.onLine`, because the socket says this
+client can talk to that server where the browser only says the interface is up.
+Re-warming on reconnect is what stops what is held being a copy of last Tuesday.
+
+**A warm may not touch a store.** `resource.load()` writes the rows into the store
+the screen is rendering; a warm runs in the background under a question nobody is
+looking at, so routing it through `load()` would swap a visible list — the feature
+breaking the screen it exists to protect. It calls `find` and remembers the
+answer, which is `load()`'s other half and nothing else.
+
+**It writes under `listKey`, the same function the read uses**, and that is the
+whole of how this feature fails: a warm keyed even slightly differently fills a
+slot nothing looks under, and nothing about the app looks wrong until the outage.
+So every test in `tests/offline-query.test.js` is *warmed, then offline, then
+read* rather than *the warm ran* — probed by breaking the key, which turns 6 of
+the 13 red, and by routing the warm through `load()`, which turns exactly the
+store case red.
+
+**The honest bound gets its own test.** It is keyed by the QUESTION, so the
+declared one is answerable offline and a different one is not. It is a cache with
+a schedule and not a replica.
+
+**`offlineQuery` on a model with no `@@sync` is refused by name and registered
+nowhere.** Rows on a device outlive the session, so which models may be written
+there is the schema's word (`FJS-D298`) — a warm on a model that never said so
+would fill nothing, and the outage is where that would be discovered. Warned
+rather than thrown, which is what the ten other refusals in `resource.js` do: a
+throw in a `<script module>` is a white screen.
+
+Two ordering bugs came out of writing the tests, both of which would have shipped
+the feature doing nothing. The arm flag latched when no client had been built yet,
+so a declaration made before `initJunction` marked the app armed against a client
+that did not exist and nothing ever warmed. And `FJS-1178` is the half that
+remains: a declaration only exists once its module does, and a route's modules are
+code-split, so the screen nobody opened declares nothing until somebody opens it —
+`example` answers it with one import in `web/src/main.js`, which is a real answer
+rather than a workaround, since which resources are worth the entry chunk is the
+app's decision.
+
+
+## 2026-09-16 — what `@@sync`'s argument does to a HELD write
+
+`FJS-D304`. All three policies are identical on a reachable network — the argument decides what happens
+to a write nobody is standing over when it lands — and each now differs from the others in a way a test
+can see (`tests/sync-policies.test.js`; 4 of its rows go red with the change reverted).
+
+**`server` now DROPS the revision from a held write, and that is a fix.** The resource stamps the
+`@version` onto every patch so a stale edit is refused, which is right for a write somebody is standing
+over and wrong for a held one: `server` means *replay this against whatever the row holds by then*, and
+a carried revision turns that into a refusal the person who made the write walked away from an hour ago.
+`example`'s ledger says exactly this in its own schema comment and had no way to mean it.
+
+**`refuse` keeps it**, which is the only difference between the two and the reason it is a word.
+
+**`append` refuses to HOLD a `patch`, `remove` or `restore`, by name**, with the model and the method on
+the error and `code: 'APPEND_ONLY'`. Each of those three unambiguously names a row that already exists,
+which the declaration says does not happen.
+
+**A CUSTOM method is not refused, and the drive is what settled that.** The first version refused
+everything that was not a `create`, and `verify:offline` went red on `InventoryMovement.adjust()` —
+the app's own verb, which computes a delta and APPENDS a movement — on the very model whose schema says
+`append` is a statement of fact. Sierra cannot read a custom method; a rule over one is a rule about
+something this layer does not know. The built-in verbs are the ones whose meaning is fixed.
+
+The attachment queue is untouched: it patches through the raw client, because the bytes of a row THIS
+device created arriving late are not a second writer. Pinned, because routing that drain through the
+resource "for consistency" would silently stop an append-only model accepting its own photographs.
+
+## 2026-09-16 — the offline shell has a budget, and it ratchets down only
+
+`FJS-D302`, and the first act of phase 4 rather than the last. The build already printed what the shell
+cost; a number nothing enforces is a number nobody reads, which is why there had never been a budget.
+
+**What is graded is what goes over the WIRE.** Brotli, per file and summed the way a CDN compresses
+each response — a concatenation compresses better than the thing it stands for, by the exact amount
+nobody would notice. Gzip and raw are printed beside it for reading a build.
+
+```
+sw.js — 89 file(s) precached · 276 kB over the wire (317 kB gzip, 982 kB raw) · baseline adopted at 276 kB
+```
+
+**A ceiling this framework picked would be wrong for every app**, so the app adopts whatever it costs
+today: no baseline writes one, under it passes, over it FAILS the build with both numbers and the path
+to the file. `FJS_OFFLINE_BASELINE=update` is the deliberate act — lowering after a win, raising after
+a feature somebody chose to pay for. Invariant 14's mechanism on a second axis.
+
+**It does not rewrite itself when a build shrinks.** A file that changes on every build is a diff
+nobody reads, and the lowering is somebody's decision to record.
+
+**The baseline lives in the surface ROOT and not in `outDir`** — a build empties its own output, so the
+first version adopted a new baseline on every single run and graded nothing.
+
+## 2026-09-16 — the app opens with no network, and has something in it
+
+Phase 3 of the Homestead work (`IDEAS/homestead.md`). Phases 1 and 2 made a WRITE survive an outage;
+this is the other half of the same promise, and it was false until now — a page navigated to with the
+network down landed on Chrome's error screen, and from there every queue on the device is unreachable.
+
+**`postbuild/offline-shell.js` writes `sw.js` from what the build emitted.** Opt-in: `offline: true` in
+`sierra.config.js`, because a service worker is the longest-lived thing a build can leave on somebody's
+device. Sierra writes this one where the app writes its manifest, and the difference is the reason: a
+manifest is a DECLARATION, a precache list is a DERIVATION — only the build knows this build's hashes,
+and an app maintaining one by hand ships a shell pointing at assets that no longer exist.
+
+**It answers for two things and touches nothing else.** A file it precached, and a navigation
+(network-first, the last shell as the fallback). Everything else falls through without `respondWith`
+being called at all, so `/api`, `/ws` and every upload are not in its path. No runtime caching — a
+cache in front of a read would eventually answer with a row the live layer believes it has corrected,
+and `verify:shell` asserts that against the SOURCE as well as against behavior.
+
+**`skipWaiting`, and the drive is why.** The first version left it out, reasoning that a running page
+holds module references into the cache activating would sweep. `verify:shell` refuted it: without it a
+new worker waits for every tab it would replace to CLOSE, and a navigation in the same tab does not
+release control — so a phone with the app open for a week never sees a release. The hazard it was
+guarding against is not new either: a page asking for a chunk the deploy removed fails with or without
+a worker, and `x-fjs-build` is already the mechanism for that.
+
+**`junction/list-cache.js` — what a screen last saw.** A working shell over empty tables reads to a
+person as *the data is gone*. A load that cannot reach the server answers with the last list instead
+of throwing, keyed by the QUESTION (service + query + directives, key-sorted) rather than by the model.
+Three refusals: only a model that declared `@@sync` is kept at all, because putting rows a gate let this
+caller read onto a disk outlives the session and is the app's word rather than a default; it answers on
+SILENCE and never on a refusal, since a 403 means this caller may not read these rows now; and it never
+speaks while the network works, so the online path is unchanged.
+
+**And the session survives.** `refresh()` asked the server who the token is, and with no server it
+answered *nobody* — so an app that opened offline opened SIGNED OUT and hid every gated screen from the
+person holding the device. The last resolved session is kept in `localStorage` and restored when the
+question could not be asked. Safe because a client-side level was never the enforcement (Invariant 6):
+the device gets exactly the refusals it would get without one. Cleared by `clear()`, which both a 401
+and a sign-out go through.
+
+## 2026-09-16 — two queues: the bytes are not a row
+
+`FJS-D301`, and the second half of phase 2. `junction/attachments.js` is a queue of its own — its own
+IndexedDB **database**, its own retry, objects immutable once named — and `resource.js` splits a
+write that could not be sent into the row and its files.
+
+**Three reasons it is not one queue.** A 4MB photograph in front of a 200-byte correction in one FIFO
+makes the small write wait on exactly the connection that cannot carry the large one. A refused row is
+news for a person and a half-sent upload is a retry, so sharing `attempts`, `state` and a drain rule
+would give one of them the wrong one. And a blob store is what fills a device's quota, so a separate
+database is what stops a quota failure taking the write queue down with it.
+
+**Nothing new crosses the wire.** An entry drains as an ordinary `patch` carrying the Blob, which the
+client already turns into multipart and `FileStorage` already turns into an object plus a ref. No
+upload endpoint, no pending-file value in the column, no second answer to who may write — the same
+argument phase 1 made for having no sync protocol.
+
+**The online path is still ONE call.** The bytes travel on the create as they always did; the entry is
+written before it goes out and settled by the same acknowledgement. The split only happens when the
+send could not arrive.
+
+**The bytes go after the rows**, because an attachment names a row that has to exist. The drain chain
+is one handler, and `attachments.js` is imported dynamically there — which keeps the two modules a
+one-way dependency (attachments asks `pending.js` what `unreachable` means) and means an app that never
+queues a photograph never loads the blob queue.
+
+**A model whose key only the server assigns queues NEITHER half.** There would be nothing for the patch
+to name, so failing is the honest answer; the schema advisor says so ahead of time.
+
+## 2026-09-16 — the browser states the key, so a child can name an unsent parent
+
+Phase 2 of the Homestead work (`IDEAS/homestead.md`). Phase 1 held one flat write; this is the shape
+that breaks — a parent and its children written in the same minute with nothing reachable, where the
+child has to name a parent whose id does not exist because the INSERT has not happened.
+
+`resource.js` mints the key off `x-mint` — `{ field, kind }`, crossed only for a model that declares
+`@@sync` and whose single `@id` has a generated default — through `@frontierjs/toolbelt/ids`.
+
+**It mints on every create, not only on one that turns out to be held.** A screen cannot know whether
+its parent reached the server before it needs the parent's id, and an id whose origin depends on the
+network is an id that is sometimes there and sometimes not. A key the caller stated is kept, which is
+the rule the server already follows.
+
+**A generator this bundle does not have is not an error.** `mintId` answers null and the create goes
+without a key, exactly as it does for a model with no `x-mint` — a schema emitted by a newer litestone
+than the bundle reading it degrades to the old behavior rather than throwing.
+
+**The queued error now carries `data`.** For a create on a minting model that is the ROW, and it is the
+only copy anywhere, since the server has never seen it. A screen whose next act references the row had
+nowhere else to read the key from.
+
+## 2026-09-16 — a write the network could not carry is held, not lost
+
+Phase 1 of the Homestead work (`IDEAS/homestead.md`), and the first thing in this framework that
+holds a write the network could not carry. `junction/pending.js` is the queue; `resource.js`'s one
+write funnel is where it hooks in; a model opts in with `@@sync(server)` and nothing else changes.
+
+**Queue-first, one path.** The entry is written BEFORE the call goes out, not in a catch after it
+fails — what PowerSync does, and for the reason it does it (`IDEAS/prior-art.md` § 4): a catch-based
+queue has two routes to the server with a seam between them, and the seam is where a write goes
+twice or not at all. What is stored is what the resource's hooks produced — coerced, blank-stripped,
+validated, version-stamped — because that is what a replay has to send.
+
+**An entry clears on an acknowledgement and never on a send.** This is the rule `example`'s
+`verify:offline` paid for: Chrome's offline mode carries frames on a socket that is already open, so
+a call can leave on a socket that has not noticed the network is gone and arrive minutes later with
+the screen never told. `settle()` is called from the success path and nowhere else.
+
+**`code` is what separates a refusal from silence.** The client attaches one when the server
+answered, so no code at all is a request that never got a reply — and 408 is deliberately on the
+unreachable side, because a timeout is the one answer that cannot say whether the write arrived,
+which is exactly the ambiguity the idempotency key makes safe to resolve by sending again. Not
+`retryable`, which is the SERVER saying *the row moved under you* — a different question that would
+eventually share a branch if it shared a word.
+
+**A held write throws rather than resolving**, carrying `queued: true` and `durable`. Resolving
+successfully would claim the server has a row it may not have; a screen that reads the flag can say
+*held on this device* and one that ignores it shows a failure, which is the safe default. Where
+IndexedDB is unavailable the queue still runs in memory and reports `durable: false`, because an
+in-memory queue survives the outages a page lives through — but a screen promising *will sync* on
+one is promising something a reload breaks.
+
+**Every method but `find` and `get` is held**, custom verbs included. The client cannot tell a
+custom read from a custom write — only the server's method policy knows — and including them is the
+lesser wrong: most of what a real app writes is a custom verb, so excluding them would leave the
+queue covering the part of an app that needs it least, and a queued custom READ costs one wasted
+call on reconnect against a custom WRITE left out costing the row.
+
+**A write carrying a `File` is sent straight through, not queued** — a blob has to outlive the tab
+in a store of its own and the multipart request has to be built at drain, which is phase 2 and the
+`FJS-D298`-shaped ruling it still needs.
+
+**The queue is the resource layer's, and the raw client is the escape hatch.** That is a capability
+line and not a preference: a replay must send the post-hook payload, and `getClient().service(x)`
+has no hooks, no field rules and no version knowledge to produce one. `example`'s own inventory
+screen was on the wrong side of it and moved.
+
 ## 2026-09-15 — a resource's `make()` is handed the create-mode `required`
 
 [`FJS-1162`](../../ISSUES.md#fjs-1162). `createMakeFromSchema` takes it as a fifth argument and

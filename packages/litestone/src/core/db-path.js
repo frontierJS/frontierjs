@@ -7,9 +7,7 @@
 // it had just created while every other command in the tree opened the real one
 // (`FJS-449`).
 
-import { existsSync, statSync } from 'fs'
-import { dirname, basename, resolve } from 'path'
-import { fileURLToPath } from 'url'
+import { existsSync, statSync, dirname, basename, resolve, fileURLToPath } from '#host'
 
 // Where a relative `database { path }` is anchored.
 //

@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-88 definitions · 51 models · 1 view · 12 types · 24 enums · 0 other
+90 definitions · 53 models · 1 view · 12 types · 24 enums · 0 other
 ```
 
 ## Definitions
@@ -66,6 +66,8 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `CartLine` | model |
 | `StockReservation` | model |
 | `InventoryMovement` | model |
+| `StocktakeSheet` | model |
+| `StocktakeCount` | model |
 | `JournalEntry` | model |
 | `JournalLine` | model |
 | `Employee` | model |
@@ -898,7 +900,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `InventoryMovement`
 
-- gate `read:5 create:5 update:9 delete:9` · closed (`additionalProperties: false`)
+- gate `read:5 create:5 update:9 delete:9` · sync `append` · closed (`additionalProperties: false`)
 - relation `variant` — belongsTo `ProductVariant` via `variantId` · on delete Restrict
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -913,6 +915,38 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `note` | `string`? | — | — | `minLength: 0` `maxLength: 200` | — |
 
 **On create**: required — `variantId`, `kind`, `quantity`, `stockBefore`, `stockAfter` · not accepted — `id`
+
+### `StocktakeSheet`
+
+- gate `read:5 create:5 update:5 delete:9` · sync `server` · client mints `id` with `uuid()` · closed (`additionalProperties: false`)
+- relation `counts` — hasMany `StocktakeCount`
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `closedAt` | `string`? | — | — | `format: "date-time"` | — |
+| `note` | `string`? | — | — | `minLength: 0` `maxLength: 200` | — |
+| `startedAt` | `string` | — | — | `format: "date-time"` | — |
+
+**On create**: required — nothing
+
+### `StocktakeCount`
+
+- gate `read:5 create:5 update:5 delete:9` · sync `append` · client mints `id` with `uuid()` · closed (`additionalProperties: false`)
+- relation `sheet` — belongsTo `StocktakeSheet` via `sheetId` · on delete Cascade
+- relation `variant` — belongsTo `ProductVariant` via `variantId` · on delete Restrict
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `string` | — | — | — | — |
+| `sheetId` | `string` | yes | — | — | — |
+| `variantId` | `integer` | yes | Variant | — | — |
+| `counted` | `integer` | yes | — | `minimum: 0` | — |
+| `expected` | `integer` | yes | — | — | — |
+| `damage` | `FileRef`? | — | — | `x-sortable: "file"` `x-aggregatable` `x-litestone-accept` | — |
+| `note` | `string`? | — | — | `minLength: 0` `maxLength: 200` | — |
+
+**On create**: required — `sheetId`, `variantId`, `counted`, `expected`
 
 ### `JournalEntry`
 

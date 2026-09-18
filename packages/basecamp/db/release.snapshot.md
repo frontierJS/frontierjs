@@ -835,13 +835,14 @@ table `flow_credential` · db `main` · gate `5`
 | `encoding` | `String` | yes | `'json'` | — |
 | `header` | `String` | yes | — | — |
 | `id` | `String` | no | `(lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6))))` | id |
-| `name` | `String` | no | — | unique · **required on write** |
+| `name` | `String` | no | — | **required on write** |
 | `provider` | `String` | no | — | **required on write** |
 | `secret` | `String` | yes | — | @encrypted |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` | — |
 | `workspaceId` | `String` | no | — | **required on write** |
 
 ```
+@@unique(name, workspaceId)
 @@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
 @@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
@@ -1040,7 +1041,7 @@ table `kv_entry` · db `main` · gate `8`
 | `workspaceId` | `String` | no | — | **required on write** |
 
 ```
-@@unique(key, scope)
+@@unique(key, scope, workspaceId)
 @@index(expiresAt)
 @@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
 @@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)

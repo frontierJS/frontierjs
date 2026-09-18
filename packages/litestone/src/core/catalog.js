@@ -31,6 +31,11 @@
 // parser rather than by reading it — every field attribute is tried on an enum
 // member, and accepted-there must equal declared-here.
 
+// The one import this table has, and it is the point: an enumerated argument's
+// values are the PARSER's set, never a copy of it (`test/catalog.test.ts` binds
+// every other one by name).
+import { SYNC_POLICIES } from './parser.js'
+
 export const POSITIONS = {
   field:      "on a model's field",
   typeField:  "on a type's field",
@@ -955,6 +960,26 @@ const MODEL = [
     }
   ),
   t(
+    'sync',
+    'model',
+    'operate',
+    '(policy)',
+    'This model\'s rows may be written with no server reachable: the client holds the write and replays it when one is. The argument is the COLLISION policy and nothing else — whether a model leaves the device, and in which direction, is a separate question this attribute has not been asked. All three policies behave identically on a reachable network; each decides what happens to a write nobody is standing over when it lands. `server` drops the revision the device read, so the replay applies to whatever the row holds by then. `append` says rows are only ever added, which is what makes a collision impossible rather than resolved — a held patch, remove or restore is refused by name. `refuse` carries the revision and the Data boundary refuses the replay if the row moved, which is why it needs an @version column and is refused without one. There is no default and silence is not permission: a model that declares nothing is not syncable, and an offline client refuses to queue a write against it by name rather than dropping it, because a model nobody thought about would otherwise lose a row with nothing said. It crosses to the browser as `x-sync`, and its ABSENCE is what a client reads as a refusal.',
+    '@@sync(server)',
+    {
+      seeAlso: ['gate', 'version', 'transitions'],
+      // `refuse` names a revision and the parser refuses it without one, so the
+      // probe model needs the column or the catalog would be declaring a value
+      // its own binding test cannot make parse.
+      extraFields: 'version Int @version',
+      // DERIVED from the parser's own set. The catalog is what an editor
+      // completes from and what the reference page prints, so a hand-written
+      // list is a second answer to *which policies exist* — and it had already
+      // gone stale by two the first time the set grew.
+      values: [vals('policy', [...SYNC_POLICIES], '@@sync(%s)')]
+    }
+  ),
+  t(
     'capabilities',
     'model',
     'access',
@@ -1371,6 +1396,7 @@ export const DOCS = {
 export const UNDOCUMENTED = {
   'schema:valueset': 'FJS-412 — ruled and being built, so the page is owed with the feature rather than now',
   'field:values':    'FJS-412 — the binding half of valueset, and the same page will cover both',
+  'model:sync':      'FJS-D298 — the declaration ships ahead of the queue that reads it (IDEAS/homestead.md phase 1), and a page describing offline writes before an app can make one would document a promise rather than a feature. Owed with the queue.',
 }
 
 /* ─── When you meet a word ────────────────────────────────────────────────────
@@ -1431,7 +1457,7 @@ export const TIERS = {
     'field:endsWith', 'field:contains', 'field:minItems', 'field:maxItems', 'field:uniqueItems',
     'field:type','field:lt', 'field:gt',
     // model attributes
-    'model:id', 'model:arc', 'model:map', 'model:external', 'model:noStrict',
+    'model:id', 'model:arc', 'model:map', 'model:external', 'model:noStrict', 'model:sync',
     'model:fts','model:check', 'model:extensible',
   ],
 }

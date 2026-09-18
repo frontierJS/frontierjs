@@ -2,7 +2,7 @@
 // Receives: { srcPath, outPath, splitPipeline, configPath }
 // Replies:  { ok, outPath, elapsed, warnings } | { ok: false, error }
 
-import { Database } from 'bun:sqlite'
+import { openDatabase } from '../core/engine.js'
 import { copyFileSync, statSync } from 'fs'
 import { introspectSQL, plan, parseLimit } from './framework.js'
 import { run } from './runner.js'
@@ -21,7 +21,7 @@ self.onmessage = ({ data }) => {
 
   try {
     copyFileSync(srcPath, outPath)
-    const db = new Database(outPath)
+    const db = openDatabase(outPath)
     applyPragmas(db)
 
     const schema = introspectSQL(db)

@@ -145,7 +145,28 @@ import { LEVELS } from '@frontierjs/toolbelt/gate'
 import { TIME_PATTERNS } from './core/validate.js'
 import { dependsOnClock } from './core/policy.js'
 import { capabilitiesForModel } from './core/capabilities.js'
-import { isServerAssignedId } from './core/ids.js'
+import { isServerAssignedId, ID_GENERATORS } from './core/ids.js'
+
+/**
+ * May the CALLER state this model's key, and how is one made?
+ *
+ * Two readers and one answer: the create-mode subtraction above, which must
+ * offer the column, and `x-mint` below, which tells a client how to fill it.
+ * Asked of `@@sync` because that is the declaration that makes a client-stated
+ * key necessary — a row written with no server reachable is named by its
+ * children before any INSERT has happened.
+ *
+ * A composite key answers null: minting one member of a key is not minting the
+ * key, and the other members are offered for the caller to supply already.
+ */
+function mintableId(model) {
+  if (!model.attributes?.some(a => a.kind === 'sync')) return null
+  const ids = (model.fields ?? []).filter(f => f.attributes.some(a => a.kind === 'id'))
+  if (ids.length !== 1) return null
+  const gen = ids[0].attributes.find(a => a.kind === 'default')?.value
+  if (gen?.kind !== 'call' || !ID_GENERATORS[gen.fn]) return null
+  return { field: ids[0].name, kind: gen.fn }
+}
 import { filterableKeysFor, sortableKeysFor, aggregatableKeysFor, identifyingKeysFor } from './core/query.js'
 import { sealedStates } from './core/seal.js'
 
@@ -495,8 +516,14 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     // create carrying the key was refused and a generated form had no box to
     // type it into (`FJS-608`). `isServerAssignedId` is the one owner — the
     // required pre-flight in client.js asks the same question.
+    //
+    // A model that declares `@@sync` is the exception, and it is the same
+    // statement rather than a second one: writing with no server reachable
+    // means a parent is named by its children before any INSERT has happened,
+    // so the caller must be able to state the key. It stays OPTIONAL — a create
+    // made on the network omits it and the server assigns it exactly as before.
     const isId = field.attributes.find(a => a.kind === 'id')
-    if (isId && mode === 'create' && isServerAssignedId(field, model)) continue
+    if (isId && mode === 'create' && isServerAssignedId(field, model) && !mintableId(model)) continue
 
     // @guarded / @secret — excluded for the client audience entirely, in every
     // mode. There were two branches here, and the second advertised a bare
@@ -753,6 +780,29 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
   // which field to round-trip without scanning properties for a readOnly Int.
   const versionField = model.fields.find(f => f.attributes.some(a => a.kind === 'version'))
   if (versionField) result['x-version'] = versionField.name
+
+  // ── x-sync ─────────────────────────────────────────────────────────────────
+  // May this model's rows be written with no server reachable, and under which
+  // collision policy (`FJS-D298`)? A model that declares nothing emits nothing,
+  // and a client with no answer refuses to queue — so the absence is the
+  // refusal, not a default.
+  const syncAttr = model.attributes?.find(a => a.kind === 'sync')
+  if (syncAttr) result['x-sync'] = syncAttr.policy
+
+  // ── x-mint ─────────────────────────────────────────────────────────────────
+  // May the CALLER state this row's key, and how is one made? An `@id` with a
+  // generated default is server-assigned (`isServerAssignedId`) and is therefore
+  // absent from create mode entirely — which is right on a network and is the
+  // thing that breaks offline, where a parent has to be named by its children
+  // before any INSERT has happened. Naming the generator lets a client mint the
+  // same value the server would; its absence means only the server can key this
+  // model, which is today's behavior and stays the default.
+  //
+  // The FIELD is carried because the property is not here to be read off: it was
+  // subtracted for being server-assigned. A composite key emits nothing — minting
+  // one member of a key is not minting the key.
+  const mint = mintableId(model)
+  if (mint) result['x-mint'] = mint
 
   // ── x-label-field ──────────────────────────────────────────────────────────
   // Which column a picker SHOWS for a row of this model — FHIR's `display`.

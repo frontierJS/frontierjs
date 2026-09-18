@@ -116,6 +116,85 @@ phase. That is `classifyPivot` built by people for whom it is the whole company.
 Worth reading for its vocabulary and for what it refuses to decide
 automatically — `release-transitions.md` is the consumer.
 
+## 4. The sync engines — the field Homestead is walking into
+
+**Added 2026-09-16, and it opens with the same finding this paper opened with.**
+Grepped before writing: the whole repository cited this field **once** — the
+words *Replicache and Zero* inside [`FJS-D138`](../DECISIONS.md#fjs-d138) — plus
+Convex in passing in `live-queries.md`. Five phases, three rulings
+(`FJS-D298`–`FJS-D300`) and a built drive were written against none of it.
+
+**Confidence is not uniform and is marked per claim.** The four findings under
+*What it changes* were checked against the projects' own documentation on the
+date above; everything in the table below that is not one of those is outside
+knowledge, and is a lead to verify rather than a fact (`VERIFYING.md`).
+
+### The reading list, and what each is evidence of
+
+| Project | Evidence of |
+| --- | --- |
+| **PowerSync** | The queue-first write path, in production, over the same two databases FJS has. Its upload queue is a real table and the local write and the queue entry are ONE transaction |
+| **Replicache / Zero** (Rocicorp) | Operations-replay done properly: named mutators that run optimistically, again on every rebase, and authoritatively on the server; `lastMutationID` per client as the exactly-once mechanism |
+| **ElectricSQL** | **The pivot.** It began as SQLite + Postgres + bidirectional CRDT sync and dropped all of it; writes now go through the app's own backend API |
+| **Triplit** | The nearest comparator to FJS's bet — one TypeScript schema, a database on both sides, queries that sync. Property-level conflict resolution, durable local storage |
+| **PouchDB / CouchDB** | The canonical revision-tree design, and conflict as a STORED state rather than an event: the document carries its conflicting revisions until something resolves them |
+| **Firestore offline persistence** | The most widely deployed offline write queue there is, and what it costs to make the queue invisible and unbounded — lead, not verified here |
+| **SQLite session extension** | Changesets, their inverses, and a conflict handler, already inside the engine FJS runs on both sides. Cited nowhere in this repo — lead |
+| **cr-sqlite** | What a CRDT costs when it lives in the storage layer rather than the application — lead |
+| **Automerge / Yjs** | The byte and complexity budget of full CRDTs — lead |
+| **Linear's sync engine** | An object graph, a transaction log and a bootstrap, at production scale — lead |
+| **Figma multiplayer** | How far last-writer-wins per property gets without CRDTs — lead |
+| **Meteor latency compensation** | The original *run the method locally, reconcile after* — lead |
+| *Local-first software*, Ink & Switch | The seven ideals, and the citation `IDEAS/offline-first-and-release.md` should have carried from the start — lead |
+| **Weidner, *Designing Data Structures for Collaborative Apps*** | **How to CHOOSE merge semantics per field, which is the `@@sync` vocabulary question.** Read 2026-09-16. Four rules, of which two decide entries in that table: an operation that ADDS a unique new thing wants a set of unique things and then cannot conflict at all (which is `append`, and makes it the principled answer rather than the cheap one); and *independent operations should act on independent state*, which is the argument against a row-wide `lww` and for per-column resolution. Also the deletion anomaly — a concurrent delete beside a property update leaves a row that is neither — and a warning that generalizes past CRDTs: semantics that come from a library you do not understand inside and out are a hard fix later |
+| Riffle, *a reactive relational database* · Forsyth, *In search of a local-first database* | Phase 4 — reactive local reads, and which browser database. Unread, deliberately: they answer a question no phase before 4 asks |
+
+### What it changes
+
+**1. Queue-first, one path.** `IDEAS/homestead.md` phase 1 briefly said the
+durable queue sits BEHIND an existing retry in the client. There is no such
+retry — that reading was an instrument fault, recorded in that paper — and the
+field does not build it that way regardless. PowerSync's SDK intercepts every local write and places it in
+a persistent FIFO queue in the same transaction as the write itself, and sending
+is that queue draining; there is no second path and therefore no seam where a
+write is sent twice or not at all. **The FJS version of "same transaction" is the
+optimistic overlay `FJS-D138` already keeps** — the intent is recorded where the
+screen reads it, or the screen and the queue can disagree.
+
+**2. A file is a second queue, and the reference is minted by the client.**
+Q5 asked what happens to a `File` in a queued write and had no options. The
+field has converged: metadata syncs through the ordinary path, the bytes go to
+object storage, and attachments get a queue of their OWN with its own local
+table, its own retry interval and immutable UUID-named objects. FJS is already
+shaped for it — a `File` column stores a reference and `FileStorage` owns the
+bytes — so the queued mutation carries a reference the client minted and a
+second queue carries the upload.
+
+**3. An entry clears on an acknowledgement, not on a send.** Replicache's
+`lastMutationID` is *the high water mark of mutations seen from that client*,
+and exactly-once falls out of it. `verify:offline` measured why that matters
+here from the other end: a call can leave on a socket that has not yet noticed
+the network is gone, arrive minutes later, and the screen is never told.
+
+**4. The gate at replay has prior art and it agrees with `FJS-D300`.**
+Replicache's mutator body runs again on every rebase, and its own documentation
+says a guard that held at the gesture can legitimately fail on rebase, because
+the server has since told the client something it did not know. That is the
+ruling this repo already made, arrived at independently.
+
+**5. Phase 5 should be approached as a question, not a plan.** ElectricSQL
+abandoned bidirectional CRDT sync after building it and now handles no write
+path at all. Nothing here says FJS cannot do conflict resolution; it says the
+one team that shipped the ambitious version narrowed it, and a phase that
+assumes the ambitious version should carry that.
+
+### What is NOT changed by any of it
+
+**The write still goes through the service, the gate still lives in the seed,
+and the server still re-checks.** Electric's pivot landed on exactly that
+arrangement from the other direction, which is the strongest available evidence
+that FJS's Data boundary is not the part to soften for offline.
+
 ## Already read, so not restated here
 
 `live-queries.md` reads Remult (a per-connection query registry, correct and

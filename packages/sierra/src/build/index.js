@@ -21,6 +21,7 @@ import { mesaPlugin } from './mesa-plugin.js'
 import { devtoolsPlugin } from './devtools-plugin.js'
 import { scannerPlugin } from './scanner-plugin.js'
 import { schemaPlugin }  from './schema-plugin.js'
+import { localDbPlugin } from './local-db-plugin.js'
 import { virtualSierraPlugin } from '../virtual/virtual-sierra.js'
 import { runPostBuild } from '../postbuild/index.js'
 import { prerenderRoutes } from './prerender.js'
@@ -112,6 +113,9 @@ export function createSierraViteConfig(config = {}) {
     // Before the scanner: virtual:sierra embeds the generated model schemas,
     // so they must exist by the time it is built.
     sierraPlugins.push(schemaPlugin(config, sierraContext))
+    // After the schema plugin, which is what produced the device projection it
+    // emits, and before virtual:sierra, which names the URLs it writes.
+    sierraPlugins.push(localDbPlugin(config, sierraContext))
     sierraPlugins.push(scannerPlugin(config, sierraContext))
     // Dev only (`apply: 'serve'`). A prerendered route's load() runs in Node,
     // and in dev this process IS the Node — so the page can be seen with its

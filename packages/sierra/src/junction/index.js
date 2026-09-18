@@ -57,6 +57,11 @@ export {
   displayFor, defaultDisplayFor, columnList, filterOpFor,
   registerDisplay, unregisterDisplay, registeredDisplays,
 } from './resource.js'
+// The device's own database, when the app configured one. Exported because
+// `virtual:sierra` calls it — the app never does.
+export { configureLocalDb } from './local-db.js'
+import { clearLocalDb } from './local-db.js'
+
 // The live stores' half of a token change — see _tokenChanged below.
 import { resetResourcesForIdentityChange } from './resource.js'
 
@@ -155,6 +160,19 @@ function _tokenChanged(token) {
   // until their own load() resolves and indefinitely on any screen whose load()
   // never runs — sign-out is a goto(), not a reload (FJS-786).
   resetResourcesForIdentityChange()
+  // And the device's own tables, which outlive the tab and are the only one of
+  // the three that survives a reload. Every row in them arrived in an answer
+  // the PREVIOUS caller was given, which is exactly why they are read back
+  // without being re-graded — so they go when that caller does.
+  clearLocalDb().catch(() => {})
+  // **Nothing re-warms from here**, and the reason is worth stating because the
+  // gap looks real: everything declared was last fetched as the PREVIOUS caller
+  // and a gate refused most of it. `setToken` cycles the socket, because the
+  // identity is established at the upgrade and cannot be restated per frame —
+  // so `connect` fires and the warm armed on it runs as the person who just
+  // signed in. A call here would be a second origin for *when what is held is
+  // refreshed*, and it would race the clear above for the OPFS pool.
+  //
   // A deliberate sign-out closes the socket rather than reopening it as a
   // stranger: an anonymous connection serves no purpose and would fire
   // 'connect' after the person has left.
