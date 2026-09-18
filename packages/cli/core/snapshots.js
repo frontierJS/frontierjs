@@ -343,6 +343,9 @@ export function checkSnapshots({ root, only = null, write = false, timeoutMs = 1
     }
 
     const argv = write ? entry.argv.slice(1) : [...entry.argv.slice(1), '--check']
+    // Marked on the result so a formatter can tell a stale file from a
+    // generator that never ran.
+    const wrote = write
     const run  = spawnSync('bun', [generator, ...argv], {
       cwd:        join(root, entry.dir),
       encoding:   'utf8',
@@ -354,12 +357,13 @@ export function checkSnapshots({ root, only = null, write = false, timeoutMs = 1
     })
 
     if (run.error) {
-      results.push({ ...entry, ok: false, error: `could not run \`${entry.argv.join(' ')}\` — ${run.error.message}`, stdout: '', stderr: '' })
+      results.push({ ...entry, wrote, ok: false, error: `could not run \`${entry.argv.join(' ')}\` — ${run.error.message}`, stdout: '', stderr: '' })
       continue
     }
 
     results.push({
       ...entry,
+      wrote,
       ok:     run.status === 0,
       error:  run.status === 0 ? null : entry.seeded ? 'could not be written' : write ? 'could not be regenerated' : 'no longer matches its source',
       stdout: run.stdout ?? '',
@@ -381,9 +385,14 @@ export function formatSnapshotResults(results) {
     if (r.ok) continue
     out.push(`  ✗  ${r.file} ${r.error}`)
     if (r.argv) out.push(`       cd ${r.dir} && bunx ${r.argv.join(' ')}`)
-    // A stale snapshot's remedy is the rerun; a snapshot that never existed
-    // failed for a reason only the generator printed, like an unset env var.
-    if (r.seeded) for (const line of (r.stderr ?? '').trim().split('\n').filter(Boolean).slice(-4)) out.push(`       ${line}`)
+    // A CHECK that failed is a diff, and the remedy is the rerun above. A
+    // generator that could not RUN failed for a reason only it printed — a
+    // migration the database never got, an unset env var — and without those
+    // lines `--fix` reads as having done nothing for no reason, which is how a
+    // broken app boot was mistaken for a broken command.
+    if (r.seeded || r.wrote) {
+      for (const line of (r.stderr ?? '').trim().split('\n').filter(Boolean).slice(-4)) out.push(`       ${line}`)
+    }
   }
   return out
 }

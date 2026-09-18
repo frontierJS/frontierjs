@@ -548,6 +548,96 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       })
   }
 
+  // ─── registerHandler ───────────────────────────────────────────────────────
+  //
+  // The one place a handler enters the registry. `handle()` and `schedule()`
+  // both arrive here and differ in one bit: `declared` says whether the
+  // registration is something the app's SOURCE states, or something a database
+  // row asked for at boot. `registrations()` reports only the first, which is
+  // what keeps `junction jobs` a fact about the code.
+
+  function registerHandler(
+    nameOrJob:   string | JobDefinition<never>,
+    handler:     JobHandler<never> | undefined,
+    handlerOpts: HandlerOptions,
+    declared:    boolean
+  ): void {
+    // A definition already states everything a registration needs, so the
+    // two forms differ only in where the values are read from.
+    const def  = typeof nameOrJob === 'string' ? null : nameOrJob
+    const name = typeof nameOrJob === 'string' ? nameOrJob : nameOrJob.name
+    const fn   = (def ? def.handler : handler) as JobHandler | undefined
+    const o    = def
+      ? {
+          queue:       def.queue,
+          maxAttempts: def.maxAttempts,
+          retryDelay:  def.retryDelay,
+          timeout:     def.timeout,
+          cron:        def.cron,
+          timeZone:    def.timeZone,
+        }
+      : handlerOpts
+
+    if (typeof fn !== 'function')
+      throw new Error(`[Caravan] handle('${name}') was given no handler function`)
+
+    const queue       = o.queue       ?? 'default'
+    const maxAttempts = o.maxAttempts ?? 3
+    const retryDelay  = o.retryDelay  ?? []
+
+    handlers.set(name, {
+      name,
+      handler:  fn,
+      queue,
+      maxAttempts,
+      retryDelay,
+      // The queue's default applies to a handler that declares none, and is
+      // resolved HERE rather than in the worker so `registrations()` reports
+      // the bound that will actually be enforced. A snapshot showing `—` for
+      // a job the queue does bound would be a true statement about the
+      // handler and a false one about the app.
+      timeout:  o.timeout ?? queueConf[queue]?.timeout,
+      cron:     o.cron,
+      timeZone: o.timeZone,
+      declared,
+    })
+
+    // WHEN it runs is declared beside WHAT it does. The schedule is
+    // registered here rather than in schedule() because handle() is the only
+    // call autoload makes — a job file that could not reach this could
+    // declare everything about itself except when it runs.
+    if (o.cron) {
+      cron.add({
+        name,
+        cron:     o.cron,
+        timeZone: o.timeZone,
+        // `actor: null` stated rather than inferred: a cron fire is the app's
+        // own work by definition, and nothing about a timer should depend on
+        // whether some unrelated request happened to be in scope when it fired.
+        //
+        // The id NAMES the fire — this job, this minute — rather than being a
+        // fresh uuid, which is what makes a second instance's fire a no-op
+        // instead of a second row. The scheduler is in-process and there is
+        // no leader, so every instance fires and the primary key is what
+        // settles it; a lease-held leader would instead miss fires whenever
+        // the lease was between owners. Two clocks agreeing to within a
+        // minute is the assumption, and it is the same one cron already
+        // makes about firing at the right time at all.
+        //
+        // Built through `occurrenceKey` because a job name is caller-supplied
+        // and this id becomes the jobs table's primary key: interpolated raw,
+        // a job called `report:daily` fired at minute 5 and a job called
+        // `report` fired at `daily:5` are one key, and one of the two fires
+        // silently never runs. Byte-identical for a name without a `:`.
+        fn: (fireMinute: number) =>
+          caravan.dispatch(name, {}, { queue, actor: null, id: occurrenceKey('cron', name, fireMinute) })
+            .catch(err => console.error(`[Caravan] Cron dispatch "${name}" failed:`, err)),
+      })
+    }
+
+    ensureQueue(queue)
+  }
+
   const caravan: CaravanInstance = {
 
     name: 'caravan',
@@ -675,79 +765,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       handler?:    JobHandler<never>,
       handlerOpts: HandlerOptions = {}
     ): void {
-      // A definition already states everything a registration needs, so the
-      // two forms differ only in where the values are read from.
-      const def  = typeof nameOrJob === 'string' ? null : nameOrJob
-      const name = typeof nameOrJob === 'string' ? nameOrJob : nameOrJob.name
-      const fn   = (def ? def.handler : handler) as JobHandler | undefined
-      const o    = def
-        ? {
-            queue:       def.queue,
-            maxAttempts: def.maxAttempts,
-            retryDelay:  def.retryDelay,
-            timeout:     def.timeout,
-            cron:        def.cron,
-            timeZone:    def.timeZone,
-          }
-        : handlerOpts
-
-      if (typeof fn !== 'function')
-        throw new Error(`[Caravan] handle('${name}') was given no handler function`)
-
-      const queue       = o.queue       ?? 'default'
-      const maxAttempts = o.maxAttempts ?? 3
-      const retryDelay  = o.retryDelay  ?? []
-
-      handlers.set(name, {
-        name,
-        handler:  fn,
-        queue,
-        maxAttempts,
-        retryDelay,
-        // The queue's default applies to a handler that declares none, and is
-        // resolved HERE rather than in the worker so `registrations()` reports
-        // the bound that will actually be enforced. A snapshot showing `—` for
-        // a job the queue does bound would be a true statement about the
-        // handler and a false one about the app.
-        timeout:  o.timeout ?? queueConf[queue]?.timeout,
-        cron:     o.cron,
-        timeZone: o.timeZone,
-      })
-
-      // WHEN it runs is declared beside WHAT it does. The schedule is
-      // registered here rather than in schedule() because handle() is the only
-      // call autoload makes — a job file that could not reach this could
-      // declare everything about itself except when it runs.
-      if (o.cron) {
-        cron.add({
-          name,
-          cron:     o.cron,
-          timeZone: o.timeZone,
-          // `actor: null` stated rather than inferred: a cron fire is the app's
-          // own work by definition, and nothing about a timer should depend on
-          // whether some unrelated request happened to be in scope when it fired.
-          //
-          // The id NAMES the fire — this job, this minute — rather than being a
-          // fresh uuid, which is what makes a second instance's fire a no-op
-          // instead of a second row. The scheduler is in-process and there is
-          // no leader, so every instance fires and the primary key is what
-          // settles it; a lease-held leader would instead miss fires whenever
-          // the lease was between owners. Two clocks agreeing to within a
-          // minute is the assumption, and it is the same one cron already
-          // makes about firing at the right time at all.
-          //
-          // Built through `occurrenceKey` because a job name is caller-supplied
-          // and this id becomes the jobs table's primary key: interpolated raw,
-          // a job called `report:daily` fired at minute 5 and a job called
-          // `report` fired at `daily:5` are one key, and one of the two fires
-          // silently never runs. Byte-identical for a name without a `:`.
-          fn: (fireMinute: number) =>
-            caravan.dispatch(name, {}, { queue, actor: null, id: occurrenceKey('cron', name, fireMinute) })
-              .catch(err => console.error(`[Caravan] Cron dispatch "${name}" failed:`, err)),
-        })
-      }
-
-      ensureQueue(queue)
+      registerHandler(nameOrJob, handler, handlerOpts, true)
     },
 
     // ── cancel ───────────────────────────────────────────────────────────────
@@ -798,11 +816,13 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       handler:   JobHandler,
       schedOpts: { queue?: string; timeZone?: string } = {}
     ): void {
-      caravan.handle(name, handler, {
+      // `declared: false` — this door is how a database ROW binds a clock, so
+      // the set of these differs between two databases running one build.
+      registerHandler(name, handler, {
         queue:    schedOpts.queue,
         timeZone: schedOpts.timeZone,
         cron:     cronExpr,
-      })
+      }, false)
     },
 
     // ── unschedule ────────────────────────────────────────────────────────────
@@ -832,6 +852,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 
     registrations(): ReturnType<CaravanInstance['registrations']> {
       return [...handlers.values()]
+        .filter(h => h.declared)
         .map(h => ({
           name:        h.name,
           queue:       h.queue,

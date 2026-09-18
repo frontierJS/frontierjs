@@ -272,6 +272,19 @@ describe('registrations — the declaration, not the clock', () => {
     expect('handler' in q.registrations()[0]!).toBe(false)
   })
 
+  it('leaves out a schedule() registration — a row bound a clock, the app did not declare it', () => {
+    const q = makeQueue()
+    q.handle('send-email', () => {})
+    // What a Job row or a flow's cron trigger does at boot. Two databases run
+    // the same build, so this list moving with their contents is what made
+    // `jobs.snapshot.md` uncommittable.
+    q.schedule('job:cron:8f2c', '0 3 * * *', () => {}, { queue: 'jobs' })
+
+    expect(q.registrations().map(r => r.name)).toEqual(['send-email'])
+    // Registered, fired, and on the clock — only off the declaration list.
+    expect(q.nextRuns().map(r => r.name)).toEqual(['job:cron:8f2c'])
+  })
+
   it('copies retryDelay, so a reader cannot mutate the registry', () => {
     const q = makeQueue()
     q.handle('x', () => {}, { retryDelay: [1000, 2000] })

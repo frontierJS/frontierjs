@@ -164,6 +164,13 @@ export interface RegisteredHandler {
   timeout?:    number
   cron?:       string
   timeZone?:   string
+  /**
+   * False when the registration came through `schedule()`, which is the door a
+   * database ROW comes in by — a flow's schedule trigger, a Job row with a cron
+   * expression. Those are data, so the set of them differs between two
+   * databases running identical code, and `registrations()` leaves them out.
+   */
+  declared:    boolean
 }
 
 // ─── Job definition — what defineJob() returns ───────────────────────────────

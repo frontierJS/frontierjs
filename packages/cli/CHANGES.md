@@ -1,5 +1,16 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-17 — `--fix` says why a generator would not run
+
+`fli test:snapshots --fix` printed `could not be regenerated` and the rerun
+command, and swallowed everything the generator had written to stderr — the
+stderr tail was shown only for a snapshot being written for the FIRST time. So a
+basecamp app whose database was missing a migration failed three snapshots with
+`Plugin "orion" boot failed: no such table: flow` on the floor, and `--fix` read
+as a command that does nothing. The tail is shown for any generator that was
+asked to WRITE and could not; a stale `--check` still prints just the rerun,
+where the diff is the whole answer.
+
 ## 2026-09-17 — the cognitive cuts are moved by hand, over the distribution they cut
 
 A threshold is a claim about where a project falls off, and four numbers do not argue for themselves.

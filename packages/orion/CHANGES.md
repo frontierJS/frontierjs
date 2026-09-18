@@ -1,5 +1,14 @@
 # Changes — @frontierjs/orion
 
+## 2026-09-17 — a flow's cron is on the clock, off the declaration list
+
+Caravan's `registrations()` no longer reports a `schedule()` registration, and
+`orion.cron:<flowId>:t` is one — a clock bound to a flow ROW. Nothing in the
+runner changed; the cron suite asserts against `nextRuns()`, which is what that
+question was always about. The job-name catalog a flow compiles against narrows
+with it, which is the fix rather than the cost: a flow could offer another
+flow's schedule as a job to dispatch.
+
 ## 2026-09-16 — the mockup is cut to what is still owed
 
 `mockup/ui/` was 11 files and 14,908 lines; seven of them, 6,378 lines, are deleted. Each was

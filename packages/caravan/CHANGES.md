@@ -1,5 +1,21 @@
 # Changes — @frontierjs/caravan
 
+## 2026-09-17 — `registrations()` answers the declaration, and a row is not one
+
+`jobs.snapshot.md` could not be committed and nobody could see why. `schedule()`
+is sugar over `handle()`, so a clock bound to a database ROW — a basecamp `Job`
+with a cron expression, an orion flow's cron trigger — landed in the same
+registry a job file does, and `registrations()` reported it. Same build, two
+databases, two answers: basecamp's snapshot grew fifteen `job:cron:<uuid>` rows
+the moment its own database was seeded, and every one of them was data.
+
+`registerHandler` is the one door now and `declared` is the bit it carries:
+`handle()` sets it, `schedule()` clears it, and `registrations()` filters on it.
+`nextRuns()` is unchanged and is where a row-bound schedule still shows — it
+reads the clock, which is the question that legitimately moves. The
+job-name catalog orion offers a flow narrows the same way, which is right for
+the same reason: `orion.cron:<flowId>:t` was never a job anyone can dispatch.
+
 ## 2026-09-14 — a zone's wall clock is read by `/datetime`
 
 `src/cron.ts` held two readers of one fact: `getDateMap` split

@@ -190,7 +190,9 @@ describe("cron from a flow row", () => {
     const flow = chain([count("tick")])
     return { ...flow, nodes: { ...flow.nodes, t: cronTrigger(expression) } }
   }
-  const registered = () => jobs.registrations().map(r => r.name)
+  // `nextRuns()` and not `registrations()`: a cron bound to a flow ROW is data,
+  // so it is on the clock and off the declaration list `junction jobs` commits.
+  const registered = () => jobs.nextRuns().map(r => r.name)
 
   test("an active flow's cron trigger is a schedule, and unscheduling takes it back", async () => {
     const flowId = await activeFlow(env.system, cronFlow("*/5 * * * *"))
