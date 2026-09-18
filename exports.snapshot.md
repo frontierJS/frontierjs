@@ -16,7 +16,7 @@ release moves sixteen at once, and a file that changes every release is a file
 nobody reads on the release that matters.
 
 ```
-19 publishable package(s) · 0 problem(s)
+20 publishable package(s) · 0 problem(s)
 ```
 
 ## Unpublished entry points
@@ -264,6 +264,18 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | main | `main` | `index.ts` | yes |
 
 - peers — `@frontierjs/junction`: `^0.1.0`
+
+## `@frontierjs/orion`
+
+`packages/orion` · ships `CHANGES.md` `CLAUDE.md` `PROJECT_STATE.md` `README.md` `bench/` `db/` `mockup/` `package.json` `src/` `tests/` `tsconfig.json` `web/`
+
+| Kind | Name | Target | Published |
+| --- | --- | --- | --- |
+| exports | `./plugin` | `src/plugin.ts` | yes |
+| exports | `./routes` | `web/routes.js` | yes |
+| exports | `./orion.lite` | `db/orion.lite` | yes |
+
+- peers — `@frontierjs/junction`: `*` · `@frontierjs/litestone`: `*` · `@frontierjs/conduit`: `*` · `@frontierjs/sierra`: `*` · `@frontierjs/ui`: `*`
 
 ## `@frontierjs/outpost`
 
