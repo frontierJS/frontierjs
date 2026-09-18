@@ -1,5 +1,21 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-18 — `ws:pub` asks about npm once, where the answer still costs nothing
+
+`--interactive` carried two things: a bump menu per package, and the pause the
+npm 2FA prompt needs. Only the second is what anyone reached for it for, and
+the first was answering a question the release cannot honor anyway — `bun
+publish` rewrites a `workspace:*` dependency from the LOCKFILE, so every
+version is written and committed before anything is published, and a per-package
+bump pins siblings to versions the run has not published yet. The menu is gone;
+one bump applies to the run, `--filter`/`--except` hold a package back, and
+`--interactive` is now pacing alone. **Every run stops once before the FIRST
+publish** on a terminal, which is where a person gets logged in and their
+authenticator up before eighteen OTP prompts arrive. And preflight asks `npm
+whoami` before a version is spent: `bun publish` reads npm's credentials, so a
+logged-out release used to fail at the registry with the commit and eighteen
+tags already written, where the recovery is a reset rather than a login.
+
 ## 2026-09-18 — `ws:pub` holds back a package nothing has touched
 
 `--affected` was the flag that limited a release to packages with commits since

@@ -5,6 +5,7 @@ description: Every reason this release must not go to npm, before a version is s
 
 <script>
 import { resolve } from 'path'
+import { execSync } from 'child_process'
 </script>
 
 ```js
@@ -33,6 +34,26 @@ if (refusals.some(r => !r.note)) {
   context.config.abort = true
   context.config.prompts?.close()
   return
+}
+
+// Whether npm knows who you are, asked BEFORE a version is spent. bun reads
+// npm's own credentials, and without them the refusal arrives from the registry
+// after the commit and the tags are written — at which point the recovery is a
+// reset rather than a login. `npm whoami` is the cheapest form of the question
+// and it asks the registry, so an expired token reads as logged out.
+if (!flag.dry) {
+  let who = ''
+  try { who = String(execSync('npm whoami', { stdio: ['ignore', 'pipe', 'ignore'] })).trim() }
+  catch { who = '' }
+  if (!who) {
+    log.error('  ✗  npm-auth')
+    log.error('      npm does not know who you are — `bun publish` reads npm\'s credentials')
+    log.error('      Run `npm login` (or `npm login --auth-type=web`) and start again')
+    context.config.abort = true
+    context.config.prompts?.close()
+    return
+  }
+  log.info(`  npm: ${who}`)
 }
 
 // The order is the product of this step even when nothing refused. A dependency

@@ -8,7 +8,7 @@ import { execSync } from 'child_process'
 </script>
 
 ```js
-const { released, tag, otp, tolerate, interactive, prompts } = context.config
+const { released, tag, otp, tolerate, interactive, prompts, tty } = context.config
 if (!released?.length) { log.info('Nothing to publish'); return }
 
 const published = []
@@ -16,12 +16,15 @@ const failures  = []
 const skipped   = []
 
 for (const { name, dir, newVersion } of released) {
-  // The pause the flag exists for. npm's browser 2FA is per-publish, so a loop
-  // that does not stop here opens an OTP prompt for a package nobody is looking
-  // at — and the version is already committed by now, so *not this one, not
-  // today* has to be answerable without abandoning the run.
-  if (interactive && !flag.dry) {
+  // npm's browser 2FA is per-publish, so a loop that does not stop opens an OTP
+  // prompt for a package nobody is looking at — and the version is already
+  // committed by now, so *not this one, not today* has to be answerable without
+  // abandoning the run. The FIRST one always stops, which is where a person
+  // gets their authenticator up; `--interactive` keeps stopping after that.
+  const first = !published.length && !failures.length && !skipped.length
+  if ((interactive || (first && tty)) && !flag.dry) {
     echo('')
+    if (first) log.info(`  ${released.length} publish(es) from here, each with its own npm 2FA prompt.`)
     log.info(`  Ready: ${name}@${newVersion}  →  npm (tag ${tag})`)
     if (!await prompts.confirm('  Publish it?', { default: true })) {
       // A skip is NOT a failure: the version and tag are already written, so

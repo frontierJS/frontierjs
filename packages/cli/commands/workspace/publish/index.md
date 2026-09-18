@@ -70,7 +70,7 @@ flags:
   interactive:
     char: i
     type: boolean
-    description: Walk the release one package at a time, confirming each step — the pacing a browser 2FA prompt needs
+    description: Confirm before every publish, not just the first — the pacing a browser 2FA prompt needs
     defaultValue: false
 ---
 
@@ -106,20 +106,20 @@ commit carries version bumps and nothing else, so re-running the checks that
 already passed on its parent costs about a minute and proves nothing new. The
 push command is printed for you to run when you mean to.
 
-`--interactive` walks the release rather than running it. Each candidate is
-offered on its own with what has moved since its tag, the preflight refusals are
-read before a version is spent, and the publish loop stops before every package
-— which is the whole reason the flag exists: npm's browser 2FA is per-publish
-and human-paced, and a loop that does not stop hands the OTP prompt to a package
-nobody is looking at.
+**One bump for the whole run, always.** `bun publish` rewrites a `workspace:*`
+dependency from the LOCKFILE, so every version is written, the lockfile is
+refreshed once and the commit is made BEFORE anything is published — a
+per-package bump would pin every sibling to a version this run has not
+published yet. A package that should go out on its own bump is its own run,
+which is what `--filter` and `--except` are for.
 
-What it does NOT do is bump one package at a time, and that is worth knowing
-before reaching for it. `bun publish` rewrites a `workspace:*` dependency from
-the LOCKFILE, so every version is written, the lockfile is refreshed once and
-the commit is made BEFORE anything is published — bumping per package would pin
-every sibling to a version this run has not published yet. So the choosing is
-interactive, the versioning is one shot, and the publishing is interactive
-again.
+**Every run stops once before the first publish**, on a terminal. npm's browser
+2FA is per-publish and human-paced, so the pause is where you get logged in and
+ready before eighteen OTP prompts arrive; whether you are logged in AT ALL is
+asked earlier still, in preflight, where no version has been spent yet.
+`--interactive` extends that pause to every package, and adds one before
+versioning and one before the push — the pacing to reach for when the 2FA
+prompt is a browser round trip rather than a code you can type.
 
 ```js
 const { wsRoot, packages: all } = await context.wsPackages()
@@ -194,41 +194,17 @@ if (!packages.length) {
 let planned = packages.map(p => ({ ...p, newVersion: bumpVersion(p.pkg.version, arg.bump) }))
 const repo  = context.wsRepo(all)
 
-// ─── interactive selection ────────────────────────────────────────────────────
-// The prompts are constructed ONCE and travel to the steps on `context.config`.
-// A step importing its own would put a second readline interface on one TTY,
-// and the two then race for every keystroke.
+// ─── prompts ──────────────────────────────────────────────────────────────────
+// Constructed ONCE and carried to the steps on `context.config`. A step
+// importing its own would put a second readline interface on one TTY, and the
+// two then race for every keystroke. Constructing is free — `prompt.js` opens
+// stdin lazily, on the first question actually asked — so they are built for
+// any run that could ask one, rather than for `--interactive` alone: step 02
+// stops before the FIRST publish on every run.
 let prompts = null
-if (flag.interactive) {
+if (!flag.dry) {
   const { createPrompts } = await import(new URL('file://' + global.fliRoot + '/core/prompt.js'))
   prompts = createPrompts()
-
-  const chosen = []
-  echo('')
-  log.info(`${planned.length} candidate(s) — choose a bump for each, or skip it`)
-  echo('')
-  for (const p of planned) {
-    // What has moved since this package's OWN tag is the fact the decision
-    // turns on: a package with no commits since its tag is one whose version
-    // would be spent on nothing, so that is what the default answers.
-    const state = context.git.pkgState(p.pkg.name, p.dir)
-    const since = state.affected
-      ? `${state.commits.length} commit(s) since ${state.lastTag || 'ever'}`
-      : `nothing since ${state.lastTag || 'ever — never released'}`
-    echo(`  ${p.pkg.name}  ${p.pkg.version}  — ${since}${state.dirty ? `, ${state.files.length} uncommitted` : ''}`)
-    if (state.affected) echo(`    last: ${state.commits[0].subject}`)
-    const pick = await prompts.choose('bump', ['patch', 'minor', 'major', 'prerelease', 'skip'],
-                                      { default: state.affected ? 0 : 4 })
-    if (pick !== 'skip') chosen.push({ ...p, newVersion: bumpVersion(p.pkg.version, pick) })
-    echo('')
-  }
-
-  if (!chosen.length) {
-    log.info('Nothing chosen — nothing to publish')
-    prompts.close()
-    return
-  }
-  planned = chosen
 }
 
 log.info(`Publishing ${planned.length} package(s)`)
@@ -256,8 +232,14 @@ context.config.startTime  = Date.now()
 context.config.releaseTag     = releaseTag
 context.config.releaseSubject = releaseSubject
 
-// The pacing the later steps read. `prompts` is null unless --interactive, so a
-// step reaching for it on an ordinary run finds nothing and never opens stdin.
+// The pacing the later steps read. `prompts` is null on a --dry run, which is
+// the one shape that must never ask a question.
 context.config.interactive = flag.interactive
 context.config.prompts     = prompts
+// Whether a question can be answered at all. `prompt.js` buffers a piped stdin
+// to `end`, so asking one where nobody is typing is a hang with no output —
+// the always-on pause before the first publish is gated on this and the
+// explicit `--interactive` is not, because that flag IS someone saying they
+// are here.
+context.config.tty = Boolean(process.stdin.isTTY && process.stdout.isTTY)
 ```
