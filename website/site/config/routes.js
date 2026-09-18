@@ -186,11 +186,40 @@ export const components = {
 }
 
 
+function __sierraDevStatic(routeId) {
+  let answered = null
+  return Promise.resolve({
+    async load({ params, url }) {
+      const q = new URLSearchParams({ route: routeId, url, params: JSON.stringify(params ?? {}) })
+      const res = await fetch('/__sierra/static-data?' + q)
+      const body = await res.json()
+      if (!res.ok) throw new Error(body?.error ?? ('static-data ' + res.status))
+      answered = body
+      return body.data
+    },
+    head: () => answered?.head ?? null,
+  })
+}
+
 // Loader factory map — routes with a .meta.js companion
 // Only populated for routes that have a companion file
 export const loaders = {
 
-
+  'root': () => __sierraDevStatic('root'),
+  'before-after': () => __sierraDevStatic('before-after'),
+  'flow': () => __sierraDevStatic('flow'),
+  'index2': () => __sierraDevStatic('index2'),
+  'index3': () => __sierraDevStatic('index3'),
+  'journey': () => __sierraDevStatic('journey'),
+  'landscape': () => __sierraDevStatic('landscape'),
+  'showroom': () => __sierraDevStatic('showroom'),
+  'showroom2': () => __sierraDevStatic('showroom2'),
+  'showroom3': () => __sierraDevStatic('showroom3'),
+  'showroom4': () => __sierraDevStatic('showroom4'),
+  'showroom5': () => __sierraDevStatic('showroom5'),
+  'tutor': () => __sierraDevStatic('tutor'),
+  'vs-laravel': () => __sierraDevStatic('vs-laravel'),
+  '[pkg]': () => __sierraDevStatic('[pkg]'),
 }
 
 // Layout factory map — keyed by file path (same as node.layout in the tree).
