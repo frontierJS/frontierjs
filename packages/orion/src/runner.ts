@@ -32,6 +32,7 @@
 import { Compiler, type IPluginRegistry } from "./engine/compiler"
 import { InMemoryExecutionStore, InMemoryPlanCache, Scheduler, buildRecord, type ExecutionContext } from "./engine/runtime"
 import type { INodeRegistry } from "./engine/executor"
+import type { NodeTypeDescriptor } from "./engine/plugins"
 import { AsyncLocalStorage } from "node:async_hooks"
 import type { ExecutionPlan, Expression, Flow, NodeDefinition } from "./engine/types"
 import type { SyncHttpResponse } from "./engine/runtime/context"
@@ -106,8 +107,14 @@ export interface RunnerOptions {
   /** Where orion's rows are, per tenant (`src/tenancy.ts`). Orion's models are written at gate 8. */
   host:     OrionHost
   jobs:     OrionJobs
-  /** The node types a flow may use, and their implementations. */
-  registry: IPluginRegistry & INodeRegistry
+  /**
+   * The node types a flow may use, and their implementations.
+   *
+   * `descriptors()` is here rather than on the compiler's interface because
+   * the compiler never asks: it is the CATALOG, which a screen reads to offer
+   * a node and to build that node's form from its `configSchema`.
+   */
+  registry: IPluginRegistry & INodeRegistry & { descriptors(): NodeTypeDescriptor[] }
   /** What the app has — models, jobs, notifications — so a node naming one is checked when its flow compiles. */
   catalog?: HostCatalog
   /**
@@ -716,6 +723,19 @@ export function createRunner(opts: RunnerOptions) {
 
   // ─── the services ──────────────────────────────────────────────────────────
 
+  /**
+   * Every node type this app knows, with the schema each one's config answers.
+   *
+   * Read off the registry rather than off `BUILTIN_DESCRIPTORS`, because the
+   * set a screen may offer is the set this app registered: a host that
+   * installed a plugin has node types no import can see, and they are the ones
+   * `configSchema` exists for — a built-in's form could have been written by
+   * hand, a plugin's could not.
+   */
+  function nodeTypes(): NodeTypeDescriptor[] {
+    return registry.descriptors()
+  }
+
   /** What the compiler says of a definition, before it is saved as a version. */
   function check(definition: unknown): ReturnType<Compiler["compile"]> {
     return compiler.compile({ ...(definition as Flow), id: "check", version: "check" })
@@ -782,7 +802,7 @@ export function createRunner(opts: RunnerOptions) {
   return {
     start, resume, dryRun, runInline,
     activate, deactivate, syncActivations, watch, onWrite, webhook, emit,
-    check, cancel,
+    check, cancel, nodeTypes,
     sweep, register, host,
   }
 }

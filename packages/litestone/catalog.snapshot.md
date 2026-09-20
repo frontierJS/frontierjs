@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**104 words** — 12 declarations · 64 field attributes · 28 model attributes.
+**105 words** — 12 declarations · 65 field attributes · 28 model attributes.
 
 ## Declarations
 
@@ -67,6 +67,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@scale` | Shape the table | (<places>) | on a model's field · on a trait's field |  |  |
 | `@money` | Shape the table | [(<CURRENCY>)] \| [(field: <column>)] | on a model's field · on a trait's field |  |  |
 | `@point` | Shape the table | (<latKey>, <lngKey>) |  |  |  |
+| `@vector` | Shape the table | (<dimensions>) |  |  |  |
 | `@keepVersions` | Record who and when |  |  |  |  |
 | `@log` | Record who and when | (<database>[, reads: false][, writes: false]) |  |  |  |
 | `@trim` | Clean a value on write |  |  |  |  |

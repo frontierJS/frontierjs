@@ -13,6 +13,7 @@ import { printPlanFromFile } from './prose.js'
 import { buildRegistry, uniqueCommands, getModule } from './registry.js'
 import { loadConfig } from './config.js'
 import { BOOL_ARGV, dropUntypedBooleans } from './runtime.js'
+import { setVerbose } from './verbosity.js'
 
 // ─── .fli.json + .env — load both from project root ──────────────────────────
 loadConfig()
@@ -27,7 +28,7 @@ loadEnv(resolve(global.projectRoot, '.env'), { override: true })
 // ─── Internal flags hidden from help/listing ─────────────────────────────────
 // These are added by the runtime (defaultFlags) for cross-cutting behavior;
 // users don't pass them by name in command help so we hide them from listings.
-const INTERNAL_FLAGS = new Set(['dry', 'test', 'step', 'debug', 'project', '_spec'])
+const INTERNAL_FLAGS = new Set(['dry', 'test', 'step', 'debug', 'verbose', 'project', '_spec'])
 
 // ─── printSearch() — keyword search across all commands ──────────────────────
 function printSearch(q, all) {
@@ -227,6 +228,10 @@ export async function run(process) {
     ...flag
   } = argv
   dropUntypedBooleans(flag, process.argv.slice(2))
+  // Before anything can log. `--verbose` is global rather than per-command
+  // because the thing it turns on crosses commands: a command that composes
+  // others hides their output, and the flag has to reach the child too.
+  setVerbose(flag.verbose === true)
   // `fli --version` before anything else — a stranger asking which build they
   // have must not be answered with the usage screen, which is what minimist's
   // empty `_` used to fall through to.
@@ -286,6 +291,11 @@ export async function run(process) {
     line(
       `    ${dim('--project <dir>')}            ${dim(
         'run against that project root instead of cwd'
+      )}`
+    )
+    line(
+      `    ${dim('--verbose')}                  ${dim(
+        'the long version — explanations, and the output of composed commands'
       )}`
     )
     line('')

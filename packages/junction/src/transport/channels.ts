@@ -1236,9 +1236,14 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
               // not also belong in locals — one owner per translation.
               // correlationId/idempotencyKey become request metadata, which is
               // an ALS store rather than a context field.
+              // `base` is the row a held write was made against (`FJS-D334`).
+              // It needs no envelope here — a frame already carries its caller
+              // extras under `meta`, which is the slot HTTP does not have
+              // (`FJS-D338`) — but it is a CONTEXT field rather than scratch,
+              // so it is lifted out of the spread into `locals` below.
               const {
                 query: _q, workspaceId: _ws, headers: _hdrs,
-                correlationId: _cid, idempotencyKey: _idk,
+                correlationId: _cid, idempotencyKey: _idk, base: _base,
                 ...restExtra
               } = extra
 
@@ -1253,6 +1258,9 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
                   query: wsQuery,
                   auth:  { user: (conn?.user ?? null) as import('../auth/types.ts').SessionContext | null },
                   transport: 'websocket',
+                  base: (_base && typeof _base === 'object' && !Array.isArray(_base)
+                    ? _base as Record<string, unknown>
+                    : null),
                   locals: { __channels: manager, ...restExtra } as Record<string, unknown>,
                 },
                 app

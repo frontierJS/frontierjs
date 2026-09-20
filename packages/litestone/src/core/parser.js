@@ -6275,6 +6275,15 @@ function validate(schema) {
         errors.push(`${at}: @vector cannot be @id — a row is not identified by what it means`)
       if ((model.attributes ?? []).some(a => a.kind === 'fts' && (a.fields ?? []).includes(field.name)))
         errors.push(`${at}: @vector cannot be named in @@fts — FTS5 indexes text, and these bytes are not text`)
+
+      // The ordering stamps the computed distance on the row under a fixed name
+      // (`FJS-D329`), so a column already called that would be overwritten with
+      // a float on every similarity read and hold its own value on every other
+      // one. Refused here rather than at the read, the way findMany({ recursive })
+      // refuses a field named `_depth`: this model DECLARES a vector, so the
+      // collision is decidable from the schema alone.
+      if (model.fields.some(f => f.name === '_distance'))
+        errors.push(`${at}: model '${model.name}' declares a field named '_distance', which the similarity ordering writes the computed distance to`)
     }
   }
 

@@ -69,7 +69,40 @@ const PHONE_RE    = /^\+?[\d\s\-().]{7,20}$/
 // reach this file: a migration, a seed, a raw statement, `asSystem()`.
 export const EXACT_INT_MAX = Number.MAX_SAFE_INTEGER
 
+// One owner of *is this storable as a vector*, shared by the validator and the
+// message below so the two cannot describe different rules.
+function vectorWriteError(v, dim) {
+  const bytes = v instanceof Uint8Array ? v
+              : (ArrayBuffer.isView(v) || v instanceof ArrayBuffer) ? new Uint8Array(v.buffer ?? v)
+              : null
+  if (!bytes) return 'is not bytes'
+  if (bytes.byteLength !== dim * 4) return `is ${bytes.byteLength} bytes, expected ${dim * 4}`
+
+  const floats = new Float32Array(bytes.buffer, bytes.byteOffset, dim)
+  let allZero = true
+  for (let i = 0; i < dim; i++) {
+    if (!Number.isFinite(floats[i])) return `has ${floats[i]} at dimension ${i}`
+    if (floats[i] !== 0) allZero = false
+  }
+  if (allZero)
+    return 'is every-dimension zero, which is what an empty or failed embed() returns — ' +
+           'its cosine distance is NULL, NULL sorts first, and the row becomes the best match for every query'
+  return null
+}
+
 const VALIDATORS = {
+  // @vector(n) — the shape the CHECK cannot see.
+  //
+  // The column constraint grades LENGTH, which catches a truncated write and
+  // nothing else. These two are the silent ones, both measured: an all-zeros
+  // vector — what an empty or failed embed() returns — scores NULL in
+  // `vec_distance_cosine`, and NULL sorts FIRST, so one such row is the best
+  // match for every query ever asked, with a 200 and nothing logged. A NaN
+  // makes every distance involving the row NaN, which sorts unpredictably
+  // rather than losing. Neither is visible to a reader, so the write is the
+  // only place either can be refused.
+  vector:      (v, dim)     => vectorWriteError(v, dim) === null,
+
   // String validators
   email:       (v)          => EMAIL_RE.test(String(v)),
   url:         (v)          => URL_RE.test(String(v)),
@@ -457,6 +490,13 @@ export function validateField(fieldName, value, attributes) {
     let defaultMsg = ''
 
     switch (kind) {
+      case 'vector': {
+        const why = vectorWriteError(value, attr.dim)
+        pass       = why === null
+        defaultMsg = `must be a ${attr.dim}-dimension float32 vector — it ${why}`
+        break
+      }
+
       case 'email':
       case 'url':
       case 'phone':
@@ -642,6 +682,12 @@ export function buildValidationMap(schema) {
     // and a caller sending `1.5` to a @big column is refused by the CHECK,
     // which names a physical column and no way to fix it.
     'big',
+    // And again, with the sharpest consequence of the three. `@vector`'s CHECK
+    // grades LENGTH alone, so without this entry a zero vector and a NaN both
+    // store cleanly — and neither is visible afterwards: the zero scores NULL,
+    // NULL sorts first, and the row is the best match for every query with a
+    // 200. The pass is the only place either can be refused.
+    'vector',
   ])
 
   const map = {}

@@ -580,8 +580,8 @@ name when it declares none.
 
 ### `flows` · model `Flow`
 
-- **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `save`, `versions`, `activate`, `pause`, `archive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`
-- **custom methods** — `save`, `versions`, `activate`, `pause`, `archive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`
+- **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `save`, `versions`, `activate`, `pause`, `archive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`, `nodeTypes`
+- **custom methods** — `save`, `versions`, `activate`, `pause`, `archive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`, `nodeTypes`
 - **who may call** —
   - `restore` — standing 4 or above — declared `gate: 4`
   - `save` — standing 4 or above — declared `gate: 4`
@@ -595,6 +595,7 @@ name when it declares none.
   - `import` — standing 4 or above — declared `gate: 4`
   - `layout` — standing 4 or above — declared `gate: 4`
   - `saveLayout` — standing 4 or above — declared `gate: 4`
+  - `nodeTypes` — standing 4 or above — declared `gate: 4`
 - **broadcasts on** — `flows`
 
 | Phase | Method | Chain |

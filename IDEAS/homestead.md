@@ -814,21 +814,45 @@ automatically; doing that here re-sends the whole patch and overwrites the other
 writer's column with nothing said. `retryable` is false, and the flag is pinned
 by a test in litestone rather than in the package that reads it.
 
-#### What is left of phase 5 — the transport
+#### The transport — BUILT
 
-Nothing yet carries a base from a device to the boundary, so `field` is reachable
-only by a direct `db.<model>.update({ base })`. Sierra's half is one line at a
-call site that already holds what it needs — `_read.get(ctx.id)` IS the row the
-screen read, and it is already consulted there for `@version`. **Junction's half
-is a decision rather than a line**: a base is a ROW, so it cannot travel as a
-header the way `idempotencyKey` does, and a write's body today IS its `data`.
-Carrying one means an envelope on write requests, which is a new wire shape and
-wants its own hearing. Filed as `FJS-1202`.
+`FJS-D338`. A base is a ROW, so it cannot ride a header the way an idempotency
+key does, and a write's body already IS its `data` — so a call carrying one
+flags the body: `X-Fjs-Write: enveloped`, and a body of `{ data, base }`.
+Absent flag, the body is the data exactly as before, so nothing already on the
+wire changed meaning. **Flagged rather than sniffed**, because a row may hold a
+`data` key of its own and the shape cannot answer the question.
 
-**Meanwhile sierra refuses to hold a `field` write by name** (`NO_BASE_CARRIED`)
-rather than letting it go up with its revision and no base, be refused on the
-revision alone, and behave as `refuse` under a declaration promising more — the
-same rule `append` already follows, for the reason `FJS-D298` closed the set.
+**The socket needed none of it.** A `service_call` frame already carries caller
+extras under `meta`, which is the slot HTTP lacks, so both transports land on
+one `ctx.base` — and `write-envelope.test.ts` grades them against each other,
+which is the only place the agreement is visible.
+
+**Sierra derives the base rather than declaring it.** Nothing a caller writes
+says what they were looking at; the resource does, in the `_read` map it already
+reads a `@version` out of. It rides the live call as well as the held one,
+because a write made with the network up can still lose a race — otherwise
+`field` would resolve only for a device that had been offline.
+
+**`example` proves it on the model its own schema comment named.** The `@version`
+note in `schema.lite` had listed `ProductVariant` as the case a row-wide revision
+gets wrong — a person edits the price while every sale writes `stock` — so that
+is where `@@sync(field)` went, and the note is rewritten rather than left stating
+an argument that now has an answer. `verify:offline` runs two writers against a
+real database, and **the control is the sharp part**: the identical stale write
+with NO base is a plain 409. Without it the merge assertion passes equally well
+against a boundary that had stopped checking the revision, which is the opposite
+of the feature.
+
+**Two things the build taught.** The pending queue assembles its entry BY NAME,
+so the base reached the call site and vanished — anything a caller passes that
+`add` does not list is silently gone. And removing the service's pass-through
+reveals the degradation exactly: a `retryable: true` version conflict, which is
+the shape an automatic re-apply turns into silent data loss.
+
+**What is left of phase 5 is `manual`**, and `FJS-D335` says it stays left: the
+conflict relation is `manual`'s cost, `FJS-D304` ships nothing else until an app
+asks, and a V1 conflict is a rejected queue entry carrying `base`/`local`/`remote`.
 
 **And phase 5 carries `FJS-D337` with it**, because the two are one call: a
 device required to supply the base is a device whose copy is load-bearing, which

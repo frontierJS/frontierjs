@@ -306,9 +306,10 @@ export function buildFieldPolicyMap(schema) {
       const hashedAttr    = field.attributes.find(a => a.kind === 'hashed')
       const systemAttr    = field.attributes.find(a => a.kind === 'system')
       const immutableAttr = field.attributes.find(a => a.kind === 'immutable')
+      const vectorAttr    = field.attributes.find(a => a.kind === 'vector')
       const fieldAllows   = field.attributes.filter(a => a.kind === 'fieldAllow')
 
-      if (!omitAttr && !guardedAttr && !encryptedAttr && !hashedAttr && !systemAttr && !immutableAttr && !fieldAllows.length) continue
+      if (!omitAttr && !guardedAttr && !encryptedAttr && !hashedAttr && !systemAttr && !immutableAttr && !vectorAttr && !fieldAllows.length) continue
 
       // Build per-op allow expression lists: { read: [expr,...], write: [expr,...] }
       const allow = fieldAllows.length ? { read: [], write: [] } : null
@@ -318,7 +319,18 @@ export function buildFieldPolicyMap(schema) {
       }
 
       map[model.name][field.name] = {
-        omit:      omitAttr?.level    ?? null,
+        // `@vector` is `@omit(all)` by declaration (`FJS-D328`) — four bytes a
+        // dimension is 6 kB on a 1536-dimension column, so twenty rows of a
+        // list carry 123 kB nobody asked for, and the failure is a slow screen
+        // that gets attributed to anything but the schema. The DECLARATION
+        // already knows the size class, so this restates nothing; naming the
+        // field in `select` is how you get it, which is `@omit(all)`'s own
+        // contract and needs no second mechanism.
+        omit:      omitAttr?.level ?? (vectorAttr ? 'all' : null),
+        // Carried so a message can name the attribute the schema actually
+        // wrote. `@omit(all)` and `@vector` produce one behavior and are two
+        // different sentences to a reader looking for the word in their file.
+        vector:    vectorAttr ? { dim: vectorAttr.dim } : null,
         guarded:   !!guardedAttr,
         encrypted: encryptedAttr ? { deterministic: encryptedAttr.deterministic ?? false } : null,
         // @hashed is not a flavor of encrypted — no ciphertext, no decrypt, and it

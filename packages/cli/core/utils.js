@@ -4,6 +4,7 @@ import { pathToFileURL } from 'url'
 import { tmpdir } from 'os'
 import { createHash } from 'crypto'
 import { chalk } from './color.js'
+import { isVerbose } from './verbosity.js'
 
 // ─── Filesystem walker ────────────────────────────────────────────────────────
 // Recursive .md (or arbitrary extension) discovery. Hot path on every cold
@@ -99,8 +100,12 @@ export const logger = (msg, level = 'log') => {
     case 'info':
       console.log(chalk.dim('·') + ' ' + msg)
       break
-    case 'debug':
-      console.log(chalk.dim('[debug]') + ' ' + chalk.dim(msg))
+    // The paragraph behind a line. Unprefixed, because the caller is prose
+    // rather than a diagnostic, and silent unless `--verbose` was typed: a
+    // command that explains itself in full every time is one whose important
+    // lines scroll past.
+    case 'detail':
+      if (isVerbose()) console.log(chalk.dim(msg))
       break
     default:
       console.log(msg)

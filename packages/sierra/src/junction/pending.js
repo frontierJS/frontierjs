@@ -147,12 +147,17 @@ export function createPendingQueue({ onChange = null, now = () => Date.now() } =
      * phase 2 and the resource refuses it by name rather than storing a blob
      * nothing will ever upload.
      */
-    async add({ service, model, method, id, data }) {
+    async add({ service, model, method, id, data, base }) {
       const entry = {
         key:       crypto.randomUUID(),
         service, model, method,
         id:        id ?? null,
         data:      data ?? null,
+        // The row the writer READ, kept only where a policy reads one
+        // (`@@sync(field)`, `FJS-D334`). The entry is built by NAME rather
+        // than spread, so a field the caller passes and this does not list is
+        // dropped — which is what happened to this one first time round.
+        ...(base ? { base } : {}),
         createdAt: now(),
         attempts:  0,
         state:     'pending',
@@ -272,7 +277,12 @@ export function pendingQueue() {
  */
 async function _send(client, entry) {
   const proxy = client.service(entry.service)
-  const opts  = { idempotencyKey: entry.key }
+  // `base` is the row the writer read, kept on the entry so a replay days
+  // later compares against what they were looking at rather than against
+  // whatever the row holds by then — which is the whole of `@@sync(field)`
+  // (`FJS-D334`). Absent on every other policy, and litestone refuses one it
+  // was not expecting by name.
+  const opts  = { idempotencyKey: entry.key, ...(entry.base ? { base: entry.base } : {}) }
   switch (entry.method) {
     case 'create': return proxy.create(entry.data ?? {}, undefined, opts)
     case 'patch':  return proxy.patch(entry.id, entry.data ?? {}, undefined, opts)

@@ -42,8 +42,9 @@ the plan, module by module, and the rulings it rests on are
 | `bench/checkpoint.ts` | what one checkpoint costs at 10, 100 and 1,000 nodes; `bun run bench` |
 | `web/routes.js` | the directory a host mounts — `export { default } from '@frontierjs/orion/routes'` in a `*.mount.js` (`FJS-D282`) |
 | `web/routes/` | the screens: flows, a flow, runs, a run, credentials, and the section layout |
+| `web/components/` | `NodeInspector.mesa` (a node's config, one field per `configSchema` property), `ConfigValue.mesa` (one value — a literal on the schema's control, a computed one on `ExpressionField`) and `ExpressionField.mesa` (an expression as the line that parses back to it) |
 | `web/resources/` | `Flow.mesa`, `Run.mesa`, `FlowCredential.mesa` — the resources the screens read through |
-| `mockup/ui/components/` | four files, the specification for what phase 6 has not built and not a source: `flow-editor.jsx` (the canvas), `nodes.jsx` (the per-node inspector), `node-types.js` (`NODE_CONFIG_FIELDS` and `schemaToFields` — `ENODE_TYPES` beside them is ported), `pages.jsx` (metrics, templates, plugins, the run filter bar). **It does not run** — no `package.json`, no vite — so it is read, never driven |
+| `mockup/ui/components/` | four files, the specification for what is not built and not a source: `flow-editor.jsx` (the canvas), `pages.jsx` (metrics, templates, plugins, the run filter bar), and `nodes.jsx` + `node-types.js`, whose `NODE_CONFIG_FIELDS` is the design the inspector DECLINED. **It does not run** — no `package.json`, no vite — so it is read, never driven |
 
 ## What bites here
 
@@ -162,6 +163,33 @@ the plan, module by module, and the rulings it rests on are
   client the pool may evict once released, so it is used inside the call that
   opened it and never kept — which is why the runner's actor is a callback, and
   why `runInline` holds its lease until the run ends rather than until it answers.
+- **A config value is an Expression node, never a plain value.** The resolver
+  dispatches on the stored node's own `type`, so `model: 'Customer'` is written
+  `{ type: 'literal', value: 'Customer' }` and the same slot may hold
+  `{ type: 'ref', path: '$.trigger.record.id' }`. A `configSchema` therefore
+  describes what a value must RESOLVE to and not what is stored — which is what
+  makes it a form: `buildFieldRules` + `formFieldList` pick the control for the
+  literal, and the stored node's own type decides whether that control is what
+  the field opens on. **A property with no `type` is an always-computed one**,
+  and that absence is read rather than marked, so nothing has to be kept in step
+  when a node type gains a field.
+- **The node catalog is the REGISTRY's, and that is the whole of why
+  `configSchema` exists.** `flows.nodeTypes()` answers `registry.descriptors()`,
+  so a host's plugin node reaches a screen; a built-in's form could have been
+  written by hand, a plugin's could not.
+- **A screen imports the engine for ONE thing and the rule is what separates
+  it.** The catalog is registry STATE and can only come from the server. The
+  expression text form is a pure function over a closed grammar — `text.ts`
+  reads, `emit.ts` writes — so both ends agree by construction, and an author's
+  mistake has to arrive as they type; `ExpressionField.mesa` imports those two
+  and nothing else under `src/`. Anything that holds state, opens a client or
+  touches a run stays the server's.
+- **The text grammar is a SUBSET of the Expression union**: seven of thirteen
+  forms parse, so `expressionToText` answers `{ text }` or
+  `{ text: null, reason }` and a `template`, an `object` or a `pipe` is edited
+  as its document ([`FJS-1209`](../../ISSUES.md#fjs-1209)). The grammar is
+  `@frontierjs/toolbelt/predicate`, which litestone parses `.lite` policies
+  with, so widening it is a ruling and not an edit (`FJS-D271`).
 - **A screen reaches nothing through `@`.** A mounted route is compiled in the
   HOST's Vite root, where `@` is the host's `src/`, so every import in `web/` is
   relative or a package name. The services are reached by their default names,

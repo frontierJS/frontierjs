@@ -87,6 +87,9 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           `basecamp.page`, which reads the channel as the FLOW'S OWNER and hands
           it to core/delivery.ts. A dry run answers which channel it would have
           reached and moves no `lastDeliveryAt`
+          core/app-source.ts is the ONE reader of `App.source` — `git`, `image`,
+          `inline`, parsed and normalized, and the paste box's limits (the
+          machine's are outpost's, and they win)
           core/credentials.ts owns both conduit ref forms — `secret:<id>` and
           `env:<NAME>`; a target carries the ref, never the material
           core/session-auth.ts projects this app's OWN User columns onto the
@@ -389,6 +392,23 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   between the two. Never add a fourth branch that returns early and lets the
   caller mark the step `success`: that was the whole of `FJS-257`, a release
   finishing green in 23ms having issued no command.
+- **An App's source is a KIND, and `inline` means the files ARE the release**
+  (`FJS-D345`). `git`, `image`, `inline`, read in one place —
+  `api/src/core/app-source.ts` — and a source naming no kind is REFUSED rather
+  than inferred from which keys happen to be present. Three things follow and
+  each is a place a later change will want to shortcut. **`inline` forces
+  `type: static`**, because inline bytes through the container pipeline fail
+  four steps in with a docker error about an image nobody named. **The step
+  list is read off the SOURCE, not the type** — `buildInitialSteps` — and a
+  rollback builds it from the TARGET's snapshot, or an app switched between
+  kinds rolls an old release back through a pipeline its bytes cannot run.
+  **A list carries `summarizeSource`, not the files**: fifty pasted pages on a
+  request that draws a table of names, and `content` is removed rather than
+  blanked so nothing renders an empty editor over a file that has a page in it.
+- **Deleting an inline app retires it from the machine.** Files do not stop when
+  nothing restarts them, so a row removed here and a page still answering on the
+  internet is the failure. Best effort and logged: a machine that cannot be
+  reached does not refuse an operator's decision.
 - **A status column with a machine behind it is declared, and the level for a
   move goes on the move.** `Server`, `Deployment` and `Job` carry
   `@@transitions(status, …)`, so a move is `db.<model>.transition(id, name)` and

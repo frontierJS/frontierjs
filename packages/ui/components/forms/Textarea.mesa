@@ -93,7 +93,18 @@
     on:blur={onblur}
     on:focus={onfocus}
     {...$attributes}
+    value={value}
   >{value}</textarea>
+  <!--
+    The value is written TWICE and both are load-bearing. The child text is
+    what a server render emits, since `value` is inert as an attribute on a
+    <textarea>; the DOM PROPERTY is what a later change has to go through,
+    because `el.value` stops tracking the child text the moment anything
+    writes to the element, so an update that only replaced the text left the
+    old string on screen while the component's state said otherwise — a
+    disagreement nothing reported. `<Input>` never had it: its value was
+    always the property.
+  -->
 
   {#if resolvedMaxlength}
     <!--

@@ -36,7 +36,7 @@
 // The skip is the honest state and not a hole being hidden: what it costs is
 // that the JS path is still graded on every run and the AGREEMENT is not.
 
-import { describe, it, expect } from 'bun:test'
+import { describe, it, expect, beforeAll, afterAll } from 'bun:test'
 import { createRequire }        from 'node:module'
 import {
   BYTES_PER_DIM, readVector, toVectorBytes, isZeroVector,
@@ -317,5 +317,266 @@ describe('the engine says which path it is', () => {
     } finally { put() }
 
     expect(currentEngine()?.name).toBe(held?.name)
+  })
+})
+
+// ─── the language half ────────────────────────────────────────────────────
+//
+// `@vector(n)` and `orderBy: { col: { near: v } }`, end to end against a real
+// client. Nothing below is skipped for want of `sqlite-vec`: `FJS-D331` makes
+// the extension an accelerator and the JS path the mechanism, so every one of
+// these runs on whatever is installed. What the extension changes is which
+// half is being graded — which is why the last describe runs the SAME battery
+// under both and compares the answers.
+
+import { createClient } from '../src/index.js'
+import { parse }        from '../src/core/parser.js'
+
+const vbytes = (...v: number[]) => new Uint8Array(Float32Array.from(v).buffer)
+const model  = (field: string) => `model Doc {\n  id Int @id\n  kind String\n  ${field}\n}`
+const refusal = (src: string) => { const r = parse(src); return r.valid ? null : r.errors[0] }
+
+describe('@vector — what the schema accepts', () => {
+  it('declares a dimension on a Bytes column', () => {
+    const r = parse(model('embedding Bytes @vector(1536)'))
+    expect(r.valid).toBe(true)
+    const f = r.schema.models[0].fields.find((x: any) => x.name === 'embedding')
+    expect(f.attributes.find((a: any) => a.kind === 'vector')).toEqual({ kind: 'vector', dim: 1536 })
+  })
+
+  it('refuses every shape where the bytes would not be a vector', () => {
+    expect(refusal(model('embedding String @vector(4)'))).toMatch(/requires a Bytes field/)
+    expect(refusal(model('embedding Bytes @vector(0)'))).toMatch(/positive whole number/)
+    expect(refusal(model('embedding Bytes @vector(1.5)'))).toMatch(/positive whole number/)
+    // Encoded bytes are the sharp one: ciphertext is a valid blob of the right
+    // length and ranks by nothing at all.
+    expect(refusal(model('embedding Bytes @vector(4) @encrypted'))).toMatch(/rank by nothing/)
+    // @hashed is refused a rule earlier — it wants a String column — so this
+    // asserts the refusal and not the sentence, which belongs to that rule.
+    expect(refusal(model('embedding Bytes @vector(4) @hashed'))).toBeTruthy()
+    expect(refusal(model('embedding Bytes @vector(4) @unique'))).toMatch(/near or far, never equal/)
+    expect(refusal(model('embedding Bytes @vector(4) @computed'))).toMatch(/needs a stored column/)
+    expect(refusal(`model Doc {\n  id Int @id\n  embedding Bytes @vector(4)\n  @@fts([embedding])\n}`))
+      .toMatch(/FTS5 indexes text/)
+  })
+
+  it('emits a length CHECK and no index', async () => {
+    const { generateDDL } = await import('../src/core/ddl.js')
+    const ddl = generateDDL(parse(model('embedding Bytes? @vector(4)')).schema)
+    expect(ddl).toContain('"embedding" BLOB')
+    expect(ddl).toContain('length("embedding") = 16')
+    // No b-tree over a distance — measured, vec0 was slower than a plain scan.
+    expect(ddl).not.toMatch(/CREATE INDEX[^;]*embedding/)
+  })
+})
+
+describe('@vector — the write boundary', () => {
+  let db: any
+  beforeAll(async () => { db = await createClient({ schema: model('embedding Bytes? @vector(4)'), db: ':memory:' }) })
+  afterAll(async () => { await db?.$close() })
+
+  const write = (id: number, embedding: any) => db.doc.create({ data: { id, kind: 'a', embedding } })
+
+  it('stores a usable vector and a null one', async () => {
+    await expect(write(1, vbytes(1, 0, 0, 0))).resolves.toBeTruthy()
+    await expect(write(2, null)).resolves.toBeTruthy()
+  })
+
+  it('refuses a zero vector, which the CHECK cannot see', async () => {
+    // The severe one. Its distance is NULL, NULL sorts first, and the row is
+    // the best match for every query with a 200 — so the write is the only
+    // place it can be refused.
+    await expect(write(3, vbytes(0, 0, 0, 0))).rejects.toThrow(/every-dimension zero/)
+  })
+
+  it('refuses a NaN and a wrong length', async () => {
+    await expect(write(4, vbytes(1, NaN, 0, 0))).rejects.toThrow(/NaN at dimension 1/)
+    await expect(write(5, vbytes(1, 0, 0))).rejects.toThrow(/expected 16/)
+  })
+})
+
+// ─── retrieval, and it is the same read on both engines ───────────────────
+
+const Q   = [1, 0, 0, 0]
+const NEAR = { embedding: { near: Q } }
+
+// Swap the registered engine for one that declares no vector capability, which
+// is what a browser and an un-installed server are. The engine is module-level
+// and `bun test` shares one process across files, so the restore is not tidy —
+// leaving it cleared failed 238 tests in other files once.
+async function onTheJsPath<T>(fn: () => Promise<T>): Promise<T> {
+  const { setEngine, clearEngine, currentEngine } = await import('../src/core/engine.js')
+  const held = currentEngine() as any
+  if (!held?.vector) return fn()
+  try {
+    clearEngine()
+    setEngine({ ...held, vector: null })
+    return await fn()
+  } finally { clearEngine(); setEngine(held) }
+}
+
+async function corpus() {
+  const db = await createClient({ schema: model('embedding Bytes? @vector(4)'), db: ':memory:' })
+  await db.doc.create({ data: { id: 1, kind: 'a', embedding: vbytes(1, 0, 0, 0) } })   // exact
+  await db.doc.create({ data: { id: 2, kind: 'b', embedding: vbytes(0, 1, 0, 0) } })   // orthogonal
+  await db.doc.create({ data: { id: 3, kind: 'a', embedding: vbytes(-1, 0, 0, 0) } })  // opposite
+  await db.doc.create({ data: { id: 4, kind: 'a', embedding: null } })                 // un-embedded
+  return db
+}
+
+// One list, run twice. A query added here is graded on both paths by
+// construction, which is the only thing that keeps two implementations of one
+// comparison from drifting apart.
+const BATTERY: Array<[string, any]> = [
+  ['nearest first',       { orderBy: NEAR }],
+  ['where composes',      { where: { kind: 'a' }, orderBy: NEAR }],
+  ['limit pages',         { orderBy: NEAR, limit: 2 }],
+  ['offset pages',        { orderBy: NEAR, limit: 2, offset: 1 }],
+  ['descending',          { orderBy: { embedding: { near: Q, dir: 'desc' } } }],
+  ['select narrows',      { select: { id: true, kind: true }, orderBy: NEAR }],
+  ['select unlocks',      { select: { id: true, embedding: true }, orderBy: NEAR }],
+  ['a second sort key breaks ties',
+                          { orderBy: [{ embedding: { near: [0, 0, 1, 0] } }, { id: 'desc' }] }],
+]
+
+describe('@vector — retrieval is an ordering', () => {
+  let db: any
+  beforeAll(async () => { db = await corpus() })
+  afterAll(async () => { await db?.$close() })
+
+  const near = (extra: any = {}) => db.doc.findMany({ orderBy: NEAR, ...extra })
+
+  it('orders nearest first', async () => {
+    expect((await near()).map((r: any) => r.id)).toEqual([1, 2, 3])
+  })
+
+  it('drops the un-embedded row rather than failing the read', async () => {
+    // The extension THROWS on a null operand, so without the guard one row
+    // added before its embedding job ran would 500 every similarity read. The
+    // JS path drops it for the same reason rather than scoring undefined.
+    expect((await near()).map((r: any) => r.id)).not.toContain(4)
+  })
+
+  it('composes with where and limit, which is the whole argument for an orderBy', async () => {
+    expect((await near({ where: { kind: 'a' } })).map((r: any) => r.id)).toEqual([1, 3])
+    expect((await near({ limit: 2 })).map((r: any) => r.id)).toEqual([1, 2])
+    expect((await near({ limit: 2, offset: 1 })).map((r: any) => r.id)).toEqual([2, 3])
+  })
+
+  it('carries the distance it sorted by (`FJS-D329`)', async () => {
+    // No cutoff option, deliberately: a cosine threshold is a number every
+    // corpus guesses differently, so the app gets the value.
+    const rows = await near()
+    expect(rows.map((r: any) => Math.round(r._distance * 1000) / 1000)).toEqual([0, 1, 2])
+    expect((await db.doc.findFirst({ orderBy: NEAR }))._distance).toBeCloseTo(0, 5)
+    expect((await db.doc.findManyAndCount({ orderBy: NEAR, limit: 1 })).rows[0]._distance).toBeCloseTo(0, 5)
+  })
+
+  it('keeps the distance through a narrowed select, which trims to fields', async () => {
+    const [row] = await near({ select: { id: true } })
+    expect(Object.keys(row).sort()).toEqual(['_distance', 'id'])
+  })
+
+  it('leaves the column out of the payload until it is asked for (`FJS-D328`)', async () => {
+    // 4 bytes a dimension is 6 kB on a 1536-dimension column, so twenty rows of
+    // a list carry 123 kB nobody asked for. asSystem() does not lift it: this
+    // is a size rule and not an access one.
+    expect(await db.doc.findFirst({ where: { id: 1 } })).not.toHaveProperty('embedding')
+    expect(await db.asSystem().doc.findFirst({ where: { id: 1 } })).not.toHaveProperty('embedding')
+    expect(await db.doc.findFirst({ where: { id: 1 }, select: { id: true, embedding: true } }))
+      .toHaveProperty('embedding')
+  })
+
+  it('refuses a query vector the column cannot be compared to', async () => {
+    await expect(db.doc.findMany({ orderBy: { embedding: { near: [1, 0, 0] } } }))
+      .rejects.toThrow(/got 3 dimensions/)
+    await expect(db.doc.findMany({ orderBy: { embedding: { near: [0, 0, 0, 0] } } }))
+      .rejects.toThrow(/every dimension is zero/)
+  })
+
+  it('refuses a bare sort on the column, which would order by opaque bytes', async () => {
+    await expect(db.doc.findMany({ orderBy: { embedding: 'asc' } }))
+      .rejects.toThrow(/sorts by nothing on its own/)
+  })
+
+  it('refuses a near that is not the first sort key, on either engine', async () => {
+    // The rule exists so the two implementations cannot answer different
+    // ORDERS: a key in front of the distance groups the rows, and JS can only
+    // reproduce SQLite's grouping by restating its comparison rules.
+    await expect(db.doc.findMany({ orderBy: [{ kind: 'asc' }, { embedding: { near: Q } }] }))
+      .rejects.toThrow(/must be the first sort key/)
+    await expect(onTheJsPath(() =>
+      db.doc.findMany({ orderBy: [{ kind: 'asc' }, { embedding: { near: Q } }] })))
+      .rejects.toThrow(/must be the first sort key/)
+  })
+
+  it('refuses a cursor over a distance, naming the column', async () => {
+    // A keyset cursor resumes from a value the ROW holds; a distance belongs to
+    // the query vector. Without this the caller met a demand for a lat and lng.
+    await expect(db.doc.findManyCursor({ limit: 2, orderBy: NEAR }))
+      .rejects.toThrow(/is a @vector, and a cursor pages by a value the row holds/)
+  })
+
+  it('refuses aggregating the column, naming @vector rather than @omit(all)', async () => {
+    await expect(db.doc.aggregate({ _max: { embedding: true } }))
+      .rejects.toThrow(/is @vector\(4\)/)
+  })
+
+  it('qualifies the distance column under a JOIN', async () => {
+    // The expression begins with a function rather than with its column, so the
+    // relation builder's leading-identifier rewrite never fired on one and the
+    // column reached SQLite unqualified — `ambiguous column name` the moment
+    // the joined table carried the same name. True of `@point` since it shipped.
+    const j = await createClient({ schema: `
+model Tag { id Int @id embedding Bytes? docs Doc[] }
+model Doc { id Int @id tagId Int tag Tag @relation(fields: [tagId], references: [id]) embedding Bytes? @vector(4) }`,
+      db: ':memory:' })
+    try {
+      await j.tag.create({ data: { id: 1 } })
+      await j.doc.create({ data: { id: 1, tagId: 1, embedding: vbytes(1, 0, 0, 0) } })
+      const rows = await j.doc.findMany({ orderBy: [{ embedding: { near: Q } }, { tag: { id: 'asc' } }] })
+      expect(rows.map((r: any) => r.id)).toEqual([1])
+    } finally { await j.$close() }
+  })
+})
+
+describe('the two paths answer the same thing', () => {
+  if (!vec) {
+    it.skip('sqlite-vec is not installed — with only one path there is nothing to compare', () => {})
+    return
+  }
+
+  it('the whole battery, compiled and scored, row for row', async () => {
+    // The condition on `core/vector.js` existing. `FJS-D331` puts both paths in
+    // service precisely so neither rots, and this is what a rot would fail.
+    const db = await corpus()
+    try {
+      for (const [label, args] of BATTERY) {
+        const compiled = await db.doc.findMany(args)
+        const scored   = await onTheJsPath(() => db.doc.findMany(args))
+        expect(`${label}: ${JSON.stringify(scored.map((r: any) => r.id))}`)
+          .toBe(`${label}: ${JSON.stringify(compiled.map((r: any) => r.id))}`)
+        for (let i = 0; i < compiled.length; i++) {
+          expect(scored[i]._distance).toBeCloseTo(compiled[i]._distance, 5)
+          expect(Object.keys(scored[i]).sort()).toEqual(Object.keys(compiled[i]).sort())
+        }
+      }
+    } finally { await db.$close() }
+  })
+
+  it('and the refusals, which are the other half of an answer', async () => {
+    const db = await corpus()
+    const both = async (fn: (c: any) => Promise<any>) => {
+      const one = await fn(db).then(() => null, (e: any) => e.message)
+      const two = await onTheJsPath(() => fn(db).then(() => null, (e: any) => e.message))
+      return [one, two]
+    }
+    try {
+      for (const bad of [[1, 0, 0], [0, 0, 0, 0], null]) {
+        const [a, b] = await both(c => c.doc.findMany({ orderBy: { embedding: { near: bad } } }))
+        expect(b).toBe(a)
+        expect(a).toBeTruthy()
+      }
+    } finally { await db.$close() }
   })
 })

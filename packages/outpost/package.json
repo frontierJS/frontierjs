@@ -10,6 +10,8 @@
     ".": "./src/index.js",
     "./server": "./src/server.js",
     "./docker": "./src/docker.js",
+    "./static": "./src/static.js",
+    "./serve": "./src/serve.js",
     "./vitals": "./src/vitals.js"
   },
   "scripts": {
@@ -18,7 +20,7 @@
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "engines": {
-    "bun": ">=1.0.0"
+    "bun": ">=1.4.0"
   },
   "dependencies": {
     "@frontierjs/toolbelt": "workspace:*"

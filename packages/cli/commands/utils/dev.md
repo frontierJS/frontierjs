@@ -91,7 +91,7 @@ if (!flag['no-check']) {
     warnIfDatabaseEmpty(context)
   } catch (err) {
     // A preflight that throws must not stop a dev server. It is a courtesy.
-    log.debug?.(`database preflight skipped: ${err.message}`)
+    log.detail(`database preflight skipped: ${err.message}`)
   }
 }
 

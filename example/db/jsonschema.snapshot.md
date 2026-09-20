@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-90 definitions · 53 models · 1 view · 12 types · 24 enums · 0 other
+92 definitions · 55 models · 1 view · 12 types · 24 enums · 0 other
 ```
 
 ## Definitions
@@ -49,6 +49,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Customer` | model |
 | `CustomField` | model |
 | `Discount` | model |
+| `PickupPoint` | model |
 | `ShippingMethod` | model |
 | `TaxRate` | model |
 | `Order` | model |
@@ -63,6 +64,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `InvoiceLine` | model |
 | `CreditNote` | model |
 | `Cart` | model |
+| `CartGrant` | model |
 | `CartLine` | model |
 | `StockReservation` | model |
 | `InventoryMovement` | model |
@@ -471,7 +473,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 ### `ProductVariant`
 
-- gate `read:0 create:4 update:4 delete:5` · closed (`additionalProperties: false`)
+- gate `read:0 create:4 update:4 delete:5` · version field `version` · sync `field` · closed (`additionalProperties: false`)
 - relation `product` — belongsTo `Product` via `productId` · on delete Cascade
 - relation `images` — hasMany `ProductImage`
 - relation `reservations` — hasMany `StockReservation`
@@ -487,9 +489,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `price` | `integer` | yes | — | `minimum: 0` `x-money` | — |
 | `barcode` | `string`? | — | — | — | — |
 | `stock` | `integer` = `0` | — | — | `minimum: 0` | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
 | `active` | `boolean` = `true` | — | — | — | — |
 
-**On create**: required — `productId`, `sku`, `price` · not accepted — `id`
+**On create**: required — `productId`, `sku`, `price` · not accepted — `id`, `version`
 
 ### `ProductImage`
 
@@ -583,6 +586,22 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `active` | `boolean` = `true` | — | Active | — | — |
 
 **On create**: required — `code`, `label`, `value` · not accepted — `id`
+
+### `PickupPoint`
+
+- gate `read:0 create:5 update:5 delete:5` · version field `version` · closed (`additionalProperties: false`)
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `name` | `string` | yes | Branch | `minLength: 1` `maxLength: 60` | — |
+| `address` | `string` | yes | Address | `minLength: 1` `maxLength: 160` | — |
+| `site` | `json`? | — | Location | `x-sortable: "json"` `x-aggregatable` `x-geo` | — |
+| `hours` | `string`? | — | Hours | `minLength: 0` `maxLength: 80` | — |
+| `active` | `boolean` = `true` | — | Active | — | — |
+| `version` | `integer` | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `name`, `address` · not accepted — `id`, `version`
 
 ### `ShippingMethod`
 
@@ -850,6 +869,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 ### `Cart`
 
 - gate `read:0 create:0 update:0 delete:5` · closed (`additionalProperties: false`)
+- relation `grants` — hasMany `CartGrant`
 - relation `discount` — belongsTo `Discount` via `discountId` · on delete SetNull · optional
 - relation `shippingMethod` — belongsTo `ShippingMethod` via `shippingMethodId` · on delete SetNull · optional
 - relation `lines` — hasMany `CartLine`
@@ -865,6 +885,18 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 **On create**: required — nothing · not accepted — `id`
 
+### `CartGrant`
+
+- gate `read:8 create:8 update:8 delete:8` · closed (`additionalProperties: false`)
+- relation `cart` — belongsTo `Cart` via `cartId` · on delete Cascade
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `cartId` | `integer` | yes | Basket | — | — |
+
+**On create**: required — `cartId` · not accepted — `id`
+
 ### `CartLine`
 
 - gate `read:0 create:0 update:0 delete:0` · closed (`additionalProperties: false`)
@@ -878,9 +910,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `variantId` | `integer` | yes | Variant | — | `required` |
 | `quantity` | `integer` = `1` | — | — | `minimum: 1` `maximum: 99` | — |
 | `unitPrice` | `integer` | — | — | `minimum: 0` `x-litestone-kind` `x-money` | — |
-| `token` | `string` | yes | — | — | — |
 
-**On create**: required — `cartId`, `variantId`, `token` · not accepted — `id`
+**On create**: required — `cartId`, `variantId` · not accepted — `id`
 
 ### `StockReservation`
 

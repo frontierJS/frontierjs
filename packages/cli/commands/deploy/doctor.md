@@ -309,16 +309,13 @@ if (dockerfileSrc && linked.length && !installsGenerated) {
   renderCheck('Dockerfile installs from deploy/generated/', 'pass')
 }
 
-// ─── /health route — required for auto-rollback ───────────────────────────
-// Heuristic: check the API source for a /health route definition.
-// Won't catch dynamic registrations but covers the common case.
-// `api/src/app.ts` first, because that is where `fli new` configures the plugin
-// and it is the file the layout calls the composition root. `api/index.ts` is
-// the ENTRY — it starts the app and assembles nothing — but an app is free to
-// configure there, and `api/src/index.*` is the shape of an app that made the
-// entry and the assembly one file. `api/src/server.*` was in this list and has
-// never been written by any scaffold, which is what a hedge costs: it reads as
-// a layout somebody supports.
+// The API source, as this command reads it elsewhere. `api/src/app.ts` first,
+// because that is where `fli new` configures plugins and the layout calls it the
+// composition root. `api/index.*` is the ENTRY — it starts the app and assembles
+// nothing — but an app is free to configure there, and `api/src/index.*` is the
+// shape of an app that made the entry and the assembly one file.
+// `api/src/server.*` was in this list and has never been written by any
+// scaffold, which is what a hedge costs: it reads as a layout somebody supports.
 const apiSrcCandidates = [
   resolvePath(context.paths.root, 'api/src/app.ts'),
   resolvePath(context.paths.root, 'api/src/app.js'),
@@ -327,19 +324,31 @@ const apiSrcCandidates = [
   resolvePath(context.paths.root, 'api/src/index.ts'),
   resolvePath(context.paths.root, 'api/src/index.js'),
 ]
+
+// ─── /health route — required for auto-rollback ───────────────────────────
+// core/health-target.js owns the question; `fli make:deploy` asks it too, and
+// the two copies disagreed. Both places that can serve it count — the plugin
+// configured in the API source, and `plugins: { health: true }` in
+// junction.config.js, which is where `fli new` puts it.
+const { declaresHealth } =
+  await import(new URL('file://' + global.fliRoot + '/core/health-target.js'))
+
 const healthPath = deployConf.api?.health ?? '/health'
-// healthPlugin() registers /health without the path ever appearing as a literal,
-// so a plugin-wired app would fail a string search while answering correctly.
-// The plugin serves `{apiPrefix}/health`, so ANY configured path ending in
-// /health is satisfied by it — testing for the bare '/health' instead reported a
-// missing route on every app that sets a prefix, which is the recommended shape.
-const hasHealth  = fileContains(apiSrcCandidates, new RegExp(`['"\`]${healthPath.replace(/\//g, '\\/')}['"\`]`))
-  || (healthPath.endsWith('/health') && fileContains(apiSrcCandidates, /healthPlugin\s*\(/))
-if (hasHealth) {
-  renderCheck(`${healthPath} route in api source`, 'pass')
+const health     = declaresHealth(context.paths.root, healthPath)
+
+if (health.clash) {
+  // Junction refuses a plugin configured by hand AND declared in config at
+  // start(), by name — so this app builds, ships, and the container exits.
+  renderCheck(`${healthPath} route in api source`, 'fail',
+    'health is configured by hand AND declared in junction.config.js — start() refuses both, ' +
+    'so the container exits on boot. Keep one.')
+  fail()
+} else if (health.declared) {
+  renderCheck(`${healthPath} route`, 'pass', health.sources.map(s => s.file).join(', '))
 } else {
-  renderCheck(`${healthPath} route in api source`, 'warn',
-    `couldn't find a literal "${healthPath}" string — auto-rollback needs a 200 response here`)
+  renderCheck(`${healthPath} route`, 'warn',
+    `nothing declares it — not plugins.health in junction.config.js, not healthPlugin() in the ` +
+    `api source, and no literal "${healthPath}". Auto-rollback needs a 200 here`)
   warn()
 }
 

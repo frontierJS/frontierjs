@@ -1,5 +1,90 @@
 # Changes — @frontierjs/orion
 
+## 2026-09-20 — an expression, written as the language
+
+`compileExpression` turned `$.trigger.body.amount > 100` into the node the resolver runs, and the
+other direction did not exist — so the inspector that landed this morning showed every computed
+value as its tree. `expressionToText` is that direction, in `emit.ts` beside it, and
+`ExpressionField.mesa` is what reaches both.
+
+**The parser runs in the browser, and that is the one place `web/` imports the engine.** The text
+form is a pure function over a closed grammar, so both ends agree by construction, and an author's
+mistake has to arrive as they type rather than one round trip later. The refusal shown is the
+PARSER's own sentence with the column it failed at — a second wording here would be a second
+grammar. A half-typed expression is HELD rather than written, so a definition that cannot compile
+never reaches the document under a save button that looks ready. It costs `text.ts`, `emit.ts` and
+nothing else: the predicate kit under them is already in a sierra app's bundle, since that is what
+answers `@required(where: …)` on a form.
+
+**The grammar is a SUBSET of what the engine runs, and the emitter says so rather than inventing
+syntax.** Thirteen forms compile and seven parse; `template`, `array`, `object`, `pipe`, `let` and
+`match` have no text at all — a backtick is even tokenized and read by no parser. So
+`expressionToText` answers `{ text }` or `{ text: null, reason }`, and a shape with no text form is
+edited as the document it already was. Measured over every flow definition in this repo, 427 of 471
+expression nodes have a text form; the 44 that do not are named in
+[`FJS-1209`](../../ISSUES.md#fjs-1209), whose real question is whether the language litestone parses
+`.lite` policies with should grow a value-assembling form.
+
+**The only way this can be quietly wrong is a dropped bracket**, which produces text that parses and
+means something else. So every emission states the tightness it is read at — the parser's own ladder,
+with a comparison's operands at VALUE because the grammar hands it an `operand` — and
+`tests/engine/expression/emit.test.ts` compares TREES rather than strings over 41 sources: text →
+Expression → text → Expression. A string comparison would pass by construction, since the emitter's
+output is its own input by then. With the parenthesization removed it fails 7 of 49, and its control
+is a pair that genuinely disagrees — `a && (b || c)` against `a && b || c`, false and true on the
+same run — because without one, every assertion is satisfied by an emitter that brackets nothing.
+
+591 tests from 542; `verify:automations` 63 assertions from 56.
+
+## 2026-09-20 — the node inspector, which the node types write themselves
+
+A flow's definition was authored in a 16-row textarea of raw JSON. Selecting a node now opens a
+form, and **nothing in the package says what any node takes**: every descriptor already declared a
+`configSchema`, sierra's `buildFieldRules` flattens a JSON Schema object into a rule per property
+and `formFieldList` asks `controlFor` which control each rule gets, so a `trigger.webhook`'s `path`
+is a text box and its `method` a select with no table anywhere naming either. The mockup carries the
+other design — `NODE_CONFIG_FIELDS`, a hand-written field list per node type consulted BEFORE the
+schema — and it is not ported: a table beside the descriptors is a second statement of what a node
+takes, and the descriptor is the one the compiler grades against.
+
+**`flows.nodeTypes()` is how the catalog crosses**, and it is read off the REGISTRY rather than off
+`BUILTIN_DESCRIPTORS`. That is the whole reason `configSchema` can sit on a plugin manifest: a host
+that installed a plugin has node types no import can see, and a built-in's form could have been
+written by hand where a plugin's could not. It is a method on `flows` because there is no row —
+the catalog is the same for every caller and only the plugin set varies — and it answers whole,
+since a screen holding a flow needs a descriptor per node in it plus every node it may offer.
+
+**A config value is never a plain value, and that is the shape the port could not have guessed.**
+The resolver dispatches on the stored node's own `type`, so `model: 'Customer'` is written
+`{ type: 'literal', value: 'Customer' }` and the same slot may instead hold
+`{ type: 'ref', path: '$.trigger.record.id' }`. The schema describes what the value must RESOLVE to,
+which is what picks the control; what is stored is the expression around it. So a field has two
+states and the stored value says which — a literal opens on its own control and writes the wrapper
+back, anything else opens on the document it is. It is also why 17 properties across the built-ins
+declare no `type` at all: those are the always-computed ones, and that absence is read rather than
+marked. A text form for an expression landed the same day, in the entry above.
+
+**The inspector and the textarea are ONE model and the model is the text.** The inspector parses it,
+writes a node's config into the parse, and serializes the whole definition back — so there is no
+second copy to keep in step, a definition that does not parse disables the inspector rather than
+diverging from it, and structure (a node, an edge, the name) stays the document's until the canvas
+exists. Finding that out cost a defect in `@frontierjs/ui`: a `<Textarea>`'s value is its child
+text, which the DOM ignores once anything has written to the element, so the edit was in the model
+and not on the screen ([`FJS-1207`](../../ISSUES.md#fjs-1207)).
+
+`tests/node-forms.test.ts` is what makes `configSchema` true rather than declared — it was read by
+nothing at all, not the compiler, not the executor — grading every built-in's schema through the
+same pipeline, so a property no control can render fails the suite instead of appearing as an empty
+box on a screen. 542 tests from 465; `verify:automations` 56 assertions from 37.
+
+## 2026-09-20 — the bun floor is `1.4.0`
+
+`engines: { bun: '>=1.0.0' }` was a number nobody had moved since it was written, and an engine range
+is advisory anyway: bun runs an app whose floor it does not meet, so a machine one minor behind
+reports the feature it cannot reach as MISSING rather than reporting itself as stale. `fli doctor`
+grades the installed version against this floor now, which is the half a `package.json` field cannot
+enforce on its own.
+
 ## 2026-09-17 — a flow's cron is on the clock, off the declaration list
 
 Caravan's `registrations()` no longer reports a `schedule()` registration, and

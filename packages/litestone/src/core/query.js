@@ -11,6 +11,12 @@ import { boundingBox, isPoint } from '@frontierjs/toolbelt/geo'
 import { parseLength } from '@frontierjs/toolbelt/units'
 import { pointColumns } from './parser.js'
 
+// What a vector IS, and the refusals a query vector shares with a stored one.
+// Same argument as `boundingBox` above: the browser scores an arriving row with
+// this function and the server compiles the extension's, so the two have to
+// agree about the layout and about which vectors are unusable.
+import { toVectorBytes } from './vector.js'
+
 // ─── identifier quoting ───────────────────────────────────────────────────────
 //
 // Invariant 8 — a caller-supplied name never enters a SQL pattern. Two failures
@@ -273,7 +279,7 @@ const TEXT_OP_REFUSALS = {
 }
 
 /**
- * The great-circle distance between a point column pair and a literal centre,
+ * The great-circle distance between a point column pair and a literal center,
  * as a SQL expression in metres.
  *
  * The haversine rather than the spherical law of cosines, for the same reason
@@ -295,12 +301,12 @@ const TEXT_OP_REFUSALS = {
  * Binds land in the order the `?`s appear in the text, which is the only
  * ordering positional parameters have.
  */
-function haversineSql(lat, lng, centre, params) {
+function haversineSql(lat, lng, center, params) {
   const A = typeof lat === 'string' ? { sql: lat } : lat
   const B = typeof lng === 'string' ? { sql: lng } : lng
   const push = (v) => { if (v !== undefined) params.push(v) }
-  push(centre.lat); push(A.param); push(A.param)
-  push(centre.lat); push(centre.lng); push(B.param)
+  push(center.lat); push(A.param); push(A.param)
+  push(center.lat); push(center.lng); push(B.param)
   return `(2 * 6371008.8 * asin(min(1.0, sqrt(` +
     `power(sin((radians(?) - radians(${A.sql})) / 2), 2) + ` +
     `cos(radians(${A.sql})) * cos(radians(?)) * ` +
@@ -309,9 +315,9 @@ function haversineSql(lat, lng, centre, params) {
 }
 
 /**
- * A centre as the caller stated it → two numbers, or `null` when it is not one.
+ * A center as the caller stated it → two numbers, or `null` when it is not one.
  *
- * A numeric STRING is a centre. `@frontierjs/toolbelt/query` reads a query
+ * A numeric STRING is a center. `@frontierjs/toolbelt/query` reads a query
  * string with no model in the room, so a coordinate becomes a number only if it
  * round-trips — and `?site[near][lat]=51.507400`, which is what `toFixed(6)`
  * writes and what almost every GPS reading in a URL looks like, does not. The
@@ -321,7 +327,7 @@ function haversineSql(lat, lng, centre, params) {
  * An empty string is not zero here: `Number('')` is 0, so a caller who sent
  * `?site[near][lat]=` would otherwise be searching the Gulf of Guinea.
  */
-export function centreOf(spec) {
+export function centerOf(spec) {
   const num = (v) => {
     if (typeof v === 'number') return Number.isFinite(v) ? v : null
     if (typeof v !== 'string' || v.trim() === '') return null
@@ -354,11 +360,11 @@ function nearSql(col, field, point, spec, params) {
     throw new ValidationError([{ path: where, message:
       `"near" takes { lat, lng, within } — got ${Array.isArray(spec) ? 'an array' : typeof spec}` }])
 
-  const centre = centreOf(spec)
-  if (!centre)
+  const center = centerOf(spec)
+  if (!center)
     throw new ValidationError([{ path: where, message:
       `"near" needs a numeric lat and lng — got ${JSON.stringify({ lat: spec.lat, lng: spec.lng })}` }])
-  const { lat, lng } = centre
+  const { lat, lng } = center
   const { within } = spec
   if (within == null)
     throw new ValidationError([{ path: where, message:
@@ -952,8 +958,143 @@ function rawOrderPart(val, outParams) {
   return val.sql.trim()
 }
 
-export function buildOrderBy(orderBy, outParams = [], columnMap = null, pointMap = null) {
+/**
+ * A caller's query vector → the bytes the comparison binds.
+ *
+ * The dimension checked against is the COLUMN's, never the argument's length:
+ * a 768-dimension query against a 1536-dimension column is a caller mistake,
+ * and `vec_distance_cosine` answers it with a dimension-mismatch throw naming
+ * neither the field nor the model. This refuses first and names both.
+ *
+ * Every other refusal — a zero vector, a NaN, a wrong length — is
+ * `toVectorBytes`, so a query vector is held to exactly what a stored one is.
+ * The zero vector is the one that matters: it scores NULL, NULL sorts first,
+ * and a caller who embedded an empty string would otherwise get a result list
+ * ordered by nothing, with a 200.
+ */
+export function vectorQueryBytes(value, dim, field) {
+  if (value == null)
+    throw new ValidationError([{ path: [field], message:
+      `orderBy "${field}".near needs a vector of ${dim} numbers — got ${value === null ? 'null' : 'undefined'}` }])
+  try {
+    return toVectorBytes(value, dim, `orderBy "${field}".near`)
+  } catch (err) {
+    throw new ValidationError([{ path: [field], message: err.message }])
+  }
+}
+
+/**
+ * The similarity ordering this orderBy asks for, or `null`.
+ *
+ * A PLAN rather than a list of field names, because three facts travel together
+ * and the position one is the reason this function exists.
+ *
+ * **A `near` key must be the FIRST key in the orderBy.** It is the only shape
+ * both implementations can produce: the SQL path sorts inside SQLite, the JS
+ * path sorts a fetched candidate set, and a `near` behind another key means
+ * *group by that key, then rank within the group* — which JS can only do by
+ * reimplementing SQLite's own comparison (affinity, storage class, NULLS), the
+ * `compare()` trap `policy.js` pays for once already. Refused on BOTH engines
+ * rather than on the one that cannot do it, or the same query answers a
+ * different ORDER on a server that installed `sqlite-vec` than on one that did
+ * not, with nothing raised. Keys AFTER it are kept and break ties.
+ *
+ * The plan's other half is the `IS NOT NULL` guard the compiled read owes the
+ * column, and that is not an optimization: `vec_distance_cosine` THROWS on a
+ * null operand rather than ranking the row last, so a single un-embedded row
+ * fails the whole query. A backfill in progress, an optional column or one
+ * failed job would otherwise 500 every similarity read on the model — measured,
+ * and it is the first thing that happens when a real corpus loads a row at a
+ * time. A row with no vector is absent from a nearest-first list, which is the
+ * same answer the JS path gives by dropping it.
+ */
+export function vectorOrderPlan(orderBy, vectorMap) {
+  if (!orderBy || !vectorMap) return null
+
+  const keys = []
+  for (const item of Array.isArray(orderBy) ? orderBy : [orderBy]) {
+    if (!item || typeof item !== 'object') continue
+    for (const entry of Object.entries(item)) keys.push(entry)
+  }
+
+  let plan = null
+  for (let i = 0; i < keys.length; i++) {
+    const [field, dir] = keys[i]
+    if (!vectorMap[field] || dir === null || typeof dir !== 'object' || dir.near === undefined) continue
+
+    if (plan)
+      throw new ValidationError([{ path: ['orderBy', field], message:
+        `orderBy names two @vector columns at once — "${plan.field}" and "${field}". A row has one distance ` +
+        'per query vector, and the second can only order rows the first left exactly tied, which floats are not.' }])
+
+    if (i !== 0)
+      throw new ValidationError([{ path: ['orderBy', field], message:
+        `orderBy "${field}".near must be the first sort key — it is behind "${keys[0][0]}".\n` +
+        '  A similarity ordering is the whole ordering; a key in front of it groups the rows and leaves the\n' +
+        '  distance as a tie-break, which is not what a nearest-first list means. Keys after it are kept and\n' +
+        '  do break ties.' }])
+
+    plan = { field, dim: vectorMap[field].dim, near: dir.near, dir: dir.dir ?? 'asc' }
+  }
+  return plan
+}
+
+/**
+ * The orderBy keys that follow the similarity one — the tie-break, and what the
+ * JS path hands to the candidate query so its own stable sort reproduces the
+ * SQL path's `ORDER BY <distance>, <the rest>`.
+ */
+export function orderByAfterVector(orderBy, field) {
+  const out = []
+  let seen = false
+  for (const item of Array.isArray(orderBy) ? orderBy : [orderBy]) {
+    if (!item || typeof item !== 'object') continue
+    const kept = {}
+    for (const [k, v] of Object.entries(item)) {
+      if (k === field && !seen) { seen = true; continue }
+      kept[k] = v
+    }
+    if (Object.keys(kept).length) out.push(kept)
+  }
+  return out.length ? out : null
+}
+
+/**
+ * `orderBy: { embedding: { near: v } }` → one ORDER BY term.
+ *
+ * ONE owner because there are two order builders — the flat one and the
+ * relation one — and the point branch above is emitted twice for want of this.
+ * Two spellings of a distance is how the two disagree about `NULLS LAST`, which
+ * is the part that decides whether a failed embedding opens every result list.
+ */
+function vectorOrderSql(field, col, val, vectorInfo, sqlDistanceFn, outParams) {
+  // Reached only where the caller's read cannot fall back to the JS path —
+  // `search()`, which resolves its rows through FTS5 and then orders them, so
+  // there is no candidate set for `scoreByDistance` to rank. `findMany` scores
+  // in JavaScript instead of arriving here (`FJS-D331`).
+  if (!sqlDistanceFn)
+    throw new Error(
+      `orderBy "${field}".near inside search() needs a SQL distance function and this engine has none.\n` +
+      '  Install sqlite-vec on the server (`bun add sqlite-vec`), or order a findMany by it — that path\n' +
+      '  scores in JavaScript on any engine.')
+
+  const q = vectorQueryBytes(val.near, vectorInfo.dim, field)
+  const d = String(val.dir ?? 'asc').toUpperCase()
+  if (d !== 'ASC' && d !== 'DESC')
+    throw new Error(`orderBy direction must be 'asc' or 'desc', got: ${val.dir}`)
+  outParams.push(q)
+  // NULLS LAST for the zero vector: its distance is NULL, and NULL sorts first
+  // ascending, so a failed embed() would be the best match for every query.
+  return `${sqlDistanceFn}(${quoteIdent(col)}, ?) ${d} NULLS LAST`
+}
+
+export function buildOrderBy(orderBy, outParams = [], columnMap = null, pointMap = null, vectorMap = null, sqlDistanceFn = null) {
   if (!orderBy) return ''
+  // Graded for effect: a `near` key behind another one is refused here as well
+  // as at the read, so a caller that builds its own SELECT — `search()` — is
+  // held to the same rule as `findMany`. Pure, so asking twice costs a walk of
+  // the keys.
+  vectorOrderPlan(orderBy, vectorMap)
   const items = Array.isArray(orderBy) ? orderBy : [orderBy]
   const parts  = []
   for (const item of items) {
@@ -970,8 +1111,8 @@ export function buildOrderBy(orderBy, outParams = [], columnMap = null, pointMap
       // filter disagrees with.
       const pointInfo = pointMap?.[field]
       if (pointInfo && dir !== null && typeof dir === 'object' && dir.near) {
-        const centre = centreOf(dir.near)
-        if (!centre)
+        const center = centerOf(dir.near)
+        if (!center)
           throw new Error(`orderBy ${field}.near needs a numeric lat and lng`)
         const [latName, lngName] = pointColumns(field, pointInfo)
         const d = String(dir.dir ?? 'asc').toUpperCase()
@@ -981,13 +1122,38 @@ export function buildOrderBy(orderBy, outParams = [], columnMap = null, pointMap
         // is NULL for it and SQLite sorts a NULL first ascending, so without
         // this a nearest-first list opens with every row that has no
         // coordinate — measured, and with a 200.
-        parts.push(`${haversineSql(quoteIdent(latName), quoteIdent(lngName), centre, outParams)} ${d} NULLS LAST`)
+        parts.push(`${haversineSql(quoteIdent(latName), quoteIdent(lngName), center, outParams)} ${d} NULLS LAST`)
         continue
       }
       if (pointInfo)
         throw new Error(
           `orderBy "${field}" is a @point and sorts by nothing on its own — ` +
           `it holds JSON, which orders as text. Say { ${field}: { near: { lat, lng } } } for nearest first.`)
+
+      // orderBy: { embedding: { near: vector } } — most similar first.
+      //
+      // `FJS-D333`: an ordering on the ordinary read rather than a verb of its
+      // own, so `where`, `select`, `include`, cursors, `@@softDelete`, the
+      // tenant filter, both row policies and the gate all apply by doing
+      // nothing. `search()` earned a verb because FTS5 is a different engine on
+      // a different table; a vector column is on the model's own table.
+      //
+      // Two NULLs to keep apart, and neither is a row that merely sorts late.
+      // A NULL COLUMN is an un-embedded row — the extension throws on it rather
+      // than losing it, so the read carries `IS NOT NULL` itself. A NULL
+      // DISTANCE is the zero vector: `vec_distance_cosine` cannot divide by a
+      // zero norm and answers NULL, which sorts FIRST ascending, so a failed
+      // `embed()` would open every result list with a 200 and nothing raised.
+      // `NULLS LAST` is what the point branch above learned the same way.
+      const vectorInfo = vectorMap?.[field]
+      if (vectorInfo && dir !== null && typeof dir === 'object' && dir.near !== undefined) {
+        parts.push(vectorOrderSql(field, col, dir, vectorInfo, sqlDistanceFn, outParams))
+        continue
+      }
+      if (vectorInfo)
+        throw new Error(
+          `orderBy "${field}" is a @vector and sorts by nothing on its own — ` +
+          `it holds bytes, which order as opaque text. Say { ${field}: { near: vector } } for most similar first.`)
 
       // Relation orderBy — { relation: { field: 'asc' } } — handled separately
       if (dir !== null && typeof dir === 'object') {
@@ -1111,7 +1277,7 @@ export function extractNamedAggs(args) {
 //     LEFT JOIN "teams" _ob_author_team ON _ob_author_team."id" = _ob_author."teamId"
 //   → ORDER BY _ob_author_team."name" ASC
 
-export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTable = (m) => m, outParams = [], pointMap = null) {
+export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTable = (m) => m, outParams = [], pointMap = null, vectorMap = null, sqlDistanceFn = null, columnMap = null) {
   if (!orderBy) return { joinClauses: [], orderParts: [] }
 
   const items       = Array.isArray(orderBy) ? orderBy : [orderBy]
@@ -1139,16 +1305,26 @@ export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTab
       // table. Without this it looks like a relation hop (an object value under
       // a name that is not a column) and is refused as a relation that does not
       // exist, which is the one wrong answer available here.
+      // Same reason as the point below: a vector ordered by similarity reads a
+      // column of THIS table, so it is flat. Without this it looks like a
+      // relation hop and is refused as a relation that does not exist.
+      const vec = vectorMap?.[key]
+      if (vec && val && typeof val === 'object' && val.near !== undefined) {
+        entries.push({ flat: true, cols: [columnMap?.[key] ?? key], sql:
+          vectorOrderSql(key, columnMap?.[key] ?? key, val, vec, sqlDistanceFn, outParams) })
+        continue
+      }
+
       const pt = pointMap?.[key]
       if (pt && val && typeof val === 'object' && val.near) {
-        const centre = centreOf(val.near)
-        if (!centre) throw new Error(`orderBy ${key}.near needs a numeric lat and lng`)
+        const center = centerOf(val.near)
+        if (!center) throw new Error(`orderBy ${key}.near needs a numeric lat and lng`)
         const [latName, lngName] = pointColumns(key, pt)
         const d = String(val.dir ?? 'asc').toUpperCase()
         if (d !== 'ASC' && d !== 'DESC')
           throw new Error(`orderBy direction must be 'asc' or 'desc', got: ${val.dir}`)
-        entries.push({ flat: true, sql:
-          `${haversineSql(quoteIdent(latName), quoteIdent(lngName), centre, outParams)} ${d} NULLS LAST` })
+        entries.push({ flat: true, cols: [latName, lngName], sql:
+          `${haversineSql(quoteIdent(latName), quoteIdent(lngName), center, outParams)} ${d} NULLS LAST` })
         continue
       }
 
@@ -1197,9 +1373,20 @@ export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTab
   // When there are no JOINs, we return only relation/aggregate parts; the caller
   // uses buildOrderBy() for the flat parts (which is already positionally fine).
   if (joinClauses.length > 0) {
-    const orderParts = entries.map(e =>
-      e.flat && !e.raw ? e.sql.replace(/^"([^"]+)"/, 't."$1"') : e.sql
-    )
+    // A distance order is flat and does NOT begin with its column — it begins
+    // with a function call, so the leading-identifier rewrite below never fired
+    // on one and the column reached SQLite unqualified. With a joined table
+    // carrying a column of the same name that is `ambiguous column name` and
+    // the whole read fails; measured on `@vector` and true of `@point` since it
+    // shipped. Those entries name their columns instead, and the lookbehind is
+    // what keeps a second pass from qualifying an already-qualified one.
+    const orderParts = entries.map(e => {
+      if (!e.flat || e.raw) return e.sql
+      if (!e.cols) return e.sql.replace(/^"([^"]+)"/, 't."$1"')
+      let sql = e.sql
+      for (const c of e.cols) sql = sql.replace(new RegExp(`(?<!\\.)"${c}"`, 'g'), `t."${c}"`)
+      return sql
+    })
     return { joinClauses, orderParts }
   }
   // A raw part is flat and still has to come back here: the caller only falls
@@ -1508,8 +1695,34 @@ export function serializeRow(data, jsonFields) {
 //
 // The direction of the comparison flips based on ASC/DESC.
 
+// base64url, both ways, with no `Buffer` — which is the whole of why these two
+// exist. Litestone runs in a browser by ruling (`FJS-D305`), and `Buffer` is
+// node's: a cursor minted on a device threw `ReferenceError: Buffer is not
+// defined`, taking EVERY paginated list with it and not only a distance-ordered
+// one. `TextEncoder` and `btoa` are in both runtimes. `btoa` reads one byte per
+// character, so the UTF-8 pass is not optional — a cursor paging by a name is
+// caller data, and `Zürich` is not a latin1 string.
+const B64URL = { '+': '-', '/': '_' }
+
+function toBase64Url(text) {
+  const bytes = new TextEncoder().encode(text)
+  let binary = ''
+  // Built one character at a time: a spread here is one argument per byte, and
+  // that is a stack overflow on a long cursor rather than a slow one.
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replace(/[+/]/g, (c) => B64URL[c]).replace(/=+$/, '')
+}
+
+function fromBase64Url(token) {
+  if (typeof token !== 'string') throw new TypeError('cursor is not a string')
+  const padded = token.replace(/-/g, '+').replace(/_/g, '/')
+  const binary = atob(padded.padEnd(Math.ceil(padded.length / 4) * 4, '='))
+  const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0))
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+}
+
 export function encodeCursor(values) {
-  return Buffer.from(JSON.stringify(values)).toString('base64url')
+  return toBase64Url(JSON.stringify(values))
 }
 
 /**
@@ -1548,7 +1761,7 @@ export function decodeCursor(token, fields = null) {
 
   let value
   try {
-    value = JSON.parse(Buffer.from(token, 'base64url').toString('utf8'))
+    value = JSON.parse(fromBase64Url(token))
   } catch {
     refuse('is not a cursor this list minted — hand back an `endCursor` verbatim, unmodified')
   }
@@ -1579,14 +1792,14 @@ export function decodeCursor(token, fields = null) {
   // that never existed. Refused by name rather than answering a page from a
   // different sort (`FJS-D324`).
   const nearFields = new Map((fields ?? []).filter(f => f.near).map(f => [f.col, f.near]))
-  for (const [col, centre] of nearFields) {
+  for (const [col, center] of nearFields) {
     const v = value[col]
     const pair = (a) => Array.isArray(a) && a.length === 2 && a.every(n => typeof n === 'number')
     const bad = v !== null && (typeof v !== 'object' || Array.isArray(v) || !pair(v.at) || !pair(v.p))
     if (bad) refuse(`holds no position for "${col}", which this list orders by distance`)
-    if (v !== null && (v.at[0] !== centre.lat || v.at[1] !== centre.lng)) refuse(
+    if (v !== null && (v.at[0] !== center.lat || v.at[1] !== center.lng)) refuse(
       `was minted around ${v.at[0]}, ${v.at[1]} and this page is ordered around ` +
-      `${centre.lat}, ${centre.lng} — a distance order resumes only from its own center. ` +
+      `${center.lat}, ${center.lng} — a distance order resumes only from its own center. ` +
       'Reload the first page.')
   }
 
@@ -1636,9 +1849,9 @@ export function normalizeOrderBy(orderBy) {
         // near order states no direction of its own, so reading `dir.dir` up
         // here throws on the ordinary spelling.
         if (dir !== null && typeof dir === 'object' && dir.near != null) {
-          const centre = centreOf(dir.near)
-          if (!centre) throw new Error(`orderBy ${col}.near needs a numeric lat and lng`)
-          return { col, dir: String(dir.dir ?? 'asc').toUpperCase(), nulls: 'LAST', near: centre }
+          const center = centerOf(dir.near)
+          if (!center) throw new Error(`orderBy ${col}.near needs a numeric lat and lng`)
+          return { col, dir: String(dir.dir ?? 'asc').toUpperCase(), nulls: 'LAST', near: center }
         }
         const d = (typeof dir === 'object' ? dir.dir : dir).toUpperCase()
         return { col, dir: d, nulls: nullsPosition(dir, d) }

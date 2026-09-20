@@ -1,5 +1,215 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-20 — the flag hints under a command's result are TTY-only
+
+Seven commands end by listing what else they accept — `jsonschema`, `types`, `access`, `ddl`,
+`release`, and the two diffs. Written for somebody who just typed the command and is reading the
+answer, and correct for them. A composing caller is the other reader: `fli new` runs six of these on
+the user's behalf, and each one's result was followed by seven lines of flags for a command the user
+never typed.
+
+`hints()` prints only when stdout is a TTY — the same question `chalk`'s own enablement asks, and
+the honest one: whether a person is reading this.
+
+
+## 2026-09-20 — every prompt the console draws goes through one guarded owner
+
+`rl.prompt()` calls readline's `resume()` internally, and a closed interface
+raises `ERR_USE_AFTER_CLOSE` there rather than returning. The repl serializes
+its lines through a promise CHAIN — pausing does not hold back lines readline
+has already buffered, so a pasted block or a piped heredoc would otherwise
+complete in whatever order its awaits finish — and that chain is what made the
+throw reachable: the LAST line's continuation runs after the input ended and
+the interface closed, so a session's final statement threw on its way to drawing
+the next prompt, after its answer was already printed.
+
+Seven `rl.prompt()` sites become one `showPrompt()` that no-ops once closed. The
+flag is this file's own rather than a property read off the interface, because
+whether one is exposed — and whether resuming a closed interface throws at all —
+is a runtime's choice and has changed underneath us. `FJS-1204`.
+
+
+## 2026-09-20 — every cursor was broken in a browser, and `@point` is measured in the wasm engine
+
+**`encodeCursor` reached for node's `Buffer`, so `findManyCursor` threw
+`ReferenceError: Buffer is not defined` on a device.** Not a distance cursor —
+EVERY cursor, which is the whole of paginated reading on a client that runs in a
+browser by ruling (`FJS-D305`). Nothing in this package could see it: bun has a
+`Buffer`, so all 5,000-odd unit tests pass against the bug, and it only appears
+where the thing that lacks one is actually running.
+
+base64url both ways is now `TextEncoder` + `btoa`/`atob`, which both runtimes
+have. The UTF-8 pass is not decoration: `btoa` reads one byte per character, a
+cursor pages by caller data, and `Zürich` is not a latin1 string. The binary
+string is built one character at a time rather than spread, because a spread is
+one argument per byte and that is a stack overflow rather than a slow call.
+`cursor-grading.test.ts` pins it with the global REMOVED for the call, so a
+copy of the old line somewhere else is caught without a browser.
+
+**`@point` now has six assertions in the wasm engine** — the measurement
+`IDEAS/geo.md` listed as owed, since every number in that record was taken on
+`bun:sqlite`. The worry was the right one: the haversine is built from `asin`,
+`sqrt`, `power`, `sin`, `cos` and `radians`, every one of them
+`SQLITE_ENABLE_MATH_FUNCTIONS` — a COMPILE-TIME option, the same shape that
+makes `sqlite-vec` permanently unavailable in this build's
+`OMIT_LOAD_EXTENSION`. It IS set in `@sqlite.org/sqlite-wasm` 3.53.4, so the
+generated columns, the `CHECK`, a `near` filter, `NULLS LAST` on a distance
+order and a distance-ordered page all behave over OPFS exactly as they do on a
+server. Found the `Buffer` defect on its first run.
+
+**And the geo surface is spelled `center` throughout** — `centerOf`, and every
+comment and test beside it. `FJS-D192` is American spelling in prose and
+identifiers alike; `fli check`'s word list deliberately does not grade `-re`,
+because a rule firing on `centre` would have to know it is not a proper noun, so
+this drifted past the one thing that would have caught it — and `FJS-D321`, the
+ruling the code implements, spells it `center` in its own text. Renamed outright
+with no alias, which is what pre-alpha means (`packages/toolbelt` and the
+`example` screen carry the same rename).
+
+**One thing it found and did not fix** — `FJS-1205`: the browser host's named
+refusal for `@encrypted`/`@hashed` is unreachable, because the `Buffer.concat`
+in its caller's argument list throws first.
+
+## 2026-09-20 — `@vector`: the JavaScript distance path, the distance on the row, and the column out of the payload
+
+The three halves of `FJS-1193` that were still open, which is what makes the
+feature true on an engine that cannot load an extension.
+
+**The comparison now has two implementations and the extension is the optional
+one** (`FJS-D331`). A server that installed `sqlite-vec` compiles the ordering
+into the statement; everything else scores in `core/vector.js`. That is not a
+fallback — SQLite's own wasm build carries `SQLITE_OMIT_LOAD_EXTENSION`, so a
+browser cannot load one at any version. Before this, an engine without the
+function refused the ordering by name.
+
+What moves to JavaScript is the ORDER and therefore the PAGE: `limit` and
+`offset` cannot ride the statement when SQLite is ranking nothing, so the scan is
+the whole filtered set. That is why the caller's `where` is the prune, and why a
+gate in front of the read pays for itself rather than costing.
+
+**`_distance` comes back on the row** (`FJS-D329`), from both paths — a SELECT
+alias on one, `scoreByDistance` on the other — and it survives `finalize`, which
+trims to the caller's `select` and knows no field of that name. No cutoff
+option: a cosine threshold is a number every corpus guesses differently. A model
+declaring `@vector` beside a field called `_distance` is refused at parse, the
+way `findMany({ recursive })` refuses `_depth`.
+
+**The column is out of the default payload** (`FJS-D328`), as `@omit(all)`
+through the map that already owns *is this column in the default payload* — no
+second mechanism, and `select` unlocks it. A size rule and not an access one, so
+`asSystem()` does not lift it. It is taken out of the SQL as well as the row:
+measured against the same model with the attribute removed, at 1536 dimensions,
+0.118 ms → 0.032 ms for twenty rows and 2.48 ms → 0.56 ms for a thousand.
+
+**A `near` key must be the FIRST sort key, on BOTH engines.** Keys after it break
+ties; a key in front of it is refused by name. A key ahead of the distance groups
+the rows, and JS can only reproduce SQLite's grouping by restating its comparison
+rules — affinity, storage class, NULLS, the `compare()` trap `policy.js` pays for
+once already. Refused on the engine that COULD do it too, or one query answers a
+different order on a server with the extension than on one without it, with
+nothing raised.
+
+**`test/vector.test.ts` runs one battery of queries under both paths and compares
+them row for row**, distances included, plus the refusals. Verified by breaking
+it: a JS-only offset bug that no unit test could see turns that oracle red.
+
+**And a defect the work uncovered, older than it.** A distance order is flat and
+does not BEGIN with its column — it begins with a function call — so
+`buildRelationOrderBy`'s leading-identifier rewrite never fired on one and the
+column reached SQLite unqualified. With a joined table carrying a column of the
+same name that is `ambiguous column name` and the whole read fails. Measured on
+`@vector` and true of `@point` since it shipped; both fixed by naming the columns
+on the entry. Verified by reverting the fix.
+
+`findManyCursor` refuses a distance order by name — a keyset cursor resumes from
+a value the ROW holds, and a distance belongs to the query vector. It used to
+answer by demanding a lat and a lng.
+
+
+## 2026-09-20 — a distance order was refused at the API boundary by a guard already taught to lift it
+
+`checkOrderBy` — the guard in front of a call this client is about to run — was taught that
+`{ site: { near: … } }` is not a sort of the JSON document, so it is lifted out before
+`sortableKeysFor`'s `opaque` verdict reaches it. `$checkOrderBy` was not, and that is the one
+junction's `autoSort` asks BEFORE the call is made.
+
+So a distance-ordered list worked perfectly through the client and was a 400 over HTTP,
+naming the column as unsortable and listing the columns that are:
+
+```
+Unknown or unsortable $orderBy key 'site' (stores a serialization — not sortable).
+```
+
+Found by a drive that asks over the wire; every unit suite on either side passed throughout.
+
+The lift is one owner now — `pointFieldsOf` / `isNearOrderFor` / `liftNearOrders` — because
+the two guards are reached from opposite ends and a second copy is exactly how this
+happened.
+
+## 2026-09-20 — `@vector`: what a row means, ordered by an ordinary read
+
+`FJS-1193`'s language half, on the engine seam that landed earlier the same day.
+`FJS-D332` ruled the declaration and `FJS-D333` the retrieval; the measurements
+are `IDEAS/embedding.md` and the reference page is `docs/vectors.md`.
+
+```
+model Passage {
+  body      String
+  embedding Bytes? @vector(1536)
+}
+```
+
+```js
+db.passage.findMany({
+  where:   { documentId: 42 },
+  orderBy: { embedding: { near: queryVector } },
+  limit:   10,
+})
+```
+
+**Retrieval is an ordering and not a verb.** `search()` earned one because FTS5
+is a different engine on a different table; a vector column is on the model's
+own, so the ordering composes with `where`, `select`, `include`, cursors,
+`@@softDelete`, the tenant filter, both row policies and the gate by doing
+nothing. That is the security argument for the feature — a passage the caller
+may not read cannot ground an answer — and the filter is also a **speed-up**,
+measured 3-4x on a quarter of the rows.
+
+**A marker on storage that exists, not a ninth scalar.** `Embedding(n)` would
+have been this grammar's first parameterized type. `String @date` and `@point`
+are the same decision already made twice.
+
+**A length `CHECK` and no index.** Measured at `sqlite-vec` 0.1.9, the `vec0`
+virtual table is exact brute force and came out slower than a plain scan at 50k
+rows, so a shadow table with its triggers, differ rule, soft-delete rule and a
+JOIN in the one path every policy composes into would be paid for a ratio below
+one.
+
+**Three guards, and two of them are silent without it.** The `CHECK` grades
+length alone, so the write boundary refuses a zero vector — what an empty or
+failed `embed()` returns, whose cosine distance is `NULL`, and `NULL` sorts
+FIRST, making that row the best match for every query with a 200 — and a `NaN`,
+which sorts unpredictably rather than losing. The compiled read ANDs
+`IS NOT NULL` onto the column itself, because the extension THROWS on a null
+operand: one row added before its embedding job ran would otherwise fail every
+similarity read on the model. **Registering `vector` in `buildValidationMap`'s
+`VALIDATOR_KINDS` is what makes the first two fire** — that set decides whether
+a model is validated at all, and without the entry both wrote cleanly.
+
+**`orderBy` on the bare column is refused by name** rather than ordering by
+opaque bytes, which is `@point`'s rule one field kind over.
+
+The SQL distance function still comes from `sqlite-vec`, which `FJS-D331` makes
+an optional accelerator; an engine without one refuses the ordering by name
+rather than reaching SQLite as a call to a function it does not have. The
+JavaScript path that lifts that refusal — and gives the browser engine, which
+can never load an extension, a similarity read at all — is the open half of
+`FJS-1193`.
+
+Also: `wrapDb` exposes `$raw` and the read router forwards `$plain`/`$raw`,
+routed the way `query` is. An extension loads into a connection, and inside a
+transaction the read runs on the write handle.
+
 ## 2026-09-20 — `x-geo`, so a coordinate stops being offered a JSON editor
 
 A `@point` column is a `Json` column, and `Json` is the one thing this schema deliberately
@@ -161,10 +371,13 @@ file wrote `system ? 'system' : 'user'` beside a line that wrote null for the
 same caller — two graders, disagreeing. The export row now goes through the
 scoped client and names neither actor field.
 
-What a bearer should name as its ACTOR — the grant row it came in on, or the
-subject it resolved to — is not answered here; it is in `IDEAS/bearer-access.md`
-§ Open questions, and nothing can answer it until a resolver hands the boundary
-a row id.
+**And what a bearer names as its actor is now answered** (`FJS-D342`): the
+provenance closure carries `bearerId` and `bearerSubject`, which the entry
+files as `actorId` and `subjectId` — the same two columns an episode swaps,
+and for the same reason. Neither fact is on the principal: one is deliberately
+hidden from it, the other is a row this package never read. An operator still
+wins where both are present, since support mode's whole point is that the
+trail names the person who acted.
 
 ## 2026-09-20 — the vector engine seam, ahead of `@vector`
 
@@ -239,7 +452,7 @@ the trap is now in `docs/gotchas.md`.
 carries its unit — `within: '5mi'`, parsed by `@frontierjs/toolbelt/units` (`FJS-D319`) —
 the box prunes and a haversine in SQL measures, and the ordering is the query's rather than
 the page's, so a nearest-first list paginates (`FJS-D321`). The distance is not added to the
-row: the caller has the point and the centre, and one kit call is the number (`FJS-D320`).
+row: the caller has the point and the center, and one kit call is the number (`FJS-D320`).
 Everything else on a point field is refused by name, including `orderBy: { site: "asc" }`,
 which names the shape that works.
 
@@ -249,7 +462,7 @@ a pole and at mid-latitude, with the fixture sized to straddle the circle's edge
 prefilter that drops a row answers fewer rows with a 200, which is the defect
 Elasticsearch, qdrant and GeoBlacklight each shipped.
 
-**A centre may arrive as text.** `@frontierjs/toolbelt/query` reads a coordinate as a
+**A center may arrive as text.** `@frontierjs/toolbelt/query` reads a coordinate as a
 number only when it round-trips, which `51.507400` — what `toFixed(6)` writes — does not.
 The kit's stated answer is that the model has the last word, and `@point` is the model
 saying these two keys are Floats, so the reading is here. An empty coordinate is refused

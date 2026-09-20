@@ -101,7 +101,7 @@ example/
 │       ├── app.ts              ← the construction site. Exported unstarted
 │       ├── domain/shop/
 │       │   ├── inventory.ts    ← the ONE owner of the shelf: holds, availability, the ledger
-│       │   ├── cart-claim.ts   ← a header → a claim a stranger holds
+│       │   ├── cart-grant.ts   ← a header → a grant row → the basket's own id
 │       │   └── settle.ts       ← the ONE owner of "this order has been paid for"
 │       ├── domain/billing/     ← the renewal and dunning jobs, a subscription's transitions
 │       ├── domain/payroll/     ← pay runs, arrears, banded rates, effective dating

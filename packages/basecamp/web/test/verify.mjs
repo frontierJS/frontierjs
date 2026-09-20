@@ -33,6 +33,7 @@
 
 import { signRequest } from '@frontierjs/toolbelt/signature'
 import { createOutpostServer } from '@frontierjs/outpost/server'
+import { createStaticServer }  from '@frontierjs/outpost/serve'
 import { createDocker } from '@frontierjs/outpost/docker'
 import { spawn } from 'node:child_process'
 import { mkdtempSync } from 'node:fs'
@@ -80,6 +81,12 @@ const BASE     = `http://localhost:${WEB_PORT}`
 // every later run inherits the wreckage — five of them, one 22 hours old, were
 // found sharing this path.
 const PROFILE  = mkdtempSync(join(tmpdir(), 'fjs-basecamp-verify-'))
+// Where an inline release lands. A temp directory per run: a shared one would
+// serve the last run's bytes and the drive would pass against a broken tree,
+// which is the hazard `scaffold`'s per-run cache exists for one layer out.
+// Declared beside PROFILE because cleanup() removes both and runs on a throw
+// from anywhere below.
+const STATIC_DIR = mkdtempSync(join(tmpdir(), 'basecamp-static-'))
 
 const ACCOUNT = {
   workspace: 'Acme',
@@ -105,6 +112,9 @@ async function cleanup() {
   // spawned into its own process group so the group can be reaped here.
   if (chromePid) { try { process.kill(-chromePid, 'SIGKILL') } catch {} }
   await rm(PROFILE, { recursive: true, force: true }).catch(() => {})
+  // The inline releases this run wrote. Per-run, so nothing here can be served
+  // to the next one — see STATIC_DIR.
+  await rm(STATIC_DIR, { recursive: true, force: true }).catch(() => {})
 }
 
 // An interrupted run used to leave its API, its Vite and its Chrome alive.
@@ -232,6 +242,7 @@ const outpostSaw = { deleted: [], pruned: [], ran: [], swept: [], deploy: [] }
 // commit hold two images with the same tag (IDEAS/deploy-plane.md).
 const SINK_DIGEST = 'sha256:' + 'a1'.repeat(32)
 
+
 // The real Outpost, over a machine that does not exist: every docker command it
 // would run goes through this runner instead, which resolves one image digest
 // and reports every container as up. What is NOT faked is the Outpost — its
@@ -244,7 +255,10 @@ let realOutpost = null
  *  cannot exist before the exchange. */
 const buildOutpost = (secret) => createOutpostServer(
   { serverId: 'drive', secret, version: '0.4.1',
-    publicUrl: `http://localhost:${OUTPOST_PORT}`, workDir: '/tmp/outpost-drive' },
+    publicUrl: `http://localhost:${OUTPOST_PORT}`, workDir: '/tmp/outpost-drive',
+    // An inline release writes real files. The store is the shipped one over a
+    // real directory — faking it would assert this drive's idea of a symlink.
+    staticDir: STATIC_DIR, staticUrl: `http://localhost:${OUTPOST_PORT + 1}` },
   {
     docker: createDocker({
       run: async (argv) => {
@@ -305,7 +319,9 @@ const buildOutpost = (secret) => createOutpostServer(
       //
       // A stand-in agrees with itself. Same argument the repo makes about fake
       // clients hiding real bugs, one layer out.
-      if (req.method === 'POST' && ['/pull', '/deploy', '/stop', '/health-check'].includes(req.url)) {
+      if (req.method === 'POST' && ['/pull', '/deploy', '/stop', '/health-check',
+                                    '/static/publish', '/static/activate', '/static/health',
+                                    '/static/retire', '/static/releases'].includes(req.url)) {
         outpostSaw.deploy.push({ path: req.url, body: JSON.parse(body || '{}') })
         // Nothing should reach here before the machine enrolled: Basecamp only
         // learns this address from a heartbeat, and a heartbeat needs the
@@ -1198,6 +1214,126 @@ check('a pushed patch moves the list without a navigation',
 check('…and the app cell still names the app after the push',
   await evaluate(deployCell('appId')), appCellBefore)
 
+// ── 9f. A pasted app ─────────────────────────────────────────────────
+//
+// The prototyping door: an app whose source is the files themselves. No
+// repository, no image, no build — an HTML page that loads its libraries from a
+// CDN is a whole app, and the point of the kind is that pressing one button
+// puts it on the internet.
+//
+// Everything below the browser is real: the release goes through the shipped
+// Outpost, which writes the bytes into a real directory, swaps a real symlink
+// and answers the digest it read back off what it wrote. The last check fetches
+// the page through the static server the Outpost process runs — so what is
+// asserted at the end is not that a status column says success, but that the
+// characters typed into a textarea come back over HTTP.
+{
+  const envId    = appOwnerEnvPath.split('/')[2]
+  const serverId = releaseServer.id
+
+  const pastedId = await evaluate(`
+    (async () => {
+      const m = await import('/src/resources/App.mesa')
+      const created = await m.apps.service.create({
+        environmentId: ${JSON.stringify(envId)}, name: 'pasted', slug: 'pasted', type: 'static' })
+      await m.apps.service.invoke('place', created.id, { serverId: ${JSON.stringify(serverId)} })
+      return created.id
+    })()
+  `)
+  check('a static app can be created with no source at all', typeof pastedId, 'string')
+
+  await goto(`/apps/${pastedId}/`)
+  await sleep(1200)
+  await click('source')
+  await sleep(400)
+
+  check('a static app with nothing in it is offered the editor',
+    await evaluate(`!!document.getElementById('app-source-starter')`), true)
+
+  await evaluate(`document.getElementById('app-source-starter').click()`)
+  await sleep(400)
+
+  // What somebody actually pastes. The CDN tag is the whole reason this kind
+  // exists — nothing here builds it, bundles it or installs anything.
+  const PASTED = '<!doctype html><html><head><meta charset="utf-8">'
+    + '<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></scr'
+    + 'ipt></head><body><h1 id="hi">pasted and running</h1></body></html>'
+
+  await evaluate(`
+    (() => {
+      const el = document.getElementById('app-source-body-0')
+      if (!el) throw new Error('no editor — did the starter button fire?')
+      el.value = ${JSON.stringify(PASTED)}
+      el.dispatchEvent(new Event('input', { bubbles: true }))
+    })()
+  `)
+  await sleep(400)
+  check('an edited draft says so before it is saved',
+    await evaluate(`document.getElementById('app-source-dirty')?.textContent ?? ''`), 'unsaved')
+
+  await evaluate(`document.getElementById('app-source-deploy').click()`)
+  await sleep(2500)
+
+  check('save and deploy opens the release', await path(), p => /^\/deployments\/[0-9a-f-]{36}\/$/.test(p))
+  const pastedDeploy = (await path()).split('/')[2]
+
+  // Four steps, and not one container word: an inline release has no image to
+  // build, push, start or stop. A step list read off the app's TYPE alone would
+  // put six here and fail on the fourth.
+  check('the release runs the inline pipeline',
+    await evaluate(`[...document.querySelectorAll('#deploy-steps li strong')].map(el => el.textContent.trim()).join('|')`),
+    'Validate|Upload files|Activate|Health check')
+
+  check('the release finishes on screen',
+    await waitFor(`document.getElementById('deploy-status')?.textContent.trim()`,
+      v => ['success', 'failed', 'rolled_back', 'cancelled'].includes(v), 40_000),
+    'success')
+
+  // The digest is the MACHINE's reading of the bytes it wrote, not a tag this
+  // app chose — which is what makes a rollback able to name a release and an
+  // unchanged redeploy able to mint the same one.
+  // Read through the browser's own resource, not `apiCall`: `deployments` is
+  // workspace-scoped and the SPA is the thing that knows which workspace this
+  // tab is in. A fetch from the drive would have to guess at the header.
+  const readRelease = (id) => evaluate(`
+    (async () => {
+      const m = await import('/src/resources/Deployment.mesa')
+      return await m.deployments.service.get(${JSON.stringify(id)})
+    })()
+  `)
+  const release = await readRelease(pastedDeploy)
+  check('…recording the digest the machine read off the bytes',
+    release.builtImage ?? '', t => /^sha256:[0-9a-f]{64}$/.test(t))
+  check('…and the Activate step says where it is being served',
+    JSON.stringify((release.steps ?? []).map(s => s.output)),
+    t => t.includes(`http://localhost:${OUTPOST_PORT + 1}/pasted/`))
+
+  // The end of the claim. Not a status column — the page itself, off the disk
+  // the Outpost wrote, through the server that process runs.
+  const served = await createStaticServer({ staticDir: STATIC_DIR })
+    .handle(new Request('http://pasted.fleet.test/', { headers: { host: 'pasted.fleet.test' } }))
+  check('the pasted page is served, by hostname, off the machine', served.status, 200)
+  check('…and it is the characters that were typed',
+    await served.text(), t => t.includes('pasted and running') && t.includes('cdnjs.cloudflare.com'))
+
+  // A second deploy of the same bytes is the same release: the directory is
+  // named for its own digest, so nothing new is written and nothing is minted.
+  await goto(`/apps/${pastedId}/`)
+  await sleep(1200)
+  await click('source')
+  await sleep(400)
+  await evaluate(`document.getElementById('app-source-deploy').click()`)
+  await sleep(2500)
+  check('an unchanged redeploy still ships',
+    await waitFor(`document.getElementById('deploy-status')?.textContent.trim()`,
+      v => ['success', 'failed'].includes(v), 40_000), 'success')
+  // Read AFTER it finished: a digest fetched mid-release is null on every run
+  // and the comparison would pass by matching nothing against nothing.
+  const again = await readRelease((await path()).split('/')[2])
+  check('…addressed by the same digest, because the bytes did not change',
+    again.builtImage, release.builtImage)
+}
+
 // Cancel is a state change, not a delete — history is the point of the record.
 await goto(deployPath)
 check('a finished release offers no cancel',
@@ -1356,10 +1492,27 @@ check('nor a way to move their own role',
   `), true)
 
 // The trail. Everything done above should be in it.
+//
+// Asked through the screen's own FILTER rather than off the first page. The
+// page is time-ordered and every section above it writes to the trail, so
+// `projects.create` — written near the start of this run — sits on page one
+// only until somebody adds a section that records more than a page of events
+// before this point. Adding the inline-release section did exactly that, and
+// the check failed over work that had nothing to do with it. Filtering asks
+// the question the line means: is this in the trail, rather than is it recent.
 await goto('/admin/audit/')
+check('the trail renders what has been happening',
+  await evaluate(`document.getElementById('audit-rows')?.textContent ?? ''`), t => t.length > 0)
+
+await fill({ 'audit-filter': 'projects' })
+await click('Filter')
+await sleep(1500)
 check('the audit trail lists what happened',
   await evaluate(`document.getElementById('audit-rows')?.textContent ?? ''`),
-  t => t.includes('projects.create') || t.includes('servers.create'))
+  t => t.includes('projects.create'))
+check('…and the filter narrowed it to that subject',
+  await evaluate(`document.getElementById('audit-rows')?.textContent ?? ''`),
+  t => !t.includes('servers.') && !t.includes('deployments.'))
 
 // Append-only, and that is enforced by the service rather than by the UI
 // hiding a button. Verified at the API, because the UI never offers it.

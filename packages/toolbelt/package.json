@@ -8,6 +8,10 @@
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "exports": {
+    "./bearer": {
+      "types": "./src/bearer/bearer.d.ts",
+      "default": "./src/bearer/bearer.js"
+    },
     "./cron": {
       "types": "./src/cron/cron.d.ts",
       "default": "./src/cron/cron.js"

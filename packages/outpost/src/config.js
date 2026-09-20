@@ -12,6 +12,11 @@
 /** Ports are derived, not chosen: `packages/cli/core/ports.js`, project id 8,
  *  category `be`. dev 8180, test 7180. */
 const DEFAULT_PORT = 8180
+/** The origin inline apps answer on — dev 8181, test 7181, same row, service
+ *  slot 1. It is a SECOND listener rather than a path on the first because a
+ *  pasted page is a stranger's script and a port is an origin: sharing one with
+ *  the signed command protocol would put the fleet inside every prototype. */
+const DEFAULT_STATIC_PORT = 8181
 
 export function readConfig(env = process.env) {
   const missing = []
@@ -43,6 +48,19 @@ export function readConfig(env = process.env) {
     publicUrl:   env.OUTPOST_PUBLIC_URL ?? `http://localhost:${env.OUTPOST_PORT ?? DEFAULT_PORT}`,
     /** Where a git build is checked out. One directory per app. */
     workDir:     env.OUTPOST_WORK_DIR ?? '/var/lib/outpost/apps',
+    /** Where published static releases live. One directory per app, one
+     *  subdirectory per digest, plus the `hosts/` links the server resolves. */
+    staticDir:   env.OUTPOST_STATIC_DIR ?? '/var/lib/outpost/static',
+    /** 0 turns the static origin off entirely — a machine that runs containers
+     *  and nothing else has no reason to hold a public port open. */
+    staticPort:  Number(env.OUTPOST_STATIC_PORT ?? DEFAULT_STATIC_PORT),
+    /** The address the WORLD reaches a published app at. Stated rather than
+     *  derived for `publicUrl`'s reason — this process cannot see how it is
+     *  reached — and it is what a release step writes into its own output, so
+     *  the answer to *where is it* comes off the machine that put it there
+     *  rather than being assembled by a console that is guessing. */
+    staticUrl:   (env.OUTPOST_STATIC_URL ?? `http://localhost:${env.OUTPOST_STATIC_PORT ?? DEFAULT_STATIC_PORT}`)
+                   .replace(/\/$/, ''),
   }
 
   if (missing.length) {

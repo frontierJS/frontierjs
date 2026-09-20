@@ -143,7 +143,7 @@ export function createOrionServices(deps: {
     channel: names.flows,
     methods: [
       "find", "get", "create", "patch", "remove",
-      ...signedIn("save", "versions", "activate", "pause", "archive", "restore", "run", "dryRun", "export", "import", "layout", "saveLayout"),
+      ...signedIn("save", "versions", "activate", "pause", "archive", "restore", "run", "dryRun", "export", "import", "layout", "saveLayout", "nodeTypes"),
     ],
 
     // A patch moving the status or the version, and a removal, reach this
@@ -183,6 +183,25 @@ export function createOrionServices(deps: {
         orderBy: { version: "desc" },
         select:  { id: true, version: true, authorId: true, createdAt: true },
       })
+    },
+
+    /**
+     * Every node type this app's engine knows, each with the JSON Schema its
+     * config answers — what an editor offers, and what it builds a node's form
+     * from.
+     *
+     * It is a method on `flows` rather than a service of its own because there
+     * is no row: the catalog is the registry's, the same for every caller, and
+     * the only thing that varies is which plugins the host installed.
+     *
+     * Answered whole rather than one type at a time. A screen holding a flow
+     * needs the descriptor for every node in it plus every node it may offer,
+     * which is the catalog, and 25 small documents down one call beats 25.
+     */
+    async nodeTypes(ctx: ServiceContext) {
+      ctx.dispatch = false
+      // A list method answers a list, so the envelope is junction's to add.
+      return runner.nodeTypes()
     },
 
     /**

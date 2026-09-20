@@ -1,0 +1,126 @@
+<script>
+  // One node's config, as a form the node type describes itself.
+  //
+  // ─── Where the form comes from ────────────────────────────────────────────
+  //
+  // Nothing here knows what a `trigger.cron` takes. Every node type declares a
+  // `configSchema` — a JSON Schema object — and the framework already owns
+  // JSON Schema → controls: `buildFieldRules` flattens the document into a rule
+  // per property, `formFieldList` asks `controlFor` which control each rule
+  // gets, and `@frontierjs/ui`'s `FormField` renders the name it answered.
+  // So a node type this package has never heard of — a host's plugin — gets a
+  // form with nothing written, which is the only reason `configSchema` can be
+  // on a plugin's manifest at all.
+  //
+  // The mockup carries the other design, a hand-written field table per node
+  // type consulted BEFORE the schema, and it is not ported: a table beside the
+  // descriptors is a second statement of what a node takes, and the one the
+  // compiler grades against is the descriptor.
+  //
+  // ─── $context.form ────────────────────────────────────────────────────────
+  //
+  // Every kit control resolves its own label, `required` and constraints from
+  // `$context.form.fields`, which is a rule map — exactly what
+  // `buildFieldRules` answers. So the panel provides one rather than passing
+  // eleven props down, and a control standing in it behaves as it does under
+  // `<Form>`. What it deliberately does NOT provide is a submit: a config is
+  // written into the definition the page already holds, and saving is the
+  // page's one save.
+
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import { buildFieldRules, formFieldList } from '@frontierjs/sierra/junction'
+
+  import ConfigValue from './ConfigValue.mesa'
+
+  // `{ id, type, config }` from the definition.
+  export let node
+
+  // The node type's descriptor, from `flows.nodeTypes()`. Undefined where the
+  // node names a type this app's registry does not have — which is a real
+  // state and not an error here: the compiler is what refuses it, on save.
+  export let descriptor = undefined
+
+  export let write    = undefined     // (config) => void
+  export let disabled = false
+
+  $: schema = descriptor?.configSchema ?? null
+
+  // `() => null` is the ref resolver: a config schema is one self-contained
+  // document with no `$defs` table under it, so a `$ref` in one resolves to
+  // nothing and `buildFieldRules` records that rather than reading the absent
+  // type as a document.
+  $: rules = schema ? buildFieldRules(schema, () => null) : {}
+
+  // A config key the schema does not declare still has to appear. A node
+  // carrying one is either a schema that has moved on or a value somebody
+  // typed into the JSON, and in both cases the key is in the definition and
+  // editing it in the document below is the only way to reach it — so it is
+  // named here rather than being invisible.
+  $: extra = Object.keys(node?.config ?? {}).filter(k => !(k in rules))
+
+  $: fields = formFieldList(rules)
+
+  // The property's own `description`, which is the sentence the schema wrote
+  // for a person. `buildFieldRules` does not carry it — a litestone model has
+  // no equivalent — so it is read off the document here.
+  const describe = (name) => schema?.properties?.[name]?.description ?? ''
+
+  const setKey = (name, value) => {
+    const next = { ...(node?.config ?? {}) }
+    if (value === undefined) delete next[name]
+    else next[name] = value
+    write?.(next)
+  }
+
+  $context.form = {
+    errors:     {},
+    submitting: false,
+    disabled,
+    fields:     rules,
+    submitted:  false,
+    // No relation reaches a config value, so there is nothing to fetch; the
+    // shape is still the one every list control awaits.
+    optionsFor:    () => Promise.resolve({ options: [], total: 0, truncated: false }),
+    reportInvalid: () => {},
+  }
+</script>
+
+<SectionHeader title={descriptor?.label ?? node?.type ?? 'Node'} level={3}>
+  {#snippet action()}
+    <Pill tone="muted" id="inspector-node">{node?.id}</Pill>
+  {/snippet}
+</SectionHeader>
+
+{#if descriptor?.description}
+  <p class="text-muted text-sm">{descriptor.description}</p>
+{/if}
+
+{#if !descriptor}
+  <Alert tone="warning" id="inspector-unknown">
+    This app's engine has no node type called <code>{node?.type}</code>, so there is no form for it.
+    It is edited in the definition below, and the compiler refuses it on save.
+  </Alert>
+{:else if !schema}
+  <Alert tone="muted" id="inspector-no-config">{descriptor.label} takes no configuration.</Alert>
+{:else}
+  <div class="stack" id="inspector-fields">
+    {#each fields as field (field.name)}
+      <ConfigValue
+        {field}
+        {disabled}
+        hint={describe(field.name)}
+        value={node?.config?.[field.name]}
+        write={(v) => setKey(field.name, v)}
+      />
+    {/each}
+  </div>
+{/if}
+
+{#if extra.length}
+  <Alert tone="warning" id="inspector-extra">
+    {extra.join(', ')} {extra.length === 1 ? 'is' : 'are'} in this node's config and not in its schema.
+    Edit {extra.length === 1 ? 'it' : 'them'} in the definition below.
+  </Alert>
+{/if}

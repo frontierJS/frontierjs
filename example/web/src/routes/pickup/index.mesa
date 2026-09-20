@@ -1,0 +1,157 @@
+---
+title: Pickup points
+---
+<script>
+  // Where an order can be collected from — the one screen in this app whose
+  // question is WHERE.
+  //
+  // Three realms are crossed here and each is load-bearing:
+  //
+  //   Data   `site Json? @point(lat, lng)` emits two generated columns, an
+  //          index on the pair and a CHECK. `near` is the only filter it
+  //          answers and distance the only ordering.
+  //   API    the search lives in the URL as ordinary bracket notation —
+  //          `?site[near][lat]=…&site[near][within]=5mi` — which is what
+  //          `@frontierjs/toolbelt/query` already carries structure in
+  //          (`FJS-D323`). No second syntax was invented for it, and the three
+  //          readers that already existed parse it.
+  //   UI     nothing on this page names a control. `x-geo` reaches
+  //          `controlFor`, which answers `geo`, which the kit binds to
+  //          `GeoField`. Without `@point` the same column gets a JSON document
+  //          editor, which is the workaround the declaration retires.
+  //
+  // The DISTANCE is computed here and is not a column (`FJS-D320`): the row
+  // carries its point and this page knows the center, so one kit call answers
+  // *2.3 mi away* with no server contract at all.
+  import { pickupPoints } from '@/resources/PickupPoint.mesa'
+  import { session } from '@/session.js'
+  import { prefs }   from '@/prefs.js'
+  import { distance, isPoint } from '@frontierjs/toolbelt/geo'
+  import { formatDistance }    from '@frontierjs/toolbelt/units'
+
+  import Alert         from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import Button        from '@frontierjs/ui/components/forms/Button.mesa'
+  import Form          from '@frontierjs/ui/components/forms/Form.mesa'
+  import NumberInput   from '@frontierjs/ui/components/forms/NumberInput.mesa'
+  import Pill          from '@frontierjs/ui/components/display/Pill.mesa'
+  import SectionHeader from '@frontierjs/ui/components/display/SectionHeader.mesa'
+  import Select        from '@frontierjs/ui/components/forms/Select.mesa'
+  import Table         from '@frontierjs/ui/components/display/Table.mesa'
+
+  $: (session.level, prefs.dense)
+
+  // The URL is the state. A near-me list is exactly the screen somebody sends
+  // to somebody else, so the center and the radius have to survive a paste.
+  const list = pickupPoints.list()
+
+  // The boxes, seeded from whatever the URL already carries. A hand-typed
+  // coordinate arrives as TEXT when it does not round-trip — `51.507400` is
+  // what `toFixed(6)` writes — and that is correct: the query kit has no model
+  // in the room, and `@point` is the model having the last word at the Data
+  // boundary.
+  $: lat    = Number(list.query?.site?.near?.lat ?? 51.5074)
+  $: lng    = Number(list.query?.site?.near?.lng ?? -0.1278)
+  $: within = list.query?.site?.near?.within ?? '5mi'
+
+  const RADII = ['1mi', '5mi', '25mi', '100mi'].map(v => ({ value: v, label: v }))
+
+  const center = () => ({ lat, lng })
+
+  function search() {
+    // One key, and the whole search is under it. `apply` navigates, and the
+    // change arrives back through the router — so the back button works and
+    // the address bar holds the question that was asked.
+    list.apply({ site: { near: { lat, lng, within } } },
+               { ...list.directives, orderBy: { site: { near: center() } } })
+  }
+
+  function clearSearch() { list.apply({}, { ...list.directives, orderBy: undefined }) }
+
+  const searching = () => !!list.query?.site?.near
+
+  // A row with no coordinate is in no circle and at no distance. It is shown
+  // rather than hidden, because *this branch has not been located yet* is a
+  // thing a person on this screen needs to see.
+  const awayFrom = (row) => isPoint(row.site)
+    ? formatDistance(distance(row.site, center()), { imperial: true })
+    : null
+
+  let creating = false
+  let record   = pickupPoints.make()
+
+  async function created() {
+    creating = false
+    record   = pickupPoints.make()
+    await list.reload?.()
+  }
+</script>
+
+<SectionHeader title="Pickup points" level={1}>
+  {#snippet action()}
+    {#if session.level >= 5}
+      <Button id="p-new" onclick={() => { creating = !creating }}>
+        {creating ? 'Cancel' : 'New branch'}
+      </Button>
+    {/if}
+  {/snippet}
+</SectionHeader>
+
+{#if list.error}<Alert tone="danger" id="p-error">{list.error.message}</Alert>{/if}
+
+<!--
+  The search. Two number boxes and a radius — no map, for the kit's reason
+  (`FJS-D327`): a map is a rendering library plus a tile VENDOR, and this repo
+  makes no vendor choice.
+-->
+<form class="cluster" id="p-search" on:submit={(e) => { e.preventDefault(); search() }}>
+  <NumberInput label="Latitude"  name="lat" bind:value={lat} step={0.0001} min={-90}  max={90} />
+  <NumberInput label="Longitude" name="lng" bind:value={lng} step={0.0001} min={-180} max={180} />
+  <Select label="Within" name="within" bind:value={within} options={RADII} />
+  <Button type="submit" id="p-search-go">Search</Button>
+  {#if searching()}
+    <Button variant="ghost" id="p-search-clear" onclick={clearSearch}>Show all</Button>
+  {/if}
+</form>
+
+<Table rows={list.rows} striped hover compact={prefs.dense}
+       columns={[{ name: 'name', label: 'Branch' }, { name: 'address', label: 'Address' },
+                 { name: 'hours', label: 'Hours' }, { name: 'away', label: 'Away' }]}
+       emptyText="No branch within that radius.">
+  {#snippet row(p)}
+    <tr data-point={p.id} data-name={p.name}>
+      <td data-col="name">{p.name}</td>
+      <td data-col="address">{p.address}</td>
+      <td data-col="hours">{p.hours ?? '—'}</td>
+      <td data-col="away" data-away={awayFrom(p) ?? ''}>
+        {#if awayFrom(p)}
+          {awayFrom(p)}
+        {:else}
+          <Pill tone="muted" data-unlocated="true">not located yet</Pill>
+        {/if}
+      </td>
+    </tr>
+  {/snippet}
+</Table>
+
+{#if list.hasMore}
+  <Button variant="ghost" id="p-more" onclick={list.more}>Load more</Button>
+{/if}
+
+{#if creating}
+  <!--
+    The generated form. Nothing here names a control: `site` is a `Json`
+    column carrying `x-geo`, so it renders as two number boxes that refuse
+    ±90/±180 and write the pair under the keys the model declared. Half a
+    coordinate is refused by the control and again by the table's own CHECK.
+  -->
+  <SectionHeader title="New branch" level={2} />
+  <Form id="p-form" resource={pickupPoints} bind:record={record} ondone={created} />
+{/if}
+
+<Alert tone="muted" id="p-derived">
+  The search above is a URL. <code>?site[near][lat]=51.5074&amp;site[near][lng]=-0.1278&amp;site[near][within]=5mi</code>
+  is ordinary bracket notation — no syntax was invented for it — and the
+  distance beside each branch is computed here from the point on the row and
+  the center this page already knows, rather than being a column the server
+  returned.
+</Alert>

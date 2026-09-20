@@ -86,7 +86,7 @@
     "@frontierjs/litestone": "workspace:*"
   },
   "engines": {
-    "bun": ">=1.0.0"
+    "bun": ">=1.4.0"
   },
   "keywords": [
     "junction",

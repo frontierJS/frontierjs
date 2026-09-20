@@ -1,14 +1,26 @@
 ---
 id: bearer-access
-status: proposed
+status: partial
 dated: 2026-09-14
 ---
 
 # Idea — Access without an account: the bearer claim as a paved road
 
-**Status: IDEA. Nothing new here is built.** Dated 2026-09-14. What *ships* is
-cited to the file that ships it; every number was read off a database or a probe
-named beside it. Do not cite this file as behavior — see `VERIFYING.md`.
+**Status: PARTIAL — the framework half is built, the portal is not.** Dated
+2026-09-14, its questions ruled 2026-09-20 — `FJS-D339` (the HMAC is a toolbelt kit) · `FJS-D340` (the link
+is redeemed for a cookie) · `FJS-D341` (the wider scope needs the inbox) ·
+`FJS-D342` (a bearer's actor is the grant row) · `FJS-D343` (one form: the
+lookup) · `FJS-D344` (graduating to an account is the app's act, and revokes
+the grant). Built on 2026-09-20: `@frontierjs/toolbelt/bearer`, junction's `bearerClaim`,
+the trail naming a grant, and `example`'s basket re-modelled onto all three
+(`verify:cart` 32 · `verify:money` 107 · `verify:stock` 41 · `verify:widget` 40
+· `verify:pay` 24). NOT built: the portal schema below, which is maid.tech's own
+app; the cookie redemption (`FJS-D340`) — the basket carries a header and no
+link, so nothing here has needed it yet; the emailed one-time code
+(`FJS-D341`); and `lastUsedAt`, which is a write per request and wants a
+measurement first. What *ships* is cited to the file that ships it;
+every number was read off a database or a probe named beside it. Do not cite
+this file as behavior — see `VERIFYING.md`.
 
 ---
 
@@ -108,22 +120,34 @@ resolver that reads it.
 
 ### 1. `bearerClaim`, beside `membershipClaim`
 
-One resolver, both proofs, one owner — and `describe()` derived from its
-options rather than written by hand.
+One resolver, ONE proof — `FJS-D343` — and `describe()` derived from its options
+rather than written by hand. A grant row is read, and what reaches a policy is
+the subject it resolved to.
 
 ```ts
-// by construction — what cart-claim.ts is today, with the shape check derived
-// from `Cart.token`'s own @default rather than a regex that can disagree with it
-principal: bearerClaim({ from: header('x-cart-token'), claim: 'cartToken', model: 'Cart', column: 'token' })
-
-// by lookup — the portal
+// the portal
 principal: bearerClaim({
-  from:    header('x-portal-link'),
+  from:    cookie('portal'),      // redeemed from the emailed link — `FJS-D340`
   model:   'PortalLink',
   column:  'tokenHash',           // presented token is HMAC'd before the read
   claims:  { portalClientId: 'clientId', portalScope: 'scope' },
 })
+
+// the basket, which is the same shape once `Cart.token` becomes a grant row
+principal: bearerClaim({
+  from:    header('x-cart-token'),
+  model:   'CartGrant',
+  column:  'tokenHash',
+  claims:  { cartId: 'cartId' },
+})
 ```
+
+**The by-construction form is not shipped**, and what it costs to lose is
+measured rather than assumed: a read on a unique column per guest call, which
+an authenticated call already pays for its session. What it buys is that
+`CartLine.token` — a copy of the parent's secret on every child row, carrying a
+paragraph in the schema explaining why the parent's copy is `@guarded` and the
+child's cannot be — becomes `cartId == auth().cartId` and disappears.
 
 The lookup form refuses a row whose `expiresAt` has passed or whose `revokedAt`
 is set **when the model declares those columns**, and touches `lastUsedAt` when
@@ -251,27 +275,34 @@ not a battery.
 
 ## Open questions
 
-- **Where does the token HMAC live?** `bearerClaim` is in junction, and auth
+- ~~**Where does the token HMAC live?**~~ **Answered 2026-09-20 (`FJS-D339`): A — a `@frontierjs/toolbelt` kit (WebCrypto only; `/signature` already has a private `hmacHex`).** `bearerClaim` is in junction, and auth
   depends on junction, so it cannot import `auth/crypto.ts`.
   - **A** — a `@frontierjs/toolbelt` kit (WebCrypto only; `/signature` already has a private `hmacHex`)
   - **B** — `bearerClaim` lives in auth, beside the API keys it resembles
   - **C** — junction owns it and auth's API keys move onto it
   - **Recommend A** — both callers are below or beside it, the key is injected, and it is a pure function
-- **Does the link travel as a header, a cookie, or the path?** maid.tech puts it in the path; `example` in a header.
+- ~~**Does the link travel as a header, a cookie, or the path?**~~ **Answered 2026-09-20 (`FJS-D340`): B — redeem the link once for an httpOnly cookie scoped to the link row.** maid.tech puts it in the path; `example` in a header.
   - **A** — header only; the page reads the link once from the URL fragment and holds it
   - **B** — redeem the link once for an httpOnly cookie scoped to the link row
   - **C** — any of the three, named by `from:`
   - **Recommend B** — the fragment is never sent to a server and the cookie keeps the secret out of history, `Referer` and logs; `from:` stays a single choice per app, and the CSRF concern `cart-claim.ts` raises is a `SameSite=Strict` cookie on a surface with no cross-site writes. **B has a precedent rather than needing a mechanism**: `LoginChallenge` is already a single-use, expiring ticket a POST trades for a session, and a portal link is the same act with a different question answered first
-- **Does the more sensitive strength need proof of the inbox, or only a live link?**
+- ~~**Does the more sensitive strength need proof of the inbox, or only a live link?**~~ **Answered 2026-09-20 (`FJS-D341`): B — `full` scope is minted only by redeeming an emailed one-time code.**
   - **A** — a live link is enough
   - **B** — `full` scope is minted only by redeeming an emailed one-time code
   - **Recommend B** — a forwarded email otherwise hands over the whole conversation, and the client hubs converged on it
-- **What does the audit trail record for a bearer?**
+- ~~**What does the audit trail record for a bearer?**~~ **Answered 2026-09-20 (`FJS-D342`): A — `actorType: 'bearer'`, `actorId` the link row's id, `subjectId` the subject's.**
   - **A** — `actorType: 'bearer'`, `actorId` the link row's id, `subjectId` the subject's
   - **B** — `actorType: 'bearer'`, `actorId` the subject's id
   - **Recommend A** — revoking one link has to be answerable by *which link did this*, and `subjectId` already exists for support mode
-- **Does a by-construction bearer (`Cart`) move to the lookup form?** Open — the basket has one subject and no strengths, so the lookup costs a read for nothing; keeping both forms is the price of not copying a token onto every child row.
-- **A portal client who later signs up** — does the `PortalLink` attach to the new `User`, and is that auth's `oauthLink`-shaped `Verification` purpose or the app's? Open.
+- ~~**Does a by-construction bearer (`Cart`) move to the lookup form?**~~ **Answered 2026-09-20 (`FJS-D343`): B — ship the lookup form only; `Cart` gets a grant row, the claim becomes the cart's id, and `CartLine.token` goes.** The basket has one subject and no strengths, so a lookup costs a read where a comparison would do — and it is the read that buys expiry, revocation and, in the cart's case, the end of a token copied onto every child row (`CartLine.token` exists only because a policy cannot traverse a relation; a `cartId` claim needs no copy).
+  - **A** — ship both forms in `bearerClaim`; `Cart` stays as it is
+  - **B** — ship the lookup form only; `Cart` gets a grant row, the claim becomes the cart's id, and `CartLine.token` goes
+  - **C** — ship the lookup form only, and leave `Cart` as app-written by-construction code, which is what `cart-claim.ts` already is
+  - **Recommend B** — one form is one set of hazards, one `describe()` kind and one thing to document, and the read it costs is an indexed hit on a unique column, which an authenticated call already pays for its session. It also deletes a documented wart rather than preserving it: the guarded-on-the-parent / not-guarded-on-the-child asymmetry is in the schema with a paragraph explaining itself. The honest cost is that a guest's every basket call now reads a row, and that `Cart` is drive-proven code being re-modelled for consistency rather than for a defect
+- ~~**A portal client who later signs up**~~ **Answered 2026-09-20 (`FJS-D344`): A — the app's own act: its `register` path attaches the subject to the new `User` and revokes the grant, and the framework ships nothing.** — what becomes of the grant once the same person has a session?
+  - **A** — the app's own act: its `register` path attaches the subject to the new `User` and revokes the grant, and the framework ships nothing
+  - **B** — auth grows a `Verification` purpose beside `oauthLink`, so redeeming a link during registration attaches the subject
+  - **Recommend A** — *which row is this person* is an application fact (`User.clientId` here, a supplier or a patient elsewhere), and a shipped purpose would have to name a model auth cannot know. What the framework owes is the seam that already exists — auth's four awaited callbacks, `onRegister` among them, each running BEFORE the thing it can refuse. The ruling should say the grant is REVOKED on attach, or the same link keeps working beside the account it was traded for
 
 ---
 

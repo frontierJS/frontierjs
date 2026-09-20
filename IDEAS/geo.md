@@ -1240,10 +1240,17 @@ changes the shape above.
   query string) and UI (a control), and `DRIVES.md` has no row that would cover it
   — so building it without adding one means `fli proves` answers *these files
   changed and no row covers them*, which is a finding rather than a pass.
-- **The wasm engine measurement is owed.** Every number in this record was taken on
-  `bun:sqlite`. Generated columns and `json_extract` are core rather than
-  compile-time options, so they are expected in the browser engine — but expected
-  is not measured, and litestone runs in both by ruling (`FJS-D305`).
+- ~~**The wasm engine measurement is owed.**~~ **Measured 2026-09-20 and it holds.**
+  `@sqlite.org/sqlite-wasm` 3.53.4 compiles with `ENABLE_MATH_FUNCTIONS`, so
+  `asin` · `sqrt` · `power` · `sin` · `cos` · `radians` are all there — the
+  compile-time worry was the right one to have, since the same build carries
+  `OMIT_LOAD_EXTENSION`, which is why `@vector` can never run here. Six
+  assertions in `packages/litestone/test/browser/verify-browser-client.mjs`,
+  over OPFS in Chrome: the generated columns, the `CHECK`, a `near` filter, a
+  row with no point in no circle, `NULLS LAST` on a distance order, and a
+  distance-ordered page continuing without repeating its boundary row.
+  **It found a defect that was not geo's**: `encodeCursor` used node's `Buffer`,
+  so EVERY cursor threw `ReferenceError` on a device, not only a distance one.
 - **The adoption path from a pair to a point has no recipe.** Every app in the
   survey stores `latitude` / `longitude`; under G they migrate, and the migration
   is a `json_object` update plus a column drop. That is an afternoon, but it is an

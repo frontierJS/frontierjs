@@ -89,7 +89,7 @@ export function distance(a, b) {
 }
 
 /**
- * The boxes that contain every point within `metres` of a centre.
+ * The boxes that contain every point within `metres` of a center.
  *
  * A LIST, because one box is not always enough and the caller who assumes it is
  * writes the defect this module's header names. Two shapes come back:
@@ -105,12 +105,12 @@ export function distance(a, b) {
  * Every box is a PREFILTER. It is always wider than the circle — a box around a
  * disc — so the exact `distance` test still runs over what it returns.
  *
- * @param {{lat:number,lng:number}} centre
+ * @param {{lat:number,lng:number}} center
  * @param {number} metres
  * @returns {Array<{south:number,north:number,west:number,east:number,full:boolean}>}
  */
-export function boundingBox(centre, metres) {
-  const c = point(centre, 'boundingBox(centre)')
+export function boundingBox(center, metres) {
+  const c = point(center, 'boundingBox(center)')
   const m = Number(metres)
   if (!Number.isFinite(m) || m <= 0)
     throw new Error(`boundingBox: radius must be a positive number of metres, got ${metres}`)
@@ -167,18 +167,18 @@ export function inBoxes(p, boxes) {
 }
 
 /**
- * Is the point within `metres` of the centre? Box first, then the exact
+ * Is the point within `metres` of the center? Box first, then the exact
  * measurement — the same two steps in the same order as the SQL, so the two
  * halves of a live list cannot disagree about a row on the edge.
  *
  * @param {{lat:number,lng:number}} p
- * @param {{lat:number,lng:number}} centre
+ * @param {{lat:number,lng:number}} center
  * @param {number} metres
  * @returns {boolean}
  */
-export function isNear(p, centre, metres) {
+export function isNear(p, center, metres) {
   if (!isPoint(p)) return false
-  return inBoxes(p, boundingBox(centre, metres)) && distance(p, centre) <= metres
+  return inBoxes(p, boundingBox(center, metres)) && distance(p, center) <= metres
 }
 
 /**

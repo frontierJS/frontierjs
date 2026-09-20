@@ -1,0 +1,17 @@
+<script module>
+// src/resources/PickupPoint.mesa — the Resource layer.
+//
+// The default form below is the whole reason this file has markup: `site` is a
+// `Json` column, and without `@point` on it a generated form offers a JSON
+// document editor for a latitude and a longitude. With it, `x-geo` reaches
+// `controlFor`, which answers `geo`, which the kit binds to `GeoField` — two
+// number boxes that refuse ±90/±180 and write the pair under the declared keys.
+//
+// Nothing here names a control. That is the assertion.
+
+import { createResource } from '@frontierjs/sierra/junction'
+
+export const pickupPoints = createResource('pickup-points', {
+  model: 'PickupPoint',
+})
+</script>

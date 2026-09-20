@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 53 models · 2 databases
+-- 55 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -312,6 +312,41 @@ CREATE TABLE IF NOT EXISTS "discount" (
   CHECK (kind != 'percent' OR value <= 10000)
 ) STRICT;
 
+-- A place a customer collects an order from, and the one model in this shop
+-- whose rows are found by WHERE THEY ARE.
+-- 
+-- The `Collect` shipping method existed with nowhere to collect from, which is
+-- what this is: a shop with branches, a storefront that asks *which one is
+-- near me*, and a staff screen that puts one on the map by typing two numbers.
+-- 
+-- `site Json @point(lat, lng)` is the whole declaration. It emits two REAL
+-- generated columns over `json_extract`, a composite index on the pair, and a
+-- `CHECK` that refuses a half-set coordinate and an out-of-range one — so a
+-- migration, a seed and `asSystem()` are all held to it, none of which reaches
+-- a validator. `near` is the only filter it answers and distance the only
+-- ordering; every other operator is refused by name, because the column holds
+-- JSON and JSON compares as text.
+-- 
+-- Readable at 0 for `ShippingMethod`'s reason and one degree sharper: a
+-- storefront asks this question with no session at all, and a shop's own
+-- address is public by the time it is printed on the door. `@point` warns
+-- about an ungated coordinate only where the model reads above STRANGER —
+-- a residential address would be that model, and this is not one
+-- (`FJS-D322`).
+CREATE TABLE IF NOT EXISTS "pickup_point" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "name" TEXT NOT NULL UNIQUE,
+  "address" TEXT NOT NULL,
+  "site" TEXT,
+  "hours" TEXT,
+  "active" INTEGER NOT NULL DEFAULT 1,
+  "version" INTEGER NOT NULL DEFAULT 1,
+  "siteLat" REAL GENERATED ALWAYS AS (json_extract("site", '$.lat')) VIRTUAL,
+  "siteLng" REAL GENERATED ALWAYS AS (json_extract("site", '$.lng')) VIRTUAL,
+  CHECK ("site" IS NULL OR (json_type("site") = 'object' AND coalesce(json_type("site", '$.lat'), '-') IN ('integer', 'real') AND coalesce(json_type("site", '$.lng'), '-') IN ('integer', 'real') AND json_extract("site", '$.lat') BETWEEN -90 AND 90 AND json_extract("site", '$.lng') BETWEEN -180 AND 180))
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_pickup_point_site" ON "pickup_point" ("siteLat", "siteLng");
+
 -- What the shop charges to send it.
 -- 
 -- Readable at 0, unlike a discount: a storefront has to OFFER these, and the
@@ -578,6 +613,7 @@ CREATE TABLE IF NOT EXISTS "product_variant" (
   "price" INTEGER NOT NULL CHECK ("price" BETWEEN -9007199254740991 AND 9007199254740991),
   "barcode" TEXT UNIQUE,
   "stock" INTEGER NOT NULL DEFAULT 0,
+  "version" INTEGER NOT NULL DEFAULT 1,
   "active" INTEGER NOT NULL DEFAULT 1,
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "deletedAt" TEXT,
@@ -672,17 +708,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uniq_payment_method_customerId" ON "payment_m
 -- must not be a service reading through `asSystem()`, because access is
 -- declared in the schema and not in hooks (Invariant 6).
 -- 
--- So the owner is a BEARER TOKEN, and `api/cart-claim.ts` turns the header
--- carrying it into a claim on the principal before the Data boundary scopes
--- the client. `auth().cartToken` is then a claim a stranger holds, and the
--- policies below are ordinary row policies over it.
+-- So the owner is a BEARER TOKEN — and the token is not here. `CartGrant`
+-- below holds its DIGEST, junction's `bearerClaim` reads that row off the
+-- header and puts the basket's own id on the principal, and `auth().cartId`
+-- is then a claim a stranger holds. The policies below are ordinary row
+-- policies over an id.
 -- 
--- The token is `@guarded`: the app writes it, `asSystem()` reads it, and no
--- caller ever gets it back in a response — the browser knows it because it
--- was handed it once, at creation, by the service that minted it.
+-- The shopper's secret therefore appears in no column of this model, no
+-- query and no log line: what crosses the Data boundary is a number the
+-- resolver already proved they hold a grant for (`FJS-D343`).
 CREATE TABLE IF NOT EXISTS "cart" (
   "id" INTEGER NOT NULL PRIMARY KEY,
-  "token" TEXT NOT NULL UNIQUE,
   "userId" TEXT,
   "status" TEXT NOT NULL DEFAULT 'open',
   "discountId" INTEGER,
@@ -961,6 +997,31 @@ CREATE TABLE IF NOT EXISTS "journal_entry" (
 CREATE INDEX IF NOT EXISTS "idx_journal_entry_orderId" ON "journal_entry" ("orderId");
 CREATE INDEX IF NOT EXISTS "idx_journal_entry_payRunId" ON "journal_entry" ("payRunId");
 
+-- A way into one basket.
+-- 
+-- The shopper holds a token; this row holds its DIGEST, keyed on the app's own
+-- secret (`@frontierjs/toolbelt/bearer`). So a copy of this table is not a set
+-- of live baskets, and the only place the token exists is the header the
+-- browser sends.
+-- 
+-- Why a row rather than a column on `Cart` (`FJS-D343`): a basket handed to
+-- another origin needs a SECOND way in, and minting one here is a row rather
+-- than a shared secret — revoke it and that origin is out while the tab that
+-- started the basket is not. It is also what lets the line policy below be an
+-- ordinary foreign key instead of a copied secret.
+-- 
+-- No `expiresAt` and no `revokedAt`, which is a statement rather than an
+-- omission: `bearerClaim` reads those columns where a model declares them, and
+-- a basket's grant lives as long as the basket, which the sweep abandons.
+CREATE TABLE IF NOT EXISTS "cart_grant" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "cartId" INTEGER NOT NULL,
+  "tokenHash" TEXT NOT NULL UNIQUE,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  FOREIGN KEY ("cartId") REFERENCES "cart" ("id") ON DELETE CASCADE
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_cart_grant_cartId" ON "cart_grant" ("cartId");
+
 -- One line. The quantity and the PRICE THE SHOPPER WAS SHOWN, which is not
 -- the same fact as the variant's price today — a basket left overnight must
 -- either honor what it quoted or say out loud that it changed, and it can do
@@ -972,7 +1033,6 @@ CREATE TABLE IF NOT EXISTS "cart_line" (
   "quantity" INTEGER NOT NULL DEFAULT 1,
   "unitPrice" INTEGER NOT NULL CHECK ("unitPrice" BETWEEN -9007199254740991 AND 9007199254740991),
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  "token" TEXT NOT NULL,
   UNIQUE ("cartId", "variantId"),
   FOREIGN KEY ("cartId") REFERENCES "cart" ("id") ON DELETE CASCADE,
   FOREIGN KEY ("variantId") REFERENCES "product_variant" ("id") ON DELETE CASCADE
@@ -986,7 +1046,7 @@ CREATE INDEX IF NOT EXISTS "idx_cart_line_variantId" ON "cart_line" ("variantId"
 -- It would fit there — a line already names a variant and a quantity, and an
 -- `heldUntil` column would have been three characters of schema. It is wrong
 -- for one reason and the reason is a POLICY: CartLine is scoped by the
--- shopper's token (`@@allow('read', token == auth().cartToken)`), and
+-- shopper's own basket (`@@allow('read', cartId == auth().cartId)`), and
 -- availability is a sum over *everybody's* holds. Summing CartLine from a
 -- shopper's own client answers a sum over their own basket — a number that is
 -- always plausible, usually zero, and never the one asked for. It is the exact

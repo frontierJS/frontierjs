@@ -167,7 +167,7 @@ function _matchOp(rule, actual, op, operand) {
  * which is the cost that made this module exist.
  *
  * The same two steps in the same order as the SQL — box, then exact — because
- * `isNear` is what both halves call. A centre may arrive as TEXT for the reason
+ * `isNear` is what both halves call. A center may arrive as TEXT for the reason
  * `@frontierjs/toolbelt/query` states: a coordinate becomes a number only if it
  * round-trips, and `51.507400` does not.
  *
@@ -181,7 +181,7 @@ function _matchOp(rule, actual, op, operand) {
  *     declared keys are the model's (`@point(y, x)` is legal), and this side
  *     holds no schema, so an unreadable pair is a key-name question rather than
  *     a location outside the circle.
- *   - a centre that is not a point.
+ *   - a center that is not a point.
  *
  * A record whose point is simply ABSENT is decidable and is `false`: the SQL
  * leads with `latCol IS NOT NULL`, so a row with no location is in no circle.

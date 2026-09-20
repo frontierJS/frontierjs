@@ -88,11 +88,53 @@ class EnvironmentFactory extends Factory {
   }
 }
 
+// A page that pulls its libraries off a CDN is a whole app and needs no build,
+// which is the reason `inline` exists. Seeded rather than described because a
+// source kind with no row in the database is a screen nobody has looked at.
+const PASTED_PAGE = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Signup counter</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></scr` + `ipt>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></scr` + `ipt>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      const { useState, createElement: h } = React
+      function Counter() {
+        const [n, set] = useState(0)
+        return h('main', null,
+          h('h1', null, 'Signups today'),
+          h('p', null, String(n)),
+          h('button', { onClick: () => set(n + 1) }, 'One more'))
+      }
+      ReactDOM.createRoot(document.getElementById('root')).render(h(Counter))
+    </scr` + `ipt>
+  </body>
+</html>
+`
+
 class AppFactory extends Factory {
   model = 'App'
   definition(_seq, rng) {
     const n    = uid()
-    const name = ['web', 'api', 'worker', 'scheduler'][n % 4]
+    const name = ['web', 'api', 'worker', 'scheduler', 'counter'][n % 5]
+
+    // The pasted one. `static` is not decoration: an inline source has no image
+    // and no container, and the service refuses the two words disagreeing.
+    if (name === 'counter') return {
+      name,
+      slug:     `${name}-${n}`,
+      type:     'static',
+      status:   'running',
+      source:   { kind: 'inline', files: [{ path: 'index.html', content: PASTED_PAGE }] },
+      config:   {},
+      port:     null,
+      isPublic: true,
+    }
+
     return {
       name,
       slug:     `${name}-${n}`,

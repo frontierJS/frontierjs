@@ -120,6 +120,10 @@
        off. -->
   <button type="button" id="notify-on"  on:click={() => { notify = true }}>notify on</button>
   <button type="button" id="notify-off" on:click={() => { notify = false }}>notify off</button>
+  <!-- The same half for a Textarea, and the mechanism is the same one: a
+       <textarea>'s value is its CHILD TEXT in markup, and `el.value` stops
+       reflecting that text the moment anything writes to the element. -->
+  <button type="button" id="summary-set" on:click={() => { summary = 'written from outside' }}>summary set</button>
   <RadioGroup name="owner" items={OWNERS} bind:value={owner} />
   <Combobox name="regions" options={REGIONS} bind:value={regions} />
 

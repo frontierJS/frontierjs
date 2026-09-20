@@ -366,7 +366,15 @@ check('a basket\'s holder can mint a handoff code', /^[0-9a-f]{32}$/.test(spare.
 
 const first  = await post('carts', 'redeem', null, { code: spare.code })
 const second = await post('carts', 'redeem', null, { code: spare.code })
-check('redeeming it answers the token', (await first.json()).token, heldToken)
+
+// A NEW grant, for the SAME basket — which is what a row of grants buys over a
+// column holding one secret (`FJS-D343`). The shop could not answer the widget's
+// own token if it wanted to: `CartGrant` stores a digest. So what is asserted is
+// the basket, and that the secret is not the one that crossed the origin.
+const redeemed = await first.json()
+check('redeeming it answers a token', /^c[0-9a-z]{24}$/.test(redeemed.token ?? ''), true)
+check('a DIFFERENT token from the one the widget holds', redeemed.token !== heldToken, true)
+check('…that opens the same basket', redeemed.id, heldId)
 // Cleared in the same transaction that read it. A code that survives its own
 // redemption is a bearer token with a nicer name.
 check('and the same code cannot be redeemed twice', second.status, 404)
@@ -397,9 +405,12 @@ check('the shop\'s own site is now holding the basket',
         `document.querySelectorAll('#basket-lines .line').length || null`)),
       1)
 
-check('and it holds the same token, so it is the same basket',
-      await evaluate(`JSON.parse(localStorage.getItem('shop_cart') ?? 'null')?.token`),
-      heldToken)
+// The shop's own origin holds a grant of its own now, so what makes it the same
+// basket is the id and the line that came with it — not a shared string. The
+// widget's token still works; revoking either would not touch the other.
+const shopHeld = await evaluate(`JSON.parse(localStorage.getItem('shop_cart') ?? 'null')`)
+check('and it holds a grant of its OWN', typeof shopHeld?.token === 'string' && shopHeld.token !== heldToken, true)
+check('…onto the same basket', shopHeld?.id, heldId)
 
 // ── A link that has already been spent ────────────────────────────────────
 //

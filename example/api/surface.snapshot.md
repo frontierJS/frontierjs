@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-44 services · 49 routes · 14 plugins · prefix /api
+45 services · 49 routes · 14 plugins · prefix /api
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -327,8 +327,8 @@ name when it declares none.
 
 ### `flows` · model `Flow`
 
-- **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `save`, `versions`, `activate`, `pause`, `archive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`
-- **custom methods** — `save`, `versions`, `activate`, `pause`, `archive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`
+- **methods** — `find`, `get`, `create`, `patch`, `remove`, `restore`, `save`, `versions`, `activate`, `pause`, `archive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`, `nodeTypes`
+- **custom methods** — `save`, `versions`, `activate`, `pause`, `archive`, `run`, `dryRun`, `export`, `import`, `layout`, `saveLayout`, `nodeTypes`
 - **who may call** —
   - `restore` — standing 4 or above — declared `gate: 4`
   - `save` — standing 4 or above — declared `gate: 4`
@@ -342,6 +342,7 @@ name when it declares none.
   - `import` — standing 4 or above — declared `gate: 4`
   - `layout` — standing 4 or above — declared `gate: 4`
   - `saveLayout` — standing 4 or above — declared `gate: 4`
+  - `nodeTypes` — standing 4 or above — declared `gate: 4`
 - **broadcasts on** — `flows`
 
 | Phase | Method | Chain |
@@ -633,6 +634,24 @@ name when it declares none.
 - **methods** — `find`, `get`, `create`, `update`, `patch`
 - **also answers to** — `pay-windows`
 - **broadcasts on** — `pay-windows`
+
+| Phase | Method | Chain |
+| --- | --- | --- |
+| around | `all` | `gateAuth` |
+| before | `find` | `autoFilter` → `autoSort` |
+| before | `get` | `autoFilter` |
+| before | `aggregate` | `autoFilter` |
+| before | `create` | `autoValidate` |
+| before | `patch` | `autoValidate` |
+| before | `update` | `autoValidate` |
+
+### `pickupPoints` · model `PickupPoint`
+
+- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **also answers to** — `pickup-points`
+- **who may call** —
+  - `restore` — anyone, a stranger included — floor, the model's read gate is 0
+- **broadcasts on** — `pickup-points`
 
 | Phase | Method | Chain |
 | --- | --- | --- |

@@ -62,6 +62,23 @@ export interface ServiceContext {
 
   data:  Record<string, unknown> | Record<string, unknown>[] | null
 
+  /**
+   * The row as the WRITER read it, for a per-column merge (`FJS-D334`).
+   *
+   * Not data and not a directive — it describes the write rather than being
+   * part of it — so it is its own field. `@@sync(field)` is the only reader:
+   * litestone compares the patch against this and against the row as it stands,
+   * and refuses only a column both writers moved. It is untrusted INPUT and
+   * never authority; the server's own row decides, and the gate, the row
+   * policies and the constraints all run unchanged.
+   *
+   * It reaches here two ways and neither is a header, because a row with a text
+   * column goes past what a header may hold (`FJS-D338`): over HTTP a body
+   * envelope the caller flags, over the socket the `meta` slot a `service_call`
+   * frame already carries its extras in.
+   */
+  base?: Record<string, unknown> | null
+
   // ── auth: WHO is calling — the principal only. Frozen. PROPAGATES
   // across internal calls (carry caller identity so authz stays
   // consistent). Nothing environmental lives here.
@@ -339,6 +356,14 @@ export interface CallOptions {
    * wire. `app.service('posts').find({}, { limit: 10 })` was simply ignored.
    */
   directives?: QueryDirectives
+
+  /**
+   * The row as the writer read it — `ctx.base`, for `@@sync(field)`'s
+   * per-column merge (`FJS-D334`). Stated by an internal caller the same way
+   * a transport states it, so a held write replayed through `app.service(…)`
+   * merges exactly as one arriving over the wire does.
+   */
+  base?: Record<string, unknown> | null
 }
 
 // ─── Reserved query params ────────────────────────────────────────────────

@@ -1,5 +1,13 @@
 # Changes — @frontierjs/conduit
 
+## 2026-09-20 — the bun floor is `1.4.0`
+
+`engines: { bun: '>=1.0.0' }` was a number nobody had moved since it was written, and an engine range
+is advisory anyway: bun runs an app whose floor it does not meet, so a machine one minor behind
+reports the feature it cannot reach as MISSING rather than reporting itself as stale. `fli doctor`
+grades the installed version against this floor now, which is the half a `package.json` field cannot
+enforce on its own.
+
 ## 2026-09-05 — `duration_ms` was the last attempt, not the call (`FJS-660`)
 
 The public result and `/metrics` reported two different numbers for one call and

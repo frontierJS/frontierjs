@@ -17,6 +17,10 @@ import '@frontierjs/css'
 // resource is created against. Which resources are worth the entry chunk is the
 // app's decision and not the framework's, which is why this is a line here
 // rather than a glob over `src/resources/` (`FJS-1178`).
+// Variants FIRST: the movements below reference them, and on a device that
+// relation is a real foreign key — the warm fills the tables in the order the
+// resources registered, so this order is the one that keeps the batch writable.
+import './resources/ProductVariant.mesa'
 import './resources/InventoryMovement.mesa'
 
 import { getClient }        from '@frontierjs/sierra/junction'

@@ -1,16 +1,19 @@
 ---
 id: embedding
-status: proposed
+status: shipped
 dated: 2026-09-20
 ---
 
 # Idea — what a row MEANS: vectors in the seed
 
-**Status: PROPOSED — nothing here is built — but the design is RULED.**
+**Status: BUILT — `FJS-1193` closed 2026-09-20, all of it.** Ruled in
 `FJS-D328`–`FJS-D333`, six questions struck in § *Open questions* below,
 including the shape (`Bytes @vector(n)`) and the retrieval surface (an `orderBy`
-on `findMany`). **The work is filed as `FJS-1193`**, which is where its state
-lives from here; this record is the argument and the measurements behind it.
+on `findMany`). Both engines are in service — the extension where a server
+installed it, `core/vector.js` everywhere else — and an oracle compares them row
+for row. **The reference page is `packages/litestone/docs/vectors.md`**, which is
+where the behavior lives from here; this record is the argument and the
+measurements behind it, and it is not a statement about what the code does now.
 Dated 2026-09-20. Every number in
 § *What both engines already hold*, § *What the extension buys* and § *The two
 silent failures* was measured on this tree today and the probes are named;

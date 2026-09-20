@@ -2079,10 +2079,26 @@ ${sc}
 }
 
 // ─── Helper: spawn a subcommand via fli ───────────────────────────────────────
-// Runs `fli <args>` in the project root. Inherits stdio so the user sees the
-// subcommand's output. Throws on non-zero exit.
-
-function runFli(context, args, cwd) {
+// Runs `fli <args>` in the project root. Throws on non-zero exit.
+//
+// STDOUT is captured and thrown away; stderr is not. Every command composed
+// here is a whole command elsewhere, so each one prints its own banner, its own
+// next-steps and its own tutorial — five endings inside a command that has one.
+// The scroll that produced was unreadable, and the lines that mattered (a
+// warning, the summary) were in it somewhere.
+//
+// stderr passes straight through because that is where `log.warn` and
+// `log.error` already go: the severity split the logger makes is exactly the
+// one wanted here, so a child's warning is still live and in order while its
+// chatter is not. On a failure the captured stdout is printed before the throw
+// — the buffer is worth having only when something went wrong.
+//
+// `--verbose` inherits stdio instead, and is forwarded to the child so its own
+// `log.detail` lines come out too. It is a PARAMETER: the helpers here live in
+// the namespace <script> and the command body is a separate function, so a
+// const declared in the body is not in scope up here — it reads as `verbose is
+// not defined` at the first composed command.
+function runFli(context, args, cwd, label = args[0], verbose = false) {
   // The RUNNING cli, never whatever `fli` is on PATH. A bare `fli` is a GLOBAL
   // install: it exists on the machine of anyone who has ever run `bun add -g`
   // and on no CI runner, in no container, and for nobody who reached this
@@ -2090,8 +2106,22 @@ function runFli(context, args, cwd) {
   // found`, so `fli:init` and `auth:install` did not run and the scaffold came
   // out with no User model — an app that installs, builds, boots, answers health
   // and can register nobody (FJS-252, found on a runner).
-  const cmd = [context.fli, ...args.map(a => JSON.stringify(a))].join(' ')
-  context.exec({ command: cmd, cwd, stdio: 'inherit' })
+  const argv = verbose ? [...args, '--verbose'] : args
+  const cmd  = [context.fli, ...argv.map(a => JSON.stringify(a))].join(' ')
+
+  // `context.log`, not the bare `log` the command body gets: this helper is in
+  // the namespace <script> and that binding is injected into the body alone.
+  context.log.info(`→ ${label}`)
+
+  if (verbose) return context.exec({ command: cmd, cwd, stdio: 'inherit' })
+
+  try {
+    return context.exec({ command: cmd, cwd, stdio: ['inherit', 'pipe', 'inherit'] })
+  } catch (err) {
+    const out = err.stdout?.toString() ?? ''
+    if (out.trim()) console.log('\n' + out.trimEnd() + '\n')
+    throw err
+  }
 }
 </script>
 
@@ -2110,6 +2140,10 @@ alongside.
 
 const name = arg.name
 const useHere = flag.here === true
+// This command composes five others, and each of those is a whole command
+// elsewhere with its own banner and its own epilogue. `--verbose` is what puts
+// their output back, and it travels to them.
+const verbose = flag.verbose === true
 
 // Every refusal here sets `abort` before returning. A bare `return` after a
 // `log.error` exits 0, so `fli new` printed *Directory already exists* and
@@ -2497,7 +2531,7 @@ if (fjsSource === 'local') {
   for (const p of neededPkgs) {
     try {
       context.exec({ command: 'bun link', cwd: pkgDir(p), stdio: 'pipe' })
-      log.info(`  → ${p}`)
+      log.detail(`  → ${p}`)
     } catch (e) {
       log.warn(`  bun link failed for ${p}: ${e.message}`)
     }
@@ -2507,7 +2541,16 @@ if (fjsSource === 'local') {
 if (useInstall) {
   try {
     log.info('→ bun install')
-    context.exec({ command: 'bun install', cwd: finalTarget, stdio: 'inherit' })
+    // Piped, and the tail is what comes back out: bun prints a line per package
+    // and then the one line anybody reads — how many, how long. Its own
+    // failures go to stderr, which is inherited, so a broken install still
+    // says so here.
+    const out = context.exec({
+      command: 'bun install', cwd: finalTarget,
+      stdio: verbose ? 'inherit' : ['inherit', 'pipe', 'inherit'],
+    })
+    const tail = out?.toString().trim().split('\n').filter(Boolean).pop()
+    if (tail) log.info(`  ${tail.trim()}`)
   } catch (e) {
     log.warn(`bun install failed: ${e.message} — run it manually before fli dev`)
   }
@@ -2524,8 +2567,7 @@ echo('')
 // fli:init — drops the cli/src/routes scaffold
 if (useFli) {
   try {
-    log.info('→ fli:init')
-    runFli(context, ['init', '--namespace', appName], finalTarget)
+    runFli(context, ['init', '--namespace', appName], finalTarget, 'fli:init', verbose)
   } catch (e) {
     log.warn(`fli:init failed: ${e.message} — continuing`)
   }
@@ -2538,8 +2580,7 @@ if (useFli) {
 // createLitestoneAuth over a second client on the same file.
 if (useAuth) {
   try {
-    log.info('→ auth:install')
-    runFli(context, ['auth:install'], finalTarget)
+    runFli(context, ['auth:install'], finalTarget, 'auth:install', verbose)
   } catch (e) {
     // Warning and continuing handed back an app that installs, builds, boots and
     // answers health, and then 500s on the first register with `"user" is not a
@@ -2562,8 +2603,7 @@ if (useAuth) {
 // app can run the command itself.
 if (withPkgs.includes('notifications')) {
   try {
-    log.info('→ notifications:install')
-    runFli(context, ['notifications:install'], finalTarget)
+    runFli(context, ['notifications:install'], finalTarget, 'notifications:install', verbose)
   } catch (e) {
     log.warn(`notifications:install failed: ${e.message} — run it yourself before the first app.notify()`)
   }
@@ -2573,8 +2613,7 @@ if (withPkgs.includes('notifications')) {
 // Schema already populated by auth:install (or user adds one manually if no-auth)
 if (useExample) {
   try {
-    log.info('→ make:scaffold User --skip-schema')
-    runFli(context, ['scaffold', 'User', '--skip-schema'], finalTarget)
+    runFli(context, ['scaffold', 'User', '--skip-schema'], finalTarget, 'make:scaffold User', verbose)
   } catch (e) {
     log.warn(`make:scaffold User failed: ${e.message} — continuing`)
   }
@@ -2585,11 +2624,10 @@ if (useExample) {
 // surface ships its own static origin from widgets/deploy/.
 if (useDeploy && useApi) {
   try {
-    log.info('→ make:deploy')
     const args = ['make:deploy']
     if (flag.server) args.push('--server', flag.server)
     if (flag.domain) args.push('--domain', flag.domain)
-    runFli(context, args, finalTarget)
+    runFli(context, args, finalTarget, 'make:deploy', verbose)
   } catch (e) {
     log.warn(`make:deploy failed: ${e.message} — you can run it manually later`)
   }
@@ -2647,9 +2685,14 @@ if (useInstall) {
 }
 
 // ─── 13. Summary ──────────────────────────────────────────────────────────────
+//
+// Everything a reader has to ACT on is an `echo`; everything that explains why
+// is `log.detail` and comes back with `--verbose`. The split is not cosmetic —
+// the full text is forty lines under a scaffold that already printed a hundred,
+// and the two lines that matter (`cd`, `bun run dev`) were in the middle of it.
 
 echo('')
-log.success(`✓ ${appName} created`)
+log.success(`${appName} created`)
 echo('')
 echo(`  cd ${useHere ? '.' : (useWorkspace ? finalTarget : name)}`)
 if (!useInstall) echo('  bun install')
@@ -2669,41 +2712,41 @@ if (!keySet) {
   echo('  fli keygen aes --format hex --name ENCRYPTION_KEY --env   # .env needs a key before the API starts')
 }
 echo('  bun run dev')
+
+// A scaffold with --auth has an empty `user` table, so the login page it just
+// wrote can sign nobody in and every screen behind a gate answers
+// "Authentication required" — which reads as a broken app rather than an empty
+// one. It stays an echo for that reason: it is the difference between the app
+// working and not.
+if (useAuth) {
+  echo('')
+  echo('  Nobody exists yet:')
+  echo('    fli auth:create-user you@example.com --role admin   mints an ADMIN')
+  echo('    /register/ in the browser                           role "user", and signs you in')
+}
+
 echo('')
 if (fjsSource === 'local') {
-  echo(`  @frontierjs packages are symlinked from ${packagesDir} — edits are live.`)
-  echo('  A build packs them into the image rather than resolving the symlinks,')
-  echo('  which a container cannot do — `fli deploy:local` runs the pack step for')
-  echo('  you, `fli deploy:vendor` does it alone. What ships is that workspace at')
-  echo('  the moment you built, so local sources can diverge from a real npm')
-  echo('  install: do an npm run before publishing either way.')
-  echo('')
+  echo(`  @frontierjs is symlinked from ${packagesDir} — edits are live.`)
+  log.detail('  A build packs them into the image rather than resolving the symlinks,')
+  log.detail('  which a container cannot do — `fli deploy:local` runs the pack step for')
+  log.detail('  you, `fli deploy:vendor` does it alone. What ships is that workspace at')
+  log.detail('  the moment you built, so local sources can diverge from a real npm')
+  log.detail('  install: do an npm run before publishing either way.')
 }
 // A scaffolded tree is where somebody who has never seen FrontierJS lands, and
 // it answers none of what the seed is FOR. The lessons build their own app, so
 // this points somewhere rather than back at the directory it just wrote.
-echo('  New to FrontierJS? `fli tutor` — thirteen lessons that run the real')
-echo('  commands and then ask the running world whether they worked. They build')
-echo('  their own app and leave this one alone.')
+echo('  New to FrontierJS? `fli tutor` — thirteen lessons against a running app.')
+log.detail('  They run the real commands and then ask the running world whether they')
+log.detail('  worked. They build their own app and leave this one alone.')
+echo('  Writing it with an AI agent? AGENTS.md is written for it.')
+log.detail('  Claude Code reads it through CLAUDE.md, and your own notes about the app')
+log.detail('  go there.')
 echo('')
-echo('  Writing it with an AI agent? AGENTS.md is written for it — Claude Code')
-echo('  reads it through CLAUDE.md, and your own notes about the app go there.')
-echo('')
-// A scaffold with --auth has an empty `user` table, so the login page it just
-// wrote can sign nobody in and every screen behind a gate answers
-// "Authentication required" — which reads as a broken app rather than an empty
-// one. auth:install prints this too, hundreds of lines up the scroll.
-if (useAuth) {
-  echo('  Nobody exists yet — the first account is either door:')
-  echo('    fli auth:create-user you@example.com --role admin   the only way to mint an ADMIN')
-  echo('    /register/ in the browser                           role "user", and it signs you in')
-  echo('  Then /login/. The nav says which of the two you are.')
-  echo('')
-}
-echo('  Then:')
-echo(`    bun run check          fli check, then lint, then typecheck${useApi && useAuth ? ', then tests' : ''} — the same gate CI runs`)
-echo('    fli scaffold <Model>    add a new model + service + resource + routes')
-echo('    fli admin:generate      generate CRUD admin UI from schema.lite')
-echo('    fli deploy:doctor       check deploy readiness')
+echo('  bun run check           the gate CI runs')
+echo('  fli scaffold <Model>    model + service + resource + routes')
+echo('  fli admin:generate      CRUD admin UI from schema.lite')
+echo('  fli deploy:doctor       deploy readiness')
 echo('')
 ```

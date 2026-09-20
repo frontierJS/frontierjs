@@ -9,7 +9,7 @@
 //
 // Two of these are credentials rather than calculations, and they are here
 // because what they identify is a BASKET and an ORDER, which only a shop has:
-// `cart-claim` is the header a stranger carries, read by `createApp({ principal })`,
+// `cart-grant` is the header a stranger carries, read by `createApp({ principal })`,
 // and `checkout-code` is the entitlement a hosted checkout link proves.
 
 // ─── what a basket costs, and why ─────────────────────────────────────────
@@ -23,5 +23,5 @@ export type { MovementKind } from './inventory.ts'
 export { settleOrder, refundOrder } from './settle.ts'
 
 // ─── the two credentials a caller with no session carries ─────────────────
-export { cartClaim, CART_HEADER }                    from './cart-claim.ts'
+export { CART_HEADER, CART_PURPOSE, cartKey, mintCartGrant } from './cart-grant.ts'
 export { checkoutCodeFor, orderIdFromCheckoutCode }  from './checkout-code.ts'

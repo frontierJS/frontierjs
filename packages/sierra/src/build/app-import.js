@@ -5,25 +5,32 @@
 // `catch { return null }`, and that is `FJS-551`: the one truthful error a
 // build ever gets is thrown away, and what is left is a downstream TDZ.
 //
-// ── Why the truth is only available once ─────────────────────────────────────
+// ── Why the truth was only available once, and may be again ─────────────────
 //
 // An app's db module ends in a top-level `await` — `export const db = await
-// openShop(…)` is the shape — and a module whose TLA throws reports its real
-// error exactly ONCE. Every import after that resolves to a partially
-// initialized namespace rather than re-throwing, so the next reader gets
-// `Cannot access 'X' before initialization` naming whichever binding it
-// happened to touch, and the cause is gone from the process for good.
+// openShop(…)` is the shape — and on a runtime that loses it, a module whose
+// TLA throws reports its real error exactly ONCE. Every import after that
+// resolves to a partially initialized namespace rather than re-throwing, so the
+// next reader gets `Cannot access 'X' before initialization` naming whichever
+// binding it happened to touch, and the cause is gone from the process.
 //
-// Measured, three imports of one broken module in one Bun process:
+// Measured, three imports of one broken module in one process:
 //
 //     1 THREW: schema.lite has errors: …the real one
 //     2 THREW: Cannot access 'other' before initialization.
 //     3 THREW: Cannot access 'other' before initialization.
 //
-// A build imports the app's db from several places, so what it usually holds is
+// A build imports the app's db from several places, so what it usually held was
 // the second kind — four messages of that shape once hid a schema parse error
 // naming a file and a line, and cost two people the same wrong diagnosis on the
 // same day.
+//
+// **The pinned runtime no longer does this**: it re-throws the original every
+// time, the way node always has, so everything below about the TDZ is DORMANT
+// rather than load-bearing. It is kept because a property that changed once can
+// change back, and `tests/build-imports.test.js`'s control is the only thing in
+// this repo that would notice — it points at the runtime rather than at this
+// file, so it says which of the two is true rather than whether we handled it.
 //
 // ── So this module keeps the first one ───────────────────────────────────────
 //

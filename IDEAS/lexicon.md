@@ -167,8 +167,10 @@ flavor.
 being, it is not `@label` with a second argument and it is not `@label` at all.
 Two ways to say one thing is the failure this whole file is trying to avoid.
 
-**Translate-by-default.** Marking every text node and opting out per exception
-inverts the cost: a brand name, an identifier, a URL or a user-generated string
+**Translate-by-default** — *largely reversed by § The switch below, which is the
+later argument and wins; what survives of this is the reason the reversal needs a
+committed, reviewable artifact to stand on.* Marking every text node and opting out
+per exception inverts the cost: a brand name, an identifier, a URL or a user-generated string
 leaks into the catalog by omission, and nothing says so while the app is English.
 It also leaves the description nowhere to live, which loses the cheapest thing in
 this file. Marking is explicit; *ergonomics vs. strictness* resolves per-surface
@@ -190,24 +192,122 @@ derivations outside-in by DOM depth, prerendered HTML and islands cannot
 re-render, and the compiled-string bundle win disappears. A locale change is a
 NAVIGATION, which per-locale prerender already makes cheap.
 
+## The switch, and the generator that primes it
+
+**i18n is off by default and one switch turns it on.** Off, an app owes nothing:
+no marking, no catalog, no runtime, no bytes. That keeps the whole of `FJS-D12`'s
+shape — the seam reserved rather than built — and it is what makes the feature
+adoptable at all.
+
+**One rule lives outside the switch, and it is constraint 7.** A sentence
+assembled from pieces is the one failure a switch cannot rescue, because the
+damage is a thousand call sites written before anybody flipped it. So *no
+assembled sentence* grades with i18n off; everything else waits for the switch.
+
+### The generator does three jobs, and the first two were the blockers
+
+The expensive half of i18n has always been human labor, and a model does three
+parts of it. **Marking** — which strings are user-facing — is what
+translate-by-default was attempting with a heuristic, and a model is better at it
+than a heuristic can be: it knows a brand name from a button label and a hex color
+from copy. **Writing the description** is the real unlock, because the mandatory
+description is the thing an author skips or writes badly, and a model reading the
+file has more context than an author bothers to type — the surrounding markup, the
+component, the route, the model behind it. **Translating** is the third and the
+least interesting; it is the commoditized part.
+
+The model is the app's own. `app.ai` already takes an `AIRegistry` through
+`createApp({ ai })`, and `FJS-D153` already rules that a connector to a named
+vendor is not in the framework, so *an LLM of your choosing* needs no new
+mechanism.
+
+### It is a generator somebody runs, and never a build step
+
+Four reasons, and the first is an invariant rather than a preference.
+
+- **Invariant 12 — mesa compiler output is reproducible.** Output depending on a
+  model version, a temperature and a network call means two builds of one tree
+  produce two different apps.
+- **Offline.** A build that cannot run without a network is a build that fails
+  without one, and this tree has already paid for that lesson once.
+- **Unreviewable.** A wrong translation looks exactly like a right one to everyone
+  who does not read the language. At build time nothing ever says so, which is
+  § V's last question in its worst form.
+- **Cost and latency**, on every build, over every string.
+
+So the shape is the one this repo already has in three places:
+
+```text
+fli lexicon      →  the catalog, committed        ← the model runs here, once, by a person
+vite build       →  reads the committed catalog   ← reproducible, offline, free
+snapshots (CI)   →  fails when source drifted     ← grades with no network
+```
+
+`fli ws:exports` writes a committed `exports.snapshot.md` that the `snapshots`
+phase gates. `litestone import` grades what its reading could not carry —
+`changed`, `lost`, `noted` — on the line where it could not carry it. fbtee's
+middle CLI verb preserves existing translations and marks new entries
+`"status": "new"`. None of this is new machinery; it is the same discipline
+pointed at strings.
+
+**The build reads and never writes, and that is the load-bearing half.** One verb
+owns source → catalog, which is what keeps the catalog a projection rather than a
+second origin of truth.
+
+**One file as the source, many as the output.** A single committed catalog is one
+place to review and one thing to gate, and the per-locale chunks a browser loads
+are derived from it at build — Paraglide's bundle win out of a loop sierra already
+runs.
+
+### What a committed artifact changes about translate-by-default
+
+Marking by default is rejected above because the failure is invisible — a brand
+name, an identifier or a user-generated string entering the catalog with nothing
+saying so. **A committed catalog turns that failure into a diff line**, which
+largely dissolves the objection: the generator marks, a person reviews, and an
+override is visible in the same review. So `i18n-ignore`, rejected above for
+having no job once marking was explicit, has one again — the default flipped back,
+and this time the default's cost is paid where somebody looks.
+
+It also makes the marking question smaller than the one this paper opened with. It
+is no longer *what syntax does an author write for every string*. It is **what
+does the generator write into the source, and what does a person write to override
+it** — and the common case is now nothing.
+
+### Four things the generator may not decide
+
+The layer split is where a model does real damage, so it is a table rather than a
+principle.
+
+| Question | Decided by | Why not the model |
+| -------- | ---------- | ----------------- |
+| the plural categories of a locale | `Intl.PluralRules` | a model guessing Slavic grammar is wrong occasionally and silently |
+| how many decimals a currency has | shipped ISO 4217 in `toolbelt/units` | measured, and the host disagrees with itself across runtimes |
+| which parts of a sentence are parameters | the compiler's AST | it is a parse, and there is already one parser |
+| **the words, and the judgment about context** | **the model** | this is the job |
+
 ## What the answer looks like
 
 Four statements, which is what `FJS-D254` needs to rule and the most this file can
 propose.
 
-1. *(V2 — needs marking syntax.)* **A marked string is explicit, carries a
-   mandatory description, and its address is derived** from the text and that description together. This is
-   `FJS-D12` constraint 1 — derive the address, never author it — extended to the
-   tier the ruling did not reach, and it means no `.lite` syntax changes.
+1. *(V2 — needs the marking, and the generator.)* **A string's marking and its
+   description are GENERATED and overridden, never hand-authored, and its address
+   is derived** from the text and the description together. This is `FJS-D12`
+   constraint 1 — derive the address, never author it — extended to the tier the
+   ruling did not reach, and it means no `.lite` syntax changes. It supersedes the
+   earlier form of this statement, where the description was an author's
+   obligation: the obligation was right and the author was the wrong party to
+   carry it.
 2. **Ruled 2026-09-20 as `FJS-D12` constraint 7 (`FJS-D254`).** A marked string is
    one unit, a nested element inside it is an implicit parameter, and no
-   user-facing sentence is assembled from pieces. It is first
-   among the four because it is the only one that cannot be retrofitted: a
+   user-facing sentence is assembled from pieces. It is first among the four
+   because it is the only one that cannot be retrofitted: a
    concatenation is a sentence that can only ever be English, and the call sites
    are already written by the time a catalog arrives.
-3. *(V2 — needs the same syntax plus a kit.)* **Grammar is declared and its
-   semantics come from `Intl`** — plural, ordinal,
-   select, list. Mesa owns the block, a toolbelt kit owns the `Intl` call and the
+3. *(V2 — needs the same marking plus a kit.)* **Grammar is declared and its
+   semantics come from `Intl`** — plural, ordinal, select, list. Mesa owns the
+   block, a toolbelt kit owns the `Intl` call and the
    category list, the catalog owns the words. Money and dates stay with the owners
    they already have, and gain no call-site syntax.
 4. **Ruled 2026-09-20 as `FJS-D12` constraint 8 (`FJS-D254`).** Locale is an

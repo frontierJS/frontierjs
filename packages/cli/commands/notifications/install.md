@@ -149,7 +149,8 @@ writeFileSync(schemaPath, schemaContents.replace(/\s*$/, '\n') + block, 'utf8')
 log.success('Appended model Notification to schema.lite')
 
 if (flag.push) {
-  log.info('Pushing schema to database...')
+  // No announcement here: `db:push` opens with the same line, and the two
+  // printed one after the other read as two pushes.
   try {
     context.exec({ command: `${context.fli} db:push`, cwd: context.paths.root })
     log.success('Schema pushed')
@@ -159,8 +160,8 @@ if (flag.push) {
 }
 
 echo('')
-log.info('Now wire it — the mailer first:')
-echo(wiringHint)
+log.info('Wire it — the mailer first, then the plugin. `--verbose` for the snippet.')
+log.detail(wiringHint)
 log.info('A notification is a FILE, and the file names it:')
 log.info('  api/src/notifications/OrderPaid.notification.ts  →  type "OrderPaid"')
 echo('')

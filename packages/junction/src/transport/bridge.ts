@@ -126,6 +126,34 @@ export const bridge = {
 
     refuseNegativeWindow(directives)
 
+    // ── The write envelope — `{ data, base }` under a flag ─────────────
+    // A base is a ROW, so it cannot ride a header the way an idempotency key
+    // does, and a write's body already IS its data — so a caller carrying one
+    // flags the body and puts both inside (`FJS-D338`). FLAGGED rather than
+    // sniffed: a row may legitimately hold a `data` key of its own, so the
+    // shape cannot answer whether it is an envelope.
+    //
+    // Absent flag means the body is the data, exactly as before, so nothing
+    // already on the wire changes meaning.
+    const enveloped = (raw.headers?.['x-fjs-write'] ?? '').trim().toLowerCase() === 'enveloped'
+    let envelopeBase: Record<string, unknown> | null = null
+    let envelopeBody = raw.body
+    if (enveloped) {
+      const b = raw.body as Record<string, unknown> | null
+      // Refused by name rather than read as data. An envelope that is not one
+      // would otherwise arrive as a record with a `data` column, be refused by
+      // validation for the wrong reason, and name a field nobody wrote.
+      if (!b || typeof b !== 'object' || Array.isArray(b) || !('data' in b))
+        throw new BadRequest(
+          'This request is flagged as an enveloped write (X-Fjs-Write: enveloped) and its body is not ' +
+          'one: an enveloped body is { data, base }, where base is the row as the writer read it.')
+      envelopeBody = b.data as TransportContext['body']
+      const rawBase = b.base
+      envelopeBase  = rawBase && typeof rawBase === 'object' && !Array.isArray(rawBase)
+        ? rawBase as Record<string, unknown>
+        : null
+    }
+
     // ── Build ctx.data — merge body + multipart files ──────────────────
     const data = (() => {
       // An ARRAY body is a bulk write and must survive as an array.
@@ -134,11 +162,11 @@ export const bridge = {
       // was false, the bulk branch never ran, and the service created a single
       // row out of the indices. Bulk create over HTTP could not work.
       // (Files are multipart, which is never an array body.)
-      if (Array.isArray(raw.body)) return raw.body as Record<string, unknown>[]
+      if (Array.isArray(envelopeBody)) return envelopeBody as Record<string, unknown>[]
 
       const body: Record<string, unknown> =
-        raw.body && typeof raw.body === 'object'
-          ? { ...raw.body as Record<string, unknown> }
+        envelopeBody && typeof envelopeBody === 'object'
+          ? { ...envelopeBody as Record<string, unknown> }
           : {}
 
       if (raw.files?.length) {
@@ -169,6 +197,7 @@ export const bridge = {
       query,
       directives,
       data,
+      base: envelopeBase,
       auth: {
         user: raw.user,
       },
@@ -245,7 +274,7 @@ export const bridge = {
     opts:    CallOptions & { query?: Record<string, unknown> } = {},
     appRef?: import('../core/app.ts').App
   ): ServiceContext {
-    const { query = {}, auth, transport = 'internal', locals, directives } = opts
+    const { query = {}, auth, transport = 'internal', locals, directives, base = null } = opts
     // An internal caller may still hand us a `$`-spelled query (older code,
     // and tests that predate ctx.directives). Translate rather than ignore:
     // explicit opts.directives wins, `$` keys are the fallback.
@@ -265,6 +294,7 @@ export const bridge = {
       query:      filters,
       directives: { ...fromQuery, ...directives },
       data,
+      base,
       auth: {
         // Shared frozen reference — same immutability guarantee the old
         // per-call structuredClone gave, without deep-clone cost on every

@@ -1,5 +1,24 @@
 # Changes
 
+## 2026-09-20 — a `<Textarea>` the app rewrites
+
+Its value was the element's CHILD TEXT, and `el.value` stops reflecting that text the moment
+anything writes to the element — so a value the app set after somebody had typed never reached the
+screen. Measured in Chrome: `textContent` carried the new 1,061-character document and `el.value`
+still answered the old 1,062-character one. The form SUBMITTED the new value, which is what made it
+silent: the state and the box disagreed and nothing reported it.
+
+It is the shape mesa's `_TEXT_DOM_PROPS` already describes, and the one `<Switch bind:checked>` had.
+`<Input>` never had it, because its value was always the DOM property. The value is written both
+ways now and the markup says why: the child text is what a server render emits, since `value` is
+inert as an attribute on a textarea, and the property is what a later change has to go through.
+
+The tripwire is in `form-tail.spec.mjs` beside the Switch's, and the ORDER is the whole of it — the
+app's write has to come after something has typed into the element, because that is what detaches
+`el.value` from the text. Against the old markup: 1 failing, 1060 passing. Found building orion's
+node inspector ([`FJS-1207`](../../ISSUES.md#fjs-1207)), where a form and the JSON document under it
+are one model, so an edit above has to be visible below.
+
 ## 2026-09-20 — `GeoField`, and the half-coordinate it refuses
 
 The control a `@point` column gets: two number boxes that refuse ±90/±180, show the point's

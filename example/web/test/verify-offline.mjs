@@ -722,6 +722,112 @@ try {
   })
   check('closing it a second time is refused', twice.status, 409)
 
+  // ─── two writers, one row, different columns ─────────────────────────────
+  //
+  // Phase 5 (`FJS-D334`, `FJS-D338`). `ProductVariant` declares `@@sync(field)`
+  // because the schema's own note says why: a person edits the price and every
+  // sale, delivery and stocktake writes `stock`, so a row-wide revision reports
+  // a conflict about a change nobody made.
+  //
+  // Asked here rather than in a unit test because it is the only place the
+  // WHOLE path runs — the envelope on the wire, the bridge unwrapping it, the
+  // service passing it down, and litestone comparing against a real row. Each
+  // half passes its own tests with the other half missing.
+
+  console.log('\n  offline — two writers, one row')
+
+  const variantUrl = (id) => `${API}/api/product-variants/${id}`
+  // A single unwraps its envelope and a list keeps one, so both shapes are
+  // read rather than guessed at.
+  const unwrap = (b) => (b && typeof b === 'object' && 'data' in b && !Array.isArray(b.data))
+    ? b.data : b
+  const readVariant = async (id) =>
+    unwrap(await (await fetch(variantUrl(id), { headers: auth })).json()) ?? null
+
+  const enveloped = (data, base) => ({
+    method:  'PATCH',
+    headers: { ...auth, 'content-type': 'application/json', 'x-fjs-write': 'enveloped' },
+    body:    JSON.stringify({ data, base }),
+  })
+
+  const firstVariant = (await (await fetch(
+    `${API}/api/product-variants?$limit=1`, { headers: auth })).json())?.data?.[0]
+  const vid = firstVariant?.id
+  check('a variant to contend over', typeof vid === 'number', true)
+
+  // Both writers read the same row. One of them then goes into the stockroom.
+  const asRead = await readVariant(vid)
+
+  // The other saves first, over the network, touching a DIFFERENT column.
+  const theirs = await fetch(variantUrl(vid), {
+    method:  'PATCH',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body:    JSON.stringify({ barcode: `BC-${Date.now()}`, version: asRead.version }),
+  })
+  check('the other writer saved', theirs.status, 200)
+
+  // Now the held write drains, made against a revision that has moved.
+  const newPrice = (asRead.price ?? 0) + 101
+  const merged = await fetch(variantUrl(vid), enveloped(
+    { price: newPrice, version: asRead.version },
+    asRead,
+  ))
+  check('the held write is accepted, not refused', merged.status, 200)
+
+  const theirBarcode = unwrap(await theirs.json())?.barcode
+  const afterMerge = await readVariant(vid)
+  check('my column won',       afterMerge.price,   newPrice)
+  check('and theirs survived', afterMerge.barcode, theirBarcode)
+
+  // ── the control: it is the BASE doing the work, not the envelope ──────────
+  //
+  // The identical stale write with no base is a plain version conflict. Without
+  // this the test above passes against a boundary that simply stopped checking
+  // the revision, which is the opposite of the feature.
+  const noBase = await fetch(variantUrl(vid), {
+    method:  'PATCH',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body:    JSON.stringify({ price: newPrice + 1, version: asRead.version }),
+  })
+  check('the same stale write with no base is refused', noBase.status, 409)
+
+  // ── and a column both of them moved is the one question a person answers ──
+  const fresh = await readVariant(vid)
+  const contested = (fresh.price ?? 0) + 7
+  await fetch(variantUrl(vid), {
+    method:  'PATCH',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body:    JSON.stringify({ price: contested, version: fresh.version }),
+  })
+  const clash = await fetch(variantUrl(vid), enveloped(
+    { price: contested + 50, version: fresh.version },
+    fresh,
+  ))
+  check('two writers on ONE column is a conflict', clash.status, 409)
+  const clashBody = await clash.json()
+  const payload = clashBody?.error ?? clashBody
+  check('and it names the column', JSON.stringify(payload), v => v.includes('price'))
+  // A retry would re-send the whole patch and overwrite the other writer.
+  check('it is not retryable', JSON.stringify(payload), v => !v.includes('"retryable":true'))
+  check('and nothing was written', (await readVariant(vid)).price, contested)
+
+  // Put the row back. Other drives count this shop's null barcodes and read its
+  // price range, and a drive that leaves a row moved makes the NEXT one fail for
+  // a reason that has nothing to do with what it tests.
+  const toRestore = await readVariant(vid)
+  await fetch(variantUrl(vid), {
+    method:  'PATCH',
+    headers: { ...auth, 'content-type': 'application/json' },
+    body:    JSON.stringify({
+      price:   asRead.price,
+      barcode: asRead.barcode,
+      version: toRestore.version,
+    }),
+  })
+  const restored = await readVariant(vid)
+  check('the drive leaves the row as it found it',
+        [restored.price, restored.barcode], [asRead.price, asRead.barcode])
+
 } catch (err) {
   fail++
   console.log(`\n  ✗ drive threw: ${err.message}`)

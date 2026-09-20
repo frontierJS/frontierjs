@@ -34,7 +34,7 @@ export type { NodeTypeDescriptor, NodeCategory, PluginManifest, PluginEntry } fr
 
 export class PluginRegistry implements IPluginRegistry, INodeRegistry {
   // type string → descriptor
-  private readonly descriptors = new Map<string, NodeTypeDescriptor>()
+  private readonly byType = new Map<string, NodeTypeDescriptor>()
   // type string → live implementation
   private readonly impls       = new Map<string, INodeImplementation>()
   // plugin id → entry
@@ -45,7 +45,7 @@ export class PluginRegistry implements IPluginRegistry, INodeRegistry {
   constructor() {
     // Pre-load all 18 built-in descriptors
     for (const d of BUILTIN_DESCRIPTORS) {
-      this.descriptors.set(d.type, d)
+      this.byType.set(d.type, d)
     }
   }
 
@@ -71,7 +71,7 @@ export class PluginRegistry implements IPluginRegistry, INodeRegistry {
 
     // Register descriptors
     for (const descriptor of manifest.nodes) {
-      this.descriptors.set(descriptor.type, descriptor)
+      this.byType.set(descriptor.type, descriptor)
       // Merge any custom function names this node type exposes
       if (descriptor.functions) {
         for (const fn of descriptor.functions) this.fnNames.add(fn)
@@ -95,7 +95,7 @@ export class PluginRegistry implements IPluginRegistry, INodeRegistry {
    * The node type must already have a descriptor (built-in or previously registered).
    */
   registerImpl(impl: INodeImplementation): void {
-    if (!this.descriptors.has(impl.type)) {
+    if (!this.byType.has(impl.type)) {
       throw new PluginRegistrationError(
         "core",
         `Cannot register implementation for unknown type "${impl.type}". ` +
@@ -114,11 +114,11 @@ export class PluginRegistry implements IPluginRegistry, INodeRegistry {
   // ─── IPLUGIN REGISTRY (compiler) ─────────────
 
   has(type: string): boolean {
-    return this.descriptors.has(type)
+    return this.byType.has(type)
   }
 
   isTrigger(type: string): boolean {
-    return this.descriptors.get(type)?.category === "trigger"
+    return this.byType.get(type)?.category === "trigger"
   }
 
   isErrorHandler(type: string): boolean {
@@ -130,19 +130,19 @@ export class PluginRegistry implements IPluginRegistry, INodeRegistry {
   }
 
   isStoreNode(type: string): boolean {
-    return this.descriptors.get(type)?.category === "storage"
+    return this.byType.get(type)?.category === "storage"
   }
 
   isAiNode(type: string): boolean {
-    return this.descriptors.get(type)?.category === "ai"
+    return this.byType.get(type)?.category === "ai"
   }
 
   getOutputSchema(type: string): JSONSchema | undefined {
-    return this.descriptors.get(type)?.outputSchema
+    return this.byType.get(type)?.outputSchema
   }
 
   getInputSchema(type: string): JSONSchema | undefined {
-    return this.descriptors.get(type)?.inputSchema
+    return this.byType.get(type)?.inputSchema
   }
 
   getFunctionNames(): Set<string> {
@@ -152,12 +152,24 @@ export class PluginRegistry implements IPluginRegistry, INodeRegistry {
   // ─── INTROSPECTION ───────────────────────────
 
   descriptor(type: string): NodeTypeDescriptor | undefined {
-    return this.descriptors.get(type)
+    return this.byType.get(type)
   }
 
   /** All registered node type strings */
   types(): string[] {
-    return [...this.descriptors.keys()].sort()
+    return [...this.byType.keys()].sort()
+  }
+
+  /**
+   * Every descriptor, in registration order — built-ins first, then each
+   * plugin's in the order it registered.
+   *
+   * Order is the registration's rather than sorted, because it is the order a
+   * node picker offers and a picker that opens on `ai` has buried the triggers
+   * a flow has to start with.
+   */
+  descriptors(): NodeTypeDescriptor[] {
+    return [...this.byType.values()]
   }
 
   /** All registered plugins */

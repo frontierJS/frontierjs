@@ -15,9 +15,9 @@ export interface GeoBox {
 export function isPoint(p: unknown): boolean
 export function distance(a: GeoPoint, b: GeoPoint): number
 /** One box, or TWO when the radius crosses ±180. Never one inverted box. */
-export function boundingBox(centre: GeoPoint, metres: number): GeoBox[]
+export function boundingBox(center: GeoPoint, metres: number): GeoBox[]
 export function inBoxes(p: GeoPoint, boxes: GeoBox[]): boolean
-export function isNear(p: unknown, centre: GeoPoint, metres: number): boolean
+export function isNear(p: unknown, center: GeoPoint, metres: number): boolean
 export function pointInPolygon(p: GeoPoint, ring: GeoPoint[]): boolean
 export function polygonArea(ring: GeoPoint[]): number
 export function centroid(points: GeoPoint[]): GeoPoint | null

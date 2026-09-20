@@ -228,6 +228,16 @@ core/
                 Minting writes nothing: the id is a pure function of the tree and
                 the bindings, which is what makes a digest promotable
   vendor.js     pack the workspace into an app's build context
+  health-target.js  where an app answers health and whether anything serves it —
+                the plugin call in the API source, `plugins: { health: true }` in
+                junction.config.js, or a route literal graded against the
+                CONFIGURED path. One module because `make:deploy` and
+                `deploy:doctor` both ask, and asking separately is how they came
+                to disagree with an app that worked. It also answers the CLASH,
+                which `start()` refuses by name
+  verbosity.js  one bit — did the caller type `--verbose`. A leaf with no
+                imports, read on the startup path, set in `bootstrap.js` before
+                anything logs. Not `--debug`, which asks for stack traces
   codegraph.js  a project drawn as one tile per tracked file — heat and blast
                 radius on top, complexity and exposure (complexity no test
                 covers) below, and a score folding three of them — for
@@ -671,6 +681,19 @@ tests/     one file per module under core/, plus the deploy pipeline's own
   value anywhere answers and stops — so the flag description says so rather than
   leaving somebody to find it. **Every progress note is suppressed when stdout
   is the document**, or `| jq` reads a `Reading schema...` line first.
+- **A line somebody must ACT on is `log.info`/`echo`; the paragraph explaining
+  it is `log.detail`, which prints only under `--verbose`.** The flag is global
+  (`defaultFlags` in `core/runtime.js`, one bit in `core/verbosity.js` set in
+  `bootstrap.js` before anything logs), and it replaced `log.debug` — which
+  printed unconditionally, had one caller, and shared a name with `--debug`,
+  which asks for stack traces. **Gating `log.info` instead was the wrong lever**:
+  every command uses it for lines a reader needs, so the blast radius has to be
+  the call sites that opted in. **A command that composes others hides their
+  stdout and passes their stderr through** — `runFli` in `project/new.md` is the
+  shape — because `log.warn`/`log.error` already go to stderr, so the severity
+  split the logger makes is the one wanted; the captured stdout is printed only
+  when the child exits non-zero, and `--verbose` inherits stdio and travels to
+  the child.
 - **A `<script>` block in a `_module.md` is MODULE scope and does not see `log`,
   `flag`, `echo` or `arg`.** The compiler puts it above `run()`, where those are
   destructured from `context`, so `log` there resolves to zx's global — a

@@ -308,6 +308,108 @@ try {
     await until(`document.querySelector('#flow-version')?.textContent.includes('1')`), true)
   t('compile.andTheRefusalIsGone', await text('#flow-error'), '')
 
+  // ─── the inspector ────────────────────────────────────────────────────────
+  //
+  // Nothing on the page knows what a `model.patch` takes. The node type
+  // declares a `configSchema` and the framework turns JSON Schema into
+  // controls, so what is asserted here is the DERIVATION: the fields that
+  // appear, the control each one got, and which of the two states a value
+  // opened in. A hand-written panel would pass every assertion below and prove
+  // nothing, so the sharpest one is the last — a field this drive never
+  // mentions, rendered because the schema names it.
+
+  t('inspector.everyNodeInTheDefinitionIsOffered', await waitFor('#flow-node-welcome'), true)
+  t('inspector.andTheTriggerBesideIt', await exists('#flow-node-t'), true)
+  // The label is the DESCRIPTOR's, which only the catalog call can supply.
+  t('inspector.aNodeIsNamedByItsTypesOwnLabel', (await text('#flow-node-welcome')).includes('Update record'), true)
+
+  await click('#flow-node-welcome')
+  t('inspector.selectingANodeOpensIt', await until(`document.querySelector('#flow-node-welcome')?.getAttribute('data-selected') === 'yes'`), true)
+  t('inspector.andTheFormIsThere', await waitFor('#inspector-fields'), true)
+
+  // `model.patch` declares model, id and data — three properties, three fields,
+  // none of them written down here or anywhere else in the app.
+  t('inspector.oneFieldPerDeclaredProperty', await evaluate(`
+    return [...document.querySelectorAll('#inspector-fields [data-config-field]')].map(e => e.getAttribute('data-config-field')).join(',')
+  `), 'model,id,data')
+
+  // `model` is stored as a literal and `id` as a ref, and the stored value is
+  // what decides which state a field opens in.
+  t('inspector.aLiteralOpensOnItsOwnControl',
+    await attr('[data-config-field="model"]', 'data-mode'), 'value')
+  t('inspector.andAComputedValueOpensOnTheExpression',
+    await attr('[data-config-field="id"]', 'data-mode'), 'expression')
+  // `model` is `{ type: 'string' }`, so the control is a text box holding the
+  // literal — not the `{ type: 'literal', value: … }` wrapper around it.
+  t('inspector.theControlHoldsTheValueAndNotItsWrapper',
+    await evaluate(`return document.querySelector('[data-config-field="model"] input')?.value ?? ''`), 'Customer')
+
+  // ─── a computed value is the language, not its tree ───────────────────────
+  //
+  // `id` is stored as `{ type: 'ref', path: '$.trigger.record.id' }` and the
+  // grammar can spell that, so the field is one line of the same language the
+  // edge conditions are written in. `data` is an `object` expression and the
+  // shared grammar has no syntax for one, so it stays the document it was —
+  // which is the honest half and is asserted rather than left to be noticed.
+
+  t('expression.aRefIsShownAsTheLanguage', await evaluate(`
+    return document.querySelector('[data-config-field="id"] input')?.value ?? ''
+  `), '$.trigger.record.id')
+  t('expression.andAShapeWithNoTextFormStaysADocument',
+    await exists('[data-config-field="data"] textarea'), true)
+
+  // The refusal is the PARSER's own sentence, with the position it failed at —
+  // a second wording on this side would be a second grammar.
+  await type('[data-config-field="id"] input', 'record.id')
+  t('expression.aRefusalIsTheParsersOwnSentence',
+    (await text('[data-config-field="id"]')).includes("'record' is not defined here"), true)
+  t('expression.andNothingWasWrittenWhileItDoesNotParse', await evaluate(`
+    const d = JSON.parse(document.querySelector('#flow-definition').value);
+    return JSON.stringify(d.nodes.welcome.config.id);
+  `), '{"type":"ref","path":"$.trigger.record.id"}')
+
+  await type('[data-config-field="id"] input', 'upper($.trigger.record.id)')
+  t('expression.oneThatParsesIsCompiledIntoTheDocument', await until(`
+    JSON.parse(document.querySelector('#flow-definition').value).nodes.welcome.config.id?.type === 'fn'
+  `), true)
+  t('expression.asTheNodeTheResolverRuns', await evaluate(`
+    const d = JSON.parse(document.querySelector('#flow-definition').value);
+    return JSON.stringify(d.nodes.welcome.config.id);
+  `), '{"type":"fn","name":"upper","args":[{"type":"ref","path":"$.trigger.record.id"}]}')
+  t('expression.andTheRefusalIsGone',
+    (await text('[data-config-field="id"]')).includes('is not defined here'), false)
+
+  // ─── an edit reaches the document ─────────────────────────────────────────
+  //
+  // The inspector and the textarea are one model: the inspector parses it,
+  // writes into the parse, and serializes the whole thing back. So an edit
+  // above is visible below, which is the only thing that makes the two
+  // editors safe to have at once.
+
+  await type('[data-config-field="model"] input', 'Custmer')
+  t('inspector.anEditIsWrittenIntoTheDefinition', await until(`
+    document.querySelector('#flow-definition')?.value.includes('"value": "Custmer"')
+  `), true)
+  t('inspector.asTheExpressionTheResolverReads', await evaluate(`
+    const d = JSON.parse(document.querySelector('#flow-definition').value);
+    return JSON.stringify(d.nodes.welcome.config.model);
+  `), '{"type":"literal","value":"Custmer"}')
+  // And the computed value beside it is untouched — a serialize that flattened
+  // every value into a literal would pass the two assertions above. It is the
+  // call the expression block left there, which is the same test with a deeper
+  // tree: a flattening serialize loses the nesting as well as the type.
+  t('inspector.andTheComputedValueBesideItIsUntouched', await evaluate(`
+    const d = JSON.parse(document.querySelector('#flow-definition').value);
+    return JSON.stringify(d.nodes.welcome.config.id);
+  `), '{"type":"fn","name":"upper","args":[{"type":"ref","path":"$.trigger.record.id"}]}')
+
+  // Put it back, through the document, since the rest of this drive runs the
+  // flow for real.
+  await type('#flow-definition', JSON.stringify(definition('Customer'), null, 2))
+  await click('#flow-save')
+  t('inspector.theGoodDefinitionIsVersionTwo',
+    await until(`document.querySelector('#flow-version')?.textContent.includes('2')`), true)
+
   // A model trigger is not a manual one, so the page does not offer to run it.
   t('admin.runNowIsNotOfferedWithoutAManualTrigger', await evaluate(`return document.querySelector('#flow-run').disabled`), true)
 

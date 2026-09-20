@@ -1,5 +1,48 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-20 — the TLA control flipped, which is the control doing its job
+
+`app-import.js` records a build's first real import failure because a module
+whose top-level await threw used to report its error exactly ONCE: every import
+after that resolved to a half-built namespace, so the next reader got
+`Cannot access 'X' before initialization` naming whichever binding it touched,
+and the cause was gone. Four messages of that shape once hid a schema parse
+error naming a file and a line.
+
+`tests/build-imports.test.js` carried a spawned NEGATIVE control asserting the
+runtime really does lose it, with a comment saying that if this ever stops being
+true the recording has stopped being load-bearing and this is the test that
+should say so. **It just said so.** The pinned runtime re-throws the original
+every time now, the way node always has.
+
+So the control is rewritten to assert what is true rather than flipped quietly,
+and the recording is KEPT and marked dormant in both the test and the file's own
+header. It is not deleted: `firstRealFailure()` still has a live reader in
+`warnings.js`, and a runtime property that changed once can change back — this
+control is the only thing here that would notice.
+
+
+## 2026-09-20 — a held write carries the row it was made against
+
+`FJS-1202`. The `NO_BASE_CARRIED` guard added yesterday comes out: `@@sync(field)`
+is reachable now, over both transports (`FJS-D338`).
+
+**The base is DERIVED, not declared.** Nothing a caller writes says what they
+were looking at — the resource does, in the `_read` map it already reads a
+`@version` out of — so `resource.js` takes it from there at the call site. Only
+a write against an existing row has one; a create was made against nothing.
+
+**It rides the live call as well as the held one.** A write made with the network
+up can still lose a race, and the merge is the same comparison either way —
+otherwise `field` would only ever resolve for a device that had been offline,
+which is not what the declaration says.
+
+**`pendingQueue().add()` builds its entry BY NAME and dropped it first time
+round.** The base reached the call site, was passed to the queue, and vanished —
+the entry is assembled field by field rather than spread, so anything a caller
+passes that `add` does not list is silently gone. Worth knowing for the next
+thing that needs to survive a replay.
+
 ## 2026-09-20 — a point column resolves to a point control
 
 `controlFor` asks `x-geo` ahead of the type switch, for the reason a `File` column is asked
@@ -37,7 +80,7 @@ works. The guard comes out when the transport lands.
 ## 2026-09-20 — a nearest-first list is URL-driven, both halves
 
 The screen a proximity search produces is the one that gets bookmarked and shared, so the
-centre, the radius and the ordering all have to survive a paste. `page-query` now pins that
+center, the radius and the ordering all have to survive a paste. `page-query` now pins that
 `?site[near][lat]=…&site[near][within]=5mi&$orderBy[site][near][lat]=…` lands as
 `page.query` plus `page.directives` with nothing to translate (`FJS-D323`), and that a
 fixed-precision coordinate — what `toFixed(6)` writes — arrives as TEXT, which is the query

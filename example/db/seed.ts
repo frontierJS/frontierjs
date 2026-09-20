@@ -307,6 +307,29 @@ async function seedMoney() {
     ] })
   }
 
+  if (await sys.pickupPoint.count() === 0) {
+    // Real coordinates, and they are chosen rather than scattered: three sit
+    // inside five miles of the middle of London and two do not, so a drive can
+    // assert a radius that ADMITS some rows and REFUSES others without
+    // inventing its own. A sixth has no coordinate at all — a branch opened and
+    // not yet located, which is the row that sorts last in a nearest-first list
+    // and belongs to no circle.
+    await sys.pickupPoint.createMany({ data: [
+      { name: 'Westminster', address: '1 Victoria St, London',      hours: 'Mon–Sat 9–6',
+        site: { lat: 51.4995, lng: -0.1248 } },
+      { name: 'Camden',      address: '14 Camden High St, London',  hours: 'Every day 10–7',
+        site: { lat: 51.5390, lng: -0.1426 } },
+      { name: 'Shoreditch',  address: '8 Old St, London',           hours: 'Mon–Fri 8–8',
+        site: { lat: 51.5256, lng: -0.0875 } },
+      { name: 'Croydon',     address: '3 North End, Croydon',       hours: 'Mon–Sat 9–5:30',
+        site: { lat: 51.3762, lng: -0.0982 } },
+      { name: 'Reading',     address: '22 Broad St, Reading',       hours: 'Mon–Sat 9–5:30',
+        site: { lat: 51.4543, lng: -0.9781 } },
+      { name: 'Milton Keynes', address: 'Unit 4, Silbury Blvd',     hours: 'Opening soon',
+        site: null },
+    ] })
+  }
+
   if (await sys.discount.count() === 0) {
     // Four codes, one per thing that can go wrong with one. Every screen in
     // this app is built around the first; the other three exist so a drive can

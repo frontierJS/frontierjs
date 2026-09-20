@@ -106,7 +106,7 @@
     "access": "public"
   },
   "engines": {
-    "bun": ">=1.0.0"
+    "bun": ">=1.4.0"
   },
   "scripts": {
     "dev": "bun src/tools/cli.js",

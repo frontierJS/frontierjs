@@ -46,39 +46,39 @@ test('geo: a point is read from either spelling, and a bad one is refused by nam
 })
 
 test('geo: the box contains every point the exact measure admits — equator', function () {
-  const centre = { lat: 0.5, lng: 0.5 }
+  const center = { lat: 0.5, lng: 0.5 }
   const radius = 20_000
-  compare(spread(centre, degreesFor(radius) * 2.5, 2000), centre, radius)
+  compare(spread(center, degreesFor(radius) * 2.5, 2000), center, radius)
 })
 
 test('geo: …and at a pole, where a naive box divides by a cosine that is zero', function () {
-  const centre = { lat: 89.7, lng: 20 }
+  const center = { lat: 89.7, lng: 20 }
   const radius = 60_000
-  const points = spread(centre, degreesFor(radius) * 2.5, 2000)
-  const boxes = boundingBox(centre, radius)
+  const points = spread(center, degreesFor(radius) * 2.5, 2000)
+  const boxes = boundingBox(center, radius)
   assert.equal(boxes.length, 1)
   assert.equal(boxes[0].full, true, 'a circle reaching the pole admits every longitude')
-  compare(points, centre, radius)
+  compare(points, center, radius)
 })
 
 test('geo: …and across ±180, where one box matches nothing and says nothing', function () {
-  const centre = { lat: 10, lng: 179.9 }
+  const center = { lat: 10, lng: 179.9 }
   const radius = 50_000
-  const boxes = boundingBox(centre, radius)
+  const boxes = boundingBox(center, radius)
   assert.equal(boxes.length, 2, 'a wrapping radius is TWO boxes, split at the seam')
   for (const b of boxes) assert.ok(b.west <= b.east, 'neither box may be inverted')
-  compare(spread(centre, degreesFor(radius) * 2.5, 2000), centre, radius)
+  compare(spread(center, degreesFor(radius) * 2.5, 2000), center, radius)
 })
 
 test('geo: the box is a prefilter and is deliberately wider than the circle', function () {
-  const centre = { lat: 45, lng: 10 }
-  const boxes  = boundingBox(centre, 10_000)
+  const center = { lat: 45, lng: 10 }
+  const boxes  = boundingBox(center, 10_000)
   // The corner of the box is outside the circle by construction — √2 × r — so a
   // caller that treats the box AS the answer returns rows it should not.
   const corner = { lat: boxes[0].north, lng: boxes[0].east }
   assert.ok(inBoxes(corner, boxes), 'the corner is in the box')
-  assert.ok(distance(corner, centre) > 10_000, 'and outside the circle')
-  assert.ok(!isNear(corner, centre, 10_000), 'so isNear must run the exact test too')
+  assert.ok(distance(corner, center) > 10_000, 'and outside the circle')
+  assert.ok(!isNear(corner, center, 10_000), 'so isNear must run the exact test too')
 })
 
 test('geo: a radius that is not a positive number is refused', function () {
@@ -126,7 +126,7 @@ test('geo: centroid averages as vectors, so ±179 is not the wrong ocean', funct
   const plain = centroid([{ lat: 0, lng: 10 }, { lat: 0, lng: 20 }])
   near(plain.lng, 15, 0.001)
   assert.equal(centroid([]), null)
-  assert.equal(centroid([{ lat: 1 }]), null, 'a list of unusable points has no centre')
+  assert.equal(centroid([{ lat: 1 }]), null, 'a list of unusable points has no center')
   assert.equal(centroid([{ lat: 0, lng: 0 }, { lat: 0, lng: 180 }]), null, 'antipodes have no mean direction')
 })
 
@@ -146,18 +146,18 @@ test('geo: a radius is stated with its unit, and the kit that owns quantities pa
 // ─── helpers ──────────────────────────────────────────────────────────────
 
 /**
- * A grid of points around a centre, `span` degrees wide, `n` of them. The span
+ * A grid of points around a center, `span` degrees wide, `n` of them. The span
  * is stated as a MULTIPLE of the radius by every caller, so the fixture always
  * straddles the circle's edge rather than sitting wholly inside or outside it —
  * which is where a prefilter is wrong if it is wrong at all.
  */
-function spread(centre, span, n) {
+function spread(center, span, n) {
   const out = []
   const side = Math.round(Math.sqrt(n))
   for (let i = 0; i < side; i++) {
     for (let j = 0; j < side; j++) {
-      const lat = centre.lat - span + (2 * span * i) / (side - 1)
-      const lng = centre.lng - span + (2 * span * j) / (side - 1)
+      const lat = center.lat - span + (2 * span * i) / (side - 1)
+      const lng = center.lng - span + (2 * span * j) / (side - 1)
       if (lat < -90 || lat > 90) continue
       out.push({ lat, lng: ((lng + 540) % 360) - 180 })
     }
@@ -170,9 +170,9 @@ function spread(centre, span, n) {
  * inside the boxes. The reverse is deliberately NOT asserted — the box is
  * wider than the circle by construction.
  */
-function compare(points, centre, radius) {
-  const boxes  = boundingBox(centre, radius)
-  const exact  = points.filter((p) => distance(p, centre) <= radius)
+function compare(points, center, radius) {
+  const boxes  = boundingBox(center, radius)
+  const exact  = points.filter((p) => distance(p, center) <= radius)
   const missed = exact.filter((p) => !inBoxes(p, boxes))
   assert.ok(exact.length > 10, `the fixture must actually contain points: ${exact.length}`)
   assert.equal(missed.length, 0,

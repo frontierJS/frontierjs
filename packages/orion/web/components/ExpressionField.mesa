@@ -1,0 +1,93 @@
+<script>
+  // One computed config value, written as the language rather than as its tree.
+  //
+  // ─── Why the parser is in the browser ─────────────────────────────────────
+  //
+  // `src/engine/` is otherwise the server's, and this is the exception: the
+  // text form is a PURE function over a closed grammar — `compileExpression`
+  // reads, `expressionToText` writes — so both ends agree by construction, and
+  // an author's mistake has to arrive as they type rather than one round trip
+  // later. The parser's own sentence is what is shown, with the column it
+  // failed at, because a second wording here would be a second grammar.
+  //
+  // It costs `text.ts`, `emit.ts` and nothing else: the predicate kit under
+  // them is already in a sierra app's bundle, since that is what answers
+  // `@required(where: …)` on a form.
+  //
+  // ─── What it does when there is no text ───────────────────────────────────
+  //
+  // The grammar is a SUBSET of what the engine runs — a template, an object, a
+  // pipeline and three more have no syntax (`FJS-1209`) — so `expressionToText`
+  // answers text or a reason, and a shape with no text form is edited as the
+  // document it already was. Nothing is hidden and nothing is guessed at.
+
+  import Input     from '@frontierjs/ui/components/forms/Input.mesa'
+  import JsonInput from '@frontierjs/ui/components/forms/JsonInput.mesa'
+
+  import { compileExpression } from '../../src/engine/expression/text'
+  import { expressionToText }  from '../../src/engine/expression/emit'
+
+  export let name     = ''
+  export let value    = undefined      // the stored Expression node
+  export let write    = undefined      // (expr) => void
+  export let hint     = ''
+  export let disabled = false
+
+  $: form = value == null ? { text: '' } : expressionToText(value)
+
+  // What the person is editing, or `null` to show the stored value's own text.
+  // It survives our OWN writes and nothing else: after `write` the stored value
+  // changes and re-deriving would snap the box back mid-keystroke, which is why
+  // the test below is what the text COMPILES to rather than how it is spelled —
+  // `i.name` and `$.i.name` are the same ref and only one of them is emitted.
+  let typed = null
+  let error = ''
+
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+
+  $: (value), () => {
+    if (typed === null) return
+    let mine = false
+    try { mine = same(compileExpression(typed), value) } catch { mine = false }
+    if (!mine) { typed = null; error = '' }
+  }
+
+  $: shown = typed ?? form.text ?? ''
+
+  function edit(next) {
+    typed = next
+    if (next.trim() === '') { error = ''; write?.(undefined); return }
+    try {
+      const expr = compileExpression(next)
+      error = ''
+      write?.(expr)
+    } catch (e) {
+      // Held rather than written: a half-typed expression is not a value, and
+      // storing one would put a definition that cannot compile into the
+      // document under a save button that looks ready.
+      error = e.message
+    }
+  }
+</script>
+
+{#if form.text === null}
+  <JsonInput
+    {name}
+    {disabled}
+    rows={4}
+    hint={hint ? hint + ' — ' + form.reason : form.reason}
+    value={value}
+    onvalue={(node) => write?.(node ?? undefined)}
+  />
+{:else}
+  <Input
+    {name}
+    {disabled}
+    {hint}
+    {error}
+    value={shown}
+    placeholder="$.trigger.body.amount > 100"
+    data-expression={error ? 'invalid' : 'ok'}
+    oninput={(e) => edit(e.target.value)}
+  />
+{/if}

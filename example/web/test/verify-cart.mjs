@@ -10,7 +10,7 @@
  * SESSION can own rows:
  *
  *   · `Cart` and `CartLine` are `@@gate("0.0.0.5")` — readable at level 0 —
- *     and their rows are reached by `@@allow('read', token == auth().cartToken)`.
+ *     and their rows are reached by `@@allow('read', id == auth().cartId)`.
  *   · The claim comes from `createApp({ principal })`, which junction runs for
  *     a caller with no session and whose claims never become one. A guest
  *     graded USER(4) would be the whole bug.

@@ -268,6 +268,22 @@ const _callHeader = (opts?: CallOptions) =>
   opts?.idempotencyKey ? { header: { 'Idempotency-Key': opts.idempotencyKey } } : {}
 
 /**
+ * The write envelope, and the only place its flag is spelled.
+ *
+ * A base is a ROW and a write's body already IS its data, so a call carrying
+ * one flags the body and puts both inside (`FJS-D338`). With no base the body
+ * is the data exactly as before, so nothing already on the wire changes.
+ */
+const _envelope = (
+  data: unknown,
+  opts?: CallOptions,
+): { body: unknown, extra: Record<string, unknown> } =>
+  opts?.base
+    ? { body:  { data, base: opts.base },
+        extra: { header: { ...(_callHeader(opts) as any).header, 'X-Fjs-Write': 'enveloped' } } }
+    : { body: data, extra: _callHeader(opts) }
+
+/**
  * What a caller states about ONE call, as opposed to about the data or the
  * query — so it is a third parameter rather than a key on `QueryDirectives`,
  * which is the closed `$`-table and describes what to fetch.
@@ -281,6 +297,18 @@ const _callHeader = (opts?: CallOptions) =>
  */
 export interface CallOptions {
   idempotencyKey?: string
+
+  /**
+   * The row as this caller READ it, for `@@sync(field)`'s per-column merge
+   * (`FJS-D334`). Only a patch by id reads one — a base is ONE row, so a bulk
+   * patch refuses it by name.
+   *
+   * It cannot travel as a header, because a row with a text column goes past
+   * what a header may hold: over HTTP the body becomes `{ data, base }` under
+   * `X-Fjs-Write: enveloped`, over the socket it rides the `meta` slot a frame
+   * already carries its extras in (`FJS-D338`).
+   */
+  base?: Record<string, unknown> | null
 }
 
 // ─── ServiceProxy ─────────────────────────────────────────────────────────
@@ -441,11 +469,12 @@ export class ServiceProxy<
     if (this._client._wsReady && !_hasFiles(data)) {
       return this._client._wsCall(this.name, 'patch', idOrQuery, data, null, opts) as Promise<T>
     }
+    const { body, extra } = _envelope(data, opts)
     return this._client._request(
       'PATCH',
       `${this._base}/${idOrQuery}`,
-      data,
-      _callHeader(opts)
+      body,
+      extra
     ) as Promise<T>
   }
 
@@ -2218,6 +2247,9 @@ export class JunctionClient extends EventEmitter {
         ...(opts?.idempotencyKey ? { 'idempotency-key': opts.idempotencyKey } : {}),
       }
       if (Object.keys(extraHeaders).length > 0)      meta.headers = extraHeaders
+      // No envelope here: a frame already has a slot for what describes a call
+      // rather than being part of it, which is the thing HTTP lacks.
+      if (opts?.base)                                meta.base    = opts.base
 
       this._ws!.send(
         JSON.stringify({

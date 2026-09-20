@@ -23,6 +23,7 @@
     "verify:reports": "node web/test/verify-reports.mjs",
     "verify:automations": "node web/test/verify-automations.mjs",
     "verify:values": "node web/test/verify-values.mjs",
+    "verify:geo": "bun web/test/verify-geo.mjs",
     "verify:live": "node web/test/verify-live.mjs",
     "verify:jobs": "node web/test/verify-jobs.mjs",
     "verify:metrics": "bun web/test/verify-metrics.mjs",

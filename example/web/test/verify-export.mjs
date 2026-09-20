@@ -5,7 +5,7 @@
  * plugin has unit coverage in junction; this is the half those tests cannot
  * reach — a real schema with a real gate ladder, a `view` gated ABOVE the rows
  * it aggregates, `tenancy { strategy database }` so there is no `app.db` at
- * all, and `cartClaim`, a principal resolver that runs per request.
+ * all, and `bearerClaim`, a principal resolver that runs per request.
  *
  * The point of running it here is the point `FJS-972` made about `view`: a
  * construct that ships and that no app calls is one nothing has ever run.

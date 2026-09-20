@@ -36,6 +36,39 @@ describe('normalizeOrderBy', () => {
     expect(normalizeOrderBy([{ a: 'asc' }])).toEqual([{ a: 'asc' }])
   })
 
+  it('a STRUCTURED value is an argument and travels untouched', () => {
+    // Three legal orderings whose value is an object rather than a direction,
+    // and the ternary here read every one of them as *not ascending*. All three
+    // arrived at the Data boundary as `{ field: 'desc' }`: a relation hop
+    // flattened onto the relation, a nulls placement with its direction
+    // INVERTED and its placement gone, and a distance order refused by name as
+    // a sort of the JSON document.
+    //
+    // The transport carries all three intact (`FJS-962`) and this flattened
+    // them one layer later, which is why no test on either side of the wire
+    // could see it. Found by a drive asking over HTTP.
+    const hop   = { author: { name: 'asc' } }
+    const nulls = { deletedAt: { dir: 'asc', nulls: 'last' } }
+    const near  = { site: { near: { lat: 51.5074, lng: -0.1278 } } }
+
+    expect(normalizeOrderBy(hop)).toEqual([hop])
+    expect(normalizeOrderBy(nulls)).toEqual([nulls])
+    expect(normalizeOrderBy(near)).toEqual([near])
+  })
+
+  it('and a comparator declines to place a row by one', () => {
+    // A relation hop reads a column that is not on the record, a nulls
+    // placement is about rows this comparator never sees, and a distance needs
+    // a center and the geo kit. `null` is *leave the list alone*; the
+    // alternative is placing a pushed row by the TEXT of a JSON document,
+    // which is a wrong position asserted confidently.
+    expect(comparatorFor({ site: { near: { lat: 1, lng: 2 } } })).toBe(null)
+
+    // And the rest of a mixed ordering still does its job.
+    const cmp = comparatorFor([{ site: { near: { lat: 1, lng: 2 } } }, { name: 'asc' }])
+    expect(cmp?.({ name: 'a' }, { name: 'b' })).toBe(-1)
+  })
+
   it('is the same function the server parses a query with', async () => {
     // parseSort in core/litestone.ts IS this — one reading of `-createdAt`, or
     // the browser sorts a list differently from the query that filled it.

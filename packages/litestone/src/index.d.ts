@@ -209,6 +209,15 @@ export interface LogRequestContext {
   ip?:            string | null
   userAgent?:     string | null
   tenant?:        string | null
+  /** Support mode: who is standing behind the principal. With one, `actorId` is
+   *  the operator and the principal becomes `subjectId`. */
+  operatorId?:    unknown
+  episodeId?:     string | null
+  /** A bearer: the GRANT row that admitted this caller, and what it was for.
+   *  A bearer principal carries no id, so without these the trail files the
+   *  write under nobody and a revocation cannot be investigated. */
+  bearerId?:      unknown
+  bearerSubject?: unknown
 }
 
 // ─── File ref ─────────────────────────────────────────────────────────────────

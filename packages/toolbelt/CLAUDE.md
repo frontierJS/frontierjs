@@ -7,7 +7,7 @@ framework import, no mutation of its arguments. The rule is the package's
 license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
-**One kit per subpath.** `/cron`, `/datetime`, `/gate`, `/geo`, `/glow`, `/inflect`,
+**One kit per subpath.** `/bearer`, `/cron`, `/datetime`, `/gate`, `/geo`, `/glow`, `/inflect`,
 `/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/match`, `/predicate`,
 `/query`, `/redact`, `/search`, `/signature` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
@@ -111,6 +111,14 @@ src/mime/            what a file's bytes ARE, and what may be said about them
                      tables disagreed on 24 of 32 extensions and the recorded
                      `.wasm` fix had reached one of them (`FJS-1186`). Ships a
                      `.d.ts` — junction's static transport is TypeScript
+src/bearer/          what a bearer secret looks like at rest — `fingerprint`
+                     (a keyed digest, `purpose` REQUIRED so one token does not
+                     digest identically in two tables), `matchesFingerprint`
+                     and `timingSafeEqual`. A fast digest rather than bcrypt on
+                     purpose: a minted token cannot be guessed at any cost and a
+                     guest pays this per call, so the expense would buy nothing
+                     and cost the hot path (`FJS-D339`). Ships a `.d.ts` —
+                     junction's resolver is TypeScript
 src/signature/       what a signed machine-to-machine request is — canonical
                      string, sign, verify. Three signers existed and no verifier
 src/redact/          *is this key a credential* — the question

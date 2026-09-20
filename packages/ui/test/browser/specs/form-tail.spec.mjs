@@ -85,6 +85,25 @@ export async function run(t) {
   await t.eventually(`document.querySelector('input[name=notify]').checked`, false,
     'and off again — the property is reset, not just the attribute')
 
+  /* ── a bound Textarea the APP rewrites ────────────────────────────────── */
+
+  // A <textarea> carries its value as child text, so a re-render that only
+  // replaced the text left what had been typed on screen — the parent read the
+  // new string, the box showed the old one, and nothing reported the
+  // disagreement. The order matters: the write has to come AFTER something has
+  // typed into the element, because that is what detaches `el.value` from the
+  // text. Found building orion's node inspector, where an edit in a form and
+  // the JSON document under it are one model.
+  await t.evaluate(`
+    const el = document.querySelector('textarea[name=summary]');
+    el.value = 'typed by hand';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  `)
+  await t.clickAt('#summary-set')
+  await t.eventually(`document.querySelector('textarea[name=summary]').value`, 'written from outside',
+    'the app can rewrite a bound Textarea after it has been typed in')
+
   /* ── required, which is the same schema fact ──────────────────────────── */
 
   // A native `required` where the element is the value…

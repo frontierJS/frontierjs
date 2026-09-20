@@ -252,7 +252,7 @@ export async function Command({ file, arg, flag, emit }) {
         info:    (text) => emit({ type: 'log', level: 'info',    text }),
         success: (text) => emit({ type: 'log', level: 'success', text }),
         dry:     (text) => emit({ type: 'log', level: 'dry',     text }),
-        debug:   (text) => emit({ type: 'log', level: 'debug',   text }),
+        detail:  (text) => emit({ type: 'log', level: 'detail',  text }),
       }
     : terminalLog
 
@@ -871,7 +871,7 @@ function assertNotRefused(config, refusedBy) {
 // The names minimist must not read a value into: without the list,
 // `fli x --dry foo` parses as `{ dry: 'foo' }`. The cost is that minimist then
 // DEFAULTS every one of them to false whether or not it was typed.
-export const BOOL_ARGV = ['help', 'h', 'dry', 'd']
+export const BOOL_ARGV = ['help', 'h', 'dry', 'd', 'verbose']
 
 // Undo that defaulting. `-d` arrives as `{ d: true, dry: false }`, and
 // getConfig's short-flag promotion reads a DEFINED `dry` as "the long name was
@@ -913,6 +913,13 @@ const defaultFlags = {
   debug: {
     type: 'boolean',
     description: 'Show full stack traces on errors instead of clean messages'
+  },
+  // Asks for the paragraph behind the line — `log.detail`, and the output of a
+  // command this one composes. A command prints the same DECISIONS either way;
+  // what this adds is the reasoning and the children's chatter.
+  verbose: {
+    type: 'boolean',
+    description: 'Show the long version — explanations, and the output of composed commands'
   }
 }
 
@@ -1243,5 +1250,5 @@ const terminalLog = {
   info:    (text) => logger(text, 'info'),
   success: (text) => logger(text, 'success'),
   dry:     (text) => logger(text, 'dry'),
-  debug:   (text) => logger(text, 'debug'),
+  detail:  (text) => logger(text, 'detail'),
 }

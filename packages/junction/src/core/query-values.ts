@@ -40,7 +40,7 @@ export type SortParam =
   | Record<string, number | string>
   | Record<string, string>[]
 
-export type OrderBy = Record<string, 'asc' | 'desc'>[]
+export type OrderBy = Record<string, unknown>[]
 
 /**
  * The three spellings → `[{ field: 'asc' | 'desc' }]`.
@@ -50,6 +50,20 @@ export type OrderBy = Record<string, 'asc' | 'desc'>[]
  *   'status,-createdAt'       several, in order
  *   { createdAt: 'desc' }     object form; 1 / -1 also accepted
  *   [{ a: 'asc' }, { b: … }]  already normalized
+ *
+ * **A STRUCTURED value is not one of the three and travels untouched.** The
+ * Data boundary takes several orderings whose value is an object rather than a
+ * direction — a relation hop (`{ author: { name: 'asc' } }`), a nulls placement
+ * (`{ deletedAt: { dir: 'asc', nulls: 'last' } }`) and a distance
+ * (`{ site: { near: { lat, lng } } }`) — and the ternary below read every one
+ * of them as *not ascending*: all three arrived as `{ field: 'desc' }`, which
+ * is a relation hop flattened onto the relation, a nulls placement with its
+ * direction INVERTED and its placement gone, and a distance order refused by
+ * name as a sort of the JSON document.
+ *
+ * The transport carries all three intact (`FJS-962` is the ruling that made it
+ * so) and this flattened them one layer later, which is why nothing on either
+ * side of the wire could see it.
  */
 export function normalizeOrderBy(sort: SortParam): OrderBy {
   if (typeof sort === 'string') {
@@ -61,8 +75,15 @@ export function normalizeOrderBy(sort: SortParam): OrderBy {
   }
   if (Array.isArray(sort)) return sort as OrderBy
   return Object.entries(sort).map(([field, dir]) => ({
-    [field]: (dir === 1 || dir === 'asc') ? 'asc' as const : 'desc' as const,
+    [field]: isDirection(dir)
+      ? ((dir === 1 || dir === 'asc') ? 'asc' as const : 'desc' as const)
+      : dir,
   }))
+}
+
+/** A direction is a word or a sign. Anything structured is an ARGUMENT. */
+function isDirection(v: unknown): boolean {
+  return v === null || (typeof v !== 'object' && typeof v !== 'function')
 }
 
 export type SelectParam = string | string[]
@@ -122,10 +143,20 @@ export function comparatorFor(
   sort: SortParam | undefined | null
 ): ((a: Record<string, unknown>, b: Record<string, unknown>) => number) | null {
   if (sort == null) return null
+  // A structured value is an ordering this side cannot reproduce: a relation
+  // hop reads a column that is not on the record, a nulls placement is about
+  // rows this comparator never sees, and a distance needs a center and the geo
+  // kit. Skipped rather than read as a direction — placing a pushed row by the
+  // TEXT of a JSON document is a wrong position asserted confidently, where
+  // dropping the key leaves the rest of the ordering doing its job and the
+  // caller's `resource.stale` saying the list should be re-read.
   const keys = normalizeOrderBy(sort)
     .map((entry) => {
       const field = Object.keys(entry)[0]
-      return field ? { field, desc: entry[field] === 'desc' } : null
+      if (!field) return null
+      const dir = entry[field]
+      if (dir !== null && typeof dir === 'object') return null
+      return { field, desc: dir === 'desc' }
     })
     .filter((k): k is { field: string; desc: boolean } => k !== null)
 

@@ -16,6 +16,12 @@ import { $ } from '@frontierjs/junction'
 //   POST /health-check { app_id, digest }                  → { healthy }
 //   POST /exec         { step, deployment_id }             → run the step
 //
+// An app whose source is `inline` speaks a second, shorter protocol. It has no
+// image, so none of the routes above apply to it:
+//   POST /static/publish  { app_id, files }          → { digest }
+//   POST /static/activate { app_id, slug, digest }   → { digest }
+//   POST /static/health   { app_id, digest }         → { healthy }
+//
 // WHO speaks it is `providers/executor.ts` — a registered outpost, or the named
 // stub, or a refusal. This file no longer has a path where nothing is sent and
 // the step is marked `success` anyway (FJS-257).
@@ -34,6 +40,7 @@ import { resolveExecutor, isExecutor } from '../providers/executor.ts'
 import type { Executor }    from '../providers/executor.ts'
 import { notifyPeople, workspaceMembers } from '../core/notify.ts'
 import { runsAsCaller }         from './context.ts'
+import { isInline, inlineFilesFor } from '../core/app-source.ts'
 import type { BasecampApp } from '../basecamp.types.ts'
 import type { StepStatus } from '../../../db/schema.d.ts'
 
@@ -215,6 +222,13 @@ function runner(app: BasecampApp) {
   ): Promise<{ output?: string; digest: string | null }> {
     const { deploy, service, executor, digest } = ctx
     const name  = step.name.toLowerCase()
+
+    // The bytes this release is FOR, which is the snapshot and never the app as
+    // it stands now: `rollback` creates a release whose whole meaning is that
+    // its snapshot differs from the app, and a runner reading the live row
+    // would put the current files back under the old release's name.
+    const source = ctx.config.source ?? service.source ?? {}
+    if (isInline(source)) return runInlineStep(step, { ...ctx, source })
     // The image as the app names it. The digest is what identifies bytes, but a
     // registry still needs a name to pull by, so both travel.
     const image = deploy.toImage ?? service.name
@@ -248,8 +262,11 @@ function runner(app: BasecampApp) {
         app_id:        deploy.appId,
         image,
         digest,
-        config:        service.config ?? {},   // Json columns — already objects
-        source:        service.source ?? {},
+        // The snapshot, not the app. `rollback` exists to put back the config
+        // that shipped with those bytes, and reading the live row here undid
+        // exactly that — the old image with the new config is neither release.
+        config:        ctx.config.config ?? service.config ?? {},
+        source:        ctx.config.source ?? service.source ?? {},
       })
       if (reply.error) throw new Error(`Deploy failed: ${reply.error.message}`)
       return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest }
@@ -272,6 +289,102 @@ function runner(app: BasecampApp) {
       if (reply.error) throw new Error(`Step '${step.name}' failed: ${reply.error.message}`)
       return { output: note(reply), digest: asDigest(reply.data?.digest) ?? digest }
     }
+  }
+
+  /**
+   * One step of an inline release.
+   *
+   * Four calls, no docker, no registry, no build. The digest is read off the
+   * bytes the machine WROTE and travels to `activate` and `health` from there —
+   * a release that says which bytes are serving it is the only thing separating
+   * this from "the files were sent and something is up".
+   */
+  async function runInlineStep(
+    step: StepRow,
+    ctx: {
+      deploy:   DeploymentRow
+      service:  ServiceRow
+      executor: Executor
+      digest:   string | null
+      source:   unknown
+    },
+  ): Promise<{ output?: string; digest: string | null }> {
+    const { deploy, service, executor, digest, source } = ctx
+    const name  = step.name.toLowerCase()
+    const files = inlineFilesFor(source)
+
+    const note = (reply: { data?: Record<string, unknown> }) =>
+      reply.data?.stubbed ? String(reply.data.note ?? 'stub executor — nothing was issued') : undefined
+
+    if (name.includes('validate')) {
+      // The snapshot, not the app. A release queued against an empty source is
+      // a release with nothing to send, and it says so before anything leaves.
+      if (!files.length) throw new Error('This release has no files — the source was empty when it was queued')
+      const bytes = files.reduce((n: number, f: { content?: string }) => n + (f.content?.length ?? 0), 0)
+      return { output: `${files.length} file(s), ${bytes} characters`, digest }
+    }
+
+    if (name.includes('upload')) {
+      const reply = await executor.call('/static/publish', {
+        app_id: deploy.appId,
+        files,
+      }, { timeoutMs: 60_000 })
+      if (reply.error) throw new Error(`Upload failed: ${reply.error.message}`)
+
+      const written = asDigest(reply.data?.digest)
+      return {
+        output: note(reply) ?? `${reply.data?.files ?? files.length} file(s), ${reply.data?.bytes ?? '?'} bytes written`,
+        digest: written ?? digest,
+      }
+    }
+
+    if (name.includes('activate')) {
+      // The digest came back from the upload, so a release that cannot name its
+      // bytes has nothing to activate. The stub is the one exception and it is
+      // marked as such in every step's output: it reports no digest on purpose
+      // rather than inventing one.
+      if (!digest && executor.kind !== 'stub')
+        throw new Error('The upload reported no digest, so there is nothing to make live')
+
+      const reply = await executor.call('/static/activate', {
+        app_id: deploy.appId,
+        // The hostname label this app answers on where there is no domain
+        // pointed at it yet, which is every app on the day it is pasted in.
+        slug:   service.slug,
+        digest,
+      })
+      if (reply.error) throw new Error(`Activate failed: ${reply.error.message}`)
+
+      // The address the MACHINE says it is serving at, written into the step
+      // an operator is already looking at. Assembling it here from a port and a
+      // slug would be this process guessing at how a box it has never seen is
+      // reached from outside.
+      const at = reply.data?.url ? ` at ${reply.data.url}` : ''
+      return { output: note(reply) ?? `serving ${digest}${at}`, digest: asDigest(reply.data?.digest) ?? digest }
+    }
+
+    if (name.includes('health')) {
+      // Two attempts and a second between them, where a container gets ten over
+      // thirty seconds: a symlink swap has either happened or it has not, and
+      // polling a filesystem for half a minute only makes a broken release take
+      // longer to say so.
+      let last: { data?: Record<string, unknown>; error?: { message: string } } = {}
+      for (let i = 0; i < 2; i++) {
+        const reply = await executor.call('/static/health', { app_id: deploy.appId, digest }, { timeoutMs: 5_000 })
+        last = reply
+        if (!reply.error && reply.data?.healthy) return { output: note(reply), digest }
+        await new Promise(r => setTimeout(r, 1_000))
+      }
+      // The machine's own sentence — "the live release is <other digest>" is a
+      // different problem from "there is no index.html" and the operator can
+      // act on exactly one of them.
+      throw new Error(`Not serving: ${last.error?.message ?? last.data?.reason ?? 'the machine did not say why'}`)
+    }
+
+    // A step name nothing here answers. Acknowledged rather than failed, which
+    // is what `/exec` already does for the container pipeline: a list that grew
+    // a line is not a release that broke.
+    return { output: `step '${step.name}' needs no work for an inline app`, digest }
   }
 
   // The release, the steps it left behind, the app's status and the event —

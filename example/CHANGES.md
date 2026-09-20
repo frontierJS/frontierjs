@@ -1,5 +1,138 @@
 # Changes — example
 
+## 2026-09-20 — `verify:automations` types an expression
+
+Seven more assertions, and the pair that matters is what each field does with the shape it holds:
+`id` is a `ref` and the grammar can spell one, so the field is the line `$.trigger.record.id`;
+`data` is an `object` and the shared grammar has no syntax for one, so it stays the document it was.
+The honest half is asserted rather than left to be noticed.
+
+Typing `record.id` shows the parser's own sentence — *'record' is not defined here* — and the
+definition underneath is read back to prove nothing was written while it does not parse. Typing
+`upper($.trigger.record.id)` puts the compiled `fn` node into the document, which is also what makes
+the serialize assertion beside it sharper: a flattening serialize would lose the nesting as well as
+the type. 63 assertions from 56.
+
+## 2026-09-20 — the basket is opened by a GRANT, not by a token in a column
+
+`FJS-D343`, and the first app to be re-modelled onto `bearerClaim`.
+
+`Cart.token` is gone and `CartGrant` is here: the shopper holds a token, the row
+holds its digest, and junction's resolver trades one for the basket's ID before
+any policy runs. So `@@allow('read', id == auth().cartId)` compares a number to
+a number, and the shopper's secret appears in no column of this schema, no query
+and no log line.
+
+**`CartLine.token` is gone with it, and that is the point.** It was a copy of
+the parent's secret on every child row — a copy that could not be `@guarded`,
+since the guest writing their own line has to write it; that a line carried for
+ever; and that no revocation could have reached. The claim is the basket's id
+now, so the column the policy needs is the foreign key that was always there.
+
+**`redeem` mints a SECOND grant rather than re-answering the first token**,
+which the shop could not do if it wanted to: there is no token stored anywhere.
+The origin a buy button runs on gets its own way in, and revoking either leaves
+the other working — which is what a row buys over a column. `verify:widget` now
+asserts the BASKET (same id, same line) rather than a shared string, and that
+the two tokens differ.
+
+**The audit trail names the grant** (`FJS-D342`): a guest's basket write used to
+be filed as `actorType: 'user'` with a null id, which is a session whose id went
+missing. It is `bearer` now, with the grant row as the actor.
+
+Drives: `verify:cart` 32, `verify:money` 107, `verify:stock` 41, `verify:widget`
+40, `verify:pay` 24. One migration, which is destructive by design — the two
+token columns hold live baskets and a dev database is reseeded rather than
+carried.
+
+## 2026-09-20 — `ProductVariant` declares `@@sync(field)`, and the schema's own note said why
+
+`FJS-1202`. The `@version` note at the top of `schema.lite` listed this model as
+the case a row-wide revision gets WRONG: a person edits the price, and every
+sale, delivery and stocktake writes `stock`, so the column would report a
+conflict about a change nobody made. `@@sync(field)` is what answers that — the
+revision says the row moved, the per-column comparison says whether the two
+writers actually contended — so the variant gains `@version` and the policy, and
+the note is rewritten rather than left stating an argument that now has an
+answer.
+
+**`move()` passes the revision it already read.** It is the one place `stock` is
+written and it is read-modify-write, so a second movement landing between the
+read and the write would be computed from a total that had already moved. The
+boundary refuses that now instead of losing the movement.
+
+**It costs 18 kB and the budget stopped the build.** `deviceSchema()` keeps the
+`@@sync` models plus what they reference, so declaring the policy put
+`ProductVariant` on the device: 3 models to 4, and the shell went **881 → 899 kB**
+(`FJS-D302`). Confirmed by asking `deviceSchema()` rather than assumed from the
+number. Recorded deliberately — a shop that wants its variant rows mergeable in
+the stockroom pays for holding them there.
+
+**And it found a defect on the way in** (`FJS-1210`). With the variant table on
+the device, `InventoryMovement`'s relation to it stopped being an inert number
+and became a real foreign key — so hydrating 40 movements against an empty
+variants table failed the whole batch with `SQLITE_CONSTRAINT_FOREIGNKEY`,
+reported as a console `warning:` nobody sees. `example` answers it the way an app
+can: the variants are declared too, and imported FIRST, because the warm walks
+its declarations in registration order. The framework half is filed as `FJS-1210`.
+
+**`verify:offline` grew the assertion that proves the whole path** — the envelope
+on the wire, the bridge unwrapping it, the service passing it down, and litestone
+comparing against a real row. Each half passes its own tests with the other half
+missing, which is why it is a drive and not a unit test.
+
+**Its control is the sharp part**: the identical stale write with NO base is a
+plain 409. Without that, the merge assertion passes just as well against a
+boundary that had stopped checking the revision at all — which is the opposite
+of the feature. Removing the pass-through reds it exactly, and reveals the
+degradation to be a `retryable: true` version conflict, the shape an automatic
+re-apply would turn into silent data loss.
+
+## 2026-09-20 — `verify:automations` drives the node inspector
+
+Nineteen assertions, and what they grade is the DERIVATION rather than the panel. `model.patch`
+declares three properties and the drive asserts that three fields appear, in that order, none of
+them written down in this app or in orion's screens; the node's button carries the label the
+DESCRIPTOR supplies, which only the catalog call can answer. The two sharpest read a value's STATE:
+`model` is stored as a literal and opens on its own control holding `Customer` — the value and not
+the `{ type: 'literal', … }` wrapper around it — while the `id` beside it is a `ref` and opens on
+the expression.
+
+The write half is asserted through the document, because the inspector and the textarea are one
+model: an edit above appears below as the expression the resolver reads, and the ref beside it is
+untouched — which a serialize that flattened every value into a literal would have passed the first
+two assertions without. The good definition is then re-typed and saved, so the flow the rest of the
+drive activates is the one it always was. 56 assertions from 37; it still starts and stops both
+servers itself and leaves nothing active.
+
+## 2026-09-20 — `PickupPoint`, and `verify:geo`
+
+The `Collect` shipping method existed with nowhere to collect from. Now there are six
+branches, five of them located and one not yet, and `site Json? @point(lat, lng)` is the
+whole declaration behind them — two generated columns over `json_extract`, a composite index
+on the pair, and a `CHECK` that a migration, a seed and `asSystem()` are all held to.
+
+`/pickup/` is the screen: a nearest-first list whose search lives in the URL as ordinary
+bracket notation, and a create form in which **nothing names a control** — `x-geo` reaches
+sierra's table, which answers `geo`, which the kit binds to `GeoField`. The distance beside
+each branch is computed on the page from the point on the row and the center the page
+already knows, rather than being a column the server returned (`FJS-D320`).
+
+**`verify:geo` is the drive, and it exists because three unit suites can all pass while the
+crossing is broken** — which is exactly what it found. Two defects, both answering a 200 or a
+400 with nothing else able to see them:
+
+- junction's `autoSort` refused every distance-ordered list with *unsortable $orderBy key
+  'site'*, because litestone's `$checkOrderBy` — the one the API boundary asks BEFORE the
+  call is made — had not been taught the lift its sibling already had;
+- and one layer above that, `normalizeOrderBy` read any structured value as *not ascending*,
+  so a relation hop, a `nulls` placement and a distance order all reached the Data boundary
+  as `{ field: 'desc' }`.
+
+The search half is graded against a brute-force scan of the same rows rather than a
+hand-written list of names, because a prefilter that drops a row at a seam says nothing at
+all.
+
 ## 2026-09-20 — the shop has an agent surface, and it is the shop's own ladder
 
 `app.configure(mcpPlugin(…))` mounts `POST /api/mcp`, and `verify:mcp` drives it

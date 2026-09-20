@@ -103,13 +103,28 @@ export function startRepl({ db, sys, standing, accessors = [], commands = {}, te
     // came back reversed.
     let chain = Promise.resolve()
 
-    rl.prompt()
+    // `rl.prompt()` resumes the input stream, and a closed interface raises
+    // ERR_USE_AFTER_CLOSE there rather than returning. The chain above is what
+    // makes that reachable: the LAST line's continuation runs after the input
+    // ended and the interface closed, so a session's final statement threw on
+    // its way to drawing the next prompt — after the answer was printed, which
+    // is the worst moment for a console to lose its voice. Every prompt goes
+    // through here.
+    //
+    // The flag is this file's own rather than a property read off the
+    // interface, because whether one is exposed, and whether resuming a closed
+    // one throws at all, is a runtime's choice and has changed under us.
+    let closed = false
+    const showPrompt = () => { if (!closed) rl.prompt() }
+
+    showPrompt()
 
     rl.on('line', (raw) => {
       chain = chain.then(() => handleLine(raw))
     })
 
     rl.on('close', () => {
+      closed = true
       // The chain, not the event: closing mid-statement otherwise reports the
       // session over while a write is still in flight.
       chain.then(() => { out(''); resolve() })
@@ -118,10 +133,10 @@ export function startRepl({ db, sys, standing, accessors = [], commands = {}, te
     async function handleLine(raw) {
       const line = raw.trim()
 
-      if (!line)                 return rl.prompt()
+      if (!line)                 return showPrompt()
       if (line === '.exit')      return rl.close()
-      if (line === '.help')      { for (const l of helpLines(accessors, commands)) out(l); return rl.prompt() }
-      if (line === '.standing')  { out(`  ${standing}`); return rl.prompt() }
+      if (line === '.help')      { for (const l of helpLines(accessors, commands)) out(l); return showPrompt() }
+      if (line === '.standing')  { out(`  ${standing}`); return showPrompt() }
 
       remember(line)
 
@@ -132,14 +147,14 @@ export function startRepl({ db, sys, standing, accessors = [], commands = {}, te
         const [name, ...args] = line.slice(1).split(/\s+/)
         if (!Object.hasOwn(commands, name)) {
           out(`  No command .${name}. ${dim('.help lists them')}`)
-          return rl.prompt()
+          return showPrompt()
         }
         try {
           await commands[name].run({ db, sys, args, out, tenant })
         } catch (err) {
           out(`  ${err.name}: ${err.message}`)
         }
-        return rl.prompt()
+        return showPrompt()
       }
 
       try {
@@ -150,7 +165,7 @@ export function startRepl({ db, sys, standing, accessors = [], commands = {}, te
         // at a prompt is debugging.
         out(`  ${err.name}: ${err.message}`)
       }
-      rl.prompt()
+      showPrompt()
     }
   })
 }

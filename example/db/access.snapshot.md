@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-53 models · 1 view · 54 gated · 0 unrestricted
-18 with row policies · 24 with protected fields · 25 declared moves · 8 @system · 1 @seals
+55 models · 1 view · 56 gated · 0 unrestricted
+18 with row policies · 25 with protected fields · 25 declared moves · 8 @system · 1 @seals
 ```
 
 ## Gates
@@ -22,6 +22,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | Model | Read | Create | Update | Delete |
 | --- | --- | --- | --- | --- |
 | `Cart` | 0 STRANGER | 0 STRANGER | 0 STRANGER | 5 ADMINISTRATOR |
+| `CartGrant` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
 | `CartLine` | 0 STRANGER | 0 STRANGER | 0 STRANGER | 0 STRANGER |
 | `Color` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `Credential` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -57,6 +58,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `Payslip` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 8 SYSTEM | 8 SYSTEM |
 | `PayslipLine` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 9 LOCKED | 8 SYSTEM |
 | `PayWindow` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
+| `PickupPoint` | 0 STRANGER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Plan` | 0 STRANGER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `PlanVersion` | 0 STRANGER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `Product` | 0 STRANGER | 4 USER | 4 USER | 5 ADMINISTRATOR |
@@ -96,15 +98,15 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 ### `Cart`
 
-- allow **read** — `token == auth().cartToken`
-- allow **update** — `token == auth().cartToken`
+- allow **read** — `id == auth().cartId`
+- allow **update** — `id == auth().cartId`
 
 ### `CartLine`
 
-- allow **read** — `token == auth().cartToken`
-- allow **create** — `token == auth().cartToken`
-- allow **update** — `token == auth().cartToken`
-- allow **delete** — `token == auth().cartToken`
+- allow **read** — `cartId == auth().cartId`
+- allow **create** — `cartId == auth().cartId`
+- allow **update** — `cartId == auth().cartId`
+- allow **delete** — `cartId == auth().cartId`
 
 ### `CreditNote`
 
@@ -203,11 +205,11 @@ rather than refusing the row.
 
 | Model | Field | Rule |
 | --- | --- | --- |
-| `Cart` | `token` | `@guarded` |
 | `Cart` | `discountId` | `@system` |
 | `Cart` | `shippingMethodId` | `@system` |
 | `Cart` | `handoffCode` | `@guarded` |
 | `Cart` | `handoffExpires` | `@guarded` |
+| `CartGrant` | `tokenHash` | `@guarded` |
 | `CartLine` | `unitPrice` | `@system` |
 | `Credential` | `value` | `@guarded` |
 | `Credential` | `accessToken` | `@secret` |

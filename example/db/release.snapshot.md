@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-53 model(s) · 24 enum(s) · 2 database(s) · 2 value set(s)
+55 model(s) · 24 enum(s) · 2 database(s) · 2 value set(s)
 audit → logger · main → sqlite
 ```
 
@@ -66,6 +66,7 @@ table `cart` · db `main` · gate `0.0.0.5`
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `discount` | `Discount` | — | — | relation |
 | `discountId` | `Int` | yes | — | @system |
+| `grants` | `CartGrant[]` | — | — | relation |
 | `handoffCode` | `String` | yes | — | unique · @guarded |
 | `handoffExpires` | `DateTime` | yes | — | @guarded |
 | `holds` | `StockReservation[]` | — | — | relation |
@@ -74,15 +75,30 @@ table `cart` · db `main` · gate `0.0.0.5`
 | `shippingMethod` | `ShippingMethod` | — | — | relation |
 | `shippingMethodId` | `Int` | yes | — | @system |
 | `status` | `CartStatus` | no | `'open'` | — |
-| `token` | `String` | no | — | unique · @guarded · **required on write** |
 | `updatedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ','now'))` | — |
 | `userId` | `String` | yes | — | — |
 
 ```
 @@index(discountId)
 @@index(shippingMethodId)
-@@allow('read', token == auth().cartToken)
-@@allow('update', token == auth().cartToken)
+@@allow('read', id == auth().cartId)
+@@allow('update', id == auth().cartId)
+```
+
+### `CartGrant`
+
+table `cart_grant` · db `main` · gate `8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `cart` | `Cart` | — | — | relation |
+| `cartId` | `Int` | no | — | **required on write** |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `id` | `Int` | no | — | id |
+| `tokenHash` | `String` | no | — | unique · @guarded · **required on write** |
+
+```
+@@index(cartId)
 ```
 
 ### `CartLine`
@@ -96,7 +112,6 @@ table `cart_line` · db `main` · gate `0.0.0.0`
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `id` | `Int` | no | — | id |
 | `quantity` | `Int` | no | `1` | — |
-| `token` | `String` | no | — | **required on write** |
 | `unitPrice` | `Int` | no | — | @system · **required on write** |
 | `variant` | `ProductVariant` | — | — | relation |
 | `variantId` | `Int` | no | — | **required on write** |
@@ -104,10 +119,10 @@ table `cart_line` · db `main` · gate `0.0.0.0`
 ```
 @@unique(cartId, variantId)
 @@index(variantId)
-@@allow('create', token == auth().cartToken)
-@@allow('delete', token == auth().cartToken)
-@@allow('read', token == auth().cartToken)
-@@allow('update', token == auth().cartToken)
+@@allow('create', cartId == auth().cartId)
+@@allow('delete', cartId == auth().cartId)
+@@allow('read', cartId == auth().cartId)
+@@allow('update', cartId == auth().cartId)
 ```
 
 ### `Color`
@@ -900,6 +915,20 @@ table `pay_window` · db `main` · gate `5.5.5.5`
 @@check(effectiveTo IS NULL OR effectiveFrom < effectiveTo)
 ```
 
+### `PickupPoint`
+
+table `pickup_point` · db `main` · gate `0.5.5.5`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `active` | `Boolean` | no | `1` | — |
+| `address` | `String` | no | — | **required on write** |
+| `hours` | `String` | yes | — | — |
+| `id` | `Int` | no | — | id |
+| `name` | `String` | no | — | unique · **required on write** |
+| `site` | `Json` | yes | — | — |
+| `version` | `Int` | no | `1` | — |
+
 ### `Plan`
 
 table `plan` · db `main` · gate `0.5.5.5`
@@ -1002,6 +1031,7 @@ table `product_variant` · db `main` · gate `0.4.4.5` · @@softDelete(cascade)
 | `size` | `Size` | no | `'one'` | — |
 | `sku` | `String` | no | — | unique · **required on write** |
 | `stock` | `Int` | no | `0` | — |
+| `version` | `Int` | no | `1` | — |
 
 ```
 @@unique(color, productId, size)

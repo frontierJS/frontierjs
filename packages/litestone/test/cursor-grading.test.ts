@@ -28,6 +28,7 @@
 
 import { describe, test, expect } from 'bun:test'
 import { createClient } from '../src/index.js'
+import { encodeCursor, decodeCursor } from '../src/core/query.js'
 
 const SCHEMA = `
   database main { path ":memory:" }
@@ -147,6 +148,31 @@ describe('a cursor is graded against the ordering using it', () => {
       { limit: 2, orderBy: { createdAt: 'desc' }, cursor: mint({ createdAt: '2020-01-01' }) }))
       .rejects.toThrow(/names id nowhere/)
     db.$close()
+  })
+
+  // ── the codec, where `Buffer` is not a global ────────────────────────────
+  //
+  // Litestone runs in a browser by ruling (`FJS-D305`) and node's `Buffer` is
+  // not there, so `encodeCursor` threw `ReferenceError: Buffer is not defined`
+  // on a device and took EVERY paginated list with it — a defect no unit test
+  // here could see, because bun has a `Buffer`. Found by the browser drive.
+  //
+  // The global is REMOVED for the call rather than the codec read for the word,
+  // which is the same distinction the rest of this file makes: a grep passes
+  // against a copy somebody moved one function down.
+  test('the codec reaches for no `Buffer`, and carries a non-ASCII value', async () => {
+    const values = { city: 'Zürich', id: 7, note: '—' }
+    const held = globalThis.Buffer
+    try {
+      // @ts-expect-error — the point of the test is that it is absent
+      delete globalThis.Buffer
+      const token = encodeCursor(values)
+      expect(token).not.toMatch(/[+/=]/)          // base64URL, so it survives a query string
+      const fields = [{ col: 'city' }, { col: 'id' }, { col: 'note' }]
+      expect(decodeCursor(token, fields)).toEqual(values)
+    } finally {
+      globalThis.Buffer = held
+    }
   })
 
   test('a full round trip is unchanged — every row once, in order', async () => {

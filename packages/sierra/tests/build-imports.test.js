@@ -68,16 +68,25 @@ describe('importAppModule', () => {
     expect(second.error.message).not.toMatch(/before initialization/)
   })
 
-  // The negative control, and it has to be spawned.
+  // The control, and it has to be spawned.
   //
-  // Vitest imports through Vite's own module runner, which RE-THROWS the
-  // original error on a second import — so under this suite the bug does not
-  // reproduce and the recording above would look like belt with no trousers.
-  // The static build runs under `bun --bun vite`, whose native loader is where
-  // a failed TLA module hands back a half-built namespace. So the control is
-  // measured in that runtime: if this ever stops being true, the recording has
-  // stopped being load-bearing, and this is the test that should say so.
-  test('the runtime really does lose it — the negative control', () => {
+  // Vitest imports through Vite's own module runner, so whatever that does is
+  // not what the static build does — the build runs under `bun --bun vite`,
+  // and that loader is what this is a statement about.
+  //
+  // **It used to assert the opposite, and the flip is the point.** The runtime
+  // handed back a half-built namespace on a second import of a module whose
+  // top-level await threw: the real error was available exactly once, and every
+  // later reader got `Cannot access 'X' before initialization` naming whichever
+  // binding it happened to touch. That is the whole reason `app-import.js`
+  // records the first failure and `warnings.js` reads it back out. The pinned
+  // runtime re-throws the original every time, the way node always has, so the
+  // recording is DORMANT rather than load-bearing.
+  //
+  // The control is kept and still points where it always pointed — at the
+  // runtime, not at the workaround. A property that changed once can change
+  // back, and this is the only thing here that would notice.
+  test('the runtime re-throws the real error, so the recording is dormant', () => {
     const probe = `
       import { writeFileSync, mkdtempSync } from 'node:fs'
       import { join } from 'node:path'
@@ -98,8 +107,7 @@ describe('importAppModule', () => {
     }
 
     const said = JSON.parse(out.trim().split('\n').pop())
-    expect(said[0]).toBe('the real one')
-    expect(said[1]).toMatch(/before initialization/)
+    expect(said).toEqual(['the real one', 'the real one'])
   })
 })
 

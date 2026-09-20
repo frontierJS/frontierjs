@@ -14,7 +14,7 @@ owned, so the gap is written down rather than left to be rediscovered.
 would let junction and orion share litestone's types, so each declares the shape it
 holds. The count is here because it is the only place that cost is visible.
 
-Seams: **87**. With a stated owner: **87**. Stated and missing: **0**.
+Seams: **88**. With a stated owner: **88**. Stated and missing: **0**.
 
 **Every seam names an owner.** A callable is graded by where it is DECLARED; a key — a `$` on a
 wire, a schema keyword, a header — has no declaration anywhere, so its owner is where it is
@@ -39,6 +39,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | 3 |
+| `publish()` | `packages/junction/src/transport/channels.ts` | 3 |
 
 ## Data → API
 
@@ -53,6 +54,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `needsBackfill` | `packages/cli/core/backfills.js` | mentioned | — |
 | `sessionGateLevel(user)` | `packages/junction/src/core/litestone.ts` | yes | — |
 | `toDataPrincipal(user)` | `packages/junction/src/core/litestone.ts` | yes | — |
+| `bearerClaim({ from, model, column, claims, key, subject })` / `BEARER` | `packages/junction/src/core/litestone.ts` | yes | — |
 | `resolveTenancy(schema)` / `registry.tenantFor({host, headers, principal})` | `packages/litestone/src/core/tenancy.js` | yes | — |
 | `accessorCandidates()` | `packages/junction/src/core/litestone.ts` | yes | — |
 | `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | yes | 3 |
@@ -128,7 +130,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `client.setCallHeader(name, value)` | `packages/junction/src/client/index.ts` | yes | — |
 | `x-fjs-build` | `packages/junction/src/core/build-id.ts` | mentioned | — |
 | `wsSend()` / `flushSendQueue()` | `packages/junction/src/transport/send-queue.ts` | yes | 2 |
-| `publish()` | `packages/junction/src/transport/channels.ts` | yes | 2 |
+| `publish()` | `packages/junction/src/transport/channels.ts` | yes | 3 |
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
 | `resource.save(data, { mode })` | `packages/sierra/src/junction/resource.js` | yes | 4 |
 | `client.auth.*` | `packages/junction/src/client/index.ts` | mentions `auth` — weak | — |

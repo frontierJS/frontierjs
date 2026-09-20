@@ -1195,6 +1195,16 @@ The Json value on this field is a coordinate, and these two of its keys carry it
 site Json @point(lat, lng)
 ```
 
+#### `@vector` (<dimensions>)
+
+tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · see also: `point`
+
+The Bytes column holds that many float32 dimensions and can be ordered by similarity: orderBy: { embedding: { near: queryVector } }, most similar first. A marker on storage that already exists rather than a ninth scalar (FJS-D332) — Embedding(n) would be this grammar's first PARAMETERIZED type, and the parameter would then have to travel into the DDL, the differ, the JSON Schema, select, orderBy, patch semantics and the audit trail; `String @date` and `@point` are the same decision already made twice. Retrieval is an ordering on the ordinary read and NOT a verb of its own (FJS-D333), so where, select, include, cursors, @@softDelete, the tenant filter, both row policies and the gate all apply by doing nothing — search() earned a verb because FTS5 is a different engine on a different table, and a vector column is on the model's own. The comparison is cosine DISTANCE: 0 identical, 1 orthogonal, 2 opposite, so it sorts ascending. A length CHECK is emitted and no index is — measured at sqlite-vec 0.1.9, its vec0 virtual table is exact brute force and came out SLOWER than a plain scan at 50k rows, so what prunes a similarity read is the caller's own where, which measured 3-4x on a quarter of the rows. Two writes are refused at the boundary because the CHECK grades length alone and neither is visible afterwards: an all-zeros vector, which is what an empty or failed embed() returns and whose distance is NULL — and NULL sorts FIRST, making that row the best match for every query with a 200 — and a NaN, which sorts unpredictably rather than losing. A row whose vector is NULL is absent from a nearest-first list rather than failing it. SQL-side comparison needs sqlite-vec, which FJS-D331 makes an optional accelerator a server installs; not with @encrypted, @hashed, @unique or @@fts, whose encoded or indexed bytes rank by nothing.
+
+```lite
+embedding Bytes? @vector(1536)
+```
+
 **Decide who may**
 
 #### `@allow` ('read'|'write'|'all', <expression>)

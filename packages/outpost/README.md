@@ -27,7 +27,9 @@ Outpost that cannot name its server reports as nobody, and one with no secret
 would either refuse every command or accept every one. Everything else has a
 default — `OUTPOST_PORT` (8180 dev, 7180 test — the number comes from
 `packages/cli/core/ports.js`, project id 8), `OUTPOST_PUBLIC_URL`,
-`OUTPOST_HEARTBEAT_MS`, `OUTPOST_REPORT_MS`, `OUTPOST_WORK_DIR`.
+`OUTPOST_HEARTBEAT_MS`, `OUTPOST_REPORT_MS`, `OUTPOST_WORK_DIR`, and the four
+that belong to the static half — `OUTPOST_STATIC_DIR`, `OUTPOST_STATIC_PORT`
+(8181 dev, 7181 test; `0` turns it off) and `OUTPOST_STATIC_URL`.
 
 `OUTPOST_PUBLIC_URL` is stated rather than derived, because this process cannot
 see the address the world reaches it at. It is what the heartbeat registers as
@@ -48,6 +50,11 @@ process's user, so the default is refuse and a route opts out rather than in.
 | `POST /health-check` | `{ app_id }` → `{ healthy }` |
 | `POST /exec` | `{ command, timeout_s }` or `{ step }` → `{ exit_code, stdout, stderr }` |
 | `POST /logs` | `{ app_id, tail, since }` → `{ running, tail, since, stdout, stderr }`, plus `error` when there is no such container |
+| `POST /static/publish` | `{ app_id, files }` → `{ digest, files, bytes }` — written, not yet live |
+| `POST /static/activate` | `{ app_id, slug, digest }` → `{ digest, host, url }` |
+| `POST /static/health` | `{ app_id, digest }` → `{ healthy, digest }`, plus `reason` when it is not |
+| `POST /static/retire` | `{ app_id, slug }` → `{ retired }` — off the air, every release kept |
+| `POST /static/releases` | `{ app_id }` → `{ current, digests }` |
 | `POST /system/prune` | `{ targets, keep_images }` → `{ freed_bytes, removed, volumes, usage }` |
 | `POST /volumes/prune` | `{ names }` → `{ removed }` |
 | `DELETE /volumes/<name>` | → `{ removed }`, or 409 with the container holding it |
@@ -70,6 +77,30 @@ put the artefact: `IDEAS/deploy-plane.md`.
 **Only `sha256:<64 hex>` counts as a digest.** A tag is a name, and two builds
 share it — an image inspect that answers anything else is reported as no digest
 at all rather than as a plausible one.
+
+### Or the bytes are the app
+
+An App whose `source.kind` is `inline` has no repository and no image: the files
+themselves are the release. A page that loads React from a CDN is a whole app,
+and there is nothing here to build. `POST /static/publish` writes the files into
+a directory named for their own sha256 and `POST /static/activate` swaps one
+symlink — which is why a republish of identical bytes answers the same digest,
+and why a rollback sends nothing at all.
+
+The digest is computed here and the caller states none: a release records what
+ran, and a claim about bytes somebody sent is not a reading of the bytes that
+landed. Every path is an allow-list of plain file names, and the files are
+written into a staging directory and moved into place with one `rename`, so a
+publish that dies halfway cannot leave a release holding some of its own files.
+
+**They are served on a second listener, on a port of its own** (`OUTPOST_STATIC_PORT`).
+The pages are written by whoever can edit an app, so anything they reach as
+same-origin is theirs — and a port is an origin, so sharing one with the signed
+command protocol would put the fleet inside every prototype. Nothing on that
+port is signed or authenticated: it is a web server for public files, and the
+only reads it can perform are inside one release directory. An app is reached by
+the first label of the Host (`shop.fleet.example.com`) or, where there is no DNS,
+by the first path segment (`/shop/`).
 
 ## Testing
 

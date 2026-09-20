@@ -950,6 +950,23 @@ src/
   **It does not run for work with no request behind it either**, which is ruled
   and deferred work reaches a tenant through `app.runAs(userId, { tenant })`
   instead, where `membershipClaim` re-reads the membership (`FJS-384`).
+- **`bearerClaim()` is the other battery, for a caller with NO session** who
+  still owns rows (`FJS-D343`). One form: the grant row is READ — the column
+  holds `fingerprint(token, { key, purpose })` and never the token — and what
+  reaches a policy is the SUBJECT it resolved to, so an id is compared to an id
+  and no query, log line or error has a secret in it. Comparing the token to the
+  column it lives on needs no read and cannot answer *has it expired*, *was it
+  revoked* or *which of several links is this*, and it forces the token onto
+  every child row a policy must reach, since a policy cannot traverse a
+  relation. `revokedAt`/`expiresAt` are read off columns the app's model
+  declares, so the answer lives in the seed; an unparseable `expiresAt` reads as
+  EXPIRED, because the other reading is a grant that never dies. Unknown,
+  revoked and expired all answer the same nothing — a refusal that distinguished
+  them would be an oracle for which tokens existed. The row parks at
+  `ctx.locals[BEARER]`, which is what lets the audit trail name the GRANT as the
+  actor (`FJS-D342`). `header()` and `cookie()` both fall back to
+  `requestMeta()`: `CallOptions` carries no client, so a service calling a
+  service is reached no other way.
 - **`membershipClaim()` is the battery, and its whole safety is one line: no row
   is no claim.** The hand-written version that forgets the membership check
   emits the claim anyway and every read answers 200 over somebody else's rows —

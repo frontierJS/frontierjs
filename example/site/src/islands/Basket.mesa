@@ -3,9 +3,10 @@
 
   Everything on this screen belongs to a STRANGER. There is no sign-in, no
   account and no user id anywhere in it: `Cart` and `CartLine` are
-  `@@gate("0.0.0.5")` and their rows are reached by `@@allow('read', token ==
-  auth().cartToken)`, so the only thing that makes these rows visible is a token
-  this browser is holding. A wrong token is an empty screen rather than an
+  `@@gate("0.0.0.5")` and their rows are reached by `@@allow('read', id ==
+  auth().cartId)`, so the only thing that makes these rows visible is a token
+  this browser is holding — which the server trades for the basket's id before
+  any policy runs. A wrong token is an empty screen rather than an
   error, because a policy filters — it does not refuse.
 
   ─── The arithmetic is the server's, all of it ────────────────────────────

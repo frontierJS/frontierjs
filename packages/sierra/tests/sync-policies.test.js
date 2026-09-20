@@ -80,7 +80,7 @@ beforeEach(async () => {
   _resetAttachmentQueue()
   patching = (id, d) => Promise.resolve({ ...d })
   _proxy = {
-    find:    ()      => Promise.resolve({ data: [], total: 0 }),
+    find:    ()      => Promise.resolve({ data: [{ id: 'M-1', name: 'as read', v: 3 }], total: 1 }),
     get:     (id)    => Promise.resolve({ id, name: 'as read', v: 7 }),
     create:  (d)     => { _calls.push(['create', d]); return Promise.resolve({ ...d }) },
     patch:   (id, d) => { _calls.push(['patch', id, d]); return patching(id, d) },
@@ -166,32 +166,37 @@ describe('append — rows are only ever added', () => {
     expect(held()[0].method).toBe('adjust')
   })
 
-  // ── field — built at the boundary, not yet reachable from here ────────────
+  // ── field — the row the write was made against travels with it ───────────
   //
-  // `@@sync(field)` merges a held write column by column against the row it was
-  // made against, and the comparison lives at the Data boundary (`FJS-D334`).
-  // Nothing here carries that row yet, so a held write would go up with its
-  // revision and no base and be refused on the revision alone — which is
-  // `refuse` behaving correctly under a declaration that promises more.
-  //
-  // The refusal is what keeps that from being a green screen over a feature
-  // that is off: a policy that parses and resolves nothing reads exactly like
-  // one that works, which is why `FJS-D298` closed the set in the first place.
-  test('a held patch is refused BY NAME while the base cannot travel', async () => {
+  // `@@sync(field)` merges a held write column by column against the row the
+  // writer READ (`FJS-D334`), so the held entry has to carry that row. Nothing
+  // a caller writes says what they were looking at — the resource does, in the
+  // same `_read` map it already reads a `@version` out of — so the base is
+  // DERIVED at the call site rather than declared by a screen.
+  test('a held patch carries the row this resource read', async () => {
     const merge = createResource('merges', { model: 'Merge' })
-    const err = await merge.service.patch('ROW-1', { name: 'mine' }).catch(e => e)
-    expect(err.code).toBe('NO_BASE_CARRIED')
-    expect(String(err.message)).toMatch(/@@sync\(field\)/)
-    expect(String(err.message)).toMatch(/behave as @@sync\(refuse\)/)
-    expect(held().length).toBe(0)
+    await merge.load()                       // stamps _read with the server's rows
+    _proxy.patch = offline
+    await merge.service.patch('M-1', { name: 'mine' }).catch(() => {})
+    expect(held().length).toBe(1)
+    expect(held()[0].base).toEqual({ id: 'M-1', name: 'as read', v: 3 })
   })
 
-  test('a create is held — it was made against no row', async () => {
+  test('a create carries none — it was made against no row', async () => {
     _proxy.create = offline
     const merge = createResource('merges', { model: 'Merge' })
     await merge.save({ name: 'first' }).catch(() => {})
     expect(held().length).toBe(1)
-    expect(held()[0].method).toBe('create')
+    expect(held()[0].base).toBeUndefined()
+  })
+
+  test('a model on another policy carries none, so the boundary is never handed one', async () => {
+    const guard = createResource('guards', { model: 'Guard' })
+    await guard.load()
+    _proxy.patch = offline
+    await guard.service.patch('M-1', { name: 'mine' }).catch(() => {})
+    expect(held().length).toBe(1)
+    expect(held()[0].base).toBeUndefined()
   })
 
   // The control. A refusal that fired on reads would break every screen, and

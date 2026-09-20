@@ -14,6 +14,11 @@ import { EXACT_INT_MAX } from './validate.js'
 // the query compiler and the migration differ cannot disagree about a spelling.
 import { pointColumns } from './parser.js'
 
+// Four bytes a dimension, owned once — the query compiler and the boundary read
+// the same constant, so a stored blob and the length this CHECK enforces cannot
+// come to mean different numbers of floats.
+import { BYTES_PER_DIM } from './vector.js'
+
 // ─── Type mapping ─────────────────────────────────────────────────────────────
 // Prisma-style names → SQLite storage classes
 // Json is stored as TEXT — SQLite has no native JSON type but json_extract() works on TEXT
@@ -540,6 +545,41 @@ function pointDefs(model, cmap) {
   return { cols, checks }
 }
 
+/**
+ * `@vector(n)` → the length CHECK, and nothing else.
+ *
+ * No generated column and no index, which is where this parts company with
+ * `@point` above. There is no b-tree over a 1536-dimensional distance to build:
+ * measured at 0.1.9, `sqlite-vec`'s own `vec0` virtual table is exact brute
+ * force and came out SLOWER than a plain scan at 50k rows, which is why
+ * `FJS-D332` refused the shadow-table shape outright. What prunes a similarity
+ * read here is the caller's own `where` — and that measured 3-4x on a quarter
+ * of the rows, so the gate and the row policies in front of it are a speed-up
+ * rather than a cost.
+ *
+ * The CHECK is the database's rather than the boundary's for the usual reason:
+ * a migration, a seed, a raw statement and `asSystem()` never reach the
+ * boundary. `typeof(...) = 'blob'` rides along because `length()` counts
+ * CHARACTERS on a text value and bytes on a blob — under `@@noStrict` a text
+ * value of the right character count would otherwise pass and then be read as
+ * the wrong number of floats.
+ *
+ * A NULL column passes: an un-embedded row is a legitimate state, and it is the
+ * READ that has to drop it rather than fail (`core/vector.js`).
+ */
+function vectorChecks(model) {
+  const out = []
+  for (const field of model.fields) {
+    const vec = field.attributes.find(a => a.kind === 'vector')
+    if (!vec) continue
+    const src = fieldToColumnName(field)
+    out.push(
+      `  CHECK ("${src}" IS NULL OR (` +
+      `typeof("${src}") = 'blob' AND length("${src}") = ${vec.dim * BYTES_PER_DIM}))`)
+  }
+  return out
+}
+
 /** The composite index every declared point earns, without anybody writing `@@index`. */
 function pointIndexes(model, tableName, softDelete = false) {
   const cmap = columnMapFor(model)
@@ -566,7 +606,8 @@ function createTable(model, schema, tableName, pluralize = false) {  // schema n
   const enumChecks   = columnFields.map(f => enumCheck(f, schema)).filter(Boolean)
   const constraints  = tableConstraints(model, schema, pluralize)
   const points       = pointDefs(model, columnMapFor(model))
-  const allDefs      = [...colDefs, ...points.cols, ...enumChecks, ...points.checks, ...constraints]
+  const vectors      = vectorChecks(model)
+  const allDefs      = [...colDefs, ...points.cols, ...enumChecks, ...points.checks, ...vectors, ...constraints]
 
   const strictClause = strict ? ' STRICT' : ''
   const body = allDefs.join(',\n')

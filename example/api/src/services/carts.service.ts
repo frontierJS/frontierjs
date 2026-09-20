@@ -2,28 +2,29 @@ import { createBaseService, $ } from '@frontierjs/junction'
 import { hold, release, consume, heldUntil, levelsFor, HOLD_MINUTES } from '../domain/shop'
 import { priceBasket, contextFor, discountByCode, discountProblem } from '../domain/shop'
 import type { CustomField } from '../domain/shop/custom-fields.ts'
-import { checkoutCodeFor } from '../domain/shop'
+import { checkoutCodeFor, mintCartGrant } from '../domain/shop'
 import { postJournal, saleJournal } from '../domain/ledger.ts'
 
 // The basket. Its ACCESS is entirely in db/schema.lite — `@@allow('read',
-// token == auth().cartToken)` on both models — so nothing in this file checks
+// id == auth().cartId)` on both models — so nothing in this file checks
 // who is calling. What it adds is the three things a policy cannot express:
 // minting a basket, adding to it at the price the shopper is being shown, and
 // turning it into an order.
 //
 // ─── Why the token is answered ONCE ───────────────────────────────────────
 //
-// `Cart.token` is `@guarded`, so it is stripped from every response — which is
-// the point: the only way to hold one is to have been given it. `open` is the
-// one method that gives it, and it is a custom method rather than `create` for
-// exactly that reason, since a CRUD create would answer the row and the row no
-// longer carries the secret.
+// There is no column to read it back from: `CartGrant` holds the DIGEST of a
+// token and nothing holds the token, so a method that wanted to re-answer one
+// could not. `open` mints a grant and answers it, and `redeem` mints a SECOND
+// grant for the same basket — which is the difference a row makes over a
+// column, since the other origin gets its own way in rather than a copy of the
+// first one's secret.
 
 /** How long a handoff code is good for. Long enough to click a link, short
  *  enough that a leaked URL is worth almost nothing. */
 const HANDOFF_MINUTES = 2
 
-type CartRow  = { id: number, token: string, status: string, discountId?: number | null, shippingMethodId?: number | null }
+type CartRow  = { id: number, status: string, discountId?: number | null, shippingMethodId?: number | null }
 type LineRow  = { id: number, variantId: number, quantity: number, unitPrice: number }
 type Variant  = { id: number, price: number, stock: number, active: boolean, sku: string }
 
@@ -150,7 +151,11 @@ export function createCartsService() {
      */
     async open() {
       const cart = await sys().cart.create({ data: {} }) as CartRow
-      return { ...await view(cart), token: cart.token }
+      // The grant is minted here and its token answered once. The row holds a
+      // digest, so there is no second chance to read it — which is the same
+      // promise `@guarded` used to make about the column, kept by not storing
+      // the secret at all.
+      return { ...await view(cart), token: await mintCartGrant(sys(), cart.id) }
     },
 
     /** The basket and its lines. Both reads go through the CALLER's client, so
@@ -203,7 +208,6 @@ export function createCartsService() {
         await $.db.cartLine.create({ data: {
           cartId:    cart.id,
           variantId: variant.id,
-          token:     await tokenOf(cart.id),
           quantity:  wanted,
           // @system — the application sets the price, never the caller. Named
           // on the write so the gate, the row policies and the audit actor all
@@ -417,17 +421,18 @@ export function createCartsService() {
 
       // Built through the SYSTEM client, and this is the one call where that is
       // right. Every other method here reads lines through the caller's own
-      // client so `@@allow('read', token == auth().cartToken)` does the work —
+      // client so `@@allow('read', cartId == auth().cartId)` does the work —
       // and the caller redeeming a code holds no claim yet, because the claim
       // rides a header on the NEXT request. Reading as the caller answers a
       // basket with `lines: []` and `count: 0`: a wrong policy is an empty
       // screen, not an error, and this one arrives as a shopper who followed a
       // checkout link to an empty basket.
       //
-      // The proof is the code: single use, two minutes, issued to whoever was
-      // already holding this basket. That is the same evidence the token would
-      // have been.
-      return { ...await view(cart, system), token: cart.token }
+      // A NEW grant rather than the old token, which the shop could not answer
+      // if it wanted to. The proof it is owed to this caller is the code:
+      // single use, two minutes, issued to whoever was already holding this
+      // basket — the same evidence the token would have been.
+      return { ...await view(cart, system), token: await mintCartGrant(system, cart.id) }
     },
 
     /**
@@ -686,13 +691,6 @@ async function open$(): Promise<CartRow> {
   return cart
 }
 
-/** The token, which no response carries — `@guarded` strips it from the
- *  caller's own read, so writing a line's copy has to ask the system client. */
-async function tokenOf(cartId: number): Promise<string> {
-  const row = await sys().cart.findFirst({ where: { id: cartId } }) as CartRow
-  return row.token
-}
-
 /**
  * The whole basket, as every method here answers it.
  *
@@ -701,8 +699,8 @@ async function tokenOf(cartId: number): Promise<string> {
  * total are on it for the same reason the line total is: a header badge and a
  * checkout button must not each do their own arithmetic.
  *
- * `token` is absent and cannot be otherwise — the column is `@guarded`, so the
- * caller's own read strips it. `open` is the one method that puts it back.
+ * `token` is absent and cannot be otherwise — there is no column holding one.
+ * `open` and `redeem` are the two methods that mint a grant and answer it.
  */
 async function view(cart: CartRow, client: Record<string, any> = $.db) {
   const lines = await linesOf(cart.id, client)
@@ -756,7 +754,7 @@ async function view(cart: CartRow, client: Record<string, any> = $.db) {
  * CALLER's client like everything else here. That works for a stranger because
  * the catalog reads at level 0: `Product` and `ProductVariant` are
  * `@@gate("0.4.4.5")`, so a guest may read them and may not write them. The
- * line itself is reached by the token policy.
+ * line itself is reached by the basket's own policy — `cartId == auth().cartId`.
  *
  * The image is the product's FIRST photograph rather than the variant's own,
  * which is a deliberate simplification: a colorway usually has one and a
@@ -774,13 +772,7 @@ async function linesOf(cartId: number, client: Record<string, any> = $.db): Prom
   // the NUMBER is theirs to know and the ROWS are not.
   const levels = await levelsFor(sys(), lines.map(l => l.variantId), { exceptCartId: cartId })
 
-  // `token` is dropped rather than carried. It is the caller's own — the
-  // policy is what let them read the row at all — so this is not a leak; it is
-  // that a response should not repeat back a secret nobody asked it for.
-  // `CartLine.token` cannot be `@guarded` the way `Cart.token` is: a guard
-  // locks BOTH directions, and the guest writing their own line is refused by
-  // it. The create policy is the protection instead.
-  return lines.map(({ variant, token: _token, ...line }) => {
+  return lines.map(({ variant, ...line }) => {
     const product = variant?.product ?? {}
     const photo   = (product.images ?? [])
       .slice()

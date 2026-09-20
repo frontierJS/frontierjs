@@ -4084,12 +4084,12 @@ async function cmdTypes(outArg, cfg) {
 
   console.log(`  ${green('✓')}  ${rel(outPath)}  ${dim(`(${(size/1024).toFixed(1)}kb)`)}`)
   console.log(`  ${dim(`${models} model${models!==1?'s':''}, ${enums} enum${enums!==1?'s':''}, audience=${audience}`)}`)
-  console.log()
-  console.log(`  ${dim('--out=<path>')}              ${dim('default: schema path + .d.ts')}`)
-  console.log(`  ${dim('--stdout')}                  ${dim('print to stdout instead of writing a file')}`)
-  console.log(`  ${dim('--audience=client|system')}  ${dim('client strips @guarded/@secret  (default: client)')}`)
-  console.log(`  ${dim('--augment=junction')}        ${dim('also type client.service(name) in the browser')}`)
-  console.log()
+  hints([
+    `  ${dim('--out=<path>')}              ${dim('default: schema path + .d.ts')}`,
+    `  ${dim('--stdout')}                  ${dim('print to stdout instead of writing a file')}`,
+    `  ${dim('--audience=client|system')}  ${dim('client strips @guarded/@secret  (default: client)')}`,
+    `  ${dim('--augment=junction')}        ${dim('also type client.service(name) in the browser')}`,
+  ])
 }
 
 async function cmdJsonSchema(cfg) {
@@ -4168,14 +4168,30 @@ async function cmdJsonSchema(cfg) {
     console.log(`  ${dim(`${models} model${models!==1?'s':''}, ${enums} enum${enums!==1?'s':''}, mode=${mode}, format=${format}`)}`)
   }
 
+  hints([
+    `  ${dim('--out=<path>')}               ${dim('default: schema path + .json')}`,
+    `  ${dim('--stdout')}                   ${dim('print to stdout instead of writing a file')}`,
+    `  ${dim('--mode=create|update|full')}  ${dim('(default: create)')}`,
+    `  ${dim('--all-modes')}                ${dim('generate create + update + full')}`,
+    `  ${dim('--format=definitions|flat')}  ${dim('(default: definitions)')}`,
+    `  ${dim('--include-timestamps')}       ${dim('include createdAt/updatedAt')}`,
+    `  ${dim('--include-deleted-at')}       ${dim('include deletedAt')}`,
+  ])
+}
+
+// ─── hints — the "what else you can pass" block under a command's result ────
+//
+// TTY only. These are written for somebody who just typed the command and is
+// reading the answer; a composing caller (`fli new` runs six commands that each
+// end in one of these) gets a wall of flags for commands it ran on the user's
+// behalf, and the lines that mattered scroll off the top.
+//
+// `process.stdout.isTTY` rather than a flag: the question is whether a person
+// is reading this, which is the same question the color subset already asks.
+function hints(lines) {
+  if (!process.stdout.isTTY) return
   console.log()
-  console.log(`  ${dim('--out=<path>')}               ${dim('default: schema path + .json')}`)
-  console.log(`  ${dim('--stdout')}                   ${dim('print to stdout instead of writing a file')}`)
-  console.log(`  ${dim('--mode=create|update|full')}  ${dim('(default: create)')}`)
-  console.log(`  ${dim('--all-modes')}                ${dim('generate create + update + full')}`)
-  console.log(`  ${dim('--format=definitions|flat')}  ${dim('(default: definitions)')}`)
-  console.log(`  ${dim('--include-timestamps')}       ${dim('include createdAt/updatedAt')}`)
-  console.log(`  ${dim('--include-deleted-at')}       ${dim('include deletedAt')}`)
+  for (const l of lines) console.log(l)
   console.log()
 }
 
@@ -4646,13 +4662,13 @@ async function cmdAccess(cfg) {
   if (counts.unrestricted)
     console.log(`  ${yellow('!')}  ${counts.unrestricted} model${counts.unrestricted!==1?'s':''} declare neither @@gate nor @@allow — every caller reaches every row`)
 
-  console.log()
-  console.log(`  ${dim('--check')}          ${dim('exit 1 if the committed snapshot is stale (CI)')}`)
-  console.log(`  ${dim('--from=<ref>')}     ${dim('what moved since that release — widens, narrows or undecidable')}`)
-  console.log(`  ${dim('--json')}           ${dim('the structured table instead of the markdown')}`)
-  console.log(`  ${dim('--stdout')}         ${dim('print instead of writing a file')}`)
-  console.log(`  ${dim('--out=<path>')}     ${dim('default: access.snapshot.md beside the schema')}`)
-  console.log()
+  hints([
+    `  ${dim('--check')}          ${dim('exit 1 if the committed snapshot is stale (CI)')}`,
+    `  ${dim('--from=<ref>')}     ${dim('what moved since that release — widens, narrows or undecidable')}`,
+    `  ${dim('--json')}           ${dim('the structured table instead of the markdown')}`,
+    `  ${dim('--stdout')}         ${dim('print instead of writing a file')}`,
+    `  ${dim('--out=<path>')}     ${dim('default: access.snapshot.md beside the schema')}`,
+  ])
 }
 
 // ─── the permission diff ─────────────────────────────────────────────────────
@@ -4817,9 +4833,10 @@ async function cmdAccessDiff(cfg, from, { asJson, strict }) {
     }
     console.log()
   }
-  console.log(`  ${dim('--strict')}  ${dim('exit 1 unless the verdict is narrows, new or unchanged (CI)')}`)
-  console.log(`  ${dim('--json')}    ${dim('the diff as data')}`)
-  console.log()
+  hints([
+    `  ${dim('--strict')}  ${dim('exit 1 unless the verdict is narrows, new or unchanged (CI)')}`,
+    `  ${dim('--json')}    ${dim('the diff as data')}`,
+  ])
 
   if (strict && !ACCESS_STRICT_OK.has(result.verdict)) process.exit(1)
 }
@@ -4878,12 +4895,12 @@ async function cmdDdl(cfg) {
 
   console.log(`  ${green('✓')}  ${rel(outPath)}  ${dim(`(${(size/1024).toFixed(1)}kb)`)}`)
   console.log(`  ${dim(summary)}`)
-  console.log()
-  console.log(`  ${dim('--check')}       ${dim('exit 1 if the committed snapshot is stale (CI)')}`)
-  console.log(`  ${dim('--stdout')}      ${dim('print instead of writing a file')}`)
-  console.log(`  ${dim('--pluralize')}   ${dim('pluralized table names (default: from config)')}`)
-  console.log(`  ${dim('--out=<path>')}  ${dim('default: ddl.snapshot.sql beside the schema')}`)
-  console.log()
+  hints([
+    `  ${dim('--check')}       ${dim('exit 1 if the committed snapshot is stale (CI)')}`,
+    `  ${dim('--stdout')}      ${dim('print instead of writing a file')}`,
+    `  ${dim('--pluralize')}   ${dim('pluralized table names (default: from config)')}`,
+    `  ${dim('--out=<path>')}  ${dim('default: ddl.snapshot.sql beside the schema')}`,
+  ])
 }
 
 
@@ -4991,11 +5008,12 @@ async function cmdRelease(cfg) {
   if (result.verdict !== 'unchanged' && result.verdict !== 'expand')
     console.log(`  ${dim('A contract deploy is one that cannot be taken back. Split it, or cross the pivot knowingly.')}\n`)
 
-  console.log(`  ${dim('--from=<ref|path>')}  ${dim('classify against another release (default: HEAD)')}`)
-  console.log(`  ${dim('--strict')}           ${dim('exit 1 unless the verdict is expand or unchanged (CI)')}`)
-  console.log(`  ${dim('--check')}            ${dim('exit 1 if the committed snapshot is stale (CI)')}`)
-  console.log(`  ${dim('--json')}             ${dim('the verdict as data, nothing written')}`)
-  console.log()
+  hints([
+    `  ${dim('--from=<ref|path>')}  ${dim('classify against another release (default: HEAD)')}`,
+    `  ${dim('--strict')}           ${dim('exit 1 unless the verdict is expand or unchanged (CI)')}`,
+    `  ${dim('--check')}            ${dim('exit 1 if the committed snapshot is stale (CI)')}`,
+    `  ${dim('--json')}             ${dim('the verdict as data, nothing written')}`,
+  ])
 
   if (strict && result.verdict !== 'expand' && result.verdict !== 'unchanged') process.exit(1)
 }
@@ -5378,9 +5396,9 @@ async function cmdMutate(cfg) {
     console.log(`  ${dim('policy (checked by evalJs alone, so nothing independent can grade it).')}`)
   }
 
-  console.log()
-  console.log(`  ${dim('--kinds=<a,b>')}  ${dim(`narrow: ${[...new Set(all.map(m => m.kind))].join(', ')}`)}`)
-  console.log()
+  hints([
+    `  ${dim('--kinds=<a,b>')}  ${dim(`narrow: ${[...new Set(all.map(m => m.kind))].join(', ')}`)}`,
+  ])
 }
 
 

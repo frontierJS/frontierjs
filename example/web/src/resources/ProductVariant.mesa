@@ -13,5 +13,21 @@
 
   import { createResource } from '@frontierjs/sierra/junction'
 
-  export const productVariants = createResource('product-variants', { model: 'ProductVariant' })
+  // ─── offlineQuery — and it is a FOREIGN KEY that makes it required ────────
+  //
+  // `ProductVariant` declares `@@sync(field)`, which puts it in the schema the
+  // device gets — and `InventoryMovement`, which the stockroom already
+  // hydrates, has a relation to it. Before the policy the device held no
+  // variant table at all, so that column was an inert number; with the table
+  // there the constraint is real, and hydrating movements against an empty
+  // variants table fails the whole batch with a FOREIGN KEY error the screen
+  // never sees.
+  //
+  // So this is warmed too, and **it is imported BEFORE the movements in
+  // `main.js`**: the warm walks the declarations in the order they registered,
+  // so on a device that order is the order the tables fill.
+  export const productVariants = createResource('product-variants', {
+    model:        'ProductVariant',
+    offlineQuery: { directives: { limit: 200, orderBy: '-id' } },
+  })
 </script>

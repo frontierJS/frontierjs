@@ -19,6 +19,7 @@ title: App
   import { apps } from '../../../resources/App.mesa'
   import { domains } from '../../../resources/Domain.mesa'
   import { servers } from '../../../resources/Server.mesa'
+  import { deployments } from '../../../resources/Deployment.mesa'
   import { at } from '../../../datetime.js'
 
   import NoRecord from '../../../components/NoRecord.mesa'
@@ -51,6 +52,12 @@ title: App
   let certDraft = { certPem: '', keyPem: '', expiresAt: '' }
   let fleet     = []                 // the workspace's machines, for the placement select
   let placeOn   = ''
+  // Declared up here with the rest of the screen's state and not beside the
+  // functions that use them: `watchApp` subscribes on the first load and the
+  // callback seeds the draft, which runs before anything further down the
+  // module body has been evaluated.
+  let files       = []
+  let sourceDirty = false
 
   function write(name, value) { draft = { ...draft, [name]: value } }
   function writeCert(name, value) { certDraft = { ...certDraft, [name]: value } }
@@ -69,7 +76,7 @@ title: App
     if (appRow && String(appRow.id) === String(id)) return appRow.refresh()
     unwatch?.(); appRow?.release()
     appRow = apps.record(id, { composed: true })
-    unwatch = appRow.subscribe(v => { app = v })
+    unwatch = appRow.subscribe(v => { app = v; seedFiles(v) })
     return appRow.ready
   }
 
@@ -213,6 +220,87 @@ title: App
     }
   }
 
+  // ─── The pasted source ──────────────────────────────────────────────────
+  //
+  // An app whose source is `inline` IS these files: no repository, no image, no
+  // build. The editor is the deploy surface, which is the whole point of the
+  // kind — an HTML page that pulls its libraries off a CDN is a running app the
+  // moment somebody presses the button.
+  //
+  // Nothing here validates. The size caps, the path shapes and the missing
+  // entry point are all the service's answer, said in a sentence this screen
+  // shows — a second copy of those rules in the browser is a second place to
+  // change them and the one that is wrong is never the one that refuses.
+  const STARTER = `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>New app</title>
+  </head>
+  <body>
+    <h1>Hello</h1>
+    <p>Edit this file, press Save and deploy, and it is live.</p>
+  </body>
+</html>
+`
+
+  const isInline = () => app?.source?.kind === 'inline'
+  // A static app with nothing in it yet is offered the editor too: the kind is
+  // what somebody is about to choose, and a screen that hides the box until the
+  // source already exists has no way of ever creating one.
+  const canPaste = () => isInline() || (app?.type === 'static' && !app?.source?.kind)
+
+  /** Seed the draft from the row — but NEVER over something being typed. The
+   *  record is live, so a push from anybody's write re-enters `load()`, and a
+   *  re-seed there would empty the editor under the person using it. */
+  function seedFiles(row) {
+    if (sourceDirty) return
+    files = (row?.source?.files ?? []).map(f => ({ path: f.path, content: f.content ?? '' }))
+  }
+
+  function editFile(i, key, value) {
+    files = files.map((f, n) => (n === i ? { ...f, [key]: value } : f))
+    sourceDirty = true
+  }
+  function addFile(path = '', content = '') {
+    files = [...files, { path, content }]
+    sourceDirty = true
+  }
+  function dropFile(i) {
+    files = files.filter((_, n) => n !== i)
+    sourceDirty = true
+  }
+
+  /**
+   * Save, and optionally ship.
+   *
+   * Two calls rather than one, and the order is what makes the failure legible:
+   * the source is written first, so a deploy refused for want of a machine
+   * leaves the edit saved and the button ready — where one combined call would
+   * have to choose between losing the typing and shipping something nobody
+   * asked to ship.
+   */
+  async function saveSource({ deploy } = {}) {
+    error = null; busy = deploy ? 'deploy' : 'save'
+    try {
+      app = await apps.service.patch(app.id, { source: { kind: 'inline', files } })
+      sourceDirty = false
+      if (!deploy) { toasts.success('Source saved'); return }
+
+      const release = await deployments.service.create({ appId: app.id })
+      toasts.success('Deploying')
+      goto(`/deployments/${release.id}/`)
+    } catch (e) {
+      // The service's own sentence: which file, which limit, or which machine
+      // is missing. A generic failure here is a person reading their own HTML
+      // trying to work out what a console did not like about it.
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
   const STATUS_TONE = {
     running: 'success', deploying: 'info', starting: 'info',
     error: 'danger', stopped: 'muted', unknown: 'muted', stopping: 'warning',
@@ -225,7 +313,7 @@ title: App
   }
 
   // Only the tabs with something behind them. See the note at the foot.
-  const TABS = ['overview', 'domains', 'config', 'releases', 'logs']
+  const TABS = ['overview', 'domains', 'source', 'config', 'releases', 'logs']
   const APP_RELEASES_COLUMNS = [
     { name: 'queued',  label: 'Queued' },
     { name: 'status',  label: 'Status' },
@@ -420,6 +508,78 @@ title: App
           </Card>
         {/each}
       </div>
+    {/if}
+  {/if}
+
+  {#if tab === 'source'}
+    {#if canPaste()}
+      <Card>
+        <div class="section-header">
+          <h2 class="h4">Files</h2>
+          <span class="cluster">
+            {#if sourceDirty}<Badge tone="warning" id="app-source-dirty">unsaved</Badge>{/if}
+            <Button variant="ghost" onclick={() => addFile()} id="app-source-add">Add file</Button>
+          </span>
+        </div>
+        <p class="text-sm text-muted">
+          These files are the app. There is no build step — a page that loads its libraries from a
+          CDN runs as it is written. <code>index.html</code> is what the address serves.
+        </p>
+
+        {#if !files.length}
+          <!-- The action is a SNIPPET: <EmptyState> renders `title`,
+               `description` and `action` and drops anything else between its
+               tags, so a button written as a child is a dead end with no way
+               out of it. -->
+          <EmptyState title="Nothing pasted yet" id="app-source-empty"
+                      description="Start from a blank page, or add a file and paste into it.">
+            {#snippet action()}
+              <Button onclick={() => addFile('index.html', STARTER)} id="app-source-starter">
+                Start from a blank page
+              </Button>
+            {/snippet}
+          </EmptyState>
+        {/if}
+
+        {#each files as f, i}
+          <div class="stack" id={`app-source-file-${i}`}>
+            <div class="cluster">
+              <Input label="Path" value={f.path} id={`app-source-path-${i}`}
+                     oninput={e => editFile(i, 'path', e.target.value)} />
+              <Button variant="ghost" tone="danger" onclick={() => dropFile(i)}
+                      id={`app-source-drop-${i}`}>Remove</Button>
+            </div>
+            <Textarea label="Contents" rows={18} value={f.content} id={`app-source-body-${i}`}
+                      oninput={e => editFile(i, 'content', e.target.value)} />
+          </div>
+        {/each}
+
+        <div class="cluster">
+          <Button onclick={() => saveSource({ deploy: true })} disabled={busy || !files.length}
+                  id="app-source-deploy">
+            {busy === 'deploy' ? 'Deploying…' : 'Save and deploy'}
+          </Button>
+          <Button variant="outlined" onclick={() => saveSource()} disabled={busy || !files.length}
+                  id="app-source-save">
+            {busy === 'save' ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+      </Card>
+
+      {#if !app.domains?.length}
+        <!-- Where it answers before anybody has pointed a name at it. The exact
+             address is written into the release's Activate step by the machine
+             that served it, because this console cannot see how that box is
+             reached from outside. -->
+        <Callout tone="info" title="It answers on its own address">
+          With no domain pointed at it, the machine serves this app under the label
+          <code>{app.slug}</code>. The release page names the full address — it is what the
+          machine reported when it went live.
+        </Callout>
+      {/if}
+    {:else}
+      <EmptyState title="This app is built, not pasted" id="app-source-not-inline"
+                  description={`Its source is ${app.source?.kind ?? 'a repository or an image'}, so what ships is decided by a build rather than by an editor. The Config tab shows what it was pointed at.`} />
     {/if}
   {/if}
 

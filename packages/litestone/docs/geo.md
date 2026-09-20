@@ -149,10 +149,10 @@ by name rather than guessed at, and so is `'5 parsecs'`.
 
 **The ordering is the query's, not the page's** (`FJS-D321`). A list sorted
 after it was selected is the wrong twenty rows the moment there is a second
-page. `{ site: { near: centre, dir: 'desc' } }` is furthest first.
+page. `{ site: { near: center, dir: 'desc' } }` is furthest first.
 
 **The distance does not come back on the row** (`FJS-D320`). The row carries its
-point and the caller knows the centre, so `distance(row.site, centre)` from the
+point and the caller knows the center, so `distance(row.site, center)` from the
 kit answers *2.3 mi away* with no server contract at all.
 
 Everything else on a point field is refused by name: `equals`, `contains` and

@@ -75,6 +75,47 @@ describe('actorType grades the principal it was handed', () => {
     expect(row.actorType).toBeNull()
   })
 
+  test('a bearer names the GRANT as its actor, and what it was for as the subject', async () => {
+    // A bearer principal carries no id — that is what keeps the gate at
+    // STRANGER(0) — so without the provenance closure the write is filed under
+    // nobody, and *which link did this* is unanswerable after a revocation
+    // (`FJS-D342`). The grant travels the same way an operator does, because
+    // neither is on the principal.
+    const dir = mkdtempSync(join(tmpdir(), 'fjs-actor-'))
+    try {
+      const db: any = await createClient({ schema: SCHEMA(dir), resolveFrom: dir })
+      db.$logContext(() => ({ bearerId: 'link-7', bearerSubject: 'client-3' }))
+      await db.$setAuth({ portalClientId: 'client-3' }).thing.create({ data: { name: 'x' } })
+      await tick()
+      const row = (await db.asSystem().auditLogs.findMany({}))[0]
+      db.$close()
+
+      expect(row.actorType).toBe('bearer')
+      expect(row.actorId).toBe('link-7')
+      expect(row.subjectId).toBe('client-3')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  test('an operator still wins over a bearer, and keeps the principal as subject', async () => {
+    // The negative control for the row above. Both arrive down one closure, so
+    // a reader that took whichever it saw first would file a support write
+    // against a link id — and support mode is the feature whose whole point is
+    // that the trail names the person who acted.
+    const dir = mkdtempSync(join(tmpdir(), 'fjs-actor-'))
+    try {
+      const db: any = await createClient({ schema: SCHEMA(dir), resolveFrom: dir })
+      db.$logContext(() => ({ operatorId: 'op-9', episodeId: 'ep-1', bearerId: 'link-7', bearerSubject: 'client-3' }))
+      await db.$setAuth({ id: 'subject-1', type: 'user' }).thing.create({ data: { name: 'x' } })
+      await tick()
+      const row = (await db.asSystem().auditLogs.findMany({}))[0]
+      db.$close()
+
+      expect(row.actorId).toBe('op-9')
+      expect(row.actorType).toBe('support')
+      expect(row.subjectId).toBe('subject-1')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
   test('a principal that states its own type keeps it', async () => {
     // Declared beats derived: an app whose callers are machines says so, and
     // an id is present here, so the derivation would have answered 'user'.

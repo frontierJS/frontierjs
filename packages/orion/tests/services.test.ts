@@ -358,6 +358,35 @@ describe("flowCredentials", () => {
   })
 })
 
+// ─── the node catalog ────────────────────────────────────────────────────────
+
+describe("the node catalog a screen builds a form from", () => {
+  test("it is the REGISTRY's, so a host's plugin node is in it with its schema", async () => {
+    const answer = await call(TOKEN.user, "/flows", "nodeTypes")
+    expect(answer.status).toBe(200)
+    const types = (answer.body as any).data ?? answer.body
+    const byType = new Map(types.map((t: any) => [t.type, t]))
+
+    // Every built-in, and the suite's contributed node beside them. The second
+    // is what makes this a catalog rather than an import: `test.count` exists
+    // only because this app registered it, and a screen that read
+    // `BUILTIN_DESCRIPTORS` could not see it.
+    expect(byType.has("trigger.webhook")).toBe(true)
+    expect(byType.has("model.create")).toBe(true)
+    expect(byType.has("test.count")).toBe(true)
+
+    // The schema is what the form is built from, so it has to survive the wire.
+    expect(byType.get("trigger.cron")).toMatchObject({
+      label:        "Cron",
+      configSchema: { properties: { expression: { type: "string" } }, required: ["expression"] },
+    })
+  })
+
+  test("a stranger is refused, like every other method here", async () => {
+    expect((await http().post("/flows").set("X-Service-Method", "nodeTypes").send({})).status).toBe(401)
+  })
+})
+
 // ─── the done-when ───────────────────────────────────────────────────────────
 
 describe("transport parity", () => {
@@ -381,6 +410,7 @@ describe("transport parity", () => {
         { service: "flows", method: "get",        id: flowId },
         { service: "flows", method: "patch",      id: flowId, data: { description: "edited" } },
         { service: "flows", method: "versions",   id: flowId },
+        { service: "flows", method: "nodeTypes" },
         { service: "flows", method: "export",     id: flowId },
         { service: "flows", method: "layout",     id: flowId },
         { service: "flows", method: "saveLayout", id: flowId, data: { layout: { a: { x: 1 } } } },

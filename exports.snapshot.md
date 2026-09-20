@@ -286,6 +286,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `.` | `src/index.js` | yes |
 | exports | `./server` | `src/server.js` | yes |
 | exports | `./docker` | `src/docker.js` | yes |
+| exports | `./static` | `src/static.js` | yes |
+| exports | `./serve` | `src/serve.js` | yes |
 | exports | `./vitals` | `src/vitals.js` | yes |
 | bin | `outpost` | `src/index.js` | yes |
 
@@ -333,6 +335,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
+| exports | `./bearer (types)` | `src/bearer/bearer.d.ts` | yes |
+| exports | `./bearer (default)` | `src/bearer/bearer.js` | yes |
 | exports | `./cron (types)` | `src/cron/cron.d.ts` | yes |
 | exports | `./cron (default)` | `src/cron/cron.js` | yes |
 | exports | `./datetime (types)` | `src/datetime/datetime.d.ts` | yes |

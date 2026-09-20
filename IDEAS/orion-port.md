@@ -552,6 +552,38 @@ question 24 ruled (`FJS-D295`: the owner or an administrator) and is closed.
 
 ## Open questions
 
+- **25 — Should `signedIn()` declare a gate at all, when it states the model's own read gate a second time?**
+  Every custom method on `flows` and `runs` is declared at `LEVELS.USER`, and
+  `Flow`'s `@@gate("4.4.4.5")` already reads at 4 — which is the floor junction
+  applies to a method nobody graded (`FJS-826`). The two agree today and nothing
+  holds them together, so question 26 moving the read gate would leave the
+  custom methods at 4 in silence.
+  - **A** — drop the gate and keep the bare method names, so the surface is still
+    narrowed and the floor is the one statement of the level.
+  - **B** — keep the declaration and add a test asserting it equals the model's
+    read gate, so a divergence is loud rather than silent.
+  - **C** — keep it as written: an explicit refusal for a stranger is worth one
+    restatement.
+  - **Recommend A** — the floor is derived from the gate, so the declaration is a
+    second origin for a number that already has one, and the comment defending it
+    describes what the floor already does. B buys the same safety by adding a test
+    to hold two things equal that need not be two.
+
+- **26 — Should a flow be READABLE below the level that edits it?**
+  `Flow` and `FlowLayout` read at 4 and `FJS-D295` admits the owner or an
+  administrator. A workspace member below 4 — a viewer, a restricted member —
+  cannot see that an automation exists at all, so a failed release pages a
+  channel they watch and the flow behind it is invisible to them.
+  - **A** — leave it at 4. A flow is an editor's object and a run is where
+    everyone else looks.
+  - **B** — read at 3, keeping create/update/delete where they are, so a
+    restricted member can open a flow and read its definition.
+  - **C** — read at 3 for `Flow` and leave `FlowLayout` at 4, since a canvas
+    position is an editing artefact.
+  - **Recommend A** — for now: `Run` already reads at 4 through its own policy, so
+    B would show a viewer the flow and not its history, which is the half they
+    actually want; revisit once somebody asks for it against a real host.
+
 - ~~**1 — Package or application?**~~ **Answered 2026-09-14 (`FJS-D269`): B — a package installed into an app, in auth's shape: `.lite` models, a Junction plugin, the engine inside.** `FJS-D14` calls orion an application beside
   basecamp.
   - **A** — an application: its own `db/`, `api/`, `web/`, reaching other apps

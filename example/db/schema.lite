@@ -121,14 +121,14 @@ database audit {
 // a FORM edits and nothing else writes. Two people on one both PATCH, and
 // without the column the second silently erases the first.
 //
-// The rest are left out on purpose, because @version is per ROW and not per
-// column: where two writers touch DISJOINT columns it reports a conflict about a
-// change nobody made, and a 409 nobody can act on teaches everyone to retry
-// blindly.
+// ProductVariant now carries one too, and it is the case that USED to be the
+// argument against: @version is per ROW, so where two writers touch disjoint
+// columns it reports a conflict about a change nobody made. `@@sync(field)` is
+// what answers that — the revision says the row moved and the per-column
+// comparison says whether the two writers actually contended — so the column
+// buys the protection without the false refusal.
 //
-//   ProductVariant     a person edits the price; every sale, delivery and
-//                      stocktake writes `stock`. Those two never collide, and
-//                      the column would say that they had
+// The rest are still left out, for the same reason stated the same way.
 //   Order              @@transitions(status, …) is already a compare-and-swap on
 //                      the one column two writers contend for, and it refuses BY
 //                      NAME; `trackingCode` is written by the courier job.
@@ -204,11 +204,15 @@ extend model Flow {
 
 // A claim a caller with NO SESSION holds, resolved per request off a declared
 // header. It is on no row, so `@@auth User` cannot name it, and `Cart`'s
-// `@@allow('read', token == auth().cartToken)` is a policy over it. Declared
-// here rather than only at `createClient` because a tool that has the schema
-// and not the app — `fli studio`, `litestone tinker` — grades the same names
-// the app does (`FJS-772`). The VALUE is still the app's, per request.
-claim cartToken
+// `@@allow('read', id == auth().cartId)` is a policy over it. Declared here
+// rather than only at `createClient` because a tool that has the schema and not
+// the app — `fli studio`, `litestone tinker` — grades the same names the app
+// does (`FJS-772`). The VALUE is still the app's, per request.
+//
+// It is an ID and not the token itself (`FJS-D343`): `bearerClaim` reads the
+// grant row and emits what it was FOR, so the shopper's secret stops at the
+// resolver and this schema never names it.
+claim cartId
 
 model Product {
   id   Int    @id
@@ -432,6 +436,13 @@ model ProductVariant {
   /// would be a cached answer with nothing to invalidate it. `api/inventory.ts`
   /// is the one place it is computed and the one place this column is written.
   stock         Int                  @default(0) @gte(0)
+
+  /// Two people write this row and they write different columns: a person edits
+  /// the price, and every sale, delivery and stocktake writes `stock`. That is
+  /// what `@@sync(field)` below is for — see the @version note at the top of
+  /// this file, which named this model as the case a row-wide revision gets
+  /// wrong.
+  version       Int                  @version
   
   active        Boolean              @default(true)
   createdAt     DateTime             @default(now())
@@ -463,6 +474,14 @@ model ProductVariant {
   /// the index holds live active rows and the caller's query — which litestone
   /// narrows to live rows for them — matches it exactly.
   @@index([productId], where: active == true)
+
+  /// The one model here where two offline writers touch one row and touch
+  /// DIFFERENT columns — which is the whole of `field`. A supervisor correcting
+  /// a price in the stockroom and a count landing on `stock` are not a conflict
+  /// and a row-wide revision cannot say so; per column, both of them win, and
+  /// only two people moving the same column is a question a person has to
+  /// answer. Needs `@version`, which is above.
+  @@sync(field)
   
   /// `(cascade)` reaches the photographs of THIS colorway and nothing else — a
   /// flat-lay of the whole range names no variant, so its foreign key is null
@@ -930,6 +949,55 @@ model Discount {
 
   @@gate("5.5.5.5")
   @@log(audit)
+}
+
+/// A place a customer collects an order from, and the one model in this shop
+/// whose rows are found by WHERE THEY ARE.
+///
+/// The `Collect` shipping method existed with nowhere to collect from, which is
+/// what this is: a shop with branches, a storefront that asks *which one is
+/// near me*, and a staff screen that puts one on the map by typing two numbers.
+///
+/// `site Json @point(lat, lng)` is the whole declaration. It emits two REAL
+/// generated columns over `json_extract`, a composite index on the pair, and a
+/// `CHECK` that refuses a half-set coordinate and an out-of-range one — so a
+/// migration, a seed and `asSystem()` are all held to it, none of which reaches
+/// a validator. `near` is the only filter it answers and distance the only
+/// ordering; every other operator is refused by name, because the column holds
+/// JSON and JSON compares as text.
+///
+/// Readable at 0 for `ShippingMethod`'s reason and one degree sharper: a
+/// storefront asks this question with no session at all, and a shop's own
+/// address is public by the time it is printed on the door. `@point` warns
+/// about an ungated coordinate only where the model reads above STRANGER —
+/// a residential address would be that model, and this is not one
+/// (`FJS-D322`).
+model PickupPoint {
+  id       Int      @id
+  
+  name     String   @length(1, 60) @unique @label("Branch")
+  address  String   @length(1, 160) @label("Address")
+  
+  /// Where it is. One field, written and read whole — `{ lat, lng }` — so a
+  /// screen cannot save half of it and a read cannot return half of it.
+  ///
+  /// Nullable because a branch that has been opened and not yet located is an
+  /// ordinary state, and the alternative is a row nobody can create until
+  /// somebody has looked up a coordinate. It is simply in no circle until it
+  /// has one, and it sorts LAST in a nearest-first list rather than first,
+  /// which is what a NULL distance would otherwise do.
+  site     Json?    @point(lat, lng) @label("Location")
+  
+  /// Opening hours as a sentence, not a schedule. This shop has no model for
+  /// one and inventing a second date-shaped thing here would be a feature
+  /// nothing on screen asks for.
+  hours    String?  @length(0, 80) @label("Hours")
+  
+  active   Boolean  @default(true) @label("Active")
+  
+  version  Int      @version
+  
+  @@gate("0.5.5.5")
 }
 
 /// What the shop charges to send it.
@@ -2060,17 +2128,22 @@ enum CartStatus { open ordered abandoned }
 /// must not be a service reading through `asSystem()`, because access is
 /// declared in the schema and not in hooks (Invariant 6).
 ///
-/// So the owner is a BEARER TOKEN, and `api/cart-claim.ts` turns the header
-/// carrying it into a claim on the principal before the Data boundary scopes
-/// the client. `auth().cartToken` is then a claim a stranger holds, and the
-/// policies below are ordinary row policies over it.
+/// So the owner is a BEARER TOKEN — and the token is not here. `CartGrant`
+/// below holds its DIGEST, junction's `bearerClaim` reads that row off the
+/// header and puts the basket's own id on the principal, and `auth().cartId`
+/// is then a claim a stranger holds. The policies below are ordinary row
+/// policies over an id.
 ///
-/// The token is `@guarded`: the app writes it, `asSystem()` reads it, and no
-/// caller ever gets it back in a response — the browser knows it because it
-/// was handed it once, at creation, by the service that minted it.
+/// The shopper's secret therefore appears in no column of this model, no
+/// query and no log line: what crosses the Data boundary is a number the
+/// resolver already proved they hold a grant for (`FJS-D343`).
 model Cart {
-  id    Int    @id
-  token String @unique @guarded @default(cuid())
+  id Int @id
+
+  /// The grants that open this basket. Usually one; a second exists the moment
+  /// a buy button hands the basket to the shop's own origin, which is a new
+  /// grant rather than a copied secret.
+  grants CartGrant[]
 
   /// Set when a signed-in person owns the basket, null while they are a guest.
   /// Both audiences use the same policies — the token is what proves ownership
@@ -2094,7 +2167,7 @@ model Cart {
   /// reprice history.
   ///
   /// Both are `@system`. The basket's own policy lets its holder update it —
-  /// `@@allow('update', token == auth().cartToken)` — which is what makes the
+  /// `@@allow('update', id == auth().cartId)` — which is what makes the
   /// quantity stepper work without a session, and it would just as happily let
   /// them point `discountId` at any row in the table. So neither is set by a
   /// write: `carts.applyDiscount` takes a CODE and validates it, and
@@ -2140,8 +2213,8 @@ model Cart {
   /// basket is abandoned by the sweep, not removed by its holder.
   @@gate("0.0.0.5")
 
-  @@allow('read',   token == auth().cartToken)
-  @@allow('update', token == auth().cartToken)
+  @@allow('read',   id == auth().cartId)
+  @@allow('update', id == auth().cartId)
 
   /// Neither is a lookup anybody performs — a basket reaches its discount and
   /// its delivery method by primary key. Both are `SetNull`, which is the read
@@ -2149,6 +2222,43 @@ model Cart {
   /// every basket holding it, and finds them by scanning.
   @@index([discountId])
   @@index([shippingMethodId])
+}
+
+/// A way into one basket.
+///
+/// The shopper holds a token; this row holds its DIGEST, keyed on the app's own
+/// secret (`@frontierjs/toolbelt/bearer`). So a copy of this table is not a set
+/// of live baskets, and the only place the token exists is the header the
+/// browser sends.
+///
+/// Why a row rather than a column on `Cart` (`FJS-D343`): a basket handed to
+/// another origin needs a SECOND way in, and minting one here is a row rather
+/// than a shared secret — revoke it and that origin is out while the tab that
+/// started the basket is not. It is also what lets the line policy below be an
+/// ordinary foreign key instead of a copied secret.
+///
+/// No `expiresAt` and no `revokedAt`, which is a statement rather than an
+/// omission: `bearerClaim` reads those columns where a model declares them, and
+/// a basket's grant lives as long as the basket, which the sweep abandons.
+model CartGrant {
+  id Int @id
+
+  cartId Int  @label("Basket")
+  cart   Cart @relation(fields: [cartId], references: [id], onDelete: Cascade)
+
+  /// `fingerprint(token, { key, purpose })`, and never the token. `@guarded`
+  /// for the reason every stored credential is: the app writes it, `asSystem()`
+  /// reads it, and no response carries it.
+  tokenHash String @unique @guarded
+
+  createdAt DateTime @default(now())
+
+  /// Nothing below `asSystem()` touches this table. A shopper never reads
+  /// their own grant — they are holding the only half of it that matters — and
+  /// the resolver reads it through the system client before any principal
+  /// exists to be graded.
+  @@gate("8")
+  @@index([cartId])
 }
 
 /// One line. The quantity and the PRICE THE SHOPPER WAS SHOWN, which is not
@@ -2173,21 +2283,6 @@ model CartLine {
   /// the two rows disagree about how many.
   @@unique([cartId, variantId])
   
-  /// The basket's token, copied onto the line.
-  ///
-  /// A policy cannot traverse a relation — `cart.token == auth().cartToken`
-  /// does not parse — so a child row that is scoped by its parent has to carry
-  /// the parent's key itself. (`@@tenant(via: parent)` does exactly this for
-  /// the tenancy feature; a plain `@@allow` has no equivalent.) It is written
-  /// once, with the line, and a line never moves basket.
-  ///
-  /// NOT `@guarded`, unlike the copy on `Cart`. A guard locks BOTH directions,
-  /// so the caller who has to write this column could not — measured, an
-  /// `AccessDeniedError` on a guest adding a line to their own basket. It does
-  /// not need one: the create policy below only admits the caller's own token,
-  /// and reading it back tells the bearer a secret they are already holding.
-  token      String
-  
   /// All four at 0, unlike `Cart` above, and the difference is delete.
   ///
   /// A gate answers *what kind of caller* and a policy answers *which rows*.
@@ -2201,11 +2296,19 @@ model CartLine {
   /// beneath it saying what was meant. Nothing noticed, because nothing removed
   /// a line: `removeLine` and `setQuantity(0)` both answered 403 to every guest
   /// in the shop, and the two drives that fill a basket only ever added to it.
+  /// Scoped by the PARENT'S ID, which the line already carries.
+  ///
+  /// This column used to be a copy of the basket's token, because a policy
+  /// cannot traverse a relation and the claim was the secret itself — a copy
+  /// that could not be `@guarded` (the shopper has to write it), that a line
+  /// carried for ever, and that no revocation could reach. The claim is the
+  /// basket's id now, so the column the policy needs is the foreign key that
+  /// was always there.
   @@gate("0.0.0.0")
-  @@allow('read',   token == auth().cartToken)
-  @@allow('create', token == auth().cartToken)
-  @@allow('update', token == auth().cartToken)
-  @@allow('delete', token == auth().cartToken)
+  @@allow('read',   cartId == auth().cartId)
+  @@allow('create', cartId == auth().cartId)
+  @@allow('update', cartId == auth().cartId)
+  @@allow('delete', cartId == auth().cartId)
   
   /// `Cascade` from the variant: withdrawing a colorway takes it out of every
   /// basket holding it, and that walk starts here.
@@ -2278,7 +2381,7 @@ enum StockMovementKind { received sold returned adjusted damaged }
 /// It would fit there — a line already names a variant and a quantity, and an
 /// `heldUntil` column would have been three characters of schema. It is wrong
 /// for one reason and the reason is a POLICY: CartLine is scoped by the
-/// shopper's token (`@@allow('read', token == auth().cartToken)`), and
+/// shopper's own basket (`@@allow('read', cartId == auth().cartId)`), and
 /// availability is a sum over *everybody's* holds. Summing CartLine from a
 /// shopper's own client answers a sum over their own basket — a number that is
 /// always plausible, usually zero, and never the one asked for. It is the exact
@@ -3336,6 +3439,6 @@ model User {
   // The principal `auth()` reads. Declaring it is what makes a claim GRADED:
   // without it `auth().isStff` parses, builds and then denies every reader on
   // the SQL side while allowing every writer on the JS side (`FJS-666`). The
-  // claims that are on no row — `cartToken` — are declared at `createClient`.
+  // claims that are on no row — `cartId` — are declared at `createClient`.
   @@auth
 }

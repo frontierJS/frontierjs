@@ -1,5 +1,13 @@
 # Changes — @frontierjs/mcp
 
+## 2026-09-20 — the bun floor is `1.4.0`
+
+This package is bun-only and declared no `engines` at all, so it stated its runtime nowhere. An
+engine range is advisory anyway — bun runs an app whose floor it does not meet — so a machine one
+minor behind reports the feature it cannot reach as MISSING rather than reporting itself as stale.
+`fli doctor` grades the installed version against this floor now, which is the half a
+`package.json` field cannot enforce on its own.
+
 ## 2026-09-20 — a real MCP client, against the real shop
 
 `example` mounts `mcpPlugin()` and `verify:mcp` drives it with

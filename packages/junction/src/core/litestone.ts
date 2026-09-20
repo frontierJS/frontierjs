@@ -37,6 +37,7 @@ import { clampPage } from './directives.ts'
 import { announcingService, announcedInCommitScope, freezeUser, requestMeta, currentCall } from './context.ts'
 import { toBulkFailure, partitionBulk, BULK_FAILURES, type BulkFailure } from './envelope.ts'
 import { singularize } from '@frontierjs/toolbelt/inflect'
+import { fingerprint } from '@frontierjs/toolbelt/bearer'
 import { gradeStanding, levelPasses, LEVELS } from '@frontierjs/toolbelt/gate'
 import type { GradableUser } from '@frontierjs/toolbelt/gate'
 import { normalizeOrderBy, normalizeSelect, type SortParam, type SelectParam } from './query-values.ts'
@@ -1217,6 +1218,11 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         if (q.select)      args.select      = q.select
         if (q.include)     args.include     = q.include
         if (q.withDeleted) args.withDeleted = true
+        // The row the writer READ, for `@@sync(field)`'s per-column merge
+        // (`FJS-D334`). Passed through untouched: it is untrusted input to a
+        // comparison the Data boundary makes, never authority, and litestone
+        // refuses it by name on a model that declares no `field` policy.
+        if (ctx.base)      args.base        = ctx.base
         const sys = systemFields(ctx)
         if (sys) args.system = sys
         const updated = await table.update(args)
@@ -1225,6 +1231,14 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       }
 
       ensureBulkAllowed('patch')
+
+      // A base is ONE row, so it cannot be right for N of them — the same
+      // reason a bulk patch refuses a stated `@version` just below, and it is
+      // refused for the same reason rather than dropped: a merge that silently
+      // did not happen reads exactly like one that found no conflict.
+      if (ctx.base) throw new BadRequest(
+        'A bulk patch cannot carry a base row — a base is the row ONE writer read, and it would ' +
+        'describe every matched row but that one. Patch by id to merge, or drop it.')
 
       const versionField = await modelVersionField(ctx.locals.db, model ?? ctx.service)
       if (versionField && versionField in (ctx.data as Record<string, unknown>)) {
@@ -3178,6 +3192,226 @@ export function membershipClaim(opts: MembershipClaimOptions): DescribedResolver
   return described
 }
 
+// ─── bearerClaim ─────────────────────────────────────────────────────────────
+//
+// The resolver for a caller who has no session and still owns rows: a shopper
+// holding a basket, a client following a portal link, a machine holding a key.
+// `membershipClaim`'s sibling, and the two divide by what the caller HAS — a
+// session that proves who they are, against a string whose holder is the whole
+// of the proof.
+//
+// **One form: the row is read** (`FJS-D343`). The alternative — comparing the
+// token to the column it lives on, which is what `example`'s basket did — needs
+// no read and cannot answer the three questions a link asks: has it expired,
+// was it revoked, and WHICH of several links is this. It also forces the
+// token's value onto every child row a policy has to reach, because a policy
+// cannot traverse a relation; resolving to an id instead means the children are
+// already scoped by the id they carry.
+//
+// What travels is the SUBJECT, never the token. `@@allow('read', clientId ==
+// auth().portalClientId)` compares an id to an id, so the secret stops at this
+// function and never reaches a policy, a query or a log line.
+
+/** Where the token is on the request. `header()` and `cookie()` are the two
+ *  shipped readers; a path segment is deliberately not one (`FJS-D340`). */
+export type BearerSource = (ctx: ServiceContext) => string | null
+
+/**
+ * Every place a request's headers can be, in the order they are authoritative.
+ *
+ * `ctx.headers` on a TransportContext and `ctx.client.headers` on a
+ * ServiceContext are the same fact in two shapes, and a resolver runs against
+ * whichever one made the call. The request STORE is the third and it is not a
+ * fallback for the other two failing: an in-process call carries no client at
+ * all — `CallOptions` is auth, transport, locals and directives — so a service
+ * calling a service is reached only this way. `membershipClaim` reads its
+ * tenant down the same two steps and for the same reason.
+ */
+function requestHeaders(ctx: ServiceContext): Record<string, string> {
+  const meta = requestMeta() as { headers?: Record<string, string>; client?: { headers?: Record<string, string> } } | null
+  return (ctx as { headers?: Record<string, string> }).headers
+      ?? ctx.client?.headers
+      ?? meta?.headers
+      ?? meta?.client?.headers
+      ?? {}
+}
+
+/** Read the token from a request header. */
+export function header(name: string): BearerSource {
+  const lower = name.toLowerCase()
+  return (ctx) => {
+    const headers = requestHeaders(ctx)
+    // A header name is case-insensitive on the wire and two transports
+    // normalize differently, so all three spellings are asked rather than
+    // assuming the one this app happens to see today.
+    const raw = headers[lower] ?? headers[name] ?? headers[name.toUpperCase()]
+    return typeof raw === 'string' && raw ? raw : null
+  }
+}
+
+/** Read the token from a cookie — what a redeemed link leaves behind. */
+export function cookie(name: string): BearerSource {
+  return (ctx) => {
+    const direct = (ctx as { cookies?: Record<string, string> }).cookies?.[name]
+                ?? (ctx.client as { cookies?: Record<string, string> } | undefined)?.cookies?.[name]
+    if (typeof direct === 'string' && direct) return direct
+
+    // Parsed here rather than reached for on the context, because a raw route
+    // and a socket frame both arrive with the header and neither has a parsed
+    // bag. One cookie, split off the header the same way `parseCookies` does,
+    // without importing the transport into the Data seam.
+    const raw = requestHeaders(ctx).cookie
+    if (typeof raw !== 'string' || !raw) return null
+    for (const pair of raw.split(';')) {
+      const eq = pair.indexOf('=')
+      if (eq < 0) continue
+      if (pair.slice(0, eq).trim() !== name) continue
+      const value = pair.slice(eq + 1).trim()
+      return value ? decodeURIComponent(value) : null
+    }
+    return null
+  }
+}
+
+export interface BearerClaimOptions {
+  /** Where the token is on the request — `header('x-cart-token')`, `cookie('portal')`. */
+  from:    BearerSource
+  /** The model holding the grants. Its accessor is the name with a lower first letter. */
+  model:   string
+  /** The column holding the token's DIGEST. Never the token: what is stored is
+   *  `fingerprint(token, { key, purpose })` and the token itself is in the email
+   *  or the header that carried it, nowhere else. */
+  column:  string
+  /** Claim name → the column on the grant row it is read from. These are what a
+   *  policy compares, so they are ids and states, never the token. */
+  claims:  Record<string, string>
+  /** The app secret the digest is keyed on. A function where it is per tenant. */
+  key:     string | ((ctx: ServiceContext) => string)
+  /** Domain separation for the digest. Defaults to `<model>.<column>`, which is
+   *  already unique per app; state it only to match an existing column. */
+  purpose?: string
+  /** The column naming what the grant is FOR — a client, a cart, a user. Written
+   *  to the audit trail's `subjectId`, where `actorId` is the grant row
+   *  (`FJS-D342`): revoking one link has to be answerable by *which link did
+   *  this*, which the subject alone cannot say. */
+  subject?: string
+  /** How a caller presents the token, quoted into nothing yet — carried for the
+   *  same reason `membershipClaim` carries it: once installed this is the only
+   *  static answer to *how does a request name its grant*. */
+  namedBy?: string
+}
+
+/** Where this call's resolved grant row is parked, so a service can read the
+ *  rest of it — its scope, its purpose, when it expires — without a second
+ *  query, and so `installLogContext` can name it as the actor. */
+export const BEARER = 'bearer'
+
+/** What `ctx.locals[BEARER]` holds once a grant resolved. */
+export interface ResolvedBearer {
+  /** The grant row's own primary key — the audit trail's actor. */
+  id:      unknown
+  /** What the grant is for, where `subject` named a column. */
+  subject: unknown
+  /** The row itself, so nothing has to read it twice. */
+  row:     Record<string, unknown>
+}
+
+export function bearerClaim(opts: BearerClaimOptions): DescribedResolver {
+  const purpose = opts.purpose ?? `${opts.model}.${opts.column}`
+
+  const resolver = async function bearerClaim(ctx: ServiceContext, _user: ServiceContext['auth']['user'] | null): Promise<PrincipalClaims> {
+    // A token this request does not carry is not a refusal to report: most
+    // callers are ordinary signed-in people, and a resolver that recorded
+    // *refused* for every one of them would make `NO_CLAIM` meaningless for
+    // the requests that really were turned away.
+    const token = opts.from(ctx)
+    if (!token) return {}
+
+    const db  = ctx.locals.db as LitestoneClient | undefined
+    const sys = typeof db?.asSystem === 'function' ? db.asSystem() : db
+
+    // asSystem(), for `membershipClaim`'s reason one step further: a grant is
+    // what DECIDES this caller's access, and the caller holding it has no
+    // session at all, so a client scoped by that access can read nothing.
+    const table = sys?.[opts.model] as { findFirst?: (a: Record<string, unknown>) => Promise<unknown> } | undefined
+
+    if (typeof table?.findFirst !== 'function') throw new BadRequest(
+      `bearerClaim: no accessor '${opts.model}' on the client. ` +
+      `A model's accessor is its name with a lower first letter — ` +
+      `\`model PortalLink\` is \`portalLink\`.`,
+    )
+
+    const key = typeof opts.key === 'function' ? opts.key(ctx) : opts.key
+    if (typeof key !== 'string' || !key) throw new Error(
+      `bearerClaim: \`key\` is the secret the stored digest is keyed on, and there is no default. ` +
+      `An unkeyed digest can be attacked offline the moment the column leaks.`)
+
+    // The digest is what the column holds, so the token is never in a query,
+    // a log line or an error — and a caller cannot present a digest they read
+    // somewhere, because the purpose and the key are not theirs to reproduce.
+    const digest = await fingerprint(token, { key, purpose })
+
+    const row = await table.findFirst({ where: { [opts.column]: digest } }) as Record<string, unknown> | null
+
+    // No row is no claim, and it is the same answer as an expired one on
+    // purpose: *this link does not work* is all a bearer may learn, or the
+    // refusal becomes an oracle for which tokens once existed.
+    if (!row || !isLive(row)) {
+      ctx.locals[NO_CLAIM] = { reason: 'refused', namedBy: opts.namedBy } satisfies NoClaim
+      return {}
+    }
+
+    ctx.locals[BEARER] = {
+      id:      row.id ?? null,
+      subject: opts.subject ? row[opts.subject] ?? null : null,
+      row,
+    } satisfies ResolvedBearer
+
+    return Object.fromEntries(
+      Object.entries(opts.claims).map(([claim, column]) => [claim, row[column] ?? null]),
+    )
+  }
+
+  const described = resolver as DescribedResolver
+  described.describe = () => ({
+    kind:     'bearer',
+    model:    opts.model,
+    subject:  opts.subject ?? null,
+    tenant:   null,
+    standing: null,
+    claims:   Object.keys(opts.claims),
+    include:  [],
+    namedBy:  opts.namedBy ?? null,
+  })
+
+  return described
+}
+
+/**
+ * Is this grant still good?
+ *
+ * Read off COLUMNS the app's own model declares rather than off options, so the
+ * answer is in the seed where `fli check`, a migration and a person reviewing
+ * access can all see it. A model that declares neither column has said its
+ * grants do not expire, which is a legitimate thing for a basket to say and a
+ * dangerous thing for a portal link to say — and the schema is where that
+ * argument belongs.
+ *
+ * A column that is present and unreadable — a string that is not a date — is
+ * treated as EXPIRED. The alternative reading is *live*, which turns a column
+ * nobody can parse into a grant that never dies.
+ */
+function isLive(row: Record<string, unknown>): boolean {
+  if ('revokedAt' in row && row.revokedAt != null) return false
+
+  if ('expiresAt' in row && row.expiresAt != null) {
+    const at = new Date(row.expiresAt as string | number | Date).getTime()
+    if (!Number.isFinite(at) || at <= Date.now()) return false
+  }
+
+  return true
+}
+
 /** A resolver that can say what it is — `junction principal` reads this, and an
  *  app writing its own may carry one. */
 export type DescribedResolver = PrincipalResolver & { describe: () => PrincipalDescription }
@@ -3426,6 +3660,13 @@ export function installLogContext(db: unknown): (() => void) | null {
       // failure the feature exists to prevent.
       operatorId:    meta?.user?.support?.operatorId ?? null,
       episodeId:     meta?.user?.support?.episodeId  ?? null,
+      // A bearer. `ctx.auth.user` is null for one — that is what keeps the gate
+      // at STRANGER(0) — so the principal carries no id and the trail would
+      // record the write as a caller with no name. The GRANT is the actor
+      // (`FJS-D342`), because revoking one link has to be answerable by *which
+      // link did this*, which the subject alone cannot say.
+      bearerId:      (call?.locals?.[BEARER] as ResolvedBearer | undefined)?.id ?? null,
+      bearerSubject: (call?.locals?.[BEARER] as ResolvedBearer | undefined)?.subject ?? null,
     }
   })
 }

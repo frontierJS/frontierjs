@@ -15,6 +15,7 @@ import { readConfig }            from './config.js'
 import { createOutpostServer }   from './server.js'
 import { createReporter }        from './report.js'
 import { createDocker, createInspector } from './docker.js'
+import { createStaticServer }         from './serve.js'
 
 const config    = readConfig()
 const docker    = createDocker({ workDir: config.workDir })
@@ -27,9 +28,21 @@ const server = Bun.serve({
   fetch: req => outpost.handle(req),
 })
 
+// The public half. Separate listener, separate origin, no signature: it serves
+// files anybody may read, and the pages it serves are written by whoever can
+// edit an app. Same process, because it holds no state beyond the filesystem
+// the command half writes — and a second process would need the same directory
+// and its own supervision to gain nothing.
+const statics      = createStaticServer({ staticDir: config.staticDir })
+const staticServer = config.staticPort
+  ? Bun.serve({ port: config.staticPort, fetch: req => statics.handle(req) })
+  : null
+
 const stopTimers = reporter.start()
 
-console.log(`outpost ${config.version} · server ${config.serverId} · :${server.port} → ${config.basecampUrl}`)
+console.log(
+  `outpost ${config.version} · server ${config.serverId} · :${server.port} → ${config.basecampUrl}` +
+  (staticServer ? ` · static :${staticServer.port}` : ' · static disabled'))
 
 // A machine reboots and a deploy replaces this process; both send a signal, and
 // a timer left running holds the event loop open past the point where anything
@@ -38,6 +51,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
     stopTimers()
     server.stop()
+    staticServer?.stop()
     process.exit(0)
   })
 }

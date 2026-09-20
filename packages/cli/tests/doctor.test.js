@@ -15,7 +15,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
 
-import { diagnose, requiringModules, BINARIES } from '../core/doctor.js'
+import { diagnose, requiringModules, BINARIES, MIN_BUN, compareVersions } from '../core/doctor.js'
 
 /** A home with a global env file, and a project root with or without a `.env`. */
 function machine({ dotenv = false, globalEnv = true } = {}) {
@@ -28,6 +28,9 @@ function machine({ dotenv = false, globalEnv = true } = {}) {
   if (dotenv) writeFileSync(join(root, '.env'), '')
   return {
     home, root,
+    // Injected for the reason `has` is: a suite that asks the real machine
+    // asserts whatever that machine happens to have installed.
+    versionOf: () => MIN_BUN,
     cleanup: () => { rmSync(home, { recursive: true, force: true }); rmSync(root, { recursive: true, force: true }) },
   }
 }
@@ -170,4 +173,40 @@ describe('which namespaces declare a requirement', () => {
     expect(requiringModules({ commands: [{ title: 'x:y' }], getModule: () => null })).toEqual([])
   })
 
+})
+
+describe('the bun floor', () => {
+
+  test('a bun below the floor is an error, and the hint names the upgrade', () => {
+    // The failure it exists for: an engine range is advisory, so a stale bun
+    // runs the app and the missing feature reports itself as missing rather
+    // than reporting the runtime as old.
+    const m = machine()
+    try {
+      const r = diagnose({ ...m, has: ALL, versionOf: () => '1.3.11', env: {}, fliRoot: m.root })
+      const bun = r.system.find(b => b.name === 'bun')
+      expect(bun.level).toBe('error')
+      expect(bun.ok).toBe(false)
+      expect(bun.present).toBe(true)
+      expect(bun.hint).toContain('1.3.11')
+      expect(bun.hint).toContain(MIN_BUN)
+    } finally { m.cleanup() }
+  })
+
+  test('a version the probe cannot read is not treated as too old', () => {
+    // A binary whose `--version` will not parse still runs; failing it here
+    // would block a working machine on this probe's own blind spot.
+    const m = machine()
+    try {
+      const bun = diagnose({ ...m, has: ALL, versionOf: () => null, env: {}, fliRoot: m.root })
+        .system.find(b => b.name === 'bun')
+      expect(bun.level).toBe('ok')
+    } finally { m.cleanup() }
+  })
+
+  test('a prerelease is truncated rather than ordered', () => {
+    expect(compareVersions('1.4.0-canary.3', '1.4.0')).toBe(0)
+    expect(compareVersions('1.3.11', '1.4.0')).toBeLessThan(0)
+    expect(compareVersions('1.10.0', '1.4.0')).toBeGreaterThan(0)
+  })
 })

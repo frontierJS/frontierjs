@@ -134,28 +134,13 @@ const healthHint = `// Add this route to your Junction API server (api/src/serve
 
 // ─── frontier.config.js deploy block ─────────────────────────────────────────
 
-// ─── resolveHealthPath ────────────────────────────────────────────────────────
-// `healthPlugin()` registers through app.get(), which is the one owner of
-// apiPrefix — so an app with a prefix serves health at `{prefix}/health` and
-// NOTHING a caller writes through the shortcuts can answer at a bare `/health`.
-// Writing the wrong path here does not fail loudly: the deploy's health step
-// polls a 404 for twenty seconds and then rolls back an API that was running.
-//
-// createApp() merges opts.config over config/junction.config.js, so app.ts wins
-// where it states a prefix. Read in that order, then fall back to no prefix.
-const resolveHealthPath = (root) => {
-  const sources = [
-    resolve(root, 'api/src/app.ts'),
-    resolve(root, 'api/src/app.js'),
-    resolve(root, 'api/config/junction.config.js'),
-  ]
-  for (const file of sources) {
-    if (!existsSync(file)) continue
-    const found = readFileSync(file, 'utf8').match(/apiPrefix\s*:\s*['"`]([^'"`]*)['"`]/)
-    if (found) return { path: `${found[1]}/health`, from: file, prefix: found[1] }
-  }
-  return { path: '/health', from: null, prefix: '' }
-}
+// `resolveHealthPath` and `declaresHealth` both live in core/health-target.js:
+// `fli deploy:doctor` asks the same two questions, and the copies disagreed —
+// neither read `plugins: { health: true }` out of junction.config.js, which is
+// where `fli new` puts it, so the scaffold warned about the app it had just
+// written.
+const { resolveHealthPath, declaresHealth } =
+  await import(new URL('file://' + global.fliRoot + '/core/health-target.js'))
 
 const makeDeployBlock = (appId, server, domain, healthPath) => {
   const serverLine = server ? `    server: '${server}',` : `    server: 'your-server.com',   // ← set this`
@@ -343,33 +328,30 @@ if (!existsSync(envExamplePath)) {
 }
 
 // ─── 5. Health endpoint reminder ─────────────────────────────────────────────
-// The plugin is configured in api/src/app.ts — the composition root, not the
-// entry: api/index.ts is what a runner is pointed at and it only calls start().
-// api/index.* is checked too because an app is free to configure there. What
-// matters is that SOMETHING answers health.path, and the remedy offered has to
-// be one that can actually produce that path — `app.get('/health')` cannot, in
-// an app with a prefix.
-const entryCandidates = ['api/src/app.ts', 'api/src/app.js', 'api/index.ts', 'api/index.js']
-  .map(p => ({ rel: p, abs: resolve(context.paths.root, p) }))
-  .filter(c => existsSync(c.abs))
-
-const declaresHealth = entryCandidates.some(c =>
-  /healthPlugin\s*\(|['"`]\/health/.test(readFileSync(c.abs, 'utf8')))
+// Two places can serve it and both count: `app.configure(healthPlugin())` in the
+// API source, and `plugins: { health: true }` in junction.config.js — which is
+// what `fli new` writes, so a reader that only grepped the source warned about
+// every scaffold it had just produced. core/health-target.js owns the question.
+const declared = declaresHealth(context.paths.root, health.path)
 
 if (health.from) {
   log.info(`Health path: ${health.path}  (apiPrefix '${health.prefix}' read from ${health.from.replace(context.paths.root + '/', '')})`)
 }
 
-if (declaresHealth) {
-  log.success(`Health endpoint: declared ✓ — the deploy will poll ${health.path}`)
-} else if (entryCandidates.length) {
-  log.warn(`Health endpoint not found in ${entryCandidates[0].rel}`)
-  log.info(`  Add:  app.configure(healthPlugin())`)
-  log.info(`  It serves ${health.path} — apiPrefix moves it, which is why the`)
-  log.info(`  deploy block above names the full path rather than '/health'.`)
+if (declared.clash) {
+  // start() refuses a plugin configured by hand AND declared in config, by name.
+  // A deploy finds that as a container that exits; this finds it here.
+  log.warn(`Health is declared twice — healthPlugin() in the API source and plugins.health in the config.`)
+  log.info(`  Junction refuses both at start(). Keep one: the config, unless you pass checks or authFn.`)
+} else if (declared.declared) {
+  const where = declared.sources.map(s => s.file).join(', ')
+  log.success(`Health endpoint: declared in ${where} — the deploy will poll ${health.path}`)
 } else {
-  log.info(`Health endpoint: add app.configure(healthPlugin()) to your API entry`)
-  log.info(`  The deploy polls ${health.path}`)
+  log.warn(`Nothing found that answers ${health.path}`)
+  log.info(`  Declare it:  plugins: { health: true }  in api/config/junction.config.js`)
+  log.info(`  Or by hand:  app.configure(healthPlugin())  where the plugin needs checks or authFn.`)
+  log.info(`  apiPrefix moves it, which is why the deploy block above names the full`)
+  log.info(`  path rather than '/health'.`)
 }
 
 // ─── Summary ──────────────────────────────────────────────────────────────────
@@ -378,7 +360,7 @@ log.success('Done. Next steps:')
 echo('')
 echo('  1. Review deploy/Dockerfile and adjust for your app')
 echo('  2. Set server/domain in frontier.config.js deploy block')
-echo(`  3. Make sure something answers ${health.path} (app.configure(healthPlugin()))`)
+echo(`  3. Make sure something answers ${health.path} (plugins: { health: true })`)
 echo('  4. Create .env.example with your required env keys')
 echo('  5. Test locally:      fli deploy:local')
 echo('  6. Set up server:     fli deploy:setup')

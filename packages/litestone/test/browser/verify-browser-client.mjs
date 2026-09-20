@@ -13,7 +13,15 @@
  *   • whether the `AsyncLocalStorage` shim in `host/browser.js` keeps a store
  *     across an `await` — it did not, on the first run it existed for,
  *   • whether rows written by one page load are read by the NEXT one, which is
- *     the only difference between a database and a cache.
+ *     the only difference between a database and a cache,
+ *   • and whether a feature whose SQL rests on a COMPILE-TIME option is here at
+ *     all — `@point`'s haversine is six `SQLITE_ENABLE_MATH_FUNCTIONS`
+ *     functions, and this build's `OMIT_LOAD_EXTENSION` is the same class of
+ *     fact in the other direction. A server suite cannot ask either.
+ *
+ * It has also caught what is broken in a browser and nowhere else: node's
+ * `Buffer` in the cursor codec, which took every paginated list on a device and
+ * which every unit test in this package passes over, because bun has one.
  *
  * It builds what it serves. Bundling with `--conditions=browser` is not a
  * convenience: it is what resolves `#sql-engine` to nothing and `#host` to the
@@ -77,6 +85,12 @@ model Count {
   @@gate("2")
   @@softDelete
   @@index([shelfId])
+}
+model Depot {
+  id     String @id @default(uuid())
+  name   String
+  site   Json?  @point(lat, lng)
+  @@gate("2")
 }`
 
 // ─── build ────────────────────────────────────────────────────────────────
@@ -223,7 +237,7 @@ async function main() {
   // back to memory — a fallback would pass every read below and persist none.
   await t(b, 'engine is sqlite-wasm over the OPFS pool',
     `return await window.boot`,
-    v => v?.engine?.startsWith('sqlite-wasm') && v.models.join() === 'shelf,count')
+    v => v?.engine?.startsWith('sqlite-wasm') && v.models.join() === 'shelf,count,depot')
 
   await t(b, 'a row is written and read back',
     `const s = await db.shelf.create({ data: { label: 'A1' } }); window.sid = s.id; return s.label`,
@@ -310,6 +324,70 @@ async function main() {
     v => v?.total === v?.same && v.moved === true)
 
 
+  // ── where a row IS, in the browser engine ──
+  //
+  // `@point` compiles to two `REAL GENERATED ALWAYS AS (json_extract(...))
+  // VIRTUAL` columns, a composite index, a `CHECK`, and a haversine built from
+  // `asin` · `sqrt` · `power` · `sin` · `cos` · `radians`. Every one of those
+  // six is `SQLITE_ENABLE_MATH_FUNCTIONS`, a COMPILE-TIME option — which is the
+  // shape that just bit `@vector`, where this build's `OMIT_LOAD_EXTENSION`
+  // means `sqlite-vec` can never be here. The option IS set in
+  // `@sqlite.org/sqlite-wasm` 3.53.4, so the whole feature is expected to work;
+  // expected is not measured, and litestone runs in both engines by ruling.
+  const LONDON = '{ lat: 51.5074, lng: -0.1278 }'
+  await t(b, 'a point column is written and read back whole',
+    `await db.depot.createMany({ data: [
+       { name: 'Camden',    site: { lat: 51.5390, lng: -0.1426 } },
+       { name: 'Greenwich', site: { lat: 51.4826, lng: -0.0077 } },
+       { name: 'Croydon',   site: { lat: 51.3762, lng: -0.0982 } },
+       { name: 'Edinburgh', site: { lat: 55.9533, lng: -3.1883 } },
+       { name: 'Nowhere',   site: null },
+     ] })
+     const one = await db.depot.findFirst({ where: { name: 'Camden' } })
+     return one.site`,
+    v => v?.lat === 51.5390 && v.lng === -0.1426)
+
+  // The filter is a bounding box over the generated columns AND an exact
+  // haversine. If the math functions were absent this is where it says so.
+  await t(b, 'a near filter runs in the wasm engine',
+    `const r = await db.depot.findMany({
+       where: { site: { near: { ...${LONDON}, within: '10km' } } }, orderBy: { name: 'asc' } })
+     return r.map(d => d.name)`,
+    v => Array.isArray(v) && v.join() === 'Camden,Greenwich')
+
+  // NULL is not zero distance. The generated column is NULL for a row with no
+  // point, and a NULL never satisfies a comparison, so the row is in no circle.
+  await t(b, 'a row with no point is in no circle',
+    `const r = await db.depot.findMany({ where: { site: { near: { ...${LONDON}, within: '2000km' } } } })
+     return r.map(d => d.name).includes('Nowhere')`,
+    v => v === false)
+
+  // SQLite sorts NULL FIRST ascending, so without the emitted `NULLS LAST` the
+  // nearest place to London is the branch that has never been located.
+  await t(b, 'distance orders nearest-first and sorts an unlocated row LAST',
+    `const r = await db.depot.findMany({ orderBy: { site: { near: ${LONDON} } } })
+     return r.map(d => d.name)`,
+    v => Array.isArray(v) && v.join() === 'Camden,Greenwich,Croydon,Edinburgh,Nowhere')
+
+  // The cursor carries the POINT and the center rather than a distance, so the
+  // second page compares with the same expression the first ordered by. A JS
+  // number and a SQL one differ in the last bits, and one ulp serves the
+  // boundary row twice — which here would also mean two different libm builds.
+  await t(b, 'a distance-ordered page continues without repeating a row',
+    `const near = { site: { near: ${LONDON} } }
+     const p1 = await db.depot.findManyCursor({ limit: 2, orderBy: near })
+     const p2 = await db.depot.findManyCursor({ limit: 2, orderBy: near, cursor: p1.nextCursor })
+     return [...p1.items, ...p2.items].map(d => d.name)`,
+    v => Array.isArray(v) && v.join() === 'Camden,Greenwich,Croydon,Edinburgh')
+
+  // The `CHECK` is the database's because four writers never reach the Data
+  // boundary. This client IS `asSystem()`, which is the closest a page gets to
+  // being one of them.
+  await t(b, 'the CHECK refuses half a coordinate, on the device',
+    `try { await db.depot.create({ data: { name: 'Half', site: { lat: 51.5 } } }); return 'allowed' }
+     catch (err) { return err.message.slice(0, 120) }`,
+    v => typeof v === 'string' && v !== 'allowed')
+
   // ── the schema a real app will actually send ──
   //
   // Not `.lite` text. A projection of the PARSED tree is how a device gets the
@@ -321,7 +399,7 @@ async function main() {
   await b.navigate(`http://localhost:${PORT}/parsed.html`)
   await t(b, 'a client opens from a PARSED schema, not .lite text',
     `return await window.boot`,
-    v => v?.engine?.startsWith('sqlite-wasm') && v.models.join() === 'shelf,count')
+    v => v?.engine?.startsWith('sqlite-wasm') && v.models.join() === 'shelf,count,depot')
 
   await t(b, 'and it is the same client — relations and all',
     `const s = await db.shelf.create({ data: { label: 'A1' } })

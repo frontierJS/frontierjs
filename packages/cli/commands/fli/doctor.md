@@ -62,7 +62,8 @@ echo('  fli doctor\n')
 
 echo('  system')
 for (const b of report.system) {
-  echo(`    ${ICON[b.level]}  ${b.name.padEnd(10)} ${b.ok ? 'found' : 'not found'}${b.ok ? '' : `  \u2192  ${b.hint}`}`)
+  const state = b.status ?? (b.present ? 'found' : 'not found')
+  echo(`    ${ICON[b.level]}  ${b.name.padEnd(10)} ${state}${b.ok ? '' : `  \u2192  ${b.hint}`}`)
 }
 
 echo('\n  fli config')

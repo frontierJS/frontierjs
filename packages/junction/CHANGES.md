@@ -1,11 +1,114 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-20 — a write may carry the row it was made against
+
+`FJS-1202`, ruled `FJS-D338`. The transport half of `@@sync(field)`: litestone
+merges a held write column by column against the row the writer READ, and
+nothing could carry that row to it.
+
+**Every other per-call value here is a header** — an idempotency key, a
+correlation id, whatever `setCallHeader` names — and a base is a ROW, so a text
+column puts it past what a header may hold, while a write's body already IS its
+`data`. So a call carrying one flags the body: `X-Fjs-Write: enveloped`, and a
+body of `{ data, base }`. Absent flag, the body is the data exactly as before,
+so nothing already on the wire changed meaning.
+
+**Flagged rather than sniffed.** A row may legitimately hold a `data` key of its
+own, so the shape of a body cannot answer whether it is an envelope. A body
+flagged and not shaped like one is refused by name rather than read as data —
+otherwise it arrives as a record with a `data` column and is refused by
+validation for the wrong reason.
+
+**The socket needed none of it.** A `service_call` frame already carries caller
+extras under `meta` and spreads what it does not name, so `meta.base` is the
+existing slot. Both transports land on one `ctx.base`, and
+`tests/write-envelope.test.ts` is what grades them against each other — two
+transports doing genuinely different things, where neither side alone can see
+that they agree.
+
+`ctx.base` is its own field rather than part of `data`: it describes the write
+rather than being part of it. The derived by-id patch passes it down; **a BULK
+patch refuses it by name**, for the reason that function already refuses a bulk
+`@version` — one base is the row ONE writer read, and it would describe every
+matched row but that one.
+
+## 2026-09-20 — `bearerClaim`, for a caller with no session who still owns rows
+
+`FJS-D343`. `membershipClaim`'s sibling, and the two divide by what the caller
+HAS: a session that proves who they are, against a string whose holder is the
+whole of the proof — a basket token, a portal link, a key.
+
+**The grant row is read, and one form ships.** Comparing the token to the column
+it lives on needs no read and cannot answer the three questions a link asks: has
+it expired, was it revoked, and WHICH of several links is this. It also forces
+the token's value onto every child row a policy must reach, because a policy
+cannot traverse a relation — resolving to an id instead means the children are
+already scoped by the id they carry.
+
+**The token stops at the resolver.** What the column holds is
+`fingerprint(token, { key, purpose })` from `@frontierjs/toolbelt/bearer`
+(`FJS-D339`), and what reaches a policy is the subject: `@@allow('read',
+clientId == auth().portalClientId)` compares an id to an id, so no query, log
+line or error has anything to redact.
+
+**`revokedAt` and `expiresAt` are read off columns the app's model declares**,
+not off options, so *do these grants expire* is answerable from the seed. A
+model declaring neither has said its grants never expire — legitimate for a
+basket, dangerous for a portal link, and the schema is where that argument
+belongs. An unparseable `expiresAt` reads as EXPIRED: the other reading turns a
+column nobody can parse into a grant that never dies.
+
+**One sentence for every refusal.** Unknown, revoked and expired answer the same
+nothing, or the refusal becomes an oracle for which tokens once existed.
+
+`header()` and `cookie()` are the shipped readers, and both fall back to
+`requestMeta()` — `CallOptions` is auth, transport, locals and directives and
+carries no client, so a service calling a service is reached no other way.
+A path segment is deliberately not a reader (`FJS-D340`).
+
+**The audit trail names the grant** (`FJS-D342`): the resolver parks the row at
+`ctx.locals[BEARER]` and `installLogContext` carries its id and subject down to
+litestone, which files them as `actorId` and `subjectId`. A bearer principal has
+no id, so without it the write is recorded under nobody and a revocation cannot
+be investigated.
+
+Eight tests in `tests/bearer-claim.test.ts`, every refusal paired with the
+acceptance one argument away, plus the crossing end to end in
+`tests/audit-provenance.test.ts`. Not built: `lastUsedAt`, which is a write per
+request and wants a measurement first.
+
+## 2026-09-20 — three structured `orderBy` shapes all arrived as `desc`
+
+`normalizeOrderBy` reads *the three spellings a caller may write* into one list, and its
+ternary was `(dir === 1 || dir === 'asc') ? 'asc' : 'desc'` — so a value that is an OBJECT
+rather than a direction read as *not ascending*. Three legal orderings the Data boundary
+takes go through it:
+
+| written | arrived as | what that is |
+| --- | --- | --- |
+| `{ author: { name: 'asc' } }` | `{ author: 'desc' }` | a relation hop flattened onto the relation |
+| `{ deletedAt: { dir: 'asc', nulls: 'last' } }` | `{ deletedAt: 'desc' }` | the direction INVERTED, the placement gone |
+| `{ site: { near: { lat, lng } } }` | `{ site: 'desc' }` | refused by name as a sort of the JSON document |
+
+**The transport was never the problem and that is why nothing saw it.** `FJS-962` made
+`$orderBy` travel as a structure and `query-parity` asserts it still does; this flattened it
+one layer later, inside `parseSort` — which is both what `autoSort` grades and what builds
+the query. A test on either side of the wire passes throughout. Found by a drive asking over
+HTTP (`example`: `verify:geo`).
+
+A structured value now travels untouched; a direction is a word or a sign and nothing else.
+`comparatorFor` declines to place a pushed row by one rather than reading it as a direction:
+a relation hop names a column that is not on the record, a nulls placement is about rows the
+comparator never sees, and a distance needs a center and the geo kit — and placing a row by
+the TEXT of a JSON document is a wrong position asserted confidently, where `null` leaves the
+rest of the ordering working and `resource.stale` saying the list should be re-read.
+
 ## 2026-09-20 — a proximity search is pinned down both transports
 
 `FJS-D323` ruled that a `near` filter travels as the bracket notation the query kit already
 carries structure in, rather than as a compact triple only the geo layer can read — which
 makes it a claim about the transports rather than a feature in them. `query-parity` now
-holds the rows that prove it: a centre whose coordinates must stay numbers beside a radius
+holds the rows that prove it: a center whose coordinates must stay numbers beside a radius
 that must stay text (`5mi` is neither a number nor a column), and a distance ordering, each
 asserted to mean the same thing over HTTP and over the socket. Nothing in the transport
 changed.

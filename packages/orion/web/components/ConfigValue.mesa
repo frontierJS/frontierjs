@@ -1,0 +1,103 @@
+<script>
+  // One value in a node's config.
+  //
+  // ─── Why this is not <FormField> on its own ───────────────────────────────
+  //
+  // A config value is never a plain value. The resolver dispatches on the
+  // stored node's own `type`, so `model: 'Customer'` is written
+  // `{ type: 'literal', value: 'Customer' }` and the same slot may instead hold
+  // `{ type: 'ref', path: '$.trigger.record.id' }` — a value computed while the
+  // run is going. The node type's `configSchema` describes what the value must
+  // RESOLVE to, which is what picks the control; what is stored is the
+  // expression around it.
+  //
+  // So a field has two states and the STORED VALUE says which. A literal opens
+  // on the schema's own control and writes the wrapper back; anything else is
+  // an expression, and `ExpressionField` writes it as the language — the same
+  // language the edge conditions beside it are written in — falling back to the
+  // document for the shapes the shared grammar has no syntax for (`FJS-1209`).
+  //
+  // The two are a toggle rather than two fields: the same slot holds both, and
+  // switching is how a fixed value becomes a computed one.
+
+  import Button    from '@frontierjs/ui/components/forms/Button.mesa'
+  import FormField from '@frontierjs/ui/components/forms/FormField.mesa'
+  import JsonInput from '@frontierjs/ui/components/forms/JsonInput.mesa'
+
+  import ExpressionField from './ExpressionField.mesa'
+
+  // One entry from `formFieldList()` — `{ name, rule, control, reason?, … }`.
+  export let field
+
+  // The stored Expression node, or undefined where the config has no such key.
+  export let value = undefined
+
+  export let write    = undefined      // (node | undefined) => void
+  export let hint     = ''             // the property's own `description`
+  export let disabled = false
+
+  // Nothing stored is a literal waiting to be typed, not an expression: a new
+  // node's config is empty, and every field of it opens on its own control.
+  const isLiteral = (v) => v == null || v.type === 'literal'
+
+  // `null` asks the value. A person who switched is answered until the node
+  // changes, which is the parent's `{#key}`.
+  let chosen = null
+  $: expression = chosen ?? !isLiteral(value)
+
+  const toLiteral = () => {
+    chosen = false
+    // An expression has no literal form, so switching away from one clears the
+    // slot rather than guessing a value the resolver would then refuse.
+    if (!isLiteral(value)) write?.(undefined)
+  }
+  const toExpression = () => {
+    chosen = true
+    if (isLiteral(value) && value != null) write?.({ type: 'literal', value: value.value })
+  }
+</script>
+
+<div class="stack" data-config-field={field.name} data-mode={expression ? 'expression' : 'value'}>
+  <div class="split">
+    <span class="text-sm text-muted">{expression ? 'Expression' : 'Value'}</span>
+    <Button
+      variant="ghost"
+      size="xs"
+      {disabled}
+      id={'config-mode-' + field.name}
+      onclick={() => expression ? toLiteral() : toExpression()}
+    >{expression ? 'Use a value' : 'Use an expression'}</Button>
+  </div>
+
+  {#if expression}
+    <ExpressionField
+      name={field.name}
+      {hint}
+      {disabled}
+      {value}
+      write={(expr) => write?.(expr)}
+    />
+  {:else if field.control}
+    <FormField
+      {field}
+      {disabled}
+      value={value?.value}
+      write={(v) => write?.(v === undefined || v === null || v === '' ? undefined : { type: 'literal', value: v })}
+    />
+    {#if hint}<p class="text-sm text-muted">{hint}</p>{/if}
+  {:else}
+    <!--
+      `controlFor` answered no control and said why. Shown rather than dropped,
+      for the reason <Form> warns: a config key silently missing from the
+      inspector is a value nobody can set and nothing that says so.
+    -->
+    <JsonInput
+      name={field.name}
+      hint={hint || `No control for this field — ${field.reason ?? 'the schema does not say enough'}.`}
+      {disabled}
+      rows={3}
+      value={value?.value}
+      onvalue={(v) => write?.(v === undefined || v === null ? undefined : { type: 'literal', value: v })}
+    />
+  {/if}
+</div>

@@ -18,6 +18,7 @@ import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
 import { announce } from '../../channels.ts'
+import { isInline } from '../../core/app-source.ts'
 
 // `environment` is the DEPLOYMENT's own, which is not the app's: an app has a
 // current environment and a deployment records the one it went to, and those
@@ -25,13 +26,26 @@ import { announce } from '../../channels.ts'
 // where this release went, not where the app points now.
 const WITH_APP = { app: { include: { environment: true } }, environment: true }
 
-/** The step list a deployment starts with, by app type. */
-function buildInitialSteps(appType: string): string[] {
-  if (appType === 'container' || appType === 'function')
+/**
+ * The step list a deployment starts with.
+ *
+ * Read off the SOURCE first and the type second, because what a release has to
+ * do is decided by where its bytes come from: an inline app is files behind a
+ * web server, and every container word — build, push, start, stop — describes
+ * work that does not exist for it.
+ *
+ * The four inline steps are each one call to the machine, which is what makes
+ * the list worth having: a step that stalls names what stalled. Upload and
+ * activate are apart because writing the bytes and making them the live ones
+ * are separate on the machine too — a release that failed to upload is never
+ * the one being served.
+ */
+function buildInitialSteps(target: { type: string; source?: unknown }): string[] {
+  if (isInline(target.source))
+    return ['Validate', 'Upload files', 'Activate', 'Health check']
+  if (target.type === 'container' || target.type === 'function')
     return ['Validate', 'Build image', 'Push image', 'Stop previous', 'Start container', 'Health check']
-  if (appType === 'static')
-    return ['Validate', 'Build assets', 'Upload to storage', 'Invalidate CDN cache']
-  if (appType === 'database')
+  if (target.type === 'database')
     return ['Validate', 'Run migrations', 'Verify connectivity']
   return ['Validate', 'Pull image', 'Stop previous', 'Start container', 'Health check']
 }
@@ -135,7 +149,7 @@ export function createDeploymentsService(app: BasecampApp) {
       const deployment = await db().deployment.create({ data })
 
       await db().deploymentStep.createMany({
-        data: buildInitialSteps(target.type).map(name => ({
+        data: buildInitialSteps(target).map(name => ({
           deploymentId: deployment.id, name, status: 'pending',
         })),
       })
@@ -307,7 +321,10 @@ export function createDeploymentsService(app: BasecampApp) {
       } })
 
       await db().deploymentStep.createMany({
-        data: buildInitialSteps(into.type).map(name => ({
+        // The step list the TARGET's source needs, not the app's current one.
+        // An app switched from inline to a container since that release would
+        // otherwise be rolled back through a pipeline its old bytes cannot run.
+        data: buildInitialSteps({ type: into.type, source: (target.configSnapshot as any)?.source ?? into.source }).map(name => ({
           deploymentId: replacement.id, name, status: 'pending',
         })),
       })

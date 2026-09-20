@@ -21,6 +21,8 @@ import { createApp }    from '../src/core/app.ts'
 import { collectMetrics } from '../src/transport/health.ts'
 import { createService } from '../src/core/service.ts'
 import { enterRequest } from '../src/core/context.ts'
+import { bearerClaim, header } from '../index.ts'
+import { fingerprint } from '@frontierjs/toolbelt/bearer'
 
 // A logger database is a DIRECTORY of jsonl, so this one needs a real path —
 // `:memory:` has nowhere to append.
@@ -119,6 +121,62 @@ describe('an audit row says where the write came from', () => {
       expect(row.userAgent).toBe('probe/1')
       expect(row.origin).toBe('http')
     } finally { h.cleanup() }
+  })
+
+  test('a bearer\'s write names the GRANT, not nobody', async () => {
+    // The end-to-end half of `FJS-D342`. A bearer principal carries no id, so
+    // every guest write used to file under a caller with no name; the grant is
+    // what a revocation can be investigated from, and it reaches the trail down
+    // the same closure the operator does.
+    //
+    // A real app and a real resolver, because the claim is the CROSSING: the
+    // resolver parks the row, `installLogContext` reads it off the call, and
+    // litestone builds the entry from that. A unit test on either side passes
+    // with the middle unwired.
+    const dir = mkdtempSync(join(tmpdir(), 'fjs-audit-bearer-'))
+    try {
+      const db: any = await createClient({
+        resolveFrom: dir,
+        claims: ['cartOwner'],
+        schema: `
+          database main  { path ":memory:" }
+          database audit { path "${dir}/audit/" driver logger }
+          model Grant { id Int @id @default(autoincrement())  cartId Int  tokenHash String @unique @guarded  @@gate("8") }
+          model Note  { id Int @id @default(autoincrement())  cartId Int  body String
+                        @@gate("0")
+                        @@allow('create', cartId == auth().cartOwner)
+                        @@allow('read',   cartId == auth().cartOwner)
+                        @@log(audit) }
+        `,
+      })
+      const KEY = 'audit-test-key'
+      await db.asSystem().grant.create({
+        data: { cartId: 42, tokenHash: await fingerprint('tok', { key: KEY, purpose: 'grant.tokenHash' }) },
+      })
+
+      const app = createApp({
+        db: db as never,
+        principal: bearerClaim({
+          from: header('x-cart-token'), model: 'grant', column: 'tokenHash',
+          subject: 'cartId', key: KEY, claims: { cartOwner: 'cartId' },
+        }),
+      })
+      app.services.register(createService({ name: 'notes', model: 'Note', db: db as never }))
+      await app._startForTest()
+
+      await enterRequest(
+        { origin: 'http', headers: { 'x-cart-token': 'tok' }, client: { headers: { 'x-cart-token': 'tok' } } } as never,
+        () => app.service('notes').create({ cartId: 42, body: 'mine' }),
+      )
+      await tick()
+      const [row] = await (db as any).asSystem().auditLogs.findMany({})
+
+      expect(row.actorType).toBe('bearer')
+      expect(row.actorId).toBe(1)     // the grant row
+      expect(row.subjectId).toBe(42)  // what the grant was for
+      // And the token is in none of it: what crossed was an id.
+      expect(JSON.stringify(row)).not.toContain('tok')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
   test('a nested call records the OUTER request — provenance is request-wide', async () => {

@@ -17,6 +17,7 @@
 
 import { verifyRequest } from '@frontierjs/toolbelt/signature'
 import { createDocker, createInspector } from './docker.js'
+import { createStatic } from './static.js'
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
@@ -38,6 +39,7 @@ function nonceMemory(windowMs) {
 export function createOutpostServer(config, {
   docker    = createDocker({ workDir: config.workDir }),
   inspector = createInspector(),
+  statics   = createStatic({ staticDir: config.staticDir, staticUrl: config.staticUrl }),
   log       = console,
 } = {}) {
 
@@ -95,6 +97,23 @@ export function createOutpostServer(config, {
       tail:  body.tail,
       since: body.since,
     }),
+
+    // ── Static releases ───────────────────────────────────────────────
+    //
+    // An app whose source is a pasted file has no image and no container, so
+    // none of the routes above describe it: the bytes ARE the release. They are
+    // written under their own digest and a symlink swap makes them live, which
+    // is why `activate` needs nothing but a digest this machine already holds.
+    //
+    // The digest in every reply is read off the bytes that landed. A caller
+    // states none — `/deploy` answers its own for the same reason.
+    'POST /static/publish':  (body) => statics.publish({
+      appId: body.app_id, slug: body.slug, files: body.files, keep: body.keep,
+    }),
+    'POST /static/activate': (body) => statics.activate({ appId: body.app_id, slug: body.slug, digest: body.digest }),
+    'POST /static/health':   (body) => statics.healthCheck({ appId: body.app_id, digest: body.digest }),
+    'POST /static/retire':   (body) => statics.retire({ appId: body.app_id, slug: body.slug }),
+    'POST /static/releases': (body) => statics.releases({ appId: body.app_id }),
 
     'POST /system/prune':  (body) => inspector.prune({ targets: body.targets, keepImages: body.keep_images })
       .then(async result => ({ ...result, usage: await inspector.disk() })),

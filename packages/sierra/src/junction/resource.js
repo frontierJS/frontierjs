@@ -214,30 +214,6 @@ function _appendOnly(model, method) {
   return err
 }
 
-/**
- * A held write this device cannot make carry what the policy needs.
- *
- * `@@sync(field)` compares the patch against the row the writer READ, so the
- * held write has to carry that row — and nothing here does yet: the base is a
- * ROW, so it cannot ride a header the way `idempotencyKey` does, and a write's
- * body already IS its data (`IDEAS/homestead.md` phase 5).
- *
- * Refused rather than queued, because the degradation is invisible: the write
- * would go up with its revision and no base, the Data boundary would refuse it
- * on the revision alone, and `field` would behave exactly as `refuse` while the
- * schema claims two writers on different columns both win.
- */
-function _noBaseCarried(model, method) {
-  const err = new Error(
-    `[Sierra] ${model}.${method}() cannot be held: this model declares @@sync(field), which merges a held ` +
-    `write column by column against the row it was made against — and this client cannot yet carry that row ` +
-    `to the server, so the write would be refused on its revision alone and behave as @@sync(refuse). ` +
-    `Declare @@sync(refuse) to say that deliberately, or @@sync(server) to let the replay win.`)
-  err.code = 'NO_BASE_CARRIED'
-  err.model = model
-  err.method = method
-  return err
-}
 
 /**
  * Does this payload carry bytes?
@@ -1174,20 +1150,28 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       if (syncPolicy === 'append' && APPEND_REFUSES.has(method))
         throw _appendOnly(model, method)
 
-      // `field` is built at the Data boundary and not yet reachable from here —
-      // see `_noBaseCarried`. Refused on the same writes `append` refuses,
-      // since a create has no row to have been made against.
-      if (syncPolicy === 'field' && APPEND_REFUSES.has(method))
-        throw _noBaseCarried(model, method)
-
       const files = syncPolicy && !NEVER_QUEUED.has(method) ? _filesIn(ctx.data) : {}
       const rowId = ctx.id ?? (mint ? ctx.data?.[mint.field] : null)
       const attachable = !Object.keys(files).length || rowId != null
+
+      // ── @@sync(field) — the row this write was made against ─────────────
+      // The comparison runs at the Data boundary and needs the row as the
+      // WRITER read it (`FJS-D334`), which is exactly what `_read` already
+      // holds for `@version`. Derived rather than declared: nothing a caller
+      // writes says what they were looking at, and the resource knows.
+      //
+      // Only a write against an EXISTING row has one — a create was made
+      // against nothing — and only `field` reads it, since litestone refuses a
+      // base on every other policy by name.
+      const heldBase = syncPolicy === 'field' && ctx.id != null
+        ? _read.get(ctx.id) ?? null
+        : null
 
       const held = syncPolicy && !NEVER_QUEUED.has(method) && attachable
         ? await pendingQueue().add({
             service: serviceName, model, method, id: ctx.id,
             data: _heldData(_withoutFiles(ctx.data, files), syncPolicy, versionOf),
+            ...(heldBase ? { base: heldBase } : {}),
           })
         : null
 
@@ -1202,7 +1186,13 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
 
       // network call
       const proxy = client.service(serviceName)
-      const callOpts = held ? { idempotencyKey: held.key } : undefined
+      // The base rides the live call as well as the held one. A write made
+      // while the network is up can still lose a race, and the merge is the
+      // same comparison either way — otherwise `field` would only ever resolve
+      // for a device that had been offline, which is not what it declares.
+      const callOpts = held || heldBase
+        ? { ...(held ? { idempotencyKey: held.key } : {}), ...(heldBase ? { base: heldBase } : {}) }
+        : undefined
       try {
       switch (method) {
         case 'find':    ctx.result = await proxy.find(ctx.query, ctx.directives);          break

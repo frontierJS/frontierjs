@@ -5,7 +5,7 @@
 //   Soft delete:       models with deletedAt field get auto-filtering + soft ops
 //   Statement cache:   compiled statements reused across calls via wrapDb()
 
-import { openDatabase } from './engine.js'
+import { openDatabase, currentEngine } from './engine.js'
 import { applyBusyTimeout, busyTimeoutFor, validateBusyTimeout } from './pragmas.js'
 import { resolve, join, dirname, extname, tmpdir, pathToFileURL,
          existsSync, mkdirSync, mkdtempSync, statSync } from '#host'
@@ -20,13 +20,14 @@ import {
   buildWindowCols,
   sql, rawClause,
   isNamedAgg, buildNamedAggExpr, extractNamedAggs,
-  parseSelectArg, trimAllToSelect,
+  parseSelectArg, trimAllToSelect, vectorOrderPlan, orderByAfterVector, vectorQueryBytes,
   deserializeRow, serializeRow,
-  coerceBooleans, serializeBooleans, centreOf,
+  coerceBooleans, serializeBooleans, centerOf,
   encodeCursor, decodeCursor,
   normalizeOrderBy, buildCursorWhere, extractCursorValues, cursorOrderSql,
   filterableKeysFor, sortableKeysFor, aggregatableKeysFor, opaqueSortKind, OPAQUE_SORT,
 } from './query.js'
+import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
 import { validate, applyTransforms, buildValidationMap, validateJsonPatch, ValidationError } from './validate.js'
 import { PluginRunner, AccessDeniedError } from './plugin.js'
 import { GatePlugin, FrontierGateGetLevel, levelPasses } from '../plugins/gate.js'
@@ -159,6 +160,11 @@ function wrapDb(rawDb, { maxCacheSize = 500, label = 'sqlite' } = {}) {
   return {
     query(sql)          { return stmt(sql) },
     prepare(sql)        { return stmt(sql) },
+    // The connection underneath, for the two things that are not SQL: loading
+    // an extension, and anything else the C API owns. `wrapDb` is a statement
+    // cache and every other caller wants only that, so this is deliberately not
+    // a general escape — `rawHandle()` below is the one reader.
+    $raw:               rawDb,
     // run() now caches UPDATE/DELETE/INSERT — only pragmas/transactions bypass
     run(sql, ...params) {
       if (closed) throw new ClientClosedError(label)
@@ -290,6 +296,21 @@ function mappedDb(db, columnMap) {
 // The plain handle behind a wide wrapper, for the resolvers that answer for a
 // model of their own.
 const plainDb = (db) => db.$plain ?? db
+
+// The `bun:sqlite` Database under however many wrappers are on it. `wideDb`,
+// `mappedDb` and the read router each expose `$plain` pointing one layer in, so
+// this walks down and then reads the statement cache's own handle. Bounded
+// rather than `while (true)`, because a wrapper that pointed at itself would
+// otherwise hang the read that asked.
+function rawHandle(db) {
+  let cur = db
+  for (let i = 0; i < 8 && cur; i++) {
+    if (cur.$raw) return cur.$raw
+    if (!cur.$plain || cur.$plain === cur) break
+    cur = cur.$plain
+  }
+  return cur?.$raw ?? null
+}
 
 // Mutates — the object came straight from SQLite and is not shared. A wide
 // column hands over DIGITS rather than a BigInt because `JSON.stringify` throws
@@ -694,6 +715,59 @@ function enumOptions(meta, offending) {
 // where key" — the typo hint and the AND/OR/NOT descent included — rather than
 // Junction growing a second one that drifts. Returns [] when the where is fine,
 // so `if (problems.length)` reads naturally at the call site.
+
+// ─── a distance order is not a sort of the document ──────────────────────────
+//
+// A `@point` column is a `Json` column, so `sortableKeysFor` calls it `opaque`
+// and is right to: its stored text is a serialization, and ordering by that
+// orders rows by whichever key serialized first. `{ site: { near: … } }` is the
+// one shape under that key which is NOT sorting the document, so it is lifted
+// out before the guard sees it.
+//
+// One owner, because there are two guards and they are reached from opposite
+// ends: `checkOrderBy` grades a call this client is about to run, and
+// `$checkOrderBy` answers junction's `autoSort` BEFORE the call is made. The
+// second was missed when the first was written, so every distance-ordered list
+// over HTTP was a 400 naming the column as unsortable — with the same query
+// working perfectly through the client (`FJS-D321`'s ordering, refused at the
+// API boundary alone).
+
+/** `{ field → the @point attribute }` for a model, empty for one with none. */
+function pointFieldsOf(model) {
+  return new Map(
+    (model?.fields ?? [])
+      .map(f => [f.name, f.attributes?.find(a => a.kind === 'point')])
+      .filter(([, pt]) => pt))
+}
+
+/** Is this orderBy entry a distance order rather than a sort of the column? */
+function isNearOrderFor(points, key, val) {
+  return points.has(key) && val !== null && typeof val === 'object' && !Array.isArray(val) && val.near != null
+}
+
+/**
+ * Split an `orderBy` into the entries an ordinary sort guard should grade and
+ * the first thing wrong with a distance order, if anything is.
+ *
+ * `kept` keeps the caller's own shape per item — an item whose every key was a
+ * near-order contributes nothing, so an orderBy that is ONLY a distance order
+ * leaves an empty list and the guard has nothing to say about it.
+ */
+function liftNearOrders(points, orderBy) {
+  const items = Array.isArray(orderBy) ? orderBy : [orderBy]
+  const kept  = []
+  for (const item of items) {
+    if (!item || typeof item !== 'object') { kept.push(item); continue }
+    const rest = {}
+    for (const [key, val] of Object.entries(item)) {
+      if (!isNearOrderFor(points, key, val)) { rest[key] = val; continue }
+      if (!centerOf(val.near)) return { kept, problem: { key, message:
+        `orderBy ${key}.near needs a numeric lat and lng — got ${JSON.stringify(val.near)}` } }
+    }
+    if (Object.keys(rest).length) kept.push(rest)
+  }
+  return { kept, problem: null }
+}
 
 // ─── @guarded on the way IN ───────────────────────────────────────────────────
 //
@@ -1384,17 +1458,9 @@ function withArgValidation(table, model, ctx) {
     return { ...args, where: args?.where ? { AND: [args.where, { $raw: raw }] } : { $raw: raw } }
   }
 
-  // Which fields on this model are points, read off the declaration. The sort
-  // guard below needs it because a point is a Json column — `opaque`, and right
-  // to be: it orders as text. `{ site: { near: … } }` is the one shape that is
-  // not sorting the document, so it is lifted out before the guard sees it.
-  const _pointFields = new Map(
-    (model?.fields ?? [])
-      .map(f => [f.name, f.attributes?.find(a => a.kind === 'point')])
-      .filter(([, pt]) => pt))
+  const _pointFields = pointFieldsOf(model)
 
-  const isNearOrder = (key, val) =>
-    _pointFields.has(key) && val !== null && typeof val === 'object' && !Array.isArray(val) && val.near != null
+  const isNearOrder = (key, val) => isNearOrderFor(_pointFields, key, val)
 
   const checkOrderBy = (args, method) => {
     // Every call passes through here, and one naming no order has nothing to grade.
@@ -1405,19 +1471,8 @@ function withArgValidation(table, model, ctx) {
     // this is a 400 about what the caller wrote.
     let orderBy = args.orderBy
     if (_pointFields.size) {
-      const items = Array.isArray(orderBy) ? orderBy : [orderBy]
-      const kept  = []
-      for (const item of items) {
-        if (!item || typeof item !== 'object') { kept.push(item); continue }
-        const rest = {}
-        for (const [key, val] of Object.entries(item)) {
-          if (!isNearOrder(key, val)) { rest[key] = val; continue }
-          if (!centreOf(val.near))
-            throw new ValidationError([{ path: ['orderBy', key], message:
-              `orderBy ${key}.near needs a numeric lat and lng — got ${JSON.stringify(val.near)}` }])
-        }
-        if (Object.keys(rest).length) kept.push(rest)
-      }
+      const { kept, problem } = liftNearOrders(_pointFields, orderBy)
+      if (problem) throw new ValidationError([{ path: ['orderBy', problem.key], message: problem.message }])
       if (!kept.length) return
       orderBy = Array.isArray(args.orderBy) ? kept : kept[0]
     }
@@ -1964,6 +2019,11 @@ function makeReadRouter(readDb, writeDb, txState) {
     // reachable from nowhere else — without this, _closeAll's readDb.close()
     // is a silent no-op and the read side keeps answering off a closed handle.
     close:  () => readDb.close?.(),
+    // Routed the same way `query` is, and for the same reason: inside a
+    // transaction the read runs on the write handle, and an extension loaded
+    // into the other one is not loaded into the one the statement compiles on.
+    get $plain()     { return (ownsTx(txState) ? writeDb : readDb).$plain },
+    get $raw()       { return (ownsTx(txState) ? writeDb : readDb).$raw },
     get cacheSize()  { return readDb.cacheSize },
     set cacheSize(v) { readDb.cacheSize = v },
   }
@@ -3203,6 +3263,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (!p) return null
     if (p.hashed)                     return `is @hashed — the column holds a one-way digest, so the answer would be about digests ` +
                                              `rather than values. A digest can be matched in a where and never read back, by any caller`
+    // Before the system early-return, because this is not an access rule: a
+    // vector is float32 packed into a blob, so MAX/MIN order it as opaque text
+    // and SUM/AVG read it as 0. asSystem() does not make any of that mean more.
+    if (p.vector)                     return `is @vector(${p.vector.dim}) — the column holds packed float32, which aggregates as ` +
+                                             `opaque bytes. Similarity is an ordering: orderBy { ${name}: { near: v } }`
     if (ctx.isSystem) return null
     if (p.encrypted)                  return `is @encrypted — a non-system read is stripped, and the stored column is ciphertext`
     if (p.guarded)                    return `is @guarded — a system-context column. Use asSystem() for a read that is not a caller's`
@@ -5671,6 +5736,18 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // about the tiebreaker would name a position the next page does not resume
   // from — a scan that skips a row, which is the thing this exists to stop.
   function cursorFields(orderBy) {
+    // Before `normalizeOrderBy`, which reads any `near` as a coordinate and
+    // refuses this one asking for a lat and a lng. A @vector near-order is a
+    // real ordering everywhere else in this client, so the message has to say
+    // why THIS read cannot take it: a keyset cursor resumes from a value the
+    // row holds, and a distance belongs to the query vector rather than to the
+    // row — the next page would have to carry the vector to mean anything, and
+    // any change to it would silently renumber the window.
+    const vecPlan = vectorOrderPlan(orderBy, _vectorMap)
+    if (vecPlan) throw new Error(
+      `${modelName}.findManyCursor: orderBy "${vecPlan.field}" is a @vector, and a cursor pages by a value the row ` +
+      'holds. A distance belongs to the query vector, not to the row. Page a similarity list with limit/offset.')
+
     const keyCols = _keyCols()
     // `normalizeOrderBy` defaults to the literal `id`, which it has to — it is
     // a pure function with no model in scope. Here there IS one, and a
@@ -5692,7 +5769,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // function with no model in scope and the point declaration is here.
     for (const f of fields) {
       if (!f.near) continue
-      const pt = _pointMap[f.col]
+      const pt = _pointMap?.[f.col]
       if (!pt) throw new Error(
         `${modelName}.findManyCursor: orderBy "${f.col}" is not a @point, so it has no distance to page by`)
       const [latName, lngName] = pointColumns(f.col, pt)
@@ -5812,10 +5889,71 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return Object.keys(out).length ? out : null
   })()
 
+  // `@vector(n)` — the dimension, per field, for `orderBy: { col: { near: v } }`
+  // (`FJS-D333`). Same shape as the point map above and for the same reason: the
+  // ordering is compiled from the DECLARATION rather than measured off whatever
+  // bytes are in hand, because two vectors of different lengths have no
+  // comparison and the length of the query vector is the caller's.
+  const _vectorMap = (() => {
+    const out = {}
+    for (const f of _modelDecl?.fields ?? []) {
+      const vec = f.attributes.find(a => a.kind === 'vector')
+      if (vec) out[f.name] = { dim: vec.dim }
+    }
+    return Object.keys(out).length ? out : null
+  })()
+
+
+  // `@vector` is out of the default payload (`FJS-D328`), and this is the half
+  // that makes the exclusion worth having. `applyFieldPolicyTo` strips it from
+  // the row, which is the CONTRACT — but a strip happens after the bytes have
+  // been read out of SQLite and copied through `read()`. Measured against the
+  // same model with the attribute removed, at 1536 dimensions: 0.118 ms -> 0.032
+  // ms for twenty rows, 2.48 ms -> 0.56 ms for a thousand. So `SELECT *` is
+  // replaced by the columns that are not vectors.
+  //
+  // The list is `model.fields.filter(isStoredField)` — `ddl.js`'s own
+  // `columnFields`, which is what decides the table's columns, so it cannot
+  // name one that is not there or miss a `@generated` one that is.
+  const _defaultCols = _vectorMap
+    ? (_modelDecl?.fields ?? [])
+        .filter(isStoredField)
+        .filter(f => !_vectorMap[f.name])
+        .map(f => `"${col(f.name)}"`)
+    : null
+
+  // `*` for every model that declares no vector, so nothing else in this file
+  // changes shape. `withVectors` is how the JS distance path asks for the
+  // column it is about to rank by.
+  const _starCols = (alias = '', withVectors = false) =>
+    !_defaultCols || withVectors
+      ? `${alias}*`
+      : _defaultCols.map(c => `${alias}${c}`).join(', ')
+
+  // ─── the vector ordering's engine half ──────────────────────────────────
+  //
+  // `FJS-D331`: the extension is an accelerator a server may install, so this
+  // answers null on an engine without it and the ordering refuses BY NAME
+  // rather than emitting SQL SQLite has no function for.
+  //
+  // Arming is per CONNECTION and deliberately not done at open — measured,
+  // loading the extension there takes a connection from 0.115 ms to 0.650 ms,
+  // and litestone opens one per pristine migration diff, per template clone and
+  // per tenant, almost none of which run a similarity query. So the read that
+  // needs it arms the handle it is about to use; `arm` is idempotent.
+  const _vectorFn = (db) => {
+    const cap = currentEngine()?.vector
+    if (!cap || !_vectorMap) return null
+    const handle = rawHandle(db)
+    if (!handle) return null
+    cap.arm(handle)
+    return cap.cosineDistance
+  }
+
   // The base SELECT with all @from subqueries appended
   const _baseSqlWithFrom = _hasFrom
-    ? `SELECT "${tableName}".*, ${_fromEntries.map(([n, {subquerySql}]) => `${subquerySql} AS "${n}"`).join(', ')} FROM "${tableName}"`
-    : _baseSql
+    ? `SELECT ${_starCols(`"${tableName}".`)}, ${_fromEntries.map(([n, {subquerySql}]) => `${subquerySql} AS "${n}"`).join(', ')} FROM "${tableName}"`
+    : (_defaultCols ? `SELECT ${_starCols()} FROM "${tableName}"` : _baseSql)
   // Set of @from field names that return JSON objects (need deserialization)
   const _fromObjectFields = _hasFrom
     ? new Set(_fromEntries.filter(([,{isObject}]) => isObject).map(([n]) => n))
@@ -5864,8 +6002,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
   )
   const _fastFindUniqueSql = _canFastFindUnique
     ? (softDelete
-        ? `SELECT * FROM "${tableName}" WHERE "${col(_pkField)}" = ? AND "${col('deletedAt')}" IS NULL LIMIT 2`
-        : `SELECT * FROM "${tableName}" WHERE "${col(_pkField)}" = ? LIMIT 2`)
+        ? `SELECT ${_starCols()} FROM "${tableName}" WHERE "${col(_pkField)}" = ? AND "${col('deletedAt')}" IS NULL LIMIT 2`
+        : `SELECT ${_starCols()} FROM "${tableName}" WHERE "${col(_pkField)}" = ? LIMIT 2`)
     : null
   // External (@@external) tables may not exist at createClient time — preparing
   // a statement against them throws. Skip the fast path in that case; the
@@ -5876,11 +6014,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
     catch { _fastFindUniqueStmt = null }
   }
 
-  function buildSQL({ where, orderBy, limit, offset, parsedSelect, sdMode = 'live', htMode = 'instances', distinct = false, windowSpec = null } = {}) {
+  function buildSQL({ where, orderBy, limit, offset, parsedSelect, sdMode = 'live', htMode = 'instances', distinct = false, windowSpec = null, withVectors = false } = {}) {
     const params   = []
 
     // ── Ultra-fast path: no where, no order, no limit, live mode, no policy/filters ──
-    if (_fastFindManySql && !where && !orderBy && limit == null && offset == null && sdMode === 'live' && !parsedSelect && !windowSpec && !distinct) {
+    if (_fastFindManySql && !withVectors && !where && !orderBy && limit == null && offset == null && sdMode === 'live' && !parsedSelect && !windowSpec && !distinct) {
       return { sql: _fastFindManySql, params }
     }
 
@@ -5901,7 +6039,23 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const sdWhere = softDelete
       ? injectSoftDeleteFilter(mergedWhere, sdMode)
       : mergedWhere
-    const effectiveWhere = applyHtFilter(sdWhere, htMode)
+    let effectiveWhere = applyHtFilter(sdWhere, htMode)
+
+    // A similarity ordering carries its own guard. The extension throws on a
+    // null operand rather than ranking the row last, so an un-embedded row
+    // would fail the whole read instead of losing — `vectorOrderPlan` is the
+    // one owner of which field that applies to. ANDed as an ordinary where so
+    // it composes with the policy, the soft-delete clause and the caller's own
+    // filter rather than being appended to finished SQL.
+    const _vecPlan = vectorOrderPlan(orderBy, _vectorMap)
+    if (_vecPlan) {
+      effectiveWhere = {
+        AND: [
+          ...(effectiveWhere ? [effectiveWhere] : []),
+          { [_vecPlan.field]: { not: null } },
+        ],
+      }
+    }
     // Build relation orderBy first so we know if JOINs will be present.
     // When JOINs are added, column refs in WHERE must be qualified with `t.`
     // to avoid ambiguous column errors (e.g. `id` exists on both joined tables).
@@ -5912,7 +6066,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // nothing. Sharing one array would push a `$raw`'s params twice.
     const _relOrderParams  = []
     const _flatOrderParams = []
-    const { joinClauses, orderParts } = buildRelationOrderBy(orderBy, modelName, relationMap, _modelToTable, _relOrderParams, _pointMap)
+    const { joinClauses, orderParts } = buildRelationOrderBy(orderBy, modelName, relationMap, _modelToTable, _relOrderParams, _pointMap, _vectorMap, _vectorFn(readDb), columnMap)
     const hasJoins  = joinClauses.length > 0
     // The table is aliased for a relation AGGREGATE orderBy too, which adds an
     // order part and no join — so the alias question and the join question are
@@ -5921,10 +6075,31 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // them ambiguous, which is `hasJoins`.
     const needsAlias = joinClauses.length > 0 || orderParts.length > 0
     const whereAlias = hasJoins ? 't' : null
+
+    // `FJS-D329`: the ordering puts the number it sorted by on the row, the way
+    // `search()` already returns `_rank`. No cutoff option — a cosine threshold
+    // is a number every corpus guesses differently, so the app gets the value
+    // and decides.
+    //
+    // The vector is bound twice, here and again in the ORDER BY term, and that
+    // is the price of each order builder staying self-contained: `search()`
+    // builds its own SELECT and emits the same term through `buildOrderBy`, so
+    // ordering by the alias instead would compile to a column that read's SELECT
+    // does not have. Six kB bound twice is nothing beside the scan it orders.
+    //
+    // Pushed into `params` BEFORE the where, because a SELECT expression's
+    // placeholder comes first in the statement and these are positional.
+    const _vecSqlFn = _vecPlan ? _vectorFn(readDb) : null
+    let _distTail = ''
+    if (_vecSqlFn) {
+      params.push(vectorQueryBytes(_vecPlan.near, _vecPlan.dim, _vecPlan.field))
+      _distTail = `, ${_vecSqlFn}(${needsAlias ? 't.' : ''}"${col(_vecPlan.field)}", ?) AS "${DISTANCE_FIELD}"`
+    }
+
     const whereSql  = buildWhereWithEncryption(effectiveWhere, params, whereAlias, needsAlias)
     // When JOINs exist, buildRelationOrderBy returns the full ordered list
     // (flat + relation, flat prefixed with `t.`). Don't double-emit flat parts.
-    const flatOrderSql = hasJoins ? '' : buildOrderBy(orderBy, _flatOrderParams, columnMap, _pointMap)
+    const flatOrderSql = hasJoins ? '' : buildOrderBy(orderBy, _flatOrderParams, columnMap, _pointMap, _vectorMap, _vectorFn(readDb))
     const orderSql = [flatOrderSql, ...orderParts].filter(Boolean).join(', ')
     const orderParams = hasJoins ? _relOrderParams : _flatOrderParams
     const sqlCols   = parsedSelect?.sqlCols ?? '*'
@@ -5941,18 +6116,18 @@ function makeTable(readDb, writeDb, shape, ctx) {
         ? _fromEntries.map(([n]) => `${fromExpr(n)} AS "${n}"`).join(', ')
         : null
       basePart = needsAlias
-        ? `SELECT ${distinctKw}t.*${allFromCols ? `, ${allFromCols}` : ''} FROM "${tableName}" t`
-        : (distinct ? `SELECT DISTINCT * FROM "${tableName}"` : _baseSqlWithFrom)
+        ? `SELECT ${distinctKw}${_starCols('t.', withVectors)}${allFromCols ? `, ${allFromCols}` : ''}${_distTail} FROM "${tableName}" t`
+        : (distinct || _distTail || withVectors
+            ? `SELECT ${distinctKw}${_starCols('', withVectors)}${_hasFrom ? `, ${_fromEntries.map(([n, { subquerySql }]) => `${subquerySql} AS "${n}"`).join(', ')}` : ''}${_distTail} FROM "${tableName}"`
+            : _baseSqlWithFrom)
     } else {
       const fromCols = parsedSelect?.requestedFrom?.size
         ? [...parsedSelect.requestedFrom].map(n => `${fromExpr(n)} AS "${n}"`).join(', ')
         : null
       const selectExpr = fromCols ? `${sqlCols}, ${fromCols}` : sqlCols
       basePart = needsAlias
-        ? `SELECT ${distinctKw}${selectExpr} FROM "${tableName}" t`
-        : (fromCols
-            ? `SELECT ${distinctKw}${selectExpr} FROM "${tableName}"`
-            : `SELECT ${distinctKw}${sqlCols} FROM "${tableName}"`)
+        ? `SELECT ${distinctKw}${selectExpr}${_distTail} FROM "${tableName}" t`
+        : `SELECT ${distinctKw}${fromCols ? selectExpr : sqlCols}${_distTail} FROM "${tableName}"`
     }
     // Splice relation JOINs between FROM and WHERE
     let sql = joinClauses.length
@@ -6519,13 +6694,71 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const mode            = sdMode(args)
       const htm             = htMode(args)
       const ps              = parseArgs(select, include)
-      const { sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: ps, sdMode: mode, htMode: htm, distinct: distinct === true, windowSpec })
+
+      // ── the similarity ordering's two halves (`FJS-D331`) ────────────────
+      //
+      // The comparison has two implementations and the extension is the
+      // optional one. A server that installed `sqlite-vec` compiles the
+      // ordering into the statement; everything else scores here. That is not a
+      // fallback: SQLite's own wasm build carries `SQLITE_OMIT_LOAD_EXTENSION`,
+      // so the browser engine cannot load an extension at any version and the
+      // JS path is its only answer.
+      //
+      // What moves to JavaScript is the ORDER and therefore the PAGE. `limit`
+      // and `offset` cannot travel in the statement, because SQLite is ranking
+      // nothing and `LIMIT 10` would take the first ten rows it happened to
+      // read. So the scan is the whole filtered set — which is why the record
+      // calls the caller's `where` the prune rather than an optimization, and
+      // why a gate or a row policy in front of this read PAYS for itself:
+      // measured, a quarter of the rows ran 2.3x faster in Chrome.
+      const _vecPlan = vectorOrderPlan(orderBy, _vectorMap)
+      const _jsVec   = _vecPlan && !_vectorFn(readDb) ? _vecPlan : null
+
+      let sql, params, rawRows
+      if (_jsVec) {
+        // Graded before the scan and by the SQL path's own function, so a wrong
+        // dimension, a zero vector and a NaN are refused in the same sentence
+        // on both engines rather than in whatever words each half reached for.
+        vectorQueryBytes(_jsVec.near, _jsVec.dim, _jsVec.field)
+
+        // The column being ranked has to be IN the row, and `@vector` is out of
+        // the default payload (`FJS-D328`) — so the SCAN's select is widened
+        // and `read()` is still handed the caller's own, which strips the
+        // column again unless they asked for it.
+        const psScan = select ? parseArgs({ ...select, [_jsVec.field]: true }, include) : ps
+
+        // The same guard the compiled path ANDs on, stated here because the
+        // ordering it is derived from has been taken out of this query.
+        const scanWhere = { AND: [...(where ? [where] : []), { [_jsVec.field]: { not: null } }] }
+
+        ;({ sql, params } = buildSQL({
+          where: scanWhere, orderBy: orderByAfterVector(orderBy, _jsVec.field),
+          parsedSelect: psScan, sdMode: mode, htMode: htm, distinct: distinct === true, windowSpec,
+          withVectors: true,
+        }))
+        rawRows = scoreByDistance(readDb.query(sql).all(...params), _jsVec.near, {
+          column: col(_jsVec.field), dim: _jsVec.dim, dir: _jsVec.dir,
+          take: limit  == null ? Infinity : Number(limit),
+          skip: offset == null ? 0        : Number(offset),
+        })
+      } else {
+        ;({ sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: ps, sdMode: mode, htMode: htm, distinct: distinct === true, windowSpec }))
+        rawRows = readDb.query(sql).all(...params)
+      }
+
+      // Carried across `finalize`, which trims to the caller's `select` and
+      // would drop a name that is not a field. Both paths produce it — the
+      // compiled one as a SELECT alias, this one from `scoreByDistance` — and
+      // it is positional because every step from here maps one row to one row.
+      const _dists = _vecPlan ? rawRows.map(r => r[DISTANCE_FIELD]) : null
+
       const _nt = needsTiming()
       const _fmT0 = _nt ? performance.now() : 0
-      let rows              = readAll(readDb.query(sql).all(...params), { mode: 'list', selectedFields: ps?.requestedFields })
+      let rows              = readAll(rawRows, { mode: 'list', selectedFields: ps?.requestedFields })
       if (_nt) fireQuery({ operation: 'findMany', args, sql, params, duration: _nt ? performance.now() - _fmT0 : 0, rowCount: rows.length })
       withIncludes(rows, ps, include)
       rows = finalize(rows, ps)
+      if (_dists) for (let i = 0; i < rows.length; i++) rows[i][DISTANCE_FIELD] = _dists[i]
       attachFlatEdges(rows, scopedBy)
       if (plugins?.hasPlugins) await plugins.afterRead(modelName, rows, ctx, { select })
       if (tableHasAnyLog && rows.length > 0) emitLogs('read', rows)
@@ -6535,6 +6768,12 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
     // ── findFirst ───────────────────────────────────────────────────────────
     async findFirst(args = {}) {
       refuseRecursive('findFirst', args)
+      // Ranked in JavaScript, the whole candidate set is scored before the
+      // first row is known, so a `LIMIT 1` in the statement would hand back
+      // whichever row SQLite happened to read first. `findMany` owns that path
+      // and runs the plugin door itself.
+      if (vectorOrderPlan(args.orderBy, _vectorMap) && !_vectorFn(readDb))
+        return (await this.findMany({ ...args, limit: 1 }))[0] ?? null
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const { where, include, orderBy, select, scopedBy } = args
       _scopedByForBuild = scopedBy ?? null
@@ -6544,9 +6783,16 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const { sql, params } = buildSQL({ where, orderBy, limit: 1, parsedSelect: ps, sdMode: mode, htMode: htm })
       const _nt = needsTiming()
       const _ffT0 = _nt ? performance.now() : 0
-      let row               = read(readDb.query(sql).get(...params), { mode: 'list', selectedFields: ps?.requestedFields })
+      const _raw            = readDb.query(sql).get(...params)
+      const _dist           = _raw ? _raw[DISTANCE_FIELD] : undefined
+      let row               = read(_raw, { mode: 'list', selectedFields: ps?.requestedFields })
       if (_nt) fireQuery({ operation: 'findFirst', args, sql, params, duration: _nt ? performance.now() - _ffT0 : 0, rowCount: row ? 1 : 0 })
-      if (row) { withIncludes([row], ps, include); row = finalizeOne(row, ps); attachFlatEdges([row], scopedBy) }
+      if (row) {
+        withIncludes([row], ps, include); row = finalizeOne(row, ps); attachFlatEdges([row], scopedBy)
+        // `finalize` trims to the caller's select, which knows no field of this
+        // name — same restamp findMany makes, and for the same reason.
+        if (_dist !== undefined) row[DISTANCE_FIELD] = _dist
+      }
       else row = null
       if (plugins?.hasPlugins && row) await plugins.afterRead(modelName, [row], ctx, { select })
       // ── Logging ──────────────────────────────────────────────────────────────
@@ -6719,6 +6965,14 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
     // → { rows: [...], total: 42 }
     async findManyAndCount(args = {}) {
       refuseRecursive('findManyAndCount', args)
+      // Same reason as findFirst: the page is decided in JavaScript, so the
+      // rows come from findMany. The count is the same question either way —
+      // it asks the WHERE and never the ordering.
+      if (vectorOrderPlan(args.orderBy, _vectorMap) && !_vectorFn(readDb)) {
+        const rows  = await this.findMany(args)
+        const total = await this.count(args)
+        return { rows, total }
+      }
       if (plugins?.hasPlugins) await plugins.beforeRead(modelName, args, ctx)
       const { where, include, orderBy, limit, offset, select, distinct } = args
       const mode = sdMode(args)
@@ -6729,10 +6983,13 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const { sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: ps, sdMode: mode, htMode: htm, distinct: distinct === true })
       const _nt = needsTiming()
       const _t0 = _nt ? performance.now() : 0
-      let rows = readAll(readDb.query(sql).all(...params), { mode: 'list', selectedFields: ps?.requestedFields })
+      const rawRows = readDb.query(sql).all(...params)
+      const _dists  = vectorOrderPlan(orderBy, _vectorMap) ? rawRows.map(r => r[DISTANCE_FIELD]) : null
+      let rows = readAll(rawRows, { mode: 'list', selectedFields: ps?.requestedFields })
       fireQuery({ operation: 'findMany', args, sql, params, duration: _nt ? performance.now() - _t0 : 0, rowCount: rows.length })
       withIncludes(rows, ps, include)
       rows = finalize(rows, ps)
+      if (_dists) for (let i = 0; i < rows.length; i++) rows[i][DISTANCE_FIELD] = _dists[i]
 
       // ── count query (same WHERE, no limit/offset) ─────────────────────
       const countParams = []
@@ -9219,7 +9476,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // sort key answers the right rows in the wrong order, and nothing about
       // that is visible.
       if (ordered) {
-        const orderSql = buildOrderBy(orderBy, baseParams, columnMap, _pointMap)
+        const orderSql = buildOrderBy(orderBy, baseParams, columnMap, _pointMap, _vectorMap, _vectorFn(readDb))
         if (orderSql) baseSql += ` ORDER BY ${orderSql}`
         if (limit != null) baseSql += ` LIMIT ${Number(limit)}`
         if (offset)        baseSql += ` OFFSET ${Number(offset)}`
@@ -9945,9 +10202,19 @@ function buildLogEntry({ operation, model, field, records, before, after }, ctx,
     // answers who the write was made AS and nobody answers who made it. The
     // operator comes down the same closure as the rest of the provenance, and
     // where there is one the two ids swap roles.
-    actorId:   from?.operatorId ?? ctx.auth?.id ?? null,
+    //
+    // A BEARER has the same shape for the opposite reason: the principal is a
+    // capability rather than a person, so it carries no id at all and the row
+    // would be filed under nobody. The grant is the actor and what it was for
+    // is the subject, which is the only way *which link wrote this* survives a
+    // revocation. Both arrive down the provenance closure because neither is
+    // on the principal — one is deliberately hidden from it, the other is a
+    // row this package never read.
+    actorId:   from?.operatorId ?? from?.bearerId ?? ctx.auth?.id ?? null,
     actorType: from?.operatorId ? 'support' : actorTypeOf(ctx),
-    subjectId: from?.operatorId ? (ctx.auth?.id ?? null) : null,
+    subjectId: from?.operatorId ? (ctx.auth?.id ?? null)
+             : from?.bearerId  ? (from?.bearerSubject ?? null)
+             : null,
     episodeId: from?.episodeId ?? null,
     correlationId: from?.correlationId ?? null,
     source:        from?.source        ?? null,
@@ -11902,6 +12169,19 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   function $checkOrderBy(accessor, orderBy, opts = {}) {
     const model = modelForAccessor(accessor)
     if (!model?.fields) return []
+
+    // The same lift `checkOrderBy` makes, and it has to be made HERE too:
+    // junction's `autoSort` asks this before the call is made, so a distance
+    // order refused here never reaches the client that would have run it.
+    const points = pointFieldsOf(model)
+    if (points.size) {
+      const { kept, problem } = liftNearOrders(points, orderBy)
+      if (problem) return [{ key: problem.key, reason: 'invalid', sortable: [],
+                             suggestion: null, message: problem.message }]
+      if (!kept.length) return []
+      orderBy = Array.isArray(orderBy) ? kept : kept[0]
+    }
+
     const { sortable, relations, computed, transient, opaque } = sortableKeysFor(model)
     // Legality is still the schema's — what narrows is only what the 400 SAYS,
     // which is the half junction puts in front of an unauthenticated caller.

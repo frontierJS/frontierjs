@@ -61,7 +61,7 @@
 //                               hidden that behind a word
 //
 // The line between the last two is what the file is ABOUT, not what it plugs
-// into. `cart-claim.ts` is the `createApp({ principal })` seam, which is as
+// into. `cart-grant.ts` is the `createApp({ principal })` seam, which is as
 // Junction-shaped as anything in `core/` — and it is in `domain/` because what
 // it resolves is a BASKET TOKEN, which only a shop has.
 //

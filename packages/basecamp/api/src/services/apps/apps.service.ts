@@ -29,6 +29,9 @@ import { db, findScoped, getScoped, removeScoped, assertSlugFree, deriveSlug, na
 // them rendered as "no certificate" — including the expired ones.
 import { certStatusOf } from '../domains/domains.service.ts'
 import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
+// The one reader of `App.source`. A service that parsed the blob itself would
+// be the second, and the two would disagree the first time a kind was added.
+import { parseAppSource, sourceKindOf, summarizeSource } from '../../core/app-source.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 
 const WITH_ENV = { environment: true }
@@ -41,6 +44,30 @@ const WITH_ENV = { environment: true }
 const WITH_DETAIL = { environment: true, domains: true }
 
 export function createAppsService(app: BasecampApp) {
+
+  /**
+   * `source` and `type` are one decision, so they are checked together.
+   *
+   * An inline app has no image and no container — its release is files behind
+   * a web server — and `AppType` already has the word for that. Letting the two
+   * disagree would produce an app whose deploy pipeline is the container one
+   * and whose bytes are an HTML file, which fails four steps in with a docker
+   * error about an image nobody named.
+   *
+   * The parse REWRITES `data.source`: what gets stored is the normalized shape,
+   * never the payload, so an unknown key cannot ride into the column and be
+   * read back later as though something had meant it.
+   */
+  function checkSource(data: Record<string, unknown>, current?: Record<string, unknown>) {
+    const source = 'source' in data ? parseAppSource(data.source) : null
+    if ('source' in data) data.source = source ?? {}
+
+    const kind = 'source' in data ? source?.kind : sourceKindOf(current?.source)
+    const type = (data.type ?? current?.type ?? 'container') as string
+    if (kind === 'inline' && type !== 'static')
+      throw new BadRequest(
+        `An inline source is served as files, so this app's type must be 'static' — it is '${type}'`)
+  }
 
   async function assertEnvironmentInWorkspace(environmentId: string) {
     const env = await db().environment.findFirst({ where: { id: environmentId, workspaceId: ws() } })
@@ -64,7 +91,16 @@ export function createAppsService(app: BasecampApp) {
     // is one question ("what is this app doing"), so it is one request.
     const [placement, deployments, jobs] = await Promise.all([
       db().appServer.findMany({ where: { appId: row.id }, include: { server: true } }),
-      db().deployment.findMany({ where: { appId: row.id }, orderBy: { queuedAt: 'desc' }, limit: 10 }),
+      // Columns, not the row. `configSnapshot` holds an inline app's whole
+      // source, so ten releases of a pasted page is ten copies of it on a
+      // request that draws a ten-line table.
+      db().deployment.findMany({
+        where:   { appId: row.id },
+        select:  { id: true, status: true, trigger: true, queuedAt: true, finishedAt: true,
+                   durationMs: true, commitSha: true, builtImage: true, toImage: true },
+        orderBy: { queuedAt: 'desc' },
+        limit:   10,
+      }),
       db().job.findMany({ where: { appId: row.id }, orderBy: { createdAt: 'desc' }, limit: 10 }),
     ])
 
@@ -102,7 +138,9 @@ export function createAppsService(app: BasecampApp) {
         orderBy: { createdAt: 'desc' },
         limit, offset,
       })
-      return { total, limit, offset, data: rows }
+      // See `summarizeSource`: a list says what each app's source is, the
+      // detail read says what it holds.
+      return { total, limit, offset, data: rows.map((r: any) => ({ ...r, source: summarizeSource(r.source) })) }
     },
 
     async get() {
@@ -111,6 +149,7 @@ export function createAppsService(app: BasecampApp) {
 
     async create() {
       const data = $.data as Record<string, unknown>
+      checkSource(data)
       await assertEnvironmentInWorkspace(data.environmentId as string)
       await assertSlugFree('app', { environmentId: data.environmentId, slug: data.slug },
         `App slug '${data.slug}' already exists in this environment`)
@@ -123,11 +162,12 @@ export function createAppsService(app: BasecampApp) {
     },
 
     async patch() {
-      await getScoped('app', 'App')
+      const current = await getScoped('app', 'App')
       // environmentId and slug are immutable — moving an app between
       // environments would orphan its deployment history.
       // `status` is the deploy job's to set, never a client's.
       const patch = narrowPatch($.data as Record<string, unknown>, ['environmentId', 'slug', 'status'])
+      checkSource(patch, current as Record<string, unknown>)
       if (!changesNothing(patch))
         await db().app.update({ where: { id: $.id as string }, data: patch })
 
@@ -135,10 +175,29 @@ export function createAppsService(app: BasecampApp) {
     },
 
     async remove() {
-      await getScoped('app', 'App')
+      const target = await getScoped('app', 'App')
       // Mark it stopped as well as deleted: a soft-deleted app that still reads
       // "running" would keep showing up as live in any status rollup.
       await db().app.update({ where: { id: $.id as string }, data: { status: 'stopped' } })
+
+      // A container stops when nothing restarts it. FILES do not: an inline app
+      // deleted here would go on serving its last release, at its own address,
+      // to anybody who had the link — a row removed from a console and a page
+      // still on the internet. So the machine is told, and a machine that
+      // cannot be reached does not block the delete: the row is the operator's
+      // decision and the retire is best effort, said in the log rather than
+      // swallowed.
+      if (sourceKindOf(target.source) === 'inline') {
+        const executor = await resolveExecutor(app, target.id)
+        if (isExecutor(executor)) {
+          const reply = await executor.call('/static/retire', { app_id: target.id, slug: target.slug })
+          if (reply.error)
+            app.logger.warn(`app ${target.id} deleted, but the machine still serves it: ${reply.error.message}`)
+        } else {
+          app.logger.warn(`app ${target.id} deleted with no machine to retire it from: ${executor.reason}`)
+        }
+      }
+
       const removed = await removeScoped('app', 'App')
       app.events.emit('app:deleted', { id: $.id, workspace_id: ws() })
       return removed

@@ -1,5 +1,31 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-20 — `/bearer`, what a bearer secret looks like at rest
+
+`FJS-D339`. The kit the bearer-access design needs before anything else can be
+built: a token whose HOLDER is the whole proof — a cart token, a portal link, an
+API key — is stored as a keyed digest and never as itself.
+
+**`purpose` is required, not optional.** The same token digested for two tables
+under one key produces one string, so a portal link's stored digest would be a
+legal API key digest — a row from the table with the weaker gate presented to
+the one with the stronger. Requiring the name means nobody discovers the rule
+by being bitten by it.
+
+**A fast digest rather than bcrypt, and the reason is the hot path.** A password
+has perhaps 30 bits of entropy and must be made expensive to guess; a minted
+token has 128 and cannot be guessed at any cost. A guest carrying a cart token
+pays this per call, so the expense would buy nothing and cost every request.
+
+`matchesFingerprint` is constant-time over the digests, for the shape where the
+stored digest was fetched by something other than itself — an API key found by
+its prefix, a row found by its id. `fingerprint` refuses an empty secret rather
+than digesting the empty string, which a column would then match for every
+caller who presents nothing.
+
+Eleven specs. Its first caller is junction's `bearerClaim`, and `example`'s
+basket is the first app to store a digest instead of a token.
+
 ## 2026-09-20 — `/match` decides a proximity search instead of asking the server
 
 `near` is the one operator here whose operand is a structure rather than a value, and it
@@ -21,11 +47,11 @@ runs.
 - a stored pair under key names this side cannot read is `null`. The keys are the model's
   (`@point(y, x)` is legal) and this side holds no schema, so an unreadable pair is a
   key-name question, not a location outside the circle;
-- a radius in no unit it knows, an absent radius, and a centre that is not two numbers are
+- a radius in no unit it knows, an absent radius, and a center that is not two numbers are
   each `null` rather than a guess — and an EMPTY coordinate is not `0`, since `Number('')`
   is and the alternative is silently searching the Gulf of Guinea.
 
-A centre may arrive as TEXT, for `/query`'s stated reason: a coordinate becomes a number
+A center may arrive as TEXT, for `/query`'s stated reason: a coordinate becomes a number
 only when it round-trips, and `51.507400` — what `toFixed(6)` writes — does not.
 
 ## 2026-09-20 — a distance ordering marks the column it sorts by

@@ -5,7 +5,8 @@
   themselves, the account page lists orders somebody already placed. This one
   puts a row in a table, and the row belongs to a shopper with no account at
   all — `Cart` is `@@gate("0.0.0.5")` and its rows are reached by `@@allow('read',
-  token == auth().cartToken)`, so the token this browser holds IS the proof.
+  id == auth().cartId)`, so the token this browser holds IS the proof: the
+  server resolves it to that id and the policy never sees the secret.
   There is no sign-in on this page and there is not supposed to be.
 
   ─── Two sources, and the join is the point ───────────────────────────────

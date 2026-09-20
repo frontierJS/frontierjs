@@ -260,7 +260,7 @@ export async function move(
     throw stockError('A stock movement is a whole number of items and cannot be zero', 400)
 
   const variant = await client.productVariant.findFirst({ where: { id: variantId } }) as
-    { id: number, sku: string, stock: number } | null
+    { id: number, sku: string, stock: number, version: number } | null
   if (!variant) throw stockError('No such variant', 404)
 
   const after = variant.stock + delta
@@ -283,7 +283,14 @@ export async function move(
     note:        meta.note ?? null,
   } }) as InventoryMovementRow
 
-  await client.productVariant.update({ where: { id: variantId }, data: { stock: after } })
+  // The revision this read saw rides the write. `stock` is read-modify-write, so
+  // a second movement landing between the two would be computed from a total
+  // that had already moved — the column is `@version` now and the boundary
+  // refuses that rather than losing the movement.
+  await client.productVariant.update({
+    where: { id: variantId },
+    data:  { stock: after, version: variant.version },
+  })
 
   return { before: variant.stock, after, movement }
 }

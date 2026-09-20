@@ -15,10 +15,19 @@ title: Flow
   //
   // ─── The definition ───────────────────────────────────────────────────────
   //
-  // Edited as JSON until the canvas exists. Saving writes a NEW version, which
-  // the compiler checks first — a flow that does not compile is refused with the
-  // compiler's own sentence, shown here — and it becomes current unless the flow
-  // is active, which pauses and activates to move.
+  // Two editors over ONE model, and the model is the JSON text. The inspector
+  // parses it, writes a node's config into the parse, and serializes the whole
+  // thing back — so there is no second copy to keep in step, and a definition
+  // that does not parse disables the inspector rather than diverging from it.
+  //
+  // The inspector is per NODE and the document is what holds the structure:
+  // adding a node, an edge or a name is the textarea's until the canvas exists
+  // ([`FJS-1198`](../../../../../ISSUES.md#fjs-1198)).
+  //
+  // Saving writes a NEW version, which the compiler checks first — a flow that
+  // does not compile is refused with the compiler's own sentence, shown here —
+  // and it becomes current unless the flow is active, which pauses and
+  // activates to move.
   import { flows } from '../../resources/Flow.mesa'
   import { runs }  from '../../resources/Run.mesa'
   import { session } from '@frontierjs/sierra/junction'
@@ -36,6 +45,8 @@ title: Flow
   import Textarea      from '@frontierjs/ui/components/forms/Textarea.mesa'
   import { toasts }    from '@frontierjs/ui/stores/toastStore.js'
 
+  import NodeInspector from '../../components/NodeInspector.mesa'
+
   $: (page.params, session.level, session.user)
 
   const TONE = { draft: 'muted', active: 'success', paused: 'warning', archived: 'muted', completed: 'success', failed: 'danger', waiting: 'warning', running: 'info', pending: 'muted', cancelled: 'muted' }
@@ -52,6 +63,12 @@ title: Flow
   let error    = null
   let busy     = false
   let dry      = null
+  // The node types this app's engine knows, each with the schema its config
+  // answers. Asked once per visit: it is the registry's and does not change
+  // while a page is open.
+  let types      = null
+  let typesError = null
+  let selected   = ''
 
   function watch() {
     row?.release()
@@ -73,9 +90,18 @@ title: Flow
     recent = rowsOf(found)
   }
 
+  // A catalog that did not arrive is said once, where the inspector would be.
+  // It is not an error on the page: everything else here works without it, and
+  // the definition is still editable as the document it is.
+  async function loadTypes() {
+    try { types = rowsOf(await flows.service.invoke('nodeTypes')) }
+    catch (e) { typesError = e.message }
+  }
+
   async function boot() {
     error = null
-    try { await watch(); await loadDefinition(); await loadRuns() }
+    selected = ''
+    try { await watch(); await loadDefinition(); await loadTypes(); await loadRuns() }
     catch (e) { error = e.message }
   }
   boot()
@@ -86,7 +112,25 @@ title: Flow
   $: isOwner     = !!flow && String(flow.ownerId) === String(session.user?.userId ?? session.user?.id ?? '')
   $: isAdmin     = (session.level ?? 0) >= 5
   $: mayChange   = isOwner || isAdmin
-  $: hasManual   = (() => { try { return Object.values(JSON.parse(source).nodes ?? {}).some(n => n.type === 'trigger.manual') } catch { return false } })()
+
+  // The one parse. Everything that reads the definition reads this, so the
+  // inspector and the page cannot disagree about what is in the document.
+  $: parsed      = (() => { try { return JSON.parse(source) } catch { return null } })()
+  $: nodeList    = Object.values(parsed?.nodes ?? {}).filter(n => n && n.id)
+  $: hasManual   = nodeList.some(n => n.type === 'trigger.manual')
+  $: current     = nodeList.find(n => n.id === selected) ?? nodeList[0] ?? null
+  $: descriptor  = types?.find(t => t.type === current?.type)
+
+  // A node's config, written back through the document. Serializing the whole
+  // definition is what keeps the textarea and the inspector one model; the
+  // cost is the author's own formatting, which is the same document either way.
+  function setConfig(config) {
+    if (!parsed || !current) return
+    source = JSON.stringify({
+      ...parsed,
+      nodes: { ...parsed.nodes, [current.id]: { ...parsed.nodes[current.id], config } },
+    }, null, 2)
+  }
   $: moves       = !flow ? [] : [
     ...(['draft', 'paused'].includes(flow.status) && isAdmin ? [['activate', 'Activate', 'primary']] : []),
     ...(flow.status === 'active' && mayChange ? [['pause', 'Pause', 'ghost']] : []),
@@ -188,6 +232,47 @@ title: Flow
   {/if}
 
   <SectionHeader title="Definition" level={2} />
+
+  {#if !parsed}
+    <Alert tone="warning" id="flow-unparsed">
+      The definition below is not JSON, so there is nothing to inspect yet. Fix it and the nodes come back.
+    </Alert>
+  {:else if !nodeList.length}
+    <Alert tone="muted" id="flow-no-nodes">This definition has no nodes.</Alert>
+  {:else}
+    <div class="cluster" id="flow-nodes">
+      {#each nodeList as n (n.id)}
+        <Button
+          variant={n.id === current?.id ? 'primary' : 'ghost'}
+          size="sm"
+          id={'flow-node-' + n.id}
+          data-node={n.id}
+          data-selected={n.id === current?.id ? 'yes' : 'no'}
+          onclick={() => selected = n.id}
+        >{n.id} · {types?.find(t => t.type === n.type)?.label ?? n.type}</Button>
+      {/each}
+    </div>
+
+    {#if typesError}
+      <Alert tone="warning" id="inspector-unavailable">
+        The node catalog did not arrive, so there is no form for a node: {typesError}
+      </Alert>
+    {:else if types && current}
+      <!--
+        Keyed on the node, so switching nodes gives every field its own state
+        back rather than carrying the last node's value/expression choice into
+        a slot that means something else.
+      -->
+      {#key current.id}
+        <NodeInspector node={current} {descriptor} disabled={!mayChange} write={setConfig} />
+      {/key}
+    {/if}
+  {/if}
+
+  <SectionHeader title="As JSON" level={3} />
+  <p class="text-muted text-sm">
+    The whole definition — its nodes, its edges and its name. The inspector above writes into it.
+  </p>
   <Textarea id="flow-definition" bind:value={source} rows={16} readonly={!mayChange} />
   <div class="cluster">
     <Button id="flow-save" disabled={busy || !mayChange} onclick={save}>Save as a new version</Button>

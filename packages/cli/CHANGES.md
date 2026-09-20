@@ -1,5 +1,78 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-20 — `fli new` prints 54 lines instead of 130, and `--verbose` is the way back
+
+A scaffold composes five commands, and each of those is a whole command elsewhere: its own banner,
+its own next-steps, its own tutorial. Five endings inside a command that has one, and the two lines
+anybody acts on — `cd`, `bun run dev` — were somewhere in the middle of it.
+
+**`runFli` captures the child's stdout and lets its stderr through.** That is not a volume dial: it
+is the severity split the logger already makes, since `log.warn` and `log.error` write to stderr. A
+child's warning is still live and in order; its chatter is not. The captured buffer is printed when
+the child exits non-zero, which is the only time it was worth having. `bun install` gets the same
+treatment and its summary line — how many packages, how long — comes back out.
+
+**`log.detail` is the new level and `--verbose` is the new global flag.** Gating `log.info` was the
+obvious lever and the wrong one: every command in this package uses it for lines a reader needs, so
+a level a call site opts into is the only shape whose blast radius is the call sites that asked.
+`--verbose` also travels to a composed child. It replaces `log.debug`, which printed
+unconditionally, had one caller, and collided by name with `--debug`, which asks for stack traces.
+
+**Three things the scaffold said that were not true.** `⚠ no project root found` was the first line
+of the command that CREATES the project. `✓ ✓ calendly created` — `log.success` prepends the mark and
+the string carried a second. `notifications:install` announced *Pushing schema to database* and then
+called `db:push`, which announces it again.
+
+## 2026-09-20 — health is declared in two places and both readers only knew one
+
+`fli new` writes `plugins: { health: true }` into `api/config/junction.config.js`. `fli make:deploy`
+and `fli deploy:doctor` both grepped the API SOURCE for `healthPlugin(` — so the scaffold warned, in
+its own output, that the app it had just written answers nothing at `/api/health`, and the doctor
+agreed. The app was fine. Advice that is wrong about a working app is worse than none, and this one
+was printed by the command that caused it.
+
+**`core/health-target.js` is the one owner of both questions** — *where does this app answer health*
+and *does anything serve it* — because the two readers asking them separately is how they came to
+disagree. It reads the plugin call, the config declaration and a hand-written route literal, grades
+the literal against the CONFIGURED path rather than a bare `/health`, and answers which file decided.
+
+**It also catches the clash.** Junction refuses a plugin configured by hand AND declared in config at
+`start()`, by name — an app that builds, ships and exits on boot. `deploy:doctor` fails on it now
+rather than the deploy finding it.
+
+## 2026-09-20 — the proxy's refusal is read rather than waited for, and CI runs the bun everyone else does
+
+**`bun-version` in `.github/workflows/ci.yml` moves to 1.4.2.** It was pinned at
+1.3.11 while every machine here had moved on, so three suites were red locally
+and would have been green on the runner — which is the worse direction: the
+thing that is supposed to catch a break was the thing insulated from it.
+
+**One test was leaning on the old runtime.** *An upgrade to a name nothing
+claims* opened a socket, added no `data` listener and waited for `close`. A
+socket nothing reads stays PAUSED, so the FIN is never processed — under 1.4.2
+it emits nothing at all, and the test spent its full two seconds before calling
+the timeout a pass for the wrong reason. It reads the answer now, which is also
+the stronger assertion: the upgrade is refused **by name** with a 404 rather
+than merely dropped, which is what tells somebody staring at a dead socket why
+it is dead. The proxy itself was correct throughout.
+
+
+## 2026-09-20 — `fli doctor` grades the bun VERSION, not just its presence
+
+Every published package here declared `engines: { bun: '>=1.0.0' }`, a floor nobody had moved since
+it was written, and an engine range is advisory anyway — bun installs and runs an app whose floor it
+does not meet. So a machine one minor behind reports the feature it cannot reach as MISSING rather
+than reporting itself as stale, which is how `Bun.Image` was first measured as absent on a tree that
+requires it. The floor is `1.4.0` now in every package that declares one, and `BINARIES` carries a
+`min` beside the `required` flag: bun on PATH but below the floor is an error whose hint names the
+found version, the wanted one and `bun upgrade`.
+
+**A version the probe cannot READ is not a version that is too old.** `binVersion` returns null when
+`--version` will not parse, and null passes — failing it would block a working machine on this
+probe's own blind spot. `compareVersions` truncates a prerelease (`1.4.0-canary.3` compares equal to
+`1.4.0`) rather than ordering it, because ordering it right is semver's hardest corner and being
+wrong there refuses a machine that works. The probe is injected the way `has` already was.
+
 ## 2026-09-20 — question scaffolding stops scoring
 
 The first phrasing tried outside the graded set — *why is there no formatter* — tied four rulings and

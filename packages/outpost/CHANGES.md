@@ -1,5 +1,58 @@
 # Changes — @frontierjs/outpost
 
+## 2026-09-20 — an app whose source is the files themselves
+
+`docker.js` had the whole vocabulary of a release — pull, build, deploy, stop, health-check — and
+none of it describes an HTML page that loads React from a CDN. There is nothing to build, nothing to
+push and no container to start. `src/static.js` is the other half ([`FJS-D345`](../../DECISIONS.md#fjs-d345)):
+five routes under `/static/`, signed like every other command.
+
+**The release is addressed by its own digest and the digest is computed HERE.** Basecamp states
+none. That is `/deploy` answering its own digest taken one step further — a release records what ran,
+and a caller's claim about bytes it sent is not a reading of the bytes that landed. Three things
+follow and none of them is a mechanism anybody has to remember: the directory is named for the
+digest, so a republish of identical bytes rewrites the same files in the same place and answers the
+same digest; a rollback sends nothing, because `activate` needs only a digest this machine still
+holds; and `publish` is separate from `activate`, so a release interrupted by a dropped connection
+or a full disk is never halfway to being the thing the world sees.
+
+**Writes go through `node:fs` and every path is an allow-list.** A segment is a plain file name:
+no traversal, no absolute path, no backslash, no empty segment. The blocklist version of that check
+is the one that gets written — `..` has three spellings and the fourth writes outside the directory
+as whatever user this process is — and `/exec` is the route everybody reads as dangerous while a
+publish that writes `../../etc/cron.d/x` is the same power with none of the warning signs. Files are
+written into a staging directory and moved into place with one `rename`, so a publish that dies
+halfway cannot leave a digest directory holding some of its own files, which `activate` would then
+serve forever as a release passing every check it has.
+
+**`serve.js` is a SECOND listener on a port of its own**, dev 8181, test 7181, off entirely with
+`OUTPOST_STATIC_PORT=0`. The pages are written by whoever can edit an app, so anything they reach as
+same-origin is theirs; a port is an origin, so one listener carrying both would put the signed fleet
+protocol inside every prototype. It resolves an app by the first label of the Host, falls back to the
+first path segment — both are ANSWERED in order, or a machine that gets a domain name of its own
+reads every request as an app nobody published — and serves `index.html` for a path with no
+extension, since an app using the History API otherwise 404s on every refresh. A request naming a
+file gets the truth instead.
+
+**Containment is asserted twice and the second one is the one that matters.** Prefix arithmetic on
+the path a caller named, then `realpath` on the file the kernel would open: a symlink sitting inside
+a release directory passes the first and reads whatever it points at, through a 200, on a port with
+no authentication in front of it. Publish writes only regular files, so that is the case where
+something else put it there — which is exactly when the check has to hold. It was written as a test
+first and the test failed.
+
+`test/static.test.js` runs against a real temp directory rather than an injected fs: symlink
+swapping, atomic rename and path containment are properties of the kernel, and a fake one would pass
+all three while the machine does none of them.
+
+## 2026-09-20 — the bun floor is `1.4.0`
+
+`engines: { bun: '>=1.0.0' }` was a number nobody had moved since it was written, and an engine range
+is advisory anyway: bun runs an app whose floor it does not meet, so a machine one minor behind
+reports the feature it cannot reach as MISSING rather than reporting itself as stale. `fli doctor`
+grades the installed version against this floor now, which is the half a `package.json` field cannot
+enforce on its own.
+
 ## 2026-09-07 — the readings basecamp keeps are the readings this sends
 
 `health()` sent `{ load, memory }` and basecamp keeps `cpu`, `memory` and

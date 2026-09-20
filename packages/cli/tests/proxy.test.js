@@ -294,15 +294,25 @@ describe('proxying an upgrade', () => {
 
   test('an upgrade to a name nothing claims is dropped rather than proxied somewhere', async () => {
     const p = await proxy([row({ host: 'a.localhost', port: 1 })])
-    const closed = await new Promise((ok) => {
+    // The answer is READ, and that is not decoration: a socket nothing reads
+    // stays paused, so the FIN is never processed and `close` never fires —
+    // this waited its full two seconds and called that a pass for the wrong
+    // reason. Reading is also the stronger assertion: an upgrade to an unknown
+    // name is refused BY NAME rather than merely dropped, which is what tells
+    // somebody staring at a dead socket why it is dead.
+    const said = await new Promise((ok) => {
+      let buf = ''
       const s = connect(p, '127.0.0.1', () => {
         s.write('GET /ws HTTP/1.1\r\nHost: nope.localhost\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n')
       })
-      s.on('close', () => ok(true))
-      s.on('error', () => ok(true))
-      setTimeout(() => { s.destroy(); ok(false) }, 2000)
+      s.on('data', (d) => { buf += d })
+      s.on('close', () => ok(buf))
+      s.on('error', () => ok(buf))
+      setTimeout(() => { s.destroy(); ok(null) }, 2000)
     })
-    expect(closed).toBe(true)
+    expect(said).not.toBe(null)
+    expect(statusOf(said)).toBe(404)
+    expect(said).not.toMatch(/101 Switching Protocols/)
   })
 
 })

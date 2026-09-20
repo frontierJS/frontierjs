@@ -302,24 +302,24 @@ describe('near, graded against a brute-force scan', () => {
     ['at mid latitude',   { lat: 51.5, lng: -0.12 }, 25_000],
   ]
 
-  for (const [label, centre, metres] of CASES) {
+  for (const [label, center, metres] of CASES) {
     it(label, async () => {
       const span = (metres / 6_371_008.8) * (180 / Math.PI) * 2.5
       const rows: Array<{ name: string, site: any }> = []
       const side = 12
       for (let i = 0; i < side; i++) {
         for (let j = 0; j < side; j++) {
-          const lat = centre.lat - span + (2 * span * i) / (side - 1)
-          const lng = centre.lng - span + (2 * span * j) / (side - 1)
+          const lat = center.lat - span + (2 * span * i) / (side - 1)
+          const lng = center.lng - span + (2 * span * j) / (side - 1)
           if (lat < -90 || lat > 90) continue
           rows.push({ name: `${i}-${j}`, site: { lat, lng: ((lng + 540) % 360) - 180 } })
         }
       }
       const db = await placesDb(rows)
       const sql = (await db.place.findMany({
-        where: { site: { near: { ...centre, within: `${metres}m` } } },
+        where: { site: { near: { ...center, within: `${metres}m` } } },
       })).map((p: any) => p.name).sort()
-      const brute = rows.filter(r => distance(r.site, centre) <= metres).map(r => r.name).sort()
+      const brute = rows.filter(r => distance(r.site, center) <= metres).map(r => r.name).sort()
 
       expect(brute.length).toBeGreaterThan(8)   // the fixture must actually straddle the edge
       expect(sql).toEqual(brute)
@@ -337,7 +337,7 @@ describe('near, graded against a brute-force scan', () => {
 // that the model has the last word, and `@point(lat, lng)` IS the model saying
 // these two keys are Floats — so the reading is here.
 
-describe('a centre off a query string', () => {
+describe('a center off a query string', () => {
   const asWire = (o: any) => JSON.parse(JSON.stringify(o, (_k, v) =>
     typeof v === 'number' ? v.toFixed(6) : v))
 
@@ -353,7 +353,7 @@ describe('a centre off a query string', () => {
     expect(rows.map((r: any) => r.name)).toEqual(['Westminster'])
   })
 
-  it('orders by a text centre the same way it filters by one', async () => {
+  it('orders by a text center the same way it filters by one', async () => {
     const db = await placesDb([
       { name: 'Edinburgh',   site: { lat: 55.9533, lng: -3.1883 } },
       { name: 'Westminster', site: { lat: 51.4995, lng: -0.1248 } },

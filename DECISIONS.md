@@ -893,6 +893,36 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d344"></a>2026-09-20 · `FJS-D344` — A portal client who later signs up — The app's own act: its `register` path attaches the subject to the new `User` and revokes the grant, and the framework ships nothing.
+
+Asked in [`IDEAS/bearer-access.md`](IDEAS/bearer-access.md) § Open questions. **A** was picked over **B** (auth grows a `Verification` purpose beside `oauthLink`, so redeeming a link during registration attaches the subject).
+
+The paper's recommendation, taken as written: *which row is this person* is an application fact (`User.clientId` here, a supplier or a patient elsewhere), and a shipped purpose would have to name a model auth cannot know. What the framework owes is the seam that already exists — auth's four awaited callbacks, `onRegister` among them, each running BEFORE the thing it can refuse. **And the grant is REVOKED on attach**, which was the second half of the same question: after it the person reaches their rows through their session, so a link left live is a second door onto them, and the commonest way one is still reachable is a forwarded email nobody remembers sending. The cost is a person who registered on one device and then clicks the old link on another, who is asked to sign in — which is the answer that surface is for.
+
+### <a id="fjs-d343"></a>2026-09-20 · `FJS-D343` — Does a by-construction bearer (`Cart`) move to the lookup form — Ship the lookup form only; `Cart` gets a grant row, the claim becomes the cart's id, and `CartLine.token` goes.
+
+Asked in [`IDEAS/bearer-access.md`](IDEAS/bearer-access.md) § Open questions. **B** was picked over **A** (ship both forms in `bearerClaim`; `Cart` stays as it is), **C** (ship the lookup form only, and leave `Cart` as app-written by-construction code, which is what `cart-claim.ts` already is).
+
+The paper's recommendation, taken as written: one form is one set of hazards, one `describe()` kind and one thing to document, and the read it costs is an indexed hit on a unique column, which an authenticated call already pays for its session. It also deletes a documented wart rather than preserving it: the guarded-on-the-parent / not-guarded-on-the-child asymmetry is in the schema with a paragraph explaining itself. The honest cost is that a guest's every basket call now reads a row, and that `Cart` is drive-proven code being re-modelled for consistency rather than for a defect.
+
+### <a id="fjs-d342"></a>2026-09-20 · `FJS-D342` — What does the audit trail record for a bearer — `actorType: 'bearer'`, `actorId` the link row's id, `subjectId` the subject's.
+
+Asked in [`IDEAS/bearer-access.md`](IDEAS/bearer-access.md) § Open questions. **A** was picked over **B** (`actorType: 'bearer'`, `actorId` the subject's id).
+
+The paper's recommendation, taken as written: revoking one link has to be answerable by *which link did this*, and `subjectId` already exists for support mode.
+
+### <a id="fjs-d341"></a>2026-09-20 · `FJS-D341` — Does the more sensitive strength need proof of the inbox, or only a live link — `full` scope is minted only by redeeming an emailed one-time code.
+
+Asked in [`IDEAS/bearer-access.md`](IDEAS/bearer-access.md) § Open questions. **B** was picked over **A** (a live link is enough).
+
+The paper's recommendation, taken as written: a forwarded email otherwise hands over the whole conversation, and the client hubs converged on it.
+
+### <a id="fjs-d340"></a>2026-09-20 · `FJS-D340` — Does the link travel as a header, a cookie, or the path — Redeem the link once for an httpOnly cookie scoped to the link row.
+
+Asked in [`IDEAS/bearer-access.md`](IDEAS/bearer-access.md) § Open questions. **B** was picked over **A** (header only; the page reads the link once from the URL fragment and holds it), **C** (any of the three, named by `from:`).
+
+The paper's recommendation, taken as written: the fragment is never sent to a server and the cookie keeps the secret out of history, `Referer` and logs; `from:` stays a single choice per app, and the CSRF concern `cart-claim.ts` raises is a `SameSite=Strict` cookie on a surface with no cross-site writes. **B has a precedent rather than needing a mechanism**: `LoginChallenge` is already a single-use, expiring ticket a POST trades for a session, and a portal link is the same act with a different question answered first.
+
 ### <a id="fjs-d322"></a>2026-09-20 · `FJS-D322` — Does `@@geo` imply `@guarded` — No. Declare it, and the parser warns when a point is ungated on a model whose `@@gate` is above STRANGER.
 
 Asked in [`IDEAS/geo.md`](IDEAS/geo.md) § Open questions. **A** was picked over **B** (yes, opt out — a residential coordinate is a person's address).
@@ -5387,6 +5417,14 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d338"></a>2026-09-20 · `FJS-D338` — How a per-call value too big for a header reaches the boundary — a header-flagged body envelope: `X-Fjs-Write: enveloped` and a body of `{ data, base }`, with the header absent meaning today's plain-`data` body.
+
+Asked while building [`FJS-1202`](ISSUES.md#fjs-1202), the transport half of `@@sync(field)`. **A** was picked over **B** (envelope every write unconditionally: cleaner to read, and it rewrites the wire for every existing POST/PUT/PATCH and breaks anything holding the current shape), **C** (a `$base` key inside the body: the cheapest edit, and it gives the `$` prefix a second meaning in a second place, which is the one thing Invariant 10 exists to prevent).
+
+**The problem is that a base is a ROW.** Every other per-call value junction carries over HTTP is a header — `Idempotency-Key`, the correlation id, whatever `setCallHeader` names — and a row with a text column goes past what a header may hold, while a write's body already IS its `data`. So the base has to ride the body, and the body then has to say it is carrying two things.
+
+A is flagged rather than sniffed because a row may legitimately hold a `data` key of its own, so *is this an envelope* cannot be answered by looking at the body. One header name, unwrapped in `bridge.toContext` and nowhere else; **the WebSocket path needs none of it**, since a `service_call` frame already carries caller extras under `meta` and spreads what it does not name, so `meta.base` is the existing slot and both transports land on `ctx.base`. An envelope whose body does not have the shape is refused by name, and a `base` arriving with no flag is data rather than a base — the two mistakes are told apart rather than merged. **What it buys past this feature is a slot**: the next per-call value too big for a header has somewhere to go that is not a second convention.
 
 ### <a id="fjs-d326"></a>2026-09-20 · `FJS-D326` — Does the live store grade an arriving record against a `near` filter — Teach `@frontierjs/toolbelt/match` the `near` predicate.
 
@@ -10062,6 +10100,22 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d345"></a>2026-09-20 · `FJS-D345` — an App's SOURCE is a discriminated kind, `inline` is the files themselves, and the machine serves them on a SECOND listener of its own.
+
+Not asked in a paper — ruled while building the prototyping door in basecamp, and written down because two halves of it are the kind a later change would "simplify" without seeing what they hold.
+
+**`App.source` is a kind, and there are three.** It was `Json @default("{}")` with three readers each guessing at a different half — the deploy job looked for `source.repo`, the outpost route for `source.kind === 'git'`, a screen rendered the blob raw. `git`, `image` and `inline` are declared now, parsed in one place (`api/src/core/app-source.ts`), and a source that names no kind is REFUSED rather than inferred from which keys happen to be present: the blob carrying both `repo` and `image` has no right answer, and the guess would be made twice. This is `FJS-D227`'s rule one column further on — `Json` is right where nothing interprets the value, and the moment something reads INTO it to decide, it is a language.
+
+**`inline` means the files ARE the release**, and a page that loads its libraries from a CDN is a whole app. No repository, no image, no build, no registry: the bytes are written under their own digest, a symlink swap makes them live, and a rollback sends nothing because they never left. The digest is computed on the MACHINE and nowhere else, which is `/deploy` answering its own digest taken to its conclusion — a release records what ran, and a caller's claim about bytes it sent is not a reading of the bytes that landed. Three properties fall out of that and none of them is a mechanism anybody has to remember: an unchanged redeploy mints the same Release, a rollback is a symlink, and `activate` needs nothing but a digest.
+
+**An inline source forces `type: static`, and the service refuses the two disagreeing.** `AppType.static` already existed and meant nothing. What the rule removes is a combination that was accepted and could never work: an inline source run through the container pipeline fails four steps in with a docker error about an image nobody named.
+
+**The files are served on a SECOND listener, on a port of its own.** This is the half that looks like an accident and is not. The pages are written by whoever can edit an app — arbitrary script, from a paste box — so anything they reach as same-origin is theirs; a port is an origin, so one listener carrying both would put the signed fleet protocol inside every prototype. It is the same process because it holds no state beyond the filesystem the command half writes, and a second process would need the same directory and its own supervision to gain nothing. `OUTPOST_STATIC_PORT=0` turns it off for a machine that runs containers and nothing else.
+
+**The file rules are stated twice on purpose**, and the split is `x-gate`'s: the paste box's limits are an affordance, refused where the person is still looking at what they typed; the machine's are the enforcement, and a path that walks the tree is refused there whatever the console allowed. Neither derives from the other and the machine's answer wins.
+
+*Lives in:* `packages/outpost/src/static.js` + `serve.js`, `packages/basecamp/api/src/core/app-source.ts`, the four-step list in `deployments.service.ts`.
+
 ### <a id="fjs-d302"></a>2026-09-16 · `FJS-D302` — Q6 — what is the byte budget, and what does a build do when it exceeds it — A ceiling with a baseline that ratchets down only, the way `scripts/typecheck-baselines.json` already works (Invariant 14) — an app adopts whatever it costs today and cannot get worse.
 
 Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **C** was picked over **A** (a stated ceiling in `sierra.config.js`, and a build that exceeds it FAILS. One number, enforced where the number is knowable), **B** (the build REPORTS the total and grades nothing; the budget lives in the vision paper as an intention).
@@ -11954,6 +12008,12 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d339"></a>2026-09-20 · `FJS-D339` — Where does the token HMAC live — A `@frontierjs/toolbelt` kit (WebCrypto only; `/signature` already has a private `hmacHex`).
+
+Asked in [`IDEAS/bearer-access.md`](IDEAS/bearer-access.md) § Open questions. **A** was picked over **B** (`bearerClaim` lives in auth, beside the API keys it resembles), **C** (junction owns it and auth's API keys move onto it).
+
+The paper's recommendation, taken as written: both callers are below or beside it, the key is injected, and it is a pure function.
 
 ### <a id="fjs-d254"></a>2026-09-20 · `FJS-D254` — The interface tier gets two more constraints and no build: a user-facing sentence is never assembled from pieces, and a locale is an argument rather than ambient state.
 

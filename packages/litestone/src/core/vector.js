@@ -38,6 +38,13 @@
 // that produces one emits. Four bytes a dimension is the whole layout.
 export const BYTES_PER_DIM = 4
 
+// The name the computed distance is stamped under (`FJS-D329`), and the reason
+// it is a constant is that three things write it: the SQL path's SELECT alias,
+// `scoreByDistance` below, and the parser rule that refuses a model declaring
+// both `@vector` and a field of this name. `search()`'s `_rank` is the
+// precedent the ruling cites.
+export const DISTANCE_FIELD = '_distance'
+
 // ─── what a stored vector looks like ──────────────────────────────────────
 
 /**
@@ -155,8 +162,14 @@ export function cosineDistance(a, b) {
  * query fail instead of that row losing — so a backfill in progress would 500
  * every read. The compiled SQL carries `IS NOT NULL` for the same reason; this
  * is the same refusal on the path that has no SQL.
+ *
+ * `take`/`skip` are the caller's `limit`/`offset` and they are applied HERE,
+ * after the sort, because that is the only place they can be: the candidate
+ * query cannot page a ranking it has not computed. So the scan is the whole
+ * filtered set, which is why the record calls the caller's `where` the prune
+ * rather than an optimization.
  */
-export function scoreByDistance(rows, query, { column, dim, take = Infinity, as = '_distance' }) {
+export function scoreByDistance(rows, query, { column, dim, take = Infinity, skip = 0, dir = 'asc', as = DISTANCE_FIELD }) {
   const q = query instanceof Float32Array ? query : Float32Array.from(query ?? [])
   refuseUnstorable(q, dim, 'orderBy.near')
 
@@ -168,10 +181,16 @@ export function scoreByDistance(rows, query, { column, dim, take = Infinity, as 
     if (d === null) continue
     scored.push({ row, d })
   }
-  scored.sort((x, y) => x.d - y.d)
+  // Stable, and that is the parity argument rather than a detail: the rows
+  // arrive in the order the candidate query sorted them, so a tie here breaks
+  // exactly the way the trailing orderBy keys decided — which is what the SQL
+  // path's `ORDER BY <distance>, <the rest>` does. An unstable sort would make
+  // the two engines disagree on rows at equal distance.
+  scored.sort(dir === 'desc' ? (x, y) => y.d - x.d : (x, y) => x.d - y.d)
 
   const out = []
-  for (let i = 0; i < scored.length && i < take; i++)
+  const from = Math.max(0, skip)
+  for (let i = from; i < scored.length && out.length < take; i++)
     out.push({ ...scored[i].row, [as]: scored[i].d })
   return out
 }

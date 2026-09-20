@@ -175,7 +175,7 @@ predict? In review, that breaks down into:
 - Is the complexity the problem's, or did we add it?
 - Does it reduce predictability?
 - Can it be derived instead of restated?
-- Does it have exactly one owner?
+- Does it have exactly one owner — and is that owner one that already exists?
 - Is the boundary explicit — named, typed, tested?
 - Is the failure mode proportional to the cost of being wrong?
 - Can this be wrong without anything saying so — and if it can, what artefact

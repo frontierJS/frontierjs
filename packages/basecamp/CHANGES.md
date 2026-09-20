@@ -1,5 +1,79 @@
 # Changes — Basecamp
 
+## 2026-09-20 — paste a page, press one button, it is running
+
+The prototyping door, and the thing a fleet console is missing next to Forge or CapRover: an app
+whose source is the FILES, with no repository and no build. A page that loads React from a CDN is a
+whole app, and the whole of getting one running is now a textarea and a button
+([`FJS-D345`](../../DECISIONS.md#fjs-d345)).
+
+**`App.source` is a kind now, and there are three.** It was `Json @default("{}")` read by three
+things that each guessed at a different half — the deploy job looked for `source.repo`, the outpost
+route for `source.kind === 'git'`, and the config tab rendered the blob raw. `api/src/core/app-source.ts`
+is the one reader: `git`, `image`, `inline`, parsed and NORMALIZED, so what lands in the column is
+never the payload and an unknown key cannot ride in to be read back later as though it meant
+something. A source that names no kind is refused rather than inferred from which keys are present —
+the blob carrying both `repo` and `image` has no right answer, and the guess would be made twice.
+This is [`FJS-D227`](../../DECISIONS.md#fjs-d227) one column further on.
+
+**An inline source forces `type: static`, and the service refuses the two disagreeing.** `AppType`
+already had the word and nothing meant it. What the rule removes is a combination that was accepted
+and could never work: inline bytes through the container pipeline fail four steps in with a docker
+error about an image nobody named.
+
+**The step list is read off the SOURCE, not off the type.** Four steps for an inline release —
+Validate, Upload files, Activate, Health check — each one call to the machine, so a step that stalls
+names what stalled. Upload and Activate are apart because they are apart on the machine: a release
+that failed to upload is never the one being served. The old `static` list said *Build assets*,
+*Upload to storage*, *Invalidate CDN cache*, three steps nothing implemented.
+
+**A rollback builds the pipeline the TARGET's bytes need.** That is the same claim
+[`rollback`](api/src/services/deployments/deployments.service.ts) already makes about config, and
+the deploy job was quietly defeating it: it sent `service.source` and `service.config` — the app as
+it stands NOW — so a rollback put the old image back with the new settings, which is neither
+release. It reads the snapshot first now. An app switched from inline to a container since a release
+rolls that release back through the pipeline its own bytes can run.
+
+**Deleting an inline app retires it from the machine.** A container stops when nothing restarts it;
+files do not. A row deleted from this console and a page still answering on the internet is the
+failure, so `apps.remove` calls `/static/retire` — best effort, said in the log, because a machine
+that cannot be reached is not a reason to refuse an operator's decision.
+
+**A list says what a source IS; the detail read says what it holds.** An inline app's files are its
+source, so a fleet screen listing fifty of them would otherwise send fifty pasted pages on a request
+that draws a table of names. `summarizeSource` replaces each file with its path and its size, and
+`content` is REMOVED rather than blanked — an absent key renders nothing, an empty string renders an
+empty editor over a file that has a page in it and saves that back. The app detail read stopped
+shipping `configSnapshot` with its last ten releases for the same reason.
+
+**The screen is a Source tab on the app.** Files with a path and a body, Add file, Save, and Save
+and deploy — two calls in that order, so a deploy refused for want of a machine leaves the edit saved
+and the button ready. Nothing in the browser validates: the size caps, the path shapes and the
+missing `index.html` are the service's answer, shown as the sentence it gave, because a second copy
+of those rules in the browser is a second place to change them and the one that is wrong is never
+the one that refuses.
+
+**The audit check in the drive was reading recency and calling it presence.**
+`the audit trail lists what happened` looked for `projects.create` on the first
+page of a time-ordered trail, and every section above it writes to that trail —
+so adding one that records more than a page of events before it reached there
+failed a check about work it had nothing to do with. It goes through the
+screen's own subject filter now, which asks the question the line means and
+exercises a control nothing else did.
+
+**What proves it is the drive, and it ends by fetching the page.** `bun run verify` § 9f pastes a
+CDN-loading page into the textarea, presses the button, and then asks the Outpost's own static server
+for the page over HTTP — so the assertion is that the characters typed come back, not that a status
+column says success. The Outpost underneath it is the shipped one over a real directory, per run.
+
+## 2026-09-20 — the bun floor is `1.4.0`
+
+`engines: { bun: '>=1.0.0' }` was a number nobody had moved since it was written, and an engine range
+is advisory anyway: bun runs an app whose floor it does not meet, so a machine one minor behind
+reports the feature it cannot reach as MISSING rather than reporting itself as stale. `fli doctor`
+grades the installed version against this floor now, which is the half a `package.json` field cannot
+enforce on its own.
+
 ## 2026-09-20 — the orion install is finished, and it found three framework defects
 
 The paragraph at the end of the entry below said the install was not finished, which is a to-do in a

@@ -300,7 +300,7 @@ test('match: a row with no location is in no circle, and that is decidable', fun
   assert.equal(matchesQuery(GEO_FIELDS, at(null), within('5mi')), false)
 })
 
-test('match: near reads the centre off a URL, where a coordinate may be text', function () {
+test('match: near reads the center off a URL, where a coordinate may be text', function () {
   // `toFixed(6)` does not round-trip, so `/query` hands the coordinate back as
   // a string — correctly, with no model in the room. Both halves of a live list
   // read it the same way or they disagree about the same row.
@@ -312,8 +312,8 @@ test('match: what near cannot decide, it does not guess at', function () {
   const undecidable = [
     ['a radius in no unit this side knows', within('5 parsecs')],
     ['a radius that is not there',          within(undefined)],
-    ['a centre that is not a point',        { site: { near: { lat: 'north', lng: 2, within: '5mi' } } }],
-    ['an empty centre, which is not 0,0',   { site: { near: { lat: '', lng: '', within: '5mi' } } }],
+    ['a center that is not a point',        { site: { near: { lat: 'north', lng: 2, within: '5mi' } } }],
+    ['an empty center, which is not 0,0',   { site: { near: { lat: '', lng: '', within: '5mi' } } }],
   ]
   for (const [label, query] of undecidable) {
     assert.equal(matchesQuery(GEO_FIELDS, at({ lat: 51.4995, lng: -0.1248 }), query), null, label)

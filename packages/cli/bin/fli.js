@@ -79,7 +79,10 @@ if (explicitProject) {
 // fli:* namespace — but most need to resolve project paths. Suppress the
 // warning for those obvious no-project commands so it doesn't fire for
 // `fli list` in /tmp.
-const NO_PROJECT_NEEDED = new Set(['list', 'help', '?', 'init'])
+// `new` and its alias are here because they CREATE the project this warns about
+// not finding — the scaffold's first line was a complaint that the directory it
+// was about to write does not exist yet.
+const NO_PROJECT_NEEDED = new Set(['list', 'help', '?', 'init', 'new', 'project:new'])
 const firstArg = process.argv[2]
 const projectLessNs = firstArg?.startsWith('fli:') || firstArg === '--help' || firstArg === '-h' || !firstArg
 const cwdHasPkg = existsSync(resolve(process.cwd(), 'package.json'))

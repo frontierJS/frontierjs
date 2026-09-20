@@ -34,8 +34,16 @@ import { homedir }      from 'node:os'
 // all, and without docker only `deploy:` does. Reporting both as failures is
 // how a person learns to ignore the report.
 
+// The bun floor is a VERSION and not a presence, which is the one thing a
+// `which` cannot answer. Every published package here declares the same floor in
+// `engines`, and a package manager's engine check is advisory — bun installs and
+// runs an app whose floor it does not meet, so the feature the floor was raised
+// for fails at the call site instead, reporting itself as missing rather than as
+// a stale runtime.
+export const MIN_BUN = '1.4.0'
+
 export const BINARIES = [
-  { name: 'bun',     required: true,  hint: 'https://bun.sh' },
+  { name: 'bun',     required: true,  hint: 'https://bun.sh', min: MIN_BUN, upgrade: 'bun upgrade' },
   { name: 'git',     required: true,  hint: 'sudo apt install git' },
   { name: 'sqlite3', required: false, hint: 'sudo apt install sqlite3  (needed for db: commands)' },
   { name: 'zip',     required: false, hint: 'sudo apt install zip  (needed for utils:pack)' },
@@ -43,6 +51,31 @@ export const BINARIES = [
   { name: 'rsync',   required: false, hint: 'sudo apt install rsync  (needed for deploy:)' },
   { name: 'docker',  required: false, hint: 'https://docs.docker.com/engine/install/' },
 ]
+
+/**
+ * Compare two dotted versions. Numeric segments only — a prerelease tag
+ * (`1.4.0-canary.3`) is TRUNCATED rather than ordered, because ordering it right
+ * is semver's hardest corner and being wrong here refuses a machine that works.
+ *
+ * @returns {number} negative when `a` is older than `b`
+ */
+export function compareVersions(a, b) {
+  const parts = (v) => String(v).split('-')[0].split('.').map(s => parseInt(s, 10) || 0)
+  const [x, y] = [parts(a), parts(b)]
+  for (let i = 0; i < Math.max(x.length, y.length); i++) {
+    const d = (x[i] ?? 0) - (y[i] ?? 0)
+    if (d) return d
+  }
+  return 0
+}
+
+/** What version a binary reports, or null. The default probe; injected in tests. */
+export function binVersion(cmd) {
+  try {
+    const out = execSync(`${cmd} --version`, { stdio: ['ignore', 'pipe', 'ignore'] }).toString()
+    return out.match(/\d+\.\d+\.\d+/)?.[0] ?? null
+  } catch { return null }
+}
 
 /** Is this binary on PATH. The default probe; injected in tests. */
 export function onPath(cmd) {
@@ -61,15 +94,31 @@ export function onPath(cmd) {
  *                                the registry, because a registry needs globals
  *                                this module must not depend on
  * @param {Function} o.has        binary probe
+ * @param {Function} o.versionOf   version probe, for the binaries declaring a `min`
  * @param {object}   o.env        environment
  * @param {string}   o.home       home directory
  */
-export function diagnose({ root, fliRoot, modules = [], has = onPath, env = process.env, home = homedir() } = {}) {
+export function diagnose({ root, fliRoot, modules = [], has = onPath, versionOf = binVersion, env = process.env, home = homedir() } = {}) {
   const globalEnv = join(home, '.config', 'fli', '.env')
 
   const system = BINARIES.map(b => {
-    const ok = has(b.name)
-    return { ...b, ok, level: ok ? 'ok' : b.required ? 'error' : 'warn' }
+    const present = has(b.name)
+    if (!present) return { ...b, ok: false, present, version: null, level: b.required ? 'error' : 'warn' }
+    if (!b.min)   return { ...b, ok: true,  present, version: null, level: 'ok' }
+
+    // A version this probe could not READ is not a version that is too old: a
+    // binary whose `--version` we cannot parse still runs, and failing it here
+    // would block a working machine on the probe's own blind spot.
+    const version = versionOf(b.name)
+    const stale   = version !== null && compareVersions(version, b.min) < 0
+    return {
+      ...b,
+      ok:      !stale,
+      present, version,
+      level:   stale ? (b.required ? 'error' : 'warn') : 'ok',
+      hint:    stale ? `${version} is below ${b.min}  \u2192  ${b.upgrade ?? b.hint}` : b.hint,
+      status:  stale ? `found ${version}, needs >=${b.min}` : version ? `found ${version}` : 'found',
+    }
   })
 
   const config = [
