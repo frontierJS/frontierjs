@@ -761,3 +761,55 @@ test('guide: no .sg-* class is a shipped term plus a tweak', function () {
     sheet.remove();
   }
 });
+
+test('guide: the guide reads no package variable the stylesheets do not define', function () {
+  /*
+   * The guide is a consumer of this package that ships inside it, and it is
+   * the one consumer whose breakage nothing else can see: every other test
+   * here renders shipped CSS, so a rename lands green while the reference
+   * site quietly paints nothing.
+   *
+   * Measured: the --_fill rename left eight reads in guide.css and guide.js
+   * pointing at a name no stylesheet declared any more, and the whole suite
+   * passed. The swatches would have rendered transparent.
+   *
+   * Only a read with NO fallback counts. `var(--x, <something>)` is a
+   * deliberate probe of whether a value is set — the guide uses that shape
+   * to show a tone being unset — and is not a broken reference.
+   */
+  /*
+   * guide.js is half stylesheet and half PROSE ABOUT stylesheets, and the
+   * prose is full of variables that are deliberately an app's rather than
+   * this package's: `td { background: var(--zebra) }` in the overriding
+   * section, `var(--color-brand)` in the tone recipe, and a `var(--bp-md)`
+   * inside a media query shown precisely because it does not work. Those
+   * are displayed, never applied, so they are cut before the scan — both
+   * shapes the guide uses to display code, `code(`…`)` and <code>…</code>.
+   */
+  var displayed = /code\(`[^`]*`\)|<code>[\s\S]*?<\/code>/g;
+  var text = window.__FJS_GUIDE_CSS__ + '\n' + window.__FJS_GUIDE_JS__.replace(displayed, '');
+
+  /* Everything the stylesheets declare, plus everything the guide declares itself. */
+  var declared = {};
+  allRules().forEach(function (rule) {
+    if (!(window.CSSStyleRule && rule instanceof CSSStyleRule)) return;
+    for (var i = 0; i < rule.style.length; i++) declared[rule.style[i]] = true;
+  });
+  (text.match(/(--[a-z_][\w-]*)\s*:/g) || []).forEach(function (m) {
+    declared[m.replace(/\s*:$/, '')] = true;
+  });
+
+  var missing = {};
+  var re = /var\(\s*(--[a-z_][\w-]*)\s*\)/g;
+  var m;
+  while ((m = re.exec(text))) {
+    if (!declared[m[1]]) missing[m[1]] = true;
+  }
+
+  var names = Object.keys(missing);
+  assert.equal(
+    names.length,
+    0,
+    'the guide reads a variable nothing declares:\n        ' + names.join('\n        ')
+  );
+});

@@ -618,14 +618,23 @@ group('the wire event names are Junction\'s, not a restatement of them')
   // source, because jetty's tests run on plain node and that file is TypeScript.
   // A relative path, not the package name: `bun install` copies a workspace dep,
   // so an import by name would check the last install's snapshot.
-  const { readFileSync } = await import('node:fs')
+  //
+  // The DIRECTORY is scanned rather than one file named. The declaration lived
+  // in `service.ts` and was lifted into `events.ts` beside it; the file it sits
+  // in is Junction's business and is no part of what this asks, so naming one
+  // turned a vocabulary check into a red build about a refactor.
+  const { readFileSync, readdirSync } = await import('node:fs')
   const { fileURLToPath } = await import('node:url')
   const { dirname, join } = await import('node:path')
 
   const here = dirname(fileURLToPath(import.meta.url))
-  const src  = readFileSync(join(here, '..', '..', 'junction', 'src', 'core', 'service.ts'), 'utf8')
+  const core = join(here, '..', '..', 'junction', 'src', 'core')
 
-  const decl = src.match(/export const AUTO_EVENT_MAP[^{]*\{([^}]*)\}/)
+  let decl = null
+  for (const f of readdirSync(core).filter((f) => f.endsWith('.ts'))) {
+    const m = readFileSync(join(core, f), 'utf8').match(/export const AUTO_EVENT_MAP[^{]*\{([^}]*)\}/)
+    if (m) { decl = m; break }
+  }
   const pairs = decl ? [...decl[1].matchAll(/(\w+)\s*:\s*'([^']+)'/g)].map((m) => [m[1], m[2]]) : []
 
   if (pairs.length >= 5) ok(`read ${pairs.length} auto-event names out of Junction`)

@@ -92,6 +92,27 @@ core/
                 Nothing is rewritten: junction READS the Host and vite allows
                 `*.localhost`. The target is picked per CONNECTION, which is the
                 one bound and is why nothing may come to depend on it
+  blast.js      how far a change to a file reaches — how many files NAME it,
+                for `fli gs`'s `↑n`. It computes nothing: `referenceGraph` in
+                `codegraph.js` is the one answer to *who names this file* and
+                the bands are its `BLAST`, so a file the codegraph page draws as
+                a hub is marked in the listing too. What it owns is the narrow
+                collection — the texts that reading needs and nothing else,
+                which is ~0.4s against the full codegraph's ~6s, the difference
+                being the TypeScript function measurement. **The scan cannot be
+                narrowed by target**: knowing who names `parser.js` means
+                reading everyone. Two cheaper readings are refused and say why
+                in the header — `git grep -F` per file is slower AND a second
+                matcher, and prefiltering texts by the target's BASENAME is
+                unsound, since `@frontierjs/toolbelt/inflect` resolves through
+                `exports` to `src/inflect/index.js` and the importing text
+                never contains `index.js`. `null` is *no reading*, never 0
+  git-status.js the working tree grouped by place and by what each file IS —
+                behind `fli gs`. Pure: the three git readings in as strings, a
+                model out, so the command only renders. The grouping is cosmetic
+                and the COUNT is not — a role rule that stops matching drops a
+                file from a listing somebody is reading to decide what to commit,
+                and a dropped row reads as a clean file
   doctor.js     can this MACHINE run fli — binaries, the two env files, and the
                 env vars a namespace declares. The sibling of `checks.js` and
                 deliberately not merged with it: a missing `sqlite3` is not an
@@ -789,6 +810,30 @@ tests/     one file per module under core/, plus the deploy pipeline's own
   (`FJS-D190`). An invariant with NO enforcer is not a finding: that is the gap
   `invariants.snapshot.md` exists to publish, and failing on it makes deleting the
   row the fastest fix.
+- **`core/ask.js` answers a contributor's question with a citation, and
+  `core/questions.js` is the graded set that says what answering cost.** Six
+  intents, each naming ONE committed artefact, because *why is X this way* and
+  *is X broken* both name X and land in different registers — a router treating
+  them as one returns the ruling that CLOSED the defect somebody is still
+  hitting. It is not `core/intent.js`: that resolves a CUSTOMER against an APP's
+  seed, this a CONTRIBUTOR against the WORKSPACE's registers, and `ask.js`
+  imports `terms()` from it rather than restating it. **The answer is a
+  citation and never prose**, so grading is a string compare with no judge model
+  in it. **The key is written against the TREE and lives in its own file**: an
+  answer key written after the resolver is green passes by construction, and a
+  question the router misses is a fact with no home or with two — a finding, not
+  a question to reword.
+- **`core/seams.js` is the same split one tier out, over the `bridge-index`
+  skill.** The seam LIST derives — the bullets are the seams, and a copy here
+  would be the restatement the framework is a bet against — while the OWNER is
+  declared in the bullet, because `$setAuth` is declared at all five of its sites
+  and only a person can say which one holds it. `seam-owner` grades the claim
+  two ways, both facts: the path is not in the tree, or it is and the name is
+  not in it. The second needs the module it was forwarded FROM or the finding is
+  unusable, so a re-export is read rather than reported as absent. `seam-listed`
+  grades the copy at `CLAUDE.md` § Bridge index, which is kept inline because
+  that is the whole of its value and checked because it had drifted. A bullet
+  naming no owner is not a finding, on `invariants.js`'s argument.
 - **A rule about a NAME written twice has to accept every spelling of it.**
   `transition-methods` asks whether a declared `@@transitions` move is reachable
   from `api/`, and reachable means the move name OR the state it moves to —

@@ -10,6 +10,10 @@ import { pluralize as pluralizeWord } from '@frontierjs/toolbelt/inflect'
 // the boundary and the table have to refuse the same value.
 import { EXACT_INT_MAX } from './validate.js'
 
+// The two columns a @point derives. Named by the parser so that this emitter,
+// the query compiler and the migration differ cannot disagree about a spelling.
+import { pointColumns } from './parser.js'
+
 // ─── Type mapping ─────────────────────────────────────────────────────────────
 // Prisma-style names → SQLite storage classes
 // Json is stored as TEXT — SQLite has no native JSON type but json_extract() works on TEXT
@@ -488,6 +492,68 @@ export function isStoredField(f) {
     a.kind === 'transient' || a.kind === 'edge')
 }
 
+/**
+ * `@point` → two generated columns, an index and the constraints that make the
+ * pair mean something.
+ *
+ * The columns are VIRTUAL: they store nothing and the INDEX holds the numbers,
+ * which is the whole reason a coordinate can live in one JSON value and still
+ * be pruned by a b-tree. A query names the COLUMNS — measured, a WHERE that
+ * repeats `json_extract(...)` instead reads as a full SCAN even with the index
+ * present, because SQLite matches the column and not the expression.
+ *
+ * **The CHECK is written with `coalesce()` and that is load-bearing.** A CHECK
+ * fails only on FALSE, so the natural spelling —
+ * `json_type(site,'$.lat') IN ('integer','real')` — evaluates to NULL for an
+ * object that has no `lat` at all and the row is ACCEPTED: `{}`,
+ * `{"lat": 40.7}` and `{"latitude": …, "longitude": …}` all stored as rows with
+ * no location, which is the same shape as a row that legitimately has none.
+ * Coalescing the unknown to a value outside the admitted set is what turns
+ * *cannot judge* into *refuse*.
+ */
+function pointDefs(model, cmap) {
+  const cols = []
+  const checks = []
+  for (const field of model.fields) {
+    const pt = field.attributes.find(a => a.kind === 'point')
+    if (!pt) continue
+    const src = fieldToColumnName(field)
+    const [latCol, lngCol] = pointColumns(field.name, pt)
+    const latPath = `json_extract("${src}", '$.${pt.lat}')`
+    const lngPath = `json_extract("${src}", '$.${pt.lng}')`
+
+    cols.push(`  "${latCol}" REAL GENERATED ALWAYS AS (${latPath}) VIRTUAL`)
+    cols.push(`  "${lngCol}" REAL GENERATED ALWAYS AS (${lngPath}) VIRTUAL`)
+
+    // Shape, then range. Both are the database's because four writers never
+    // reach the boundary — a migration, a seed, a raw statement and
+    // `asSystem()` — and `@point`'s promise is that a row either has a usable
+    // coordinate or has none.
+    checks.push(
+      `  CHECK ("${src}" IS NULL OR (` +
+      `json_type("${src}") = 'object'` +
+      ` AND coalesce(json_type("${src}", '$.${pt.lat}'), '-') IN ('integer', 'real')` +
+      ` AND coalesce(json_type("${src}", '$.${pt.lng}'), '-') IN ('integer', 'real')` +
+      ` AND ${latPath} BETWEEN -90 AND 90` +
+      ` AND ${lngPath} BETWEEN -180 AND 180))`)
+  }
+  return { cols, checks }
+}
+
+/** The composite index every declared point earns, without anybody writing `@@index`. */
+function pointIndexes(model, tableName, softDelete = false) {
+  const cmap = columnMapFor(model)
+  const soft = softDelete ? ` WHERE "${mapCol(cmap, 'deletedAt')}" IS NULL` : ''
+  const out  = []
+  for (const field of model.fields) {
+    const pt = field.attributes.find(a => a.kind === 'point')
+    if (!pt) continue
+    const [latCol, lngCol] = pointColumns(field.name, pt)
+    out.push(`CREATE INDEX IF NOT EXISTS "idx_${tableName}_${field.name}" ON "${tableName}" ("${latCol}", "${lngCol}")${soft};`)
+  }
+  return out
+}
+
 // ─── CREATE TABLE ─────────────────────────────────────────────────────────────
 
 function createTable(model, schema, tableName, pluralize = false) {  // schema needed for funcCall expansion; tableName pre-derived
@@ -499,7 +565,8 @@ function createTable(model, schema, tableName, pluralize = false) {  // schema n
   const colDefs      = columnFields.map(f => columnDef(f, schema, pkCount > 1, strict))
   const enumChecks   = columnFields.map(f => enumCheck(f, schema)).filter(Boolean)
   const constraints  = tableConstraints(model, schema, pluralize)
-  const allDefs      = [...colDefs, ...enumChecks, ...constraints]
+  const points       = pointDefs(model, columnMapFor(model))
+  const allDefs      = [...colDefs, ...points.cols, ...enumChecks, ...points.checks, ...constraints]
 
   const strictClause = strict ? ' STRICT' : ''
   const body = allDefs.join(',\n')
@@ -510,7 +577,7 @@ function createTable(model, schema, tableName, pluralize = false) {  // schema n
 // ─── CREATE INDEX ─────────────────────────────────────────────────────────────
 
 function createIndexes(model, softDelete = false, tableName) {
-  const lines = []
+  const lines = pointIndexes(model, tableName, softDelete)
   const cmap  = columnMapFor(model)
   const soft  = softDelete ? `"${mapCol(cmap, 'deletedAt')}" IS NULL` : null
 

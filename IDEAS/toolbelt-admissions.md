@@ -58,6 +58,34 @@ If a shipped parser surface is wanted it is a separate package beside toolbelt,
 with the dependency direction argued on its own terms. Nothing in the repo is
 currently asking for one.
 
+## 4. `frontmatter` — two parsers that disagree, and §3 does not settle it
+
+**Not the same question as §3**, which refuses a yaml WRAPPER because a
+dependency under `src/` fails `hygiene`. This asks whether the framework commits
+to a frontmatter subset of its own, which takes no dependency and is therefore
+admissible on the license — the cost lands somewhere else.
+
+Two implementations read the same block today and **they disagree on nesting**:
+
+- `packages/sierra/src/scanner/parse-frontmatter.js` — **js-yaml**, full YAML,
+  carrying a billion-laughs mitigation because of it (`FJS-821` (f)).
+- `packages/mesa/src/compiler-md.js` — hand-rolled *YAML-ish*: flat keys,
+  scalars, and one level of list. **No nested maps.**
+
+Read mesa's loop against a nested block: the parent key has no inline value and
+no `- ` items, so it is set to `null`, and the indented child line is then read
+as a **top-level key**. Silent on both sides — sierra's route table and the
+rendered page get two different objects out of one file, and nothing reports it.
+
+**What makes it a ruling rather than a cleanup.** The kit can only be the
+hand-rolled subset, so admitting it means **sierra loses full YAML** in
+frontmatter. That is the framework's usual move — commit rather than wrap — but
+it is a decision with a cost, not a de-duplication. The alternative is to say
+frontmatter means full YAML, in which case the one answer lives in sierra, mesa
+imports nothing, and the two stay split by the dependency direction.
+
+The options are in § Open questions.
+
 ## What is deliberately NOT admitted, and who already owns it
 
 Both were in the legacy package and both have an owner here. Adding either would
@@ -76,3 +104,11 @@ is a **classic script**, loaded by `<script src>` so the guide's suite can inlin
 it, so it cannot import anything at all. That is a structural exclusion of the
 same kind as the parsers, and it is written here so the next sweep does not read
 it as an oversight.
+
+## Open questions
+
+- **What does a frontmatter block mean here?** § 4 is the measurement: two parsers,
+  and a nested map silently becomes a null plus a stray top-level key on one side.
+  - **A** — a toolbelt kit holding a declared subset; sierra drops js-yaml and both callers agree by construction.
+  - **B** — full YAML is the meaning; the parser stays sierra's, and mesa's hand-rolled reader is the defect to close rather than the shape to standardize.
+  - **Recommend A** — a frontmatter block is configuration written by hand into a route file, and anchors, aliases and merge keys are the part of YAML that produced `FJS-821` in the first place, so dropping them removes the mitigation along with the feature. **B is the honest answer if an app is found relying on nesting**, which nothing in this repo does — every `.md` and `.mesa` frontmatter here is flat.

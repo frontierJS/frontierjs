@@ -172,6 +172,39 @@ reset → tokens → themes → tones → base → layout → components → pat
 
 ---
 
+### Which variables are yours
+
+A custom property in this package is one of three things, and the name says
+which.
+
+| | Example | You may |
+| --- | --- | --- |
+| **Knob** | `--bg-mix`, `--tone-fill`, `--surface-ground`, `--btn-radius` | **set** it — that is what it is for |
+| **Published** | `--tone-ink`, `--tint-surface`, `--tint-rule`, `--tint-ink` | **read** it and get exactly what the components got |
+| **Private** — leading `--_` | `--_fill`, `--_on-fill`, `--_surface-color` | neither |
+
+A private one is a step in a derivation, and setting it gets you half of an
+answer. `--_fill` is the background `.btn` actually paints, and `--_on-fill`
+is the text color derived from the same luminance — so this:
+
+```css
+.btn { --_fill: yellow; }     /* don't */
+```
+
+repaints the button and leaves the text white on yellow at **1.07:1**,
+because `--_on-fill` is still deriving from a color that is no longer there.
+The knob is one step up and does both halves:
+
+```css
+.btn { --tone-fill: yellow; } /* white text becomes black, automatically */
+```
+
+Nothing stops you writing the first one — CSS has no private — but the
+underscore is the package saying you are inside a derivation rather than on
+its surface.
+
+---
+
 ## Using it with UnoCSS
 
 Uno is not required, but running it alongside is **supported** (`FJS-D99`,

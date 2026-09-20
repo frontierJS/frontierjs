@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**103 words** — 12 declarations · 63 field attributes · 28 model attributes.
+**104 words** — 12 declarations · 64 field attributes · 28 model attributes.
 
 ## Declarations
 
@@ -66,6 +66,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@big` | Shape the table |  | on a model's field · on a trait's field |  |  |
 | `@scale` | Shape the table | (<places>) | on a model's field · on a trait's field |  |  |
 | `@money` | Shape the table | [(<CURRENCY>)] \| [(field: <column>)] | on a model's field · on a trait's field |  |  |
+| `@point` | Shape the table | (<latKey>, <lngKey>) |  |  |  |
 | `@keepVersions` | Record who and when |  |  |  |  |
 | `@log` | Record who and when | (<database>[, reads: false][, writes: false]) |  |  |  |
 | `@trim` | Clean a value on write |  |  |  |  |
@@ -101,7 +102,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 
 | word | group | arity | legal | accepts | notes |
 | --- | --- | --- | --- | --- | --- |
-| `@@index` | Shape the table | ([field, …]) |  |  |  |
+| `@@index` | Shape the table | ([field [(sort: Asc \| Desc)], …][, where: <expr>]) |  |  |  |
 | `@@id` | Identify a row | ([field, …]) | in a model |  |  |
 | `@@unique` | Shape the table | ([field, …][, nullsDistinct: true \| where: <expr>]) |  |  | parses as `uniqueIndex` |
 | `@@check` | Shape the table | ("<sql>"[, "<message>"]) |  |  |  |
@@ -111,7 +112,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@external` | Shape the table |  |  |  |  |
 | `@@noStrict` | Shape the table |  |  |  |  |
 | `@@fts` | Shape the table | ([field, …][, tokenize: unicode61\|ascii\|porter\|trigram]) | in a model | tokenize: unicode61 · ascii · porter · trigram |  |
-| `@@sync` | Wire it to the app | (policy) |  | policy: server · append · refuse |  |
+| `@@sync` | Wire it to the app | (policy) |  | policy: server · append · refuse · field |  |
 | `@@capabilities` | Decide who may | [(all)] |  | scope: all |  |
 | `@@extensible` | Shape the table | (column, declaredBy: Model[, max: { kind: N }]) |  |  |  |
 | `@@softDelete` | Shape the table | [(cascade)] |  | mode: cascade |  |
@@ -179,3 +180,6 @@ Shapes the parser accepts and something later refuses.
 | `sync-reference-to-a-server-assigned-id` | warn | a queued write references a model whose id only the server can assign |
 | `sync-file-with-no-key-to-attach-to` | warn | a syncable model carries bytes and has no key a client can state |
 | `sync-required-file` | warn | a required File on a syncable model cannot be written offline |
+| `json-arrow-answers-json` | error | a @generated column reads a JSON path with `->`, which keeps the quotes |
+| `json-path-outside-the-declared-type` | error | a @generated column reads a member the Json column's type does not declare |
+| `index-over-a-json-document` | warn | an index over a Json column indexes the document, not anything inside it |

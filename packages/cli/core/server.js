@@ -13,6 +13,7 @@
 //   GET  /api/runnables       → the inventory, cached on the registry's TTL
 //   GET  /api/state           → probed per poll, four answers, `unknown` is one
 //   GET  /api/proves          → DRIVES.md's proof table against `git diff`
+//   GET  /api/status          → the working tree grouped — `core/git-status.js`
 //   GET  /api/health/:id      → what the thing on that port says about itself
 //   GET  /api/check           → the architecture rules over this project's apps
 //   GET  /api/doctor          → can this machine run fli
@@ -129,6 +130,11 @@ function route(req, res) {
   // GET /api/proves — which of them prove what you have changed
   if (req.method === 'GET' && path === '/api/proves') {
     return handleProves(req, res)
+  }
+
+  // GET /api/status — what you have changed, grouped by place and by role
+  if (req.method === 'GET' && path === '/api/status') {
+    return handleStatus(req, res)
   }
 
   // GET /api/check — the architecture rules over this project's own apps
@@ -452,6 +458,36 @@ async function handleState(req, res) {
 // Never cached. A refresh button answering a cached read is a broken refresh,
 // and this is a git call rather than a tree walk — it is asked when somebody
 // asks, and the page does not poll it.
+
+// The working tree grouped the way the terminal groups it. The page and `fli
+// gs` read one model out of `core/git-status.js`, because two renderers of one
+// question is how the GUI comes to disagree with the terminal about what is
+// dirty.
+async function handleStatus(req, res) {
+  try {
+    const root = global.projectRoot
+    // `execFileSync`, not a shell — nothing here is caller-supplied and it
+    // stays that way by construction rather than by a validator.
+    const git = (argv) => {
+      try { return execFileSync('git', ['-C', root, ...argv], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }) }
+      catch { return '' }
+    }
+
+    const { buildStatus } = await import('./git-status.js')
+    const { usedByIndex, blastReader } = await import('./blast.js')
+    const model = buildStatus({
+      porcelain: git(['status', '--porcelain', '-z']),
+      unstaged:  git(['diff', '--no-color', '--numstat']),
+      staged:    git(['diff', '--no-color', '--numstat', '--cached']),
+      branch:    git(['rev-parse', '--abbrev-ref', 'HEAD']).trim() || null,
+      blastOf:   blastReader(usedByIndex(root)),
+    })
+
+    json(res, 200, { at: new Date().toISOString(), ...model })
+  } catch (err) {
+    json(res, 500, { error: err.message })
+  }
+}
 
 async function handleProves(req, res) {
   try {

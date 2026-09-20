@@ -1,5 +1,111 @@
 # Changes — example
 
+## 2026-09-20 — the shop has an agent surface, and it is the shop's own ladder
+
+`app.configure(mcpPlugin(…))` mounts `POST /api/mcp`, and `verify:mcp` drives it
+with a REAL `@modelcontextprotocol/client` — the handshake and framing a
+person's editor runs, rather than this repo's own `fetch` agreeing with itself.
+22 checks, no browser, starts and stops its own API. It runs under **bun**, for
+`verify:site`'s reason: its last section imports the app's own Litestone, which
+reaches `bun:sqlite`.
+
+**This app is the shape that makes the drive worth having.** `tenancy
+{ strategy database }` means there is no `app.db` at all, which is what made the
+plugin's first draft answer a permanent 503 here; four real accounts on a real
+ladder; and a row policy sitting beside the gate.
+
+**Which is what the drive got wrong twice on its first run, and the corrections
+are the point.** `sam@shop.test` carries `isStaff` and reads every order in the
+shop — and does not reach level 5, so the refund move is `alex`'s and not
+"staff's". And `sam` and `robin` are offered the **identical tool list**: a row
+policy moves nobody up a rung. **The list is the LADDER's and the rows are the
+POLICY's**, asserted as a pair — one list, two different order counts out of it.
+
+
+## 2026-09-19 — the storage mount says its bytes came from strangers
+
+`static: { root: STORAGE_ROOT, untrusted: true }` ([FJS-D314](../DECISIONS.md#fjs-d314)). Every byte
+under that root arrived on a form somebody filled in.
+
+Nothing about the photographs changes and the drive now asserts that: an image is inside the inline
+allow-list, so it answers no `content-disposition` and renders as before. The expensive mistake this
+guards is one word in that list — a photograph answered as a download renders nowhere, and every
+screen in the app shows an empty box. **The attachment half cannot be reached from here**, because
+every `File` column in this app declares `@accept` and none of them accepts a type the allow-list
+refuses; that half is junction's own suite. 39 passed, 0 failed.
+
+## 2026-09-19 — the catalog drive graded the label, not the bytes
+
+`verify:catalog`'s refusal row sent the real photograph under a `.txt` name and asserted a 400, so
+what it proved was that `@accept` graded the NAME — and a name is the one part of an upload the
+caller controls ([FJS-1184](../ISSUES.md#fjs-1184)). Its `upload()` helper always sent `photo`, so
+there was no way to send bytes of the wrong kind at all; it takes them as an argument now and the
+refusal sends real text.
+
+Three rows added: a genuine photograph with the wrong name is ACCEPTED, it is served as what the
+bytes are rather than what the name said, and the stored key's extension agrees with the ref.
+
+**The mislabeled row is deleted before the browser section rather than with the rest at the end.**
+The gallery check is `every(naturalWidth > 0)` over the swatches and the images lazy-load — two
+assertions above depend on that — so one more row pushes a swatch below the fold and it reads as a
+photograph that failed to decode. 38 passed, 0 failed.
+
+## 2026-09-18 — the migration files build the schema again, and a drive says so
+
+`db/migrations/main/` was a whole feature behind (`FJS-1154`). The app boots with `autoMigrate`, which
+diffs the live database, so development never reads those files — and a deploy replays exactly them.
+The drift had accumulated across auth's `LoginChallenge` fragment, orion's seven tables, `KvEntry`,
+the two stocktake models and a column rename, with nothing going red.
+
+One forward migration closes it. `migrate dev` wrote most of it and blocked where it should:
+`invoice.dueOn` is NOT NULL with no default, so the copy is hand-written. It states `date("dueAt")`
+rather than the `RENAME COLUMN` the generator offers, because `dueAt` held an instant and `dueOn`
+holds a day — a rename would leave `…T23:30:00.000Z` in a column every reader compares as
+`YYYY-MM-DD` — and it recreates the two indexes a rebuild drops.
+
+**The half no tool reported**: `DateTime` and `String` both emit TEXT, so ten of the fourteen columns
+`FJS-D288` converted are invisible to `diffSchemas`. It printed nothing for `employee.startedOn`,
+both pay-window pairs, `pay_run`'s three, and `payslip`'s and `invoice_line`'s — so the file carries a
+`date()` backfill for each. Idempotent, and UTC, which is this app's own `timeZone` floor.
+
+`verify:migrate` is new and is the only thing that reads the committed files. It replays them onto an
+empty disk and asks `migrate check`, then reads every `String @date` column OUT OF THE SCHEMA and
+grades the seeded rows — so the next column converted joins the drive by being converted. The row
+count is asserted beside it, because an empty table passes *nothing is wrong* without reading
+anything.
+
+## 2026-09-18 — a pay period is DAYS, and payroll keeps no clock (`FJS-D288`)
+
+The second half of the plain-date conversion, over the domain where a wrong day is somebody's wages.
+`Employee.startedOn`/`endedOn`, both window pairs (`PayWindow`, `PayRate`), `PayRun`'s period and pay
+date, and `Payslip`'s period are `String @date`; `EmploymentPay.effectiveFrom` and `AsAtQuery.at` are
+days on the wire. `PlanVersion`'s window stays a `DateTime` and is the contrast the schema keeps: a
+price changes at a moment, a salary changes on a day.
+
+**`api/src/domain/payroll` now has no clock in it.** `instant()` is gone with every `= new Date()`
+default, and `payAsAt`, `payAsAtMany`, `employedAt`, `ratesAsAt` and `allRatesAsAt` each require the
+day they answer for. The zone is spent at the edge instead — `$.config.timeZone` in
+`employees.setPay`, the registry meta in the seed, `'UTC'` in each drive — so a pay run planned on a
+laptop in Los Angeles and in a UTC container picks the same pay windows.
+
+**A pay period is `[periodStart, periodEnd)`, which is billing's interval.** `periodEnd` is therefore
+the first day the run does not pay for, and terms are read on `lastDayOf(run)`: a raise opening on
+`periodEnd` belongs to the NEXT run. One application, one answer to what a period covers.
+
+Two things only running it could find. A window can no longer open and close on the same day —
+`[d, d)` covers nothing — so `assertEffectiveFrom` refuses that by naming the employee rather than
+leaving a `@@check` to name a column; an instant hid it by putting the two writes milliseconds apart,
+which produced a window true for a few milliseconds of somebody's employment. And the people screen
+was putting a typed day through `new Date(…).toISOString()`, which sent the day BEFORE the one
+somebody picked to anyone west of Greenwich; `backdate.theDayTypedIsTheDayStored` is the assertion a
+`DateTime` column could not carry.
+
+Writing any of it through the API needed `FJS-1182` in junction first.
+
+`verify` also stopped racing: the stop-renewing assertion waited for its button to exist rather than
+to be ENABLED, and `changePlan` clears `busy` only after both re-reads settle, so a click could be
+swallowed and the failure surfaced as a timeout on a confirmation popover naming neither.
+
 ## 2026-09-17 — the devtools console is on when you run the app
 
 `bun run api` sets `DEVTOOLS=1`, so the call feed, `/metrics`, readiness and the job queue are at

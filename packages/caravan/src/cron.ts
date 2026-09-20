@@ -77,7 +77,12 @@ function validate(
     let   count   = limit
 
     while (count > 0) {
-      next.setMinutes(next.getMinutes() + 1)
+      // A minute of REAL time, not a local minute. `setMinutes(getMinutes()+1)`
+      // reads and writes the host's wall clock, so across a fall-back the step
+      // can cross an ambiguous hour and skip sixty candidate minutes the
+      // schedule should have been asked about — and the zone this search is
+      // FOR is `timeZone` below, never the host's.
+      next.setTime(next.getTime() + 60_000)
       const result = validate(cronConfig, next, { timeZone })
       if (result.isValid) return { isValid: false, date: new Date(next) }
       count--

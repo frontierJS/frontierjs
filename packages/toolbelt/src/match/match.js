@@ -46,6 +46,8 @@
  */
 
 import { DIRECTIVE_PARAMS } from '../directives/directives.js'
+import { isPoint, isNear }    from '../geo/geo.js'
+import { parseLength }        from '../units/units.js'
 
 const _WIRE_OPS = {
   $in: 'in', $nin: 'notIn', $lt: 'lt', $lte: 'lte', $gt: 'gt', $gte: 'gte',
@@ -59,6 +61,9 @@ const _BARE_OPS = new Set([
   'in', 'notIn', 'lt', 'lte', 'gt', 'gte', 'not', 'equals',
   'contains', 'startsWith', 'endsWith',
   'has', 'hasEvery', 'hasSome', 'hasNone', 'isEmpty',
+  // The only operator a `@point` column answers, and the only one here whose
+  // operand is a structure rather than a value (`FJS-D326`).
+  'near',
 ])
 
 // Filters whose answer is not in the record, so a pushed row cannot be graded
@@ -148,8 +153,59 @@ function _matchOp(rule, actual, op, operand) {
     case 'hasSome':  return Array.isArray(actual) ? operand.some(v => actual.includes(v))  : null
     case 'hasNone':  return Array.isArray(actual) ? !operand.some(v => actual.includes(v)) : null
     case 'isEmpty':  return Array.isArray(actual) ? (operand ? actual.length === 0 : actual.length > 0) : null
+    case 'near':     return _matchNear(actual, operand)
     default:         return null
   }
+}
+
+/**
+ * `{ near: { lat, lng, within: '5mi' } }` against the point on the record.
+ *
+ * `null` exists for facts this side cannot know and a distance between two
+ * points it is holding is not one of them, which is the whole of `FJS-D326`:
+ * under the other answer every live list re-fetches on every arriving row,
+ * which is the cost that made this module exist.
+ *
+ * The same two steps in the same order as the SQL — box, then exact — because
+ * `isNear` is what both halves call. A centre may arrive as TEXT for the reason
+ * `@frontierjs/toolbelt/query` states: a coordinate becomes a number only if it
+ * round-trips, and `51.507400` does not.
+ *
+ * Three things answer `null` rather than a verdict, and each is a fact that is
+ * genuinely absent here:
+ *
+ *   - a radius this side cannot parse. The server would have refused the query,
+ *     so holding one is not really reachable — but guessing a radius is the one
+ *     way to drop a row that belongs.
+ *   - a stored value that is an object and is not a readable point. The
+ *     declared keys are the model's (`@point(y, x)` is legal), and this side
+ *     holds no schema, so an unreadable pair is a key-name question rather than
+ *     a location outside the circle.
+ *   - a centre that is not a point.
+ *
+ * A record whose point is simply ABSENT is decidable and is `false`: the SQL
+ * leads with `latCol IS NOT NULL`, so a row with no location is in no circle.
+ */
+function _matchNear(actual, operand) {
+  if (!operand || typeof operand !== 'object' || Array.isArray(operand)) return null
+
+  const num = (v) => {
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null
+    if (typeof v !== 'string' || v.trim() === '') return null
+    const n = Number(v)
+    return Number.isFinite(n) ? n : null
+  }
+  const lat = num(operand.lat)
+  const lng = num(operand.lng)
+  if (lat === null || lng === null) return null
+
+  let metres
+  try { metres = parseLength(operand.within) } catch { return null }
+
+  if (actual == null) return false
+  if (!isPoint(actual)) return null
+
+  try { return isNear(actual, { lat, lng }, metres) } catch { return null }
 }
 
 function _matchField(rule, actual, expected) {

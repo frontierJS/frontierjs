@@ -15,7 +15,7 @@
  *
  * **`backdate.theCoveringWindowAtAPastDateIsNowTheNewOne`** — the other half of
  * the same fact, and it is the one that looks like a bug until you see it
- * beside the first. `verify:employment` asserts that reading a past instant
+ * beside the first. `verify:employment` asserts that reading a past day
  * gives the same answer across a raise; a BACKDATE deliberately makes it give a
  * different one. The schema holds VALID time and no transaction time, so *what
  * did we believe in March* survives only where a document froze it.
@@ -46,7 +46,8 @@
  */
 
 import { db }                                    from '../../api/src/core/db.ts'
-import { instant, payAsAt, assertEffectiveFrom } from '../../api/src/domain/payroll'
+import { payAsAt, assertEffectiveFrom }          from '../../api/src/domain/payroll'
+import { plainDateIn, addToDate }                from '@frontierjs/toolbelt/datetime'
 import { calculatePayslipFor, payPayRun, revertPayRun } from '../../api/src/domain/payroll'
 import { arrearsFor }                            from '../../api/src/domain/payroll'
 import { sweepPayroll }                          from './payroll-sweep.mjs'
@@ -54,8 +55,10 @@ import { results, report } from './lib/report.mjs'
 
 const sys = db.asSystem()
 const RUN = String(Date.now()).slice(-6)
-const DAY = 86_400_000
-const ago = (d) => new Date(Date.now() - d * DAY).toISOString()
+// Days, not instants (`FJS-D288`): a pay window, a pay period and a pay date
+// are all dates, and UTC is the calendar every drive here runs the shop on.
+const TODAY = plainDateIn(Date.now(), 'UTC')
+const ago   = (d) => addToDate(TODAY, { days: -d })
 
 const { got, t } = results()
 const refused = async (fn) => { try { await fn(); return false } catch { return true } }
@@ -154,7 +157,7 @@ const backdate = async (who, at, rate) => {
   const open = await sys.payWindow.findFirst({
     where: { employeeId: who.employee.id, effectiveTo: null },
   })
-  assertEffectiveFrom(who.employee.reference, at, instant(),
+  assertEffectiveFrom(who.employee.reference, at, TODAY,
     await sys.payWindow.findMany({ where: { employeeId: who.employee.id }, limit: 100 }))
   await sys.payWindow.update({ where: { id: open.id }, data: { effectiveTo: at } })
   const next = await sys.payWindow.create({ data: {
@@ -169,7 +172,7 @@ await backdate(B, CUT_AT, 5_400_000)
 
 const oldA = await sys.payWindow.findFirst({ where: { id: A.window.id } })
 
-t('backdate.itOpensAWindowAtTheStatedInstant', raised.effectiveFrom === RAISE_AT)
+t('backdate.itOpensAWindowOnTheStatedDay',    raised.effectiveFrom === RAISE_AT)
 t('backdate.andClosesTheOldOneThere',          oldA.effectiveTo    === RAISE_AT)
 
 // History rewritten, and this is the assertion that looks like a bug on its
@@ -207,25 +210,25 @@ t('gap.thoughOnlyAsAJsonStringInALog',
   typeof closing.before === 'string' && typeof closing.records === 'string')
 
 // The refusals, asserted against the rule the service calls.
-const NOW = instant()
+const NOW = TODAY
 t('backdate.aFutureDateIsRefused',
   refusedSync(() => assertEffectiveFrom('X', ago(-5), NOW, [oldA, raised])))
 t('backdate.andSoIsBackdatingAcrossAnEarlierChange',
   refusedSync(() => assertEffectiveFrom('X', ago(200), NOW, [oldA, raised])))
-// Into a closed history with nothing open: two windows would cover one instant,
+// Into a closed history with nothing open: two windows would cover one day,
 // which is the thing `payAsAtMany` cannot resolve and has to report by name.
 t('backdate.andSoIsOpeningInsideAClosedHistory',
   refusedSync(() => assertEffectiveFrom('X', ago(300), NOW, [oldA])))
 // **A FIRST window may start whenever they did.** Nothing to close, nothing to
 // cross — and refusing it meant a new hire's pay could only start at the
-// instant somebody typed it, so the first run for anybody hired last month was
+// day somebody typed it, so the first run for anybody hired last month was
 // wrong. Found by the console drive, which could not build its own fixture.
 t('backdate.butAFirstWindowMayStartInThePast',
   !refusedSync(() => assertEffectiveFrom('X', ago(400), NOW, [])))
 t('backdate.anOrdinaryRaiseIsNotGradedAtAll',
   !refusedSync(() => assertEffectiveFrom('X', NOW, NOW, [])))
 
-// A correction AT the instant the current window opened would need a window of
+// A correction ON the day the current window opened would need a window of
 // zero length, and the database refuses it — so putting right a correction is
 // not the same act as making one.
 t('gap.correctingAtTheSameInstantIsRefusedByTheDatabase',
@@ -305,7 +308,7 @@ t('refund.theDeductionsFall',  slipDB.deductions < bClosed.deductions)
 t('refund.andTheNetIsStillPositive', slipDB.net > 0)
 
 // A cut backdated INTO a period moves the whole of it, because the as-at read
-// stands at one instant — the period end. A change part way through a period is
+// stands on one day — the period's last. A change part way through a period is
 // not prorated, and nothing says so.
 const bMarch = adjB.filter(l => l.correctsPayRunId === closed[0].id && l.kind === 'basicPay')
 t('gap.aMidPeriodBackdateMovesTheWholePeriod',
@@ -455,7 +458,7 @@ catch (err) { console.log(`  note  sweep: ${err.message}`) }
 // ─── report ───────────────────────────────────────────────────────────────
 
 const expected = {
-  'backdate.itOpensAWindowAtTheStatedInstant': true,
+  'backdate.itOpensAWindowOnTheStatedDay': true,
   'backdate.andClosesTheOldOneThere': true,
   'backdate.theCoveringWindowAtAPastDateIsNowTheNewOne': true,
   'backdate.andItAnswersTheNewRate': true,

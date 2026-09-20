@@ -113,9 +113,15 @@ function entry(row, depth, push) {
     docFor(row)
       ? `- **Deeper** — [${docFor(row).replace(/^docs\//, '')}](${docFor(row).replace(/^docs\//, '')})`
       : null,
+    // `unique` is a word at both levels, and a bare name matches the first row
+    // carrying it — so a model attribute pointing at `@@unique` linked to the
+    // FIELD one with nothing saying so. A `<level>:<word>` entry says which.
     row.seeAlso?.length
       ? `- **See also** — ${row.seeAlso
-          .map(w => CATALOG.find(r => r.word === w && r !== row))
+          .map(w => {
+            const [level, word] = w.includes(':') ? w.split(':') : [null, w]
+            return CATALOG.find(r => r.word === word && r !== row && (!level || r.level === level))
+          })
           .filter(Boolean).map(link).join(' · ')}`
       : null,
   ].filter(Boolean)

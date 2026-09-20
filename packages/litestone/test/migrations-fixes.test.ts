@@ -240,6 +240,58 @@ model Post {
     expect(second).not.toBe(first)
     expect(second > first).toBe(true)
   })
+
+  // The stamp IS the apply order, so a local reading makes that order a fact
+  // about where each author sits: at one instant this answered 20260919103333
+  // in Los Angeles and 20260920053333 in Auckland — nineteen hours and a date
+  // boundary apart (`FJS-1151`).
+  //
+  // Two zones either side of Greenwich and never the host's, so the assertion
+  // does not quietly depend on where it runs — and each answer is bracketed by
+  // `toISOString()`, which is UTC by definition and derived from nothing here.
+  // Under a local reading Auckland's stamp lands hours ahead of that bracket
+  // and Los Angeles's hours behind it.
+  it('stamps in UTC, whatever the host clock reads', () => {
+    const held = process.env.TZ
+    try {
+      for (const tz of ['Pacific/Auckland', 'America/Los_Angeles']) {
+        process.env.TZ = tz
+        const { dir } = freshLab()
+        mkdirSync(dir, { recursive: true })
+
+        const before = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
+        const stamp  = nextMigrationName(dir, 'utc').slice(0, 14)
+        const after  = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)
+
+        expect(`${tz} ${stamp >= before && stamp <= after}`).toBe(`${tz} true`)
+      }
+    } finally {
+      if (held === undefined) delete process.env.TZ
+      else process.env.TZ = held
+    }
+  })
+
+  // The bump only fires when the held stamp is AHEAD of the clock, which is
+  // what `29…` buys — and it has to step as a CALENDAR rather than as a number.
+  // `Date.UTC` moving with `formatStamp` is what keeps it one: reading UTC while
+  // constructing local shifts by the offset, and east of Greenwich that runs
+  // backwards, at which point the caller falls through to the numeric branch
+  // meant for a stamp that is not a clock reading. Numerically, the first case
+  // below answers 29990615236000, which is not a time.
+  it('bumps across midnight, a month end and a leap day', () => {
+    const cases: Array<[string, string]> = [
+      ['29990615235959', '29990616000000'],   // midnight
+      ['29990228235959', '29990301000000'],   // 2999 is not a leap year
+      ['20400228235959', '20400229000000'],   // 2040 is
+      ['29991231235959', '30000101000000'],   // a year end
+    ]
+    for (const [held, want] of cases) {
+      const { dir } = freshLab()
+      mkdirSync(dir, { recursive: true })
+      writeFileSync(join(dir, `${held}_held.sql`), '')
+      expect(nextMigrationName(dir, 'next')).toBe(`${want}_next.sql`)
+    }
+  })
 })
 
 describe('apply — failure atomicity', () => {

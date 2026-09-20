@@ -1,5 +1,122 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-20 — `/match` decides a proximity search instead of asking the server
+
+`near` is the one operator here whose operand is a structure rather than a value, and it
+had been falling through to *not all keys are operators* — the branch that answers `null`,
+*ask the server*. `FJS-D326` ruled that wrong: `null` exists for facts this side cannot
+know, and a distance between two points it is already holding is not one. Under the old
+answer every live list holding a proximity search re-fetched on every arriving row, which is
+the cost this module exists to remove.
+
+The predicate is `isNear` from `/geo` — box first, then exact, the same two steps in the
+same order as the SQL — so the two halves of a live list cannot disagree about a row on the
+circle's edge. The radius is `parseLength` from `/units`, the same parse the Data boundary
+runs.
+
+**What it still declines to answer is the substance**, because `false` REMOVES a row:
+
+- a row whose point is **absent** is `false`, not unknown — the SQL leads with
+  `latCol IS NOT NULL`, so a row whose coordinate was cleared has to leave the list;
+- a stored pair under key names this side cannot read is `null`. The keys are the model's
+  (`@point(y, x)` is legal) and this side holds no schema, so an unreadable pair is a
+  key-name question, not a location outside the circle;
+- a radius in no unit it knows, an absent radius, and a centre that is not two numbers are
+  each `null` rather than a guess — and an EMPTY coordinate is not `0`, since `Number('')`
+  is and the alternative is silently searching the Gulf of Guinea.
+
+A centre may arrive as TEXT, for `/query`'s stated reason: a coordinate becomes a number
+only when it round-trips, and `51.507400` — what `toFixed(6)` writes — does not.
+
+## 2026-09-20 — a distance ordering marks the column it sorts by
+
+`orderByPair` descends through structure to find the first column an ordering sorts by, and
+a point field's value is the one structure that is not another ordering:
+`{ site: { near: { lat, lng } } }` walked straight past it and answered `lat` — a column no
+table has, so the header that IS sorted shows nothing and never reverses. `FJS-1077`'s shape
+on a value the wire now carries (`FJS-D323`).
+
+The `near` value stops the descent and the field is the key; `dir` beside it is the
+direction. Nothing else about the pair changed, and the filter half needed no change at
+all — bracket notation already carries a proximity search, which is what `FJS-D323` chose
+it for.
+
+## 2026-09-20 — `/geo`, and a length vocabulary in `/units`
+
+The pure half of the geo feature ruled in [`IDEAS/geo.md`](../../IDEAS/geo.md)
+(`FJS-D315`–`FJS-D327`). Both ends need this arithmetic and neither may own it: the Data boundary
+answers `where: { site: { near: … } }` in SQL, and the browser answers *is this arriving row still
+in the list* and *how far away is this one* over rows it already holds. A copy on each side is the
+bill `FJS-059` already paid once.
+
+**Five functions and it stops there** (`FJS-D325`): `distance`, `boundingBox`, `pointInPolygon`,
+`polygonArea`, `centroid`, plus `isPoint` / `inBoxes` / `isNear` as the shapes the two callers
+actually ask for. A convex hull and a spherical buffer are a geometry library with a spine, and half
+of one is a battery that has stopped being severable — the ruling is marked for review, not settled.
+
+**`boundingBox` returns a LIST of boxes and never one, which is the whole reason the module is
+shaped this way.** A bounding box is the cheap half of a proximity search and written naively it
+returns FEWER rows with a 200, in two places: a radius crossing ±180°, where `lng >= west AND lng <=
+east` is false for every point once west > east, and a radius reaching a pole, where the cosine the
+longitude span divides by is zero. Elasticsearch, qdrant and GeoBlacklight each shipped that defect.
+So the seam split is in the boundary function rather than in a caller, the pole case widens to the
+whole parallel with `full: true` — which lets a query compiler drop the clause instead of emitting a
+tautology — and the spec compares the boxes against a **brute-force scan** of the same points at the
+equator, at a pole and across the seam.
+
+**Two more places the naive arithmetic is quietly wrong**, both asserted: `centroid` averages as
+vectors, because the mean of -179 and 179 is 0 — the middle of the wrong ocean — and returns `null`
+for antipodes rather than a plausible-looking lie; `polygonArea` is the spherical excess formula,
+since treating degrees as a plane reports a parcel at 60°N as twice its size.
+
+`/units` grew the length vocabulary that `FJS-D319` gives it — `parseLength('5mi')`,
+`LENGTH_UNITS`, `formatDistance` — because *what a quantity means* is that kit's question, and a
+metres-only API is what makes callers write `radius * 1609.34` by hand: two files of one real
+application do exactly that, each with its own constant. A bare number is metres; a unitless STRING
+is refused, since `'5'` in a URL is a radius somebody meant to spell.
+
+## 2026-09-19 — `/mime`, because four tables disagreed about `.wasm`
+
+junction's static transport, litestone's `FileStorage` and sierra's two static origins each kept an
+extension-to-content-type table: 27, 16, 19 and 16 entries, keyed `js` in one and `.js` in three,
+with the charset baked into the value in two of them. 24 of the 32 extensions across them appeared
+in some and not others (`FJS-1186`).
+
+**The cost was already recorded and had not been read as a duplication.** `FJS-825` closed *a
+`.wasm` served as `application/octet-stream` cannot be `instantiateStreaming`'d at all* in
+`widget/serve.js`; the sibling `site/serve.js` gained `.avif` in the same pass and never gained
+`.wasm`.
+
+The kit answers five questions because the four callers each answered a different subset:
+`contentTypeFor` (charset asked for, never baked in), `isTextType`, `isCompressible` — junction held
+an exact-match map of ten types and sierra a regex, so `text/markdown` compressed on one server and
+not the other — `isInlineSafe`, an ALLOW-list because `FJS-692` was an SVG served inline as stored
+XSS and a deny-list is wrong the first time somebody uploads a format nobody listed, and `sniff`
+over the bytes.
+
+**`sniff` answers `null` for unknown and null is not a verdict of safe**, the shape `/match` uses:
+most text formats have no magic number, so a caller comparing a claim against it must read an
+unrecognized answer as no evidence rather than as a refusal. Markup is the case that matters and has no prefix to match — SVG and
+HTML are the two types that run in the serving origin — so they are read as text after a BOM and
+leading whitespace, and `<?xml` alone answers `application/xml` because most XML is not an SVG.
+
+`extensionFor` came later, from a caller: litestone names a stored object by its extension and a
+static origin serves by that extension with no ref to read, so a PNG stored under `.txt` leaves the
+row and the URL stating different things. `extensionsFor` answers every spelling, so the preference
+is a declared table rather than the key order of the main one — an implicit fact a reorder would
+silently change.
+
+`sameType` is the last one and came from a caller rather than the design. A HEIF file's `ftyp` brand
+decides whether it reads as `image/heic` or `image/heif`, both spellings are things an app declares,
+and once litestone graded the BYTES its equality refused a photograph for being the other reading of
+itself (`FJS-1194`). A `typeMismatch` shipped alongside `sniff` held the same fact and had no caller
+in the tree — litestone needs the evidence VALUE rather than a claimed/actual pair — so the fact was
+stated in code nothing ever ran. It is deleted and the equivalence moved to where the comparison is.
+
+16 spec rows, every one with its negative control. The first found a real defect: a bare `.png`
+went through the dotfile rule and read as a NAME, so `contentTypeFor('.png')` answered
+`application/octet-stream`.
+
 ## 2026-09-16 — `/ids`, because both ends mint now
 
 The generators behind `@default(uuid()|ulid()|cuid()|nanoid())` were `litestone/src/core/ids.js`

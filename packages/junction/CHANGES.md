@@ -1,5 +1,99 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-20 — a proximity search is pinned down both transports
+
+`FJS-D323` ruled that a `near` filter travels as the bracket notation the query kit already
+carries structure in, rather than as a compact triple only the geo layer can read — which
+makes it a claim about the transports rather than a feature in them. `query-parity` now
+holds the rows that prove it: a centre whose coordinates must stay numbers beside a radius
+that must stay text (`5mi` is neither a number nor a column), and a distance ordering, each
+asserted to mean the same thing over HTTP and over the socket. Nothing in the transport
+changed.
+
+## 2026-09-19 — `static: { untrusted: true }`
+
+[FJS-D314](../../DECISIONS.md#fjs-d314). A mount says whether its bytes came from strangers; marked,
+anything outside `isInlineSafe` is answered `attachment`. An SVG is a document that may carry script
+and it runs in the origin that served it, which is stored XSS on the app's own domain.
+
+**Unmarked is the default and stays it.** `isInlineSafe('text/javascript')` is false, so inverting
+this over a root holding an app's own bundle breaks the app it is meant to protect. An image is
+inline either way, so marking an uploads root costs a photograph nothing — the control that decides
+whether this is usable at all, and a test row.
+
+The disposition is computed ONCE and shared with the 206: a partial response declares the same type,
+so a rule reaching one and not the other hands back an inline copy of exactly the file the full
+response refused to inline. Four rows, including an unknown type (an allow-list is an allow-list)
+and the unmarked control.
+
+## 2026-09-19 — the static handler's declared type now binds
+
+`x-content-type-options: nosniff` on every served response, the 206 included — a partial response
+declares the same type, so leaving it off there hands back a sniffable copy of the file the full
+response bound.
+
+**Why it matters here and not only in theory** ([FJS-1187](../../ISSUES.md#fjs-1187)): this root
+serves an app's own bundle AND, wherever a `File` column's local provider points at it, bytes a
+stranger uploaded — and the handler cannot tell the two apart. Measured against a running `example`
+before this, a served upload answered `Content-Type` and `Cache-Control` and nothing else.
+
+**It is half the answer and the test says which half.** An SVG is still served inline and an SVG is a
+document that may carry script in the serving origin; refusing that needs to know which population
+the bytes came from, which is FJS-1187 option B. A row asserts the inline SVG so the gap cannot be
+read as covered.
+
+Safe to apply unconditionally only because the types are now correct across every server here — one
+table, `@frontierjs/toolbelt/mime`. Proved by running: junction 2386 pass, `example` `verify` 66/66
+and `verify:build` 66/66, both of which assert a clean console, and `verify:catalog` 38/38.
+
+## 2026-09-19 — the static transport reads the shared type table
+
+`CONTENT_TYPES` and `COMPRESSIBLE` in `transport/static.ts` are `@frontierjs/toolbelt/mime`
+(`FJS-1186`). `CACHEABLE` stays: what may be cached is policy read off a URL, not a fact about the
+bytes.
+
+**It had TWO tables, not one.** `transport/http.ts` kept a second compressible set — with `text/csv`
+and `application/ld+json` that `static.ts`'s lacked — so whether a response compressed depended on
+which path answered it. Both read the kit now.
+
+Three answers change, each a gap this table had and another had closed — `.avif`, `.csv` and
+`.heic` now answer their real types rather than `application/octet-stream`, and `text/markdown`
+compresses, which sierra's regex already did and this exact-match map of ten did not.
+
+## 2026-09-18 — `app.scheduler`'s cron reads the clock in UTC
+
+`0 9 * * *` matched 16:00Z under `America/Los_Angeles`, 09:00Z under UTC and neither under
+`Europe/Berlin` — one expression, three schedules, and nothing at the call site saying which one it
+was on (`FJS-1150`). It now reads `getUTC*`: the scheduler states no zone, so it names the one that is
+the same everywhere, and a schedule declared on a laptop is the schedule that runs in the container.
+
+No option was added. Caravan's `cron` takes a `timeZone` and is the one that owns the clock for
+anything durable (`FJS-D36`); whether this scheduler should take a cron expression at all is a
+question rather than a defect, and it is filed as `FJS-D312`.
+
+The regression test moves `TZ` under the matcher and asserts the answer does not move — the only
+shape that can fail here, since `bun test` pins the runtime to UTC and every other case in that file
+is a literal `Date`. It builds each date INSIDE the zone loop, because a `Date` caches its local-time
+fields at construction and one made a line earlier goes on answering in the old zone, which is a test
+that passes against the bug it was written for.
+
+## 2026-09-18 — a day and a moment are two field types, not one
+
+`resolveType` mapped both `format: 'date'` and `format: 'date-time'` onto one `FieldType` named
+`date`, whose coercion is `new Date(value)`. So a `String @date` column could not be written through
+the API at all: the boundary parsed `2025-08-15` into a `Date`, litestone's validator stringified it
+and refused, and the message named the format it had just been handed — *startedOn: must be a valid
+date in YYYY-MM-DD format* (`FJS-1182`).
+
+The type is now `instant` or `plainDate`. An `instant` is a point on the timeline and still arrives
+as a `Date`; a `plainDate` is a calendar day, validated as `YYYY-MM-DD` and coerced by NOTHING,
+because every coercion available turns a day into a moment. `v.date()` is `v.instant()` and
+`v.plainDate()`, and OpenAPI emits `format: date` for the second.
+
+Invisible until now because every `@date` column shipped before it is server-written — an invoice's
+`dueOn` is stamped by the code that issues it and never posted — so the first such column a person
+types into was the first that could find this. Found converting `example`'s payroll (`FJS-1153`).
+
 ## 2026-09-17 — `core/service.ts` and `transport/channels.ts` no longer import each other
 
 Two symbols held a runtime import cycle shut: `AUTO_EVENT_MAP`, which names a mutation's event and

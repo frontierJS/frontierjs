@@ -173,24 +173,42 @@ paper.
 
 ## Open questions
 
-- **Q1 — does `field` resolve at the Data boundary or at replay?** The
-  comparison needs the base, the local row and the server row in one place, and
-  there are two places that can hold all three.
-  - **A** — at the Data boundary, on the server, when the held write arrives:
-    the gate, the constraints and the audit trail are all already there
-  - **B** — on the device, before the write is sent: the client has the base and
-    its own row, and sends a narrowed patch the server cannot conflict on
-  - **Recommend A** — B sends a patch built from a server row the device read at
-    an unknown time, which is the same staleness one layer earlier and with no
-    constraint check behind it. A also keeps one statement of what a write means
-- **Q2 — what does a conflict relation cost a model that never has one?** The
-  relation is per model and the count has to be readable cheaply, and *zero
-  conflicts* must not be a table scan on every screen that asks.
-- **Q3 — is a conflict resolvable by whoever is looking at it?** It is a write
-  to a row, so the gate answers for the row — but the resolver is choosing
-  between two values, one of which came from somebody the resolver may not be
-  allowed to read. `@@log(audit)`'s redaction rule is the precedent and may be
-  the whole answer.
+**All three answered 2026-09-20.** The mechanism is ruled; what is left is
+building it, which is phase 5 of `IDEAS/homestead.md`.
+
+- ~~**Q1 — does `field` resolve at the Data boundary or at replay?**~~
+  **Answered (`FJS-D334`): A — at the Data boundary, on the server, when the
+  held write arrives, and the base row TRAVELS WITH the write.** The question
+  asked where the comparison runs and not where its base comes from, and the
+  second half is the one that decides the first. `@version` is a counter: it
+  says the row moved and never which columns moved, so a per-column comparison
+  needs the row as it was READ. `@@log(audit)`'s before-snapshot could supply
+  it and is refused — it covers only models declaring the log, and Invariant 7
+  redacts a protected field in it, so a conflict on a `@guarded` column would be
+  undecidable for exactly the columns where being wrong costs most. The device's
+  copy is untrusted INPUT and never authority: the server's row decides and the
+  constraints run unchanged. **And it is what settles homestead Q10**
+  (`FJS-D337`) — a device required to supply the base is a device whose copy is
+  load-bearing.
+- ~~**Q2 — what does a conflict relation cost a model that never has one?**~~
+  **Answered (`FJS-D335`): nothing, because V1 ships no relation.** `FJS-D304`
+  ships `append` and `refuse` and nothing else until an app asks, so phase 5's
+  deliverable is `field` — which needs no storage at all: it either merges, two
+  people having touched different columns, or it does not. Keeping both versions
+  until somebody picks is `manual`, and the relation is `manual`'s cost. The
+  storage for the V1 outcome already exists: `pending.js` parks a refused write
+  in `rejected` rather than dropping it, so a conflict is a rejected queue entry
+  carrying `base` / `local` / `remote` in place of a bare version mismatch. The
+  conflict is then PER DEVICE with no fleet-wide count, which is the cost, and
+  it stops being payable the day `manual` ships — at which point the relation is
+  built as § *What would have to be built* describes it.
+- ~~**Q3 — is a conflict resolvable by whoever is looking at it?**~~
+  **Answered (`FJS-D336`): by whoever may write the ROW, and a protected column
+  carries the fact of divergence and neither value.** The precedent named in the
+  question was the whole answer. Resolving is a write, so the gate already
+  decides and no second ladder is coined; Invariant 7 does the rest, and a
+  conflict on an `@encrypted`, `@guarded` or `@secret` column offers take-local
+  or take-remote with no display of either side.
 
 ---
 

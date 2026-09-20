@@ -378,7 +378,7 @@ test('surface: the hover border is mixed, so a toned card still responds', funct
    * brand-blue and danger goes a deeper red.
    */
   var rule = hoverRule();
-  var border = rule.style.getPropertyValue('--surface-border');
+  var border = rule.style.getPropertyValue('--_surface-border');
   assert.ok(
     border.indexOf('color-mix') !== -1,
     'the hover border is not a mix — a toned card will hover to its own resting color'

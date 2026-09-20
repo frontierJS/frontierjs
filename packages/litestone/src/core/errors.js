@@ -111,6 +111,42 @@ export class VersionConflictError extends Error {
   }
 }
 
+/**
+ * Two writers moved the same column, and only a person can say which wins.
+ *
+ * `@@sync(field)`'s one refusal (`FJS-D334`, `FJS-D335`). It is deliberately
+ * NOT a `VersionConflictError` and deliberately not a subclass of one: a stale
+ * write is a race worth retrying, and sierra's `isStaleWrite()` keys on
+ * `409 + retryable` to re-read and re-apply automatically. A field conflict is
+ * the one case where re-applying the patch is exactly wrong — it would send the
+ * whole write again and overwrite the other writer's column with nothing said —
+ * so `retryable` is false and this inherits neither the class nor the flag.
+ *
+ * `conflicts` carries only the contested columns, each with the three values a
+ * person needs to choose between. A protected column (Invariant 7) carries the
+ * fact of divergence and neither value: `base`, `local` and `remote` are all
+ * `[redacted]` and take-local or take-remote is still answerable without ever
+ * rendering what the column holds (`FJS-D336`).
+ */
+export class SyncConflictError extends Error {
+  constructor(model, conflicts) {
+    const names = conflicts.map(c => c.column).join(', ')
+    super(`Sync conflict on ${model}: ${conflicts.length === 1 ? 'column' : 'columns'} ${names} ` +
+          `changed here and on the server since this write was made`)
+    this.name      = 'SyncConflictError'
+    this.model     = model
+    this.conflicts = conflicts
+    // The payload junction's error boundary carries to the client, and what a
+    // device parks on its rejected queue entry in place of a bare version
+    // mismatch — the whole of V1's conflict storage (`FJS-D335`).
+    this.data      = { model, conflicts }
+    // 409 because the row moved, and NOT retryable because a retry is the
+    // failure: see the class comment.
+    this.status    = 409
+    this.retryable = false
+  }
+}
+
 export class TransitionGateError extends Error {
   constructor(model, field, transitionName, required, got) {
     super(`Transition '${transitionName}' on ${model}.${field} requires level ${required}, user has level ${got}`)

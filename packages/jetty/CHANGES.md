@@ -1,5 +1,15 @@
 # Changes — @frontierjs/jetty
 
+## 2026-09-20 — the vocabulary check asks Junction, not one of its files
+
+`phase3` reads `AUTO_EVENT_MAP` out of Junction's source rather than restating it — that is
+`FJS-059`'s lesson and it is right. It named `core/service.ts`, though, and the declaration
+was lifted into `core/events.ts` beside it, so the check went red with its own *has it moved
+or changed shape?* message and took the remove-branch assertion with it.
+
+The directory is scanned now. Which file holds the map is Junction's business and no part of
+what this asks; naming one turned a vocabulary check into a red build about a refactor.
+
 ## 2026-09-15 — `make()` is handed the create-mode `required`
 
 The same change as sierra's ([`FJS-1162`](../../ISSUES.md#fjs-1162)): a column the server fills

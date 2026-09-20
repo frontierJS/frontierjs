@@ -35,15 +35,17 @@ import { postJournal, saleJournal }        from '../../api/src/domain/ledger.ts'
 import { calculatePayRun, payPayRun, revertPayRun } from '../../api/src/domain/payroll'
 import { periodShare }                 from '../../api/src/domain/payroll'
 import { allRatesAsAt }                    from '../../api/src/domain/payroll'
-import { instant }                         from '../../api/src/domain/payroll'
+import { plainDateIn, addToDate }          from '@frontierjs/toolbelt/datetime'
 
 import { sweepPayroll }                from './payroll-sweep.mjs'
 import { results, report } from './lib/report.mjs'
 
 const sys = db.asSystem()
 const RUN = String(Date.now()).slice(-6)
-const DAY = 86_400_000
-const ago = (d) => new Date(Date.now() - d * DAY).toISOString()
+// Days, not instants (`FJS-D288`). UTC is the calendar every drive here runs
+// the shop on.
+const TODAY = plainDateIn(Date.now(), 'UTC')
+const ago   = (d) => addToDate(TODAY, { days: -d })
 
 const { got, t } = results()
 const refused = async (fn) => { try { await fn(); return false } catch { return true } }
@@ -67,7 +69,7 @@ try {
 const newRun = async (suffix, extra = {}) => {
   const run = await sys.payRun.create({ data: {
     reference:   `PR-${RUN}${suffix}`,
-    periodStart: ago(30), periodEnd: ago(1), payDate: instant(),
+    periodStart: ago(30), periodEnd: ago(1), payDate: TODAY,
     periodsPerYear: 12, periodIndex: 3, ...extra,
   } })
   fixtures.runIds.push(run.id)
@@ -182,7 +184,7 @@ t('revert.andLeavesNoneBehind',
   (await sys.payslip.findMany({ where: { payRunId: runA.id } })).length === 0)
 
 const open = await sys.payWindow.findFirst({ where: { employeeId: slipA.employeeId, effectiveTo: null } })
-const at   = instant()
+const at   = TODAY
 raised = { employeeId: slipA.employeeId, windowId: open.id, at }
 await sys.payWindow.update({ where: { id: open.id }, data: { effectiveTo: at } })
 await sys.payWindow.create({ data: {

@@ -10,29 +10,43 @@
 // pay run for March recalculated in June must produce March's numbers, and a
 // backdated raise must not silently reprice a payslip that has already been
 // issued. So no read of `PayWindow` is ever a plain read: every one of
-// them carries an instant.
+// them carries a DAY.
+//
+// ─── A day, and no clock in this module ───────────────────────────────────
+//
+// `FJS-D288`: what somebody is paid changes on a date, so every column here is
+// `String @date` and every argument below is a `YYYY-MM-DD`. Nothing in this
+// file reads a clock or names a zone, and that is the rule rather than an
+// accident — a zone is spent at the two crossings (`plainDateIn` turning an
+// instant into a day, `startOfDay` turning a day into an instant) and those
+// belong to the caller that knows which shop's calendar it is on.
+//
+// No function here defaults its date argument, and the omission is the rule: a
+// default is a clock, and a clock with no zone plans a pay run differently on a
+// laptop in Los Angeles and in a UTC container, picking different pay windows
+// at a period boundary with neither saying so.
 //
 // ─── The interval, decided ONCE ───────────────────────────────────────────
 //
-// A window is HALF-OPEN: `effectiveFrom <= at < effectiveTo`. Windows touch —
-// `setPay` closes the old one at the exact instant it opens the new — so the
-// boundary instant belongs to the NEW window and to nothing else. A second
-// reader that used `<=` on the end would find two windows covering one instant
-// and pick whichever came back first, which is a wrong salary once per raise
-// and never reproducible.
+// A window is HALF-OPEN: `effectiveFrom <= on < effectiveTo`. Windows touch —
+// `setPay` closes the old one on the exact day it opens the new — so the
+// boundary day belongs to the NEW window and to nothing else. A second reader
+// that used `<=` on the end would find two windows covering one day and pick
+// whichever came back first, which is a wrong salary once per raise and never
+// reproducible.
 //
 // That is Invariant 4's shape applied to time, and it is the whole reason this
 // module exists rather than the where-clause being written at each call site.
 //
 // ─── Where it gets ugly, which is the point ───────────────────────────────
 //
-// One employee is fine. A PAY RUN is five thousand employees at one instant,
-// and there is no way to ask for that:
+// One employee is fine. A PAY RUN is five thousand employees on one day, and
+// there is no way to ask for that:
 //
 //   * per employee, one query — N+1, and a pay run is the one place N is big
 //   * one query for every covering row, then pick in JS — what `payAsAtMany`
 //     does, and it is only correct because at most one window per employee can
-//     cover an instant
+//     cover a day
 //
 // **and that "at most one" IS declarable now.**
 // `@@unique([employeeId], where: effectiveTo == null)` — `FJS-603`, closed. The
@@ -56,9 +70,19 @@
 // application arranging validity windows identically by hand is the argument
 // for `FJS-D164`'s open question, and it is only an argument because they are
 // the same arrangement rather than two dialects.
+//
+// They differ on ONE thing and it is the right difference: a plan version is
+// dated by the instant a price changed, a pay window by the day somebody's pay
+// changed. `FJS-D143`'s point — the column says what kind of time it holds.
+
+import { addToDate } from '@frontierjs/toolbelt/datetime'
 
 /** A Litestone client of some flavor — `inventory.ts`'s reason, unchanged. */
 type Client = Record<string, any>
+
+/** A plain date, `YYYY-MM-DD`. Named so a signature says which of the two kinds
+ *  of time it wants, since both travel as strings. */
+export type PlainDate = string
 
 export type PayWindowRow = Record<string, unknown> & {
   id:            number
@@ -66,44 +90,55 @@ export type PayWindowRow = Record<string, unknown> & {
   basis:         'salary' | 'hourly'
   rate:          number
   hoursPerWeek:  number
-  effectiveFrom: string
-  effectiveTo:   string | null
+  effectiveFrom: PlainDate
+  effectiveTo:   PlainDate | null
 }
 
-/** The instant, as every function here wants it. A `Date`, a number and an ISO
- *  string all reach these call sites in practice, and a column compared against
- *  the wrong one of the three silently matches nothing. */
-export const instant = (at: string | number | Date = new Date()): string =>
-  (at instanceof Date ? at : new Date(at)).toISOString()
+/**
+ * The last day a half-open period covers.
+ *
+ * `[periodStart, periodEnd)` is the interval `FJS-D288` ruled, so `periodEnd`
+ * is the first day the period does NOT cover and reading terms at it would pick
+ * up a raise belonging to the next period. Every as-at read against a `PayRun`
+ * or a `Payslip` goes through here, and it is one function so the subtraction
+ * cannot be spelled twice.
+ */
+export function lastDayOf(period: { periodEnd: PlainDate }): PlainDate {
+  return addToDate(period.periodEnd, { days: -1 })
+}
 
 /**
- * The window covering `at`, as a `where` clause.
+ * The window covering `on`, as a `where` clause.
  *
  * The one place the half-open rule is written. Exported so a caller that must
  * build its own query — a count, a join, an aggregate — cannot spell the
  * interval a second way.
  */
-export function coveringAt(at: string) {
+export function coveringAt(on: PlainDate) {
   return {
-    effectiveFrom: { lte: at },
-    OR: [{ effectiveTo: null }, { effectiveTo: { gt: at } }],
+    effectiveFrom: { lte: on },
+    OR: [{ effectiveTo: null }, { effectiveTo: { gt: on } }],
   }
 }
 
 /**
- * What one employee was on, at one instant. `null` if nothing covers it —
- * before they were hired, or a gap somebody left.
+ * What one employee was on, on one day. `null` if nothing covers it — before
+ * they were hired, or a gap somebody left.
+ *
+ * `on` is required and there is no default. A default would be a clock in this
+ * module, and a clock with no zone is the thing `FJS-D288` took out of billing:
+ * the caller knows which shop's calendar the question is being asked in and
+ * this file does not.
  *
  * `orderBy` is belt and braces: with the invariant holding there is exactly one
  * row, and taking the latest `effectiveFrom` makes the answer deterministic
  * rather than arbitrary if it is not.
  */
 export async function payAsAt(
-  client: Client, employeeId: number, at: string | number | Date = new Date(),
+  client: Client, employeeId: number, on: PlainDate,
 ): Promise<PayWindowRow | null> {
-  const when = instant(at)
   return await client.payWindow.findFirst({
-    where:   { employeeId, ...coveringAt(when) },
+    where:   { employeeId, ...coveringAt(on) },
     orderBy: { effectiveFrom: 'desc' },
   }) as PayWindowRow | null
 }
@@ -125,14 +160,13 @@ export async function payAsAt(
 export async function payAsAtMany(
   client: Client,
   employeeIds: number[],
-  at: string | number | Date = new Date(),
+  on: PlainDate,
   { onOverlap = 'throw' as 'throw' | 'latest' } = {},
 ): Promise<Map<number, PayWindowRow>> {
   if (!employeeIds.length) return new Map()
-  const when = instant(at)
 
   const rows = await client.payWindow.findMany({
-    where:   { employeeId: { in: employeeIds }, ...coveringAt(when) },
+    where:   { employeeId: { in: employeeIds }, ...coveringAt(on) },
     orderBy: { effectiveFrom: 'desc' },
     limit:   employeeIds.length * 4,
   }) as PayWindowRow[]
@@ -142,21 +176,22 @@ export async function payAsAtMany(
     const held = byEmployee.get(row.employeeId)
     if (!held) { byEmployee.set(row.employeeId, row); continue }
 
-    // Two windows covering one instant. The database was supposed to make this
+    // Two windows covering one day. The database was supposed to make this
     // unreachable and cannot say so, so it is named rather than resolved
     // quietly — `latest` is available for a report that would rather show a
     // number than stop, and no payroll path passes it.
     if (onOverlap === 'throw') throw employmentError(
-      `employee ${row.employeeId} has overlapping pay windows covering ${when} ` +
+      `employee ${row.employeeId} has overlapping pay windows covering ${on} ` +
       `(terms ${held.id} and ${row.id}) — close one before running payroll`,
     )
-    if (new Date(row.effectiveFrom) > new Date(held.effectiveFrom)) byEmployee.set(row.employeeId, row)
+    // A plain date sorts as text, which is the whole reason the column is one.
+    if (row.effectiveFrom > held.effectiveFrom) byEmployee.set(row.employeeId, row)
   }
   return byEmployee
 }
 
 /**
- * Everybody employed at `at`, which is a different question from everybody in
+ * Everybody employed on `on`, which is a different question from everybody in
  * the table and is asked of `Employee` rather than of the terms.
  *
  * Somebody who left in February is not on March's payroll however many pay
@@ -165,13 +200,12 @@ export async function payAsAtMany(
  * is the first day they are NOT employed.
  */
 export async function employedAt(
-  client: Client, at: string | number | Date = new Date(),
+  client: Client, on: PlainDate,
 ): Promise<Array<Record<string, unknown> & { id: number, reference: string, name: string }>> {
-  const when = instant(at)
   return await client.employee.findMany({
     where: {
-      startedOn: { lte: when },
-      OR: [{ endedOn: null }, { endedOn: { gt: when } }],
+      startedOn: { lte: on },
+      OR: [{ endedOn: null }, { endedOn: { gt: on } }],
     },
     orderBy: { reference: 'asc' },
     limit:   5000,
@@ -179,7 +213,7 @@ export async function employedAt(
 }
 
 /**
- * Which instants a new pay window may open at, given the ones already there.
+ * Which days a new pay window may open on, given the ones already there.
  *
  * The rule and not the four steps. `setPay` and `plans.reprice` write the same
  * close-then-open by hand on purpose (see the module header), and this is a
@@ -188,35 +222,50 @@ export async function employedAt(
  *
  * Three refusals, and each is a wrong answer that would otherwise be silent:
  *
- *   * **The future.** A window opening tomorrow leaves `payAsAt(now)` answering
- *     the old one, so a payroll run today quietly pays the old rate for a raise
- *     everybody can see on screen. Forward effective-dating is a real feature
- *     and it needs a pay run that can say *there is one queued for the 1st*.
+ *   * **The future.** A window opening tomorrow leaves `payAsAt(today)`
+ *     answering the old one, so a payroll run today quietly pays the old rate
+ *     for a raise everybody can see on screen. Forward effective-dating is a
+ *     real feature and it needs a pay run that can say *there is one queued for
+ *     the 1st*.
  *   * **Before the open window started**, which is backdating ACROSS an earlier
  *     change. Handling it means splitting or discarding windows that an issued
  *     payslip already points at — a second correction mechanism for the rarer
  *     half of the case.
  *   * **Into a closed history with nothing open**, which would put two windows
- *     over one instant — the thing `payAsAtMany` cannot resolve and has to
- *     report by name.
+ *     over one day — the thing `payAsAtMany` cannot resolve and has to report
+ *     by name.
  *
  * **A FIRST window may start whenever they did**, and that is not a hole. Pay
- * beginning before the moment somebody typed it is the ordinary case for a new
+ * beginning before the day somebody typed it is the ordinary case for a new
  * hire, there is no window to close and no history to cross, and refusing it
- * meant a person's pay could only ever start at the instant it was recorded —
+ * would mean a person's pay could only ever start on the day it was recorded —
  * which makes the first pay run for anybody hired last month wrong.
+ *
+ * **A fourth refusal arrived with days**, and it is the one a caller meets by
+ * accident: setting pay TWICE ON ONE DAY. Close-then-open would end the open
+ * window on the day it began, and `[d, d)` covers nothing — a row that is true
+ * for no date at all, which the `@@check` refuses by naming a column rather
+ * than saying what happened. It is refused here instead, where the employee can
+ * be named. An instant column hid this by putting the two writes milliseconds
+ * apart, which produced a window covering a few milliseconds of somebody's
+ * employment and was never what anyone meant.
  *
  * Throws; a caller that reaches the end may write.
  */
 export function assertEffectiveFrom(
-  reference: string, at: string, now: string, windows: PayWindowRow[] = [],
+  reference: string, at: PlainDate, today: PlainDate, windows: PayWindowRow[] = [],
 ): void {
-  if (at > now) throw employmentError(
+  if (at > today) throw employmentError(
     `${reference}: pay cannot be set from a future date (${at})`)
 
-  if (at === now) return   // the ordinary raise: nothing to grade
-
   const open = windows.find(w => !w.effectiveTo) ?? null
+
+  if (open && at === open.effectiveFrom) throw employmentError(
+    `${reference}: pay already starts on ${at}, and closing that window here ` +
+    `would leave it covering no days at all — remove the open window, or set ` +
+    `the new pay from a later date`)
+
+  if (at === today) return   // the ordinary raise: nothing to grade
 
   if (open) {
     if (at < open.effectiveFrom) throw employmentError(
@@ -237,7 +286,7 @@ export function assertEffectiveFrom(
   if (lastEnd && at < lastEnd) throw employmentError(
     `${reference}: ${at} falls inside a pay window that has already been ` +
     `closed (the last one ended ${lastEnd}) — two windows would cover one ` +
-    `instant; correct the windows by hand`)
+    `day; correct the windows by hand`)
 }
 
 /**

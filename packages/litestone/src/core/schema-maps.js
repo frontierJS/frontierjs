@@ -186,6 +186,22 @@ export function buildVersionMap(schema) {
   return map
 }
 
+/**
+ * What each model declares about a collision — `@@sync`'s argument, by model.
+ *
+ * Only the write path reads it, and only for the policies that do something to
+ * a HELD write; a model that declares nothing is absent, which is what
+ * `FJS-D298`'s no-default means at runtime.
+ */
+export function buildSyncMap(schema) {
+  const map = {}
+  for (const model of schema.models) {
+    const sync = model.attributes.find(a => a.kind === 'sync')
+    if (sync) map[model.name] = sync.policy
+  }
+  return map
+}
+
 export function buildCreatedByMap(schema) {
   const map = {}
   for (const model of schema.models) {

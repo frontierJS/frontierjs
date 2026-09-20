@@ -53,7 +53,16 @@ const KEYWORDS = new Set([
 //   refuse  the held write carries the revision it was made against and the Data
 //           boundary refuses it if the row moved — which is why this one needs
 //           an `@version` column and is refused below without one
-export const SYNC_POLICIES = new Set(['server', 'append', 'refuse'])
+//   field   the same carried revision, compared per COLUMN against the base row
+//           the write travelled with: two people who touched different columns
+//           both win, and only a column they both moved is a conflict
+//           (`FJS-D334`). Needs `@version` for the same reason `refuse` does
+export const SYNC_POLICIES = new Set(['server', 'append', 'refuse', 'field'])
+
+// The policies that name a revision, and so cannot work without a column
+// holding one. Kept as a set rather than two comparisons because the next value
+// added is likelier to be a third member than a fourth policy.
+export const SYNC_NEEDS_VERSION = new Set(['refuse', 'field'])
 
 // The 0–9 scale, by name — `@@gate`'s named form and `@@transitions`' per-move
 // `@gate()` both read it, so a level can never mean two things. It used to be a
@@ -1341,6 +1350,21 @@ class Parser {
       case 'maxItems':    return { kind: 'maxItems',   ...this.parseNumMessage() }
       case 'uniqueItems': return { kind: 'uniqueItems', ...this.parseOptMessage() }
 
+      // ── @point — where a row IS ───────────────────────────────────────────
+      //
+      // `@point(lat, lng)` on a Json field: the two keys of that value carry a
+      // coordinate. It is the whole declaration of one — an object, two numeric
+      // keys, ±90 / ±180, both or neither — because that floor is the same in
+      // every application, which is why it belongs to the attribute rather than
+      // to a shape each schema declares for itself (`FJS-D317`). `@money` is
+      // the same shape: nobody declares a Money type to use it.
+      //
+      // The keys are NAMED rather than assumed, because the value is the app's:
+      // `@point(lat, lng)` and `@point(latitude, longitude)` are both ordinary,
+      // and inferring them from the shape would be silently wrong for the model
+      // whose `lat` is a lathe setting.
+      case 'point':   return { kind: 'point', ...this.parsePoint() }
+
       // ── Typed JSON ────────────────────────────────────────────────────────
       // @type(Address)            — strict by default: extra keys reject
       // @type(Address, strict: false)  — loose: extra keys silently kept
@@ -2378,6 +2402,16 @@ class Parser {
     return { ...(where ? { where } : {}), ...(message ? { message } : {}) }
   }
 
+  // Parse @point(lat, lng) — two key names inside the Json value.
+  parsePoint() {
+    this.eat(TK.LPAREN)
+    const lat = this.eat(TK.IDENT).value
+    this.eat(TK.COMMA)
+    const lng = this.eat(TK.IDENT).value
+    this.eat(TK.RPAREN)
+    return { lat, lng }
+  }
+
   // Parse @regex(pattern) or @regex(pattern, msg)
   parseRegex() {
     this.eat(TK.LPAREN)
@@ -3239,6 +3273,26 @@ export const TYPE_FORBIDDEN_FIELD_ATTRS = new Set([
   // that silently enforces nothing.
   'values',
 ])
+
+/**
+ * The two columns a `@point` field derives, keyed by the JSON key each reads.
+ *
+ * ONE owner, because three readers have to agree on the spelling: the DDL that
+ * emits them, the query compiler that names them in a WHERE, and the migration
+ * differ that must not see a column it cannot account for. camelCase, like
+ * every other identifier this schema language produces.
+ */
+export function pointColumnNames(fieldName, point) {
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1)
+  return { [point.lat]: `${fieldName}${cap(point.lat)}`, [point.lng]: `${fieldName}${cap(point.lng)}` }
+}
+
+/** `[latColumn, lngColumn]` in that order — what an index and a box need. */
+export function pointColumns(fieldName, point) {
+  const names = pointColumnNames(fieldName, point)
+  return [names[point.lat], names[point.lng]]
+}
+
 export const TYPE_FORBIDDEN_FIELD_TYPES = new Set(['File', 'Bytes'])
 export const TYPE_DEFAULT_FORBIDDEN_KINDS = new Set(['now', 'cuid', 'ulid', 'uuid', 'nanoid', 'auth'])
 
@@ -4616,14 +4670,6 @@ function validate(schema) {
         }
       }
 
-      // Json fields can't be part of indexes (warn, not error)
-      if (field.type.name === 'Json') {
-        const inIndex = model.attributes.some(a =>
-          (a.kind === 'index' || a.kind === 'uniqueIndex' || a.kind === 'partialUnique') && a.fields.includes(field.name)
-        )
-        if (inIndex)
-          warnings.push(`Model '${model.name}': Json field '${field.name}' used in index — SQLite will index the raw JSON text`)
-      }
     }  // end per-field loop
 
     // Validate @funcCall attributes — function must exist and arg count must match
@@ -5366,20 +5412,22 @@ function validate(schema) {
   // database's TEXT column cannot say whether it holds a date. A required column
   // is the other half: it is stamped at create, so every row is born deleted and
   // invisible to every read, or the create is refused outright.
-  // `@@sync(refuse)` names a revision, and the revision is `@version`. Without
-  // that column there is nothing for a held write to carry and nothing for the
-  // boundary to compare, so the policy is indistinguishable from `server` while
-  // claiming the opposite — the exact shape `FJS-D304` closed the set to avoid.
-  // Refused here rather than advised for the same reason `@@softDelete` is: the
-  // attribute names a column, and a model without it has already lost.
+  // `@@sync(refuse)` and `@@sync(field)` both name a revision, and the revision
+  // is `@version`. Without that column there is nothing for a held write to
+  // carry and nothing for the boundary to compare, so the policy is
+  // indistinguishable from `server` while claiming the opposite — the exact
+  // shape `FJS-D304` closed the set to avoid. Refused here rather than advised
+  // for the same reason `@@softDelete` is: the attribute names a column, and a
+  // model without it has already lost.
   for (const model of schema.models) {
     const sync = model.attributes.find(a => a.kind === 'sync')
-    if (sync?.policy !== 'refuse') continue
+    if (!SYNC_NEEDS_VERSION.has(sync?.policy)) continue
     if (!model.fields.some(f => f.attributes.some(a => a.kind === 'version')))
       errors.push(
-        `Model '${model.name}': @@sync(refuse) needs an @version field and this model has none. ` +
-        `The policy means a held write carries the revision it was made against and is refused if the ` +
-        `row moved — with no @version there is no revision, so every held write would apply to whatever ` +
+        `Model '${model.name}': @@sync(${sync.policy}) needs an @version field and this model has none. ` +
+        `The policy means a held write carries the revision it was made against and is ${
+          sync.policy === 'refuse' ? 'refused if the row moved' : 'compared column by column against it'} — ` +
+        `with no @version there is no revision, so every held write would apply to whatever ` +
         `is there, which is @@sync(server). Add: version Int @version, or say @@sync(server).`)
   }
 
@@ -6106,6 +6154,65 @@ function validate(schema) {
       for (const kind of ['scale', 'money']) {
         if (field.attributes.some(a => a.kind === kind))
           errors.push(`${at}: @big and @${kind} together — @${kind} bounds the column to ±${EXACT_INT_MAX} so its value round-trips through a JS number, which is the thing @big lifts. State one.`)
+      }
+    }
+  }
+
+  // ── @point validation ───────────────────────────────────────────────────────
+  //
+  // Every refusal here is a shape that would otherwise produce a column pair
+  // extracting from something that cannot hold a coordinate — and a generated
+  // column over the wrong bytes does not fail, it answers NULL, which reads
+  // downstream as *this row has no location*.
+  for (const model of schema.models) {
+    const declared = new Set(model.fields.map(f => f.name))
+    for (const field of model.fields) {
+      const pt = field.attributes.find(a => a.kind === 'point')
+      if (!pt) continue
+      const at = `Model '${model.name}', field '${field.name}'`
+
+      if (field.type.name !== 'Json')
+        errors.push(`${at}: @point requires a Json field, got ${field.type.name} — a point is an object with two keys`)
+      if (field.type.array)
+        errors.push(`${at}: @point cannot be an array — the attribute describes one coordinate`)
+      if (pt.lat === pt.lng)
+        errors.push(`${at}: @point(${pt.lat}, ${pt.lng}) names one key twice`)
+
+      // The value has to be readable as JSON by the database. Ciphertext is
+      // not: `json_extract` over it answers NULL for every row, so the point
+      // would be silently absent everywhere rather than refused once.
+      for (const kind of ['encrypted', 'secret']) {
+        if (field.attributes.some(a => a.kind === kind))
+          errors.push(`${at}: @point cannot be combined with @${kind} — the coordinate is extracted in SQL, and ciphertext reads as no location at all`)
+      }
+
+      // No column to extract from.
+      for (const kind of ['computed', 'from', 'derived', 'transient', 'edge']) {
+        if (field.attributes.some(a => a.kind === kind))
+          errors.push(`${at}: @point needs a stored column and @${kind} is not one`)
+      }
+
+      for (const [key, col] of Object.entries(pointColumnNames(field.name, pt))) {
+        if (declared.has(col))
+          errors.push(`${at}: @point would derive a column '${col}' for '${key}', and the model already declares a field with that name`)
+      }
+
+      // Rule 2 of `FJS-D317`: where a type is declared beside the attribute,
+      // the coordinate keys must exist IN it, or the point validates and never
+      // matches anything.
+      const typeAttr = field.attributes.find(a => a.kind === 'type')
+      if (typeAttr) {
+        const decl = (schema.types ?? []).find(t => t.name === typeAttr.name)
+        if (decl) {
+          for (const key of [pt.lat, pt.lng]) {
+            const member = decl.fields.find(f => f.name === key)
+            if (!member) {
+              errors.push(`${at}: @point names '${key}', which type '${decl.name}' does not declare`)
+            } else if (!['Float', 'Int'].includes(member.type.name)) {
+              errors.push(`${at}: @point names '${key}', which type '${decl.name}' declares as ${member.type.name} — a coordinate is a number`)
+            }
+          }
+        }
       }
     }
   }

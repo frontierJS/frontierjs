@@ -1057,14 +1057,14 @@
 }
 .sg-kind[aria-pressed='true'] {
   --bg-mix: var(--color-primary);
-  background: var(--fill);
-  color: var(--on-fill);
+  background: var(--_fill);
+  color: var(--_on-fill);
   border-color: transparent;
 }
 /* The count rides the button, so it has to invert with it. */
 .sg-kind[aria-pressed='true'] .badge {
   background: rgba(255, 255, 255, 0.22);
-  color: var(--on-fill);
+  color: var(--_on-fill);
 }
 /* The tone row's own color, so seven rows that would read alike do not. */
 .sg-class-swatch {

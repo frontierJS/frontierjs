@@ -54,6 +54,7 @@ import { fileURLToPath } from 'node:url'
 import { db } from '../../api/src/core/db.ts'
 import { sweepPayroll } from './payroll-sweep.mjs'
 import { results, report } from './lib/report.mjs'
+import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const ROOT   = join(HERE, '../..')
@@ -242,13 +243,12 @@ const fill = (name, value) => evaluate(`
   return el.value;
 `)
 
-/**
- * A `DateTime` column's control is `datetime-local`, and it REFUSES a date-only
- * string in silence — `el.value` comes back `''`, the field stays empty, and a
- * required column then fails validation with nothing on screen saying which
- * keystroke was ignored. Every date typed here goes through this.
- */
-const stamp = (d) => new Date(d).toISOString().slice(0, 16)
+// Every date field in this domain is `String @date` (`FJS-D288`), so the
+// control is an `<input type="date">` and its value is a plain `YYYY-MM-DD`.
+// A `datetime-local` string typed into one is discarded without a word and the
+// form then submits an empty required field.
+const stamp = (d) => plainDateIn(d, 'UTC')
+const ago   = (days) => addToDate(stamp(Date.now()), { days: -days })
 
 /**
  * Read through the app's OWN client, in the page, rather than with `fetch`.
@@ -321,7 +321,7 @@ t('create.theDrawerOffersTheGeneratedForm', await waitFor('[name="reference"]'))
 await fill('reference', REF)
 await fill('name', 'Robin Ashworth')
 await fill('email', `robin-${RUN}@shop.test`)
-await fill('startedOn', stamp(Date.now() - 400 * 86_400_000))
+await fill('startedOn', ago(400))
 await click('#p-save')
 
 t('create.thePersonAppears', await waitFor(`[data-reference="${REF}"]`))
@@ -347,20 +347,24 @@ t('person.theScreenLoads', await waitFor('#pd-setpay'))
 const dateControl = await evaluate(`
   const m = await import('/src/resources/PayWindow.mesa');
   const f = m.payWindows.formFields().find(f => f.name === 'effectiveFrom');
-  return { control: f?.control, required: f?.required };
+  return { control: f?.control, type: f?.type, required: f?.required };
 `)
-t('person.theFromBoxIsADate', ['date', 'datetime', 'datetime-local'].includes(dateControl.control))
+// A plain `<input type="date">` and not `datetime`, which is what the column
+// being `String @date` rather than `DateTime` buys: a box with no clock in it,
+// so there is no wall-clock time for a zone to move (`FJS-D288`).
+t('person.theFromBoxIsADate',
+  dateControl.control === 'input' && dateControl.type === 'date')
 t('person.andItIsOptional',   dateControl.required !== true)
 
 // A new hire whose pay started when they did — 400 days ago, which is a past
-// instant on the FIRST window. It was refused until this drive tried to build a
+// day on the FIRST window. It was refused until this drive tried to build a
 // fixture and could not: with nothing open there is no window to close and no
 // history to cross, and the refusal meant a person's pay could only ever begin
 // at the moment somebody typed it.
 await fill('basis', 'salary')
 await fill('rate', '60000')          // dollars — the column holds cents
 await fill('hoursPerWeek', '40')
-await fill('effectiveFrom', stamp(Date.now() - 400 * 86_400_000))
+await fill('effectiveFrom', ago(400))
 await click('#pd-setpay')
 t('pay.aFirstWindowMayStartWhenTheyDid', await waitFor('[data-window][data-open="true"]'))
 
@@ -375,11 +379,11 @@ t('pay.andTheTileShowsTheAnnualFigure',
 
 // ─── setting pay: the backdate, which is the same write ───────────────────
 
-const BACK = new Date(Date.now() - 200 * 86_400_000)
+const BACK = ago(200)
 await fill('basis', 'salary')
 await fill('rate', '72000')
 await fill('hoursPerWeek', '40')
-await fill('effectiveFrom', stamp(BACK))
+await fill('effectiveFrom', BACK)
 await click('#pd-setpay')
 
 t('backdate.aSecondWindowOpens', await evaluate(`
@@ -394,21 +398,26 @@ t('backdate.aSecondWindowOpens', await evaluate(`
 const windows = await find('PayWindow', 'payWindows',
   { employeeId: mine.id }, { orderBy: '-effectiveFrom', limit: 20 })
 t('backdate.theEarlierOneIsNowClosed', windows.filter(w => w.effectiveTo).length === 1)
-// The two windows TOUCH — no gap and no overlap — which is the invariant, and
-// it is also the only timezone-free way to assert it: the box is a local wall
-// clock and the column is an instant, so what a drive can compare is the two
-// ends against each other rather than either against what was typed.
+// The two windows TOUCH — no gap and no overlap — which is the invariant.
 t('backdate.andTheWindowsTouch',
   windows.find(w => w.effectiveTo)?.effectiveTo === windows.find(w => !w.effectiveTo)?.effectiveFrom)
+
+// **The day that was typed is the day that was stored**, which is the assertion
+// a `DateTime` column could not carry: the box is a wall clock and the stored
+// instant was UTC, so the two could only be compared against each other. With
+// `String @date` (`FJS-D288`) the value in the box IS the value on the row, and
+// west of Greenwich the old screen sent the day before the one somebody picked.
+t('backdate.theDayTypedIsTheDayStored',
+  windows.find(w => !w.effectiveTo)?.effectiveFrom === BACK)
 t('backdate.andTheNewOneOpensInThePast',
-  new Date(windows.find(w => !w.effectiveTo)?.effectiveFrom) < new Date())
+  windows.find(w => !w.effectiveTo)?.effectiveFrom < stamp(Date.now()))
 
 // A FUTURE date is refused, and the refusal reaches the screen rather than
 // dying in a console. It is a service rule, so it arrives as a form-level
 // message rather than under a box.
 await fill('basis', 'salary')
 await fill('rate', '80000')
-await fill('effectiveFrom', stamp(Date.now() + 5 * 86_400_000))
+await fill('effectiveFrom', addToDate(stamp(Date.now()), { days: 5 }))
 await click('#pd-setpay')
 t('backdate.aFutureDateIsRefusedOnScreen', await evaluate(`
   const t0 = Date.now();
@@ -424,15 +433,14 @@ t('backdate.andNoThirdWindowWasWritten',
 
 // ─── the as-at read ───────────────────────────────────────────────────────
 //
-// Typed into a box, answered by the server. Before the backdate instant the
-// answer is the first window; after it, the second.
+// Typed into a box, answered by the server. Before the backdated DAY the answer
+// is the first window; on or after it, the second.
 
 // A `type="date"` box, so a date and not a wall clock — a datetime string in
 // one is rejected outright and `el.value` comes back empty, which reads on
 // screen as somebody not having typed anything.
-const day    = (ms) => new Date(ms).toISOString().slice(0, 10)
-const before = day(Date.now() - 300 * 86_400_000)
-const after  = day(Date.now() - 100 * 86_400_000)
+const before = ago(300)
+const after  = ago(100)
 
 await evaluate(`
   const el = document.querySelector('#pd-asat input, input#pd-asat, #pd-asat');
@@ -510,14 +518,14 @@ t('runs.aBandNamesItsSlice',
   `))
 
 const RREF = `CONR-${RUN}`
-const P0 = new Date(Date.now() - 30 * 86_400_000)
-const P1 = new Date(Date.now() -  1 * 86_400_000)
+const P0 = ago(30)
+const P1 = ago(1)
 await click('#r-new')
 await waitFor('[name="reference"]')
 await fill('reference', RREF)
-await fill('periodStart', stamp(P0))
-await fill('periodEnd',   stamp(P1))
-await fill('payDate',     stamp(P1))
+await fill('periodStart', P0)
+await fill('periodEnd',   P1)
+await fill('payDate',     P1)
 await fill('periodsPerYear', '12')
 await fill('periodIndex', '0')
 await click('#r-save')
@@ -727,7 +735,7 @@ await go(`/people/${mine.id}/`)
 await waitFor('#pd-setpay')
 await fill('basis', 'salary')
 await fill('rate', '96000')
-await fill('effectiveFrom', stamp(Date.now() - 120 * 86_400_000))
+await fill('effectiveFrom', ago(120))
 await click('#pd-setpay')
 await evaluate(`
   const t0 = Date.now();
@@ -744,7 +752,7 @@ await waitFor('#r-new')
 await click('#r-new')
 await waitFor('[name="reference"]')
 await fill('reference', RREF2)
-await fill('periodStart', stamp(Date.now() - 1 * 86_400_000))
+await fill('periodStart', ago(1))
 await fill('periodEnd',   stamp(Date.now()))
 await fill('payDate',     stamp(Date.now()))
 await fill('periodsPerYear', '12')
@@ -839,6 +847,7 @@ const expected = {
   'backdate.aSecondWindowOpens': true,
   'backdate.theEarlierOneIsNowClosed': true,
   'backdate.andTheWindowsTouch': true,
+  'backdate.theDayTypedIsTheDayStored': true,
   'backdate.andTheNewOneOpensInThePast': true,
   'backdate.aFutureDateIsRefusedOnScreen': true,
   'backdate.andNoThirdWindowWasWritten': true,

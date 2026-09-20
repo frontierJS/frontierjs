@@ -7,9 +7,9 @@ framework import, no mutation of its arguments. The rule is the package's
 license, not its style: `FJS-D26` admits toolbelt as substrate *below* the
 dependency graph on the strength of it, so breaking purity costs the standing.
 
-**One kit per subpath.** `/cron`, `/datetime`, `/gate`, `/glow`, `/inflect`, `/directives`,
-`/history`, `/hooks`, `/json`, `/jsonschema`, `/match`, `/predicate`, `/query`,
-`/redact`, `/search`, `/signature` and `/units` today; a caller
+**One kit per subpath.** `/cron`, `/datetime`, `/gate`, `/geo`, `/glow`, `/inflect`,
+`/directives`, `/history`, `/hooks`, `/json`, `/jsonschema`, `/match`, `/predicate`,
+`/query`, `/redact`, `/search`, `/signature` and `/units` today; a caller
 importing one gets nothing else. There is no root `.` entry.
 
 `bun run test` — `test/run.js` is the whole harness, no dependencies, runs
@@ -45,6 +45,20 @@ src/ids/             the generators behind `@default(uuid()|ulid()|cuid()|
                      `mintId` answers null for a kind it has no generator for,
                      because the caller is deciding whether it CAN. Ships a
                      `.d.ts` — sierra reads it
+src/geo/             where a row is, as arithmetic over two numbers. Five
+                     functions by ruling (`FJS-D325`) — a hull and a buffer are
+                     a geometry spine and stay out. **`boundingBox` returns a
+                     LIST of boxes**: a radius crossing ±180 is TWO, and one
+                     inverted box matches nothing and says nothing; a radius
+                     reaching a pole widens to the whole parallel and says
+                     `full`, so a compiler drops the clause rather than emitting
+                     a tautology. Every box is a PREFILTER and wider than the
+                     circle, so the exact `distance` runs after it — the spec
+                     compares against a brute-force scan at the equator, at a
+                     pole and across the seam. `centroid` averages as VECTORS
+                     (the mean of -179 and 179 is 180, not the wrong ocean) and
+                     `polygonArea` is spherical excess. Ships a `.d.ts` — the
+                     browser client reads it
 src/units/           a magnitude with a unit, as a person reads it. Bytes:
                      binary steps, familiar labels, adaptive precision — four
                      callers had four copies and two answers (`FJS-408`).
@@ -82,7 +96,21 @@ src/history/         `occurrenceKey` — the one definition of *this unit of wor
 src/match/           does this record still belong in that query's results.
                      Three answers, `null` meaning *ask the server*, because a
                      matcher forced to return a boolean has to guess. Read by
-                     sierra's live store and jetty's
+                     sierra's live store and jetty's. It reads TWO other kits
+                     and both are deliberate: `/directives`, so a `$` name is
+                     not graded as a column, and `/geo` + `/units` for `near`,
+                     which is the one operator whose operand is a structure —
+                     a distance between two points this side is holding is not
+                     a fact it may plead ignorance of (`FJS-D326`)
+src/mime/            what a file's bytes ARE, and what may be said about them
+                     on a wire. Five questions because the four callers each
+                     answered a different subset — the type, its charset,
+                     whether to compress, whether it may be served INLINE, and
+                     `sniff`, which reads the magic number and is the only thing
+                     that can grade a NAME's claim against its bytes. Four
+                     tables disagreed on 24 of 32 extensions and the recorded
+                     `.wasm` fix had reached one of them (`FJS-1186`). Ships a
+                     `.d.ts` — junction's static transport is TypeScript
 src/signature/       what a signed machine-to-machine request is — canonical
                      string, sign, verify. Three signers existed and no verifier
 src/redact/          *is this key a credential* — the question
@@ -497,4 +525,6 @@ license.
 | `datetime` | `packages/toolbelt`: `bun run test` AND `node test/run.js datetime` — the zone table is each runtime's own. A change to the inverse is graded by the oracle; regenerate it only when the ZONES or the window change, never to make a row pass |
 | `units` | `packages/toolbelt`: `bun run test`, then `example`: `verify` and `verify:site` — the prices on a live screen and in a PRERENDERED file, which is the one place the formatter runs in node with no browser under it |
 | `gate` | `packages/litestone`: `bun run test` (the boundary that enforces it) · `packages/junction`: `bun run test` — `session-gate-level.test.ts` asserts the export IS the kit's binding, which is the assertion four hand copies could not make · `packages/sierra`: `bun run test` (the screen's verdict). The kit's own spec walks the whole 216-case grid and the whole 0-9 square, because the drift was one branch and asking one grader about one caller is what hid it |
+| `geo` | `packages/toolbelt`: `bun run test` — the spec compares `boundingBox`+`distance` against a BRUTE-FORCE scan at the equator, at a pole and across ±180, which is the only assertion that can see a prefilter dropping a row. Then `packages/litestone`: `bun test test/point.test.ts`, whose own gate is the same comparison in SQL: the two halves of a live list call `isNear` and the same haversine, so a change here moves the server's answer too |
+| `match` | `packages/toolbelt`: `bun run test`, then `packages/sierra`: `bun run test` (the live store that reads it) and `packages/jetty`: `bun run test` (the other one, which may not import sierra). A `near` change is graded against litestone as well — `false` here REMOVES a row from a live list, so the two halves have to agree about a row on the circle's edge |
 | `directives` | `packages/junction`: `bun run test` — the bridge strips by this table, and `live-order.test.ts` asserts both transports only emit names it holds. Then `packages/sierra`: `bun run test` (`page-query.test.js`), and `example`: `verify` for a real navigation. **The orderBy pair has a third caller and a browser is the only place it runs**: `packages/ui`: `test:browser`, whose `Table — the modes` pushes the object and bracket-indexed shapes through the prop, each paired with a header that must stay unmarked |

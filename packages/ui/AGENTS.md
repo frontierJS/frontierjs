@@ -64,6 +64,7 @@ the package has no root entry.
 | one of a few options with descriptions | `@frontierjs/ui/components/forms/RadioGroup.mesa` |
 | a `DateTime` column (an instant) | `@frontierjs/ui/components/forms/DateTimeInput.mesa` |
 | a calendar, a date range, presets | `@frontierjs/ui/components/forms/DatePicker.mesa` |
+| a day a screen walks one at a time | the same, with `showStepper` — a prev/next pair beside the trigger. It steps only onto days the calendar would let you click, so the buttons go dead at the edge of `disabledDates` / `enabledDates` and at the past and future bounds |
 | a stepper with its own formatting · a range | `@frontierjs/ui/components/forms/NumberInput.mesa` · `@frontierjs/ui/components/forms/Slider.mesa` |
 | a `Json` column | `@frontierjs/ui/components/forms/JsonInput.mesa` |
 | a `File` column · a free-standing dropzone | `@frontierjs/ui/components/forms/FileField.mesa` · `@frontierjs/ui/components/forms/FileUpload.mesa` |

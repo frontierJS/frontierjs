@@ -199,6 +199,58 @@ describe('CLI smoke — one-shot commands', () => {
     expect(status.stdout.toLowerCase()).toContain('applied')
   })
 
+  // `validate` is the one command whose whole value is being run against a
+  // REAL database, so the module test beside it cannot stand in: every way this
+  // goes wrong in practice — the wrong directory, a database litestone creates
+  // on the spot, a schema that no longer matches the rows — happens between
+  // argv and the client rather than inside the walk.
+  test('validate reports the rows a tightened schema would now refuse, and exits 1', async () => {
+    const dir = makeFixtureDir('validate', {
+      schema: `model Contact {
+        id    Int    @id
+        email String
+      }\n`,
+    })
+    await runCli(dir, ['migrate', 'create', 'init'])
+    await runCli(dir, ['migrate', 'apply'])
+
+    const { createClient } = await import('../src/index.js')
+    const db = await createClient({ path: join(dir, 'schema.lite'), db: join(dir, 'test.db') })
+    await db.contact.create({ data: { id: 1, email: 'fine@example.test' } })
+    await db.contact.create({ data: { id: 2, email: 'not-an-email' } })
+    await db.$close()
+
+    // Clean before the rule moves.
+    const before = await runCli(dir, ['validate'])
+    expect(before.exit).toBe(0)
+    expect(before.stdout).toContain('2 row(s)')
+
+    // Tighten it the way a deploy would. The column does not move, so the
+    // migrator is still right that there is nothing to apply.
+    writeFileSync(join(dir, 'schema.lite'), `model Contact {
+      id    Int    @id
+      email String @email
+    }\n`, 'utf8')
+
+    const after = await runCli(dir, ['validate'])
+    expect(after.exit).toBe(1)
+    expect(after.stdout).toContain('Contact 2')
+    expect(after.stdout).toContain('1 of 2 row(s)')
+    expect(after.stdout).not.toContain('Contact 1')
+  })
+
+  test('validate over a database that was not there says nothing was checked, rather than passing', async () => {
+    const dir = makeFixtureDir('validate-empty', {
+      config: `export default { schema: './schema.lite', db: './nowhere.db' }\n`,
+    })
+    const r = await runCli(dir, ['validate'])
+
+    // Zero findings over zero rows is the shape a wrong path produces, and a
+    // green tick there is the failure this command exists to prevent.
+    expect(r.stdout).toContain('not one row between them')
+    expect(r.stdout).toContain('nowhere.db')
+  })
+
   test('introspect emits PascalCase singular model names', async () => {
     const dir = makeFixtureDir('introspect')
     await runCli(dir, ['migrate', 'create', 'init'])

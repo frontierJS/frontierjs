@@ -4,8 +4,17 @@
 // WRITES a window and `payOn` READS one. Both go through
 // `api/src/domain/payroll`, which owns the half-open interval — a where-clause
 // spelled a second way here is a wrong salary once per raise.
+//
+// **This file is one of the two crossings** (`FJS-D288`). A pay window is dated
+// in DAYS and a request arrives with a clock behind it, so `plainDateIn` turns
+// *now* into a day in the shop's own calendar — `$.config.timeZone`, which
+// resolves the calling shop's answer over the app's floor — and everything past
+// that point is a `YYYY-MM-DD` with no zone attached to it. A shop in Auckland
+// and a shop in Los Angeles setting pay in the same minute get the day each of
+// them is actually having.
 import { createBaseService, NotFound, $ } from '@frontierjs/junction'
-import { payAsAt, instant, assertEffectiveFrom } from '../domain/payroll'
+import { plainDateIn }                    from '@frontierjs/toolbelt/datetime'
+import { payAsAt, assertEffectiveFrom }   from '../domain/payroll'
 
 export function createEmployeesService() {
   return createBaseService({
@@ -35,9 +44,9 @@ export function createEmployeesService() {
       const employeeId = Number($.id)
       const pay        = $.data as {
         basis: string, rate: number, hoursPerWeek?: number, effectiveFrom?: string
-      }
-      const now = instant()
-      const at  = pay.effectiveFrom ? instant(pay.effectiveFrom) : now
+      }   // `effectiveFrom` is a plain date; the input type validates it
+      const today = plainDateIn(Date.now(), $.config.timeZone)
+      const at    = pay.effectiveFrom ?? today
 
       const employee = await db.employee.findFirst({ where: { id: employeeId } })
       if (!employee) throw new NotFound('No such employee')
@@ -45,7 +54,7 @@ export function createEmployeesService() {
       // Every window, not just the open one: `assertEffectiveFrom` needs the
       // closed ones to tell a FIRST window starting in the past — which is an
       // ordinary new hire — from one opening inside a history that is already
-      // accounted for, which would put two windows over one instant.
+      // accounted for, which would put two windows over one day.
       const windows = await db.payWindow.findMany({
         where: { employeeId }, orderBy: { effectiveFrom: 'desc' }, limit: 100,
       })
@@ -61,20 +70,20 @@ export function createEmployeesService() {
 
       // ─── the backdate ───────────────────────────────────────────────────
       //
-      // A stated instant in the PAST is a correction to what we believed, and
-      // it reaches the same four steps with a different `at`. **That the two
-      // acts are one write is the finding rather than a convenience**: the
-      // schema holds VALID time and nothing records when we LEARNT something,
-      // so *this is what they earn from today* and *this is what they should
-      // have been earning since March* are indistinguishable afterwards.
+      // A stated day in the PAST is a correction to what we believed, and it
+      // reaches the same four steps with a different `at`. **That the two acts
+      // are one write is the finding rather than a convenience**: the schema
+      // holds VALID time and nothing records when we LEARNT something, so *this
+      // is what they earn from today* and *this is what they should have been
+      // earning since March* are indistinguishable afterwards.
       //
-      // Which instants are legal is `employment.ts`'s, not this file's — the
-      // rule has one owner even though the four steps deliberately do not.
-      assertEffectiveFrom(employee.reference, at, now, windows)
+      // Which days are legal is `employment.ts`'s, not this file's — the rule
+      // has one owner even though the four steps deliberately do not.
+      assertEffectiveFrom(employee.reference, at, today, windows)
 
-      // Closed at the instant the next one opens, so the windows touch with no
-      // gap and no overlap. A gap is a date on which somebody is paid nothing,
-      // and it is silent — `payAsAt` answers null and a pay run skips them.
+      // Closed on the day the next one opens, so the windows touch with no gap
+      // and no overlap. A gap is a date on which somebody is paid nothing, and
+      // it is silent — `payAsAt` answers null and a pay run skips them.
       //
       // Under a backdate this MOVES an end date backwards, and the row keeps no
       // trace of what it used to say. That is the second axis missing, said as
@@ -94,18 +103,22 @@ export function createEmployeesService() {
     },
 
     /**
-     * What they were on, at an instant somebody states.
+     * What they were on, on a day somebody states.
      *
      * The read half, over the wire. It exists so the as-at question is
      * answerable by a screen and a report rather than only by code holding a
      * client — and because a payslip reprinted in June has to come back with
      * March's number, which is the one assertion that separates this from an
      * ordinary read.
+     *
+     * `at` is REQUIRED by `AsAtQuery` and there is no fallback to today, which
+     * is `employment.ts`'s rule at the wire: a caller who may omit the date is
+     * a caller who will one day ask March's payroll what somebody earns now.
      */
     payOn: async () => {
       const employeeId = Number($.id)
-      const at         = ($.data as { at?: string } | undefined)?.at
-      const terms      = await payAsAt($.db as any, employeeId, at ?? new Date())
+      const { at }     = $.data as { at: string }
+      const terms      = await payAsAt($.db as any, employeeId, at)
       if (!terms) throw new NotFound('Nothing was in force for that employee on that date')
       return terms
     },

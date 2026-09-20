@@ -1,5 +1,44 @@
 # Changes
 
+## 2026-09-20 — `DatePicker` reads the chip derivation by its new name
+
+[`FJS-1192`](../../ISSUES.md#fjs-1192) renamed `@frontierjs/css`'s derived
+outputs to `--_fill` / `--_on-fill`, and `.fjs-dp-square` is the one thing
+outside that package which reads them: it carries `.chip`, sets `--tone-fill`
+from `--bg-mix`, and paints what the derivation answers — which is how a
+selected day stays legible against any tone a theme defines.
+
+Three `var()` reads and a comment. No behavior changed, and the drive
+(`test:browser datepicker`) is green across all three specs. Reading them is the
+sanctioned cross-package case and the comment now says why: the derivation IS
+what the base contributes and there is no public name for its output. Setting
+either is the defect the mark exists for.
+
+## 2026-09-19 — `DatePicker` keeps the day it was given, and grows a day stepper
+
+[`FJS-1188`](../../ISSUES.md#fjs-1188). An incoming `startDate` was parsed with `new Date(value)`,
+which is UTC midnight for a bare `YYYY-MM-DD`, while the hidden input the form submits is built
+from LOCAL fields — so west of Greenwich a stored day rendered as the day before and saved that
+way, untouched. The file already had `parseLocalDate` for `disabledDates` and its comment already
+named the specification; `getTimestamp` goes through it now, so there is one answer to what a bare
+day string means.
+
+`showStepper` draws a prev/next pair beside the trigger that walks the selection one day, both ends
+together for a range. It asks the grid's own `isDisabledDay` / `isPastDate` / `isFutureDate` rather
+than restating them, so a step that the calendar would refuse is a button that is visibly dead, and
+with nothing selected both are dead rather than seeding today. Off by default, drawn after the
+trigger in normal flow — the component has no control of its own, so there is no box to pin it to.
+
+`shiftDays` moves whole calendar days rather than adding `864e5`: stepped from 31 October in Denver
+the millisecond spelling answers 1 November twice and stays a day behind for ever after.
+
+`test/browser/specs/datepicker-days.spec.mjs` is the first spec here to name its zone —
+`t.timezone(id)` on the kit drive, through CDP — because every runner in this repo is UTC, which is
+the one zone where the correct and the broken spelling render the same bytes. It opens with a
+control that the override took, and the teardown clears it so a zone cannot leak into the next
+spec. 16 rows; the UTC parse reds 9 of them, the millisecond step reds exactly the two fall-back
+rows, and dropping the selectability guard reds the disabled-day row.
+
 ## 2026-09-15 — a refusal over a field the form does not draw is said at the top
 
 [`FJS-1163`](../../ISSUES.md#fjs-1163). `only` narrows what a generated form shows and not what

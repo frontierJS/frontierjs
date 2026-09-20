@@ -263,9 +263,14 @@ function fieldToSchema(field: FieldDef, schemaName?: string): OASchema {
       base.type = 'boolean'
       break
 
-    case 'date':
+    case 'instant':
       base.type   = 'string'
       base.format = 'date-time'
+      break
+
+    case 'plainDate':
+      base.type   = 'string'
+      base.format = 'date'
       break
 
     case 'array':

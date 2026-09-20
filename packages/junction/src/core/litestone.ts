@@ -4277,8 +4277,8 @@ function resolveType(prop: LiJsonProp): FieldDef['type'] {
     case 'uri':
     case 'url':      return 'url'
     case 'uuid':     return 'uuid'
-    case 'date-time':
-    case 'date':     return 'date'
+    case 'date-time': return 'instant'
+    case 'date':      return 'plainDate'
   }
 
   switch (prop.type as string) {

@@ -86,15 +86,15 @@ grading on any keyword in it, and which three it may grade on is the design.
 
 ## Which drive proves a change
 
-`bun run test` — and `tests/plugin.test.ts` is the half that matters, because it
-is the only thing that runs a real Junction app, a real Litestone client and a
-real port together. Both crossings this package lives on are invisible from
-either side alone: what junction did to the request body before the handler saw
-it, and whether the level a route reads is the level the boundary grades with.
+`bun run test`, then `example`: `verify:mcp`. They are not the same question.
+`tests/plugin.test.ts` proves the PROTOCOL and the crossings — what junction did
+to the request body before the handler saw it, and whether the level a route
+reads is the level the boundary grades with — against a Junction app on a real
+port. `verify:mcp` proves the ANSWERS: a real `@modelcontextprotocol/client`, a
+real seed, a real gate ladder, and an app with no `app.db` at all.
 
-**What is still ungated is every NUMBER.** `CHANGES.md` and `PROJECT_STATE.md`
-carry a measured table against `example` and nothing regenerates it, so a change
-to `describe()`, to `generateJsonSchema`'s keywords or to
-`@frontierjs/toolbelt/gate` can move every figure with this suite green. Run
-`packages/junction`, `packages/litestone` and `packages/toolbelt` too, and read
-`PROJECT_STATE.md` § Next item 1.
+**The absolute counts in `CHANGES.md` are a dated measurement and are meant to
+be.** What the drive gates is the relations and the credential absence; a
+typed-in count is `FJS-773`'s own failure. Run `packages/junction` too —
+`customMethodGrade` and `CALL_OPTIONS_AT` are imported from it, so a change
+there moves this package's answers with nothing here failing.

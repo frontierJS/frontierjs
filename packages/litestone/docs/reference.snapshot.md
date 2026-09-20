@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Studio's Explore panel, which also places a word into your schema and shows you
 the diff first.
 
-**103 words** — 12 declarations · 63 field attributes · 28 model attributes.
+**104 words** — 12 declarations · 64 field attributes · 28 model attributes.
 
 ## Index
 
@@ -34,7 +34,7 @@ the diff first.
 - *Record who and when* — [`@updatedAt`](#updatedat-field) · [`@updatedBy`](#updatedby-field) · [`@createdBy`](#createdby-field) · [`@version`](#version-field) · [`@keepVersions`](#keepversions-field) · [`@log`](#log-field)
 - *Clean a value on write* — [`@trim`](#trim-field) · [`@lower`](#lower-field) · [`@upper`](#upper-field) · [`@slug`](#slug-field)
 - *Refuse a bad value* — [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@markdown`](#markdown-field) · [`@accept`](#accept-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
-- *Shape the table* — [`@big`](#big-field) · [`@scale`](#scale-field) · [`@money`](#money-field)
+- *Shape the table* — [`@big`](#big-field) · [`@scale`](#scale-field) · [`@money`](#money-field) · [`@point`](#point-field)
 - *Decide who may* — [`@allow`](#allow-field)
 
 **Model attributes**
@@ -1209,6 +1209,20 @@ model Example {
 - **Deeper** — [exact-numbers.md](exact-numbers.md)
 - **See also** — [`@scale`](#scale-field)
 
+#### `@point` `(<latKey>, <lngKey>)` <a id="point-field"></a>
+
+The Json value on this field is a coordinate, and these two of its keys carry it. The whole declaration of one — an object, two numeric keys, ±90 / ±180, both or neither — because that floor is the same in every application, which is why the attribute carries it rather than a shape each schema declares (@money is the same move). The keys are NAMED because the value is the app's: @point(lat, lng) and @point(latitude, longitude) are both ordinary, and inferring them from the shape is silently wrong for the model whose `lat` is a lathe setting. Two VIRTUAL generated columns are emitted beside it, &lt;field&gt;&lt;Key&gt;, and a composite index over the pair: they store nothing and the index holds the numbers, which is what lets a point live in one JSON value and still be pruned by a b-tree. A query names those COLUMNS — a WHERE that repeats json_extract() reads as a full SCAN even with the index present, because SQLite matches the column and not the expression. The shape and range CHECKs are emitted with coalesce(), since a CHECK fails only on FALSE and the natural spelling admits every object that has no coordinate at all. @type beside it grades the REST of the object and may only NARROW the range; not with @encrypted, whose bytes json_extract reads as no location.
+
+```lite
+model Example {
+  id Int @id
+  site Json @point(lat, lng)
+}
+```
+
+- **Deeper** — [geo.md](geo.md)
+- **See also** — [`type`](#type-declaration) · [`@generated`](#generated-field)
+
 ### Decide who may
 
 #### `@allow` `('read'|'write'|'all', <expression>)` <a id="allow-field"></a>
@@ -1250,21 +1264,22 @@ model Example {
 
 ### Shape the table
 
-#### `@@index` `([field, …])` <a id="index-model"></a>
+#### `@@index` `([field [(sort: Asc | Desc)], …][, where: <expr>])` <a id="index-model"></a>
 
-An index over one or more columns.
+An index over one or more columns. A direction is part of what the index IS, so it earns its place on a COMPOSITE whose columns disagree — SQLite walks a b-tree either way, and a lowercase `desc` is the client's own `orderBy` spelling and means the same thing. The index NAME is derived from the field list alone, so adding a direction does not rename an existing index; the migrator sees the change through the sorts. `where:` emits a partial index, and on a @@softDelete model it is ANDed with the live-rows clause rather than replacing it — that clause is what makes the index reachable on such a model at all, so honoring the declaration by dropping it would silently un-optimize every read. The predicate goes through the query planner, which is why it may not compare against a value the way @@unique(where:) may.
 
 ```lite
 model Example {
   id Int @id
   customerId Int
   createdAt DateTime
-  @@index([customerId, createdAt])
+  @@index([customerId, createdAt(sort: Desc)])
 }
 ```
 
-- **Also typed** — `performance` · `speed up` · `query plan`
+- **Also typed** — `performance` · `speed up`
 - **Deeper** — [performance.md](performance.md)
+- **See also** — [`@@unique`](#unique-model)
 
 #### `@@unique` `([field, …][, nullsDistinct: true | where: <expr>])` <a id="unique-model"></a>
 
@@ -1587,7 +1602,7 @@ model Example {
 
 #### `@@sync` `(policy)` <a id="sync-model"></a>
 
-This model's rows may be written with no server reachable: the client holds the write and replays it when one is. The argument is the COLLISION policy and nothing else — whether a model leaves the device, and in which direction, is a separate question this attribute has not been asked. All three policies behave identically on a reachable network; each decides what happens to a write nobody is standing over when it lands. `server` drops the revision the device read, so the replay applies to whatever the row holds by then. `append` says rows are only ever added, which is what makes a collision impossible rather than resolved — a held patch, remove or restore is refused by name. `refuse` carries the revision and the Data boundary refuses the replay if the row moved, which is why it needs an @version column and is refused without one. There is no default and silence is not permission: a model that declares nothing is not syncable, and an offline client refuses to queue a write against it by name rather than dropping it, because a model nobody thought about would otherwise lose a row with nothing said. It crosses to the browser as `x-sync`, and its ABSENCE is what a client reads as a refusal.
+This model's rows may be written with no server reachable: the client holds the write and replays it when one is. The argument is the COLLISION policy and nothing else — whether a model leaves the device, and in which direction, is a separate question this attribute has not been asked. All four policies behave identically on a reachable network; each decides what happens to a write nobody is standing over when it lands. `server` drops the revision the device read, so the replay applies to whatever the row holds by then. `append` says rows are only ever added, which is what makes a collision impossible rather than resolved — a held patch, remove or restore is refused by name. `refuse` carries the revision and the Data boundary refuses the replay if the row moved, which is why it needs an @version column and is refused without one. `field` carries the revision AND the row the write was made against, and compares them a column at a time: two people who edited different columns both win, and only a column they both moved is a conflict — so it needs @version for the same reason `refuse` does. There is no default and silence is not permission: a model that declares nothing is not syncable, and an offline client refuses to queue a write against it by name rather than dropping it, because a model nobody thought about would otherwise lose a row with nothing said. It crosses to the browser as `x-sync`, and its ABSENCE is what a client reads as a refusal.
 
 ```lite
 model Example {
@@ -1597,7 +1612,7 @@ model Example {
 }
 ```
 
-- **`policy`** — `server` · `append` · `refuse`
+- **`policy`** — `server` · `append` · `refuse` · `field`
 - **See also** — [`@@gate`](#gate-model) · [`@version`](#version-field) · [`@@transitions`](#transitions-model)
 
 #### `@@auth` <a id="auth-model"></a>
@@ -1803,3 +1818,15 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 ### `sync-required-file` — a required File on a syncable model cannot be written offline
 
 *warn*. The row half of a held write replays WITHOUT its bytes — that is what makes a small correction independent of a large photograph. A File column that is required therefore has no value on the replayed create, and the boundary refuses the row the device thought it had saved.
+
+### `json-arrow-answers-json` — a @generated column reads a JSON path with `->`, which keeps the quotes
+
+*error*. SQLite has two arrow operators and they differ in one character and in what comes back. `->` answers the JSON REPRESENTATION, so a string member arrives still quoted — the column holds `"Reno"` where the row holds `Reno`, and every comparison against a plain value misses. `->>` answers the SQL value. Nothing catches this downstream: the column builds, an index over it builds, EXPLAIN reports SEARCH ... USING INDEX, and the query returns no rows. `->` also stringifies a number, so an Int member lands in a TEXT column.
+
+### `json-path-outside-the-declared-type` — a @generated column reads a member the Json column's type does not declare
+
+*error*. A `Json @type(T)` column has a declared shape and the SQL that reads it is graded against that shape by nothing. A misspelled member is valid SQL over valid JSON: json_extract answers NULL for a path that is not there, so the column is null for every row, forever, and no write is ever refused. The type declaration is the only thing that knows better.
+
+### `index-over-a-json-document` — an index over a Json column indexes the document, not anything inside it
+
+*warn*. The column holds one serialized document, so the index holds one entry per document — which answers *this exact document* and nothing else. A path filter cannot use it: json_extract() is opaque to the planner, so the query is a full scan with the index sitting beside it being written on every insert. What indexes a path is a @generated column over that path with an @@index on THAT.

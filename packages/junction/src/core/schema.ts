@@ -23,7 +23,12 @@ import { fieldError }          from './field-errors.ts'
 
 // ─── Field definition ─────────────────────────────────────────────────────
 
-export type FieldType = 'string' | 'number' | 'boolean' | 'date' |
+// Two kinds of time and two names, because they are not the same value and one
+// name for both is how a day gets stored as a moment (`FJS-D143`, `FJS-D288`).
+// An `instant` is a point on the timeline and arrives as a `Date`; a
+// `plainDate` is a calendar day, `YYYY-MM-DD`, with no zone and no time in it —
+// so it travels as the string it is and nothing here parses it.
+export type FieldType = 'string' | 'number' | 'boolean' | 'instant' | 'plainDate' |
                         'email' | 'url' | 'uuid' | 'array' | 'object' | 'any'
 
 export interface FieldDef {
@@ -427,9 +432,18 @@ function validateField(field: string, value: unknown, def: FieldDef): FieldResul
       break
     }
 
-    case 'date': {
+    case 'instant': {
       if (!(v instanceof Date) || isNaN((v as Date).getTime()))
-        errors.push({ field, message: `${field} must be a valid date` })
+        errors.push({ field, message: _say(def, 'type', `${_label(field, def)} must be a valid date and time`) })
+      break
+    }
+
+    case 'plainDate': {
+      // A DAY, so it stays the string it arrived as. Parsing it into a `Date`
+      // and formatting it back is how `2025-08-15` reaches a column as an
+      // instant at UTC midnight, which is a different day west of Greenwich.
+      if (typeof v !== 'string' || !PLAIN_DATE_RE.test(v))
+        errors.push({ field, message: _say(def, 'type', `${_label(field, def)} must be a date, as YYYY-MM-DD`) })
       break
     }
 
@@ -501,12 +515,15 @@ function coerce(value: unknown, type: FieldType): unknown {
       if (value === 'false' || value === '0' || value === 0)  return false
       return value
 
-    case 'date':
+    case 'instant':
       if (typeof value === 'string' || typeof value === 'number') {
         const d = new Date(value)
         if (!isNaN(d.getTime())) return d
       }
       return value
+
+    // `plainDate` is deliberately absent: there is nothing to coerce, and every
+    // coercion available turns a day into a moment.
 
     default:
       return value
@@ -516,6 +533,7 @@ function coerce(value: unknown, type: FieldType): unknown {
 // ─── Compiled regexes ─────────────────────────────────────────────────────
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const PLAIN_DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const UUID_RE  = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 // ─── Convenience validators ───────────────────────────────────────────────
@@ -527,7 +545,8 @@ export const v = {
   email:   (opts?: Partial<FieldDef>): FieldDef => ({ type: 'email',   ...opts }),
   url:     (opts?: Partial<FieldDef>): FieldDef => ({ type: 'url',     ...opts }),
   uuid:    (opts?: Partial<FieldDef>): FieldDef => ({ type: 'uuid',    ...opts }),
-  date:    (opts?: Partial<FieldDef>): FieldDef => ({ type: 'date',    ...opts }),
+  instant:   (opts?: Partial<FieldDef>): FieldDef => ({ type: 'instant',   ...opts }),
+  plainDate: (opts?: Partial<FieldDef>): FieldDef => ({ type: 'plainDate', ...opts }),
   array:   (items?: FieldDef, opts?: Partial<FieldDef>): FieldDef => ({ type: 'array', items, ...opts }),
   object:  (schema?: Schema, opts?: Partial<FieldDef>): FieldDef => ({ type: 'object', schema, ...opts }),
   any:     (opts?: Partial<FieldDef>): FieldDef => ({ type: 'any',     ...opts }),
@@ -540,7 +559,8 @@ export const v = {
     email:   (opts?: Partial<FieldDef>): FieldDef => ({ type: 'email',   required: true, ...opts }),
     url:     (opts?: Partial<FieldDef>): FieldDef => ({ type: 'url',     required: true, ...opts }),
     uuid:    (opts?: Partial<FieldDef>): FieldDef => ({ type: 'uuid',    required: true, ...opts }),
-    date:    (opts?: Partial<FieldDef>): FieldDef => ({ type: 'date',    required: true, ...opts }),
+    instant:   (opts?: Partial<FieldDef>): FieldDef => ({ type: 'instant',   required: true, ...opts }),
+    plainDate: (opts?: Partial<FieldDef>): FieldDef => ({ type: 'plainDate', required: true, ...opts }),
     array:   (items?: FieldDef, opts?: Partial<FieldDef>): FieldDef => ({ type: 'array', items, required: true, ...opts }),
     object:  (schema?: Schema, opts?: Partial<FieldDef>): FieldDef => ({ type: 'object', schema, required: true, ...opts }),
   }

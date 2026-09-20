@@ -1,5 +1,35 @@
 # Changes — @frontierjs/mcp
 
+## 2026-09-20 — a real MCP client, against the real shop
+
+`example` mounts `mcpPlugin()` and `verify:mcp` drives it with
+`@modelcontextprotocol/client` — the handshake, the capability negotiation and
+the framing a person's editor runs. **Everything before this was this repo
+talking to itself**: `fetch` plus a hand-written JSON-RPC envelope, which agrees
+with a server that gets the protocol wrong in the same way. 22 checks.
+
+**Three things only this can ask**, and each was a claim standing on nothing:
+that a real client connects at all; that the surface works on an app with no
+`app.db` (`tenancy { strategy database }`, the shape that made the first draft
+serve a permanent 503 on this very app); and that the ladder holds against a
+real seed rather than a fixture.
+
+**The drive got the ladder wrong twice on its first run, and both corrections
+are the content.** `sam@shop.test` carries `isStaff` and reads every order in
+the shop — and is NOT level 5, so the refund move is the administrator's and not
+"staff's". Worse, `sam` and `robin` are offered the **identical tool list**: a
+row policy moves nobody up a rung, so **the list is the LADDER's and the rows
+are the POLICY's**, two mechanisms this file had been describing as one. They
+are asserted as a pair now — one list, two different order counts from it.
+
+**What is gated is the RELATIONS, not the counts.** A stranger sees fewer than a
+shopper, a shopper fewer than an administrator, nothing is lost by climbing, and
+no protected column reaches any tool — with the protected set derived from what
+the two audiences disagree about rather than typed, and a control that the shop
+declares any. Absolute counts stay out of the drive deliberately: `FJS-773` is
+what a typed-in count does when the app grows.
+
+
 ## 2026-09-16 — the transport, mounted inside the app that is already running
 
 `mcpPlugin()` ships. An MCP client can reach a FrontierJS app for the first time:

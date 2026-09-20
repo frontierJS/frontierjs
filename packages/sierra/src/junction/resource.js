@@ -215,6 +215,31 @@ function _appendOnly(model, method) {
 }
 
 /**
+ * A held write this device cannot make carry what the policy needs.
+ *
+ * `@@sync(field)` compares the patch against the row the writer READ, so the
+ * held write has to carry that row — and nothing here does yet: the base is a
+ * ROW, so it cannot ride a header the way `idempotencyKey` does, and a write's
+ * body already IS its data (`IDEAS/homestead.md` phase 5).
+ *
+ * Refused rather than queued, because the degradation is invisible: the write
+ * would go up with its revision and no base, the Data boundary would refuse it
+ * on the revision alone, and `field` would behave exactly as `refuse` while the
+ * schema claims two writers on different columns both win.
+ */
+function _noBaseCarried(model, method) {
+  const err = new Error(
+    `[Sierra] ${model}.${method}() cannot be held: this model declares @@sync(field), which merges a held ` +
+    `write column by column against the row it was made against — and this client cannot yet carry that row ` +
+    `to the server, so the write would be refused on its revision alone and behave as @@sync(refuse). ` +
+    `Declare @@sync(refuse) to say that deliberately, or @@sync(server) to let the replay win.`)
+  err.code = 'NO_BASE_CARRIED'
+  err.model = model
+  err.method = method
+  return err
+}
+
+/**
  * Does this payload carry bytes?
  *
  * A queued `File` is the second half of phase 2 — the blob has to outlive the
@@ -1148,6 +1173,12 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // late are not a second writer.)
       if (syncPolicy === 'append' && APPEND_REFUSES.has(method))
         throw _appendOnly(model, method)
+
+      // `field` is built at the Data boundary and not yet reachable from here —
+      // see `_noBaseCarried`. Refused on the same writes `append` refuses,
+      // since a create has no row to have been made against.
+      if (syncPolicy === 'field' && APPEND_REFUSES.has(method))
+        throw _noBaseCarried(model, method)
 
       const files = syncPolicy && !NEVER_QUEUED.has(method) ? _filesIn(ctx.data) : {}
       const rowId = ctx.id ?? (mint ? ctx.data?.[mint.field] : null)

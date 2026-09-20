@@ -992,8 +992,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 20` | — |
 | `name` | `string` | yes | Name | `minLength: 2` `maxLength: 80` | — |
 | `email` | `string` | yes | Email | — | — |
-| `startedOn` | `string` | yes | Started | `format: "date-time"` | — |
-| `endedOn` | `string`? | — | Left | `format: "date-time"` | — |
+| `startedOn` | `string` | yes | Started | `format: "date"` | — |
+| `endedOn` | `string`? | — | Left | `format: "date"` | — |
 
 **On create**: required — `reference`, `name`, `email`, `startedOn` · not accepted — `id`
 
@@ -1009,10 +1009,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `basis` | `PayBasis` | yes | Basis | — | — |
 | `rate` | `integer` | yes | Rate | `minimum: 0` `x-money` | — |
 | `hoursPerWeek` | `integer` = `40` | — | Hours a week | `minimum: 0` `maximum: 168` | — |
-| `effectiveFrom` | `string` | — | From | `format: "date-time"` | — |
-| `effectiveTo` | `string`? | — | To | `format: "date-time"` | — |
+| `effectiveFrom` | `string` | yes | From | `format: "date"` | — |
+| `effectiveTo` | `string`? | — | To | `format: "date"` | — |
 
-**On create**: required — `employeeId`, `basis`, `rate` · not accepted — `id`
+**On create**: required — `employeeId`, `basis`, `rate`, `effectiveFrom` · not accepted — `id`
 
 ### `PayRate`
 
@@ -1025,10 +1025,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `fromAmount` | `integer` = `0` | — | From | `minimum: 0` `x-money` | — |
 | `toAmount` | `integer`? | — | To | `minimum: 0` `x-money` | — |
 | `percent` | `integer` | yes | Percent | `minimum: 0` `maximum: 10000` `x-scale` | — |
-| `effectiveFrom` | `string` | — | From date | `format: "date-time"` | — |
-| `effectiveTo` | `string`? | — | To date | `format: "date-time"` | — |
+| `effectiveFrom` | `string` | yes | From date | `format: "date"` | — |
+| `effectiveTo` | `string`? | — | To date | `format: "date"` | — |
 
-**On create**: required — `kind`, `percent` · not accepted — `id`
+**On create**: required — `kind`, `percent`, `effectiveFrom` · not accepted — `id`
 
 ### `PayRun`
 
@@ -1041,9 +1041,9 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | --- | --- | --- | --- | --- | --- |
 | `id` | `integer` | — | — | — | — |
 | `reference` | `string` | yes | Reference | `minLength: 3` `maxLength: 30` | — |
-| `periodStart` | `string` | yes | From | `format: "date-time"` | — |
-| `periodEnd` | `string` | yes | To | `format: "date-time"` | — |
-| `payDate` | `string` | yes | Pay date | `format: "date-time"` | — |
+| `periodStart` | `string` | yes | From | `format: "date"` | — |
+| `periodEnd` | `string` | yes | To | `format: "date"` | — |
+| `payDate` | `string` | yes | Pay date | `format: "date"` | — |
 | `periodsPerYear` | `integer` = `12` | — | Periods a year | `minimum: 1` `maximum: 53` | — |
 | `periodIndex` | `integer` = `0` | — | Period | `minimum: 0` `maximum: 52` | — |
 | `status` | `PayRunStatus` = `"draft"` | — | — | — | — |
@@ -1069,8 +1069,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `payRunId` | `integer` | yes | Pay run | — | — |
 | `employeeId` | `integer` | yes | Employee | — | — |
 | `payWindowId` | `integer` | yes | Pay window | — | — |
-| `periodStart` | `string` | yes | From | `format: "date-time"` | — |
-| `periodEnd` | `string` | yes | To | `format: "date-time"` | — |
+| `periodStart` | `string` | yes | From | `format: "date"` | — |
+| `periodEnd` | `string` | yes | To | `format: "date"` | — |
 | `gross` | `integer` | — | Gross | `minimum: 0` `x-litestone-kind` `x-money` | — |
 | `deductions` | `integer` | — | Deductions | `minimum: 0` `x-litestone-kind` `x-money` | — |
 | `net` | `integer` | — | Net | `minimum: 0` `x-litestone-kind` `x-money` | — |
@@ -1230,7 +1230,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `basis` | `PayBasis` | yes | Basis | — | — |
 | `rate` | `integer` | yes | Rate | `minimum: 0` | — |
 | `hoursPerWeek` | `integer` = `40` | yes | Hours a week | `minimum: 0` `maximum: 168` | — |
-| `effectiveFrom` | `string`? | — | From | `format: "date-time"` | — |
+| `effectiveFrom` | `string`? | — | From | `format: "date"` | — |
 
 **On create**: required — `basis`, `rate`, `hoursPerWeek`
 
@@ -1240,7 +1240,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
-| `at` | `string` | yes | As at | `format: "date-time"` | — |
+| `at` | `string` | yes | As at | `format: "date"` | — |
 
 **On create**: required — `at`
 

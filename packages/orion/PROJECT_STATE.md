@@ -48,8 +48,11 @@
 ## What is not
 
 - **The canvas**, and **the per-node inspector** — the screens edit a definition
-  as JSON. `mockup/ui/components/` is the specification for both, plus the
-  metrics, templates and plugins screens; everything in it the port superseded
-  is deleted, so what is left is what is owed.
-- **The basecamp automation**, phase 7's second half.
+  as JSON ([`FJS-1198`](../../ISSUES.md#fjs-1198)). The metrics, templates and
+  plugins screens are [`FJS-1196`](../../ISSUES.md#fjs-1196).
+  `mockup/ui/components/` is the specification for both rows, and everything in
+  it the port superseded is deleted, so what is left is what is owed.
+- **The basecamp install is not finished**, though its automation runs:
+  the seed reaches none of orion's tables and four schema-derived checks are red
+  ([`FJS-1197`](../../ISSUES.md#fjs-1197)).
 - **Cancelling a run that is queued or running** ([`FJS-1157`](../../ISSUES.md#fjs-1157)).

@@ -240,6 +240,9 @@ const HELP = `
     ${cyan('litestone catalog --reference')}           write docs/reference.snapshot.md ${dim('(--check in CI)')}
     ${cyan('litestone advise')}                       what this schema says wrong, and what it never said
     ${dim('  --json')}                                 both lists as data
+    ${cyan('litestone validate')}                     which STORED rows this schema would now refuse
+    ${dim('  --only=A,B')}                             just these models
+    ${dim('  --json')}                                 the report as data
     ${cyan('litestone assistant')}                    a chat-model schema assistant, with this schema, to paste
     ${dim('  --bare')}                                 the instructions alone, no schema
     ${dim('  --purpose=<path>')}                       the app's PURPOSE.md ${dim('(default: found above the schema)')}
@@ -4502,6 +4505,91 @@ function checkSnapshot(outPath, body, { regen, moved }) {
 // sentence no diff of the schema file says out loud, because a removed line is
 // the absence of a rule and reads like tidying.
 
+// `litestone validate` — which stored rows would this schema refuse?
+//
+// The question the migration differ cannot ask. A `@email`, a `@length`, a
+// `@minItems` and the shape of a `Json @type(T)` emit no CHECK, so tightening
+// one leaves the column exactly where it was and the migrator correctly reports
+// in sync — while every row already down that breaks the new rule has become
+// unwritable, and reads back looking fine.
+//
+// Exits 1 on a finding. The name is `validate`, and a validate that passes over
+// invalid data would be answering a different question than the one it is named
+// for; a report with no verdict is `advise`, beside it.
+async function cmdValidate(cfg) {
+  const asJson = flag('json')
+  const only   = getFlag('only')?.split(',').map(m => m.trim()).filter(Boolean) ?? null
+
+  const { createClient }  = await import('../core/client.js')
+  const { validateRows }  = await import('../validate-rows.js')
+
+  const parseResult = loadSchema(cfg.schema)
+  const db = await createClient({ parsed: parseResult, path: cfg.schema, resolveFrom: 'schema', db: clientDb(parseResult, cfg), encryptionKey: getEncKey() })
+
+  // The file, always, and before the verdict. Run from the wrong directory this
+  // command opens a database that is not there, litestone creates it, and every
+  // model answers zero rows — which prints as a pass. *Nothing is wrong* and
+  // *nothing was read* are one answer until something separates them, and here
+  // that is the path and the count.
+  const files = Object.entries(db.$databases)
+    .filter(([, d]) => d.path)
+    .map(([name, d]) => `${name}: ${d.path}`)
+
+  let report
+  try { report = await validateRows(db, { models: only }) }
+  finally { db.$close() }
+
+  if (asJson) {
+    process.stdout.write(JSON.stringify(report, null, 2) + '\n')
+    process.exitCode = report.ok ? 0 : 1
+    return
+  }
+
+  header('litestone validate')
+
+  const rows = report.checked.reduce((n, c) => n + c.rows, 0)
+  const at   = f => `${f.model}${f.id == null ? '' : ' ' + (typeof f.id === 'object' ? JSON.stringify(f.id) : f.id)}`
+
+  for (const f of files) console.log(`  ${dim(f)}`)
+  console.log()
+
+  if (report.ok && rows === 0) {
+    // Not a pass and not a failure. Every model empty is the shape a wrong
+    // path produces, and it is also what a fresh database legitimately looks
+    // like — so it is reported as the one thing that is certainly true.
+    console.log(`  ${yellow('!')}  ${report.checked.length} model(s) and not one row between them — nothing was checked.`)
+    console.log(`       ${dim('If this database should hold rows, the path above is not the one you meant.')}\n`)
+  } else if (report.ok) {
+    console.log(`  ${green('✓')}  ${rows} row(s) across ${report.checked.length} model(s) satisfy the schema.\n`)
+  } else {
+    // The model rollup first: a rule NO row satisfies is a deploy that
+    // half-landed, and reading the rows one by one would not say so.
+    for (const m of report.models) {
+      console.log(`  ${red('✗')}  ${cyan(m.model)} — ${bold(`all ${m.rows} row(s)`)} would be refused`)
+      for (const e of m.errors) console.log(`       ${dim(e.path.join('.'))} ${e.message}`)
+      console.log(`       ${dim('every row breaks it, so this is the rule to look at rather than the data')}`)
+      console.log()
+    }
+
+    const scattered = report.findings.filter(f => !report.models.some(m => m.model === f.model))
+    for (const f of scattered) {
+      console.log(`  ${yellow('!')}  ${cyan(at(f))}`)
+      for (const e of f.errors) console.log(`       ${dim(e.path.join('.'))} ${e.message}`)
+      console.log()
+    }
+
+    const failing = report.checked.reduce((n, c) => n + c.failing, 0)
+    console.log(`  ${failing} of ${rows} row(s) would be refused by the schema as it stands.`)
+    console.log(`  ${dim('Nothing was written. Backfill the rows, or loosen the rule back.')}\n`)
+  }
+
+  for (const s of report.skipped)
+    console.log(`  ${dim('skipped')} ${s.model} — ${dim(s.reason)}`)
+  if (report.skipped.length) console.log()
+
+  process.exitCode = report.ok ? 0 : 1
+}
+
 async function cmdAccess(cfg) {
   const toStdout = flag('stdout')
   const asJson   = flag('json')
@@ -6899,6 +6987,12 @@ async function main() {
   if (cmd === 'jsonschema') {
     const cfg = await loadConfig()
     await cmdJsonSchema(cfg)
+    return
+  }
+
+  if (cmd === 'validate') {
+    const cfg = await loadConfig()
+    await cmdValidate(cfg)
     return
   }
 

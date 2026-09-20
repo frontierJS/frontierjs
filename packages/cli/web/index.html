@@ -105,6 +105,39 @@ button[data-health] {
   white-space:   nowrap;
 }
 
+/* One place's share of the churn. The element is the kit's own Progress with a
+ * muted tone; all this adds is the box, because a bar that fills its row makes
+ * the smallest place read like the biggest. Layout only — the skin belongs to
+ * @frontierjs/css and setting one here would be a second answer to it. */
+.gui-churn {
+  inline-size: var(--space-2xl);
+  flex:        none;
+}
+
+/* A role and its files. The badge is a fixed column and the files wrap beside
+ * it, so the label stays put on a place with thirty of them. */
+.gui-role { align-items: start; }
+
+/* The files of one role. Monospace because a path is one, and the directory
+ * prefix is dimmed so the eye lands on the basenames — the half that differs. */
+.gui-files {
+  font-family: var(--font-mono);
+  font-size:   var(--text-xs);
+  line-height: 1.7;
+  word-break:  break-word;
+}
+.gui-files .dir { color: var(--ink-mute); }
+
+/* How far a change to this file reaches. Quiet at band 2, warning-toned at band
+ * 3 — the tone is @frontierjs/css's, so the loud one moves with a theme. It
+ * hangs off the filename with no space, or it reads as a separate file. */
+.gui-reach {
+  font-weight: inherit;
+  font-size:   var(--text-2xs);
+  color:       var(--ink-mute);
+}
+.gui-reach.loud { color: var(--color-warning); }
+
 /*
  * The drag handle. A hit area wider than the rule it draws, because a 1px
  * target is one nobody can grab.
@@ -332,6 +365,18 @@ button[data-health] {
              in front of you. Hidden on a clean tree — a panel that says
              "nothing changed" on every page load is a panel people learn to
              skip past. -->
+        <!-- What did I change. It sits ABOVE what proves it because that is the
+             order the two questions are asked in, and hidden on a clean tree
+             for the same reason the proves panel is. -->
+        <section class="surface" id="tree" hidden>
+          <div class="bar bordered dense">
+            <strong class="text-sm">what you have changed</strong>
+            <span class="text-xs text-muted" id="tree-note"></span>
+            <button class="btn ghost text-xs" onclick="loadTree()">recheck</button>
+          </div>
+          <ul class="rows divided" id="tree-rows"></ul>
+        </section>
+
         <section class="surface" id="proves" hidden>
           <div class="bar bordered dense">
             <strong class="text-sm">what proves this change</strong>
@@ -1524,6 +1569,7 @@ async function loadDashboard() {
     document.getElementById('dash-tick').textContent = `could not read the project: ${err.message}`
   }
   loadProves()
+  loadTree()
   loadNext()
   loadDecisions()
   loadChecks()
@@ -1650,6 +1696,124 @@ async function ruleDecision(i) {
   delete decisionWhy[q.id]
   await loadDecisions()
   document.getElementById('decisions-note').textContent += ` · ${out.ruling} filed under ${body.section}`
+}
+
+// ─── what you have changed ────────────────────────────────────────────────────
+//
+// `core/git-status.js` through `/api/status`. The model is the terminal's — two
+// renderers of one question is how this page comes to disagree with `fli gs`
+// about what is dirty, so the grouping, the ordering and the roles are all
+// decided server-side and nothing here re-derives one.
+
+// The print order of roles inside a place, and it must hold every role the
+// engine can answer: a role this list omits prints nothing, and the file
+// vanishes from its place while the count still includes it.
+const TREE_ROLES = ['schema', 'src', 'ui', 'test', 'config', 'deploy', 'snapshot', 'record', 'docs']
+
+async function loadTree() {
+  const panel = document.getElementById('tree')
+  const note  = document.getElementById('tree-note')
+  try {
+    const body = await fetch(`${API}/api/status`).then(r => r.json())
+    if (body.error) throw new Error(body.error)
+
+    const places = body.zones ?? []
+    // A clean tree hides the panel rather than saying "nothing changed" — a
+    // panel that reports nothing on every page load is one people learn to
+    // skip past, and this one is next to the panel that matters.
+    panel.hidden = !places.length
+    if (!places.length) return
+
+    const t = body.total
+    note.textContent = [
+      body.branch,
+      `${t.files} file(s) in ${places.length} place(s)`,
+      `+${t.added} −${t.deleted}`,
+      t.conflicts ? `${t.conflicts} conflicted` : '',
+      t.staged    ? `${t.staged} staged`        : '',
+      t.untracked ? `${t.untracked} new`        : '',
+    ].filter(Boolean).join(' · ')
+
+    const peak = Math.max(...places.map(p => p.churn), 1)
+    document.getElementById('tree-rows').innerHTML = places.map(p => treeRow(p, peak)).join('')
+  } catch (err) {
+    panel.hidden = false
+    note.textContent = `could not read the tree — ${err.message}`
+  }
+}
+
+function treeRow(place, peak) {
+  const share = Math.max(2, Math.round((place.churn / peak) * 100))
+
+  const roles = TREE_ROLES.map(role => {
+    const files = place.files.filter(f => f.role === role)
+    if (!files.length) return ''
+    // The directory prefix is paid for once per group, the way the terminal
+    // prints it. `base` and `folder` come from the server's own collapse.
+    const groups = new Map()
+    for (const f of files) {
+      const body   = f.rel.endsWith('/') ? f.rel.slice(0, -1) : f.rel
+      const cut    = body.lastIndexOf('/')
+      const dir    = cut === -1 ? '' : body.slice(0, cut + 1)
+      const base   = body.slice(cut + 1) + (f.rel.endsWith('/') ? '/' : '')
+      if (!groups.has(dir)) groups.set(dir, [])
+      groups.get(dir).push({ ...f, base })
+    }
+    const lines = [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([dir, entries]) => `
+      <div class="gui-files">${dir ? `<span class="dir">${esc(dir)}</span>` : ''}${entries.map(treeFile).join(' ')}</div>`).join('')
+
+    return `
+      <div class="cluster gap-2xs gui-role">
+        <span class="badge muted">${esc(role)}</span>
+        <div class="stack gap-3xs">${lines}</div>
+      </div>`
+  }).join('')
+
+  return `
+    <li class="list-row">
+      <div class="stack gap-2xs">
+        <div class="cluster gap-2xs">
+          <strong class="text-sm">${esc(place.zone)}</strong>
+          <progress class="progress muted gui-churn" max="100" value="${share}" title="${place.added + place.deleted} line(s) changed"></progress>
+          <span class="text-xs text-muted">${place.files.length} · +${place.added} −${place.deleted}</span>
+          ${place.conflicts ? `<span class="badge danger">${place.conflicts} conflicted</span>` : ''}
+          ${place.staged    ? `<span class="badge success">${place.staged} staged</span>`      : ''}
+          ${place.untracked ? `<span class="badge info">${place.untracked} new</span>`         : ''}
+        </div>
+        ${roles}
+      </div>
+    </li>`
+}
+
+// Status is carried by a tone and a glyph together: the glyph is what survives
+// a copy-paste out of the page, and it is the whole of the answer for anyone
+// who cannot tell the tones apart.
+function treeFile(f) {
+  // State first, reach second. What you DID to a file outranks how far it
+  // reaches — deleting something 77 files import is danger before it is
+  // warning, and the `↑77` beside it stays warning-toned either way, so both
+  // facts survive on the one row. Warning claims the name only where there is
+  // no state to say.
+  const tone =
+    f.conflict                        ? 'text-danger'  :
+    f.untracked || f.index === 'A'    ? 'text-info'    :
+    f.index === 'D' || f.work === 'D' ? 'text-danger'  :
+    f.blast && f.blast.band >= 3      ? 'text-warning' : ''
+  const glyph =
+    f.conflict                        ? '!' :
+    f.untracked || f.index === 'A'    ? '+' :
+    f.index === 'D' || f.work === 'D' ? '−' : ''
+  const from = f.from ? ` ←${f.from.split('/').pop()}` : ''
+  // `gui-file` is a marker, not a skin: the directory prefix beside these is a
+  // span too, so counting by position counts the prefixes as files.
+  // How far a change to this file reaches, above band 2 only. Every file
+  // carries a reading and most of them are 0, so printing all of them trains
+  // the eye to skip the one column that matters. The bands are codegraph's.
+  const reach = f.blast && f.blast.band >= 2
+    ? `<b class="gui-reach${f.blast.band >= 3 ? ' loud' : ''}" title="named by ${f.blast.usedBy} other file(s) — a change here reaches them">↑${f.blast.usedBy}</b>`
+    : ''
+
+  return `<span class="gui-file ${tone}" title="${esc(f.path)}${f.index ? ' · staged' : ''}">${glyph}${esc(f.base ?? f.rel)}${esc(from)}${reach}</span>`
 }
 
 // ─── what proves this change ──────────────────────────────────────────────────

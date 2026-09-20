@@ -166,13 +166,16 @@ describe('the build emits both write modes', () => {
     }
   })
 
-  test('an app with @immutable columns has some, and one without has none', async () => {
-    // The scale claim, measured rather than asserted as a number: `example`
-    // declares `@immutable` and `basecamp` does not, so the delta is empty for
-    // one of them — which is what makes the non-empty one evidence.
+  test('a column is marked only where something declared it', async () => {
+    // The scale claim, measured rather than asserted as a number. `basecamp`
+    // was the empty control until orion's `db/orion.lite` — which basecamp
+    // imports — stamped `Flow.ownerId @immutable` as an access grant
+    // (`FJS-D276`), so the control is now the NAMES rather than the count: a
+    // change that marks columns wholesale still fails here, and one app is
+    // still measured against a declaration it does not make.
     const marked = async (app) => {
       const g = await generateSchemas(resolve(REPO_ROOT, app, 'db', 'schema.lite'), () => {}, SIERRA_ROOT)
-      let n = 0
+      const names = []
       for (const [model, patch] of Object.entries(g.updatePatch)) {
         for (const [name, p] of Object.entries(patch.properties ?? {})) {
           // Only a column a CREATE form offers and a PATCH refuses. The
@@ -181,13 +184,13 @@ describe('the build emits both write modes', () => {
           // rendered it and nothing about it can be silently wrong.
           const inCreate = g.defs[model]?.properties?.[name]
           if (!inCreate || inCreate.readOnly) continue
-          if (p.readOnly || p['x-litestone-seal']) n++
+          if (p.readOnly || p['x-litestone-seal']) names.push(`${model}.${name}`)
         }
       }
-      return n
+      return names
     }
-    expect(await marked('example')).toBeGreaterThan(0)
-    expect(await marked('packages/basecamp')).toBe(0)
+    expect((await marked('example')).length).toBeGreaterThan(0)
+    expect(await marked('packages/basecamp')).toEqual(['Flow.ownerId'])
   })
 })
 

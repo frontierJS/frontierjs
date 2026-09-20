@@ -58,6 +58,34 @@
 //
 // A failure to open must carry `code: 'SQLITE_CANTOPEN'`, because client.js
 // turns exactly that one into the message naming the parent directory.
+//
+// ─── One OPTIONAL capability, and why it is a capability ──────────────────
+//
+//   engine.vector  →  null, or { cosineDistance: '<sql fn>', arm(db) }
+//
+// An engine that can compare two vectors inside SQLite says so here; one that
+// cannot answers null and the comparison happens in `core/vector.js`. Both
+// paths exist by ruling (`FJS-D331`) rather than by fallback, because SQLite's
+// own wasm build is compiled with `SQLITE_OMIT_LOAD_EXTENSION` — so the browser
+// engine cannot load one at any version, and an engine surface that assumed the
+// SQL path would have no browser half at all.
+//
+// **`arm(db)` is the half that is easy to get wrong.** An extension loads into
+// a CONNECTION, so the tempting version loads it in `open()` — and that makes
+// every connection pay for a capability almost none of them use. Litestone
+// opens a connection per pristine migration diff, per template clone, per
+// tenant, and two per database; measured on `bun:sqlite`, loading at open took
+// a connection from 0.115 ms to 0.650 ms and timed out the erpnext corpus test.
+// So whatever compiles a similarity read arms the connection it is about to
+// use, and `arm` must be idempotent because the caller holds a statement cache
+// rather than a database and cannot track which connection it is on.
+//
+// It is absent-by-default rather than required: an engine that says nothing
+// about vectors is complete, which is what keeps `REQUIRED` at one entry and
+// keeps a third-party engine from having to answer a question it has no stake
+// in. What it must NOT do is claim the capability half-shaped — hence the check
+// in `setEngine`, since a missing name or a missing `arm` is a SQL error at the
+// first similarity query and nothing before it.
 
 // ─── Which engine is here ─────────────────────────────────────────────────
 //
@@ -94,6 +122,23 @@ export function setEngine(engine) {
       "  Litestone's query internals call .get() and .all() without awaiting, so an engine\n" +
       '  that answers promises returns a pending Promise where a row belongs and nothing\n' +
       '  throws. Run an asynchronous engine in a worker and expose a synchronous handle.')
+  // Optional, but not optionally shaped. A `vector` that names no function is a
+  // claim the query compiler believes, and the first similarity read then fails
+  // with SQLite's own `no such function` — a sentence about the engine's
+  // internals for a caller who asked for an ordering.
+  if (engine.vector != null) {
+    if (typeof engine.vector !== 'object' || typeof engine.vector.cosineDistance !== 'string' ||
+        !engine.vector.cosineDistance)
+      throw new Error(
+        `setEngine: engine '${engine.name}' declares vector but not vector.cosineDistance.\n` +
+        "  It is the name of a SQL function the engine's connections can call. Leave vector\n" +
+        '  null and the comparison runs in core/vector.js, which is what the browser does.')
+    if (typeof engine.vector.arm !== 'function')
+      throw new Error(
+        `setEngine: engine '${engine.name}' declares vector but no vector.arm(db).\n` +
+        '  An extension loads into a connection, so a similarity read arms the one it is about\n' +
+        '  to use. Without it the function name is a promise no connection keeps.')
+  }
   current = engine
   return engine
 }

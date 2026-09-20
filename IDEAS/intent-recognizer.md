@@ -13,6 +13,28 @@ phraser behind it, and a screen index. § *Home* says where each would go. Do no
 behavior — see `VERIFYING.md`. The nine questions were answered before the first
 edit and are § *The nine*, below.
 
+**A second corpus reproduced run 2's menu finding and narrowed run 3's** — 2026-09-19,
+outside this record's subject and with no artefact in the tree: the same mechanism run
+against FrontierJS's own prose docs rather than an app's seed, and on a 36B local model
+(`qwen3.5:35b-a3b`, 3B active) rather than a frontier one. Embeddings ranked 2,217
+heading-split chunks from 39 files; the model saw only the headings and answered with a
+pick and one framing sentence; the chosen sections printed verbatim. **The split is
+composition, not capability.** Asked to write the answer, the model was right about the
+code and right about the wiring and inverted the single conditional it had to paraphrase
+— *declaring* `needs` narrows the SELECT became *not declaring* it — and, allowed to
+type a path, turned `directives.js` into `directives.ts` with the correct spelling in
+its own context. Asked only to choose off a numbered menu, it was right on every
+question tried, and the payload could not be wrong because no model touched it. Run 3
+found Haiku wrote nothing sendable and priced the agent as a frontier job; this narrows
+that to the DRAFTING seat, and leaves selection open to a cheap model.
+
+**What it cost to learn is the other half.** The retrieval that fed the menu is where
+the remaining error lives: it answered doctrine exactly — *what stops a soft-deleted row
+reusing its unique slot* landed on `FJS-D65` first — and missed a factual lookup
+entirely, since a dense vector does not encode a port number. An index over prose needs
+a lexical pass beside the semantic one, which `menu(index)` over a seed does not,
+because a seed's vocabulary is closed.
+
 **Run 3 has been made and it priced the agent** (`intent-recognizer-run-3.md`) — run
 2's fifteen asks answered by a grounded agent on three models, graded blind against
 the code. Opus 5 wrote fifteen sendable replies with no false claim; Sonnet 5 six,

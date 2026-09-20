@@ -168,6 +168,79 @@ test('form: a standalone switch still tints when checked', function () {
   );
 });
 
+test('form: a textarea grows with its value and stops at the cap', function () {
+  /*
+   * Three claims in one test because they only mean anything together: a
+   * box that grows but never stops pushes the submit button off the
+   * screen, and one that starts at the cap has not grown.
+   *
+   * The bounds are in `lh` so they stay N lines when the type scale or the
+   * density moves. Asserting a pixel number here would pin the type scale
+   * from a form test, which is the coupling tokens.css exists to prevent —
+   * so the comparison is against the element's own line height.
+   */
+  var ta = el('<textarea class="field"></textarea>');
+  if (!CSS.supports('field-sizing', 'content')) return;   /* the min-height box, unchanged */
+
+  var lh = parseFloat(style(ta, 'line-height'));
+  assert.ok(lh > 0, 'no resolvable line-height to measure against');
+
+  var empty = ta.getBoundingClientRect().height;
+  assert.atLeast(empty, lh * 4 - 1, 'an empty textarea fell below its 4lh floor');
+
+  var lines = [];
+  for (var i = 0; i < 8; i++) lines.push('line ' + i);
+  ta.value = lines.join('\n');
+  ta.dispatchEvent(new Event('input'));
+  var grown = ta.getBoundingClientRect().height;
+  assert.ok(grown > empty, 'eight lines did not grow the box past empty (' + grown + ' vs ' + empty + ')');
+
+  var many = [];
+  for (var j = 0; j < 60; j++) many.push('line ' + j);
+  ta.value = many.join('\n');
+  ta.dispatchEvent(new Event('input'));
+  var capped = ta.getBoundingClientRect().height;
+  assert.ok(
+    capped <= lh * 16 + 4,
+    'sixty lines blew past the 16lh cap — rendered ' + capped + ' against a cap of ' + (lh * 16)
+  );
+  assert.ok(capped > grown, 'the cap was already reached at eight lines, so nothing is growing');
+});
+
+test('form: a file input\'s button is the package\'s, not the UA\'s', function () {
+  /*
+   * The button is a shadow part, so this is the only way to ask. It is
+   * asked against a BARE input rather than one carrying .field, because
+   * the bare one is the case the rule exists for — example's stocktake
+   * screen writes exactly that.
+   *
+   * The background is compared against the RESOLVED --surface rather than
+   * a literal, so a theme that moves the token moves both sides and only a
+   * rule that stopped reaching the button goes red.
+   */
+  var input = el('<input type="file">');
+  var cs = getComputedStyle(input, '::file-selector-button');
+
+  assert.equal(cs.cursor, 'pointer', 'the file button is not pointing');
+  assert.equal(
+    toRGB(cs.backgroundColor).join(","),
+    toRGB(prop(document.documentElement, "--surface")).join(","),
+    'the file button did not take --surface — it is still the UA button'
+  );
+  assert.ok(
+    cs.borderTopStyle === 'solid' && parseFloat(cs.borderTopWidth) > 0,
+    'the file button has no border, so the rule did not reach it'
+  );
+  assert.ok(
+    parseFloat(cs.borderTopLeftRadius) > 0,
+    'the file button is square — it did not read --btn-radius'
+  );
+  assert.ok(
+    parseFloat(cs.marginInlineEnd) > 0,
+    'no gap between the button and the filename beside it'
+  );
+});
+
 test('form: a plain checkbox in a .field-check is still checkbox-sized', function () {
   var cb = el('<label class="field-check"><input type="checkbox"><span>On</span></label>', 'input');
   var box = cb.getBoundingClientRect();

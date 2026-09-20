@@ -276,8 +276,8 @@ symbol in it. Both are reproduced verbatim in the session that filed this.
 - **Is this a product or a phase of `fli check`?** Filed as an idea because the
   answer is probably *both*, and because the interesting version is the one that
   runs in a repository that has never heard of FrontierJS.
-- **What is the relationship to `atlas`** (`IDEAS/package-map.md`), which is *the
-  app model as a product*? Atlas describes an app from its seed. This describes
+- **What is the relationship to `fli app:atlas`**, which is *the app model as a
+  product*? Atlas describes an app from its seed. This describes
   any repository from its prose. They share the instinct and share no code.
 - **Does a claim need a stable id**, the way a defect does, so it can be cited,
   retired, and allowed? The registers say yes for defects and rulings. A claim is
@@ -296,4 +296,5 @@ symbol in it. Both are reproduced verbatim in the session that filed this.
 - `scripts/ci.mjs` § the `snapshots` phase — the best design in the tree, and the one most worth generalizing
 - `ISSUES.md` § Conventions — `stale?`, and why it is load-bearing
 - `IDEAS/committed-artifacts.md` — the adjacent argument about generated files
-- `IDEAS/package-map.md` § `atlas` — the app-model-as-product sibling
+- `fli app:atlas` — the app-model-as-product sibling, shipped as a command rather
+  than the package this file once pointed at

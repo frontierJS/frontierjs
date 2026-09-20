@@ -2677,8 +2677,8 @@ model Employee {
   
   /// The employment, not the terms. When somebody joined and when they left is
   /// one fact per person; what they were paid is a history beside it.
-  startedOn    DateTime         @label("Started")
-  endedOn      DateTime?        @label("Left")
+  startedOn    String           @date @label("Started")
+  endedOn      String?          @date @label("Left")
   
   pay          PayWindow[]
   
@@ -2748,12 +2748,21 @@ model PayWindow {
   
   hoursPerWeek  Int          @default(40) @gte(0) @lte(168) @immutable @label("Hours a week")
   
-  /// The window. `effectiveFrom` is frozen and `effectiveTo` is not, which is
-  /// the same asymmetry `PlanVersion` has and for the same reason: the start of
-  /// a window is a fact about the past, and closing one is what happens when
-  /// the next is opened.
-  effectiveFrom DateTime     @default(now()) @immutable @label("From")
-  effectiveTo   DateTime?    @label("To")
+  /// The window, in DAYS (`FJS-D288`). What somebody is paid changes on a date
+  /// and not at an instant, and a window stored as an instant moved by the hour
+  /// of whichever machine wrote it.
+  ///
+  /// `effectiveFrom` is frozen and `effectiveTo` is not, which is the same
+  /// asymmetry `PlanVersion` has and for the same reason: the start of a window
+  /// is a fact about the past, and closing one is what happens when the next is
+  /// opened. `PlanVersion` stays an INSTANT and is the contrast worth keeping —
+  /// a price changes at a moment, a salary changes on a day.
+  ///
+  /// No `@default(now())`. `now()` writes a UTC datetime, which is neither this
+  /// column's shape nor the shop's day, so the caller states the day and the
+  /// zone is spent once where it is known.
+  effectiveFrom String       @date @immutable @label("From")
+  effectiveTo   String?      @date @label("To")
   
   @@gate("5.5.5.5")
   
@@ -2834,8 +2843,11 @@ model PayRate {
   /// the same four columns arranged by hand (`PlanVersion`, `PayWindow`, this),
   /// and third instance of `FJS-603`: *one open band per (kind, fromAmount)* is
   /// not declarable.
-  effectiveFrom DateTime   @default(now()) @immutable @label("From date")
-  effectiveTo   DateTime?  @label("To date")
+  ///
+  /// Days, and no `@default(now())`, for `PayWindow`'s reasons. A tax band comes
+  /// into force on a date a government names.
+  effectiveFrom String     @date @immutable @label("From date")
+  effectiveTo   String?    @date @label("To date")
   
   /// Read by staff, written by staff. Unlike a pay window this is not about a
   /// person, so there is no argument for a higher floor — and unlike a product
@@ -2900,9 +2912,16 @@ model PayRun {
   /// The period it covers, and the date it is paid on. All three frozen: a run
   /// whose period could be edited after it was calculated is a run whose
   /// payslips stop meaning anything.
-  periodStart DateTime     @immutable @label("From")
-  periodEnd   DateTime     @immutable @label("To")
-  payDate     DateTime     @immutable @label("Pay date")
+  ///
+  /// Days, and HALF-OPEN — `[periodStart, periodEnd)`, the interval `FJS-D288`
+  /// ruled for a billing period, so one application has one answer to *what
+  /// does a period cover*. `periodEnd` is therefore the first day the run does
+  /// NOT pay for, which is why every as-at read here goes through `lastDayOf`
+  /// rather than reading `periodEnd` itself: a raise opening on `periodEnd`
+  /// belongs to the NEXT run.
+  periodStart String       @date @immutable @label("From")
+  periodEnd   String       @date @immutable @label("To")
+  payDate     String       @date @immutable @label("Pay date")
   
   /// How many periods this run is one OF. Twelve for monthly, and it is stored
   /// rather than derived because it is what `allocate` splits an annual figure
@@ -2990,8 +3009,10 @@ model Payslip {
   payWindowId  Int              @immutable @label("Pay window")
   payWindow    PayWindow        @relation(fields: [payWindowId], references: [id], onDelete: Restrict)
   
-  periodStart  DateTime         @immutable @label("From")
-  periodEnd    DateTime         @immutable @label("To")
+  /// Copied from the run, and half-open with it. A screen prints the last day
+  /// it covers rather than `periodEnd`.
+  periodStart  String           @date @immutable @label("From")
+  periodEnd    String           @date @immutable @label("To")
   
   /// Every figure `@system` and `@immutable`: written by the calculation, and
   /// restatable by nothing — the renewal-job argument from `Invoice`, in the
@@ -3139,9 +3160,9 @@ model PayslipLine {
 /// What `employees.setPay` accepts — a new pay window opening today.
 ///
 /// The window is not caller-nameable for `PlanPrice`'s reason: `effectiveFrom`
-/// is the instant the previous window closes, so a caller who could state one
-/// could open a window that overlaps or leaves a gap, and a gap is a date on
-/// which somebody is paid nothing.
+/// is the day the previous window closes, so a caller who could state one could
+/// open a window that overlaps or leaves a gap, and a gap is a date on which
+/// somebody is paid nothing.
 /// `rate` carries no `@money` and cannot: a `type` is a wire shape rather than
 /// a column, and `@money` is a storage decision — the parser refuses it here by
 /// name. The unit is the COLUMN's, which is what the form is generated from
@@ -3151,8 +3172,10 @@ type EmploymentPay {
   rate         Int       @gte(0) @label("Rate")
   hoursPerWeek Int       @default(40) @gte(0) @lte(168) @label("Hours a week")
   
-  /// When the new terms START. Absent means now, which is a raise; stated in
-  /// the past means a BACKDATE, which is a correction to what we believed.
+  /// When the new terms START, as a DAY. Absent means today in the shop's own
+  /// calendar — which the service resolves, since a wire shape has no zone —
+  /// and that is a raise; stated in the past is a BACKDATE, which is a
+  /// correction to what we believed.
   ///
   /// One column for two acts, and that is the honest shape rather than a
   /// shortcut: the schema holds VALID time — when terms were in force — and
@@ -3160,17 +3183,17 @@ type EmploymentPay {
   /// and *correct what we believed about March* are one write to one interval.
   /// The second axis exists in this application only where a document happened
   /// to freeze it (`IDEAS/payroll.md` phase 6).
-  effectiveFrom DateTime? @label("From")
+  effectiveFrom String? @date @label("From")
 }
 
-/// What `employees.payOn` accepts — the instant to answer as of.
+/// What `employees.payOn` accepts — the day to answer as of.
 ///
 /// A `type` rather than a bare query parameter because the whole argument of
-/// `employment.ts` is that an as-at read carries an INSTANT and never a
-/// default: a caller who may omit the date is a caller who will one day ask
-/// March's payroll what somebody earns today.
+/// `employment.ts` is that an as-at read carries a DAY and never a default: a
+/// caller who may omit the date is a caller who will one day ask March's
+/// payroll what somebody earns today.
 type AsAtQuery {
-  at DateTime @label("As at")
+  at String @date @label("As at")
 }
 
 /// What `inventory.receive` accepts — a delivery arriving at the warehouse.

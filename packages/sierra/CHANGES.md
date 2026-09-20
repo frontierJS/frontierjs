@@ -1,5 +1,53 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-20 — `@@sync(field)` is refused here rather than silently behaving as `refuse`
+
+Phase 5 of `IDEAS/homestead.md`. The merge itself is built at the Data boundary
+(`FJS-D334`, litestone's `core/three-way.js`), and nothing in this package can
+reach it yet: `field` compares a held write against the row it was made against,
+so the held write has to CARRY that row — and a base is a ROW, so it cannot ride
+a header the way `idempotencyKey` does, while a write's body already is its data.
+
+Left alone, a held `field` write would go up with its revision and no base and be
+refused on the revision alone, which is `@@sync(refuse)` behaving correctly under
+a declaration promising that two people editing different columns both win. So a
+held patch, remove or restore against a `field` model is refused by name —
+`NO_BASE_CARRIED`, naming the model, the method and what to declare instead. A
+create is still held: it was made against no row.
+
+The same rule `append` already follows, for the same reason `FJS-D298` closed
+the set — a policy that parses and resolves nothing reads exactly like one that
+works. The guard comes out when the transport lands.
+
+## 2026-09-20 — a nearest-first list is URL-driven, both halves
+
+The screen a proximity search produces is the one that gets bookmarked and shared, so the
+centre, the radius and the ordering all have to survive a paste. `page-query` now pins that
+`?site[near][lat]=…&site[near][within]=5mi&$orderBy[site][near][lat]=…` lands as
+`page.query` plus `page.directives` with nothing to translate (`FJS-D323`), and that a
+fixed-precision coordinate — what `toFixed(6)` writes — arrives as TEXT, which is the query
+kit being correct with no model in the room and Litestone's `@point` being the thing that
+reads it back. Router unchanged.
+
+**And one stale control, found by running the suite around it.** `resource-schema-modes`
+measured that `example` marks `@immutable` columns in the update schema and `basecamp` marks
+none — a real control until orion's `db/orion.lite`, which basecamp imports, stamped
+`Flow.ownerId @immutable` as an access grant (`FJS-D276`). The control is now the NAMES
+rather than the count, so a change that marks columns wholesale still reds it and the app
+that declares nothing is still measured against that.
+
+## 2026-09-19 — both static origins read the shared type table
+
+`TYPES` in `site/serve.js` and `widget/serve.js`, and `COMPRESSIBLE` in `serve/http-answers.js`, are
+`@frontierjs/toolbelt/mime` (`FJS-1186`). The charset is now asked for — `contentTypeFor(file, {
+charset: true })` — rather than baked into the table, so a binary type cannot acquire one by a
+caller passing the flag for its text files.
+
+**`site/serve.js` gains `.wasm`**, which is the defect the row was filed for: `FJS-825` added it to
+`widget/serve.js` for a stated reason and the file beside it gained `.avif` in the same pass and
+never gained this. It also gains `.heic`, `.bmp`, `.mp4`, `.mp3` and `.pdf`; the widget origin gains
+`.jpeg` (it had `.jpg` alone), `.txt`, `.xml` and `.html`.
+
 ## 2026-09-16 — hydration: the warm fills the device, not only the cache
 
 Phase 4's last owing (`IDEAS/homestead.md`). The device was only as full as what

@@ -221,11 +221,40 @@ This is the same type info that drives validation on writes — type drift betwe
 
 ### Performance characteristics
 
-`json_extract` parses the JSON column for each row evaluated. On a 1000-row scan, typed-JSON filters are roughly 1.5x slower than the same filter on a plain text column. For most applications this is invisible. For very hot queries on large tables, two paths help:
+`json_extract` parses the JSON column for each row evaluated. On a 1000-row scan, typed-JSON filters are roughly 1.5x slower than the same filter on a plain text column.
 
-1. **Promote frequently-filtered keys to real columns.** If you're filtering on `address.city` constantly, model `city` as a top-level String column and keep the rest of the address inside the typed JSON. The query becomes a column scan; the JSON column carries the rest.
+**The constant factor is not the thing to plan around — the SCAN is.** A path filter compiles to a function call, and the planner cannot match a function call to an index, so a typed-JSON filter reads every row however many match. That cost grows with the table rather than with the answer.
 
-2. **Use an expression index.** SQLite supports `CREATE INDEX idx_user_city ON user (json_extract(addr, '$.city'))` — Litestone doesn't currently emit these from the schema, but you can create them manually in a migration. The query planner will pick them up automatically.
+**Indexing a path is a `@generated` column with an `@@index` on it**, and it is declared in the schema like anything else:
+
+```
+type Addr { city String  zip String }
+
+model Place {
+  id   Int    @id
+  addr Json   @type(Addr)
+  city String @generated("addr ->> 'city'")
+
+  @@index([city])
+}
+```
+
+```
+"city" TEXT GENERATED ALWAYS AS (addr ->> 'city') VIRTUAL
+SEARCH place USING INDEX idx_place_city (city=?)
+```
+
+The column is VIRTUAL, so it costs no stored bytes and cannot drift from the document. Filter on `city` and the read is a lookup; filter on `addr.city` and it is still a scan — they are two columns and only one of them is indexed.
+
+**Three ways this goes wrong silently**, all three reported by `litestone advise`:
+
+- **`->` where `->>` was meant.** SQLite's two arrow operators differ in one character and in what comes back: `->` answers the JSON *representation*, so a string member arrives still carrying its quotes and the column holds `"Reno"` where the row holds `Reno`. The column builds, the index builds, `EXPLAIN` says `SEARCH … USING INDEX`, and the query matches nothing. `->>` answers the value. `json_extract()` is the same as `->>` and is the older spelling.
+- **A member the type does not declare.** `addr ->> 'citty'` is legal SQL over legal JSON — the path is simply not there, so the column is NULL for every row for the life of the table and no write is ever refused. The `type` declaration is the only thing that knows better.
+- **`@@index([addr])` on the Json column itself.** That indexes one entry per serialized document, which answers *this exact document* and nothing else. A path filter cannot use it, so those reads stay scans while every write pays for the index.
+
+**Do not hand-write the index in a migration.** SQLite would take `CREATE INDEX … ON place (json_extract(addr,'$.city'))`, but litestone only drops and restates indexes it can name, so the first migration that rebuilds that table takes the index with it and says nothing. A `@generated` column is carried through a rebuild because it is in the schema.
+
+**Promoting the key to a real column is the other answer**, and it is a different one: a stored column can be written independently of the document, which is what you want when the two are allowed to disagree (a denormalized snapshot) and exactly what you do not want when they are not.
 
 ### What's NOT supported
 

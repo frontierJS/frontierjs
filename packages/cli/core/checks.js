@@ -56,6 +56,7 @@ import { docWordUnknown, docCitesDead, docClaimsCount, docInvariantRef,
          COUNTABLES, checkRulesCountable, docStatusStale, docMapNarration,
          docUncheckedCount } from './doc-audit.js'
 import { invariantCoverage }                   from './invariants.js'
+import { seamOwnership, unlisted, SKILL as SEAM_SKILL } from './seams.js'
 
 export const RULES = [
   { id: 'model-name-case',      scope: 'app',  severity: 'error', invariant: 2,
@@ -76,6 +77,8 @@ export const RULES = [
     title: 'every vite config sets strictPort' },
   { id: 'body-tag-in-comment',  scope: 'app',  severity: 'error', invariant: null,
     title: 'the body tag is never written inside a comment' },
+  { id: 'untrusted-upload-root', scope: 'app', severity: 'warn', invariant: null,
+    title: 'a static root serving uploads says so' },
   { id: 'app-layout',           scope: 'app',  severity: 'warn',  invariant: 3,
     title: 'db/ at the app root, and each surface a directory beside it' },
   { id: 'surface-config',       scope: 'app',  severity: 'warn',  invariant: 3,
@@ -178,6 +181,10 @@ export const RULES = [
     title: 'a number in prose is generated or absent' },
   { id: 'invariant-enforcer',   scope: 'repo', severity: 'error', invariant: null,
     title: 'a declared invariant enforcer resolves to something that exists' },
+  { id: 'seam-owner',           scope: 'repo', severity: 'error', invariant: 4,
+    title: 'a seam\'s stated owner exists and is where the name is declared' },
+  { id: 'seam-listed',          scope: 'repo', severity: 'error', invariant: 4,
+    title: 'every seam the skill explains is named in CLAUDE.md\'s key list' },
 ]
 
 const BY_ID = Object.fromEntries(RULES.map(r => [r.id, r]))
@@ -704,6 +711,64 @@ const CHECKS = {
   // a file that documents its own markup, which is `packages/css/guide`. A check
   // that cries wolf is the failure this engine exists to prevent, and it is
   // worse in a rule an app runs than in one only this repo does.
+  // A `File` column's LOCAL provider writes objects into a directory and
+  // something has to serve them; if that something is a `static` mount, the
+  // handler is serving bytes a stranger uploaded and cannot tell (`FJS-D314`).
+  // `untrusted: true` is the answer and it is a flag somebody forgets — so this
+  // is the rule that fires when it is absent, which is the whole reason A was
+  // ruled over a mechanism that needed no flag.
+  //
+  // An S3/R2 provider is not in this path: the bucket serves the bytes. Only a
+  // LOCAL one is, which is what this looks for.
+  'untrusted-upload-root': ({ root }) => {
+    const sources = []
+    walk(root, 5, dir => {
+      for (const name of readdirSync(dir)) {
+        if (/\.[cm]?[jt]s$/.test(name)) sources.push(join(dir, name))
+      }
+    })
+
+    let localStorage = null      // { file, ident }  — the provider and what it points at
+    const mounts     = []        // { file, ident, marked }
+
+    for (const path of sources) {
+      const src = readFileSync(path, 'utf8')
+      if (/\bFileStorage\s*\(/.test(src) && /provider\s*:\s*['"]local['"]/.test(src)) {
+        const m = src.match(/localPath\s*:\s*([A-Za-z_$][\w$]*)/)
+        localStorage = { file: path, ident: m?.[1] ?? null }
+      }
+      // `static:` inside an http block. The root is read as an identifier
+      // because that is how the two halves are linked without evaluating the
+      // config, and a literal path is left to the coexistence case below.
+      for (const block of src.match(/static\s*:\s*\{[^}]*\}/g) ?? []) {
+        const m = block.match(/root\s*:\s*([A-Za-z_$][\w$]*)/)
+        mounts.push({ file: path, ident: m?.[1] ?? null, marked: /untrusted\s*:\s*true/.test(block) })
+      }
+    }
+
+    if (!localStorage)   return { skipped: 'no local FileStorage provider' }
+    if (!mounts.length)  return { skipped: 'no static mount' }
+
+    const findings = []
+    for (const mount of mounts) {
+      if (mount.marked) continue
+      const same = localStorage.ident && mount.ident && localStorage.ident === mount.ident
+      findings.push({
+        file: mount.file,
+        message: same
+          ? `this static mount and the local FileStorage both point at \`${mount.ident}\`, so it serves bytes ` +
+            `a stranger uploaded — and an SVG served from it runs in this app's own origin. Add ` +
+            `\`untrusted: true\` to the static block: anything outside the inline allow-list is then an ` +
+            `attachment, and an image is unaffected.`
+          : `a local FileStorage is configured (${relative(root, localStorage.file) || localStorage.file}) and ` +
+            `this static mount does not say whether its bytes came from strangers. If it serves the ` +
+            `uploads, add \`untrusted: true\`; if it serves only the app's own files, record the ` +
+            `allowance — an SVG from an upload root runs in this origin.`,
+      })
+    }
+    return { findings }
+  },
+
   'body-tag-in-comment': ({ root }) => {
     const pages = []
     walk(root, 4, dir => {
@@ -3012,6 +3077,10 @@ const CHECKS = {
   'doc-map-narration': ({ root }) => docMapNarration({ root }),
   'doc-unchecked-count': ({ root }) => docUncheckedCount({ root, countables: [...COUNTABLES, checkRulesCountable(RULES)] }),
   'invariant-enforcer': ({ root }) => invariantEnforcer({ root }),
+
+  'seam-owner': ({ root }) => seamOwner({ root }),
+
+  'seam-listed': ({ root }) => seamListed({ root }),
   'skill-pointer':      ({ root }) => skillPointer({ root }),
   'american-spelling':  ({ root }) => americanSpelling({ root }),
 }
@@ -3948,4 +4017,87 @@ function invariantEnforcer({ root }) {
     }
   }
   return { findings }
+}
+
+// ─── seam-owner ───────────────────────────────────────────────────────────────
+//
+// The `bridge-index` skill opens *reach for them before grepping*, and twenty-six
+// of its eighty-five bullets name the file to reach for. That claim is advice,
+// and it rots the same way `invariants.js`'s enforcers rot: a seam that moves
+// leaves the bullet pointing at where it used to live, and a reader who greps
+// the stated path and finds nothing concludes the seam is gone rather than that
+// the sentence is stale. `matchesQuery` moved to `@frontierjs/toolbelt/match`
+// under `FJS-D26` and the bullet still named sierra, which is the shape.
+//
+// Two ways the claim can be false and both are facts rather than judgements:
+// the path is not in the tree, or the path is there and the name is not in it.
+// The second is the one that reads as correct from every angle, because a
+// re-export puts the name in the module's public surface while the declaration
+// lives somewhere else entirely — so where it was forwarded FROM is reported,
+// since the fix is unusable without it.
+//
+// It does NOT report a bullet that names no owner. Fifty-nine name none, that
+// is the gap `seams.snapshot.md` exists to publish, and failing on it would be
+// a red build for a piece of honesty.
+
+function seamOwner({ root }) {
+  const rows = seamOwnership({ root })
+  if (!rows.length) return { skipped: `no ${SEAM_SKILL}` }
+
+  const file     = join(root, SEAM_SKILL)
+  const findings = []
+
+  for (const r of rows) {
+    if (r.owner === null) continue
+
+    if (!r.ownerExists) {
+      findings.push({ file, line: r.line,
+        message: `\`${r.names[0]}\` names \`${r.owner}\`, which is not in the tree. A seam whose ` +
+                 `stated owner has gone reads as owned from every angle, and the reader who greps it ` +
+                 `concludes the seam moved rather than the sentence.`,
+      })
+      continue
+    }
+
+    if (r.kind !== 'fn' || r.inOwner) continue
+
+    findings.push({ file, line: r.line,
+      message: r.reexport
+        ? `\`${r.names[0]}\` names \`${r.owner}\`, which only re-exports it from \`${r.reexport}\`. ` +
+          `A re-export puts the name in that module's surface and leaves the declaration elsewhere, so ` +
+          `Invariant 4's one owner is the module it came from — name that one, and keep the forward as ` +
+          `where it is consumed.`
+        : `\`${r.names[0]}\` names \`${r.owner}\`, which declares no \`${r.id}\`. Either the seam moved ` +
+          `and the bullet did not, or the owner is right and the name on the bullet is not what the ` +
+          `code calls it — both send a reader to the wrong file.`,
+    })
+  }
+  return { findings }
+}
+
+// ─── seam-listed ──────────────────────────────────────────────────────────────
+//
+// `CLAUDE.md` § Bridge index says what it is for out loud: the key list stays
+// at the root so *is there an owner for this already* is answerable without
+// loading ninety paragraphs. A seam absent from it answers that question NO,
+// which is the one wrong answer the section can give — and it had been giving
+// it for `signIn`, ruled in `FJS-D261` and explained in its own bullet, for as
+// long as the two lists were kept by hand and compared by nobody.
+//
+// It grades one direction. A name in the key list with no bullet behind it is
+// `doc-cites-dead`'s shape and not this one; a seam explained and never listed
+// is this one, because the skill is the origin and the key list is the copy.
+
+function seamListed({ root }) {
+  const gaps = unlisted(root)
+  if (!gaps.length) return { findings: [] }
+
+  const file = join(root, 'CLAUDE.md')
+  return { findings: gaps.map(s => ({
+    file, line: s.line,
+    message: `\`${s.names[0]}\` is a seam the \`bridge-index\` skill explains and § Bridge index ` +
+             `does not name. The key list is what answers *is there an owner for this already* ` +
+             `without loading the skill, and a seam missing from it answers no. Add it under ` +
+             `**${s.section}**.`,
+  })) }
 }

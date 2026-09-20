@@ -22,7 +22,7 @@ import {
   isNamedAgg, buildNamedAggExpr, extractNamedAggs,
   parseSelectArg, trimAllToSelect,
   deserializeRow, serializeRow,
-  coerceBooleans, serializeBooleans,
+  coerceBooleans, serializeBooleans, centreOf,
   encodeCursor, decodeCursor,
   normalizeOrderBy, buildCursorWhere, extractCursorValues,
   filterableKeysFor, sortableKeysFor, aggregatableKeysFor, opaqueSortKind, OPAQUE_SORT,
@@ -45,7 +45,7 @@ import { runSqliteRetention, compactJsonl } from '../tools/retention.js'
 import { ensureEventsTable, makeEventRecorder, createEventWatcher } from './cross-process.js'
 import {
   TransitionViolationError, TransitionConflictError,
-  VersionRequiredError, VersionConflictError,
+  VersionRequiredError, VersionConflictError, SyncConflictError,
   TransitionGateError, TransitionSystemError, TransitionNotFoundError, BulkTransitionError,
   SoftDeletedUniqueError, SealedDocumentError, UniqueConflictError,
   uniqueConflictColumns, checkViolationExpr, isCheckViolation, isUniqueConflict,
@@ -53,9 +53,10 @@ import {
   LockNotAcquiredError, LockReleasedByOtherError, LockExpiredError,
   ClientClosedError,
 } from './errors.js'
+import { threeWay } from './three-way.js'
 import {
   buildAutoIdMap, buildGeneratedDefaultMap, buildAuthDefaultMap, buildSelfRelationMap,
-  buildFieldRefDefaultMap, buildUpdatedByMap, buildVersionMap, buildCreatedByMap,
+  buildFieldRefDefaultMap, buildUpdatedByMap, buildVersionMap, buildCreatedByMap, buildSyncMap,
   buildSequenceMap, schemaDeclaresAccessRules, buildFieldPolicyMap, buildSecretMap,
   buildJsonMap, buildGeneratedMap, buildFromMap, buildComputedSet, buildBoolMap, buildBigMap,
   buildAffinityMap,
@@ -1383,16 +1384,50 @@ function withArgValidation(table, model, ctx) {
     return { ...args, where: args?.where ? { AND: [args.where, { $raw: raw }] } : { $raw: raw } }
   }
 
+  // Which fields on this model are points, read off the declaration. The sort
+  // guard below needs it because a point is a Json column — `opaque`, and right
+  // to be: it orders as text. `{ site: { near: … } }` is the one shape that is
+  // not sorting the document, so it is lifted out before the guard sees it.
+  const _pointFields = new Map(
+    (model?.fields ?? [])
+      .map(f => [f.name, f.attributes?.find(a => a.kind === 'point')])
+      .filter(([, pt]) => pt))
+
+  const isNearOrder = (key, val) =>
+    _pointFields.has(key) && val !== null && typeof val === 'object' && !Array.isArray(val) && val.near != null
+
   const checkOrderBy = (args, method) => {
     // Every call passes through here, and one naming no order has nothing to grade.
     if (!args?.orderBy) return
+
+    // A near-order is graded HERE rather than being passed through: the shape
+    // is this package's to refuse, and `buildOrderBy` throwing is a 500 where
+    // this is a 400 about what the caller wrote.
+    let orderBy = args.orderBy
+    if (_pointFields.size) {
+      const items = Array.isArray(orderBy) ? orderBy : [orderBy]
+      const kept  = []
+      for (const item of items) {
+        if (!item || typeof item !== 'object') { kept.push(item); continue }
+        const rest = {}
+        for (const [key, val] of Object.entries(item)) {
+          if (!isNearOrder(key, val)) { rest[key] = val; continue }
+          if (!centreOf(val.near))
+            throw new ValidationError([{ path: ['orderBy', key], message:
+              `orderBy ${key}.near needs a numeric lat and lng — got ${JSON.stringify(val.near)}` }])
+        }
+        if (Object.keys(rest).length) kept.push(rest)
+      }
+      if (!kept.length) return
+      orderBy = Array.isArray(args.orderBy) ? kept : kept[0]
+    }
     // `_depth` is a column only a tree read has, so it is sortable only there.
     const sortableHere = args?.recursive ? new Set([...sortable, '_depth']) : sortable
     // Read HERE and not where the table is built: one table serves every flavor
     // of client and takes the caller from the call in progress.
     const hidden = _guardedNames(model, ctx)
     const problems = collectOrderByKeyProblems(
-      args?.orderBy, sortableHere, relations, computed, opaque,
+      orderBy, sortableHere, relations, computed, opaque,
       method === 'groupBy' || method === 'aggregate', transient, [],
       _shownSet(sortableHere, hidden), sortHopFor(ctx, modelName),
     )
@@ -5356,7 +5391,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   function buildWhereWithEncryption(where, params, tableAlias = null, outerIsAliased = tableAlias === 't') {
     const fromMap = outerIsAliased ? _fromExprMapAliased : _fromExprMap
-    if (!where) return buildWhere(where, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, fieldKinds, columnMap)
+    if (!where) return buildWhere(where, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, fieldKinds, columnMap, _pointMap)
     where = _hasScopes ? expandScopes(where) : where
     where = _extensible ? rewriteExtensibleWhere(where) : where
     let rewritten = where
@@ -5367,7 +5402,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         return `${prefix}"id" IS NULL AND ${prefix}"id" IS NOT NULL`
       }
     }
-    return buildWhere(rewritten, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, fieldKinds, columnMap)
+    return buildWhere(rewritten, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, fieldKinds, columnMap, _pointMap)
   }
 
   /**
@@ -5749,6 +5784,20 @@ function makeTable(readDb, writeDb, shape, ctx) {
       _typedJsonMap = localMap
     }
   }
+  // ── @point setup ────────────────────────────────────────────────────────────
+  // `{ name: { lat, lng } }` for every point on this model, so the where and
+  // orderBy builders can name the generated columns the DDL emitted — and, just
+  // as importantly, so they can REFUSE every other operator on the field by
+  // name rather than comparing its JSON as text.
+  const _pointMap = (() => {
+    const out = {}
+    for (const f of _modelDecl?.fields ?? []) {
+      const pt = f.attributes.find(a => a.kind === 'point')
+      if (pt) out[f.name] = { lat: pt.lat, lng: pt.lng }
+    }
+    return Object.keys(out).length ? out : null
+  })()
+
   // The base SELECT with all @from subqueries appended
   const _baseSqlWithFrom = _hasFrom
     ? `SELECT "${tableName}".*, ${_fromEntries.map(([n, {subquerySql}]) => `${subquerySql} AS "${n}"`).join(', ')} FROM "${tableName}"`
@@ -5849,7 +5898,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // nothing. Sharing one array would push a `$raw`'s params twice.
     const _relOrderParams  = []
     const _flatOrderParams = []
-    const { joinClauses, orderParts } = buildRelationOrderBy(orderBy, modelName, relationMap, _modelToTable, _relOrderParams)
+    const { joinClauses, orderParts } = buildRelationOrderBy(orderBy, modelName, relationMap, _modelToTable, _relOrderParams, _pointMap)
     const hasJoins  = joinClauses.length > 0
     // The table is aliased for a relation AGGREGATE orderBy too, which adds an
     // order part and no join — so the alias question and the join question are
@@ -5861,7 +5910,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const whereSql  = buildWhereWithEncryption(effectiveWhere, params, whereAlias, needsAlias)
     // When JOINs exist, buildRelationOrderBy returns the full ordered list
     // (flat + relation, flat prefixed with `t.`). Don't double-emit flat parts.
-    const flatOrderSql = hasJoins ? '' : buildOrderBy(orderBy, _flatOrderParams, columnMap)
+    const flatOrderSql = hasJoins ? '' : buildOrderBy(orderBy, _flatOrderParams, columnMap, _pointMap)
     const orderSql = [flatOrderSql, ...orderParts].filter(Boolean).join(', ')
     const orderParams = hasJoins ? _relOrderParams : _flatOrderParams
     const sqlCols   = parsedSelect?.sqlCols ?? '*'
@@ -7551,7 +7600,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     //   • A post-update policy rollback was triggered
     // Callers that need to distinguish can check count() before/after,
     // or enable policyDebug to see which policy blocked.
-    async update({ where, data, include, select, scopedBy, system, _bypassVersion, _move,
+    async update({ where, data, include, select, scopedBy, system, _bypassVersion, _move, base,
                    withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
       await enforceValueSets(modelName, [data], ctx, { where })
       if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, include, select }, ctx)
@@ -7572,6 +7621,35 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           _expectVersion = supplied
         }
         if (data && _versionField in data) { data = { ...data }; delete data[_versionField] }
+      }
+
+      // ── @@sync(field) — the base row a per-column merge compares against ────
+      // Refused by name where nothing would read it, rather than dropped. A
+      // base that is silently ignored looks exactly like a merge that found no
+      // conflict, which is the one failure this mechanism cannot afford to make
+      // quietly: the caller believes two writers were reconciled and one of
+      // them was overwritten.
+      const _syncPolicy = ctx.syncMap?.[modelName]
+      if (base !== undefined && _syncPolicy !== 'field') throw new Error(
+        `[litestone] update on "${modelName}" was given a base row, and only @@sync(field) reads one. ` +
+        `This model declares ${_syncPolicy ? `@@sync(${_syncPolicy})` : 'no @@sync policy'}. ` +
+        `A base is the row as the writer read it, and it is what lets two people who edited different ` +
+        `columns both win — without @@sync(field) there is nothing to compare it against.`)
+
+      // A merge compares the patch against the STORED row, so a column whose
+      // stored form is not its value form cannot be compared: `@encrypted` is
+      // ciphertext and re-encrypts to different bytes each time, `@hashed` is
+      // one-way. Comparing either reports a conflict on every write that names
+      // it, including one nobody else touched — a false conflict, which is
+      // worse than a refusal because it looks like the feature working.
+      // Refused by name rather than merged or skipped; a device cannot reach
+      // this anyway, since `host/browser.js` refuses `@encrypted` outright.
+      if (base !== undefined) {
+        const _opaque = Object.keys(data ?? {}).filter(f => fieldPolicy[f]?.encrypted || fieldPolicy[f]?.hashed)
+        if (_opaque.length) throw new Error(
+          `[litestone] update on "${modelName}" carries a base and writes ${_opaque.join(', ')}, ` +
+          `which @@sync(field) cannot compare: the stored value is an encoding, not the value. ` +
+          `Write those columns in a call of their own, without a base.`)
       }
 
       // ── Everything that touches the database, as one unit ────────────────
@@ -7607,6 +7685,47 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         const extraFKs = hasNested ? await processBelongsToNested(nested) : {}
         data = { ..._scalarNoEdge, ...extraFKs }
 
+        const whereParams = []
+        const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates }
+        const sdWhereW = applySdFilter(where, _flags)
+        const effectiveWhere = applyHtFilter(sdWhereW, htMode(_flags))
+        const whereSql = buildWhereWithEncryption(effectiveWhere, whereParams)
+        if (!whereSql) throw new Error(`update on "${tableName}" requires a where clause`)
+
+        // ── @@sync(field) — merge, or name the columns two people contend over ─
+        // The WHERE is built above this and the SET below it, because the merge
+        // decides what the SET says: a column the writer did not actually move
+        // is dropped, and one only they moved is applied against the row as it
+        // stands now rather than the one they read.
+        //
+        // Costs one read and only on the losing side of a race — a version that
+        // still matches never reaches here, so a model declaring `field` pays
+        // nothing for it on an uncontested write.
+        if (base !== undefined && _expectVersion != null) {
+          const _cur = readDb.query(`SELECT * FROM "${tableName}" WHERE ${whereSql}`).get(...whereParams)
+          if (_cur && _cur[col(_versionField)] !== _expectVersion) {
+            const _remote = {}
+            for (const f of Object.keys(data ?? {})) _remote[f] = _cur[col(f)]
+            const { apply, conflicts } = threeWay({ base, local: data, remote: _remote })
+            // Invariant 7 through a new door: a protected column says THAT it
+            // diverged and never what either side holds, so take-local or
+            // take-remote stays answerable without rendering the value
+            // (`FJS-D336`).
+            if (conflicts.length) throw new SyncConflictError(modelName, conflicts.map(c => ({
+              column: c.column,
+              base:   redactValue(c.column, c.base),
+              local:  redactValue(c.column, c.local),
+              remote: redactValue(c.column, c.remote),
+            })))
+            data = apply
+            // The row moved and the merge says nobody contested it, so the
+            // precondition becomes where the row actually is — otherwise the
+            // statement below matches nothing and reports the conflict this
+            // just resolved.
+            _expectVersion = _cur[col(_versionField)]
+          }
+        }
+
         const { data: _upValues, ops: _upOps } = extractWriteOps(data)
         const row       = writeData(_upValues, { system, fieldWrite: 'sql', stamped })
         const setParams = []
@@ -7614,12 +7733,6 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           ...Object.keys(row).map(c => setFragment(c, row[c], setParams)),
           ..._upOps.map(o => setFragmentExpr(o.col, o.expr, o.params, setParams)),
         ].join(', ')
-        const whereParams = []
-        const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates }
-        const sdWhereW = applySdFilter(where, _flags)
-        const effectiveWhere = applyHtFilter(sdWhereW, htMode(_flags))
-        const whereSql = buildWhereWithEncryption(effectiveWhere, whereParams)
-        if (!whereSql) throw new Error(`update on "${tableName}" requires a where clause`)
         if (ctx.selfRelationMap?.[modelName] && ctx.selfRelationMap[modelName].some(r => r.fkField in (data ?? {}))) {
           const _idf = ctx.selfRelationMap[modelName][0].referencedField
           assertNoParentCycle(
@@ -9089,7 +9202,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // sort key answers the right rows in the wrong order, and nothing about
       // that is visible.
       if (ordered) {
-        const orderSql = buildOrderBy(orderBy, baseParams, columnMap)
+        const orderSql = buildOrderBy(orderBy, baseParams, columnMap, _pointMap)
         if (orderSql) baseSql += ` ORDER BY ${orderSql}`
         if (limit != null) baseSql += ` LIMIT ${Number(limit)}`
         if (offset)        baseSql += ` OFFSET ${Number(offset)}`
@@ -9763,6 +9876,28 @@ function buildLogMap(schema) {
   return { fields, models }
 }
 
+/**
+ * What KIND of caller a principal is, for the trail's `actorType`.
+ *
+ * A principal states its own type where it has one. Otherwise the object
+ * decides, and the distinction that matters is an `id`: a claims-only
+ * principal — `$setAuth({ cartToken })`, what junction hands the Data boundary
+ * for a caller with no session — is a bearer capability and has none. Reading
+ * any principal OBJECT as a user filed every guest write as a person nobody
+ * could name, which is a null id wearing the same shape as a session whose id
+ * went missing (`FJS-1195`).
+ *
+ * `system` rather than nothing for `asSystem()`, because *the application did
+ * this* and *nobody was in scope* are different answers and only one of them
+ * is null. `src/export.js` said `system` here while this line said nothing.
+ */
+function actorTypeOf(ctx) {
+  if (ctx.auth?.type) return String(ctx.auth.type)
+  if (ctx.isSystem)   return 'system'
+  if (!ctx.auth)      return null
+  return ctx.auth.id != null ? 'user' : 'bearer'
+}
+
 // Build the log entry object from the standard fields + onLog.
 // ctx is the request context (has ctx.auth).
 // onLog is the user-supplied function from createClient options.
@@ -9794,7 +9929,7 @@ function buildLogEntry({ operation, model, field, records, before, after }, ctx,
     // operator comes down the same closure as the rest of the provenance, and
     // where there is one the two ids swap roles.
     actorId:   from?.operatorId ?? ctx.auth?.id ?? null,
-    actorType: from?.operatorId ? 'support' : (ctx.auth?.type ?? (ctx.auth ? 'user' : null)),
+    actorType: from?.operatorId ? 'support' : actorTypeOf(ctx),
     subjectId: from?.operatorId ? (ctx.auth?.id ?? null) : null,
     episodeId: from?.episodeId ?? null,
     correlationId: from?.correlationId ?? null,
@@ -10502,6 +10637,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const updatedByMap       = buildUpdatedByMap(schema)
   const createdByMap       = buildCreatedByMap(schema)
   const versionMap         = buildVersionMap(schema)
+  const syncMap            = buildSyncMap(schema)
   const selfRelationMap    = buildSelfRelationMap(schema)
   const sequenceMap    = buildSequenceMap(schema)
   const enumMap        = buildEnumMap(schema)
@@ -10910,7 +11046,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const ctx = {
     now,
     relationMap, jsonMap, edgeMap, computedSets, fromMap,
-    softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, ftsMap, boolMap, bigMap, enumMap, filterKindMap, affinityMap, autoIdMap, generatedDefaultMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap, versionMap, selfRelationMap, sequenceMap, computedFns, tx,
+    softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, ftsMap, boolMap, bigMap, enumMap, filterKindMap, affinityMap, autoIdMap, generatedDefaultMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap, versionMap, syncMap, selfRelationMap, sequenceMap, computedFns, tx,
     coFkMap,
     // model → its field → column, for the resolvers that answer for a model
     // that is not the one they were built for: an include, a relation filter

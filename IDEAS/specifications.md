@@ -222,7 +222,7 @@ Invariant 10 (`FJS-D125`, `FJS-D237`).
 types. A keyset window whose tiebreaker is the model's id when the ordering is
 not total, with `total: null` on that path. **A list whose ties cannot be broken
 carries no edge rather than a wrong one.**
-**Held today:** `packages/junction/src/core/sort.ts` · `findWindow` (`FJS-D145`).
+**Held today:** `packages/junction/src/core/query-values.ts` · `findWindow` (`FJS-D145`).
 
 #### 16. Transport binding
 

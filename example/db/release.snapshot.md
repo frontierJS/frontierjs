@@ -265,12 +265,12 @@ table `employee` · db `main` · gate `5.5.5.5`
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `email` | `String` | no | — | unique · **required on write** |
-| `endedOn` | `DateTime` | yes | — | — |
+| `endedOn` | `String` | yes | — | — |
 | `id` | `Int` | no | — | id |
 | `name` | `String` | no | — | **required on write** |
 | `pay` | `PayWindow[]` | — | — | relation |
 | `reference` | `String` | no | — | unique · **required on write** |
-| `startedOn` | `DateTime` | no | — | **required on write** |
+| `startedOn` | `String` | no | — | **required on write** |
 
 ```
 @@check(endedOn IS NULL OR startedOn < endedOn)
@@ -780,8 +780,8 @@ table `pay_rate` · db `main` · gate `5.5.5.5`
 
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `effectiveFrom` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
-| `effectiveTo` | `DateTime` | yes | — | — |
+| `effectiveFrom` | `String` | no | — | **required on write** |
+| `effectiveTo` | `String` | yes | — | — |
 | `fromAmount` | `Int` | no | `0` | — |
 | `id` | `Int` | no | — | id |
 | `kind` | `RateKind` | no | — | **required on write** |
@@ -806,12 +806,12 @@ table `pay_run` · db `main` · gate `5.5.5.5`
 | `id` | `Int` | no | — | id |
 | `journals` | `JournalEntry[]` | — | — | relation |
 | `paidAt` | `DateTime` | yes | — | @system |
-| `payDate` | `DateTime` | no | — | **required on write** |
+| `payDate` | `String` | no | — | **required on write** |
 | `payslips` | `Payslip[]` | — | — | relation |
-| `periodEnd` | `DateTime` | no | — | **required on write** |
+| `periodEnd` | `String` | no | — | **required on write** |
 | `periodIndex` | `Int` | no | `0` | — |
 | `periodsPerYear` | `Int` | no | `12` | — |
-| `periodStart` | `DateTime` | no | — | **required on write** |
+| `periodStart` | `String` | no | — | **required on write** |
 | `reference` | `String` | no | — | unique · **required on write** |
 | `status` | `PayRunStatus` | no | `'draft'` | — |
 
@@ -842,8 +842,8 @@ table `payslip` · db `main` · gate `5.5.8.8`
 | `payRunId` | `Int` | no | — | **required on write** |
 | `payWindow` | `PayWindow` | — | — | relation |
 | `payWindowId` | `Int` | no | — | **required on write** |
-| `periodEnd` | `DateTime` | no | — | **required on write** |
-| `periodStart` | `DateTime` | no | — | **required on write** |
+| `periodEnd` | `String` | no | — | **required on write** |
+| `periodStart` | `String` | no | — | **required on write** |
 | `reference` | `String` | no | — | unique · **required on write** |
 | `sentAt` | `DateTime` | yes | — | @system |
 
@@ -886,8 +886,8 @@ table `pay_window` · db `main` · gate `5.5.5.5`
 | Field | Type | Null | Default | Notes |
 | --- | --- | --- | --- | --- |
 | `basis` | `PayBasis` | no | — | **required on write** |
-| `effectiveFrom` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
-| `effectiveTo` | `DateTime` | yes | — | — |
+| `effectiveFrom` | `String` | no | — | **required on write** |
+| `effectiveTo` | `String` | yes | — | — |
 | `employee` | `Employee` | — | — | relation |
 | `employeeId` | `Int` | no | — | **required on write** |
 | `hoursPerWeek` | `Int` | no | `40` | — |

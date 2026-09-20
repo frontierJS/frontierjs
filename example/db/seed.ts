@@ -55,6 +55,16 @@ const cents = (major: number) => toMinor(major, BASE)
 // so this is the same arithmetic under a name that does not claim it is money.
 const scaled = (n: number) => Math.round(n * 100)
 
+// The shop's calendar, read off the registry meta `tenantConfig` reads in
+// app.ts, over the same floor: there is no app here to ask `configFor()`.
+const shopZone = () =>
+  (shops.meta(DEFAULT_SHOP)?.config as { timeZone?: string } | undefined)?.timeZone ?? TIME_ZONE_FLOOR
+
+// Today, as a day. The seed's ONE crossing from a clock to a date (`FJS-D288`),
+// so a seed run at 23:00 in Auckland and one at 23:00 in Los Angeles each write
+// the date the shop is actually having rather than UTC's.
+const todayHere = () => plainDateIn(Date.now(), shopZone())
+
 const DEMO = {
   user:  { email: 'sam@shop.test',  password: 'correct-horse-battery', name: 'Sam',  role: 'user'  },
   admin: { email: 'alex@shop.test', password: 'correct-horse-battery', name: 'Alex', role: 'admin' },
@@ -695,12 +705,10 @@ async function seedBilling() {
     sub = await sys.subscription.findFirst({ where: { id: sub.id } })
   }
 
-  // The shop's calendar, read off the registry meta `tenantConfig` reads in
-  // app.ts, over the same floor: there is no app here to ask `configFor()`.
-  const timeZone = (shops.meta(DEFAULT_SHOP)?.config as { timeZone?: string } | undefined)?.timeZone ?? TIME_ZONE_FLOOR
+  const timeZone = shopZone()
 
   if (!sub) {
-    const periodStart = addToDate(plainDateIn(Date.now(), timeZone), { days: -10 })
+    const periodStart = addToDate(todayHere(), { days: -10 })
     sub = await sys.subscription.create({ data: {
       reference: REF,
       customerId: buyerCustomer.id,
@@ -794,8 +802,9 @@ async function seedBilling() {
  * contribution with a floor. Nothing here is advice.
  */
 async function seedPayRates() {
-  const DAY  = 24 * 60 * 60 * 1000
-  const from = new Date(Date.now() - 400 * DAY).toISOString()
+  // A DAY, not an instant (`FJS-D288`). A band comes into force on a date, and
+  // the shop's own calendar decides which date `now` is.
+  const from = addToDate(todayHere(), { days: -400 })
 
   // [kind, fromAmount, toAmount, percent] — minor units, and percent at two
   // places (2000 is 20.00%), which is `Discount.value`'s spelling.
@@ -824,8 +833,8 @@ async function seedPayRates() {
 }
 
 async function seedPayroll() {
-  const DAY  = 24 * 60 * 60 * 1000
-  const ago  = (days: number) => new Date(Date.now() - days * DAY).toISOString()
+  const today = todayHere()
+  const ago   = (days: number) => addToDate(today, { days: -days })
 
   const PEOPLE = [
     { reference: 'EMP-1001', name: 'Dana Fletcher', email: 'dana@shop.test',

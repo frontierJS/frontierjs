@@ -31,6 +31,7 @@
 
 import { ExternalRefPlugin } from './external-ref.js'
 import { createProvider }     from '../storage/index.js'
+import { contentTypeFor, sniff, baseType, extensionFor, sameType } from '@frontierjs/toolbelt/mime'
 import { buildWhere }         from '../core/query.js'
 import { extname, basename }  from 'path'
 import { existsSync, readFileSync } from 'fs'
@@ -40,16 +41,47 @@ import { existsSync, readFileSync } from 'fs'
 function mimeMatches(mime, pattern) {
   if (pattern === '*' || pattern === '*/*') return true
   if (pattern.endsWith('/*')) return mime.startsWith(pattern.slice(0, -1))
-  return mime === pattern
+  // Not an equality: one container can carry two registered types, and since
+  // the evidence is the bytes rather than the name, a HEIF photo whose `ftyp`
+  // brand reads `image/heif` was refused by `@accept("image/heic")`.
+  return sameType(mime, pattern)
 }
 
-function checkAccept(mime, accept, model, field) {
+/**
+ * What these bytes ARE, preferring evidence over the caller's word.
+ *
+ * Every `mime` reaching here is a CLAIM: a browser `File` carries whatever
+ * `type` the client set on it, and a path carries whatever its extension says.
+ * `@accept` graded that claim, so any bytes at all satisfied
+ * `@accept("image/png")` provided they arrived named `.png` (`FJS-1184`).
+ *
+ * `sniff` answers `null` for anything it does not recognize — most text formats
+ * have no magic number — and null is *no evidence*, never *safe*, so the claim
+ * stands where there is nothing to check it against.
+ */
+function resolveType(claimed, bytes) {
+  // The claim is reduced to a bare type before anything compares it. A browser
+  // hands `File.type` back with its parameters attached — a plain-text upload
+  // arrives as `text/plain;charset=utf-8` — and `mimeMatches` is an equality,
+  // so `@accept("text/plain")` refused the exact thing it was written to allow.
+  const evidence = sniff(bytes)
+  return { type: evidence ?? baseType(claimed) ?? claimed, evidence }
+}
+
+function checkAccept(mime, accept, model, field, claimed) {
   if (!accept) return
   const patterns = accept.split(',').map(s => s.trim().toLowerCase())
   const m = mime.toLowerCase()
   if (!patterns.some(p => mimeMatches(m, p))) {
+    // The second sentence is only true when the bytes were RECOGNIZED. Where
+    // `sniff` answered nothing the type being reported IS the claim, and saying
+    // *the bytes are text/plain* about bytes nothing identified is the kind of
+    // false precision an error is read as fact.
     const err = new Error(
-      `${model}.${field}: file type "${mime}" not allowed — accepted: ${accept}`
+      `${model}.${field}: file type "${mime}" not allowed — accepted: ${accept}` +
+      (claimed && baseType(claimed) !== mime
+        ? `\n  The name claimed "${claimed}"; the bytes are ${mime}.`
+        : '')
     )
     err.name  = 'ValidationError'
     err.field = field
@@ -102,11 +134,22 @@ async function readValue(value, fieldName) {
 
 // ─── Key pattern resolution ───────────────────────────────────────────────────
 
-function resolveKey(pattern = ':model/:id/:field/:uuid.:ext', { model, id, field, filename }) {
+function resolveKey(pattern = ':model/:id/:field/:uuid.:ext', { model, id, field, filename, type }) {
   const now  = new Date()
-  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  const ext  = extname(filename) || ''
-  const name = basename(filename, ext).replace(/[^a-z0-9_-]/gi, '_').slice(0, 80)
+  // UTC: `:date` becomes part of the stored KEY, so a host-local reading files
+  // an upload made at 23:30 on the 31st under the next month or the previous
+  // one depending on where the server is, and moving the server changes where
+  // the next object lands while every key already written stays put.
+  const date = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`
+  // The extension follows the RESOLVED type and not the uploaded name. A static
+  // origin serves by extension and has no ref to read, so a PNG stored under
+  // `.txt` because that is what the upload was called leaves `ref.mime` and the
+  // URL stating different things — the same defect one layer out. Only where
+  // the type is one the table can spell; otherwise the caller's name stands.
+  const named    = extname(filename) || ''
+  const fromType = type ? extensionFor(type) : null
+  const ext  = fromType ? `.${fromType}` : named
+  const name = basename(filename, named).replace(/[^a-z0-9_-]/gi, '_').slice(0, 80)
   const uuid = crypto.randomUUID().replace(/-/g, '').slice(0, 12)
   return pattern
     .replace(':model',    model)
@@ -118,19 +161,12 @@ function resolveKey(pattern = ':model/:id/:field/:uuid.:ext', { model, id, field
     .replace(':ext',      ext.replace('.', ''))
 }
 
-const MIME = {
-  '.jpg':  'image/jpeg', '.jpeg': 'image/jpeg', '.png':  'image/png',
-  '.gif':  'image/gif',  '.webp': 'image/webp', '.svg':  'image/svg+xml',
-  '.pdf':  'application/pdf',
-  '.txt':  'text/plain', '.md':   'text/markdown',
-  '.csv':  'text/csv',   '.json': 'application/json',
-  '.zip':  'application/zip',
-  '.mp4':  'video/mp4',  '.mp3':  'audio/mpeg',
-  '.wasm': 'application/wasm',
-}
-
+// The type table is `@frontierjs/toolbelt/mime` and is not restated here.
+// Four packages kept one each and 24 of 32 extensions appeared in some and not
+// others (`FJS-1186`); this one was missing `.avif` and `.heic`, which are what
+// a phone uploads.
 function guessMime(filename) {
-  return MIME[extname(filename).toLowerCase()] ?? 'application/octet-stream'
+  return contentTypeFor(filename)
 }
 
 // ─── FileStoragePlugin ────────────────────────────────────────────────────────
@@ -182,9 +218,14 @@ class FileStoragePlugin extends ExternalRefPlugin {
   async serialize(value, { field, model, id, ctx }) {
     const fieldOpts = this._fieldMap[model]?.[field] ?? {}
     const { bytes, mime, filename, size } = await readValue(value, field)
-    checkAccept(mime, fieldOpts.accept, model, field)
-    const key = resolveKey(this.config.keyPattern, { model, field, id, filename })
-    await this._provider.put(key, bytes, { contentType: mime, size })
+    // The stored type is the evidence and never the claim: `mime` is what the
+    // client or the filename SAID, and it is also what gets persisted on the ref
+    // and handed to the provider as `contentType`, which is what a public bucket
+    // later serves under. Both must be the same answer, so it is resolved once.
+    const { type, evidence } = resolveType(mime, bytes)
+    checkAccept(type, fieldOpts.accept, model, field, evidence ? mime : null)
+    const key = resolveKey(this.config.keyPattern, { model, field, id, filename, type })
+    await this._provider.put(key, bytes, { contentType: type, size })
     return {
       key,
       bucket:     this.config.bucket,
@@ -192,7 +233,7 @@ class FileStoragePlugin extends ExternalRefPlugin {
       endpoint:   this.config.endpoint ?? null,
       publicBase: this.config.publicBase ?? null,
       size,
-      mime,
+      mime: type,
       uploadedAt: new Date().toISOString(),
     }
   }

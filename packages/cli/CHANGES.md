@@ -1,5 +1,201 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-20 — `fli ws:ask` answers with a citation and says what the answer cost
+
+`PHILOSOPHY.md` §III claims you should know where something lives before you go looking for it. That
+has been true by assertion since it was written, because nothing ever put a number on it. **This is
+the number: what it costs to get one fact out of this workspace, and whether the fact came back
+right.**
+
+Six intents, each naming ONE committed artefact — **owner** and **locate** over `seams.snapshot.md`
+and the maps, **ruling** over `DECISIONS.md`, **status** over `ISSUES.md`, **blast** over
+`DRIVES.md`, **recipe** over a package's own `CLAUDE.md`. They are separate because *why is X this
+way* and *is X broken* both name X and land in different registers, and a router that treats them as
+one returns the ruling that CLOSED the defect somebody is still hitting. The intent picks the
+artefact and the subject picks the row; no model is in it, so a question answers the same way twice.
+
+**The answer is a citation, never prose** — a path, an `FJS-D##`, an `FJS-###`, a drive id — so
+grading is a string compare with no judge model, which is the only way the score means the same
+thing in six months. It also forces the useful shape: *where does this live* is answerable and
+*summarize this* is not.
+
+**Two byte counts, and only one of them is the metric.** `read` is what came back, which is what
+lands in a context window or in a person's head; `scanned` is what had to be opened to find it, which
+is what says whether a small model could have taken the same walk. Measured over the graded set:
+**median 42 tokens read, 24 of 24 correct, 14 MB scanned.** Per intent it runs 6 tok/question for a
+recipe and 49 for a locate.
+
+**The key is written against the tree, in its own file, and it was not touched.** `core/questions.js`
+holds twenty-four questions whose citations were resolved by reading the artefacts before the
+resolver existed — the ordering is the whole value, since an answer key written after the code is
+green passes by construction, which is the failure `decision-rules` names for the nine questions and
+is the same failure here. The set went 17 → 20 → 21 → 22 → 23 → 24 across six fixes and **not one
+question was reworded**; a question the router misses is a fact with no home or with two, which is
+`IDEAS/intent-recognizer.md` § *Read it backwards* pointed at prose instead of a seed.
+
+**What the misses were is the part worth keeping.** A substring is not a match — `port` matched
+inside `transport` and `export` thirty-eight times in `CLAUDE.md` alone, the same defect a `-w`
+fixes in ripgrep, arriving through a different door. A key is a NAME and is compared the way inflect
+compares one, so `port` reaches `ports.js`. A two-letter name is a name: `ui` was being dropped as
+noise. A compound matches as a UNIT — `pay run` scored against a key of `verify:pay` and beat
+`verify:payrun`, which is a substring match one level up. Trying seams before the maps and returning
+on any hit is a precedence nobody declared, and it answered *where does the port formula live* with
+junction's devtools plugin, because `devtools({ port, auth })` is a seam. And two rows naming one
+answer are not ambiguous — a drive has a row in each of `DRIVES.md`'s two tables and they tied with
+each other.
+
+**One of those was a finding about the corpus rather than the code.** `DRIVES.md`'s second table —
+what a CHANGE needs, in the words somebody would use — is the half written for exactly this
+question, and the walk was reading only the first. No Covers cell contains the phrase *pay run*; the
+mapping row does.
+
+## 2026-09-20 — `fli ws:seams` resolves the bridge index against the tree
+
+`CLAUDE.md` § Bridge index and the `bridge-index` skill are one list written twice — a key list at
+the root, eighty-five explained bullets in the skill — and nothing compared them or graded either.
+Twenty-six bullets open with *reach for them before grepping* and then name the file to reach for,
+which is advice: it rots the way `invariants.js`'s enforcers rot, and a reader who greps a stated
+path and finds nothing concludes the seam is gone rather than that the sentence is stale.
+
+`fli ws:seams` writes `seams.snapshot.md` — one row per seam, its stated owner, whether the name is
+declared there, and how many other files declare it. **The list derives and the owner does not**:
+the bullets are the seams, so a copy here would be the restatement the framework is a bet against,
+while *`$setAuth` belongs to `client.js` and not to one of the four type declarations that also
+carry the name* cannot be read off a tree where all five sites declare it. **`none` is an answer** —
+a bullet naming no owner is the gap the file publishes, and failing on it would be a red build for a
+piece of honesty.
+
+**Twenty-six bullets named an owner when the resolver first ran and sixty-seven do now.** Every
+CALLABLE seam has one; the eighteen left are not callables — a `$` on a wire, a schema keyword, a
+header — and no line anywhere declares `x-version`, so an empty cell is the answer rather than a
+gap. Thirty-one were unambiguous, one declaring site each, and the other ten had the bullet's own
+signature to pick with: `mount(label, Component, {props, root})` is mesa's and not jetty's because
+jetty's takes `(root, app, props)`.
+
+Two `fli check` rules, both `scope: 'repo'`, both serving **Invariant 4**, which had no enforcer
+before this. `seam-owner` grades the claim two ways, neither of them a judgement: the path is not in
+the tree, or the path is there and the name is not in it. The second is the one that reads as
+correct from every angle, because a re-export puts the name in a module's surface while the
+declaration lives elsewhere — so where it was forwarded FROM is reported, the fix being unusable
+without it. `seam-listed` grades the copy: a seam the skill explains and the key list never named.
+
+**Both found something on their first run.** `matchesQuery` moved to `@frontierjs/toolbelt/match`
+under `FJS-D26` and its bullet still named `sierra/src/junction/field-rules.js`, which only
+re-exports it — `CLAUDE.md` had recorded the move and the skill had not. `signIn` has carried its
+own bullet and its own ruling since `FJS-D261` and the key list had never named it, so the one
+question that section exists to answer was answered no. A third came out of the fill: the reactive
+seam had cited `mesa/runtime.js` since before there was a `src/`, and no file of that name has ever
+existed. All three are corrected here.
+
+**Each was found by a resolver bug, which is the honest way to say it.** Owning the other fifty-nine
+took four passes over what counts as a declaration, and every pass was a false answer first: a
+`.d.ts` is a restatement by construction and can never be an owner; a named function expression is
+where the thing is written, which is how the whole `$` family is declared; a comment is code-shaped,
+and this module's own comment quoting `return function $levelOf` was read as declaring it; and
+`sierra/src/build/` is source rather than output, so skipping `build/` reported `appSrcDir` as
+declared nowhere. The last one is the general shape — **what separates a path from the three other
+things spelled like one is whether the first segment NAMES A PACKAGE**, which is read off the tree,
+so `build/schema-plugin.js`, `@frontierjs/ui/utils.js` and `@/api.js` cannot become owners.
+
+The restatement count is carried because it is the only place that cost is visible.
+`IAuth.verifySession` is declared in thirteen files and `$setAuth` in seven: Invariant 1 forbids the
+import that would let junction and orion share litestone's types, so each hand-declares the shape it
+holds. That is not a defect the rule can grade — it is the price of the dependency direction, and it
+had never been counted.
+
+## 2026-09-20 — `fli gs` groups the working tree instead of forwarding it
+
+`git status` answers in one flat alphabetical list. In this repo that is 102 paths sorted by first
+character, interleaving nine packages, six example surfaces and the root registers — the reader
+re-derives the grouping by eye on every single run. `git:status` was a passthrough and added nothing.
+
+It now groups by **where** (package, surface, root folder) and then by **what the file is to that
+place** — schema, src, ui, test, config, deploy, snapshot, record, docs. Both fall out of the path
+alone, so there is no package list to keep current. Heaviest place first, because that is what a scan
+is looking for; a conflict outranks any amount of churn. Within a place a directory prefix is printed
+once and the basenames follow it, so the eye lands on what differs.
+
+**The grouping is cosmetic and the count is not.** A role rule that stops matching would drop a file
+from a listing somebody is reading to decide what to commit, and a dropped row looks exactly like a
+clean file — so `tests/git-status.test.js` asserts every input path comes out exactly once, and that
+every role a rule can answer is in the renderer's print order.
+
+`core/git-status.js` is pure — the three git readings in as strings, a model out — so the command
+only renders and `--json` prints. `-z` rather than newline-split: a path with a space is quoted and
+escaped in the default output. A rename carries two NUL fields and consuming one leaves the old path
+as a phantom entry. An untracked DIRECTORY arrives as one entry ending in `/`, which cut at the last
+separator gives an empty basename — the row printed its glyph and no name. `--short` hands over to
+plain `git status -s`; `--all` was considered and cut, since collapsing a directory hides the prefix
+and never a name.
+
+**The summary prints below the listing.** On a hundred-file tree a header has left the screen by the
+time the last place is drawn, and the totals are what the eye should land on when the scroll stops.
+
+**A file named by more than three others carries `↑n`.** The listing knew what changed and never
+how far it reached, so a diff touching `parser.js` — named by 77 files here — read exactly like one
+touching a leaf. `core/blast.js` is the tally and it computes nothing: `referenceGraph` in
+`core/codegraph.js` is the one answer to *who names this file*, and the bands are its `BLAST`, so a
+file the codegraph page draws as a hub is marked in the listing too.
+
+**Past band 3 the whole name goes amber, not just the mark** — but state wins where there is one.
+What you DID to a file outranks how far it reaches: deleting something 77 files import is red before
+it is amber, and the `↑77` beside it stays amber either way, so both facts survive on the one row.
+That split also fixed a nesting bug — the reach used to sit INSIDE the painted word, and an inner
+color's reset ends the outer one, so a red deleted hub went plain from its own `↑` onward.
+
+**The threshold is the feature.** Every file carries a reading and most are 0 — measured on this
+tree, 23 of 113 changed files are named by anything at all and 16 clear band 2 — so marking them all
+would be a column the eye learns to skip. `null` is kept apart from 0 throughout: *nothing names
+this* is a fact about the file, *nothing read this* is a fact about the tally, and a renderer that
+saw 0 for both would mark a hub as safe on the run where the index failed to build.
+
+**It costs ~0.4s, taking `fli gs` to ~0.8s, and that was the decision.** The full codegraph is ~6s;
+the difference is the TypeScript function measurement, which this question does not need. The scan
+cannot be narrowed by target — knowing who names `parser.js` means reading everyone. Two cheaper
+readings were measured and refused: `git grep -F` per changed file is slower (60 spawns, ~1.3s) and
+is a second answer to the same question, and prefiltering texts by the target's BASENAME is unsound,
+since `@frontierjs/toolbelt/inflect` resolves through `exports` to `src/inflect/index.js` and the
+importing text contains `inflect` and never `index.js`. A cache was considered and cut: it is the
+one option that can be silently wrong, and 0.4s does not buy an invalidation story.
+
+`buildStatus` takes a `blastOf` FUNCTION rather than the index, so `core/git-status.js` stays pure
+and fixture-testable — a listing that had to import the codegraph to be tested would not be testable
+at all.
+
+**`fli gui` reads the same model** — `GET /api/status`, the panel above *what proves this change*,
+which is the order the two questions are asked in. Two renderers of one question is how the page
+comes to disagree with the terminal about what is dirty, so the grouping, the ordering and the roles
+are decided server-side and the page re-derives none of them. The bar is the kit's own Progress with
+a muted tone rather than a styled div (Invariant 13); `tests/browser/specs/tree.spec.mjs` asserts
+that and asserts the count — **the page groups by its OWN role list**, so a role the engine answers
+and the list omits drops those files in silence while the note goes on counting them. That spec
+failed on its first run: `.dir` prefix spans are siblings of the file spans, so the files carry a
+`gui-file` marker now instead of being counted by position.
+
+## 2026-09-19 — `fli check`: a static root serving uploads says so
+
+`untrusted-upload-root`, warn. A local `FileStorage` writes objects into a directory and a `static`
+mount publishes them; the handler cannot tell those bytes from the app's own, so the app says
+([FJS-D314](../../DECISIONS.md#fjs-d314)) — and this is the rule that fires when it has not.
+
+**It is the half that makes the ruling hold.** A declaration somebody forgets is this framework's
+oldest failure shape, and the standing answer is a declaration plus a rule that fires on its absence;
+shipping the flag alone would have been the half that reads as done. Where the mount and the provider
+name the same identifier the message says so and names it. An S3/R2 provider SKIPS — the bucket
+serves those bytes and junction never sees them, and a rule that fired there would be telling an app
+to mark a mount carrying no uploads.
+
+Verified by breaking it: removing the flag from `example` fires the rule naming `STORAGE_ROOT`. The
+clean-app fixture gained a marked mount, because `checks.test.js` asserts nothing SKIPPED — a green
+run over a tree the rules could not see is what that file exists to prevent.
+
+## 2026-09-18 — the date `fli decide` stamps a register row with is UTC
+
+`isoDate` read the host's wall clock, so a decision recorded at 23:30 in Auckland and one recorded
+twenty minutes later in Los Angeles were dated two days apart, in a file whose whole job is to say
+when something was settled. Found sweeping for local-clock readings alongside `FJS-1150` and
+`FJS-1151`.
+
 ## 2026-09-18 — `fli ask` takes the current Sonnet, and an OAuth profile
 
 The default model was `claude-sonnet-4-6`, a generation behind and priced at

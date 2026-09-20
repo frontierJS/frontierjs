@@ -217,7 +217,9 @@ function wordEntry(r) {
   if (r.level !== 'schema' && legal.length) facts.push(`legal in: ${legal.map(p => POSITIONS[p] ?? p).join(', ')}`)
   const syn = synonymsFor(r)
   if (syn.length)        facts.push(`also called: ${syn.join(', ')}`)
-  if (r.seeAlso?.length) facts.push(`see also: ${r.seeAlso.map(w => `\`${w}\``).join(', ')}`)
+  // A seeAlso may carry the level that disambiguates it. The reader wants the
+  // WORD — `@@unique` — not the lookup key that found it.
+  if (r.seeAlso?.length) facts.push(`see also: ${r.seeAlso.map(w => `\`${w.includes(':') ? w.split(':')[1] : w}\``).join(', ')}`)
   const lines = [head, '', facts.join(' · '), '', r.blurb ?? '']
   if (r.example) lines.push('', '```lite', r.example.trim(), '```')
   return lines.join('\n')

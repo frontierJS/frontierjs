@@ -77,6 +77,24 @@ test/run.js        the harness
 
 ## What bites here
 
+- **Three variable tiers and the name is the only thing carrying which.** A
+  knob is set by a caller (`--bg-mix`, `--tone-fill`, `--surface-ground`,
+  `--overlay-from`); a published one is read by a caller and is named in
+  `README.md` or asserted by `tones.spec.js` (`--tone-ink`, `--tint-*`); a
+  private one is a derivation step and carries `--_`. The tier is not a
+  judgment call at the keyboard — before renaming or adding one, ask whether
+  `README.md` tells an app to touch it, because `--tone-ink` and `--tint-*`
+  both look internal and both are documented affordances with tests behind
+  them. `tokens.spec.js` grades one owner per `--_`, no dead ones, and no
+  published name gaining a private twin. It cannot grade an app reaching for
+  `--_fill`; the mark is what warns (`FJS-1192`).
+- **A stacking rung is `tokens.css`'s, and 0/1 are not rungs.** `--z-topbar`
+  through `--z-skip-link` are one ladder in one place, ascending, each read by
+  exactly one component. A component ordering two of its own parts inside a
+  stacking context it just made uses 0 and 1 and stays off the ladder —
+  `tokens.spec.js` allows exactly those two and a `var()`. `.dialog` and
+  `.drawer` are `<dialog>` and sit in the top layer above every rung,
+  including the skip link, so they have no number (`FJS-1191`).
 - **`bun build` drops the `@layer` order declaration**, so `build.js` re-prepends
   it. A bundle without it cascades differently from the source — check the first
   lines of `dist/` output after any build change.

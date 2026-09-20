@@ -1057,6 +1057,13 @@ try {
   // because the period has been paid for and ending it today would be the
   // forfeit the flag exists to prevent.
   t('subDetail.stopRenewing', await evaluate(`
+    // Wait for the button to be ENABLED, not merely present. The change above
+    // clears \`busy\` only after both re-reads settle, while the assertion that
+    // preceded this one is satisfied by the first of them — so a click can land
+    // on a disabled button, which is swallowed, and the popover below then
+    // never appears. The failure surfaces as a timeout on the confirm button,
+    // which names neither the button that was clicked nor the reason.
+    await waitFor(() => document.querySelector('[data-stop]')?.disabled === false);
     document.querySelector('[data-stop]').click();
     await waitFor(() => document.querySelector('.popover button.danger'));
     document.querySelector('.popover button.danger').click();

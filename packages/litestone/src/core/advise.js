@@ -91,6 +91,66 @@ const has        = (f, kind) => (f.attributes ?? []).some(a => a.kind === kind)
 const hasDefault = f => has(f, 'default') || has(f, 'generated') || has(f, 'sequence')
 const modelAttr  = (m, kind) => (m.attributes ?? []).find(a => a.kind === kind)
 
+// ─── reading a JSON path out of a @generated expression ───────────────────────
+//
+// Three spellings reach the same place: `json_extract(col, 'path')`, and
+// SQLite's two arrow operators. They are not interchangeable — `->` answers the
+// JSON REPRESENTATION, so a string member comes back still carrying its quotes.
+//
+// A regex and not a SQL parser, which is a real limit and the reason every rule
+// below fails QUIET: an expression this does not recognize is one nothing here
+// says anything about. Grading the common spelling beats grading none, and a
+// half-parse of arbitrary SQL would make a confident claim about an expression
+// it had not understood.
+const JSON_PATH_FORMS = [
+  /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(->>?)\s*'([^']*)'\s*$/,
+  /^\s*json_extract\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*'([^']*)'\s*\)\s*$/,
+]
+
+/** `{ column, op, path }` for an expression that is exactly one JSON read, else null. */
+function jsonPathRead(expr) {
+  if (typeof expr !== 'string') return null
+  const arrow = JSON_PATH_FORMS[0].exec(expr)
+  if (arrow) return { column: arrow[1], op: arrow[2], path: arrow[3] }
+  const call = JSON_PATH_FORMS[1].exec(expr)
+  if (call) return { column: call[1], op: 'json_extract', path: call[2] }
+  return null
+}
+
+/**
+ * The single member a path names, or null where it names something else.
+ * `$.city` and `city` are the same member; `$.a.b` and `$[0]` are a deeper
+ * read this does not follow, and a rule that cannot see the member says nothing.
+ */
+function topMember(path) {
+  const bare = path.startsWith('$.') ? path.slice(2) : path
+  if (bare !== path && path.startsWith('$[')) return null
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(bare) ? bare : null
+}
+
+/** The `type` a `Json @type(T)` column declares, or null. */
+function typeOfJsonColumn(schema, model, columnName) {
+  const f = (model.fields ?? []).find(x => x.name === columnName)
+  if (!f || f.type?.name !== 'Json') return null
+  const attr = (f.attributes ?? []).find(a => a.kind === 'type')
+  if (!attr) return null
+  return (schema.types ?? []).find(t => t.name === attr.name) ?? null
+}
+
+/** Every `@generated` that is exactly one JSON read, with its field. */
+function jsonGeneratedColumns(model) {
+  const out = []
+  for (const f of model.fields ?? []) {
+    const g = (f.attributes ?? []).find(a => a.kind === 'generated')
+    // A template compiles to a concat and carries its own source; it is a
+    // string being BUILT rather than a value being read out, so it is not this.
+    if (!g || g.template) continue
+    const read = jsonPathRead(g.expr)
+    if (read) out.push({ field: f, read })
+  }
+  return out
+}
+
 /** The gate levels for a model, or null where none is declared. */
 function gateOf(model) {
   const a = modelAttr(model, 'gate')
@@ -627,6 +687,123 @@ export const RULES = [
               `the truth about a row whose photograph is still on the phone, or drop @@sync from a model ` +
               `whose whole point is the file.`,
           })
+        }
+      }
+      return out
+    },
+  },
+
+  {
+    id:       'json-arrow-answers-json',
+    severity: 'error',
+    title:    'a @generated column reads a JSON path with `->`, which keeps the quotes',
+    blurb:    'SQLite has two arrow operators and they differ in one character and in what comes back. ' +
+              '`->` answers the JSON REPRESENTATION, so a string member arrives still quoted — the column ' +
+              'holds `"Reno"` where the row holds `Reno`, and every comparison against a plain value ' +
+              'misses. `->>` answers the SQL value. Nothing catches this downstream: the column builds, ' +
+              'an index over it builds, EXPLAIN reports SEARCH ... USING INDEX, and the query returns no ' +
+              'rows. `->` also stringifies a number, so an Int member lands in a TEXT column.',
+    run(schema) {
+      const out = []
+      for (const model of schema.models ?? [])
+        for (const { field, read } of jsonGeneratedColumns(model)) {
+          if (read.op !== '->') continue
+          out.push({
+            model: model.name, field: field.name,
+            message: `${model.name}.${field.name} is generated from \`${read.column} -> '${read.path}'\`, ` +
+              `which answers the JSON representation — a string member keeps its quotes, so the stored ` +
+              `value is \`"…"\` and a filter comparing it to a plain value matches nothing. An index over ` +
+              `this column builds and is used, which is what makes the empty answer look like a working ` +
+              `query. Write \`->>\` for the value, or json_extract(), which is the same thing.`,
+          })
+        }
+      return out
+    },
+  },
+
+  {
+    id:       'json-path-outside-the-declared-type',
+    severity: 'error',
+    title:    'a @generated column reads a member the Json column\'s type does not declare',
+    blurb:    'A `Json @type(T)` column has a declared shape and the SQL that reads it is graded against ' +
+              'that shape by nothing. A misspelled member is valid SQL over valid JSON: json_extract ' +
+              'answers NULL for a path that is not there, so the column is null for every row, forever, ' +
+              'and no write is ever refused. The type declaration is the only thing that knows better.',
+    run(schema) {
+      const out = []
+      for (const model of schema.models ?? [])
+        for (const { field, read } of jsonGeneratedColumns(model)) {
+          const type = typeOfJsonColumn(schema, model, read.column)
+          if (!type) continue                       // an untyped Json column declares no members
+          const member = topMember(read.path)
+          if (!member) continue                     // a deeper path is not followed
+          const declared = (type.fields ?? []).find(m => m.name === member)
+
+          if (!declared) {
+            const names = (type.fields ?? []).map(m => m.name).join(', ')
+            out.push({
+              model: model.name, field: field.name,
+              message: `${model.name}.${field.name} reads '${read.path}' out of ${read.column}, and ` +
+                `type ${type.name} declares no member '${member}'. The read is legal SQL and answers ` +
+                `NULL on every row rather than failing, so the column is empty for the life of the ` +
+                `table with nothing saying why. ${type.name} declares: ${names}.`,
+            })
+            continue
+          }
+
+          // The member's declared type and the column's are two statements about
+          // one value, and `->>` preserves the JSON type — so an Int member in a
+          // String column arrives as text and sorts and compares as text.
+          const want = declared.type?.name
+          const got  = field.type?.name
+          if (want && got && want !== got && !declared.type?.array)
+            out.push({
+              model: model.name, field: field.name, severity: 'warn',
+              message: `${model.name}.${field.name} is ${got} and reads ${type.name}.${member}, which is ` +
+                `declared ${want}. \`->>\` and json_extract both preserve the JSON type, so the value ` +
+                `arrives as ${want.toLowerCase()} and is stored in a ${got} column — it then orders and ` +
+                `compares the way ${got} does, which for a number in TEXT puts 10 before 9.`,
+            })
+        }
+      return out
+    },
+  },
+
+  {
+    id:       'index-over-a-json-document',
+    severity: 'warn',
+    title:    'an index over a Json column indexes the document, not anything inside it',
+    blurb:    'The column holds one serialized document, so the index holds one entry per document — ' +
+              'which answers *this exact document* and nothing else. A path filter cannot use it: ' +
+              'json_extract() is opaque to the planner, so the query is a full scan with the index sitting ' +
+              'beside it being written on every insert. What indexes a path is a @generated column over ' +
+              'that path with an @@index on THAT.',
+    run(schema) {
+      const out = []
+      for (const model of schema.models ?? []) {
+        const jsonCols = new Set((model.fields ?? [])
+          .filter(f => f.type?.name === 'Json' && !f.type?.array)
+          .map(f => f.name))
+        if (!jsonCols.size) continue
+
+        for (const attr of model.attributes ?? []) {
+          if (attr.kind !== 'index' && attr.kind !== 'uniqueIndex' && attr.kind !== 'partialUnique') continue
+          for (const name of attr.fields ?? []) {
+            if (!jsonCols.has(name)) continue
+            const word = attr.kind === 'index' ? '@@index' : '@@unique'
+            // A UNIQUE over a document is a real constraint and is not this
+            // warning's business; what it cannot do is serve a path lookup.
+            const why = attr.kind === 'index'
+              ? `it answers an equality test against the whole document and nothing else`
+              : `it constrains the whole document, which may be what was meant — it still cannot serve a path lookup`
+            out.push({
+              model: model.name, field: name,
+              message: `${word} names ${model.name}.${name}, a Json column, so ${why}. A filter through a ` +
+                `path compiles to json_extract(), which the planner cannot match to this index, so those ` +
+                `reads stay full scans while every write pays for the index. Extract the path into a ` +
+                `@generated column and index that.`,
+            })
+          }
         }
       }
       return out

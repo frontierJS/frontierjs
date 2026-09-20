@@ -63,10 +63,28 @@
 }
 
 /* ── Type-specific tweaks ─────────────────────────────────────── */
+
+/*
+ * The height is the content's, bounded at both ends in lines rather than
+ * pixels, so the bounds stay true when the type scale or the density
+ * changes. `field-sizing: content` grows the box as the value does — 12
+ * lines of text take a fixed 80px box to 241px — and the cap is what
+ * stops a pasted document from pushing the submit button off the screen.
+ *
+ * `resize: vertical` stays: the two answer different questions. The
+ * browser sizes it to the value, the reader overrides that for the value
+ * they are about to type. A manual resize wins and sticks, which is the
+ * behavior the handle promises.
+ *
+ * Where field-sizing is not supported the declaration drops and min-height
+ * alone applies, which is the box this had before.
+ */
 textarea.field {
-  resize:      vertical;
-  min-height:  80px;
-  font-family: var(--font-primary);
+  field-sizing: content;
+  resize:       vertical;
+  min-height:   4lh;
+  max-height:   16lh;
+  font-family:  var(--font-primary);
 }
 
 select.field {
@@ -77,6 +95,48 @@ select.field {
   background-size:     12px;
   padding-right:       36px;
   cursor:              pointer;
+}
+
+/*
+ * The one control whose affordance is not an element anybody can put a
+ * class on. A file input's button is a shadow part reachable only through
+ * this pseudo-element, so an element selector is the only expression
+ * available — and without it the UA's own grey button ships beside fields
+ * that are all .field.
+ *
+ * It is written flat rather than by borrowing .btn.outlined, and the
+ * reason is one line up in buttons.css: --tone-ink is registered
+ * `inherits: false`, so a pseudo-element computes nothing from a tone it
+ * does not have, and --btn-ink resolves to its fallback every time. Tokens
+ * that do not go through that window work here; the tone recipe does not.
+ *
+ * The bare input is the case this exists for. @frontierjs/ui's FileUpload
+ * hides its input and draws its own button, and a .field on the input
+ * still gives it the field box around this one.
+ */
+input[type="file"]::file-selector-button {
+  margin-inline-end: var(--space-md);
+  padding:           var(--control-padding-block) var(--space-lg);
+  border:            var(--border-width) solid var(--rule-strong);
+  border-radius:     var(--btn-radius);
+  background:        var(--surface);
+  color:             var(--ink);
+  font-family:       var(--font-primary);
+  font-size:         var(--text-md);
+  font-weight:       var(--btn-font-weight);
+  line-height:       1.25rem;
+  cursor:            pointer;
+  transition:        background-color var(--motion-base), border-color var(--motion-base);
+}
+
+input[type="file"]::file-selector-button:hover {
+  background:   var(--surface-sunken);
+  border-color: var(--ink-mute);
+}
+
+input[type="file"]:disabled::file-selector-button {
+  opacity: 0.6;
+  cursor:  not-allowed;
 }
 
 /* ── Composition helpers ──────────────────────────────────────── */

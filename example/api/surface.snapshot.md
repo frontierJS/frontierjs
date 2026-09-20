@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-44 services · 46 routes · 13 plugins · prefix /api
+44 services · 49 routes · 14 plugins · prefix /api
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -963,6 +963,9 @@ once; everything else was registered by hand or by a plugin.
 | POST | `/api/jobs/run/{name}` | raw |
 | GET | `/api/jobs/schedules` | raw |
 | GET | `/api/manifest` | raw |
+| DELETE | `/api/mcp` | raw |
+| GET | `/api/mcp` | raw |
+| POST | `/api/mcp` | raw |
 | GET | `/api/metrics` | raw |
 | GET | `/api/migrations` | raw |
 | POST | `/api/orion/hooks/{path}` | raw |
@@ -976,14 +979,15 @@ In configure order, which is what `requires:` is checked against.
 
 1. `metrics-store`
 2. `export`
-3. `@frontierjs/auth`
-4. `caravan`
-5. `outbox`
-6. `orion`
-7. `conduit`
-8. `mailer`
-9. `notifications`
-10. `manifest`
-11. `channels`
-12. `corsPlugin`
-13. `health`
+3. `mcp`
+4. `@frontierjs/auth`
+5. `caravan`
+6. `outbox`
+7. `orion`
+8. `conduit`
+9. `mailer`
+10. `notifications`
+11. `manifest`
+12. `channels`
+13. `corsPlugin`
+14. `health`

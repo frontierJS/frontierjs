@@ -1,6 +1,6 @@
 // api/src/domain/payroll/payrates.ts — the numbers a payroll is computed FROM, and the walk.
 //
-// `employment.ts` answers *what was this person on* at an instant. This answers
+// `employment.ts` answers *what was this person on* on a day. This answers
 // the other half of the same question — *and what were the rules* — and the two
 // are separate files because they are separate tables with separate lifetimes:
 // somebody's pay changes when they are promoted, a tax band changes when a
@@ -32,12 +32,14 @@
 //
 // `coveringAt` comes from `employment.ts`. This is its second consumer, and
 // that is the whole argument for exporting it: two tables with validity windows
-// in one application, and one definition of which window covers an instant. A
-// second spelling here would be a tax band that changes on a different midnight
-// from a salary.
+// in one application, and one definition of which window covers a day. A second
+// spelling here would be a tax band that changes on a different midnight from a
+// salary — and since `FJS-D288` there is no midnight to get wrong, because both
+// windows are dated in days.
 
 import { roundMinor }             from '@frontierjs/toolbelt/units'
-import { coveringAt, instant }    from './employment.ts'
+import { coveringAt }             from './employment.ts'
+import type { PlainDate }         from './employment.ts'
 
 type Client = Record<string, any>
 
@@ -71,18 +73,17 @@ export type BandPart = {
 }
 
 /**
- * The bands in force for one kind, at one instant, in threshold order.
+ * The bands in force for one kind, on one day, in threshold order.
  *
  * Ordered here rather than by the caller because the walk below depends on it:
  * a band list read in insertion order applies the wrong rate to the wrong
  * slice and still returns a plausible number.
  */
 export async function ratesAsAt(
-  client: Client, kind: RateKind, at: string | number | Date = new Date(),
+  client: Client, kind: RateKind, on: PlainDate,
 ): Promise<PayRateRow[]> {
-  const when = instant(at)
   return await client.payRate.findMany({
-    where:   { kind, ...coveringAt(when) },
+    where:   { kind, ...coveringAt(on) },
     orderBy: { fromAmount: 'asc' },
     limit:   50,
   }) as PayRateRow[]
@@ -98,11 +99,10 @@ export async function ratesAsAt(
  * array at least makes the walk return zero rather than throw.
  */
 export async function allRatesAsAt(
-  client: Client, at: string | number | Date = new Date(),
+  client: Client, on: PlainDate,
 ): Promise<Record<RateKind, PayRateRow[]>> {
-  const when = instant(at)
   const rows = await client.payRate.findMany({
-    where:   coveringAt(when),
+    where:   coveringAt(on),
     orderBy: { fromAmount: 'asc' },
     limit:   200,
   }) as PayRateRow[]
@@ -149,7 +149,7 @@ export function applyBands(bands: PayRateRow[], annual: number): { total: number
 }
 
 /**
- * Everything owed on one annual figure, at one instant.
+ * Everything owed on one annual figure, on one day.
  *
  * The employer's two kinds are answered beside the employee's and are NOT
  * netted into anything: employer NI and the employer's pension contribution are

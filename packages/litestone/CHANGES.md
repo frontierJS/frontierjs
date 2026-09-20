@@ -1,5 +1,374 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-20 — `@@sync(field)`: two writers, different columns, both of them win
+
+Phase 5 of `IDEAS/homestead.md`, the Data-boundary half (`FJS-D334`,
+`FJS-D335`, `FJS-D336`; `FJS-D304` amended, since it had ruled *nothing else
+until an app asks*).
+
+`@@sync(refuse)` already refuses a held write whose row moved, and it is right
+and blunt: `@version` is a counter, so it says the row moved and never which
+columns moved. `field` is that same precondition with the answer KEPT instead of
+discarded. The held write carries `base` — the row as the device read it — and
+`core/three-way.js` compares the patch against it and against the row as it
+stands, a column at a time, into four outcomes: **unchanged** (the patch named
+it and the value equals the base — a form submits every field it holds, so
+without this the merge would be a last-write-wins with extra steps),
+**taken**, **agreed** (both wrote the same value, so there is nothing to
+decide) and **conflicted**.
+
+**Only `conflicted` reaches the caller**, as `SyncConflictError` carrying
+`base`/`local`/`remote` per contested column. It is deliberately not a
+`VersionConflictError` and not a subclass of one: `isStaleWrite()` is
+`409 && retryable`, so a stale write is re-read and re-applied automatically,
+and doing that here re-sends the whole patch and overwrites the other writer's
+column with nothing said. `retryable` is false and the flag is pinned by a test
+in this package rather than in the one that reads it.
+
+**It costs nothing on an uncontested write.** A version that still matches never
+reaches the comparison, so the extra read happens only on the losing side of a
+race. The WHERE is now built before the SET inside `update`, because the merge
+decides what the SET says.
+
+**Two things are refused by name rather than dropped**, both because a silent
+version of them looks exactly like the feature working. A `base` on a model that
+does not declare `field` — a base nothing reads is indistinguishable from a
+merge that found no conflict. And a base-carrying patch that writes an
+`@encrypted` or `@hashed` column: the comparison reads the STORED value, and
+ciphertext re-encrypts to different bytes every time, so it would report a
+conflict on every write naming the column including ones nobody else touched.
+A device cannot reach that anyway — `host/browser.js` refuses `@encrypted`
+outright.
+
+`field` needs `@version` for the reason `refuse` does, and `SYNC_NEEDS_VERSION`
+is now the set both read. `asSystem()` skips the version check, so it skips the
+merge with it — a migration or a job is not a second editor.
+
+**What is NOT here: the transport.** Nothing yet carries a base from a device to
+this boundary, so `field` is reachable only by a direct `db.<model>.update({
+base })`. That half is junction's `CallOptions` and sierra's pending queue.
+
+## 2026-09-20 — the trail says what KIND of caller wrote the row
+
+`FJS-1195`. `actorId` is null for two callers that have nothing in common — a
+bearer holding a capability, and nobody at all — so `actorType` is the column
+that separates them, and it read any principal OBJECT as a user. A guest write
+through `$setAuth({ cartToken })` was therefore filed as a person with no id,
+which is what a session whose id went missing looks like. `example` files every
+guest basket edit that way.
+
+**`actorTypeOf(ctx)` in `core/client.js` is the one grader.** A principal states
+its own type where it has one (declared beats derived); `asSystem()` is
+`system`; a principal with an `id` is `user`; a principal carrying claims and no
+id is **`bearer`**.
+
+**`system` rather than nothing, because `src/export.js` already said so.** That
+file wrote `system ? 'system' : 'user'` beside a line that wrote null for the
+same caller — two graders, disagreeing. The export row now goes through the
+scoped client and names neither actor field.
+
+What a bearer should name as its ACTOR — the grant row it came in on, or the
+subject it resolved to — is not answered here; it is in `IDEAS/bearer-access.md`
+§ Open questions, and nothing can answer it until a resolver hands the boundary
+a row id.
+
+## 2026-09-20 — the vector engine seam, ahead of `@vector`
+
+`FJS-1193`'s engine half. Nothing in the `.lite` language yet — no `@vector`, no
+ordering operator — but the part underneath both is here, because it is the part
+the two engines answer differently and `FJS-D331` made the second path mandatory
+rather than a fallback.
+
+**`core/vector.js`** is what a vector is and the JS comparison over it: the
+float32 layout, `readVector`/`toVectorBytes`, `cosineDistance` and
+`scoreByDistance`.
+
+**The extension is an accelerator and never the mechanism.** SQLite's own wasm
+build is compiled with `SQLITE_OMIT_LOAD_EXTENSION` — read out of `sqlite3.wasm`
+beside `ENABLE_FTS5` — so the browser engine cannot load `sqlite-vec` at any
+version and JavaScript is its only answer. `engine.vector` is the capability:
+`null`, or `{ cosineDistance, arm(db) }`. `bun:sqlite` answers it when the
+package resolves and the browser engine declares `null` with the reason in the
+file.
+
+**`arm(db)` is per connection and deliberately not called at open.** The obvious
+version loads the extension in `open()`; measured, that takes a connection from
+0.115 ms to 0.650 ms, and litestone opens one per pristine migration diff, per
+template clone, per tenant and two per database — almost none of which run a
+similarity query. It timed out the erpnext corpus test at 11.1 s against a 5 s
+limit. So a similarity read arms the connection it is about to use, once.
+
+**Two guards, both measured and both silent without them.** A zero vector —
+what an empty or failed `embed()` returns — scores `NULL` in `vec_distance_cosine`,
+and `NULL` sorts FIRST, so one bad write is the best match for every query
+forever with a 200; `WHERE e IS NOT NULL` does not catch it, because the blob is
+valid and the distance is what is null. And a single un-embedded row makes the
+extension throw, failing the whole read rather than losing that row. So a
+zero-norm write is refused by name and the JS path drops a null instead of
+throwing.
+
+**`test/vector.test.ts` carries the oracle `FJS-D331` requires** — `cosineDistance`
+against `vec_distance_cosine` over the same bytes, 200 seeded pairs at 1536
+dimensions plus the resulting ORDER. It is a **named skip** unless `sqlite-vec`
+is installed (`bun add -d sqlite-vec` here; `FJS_REQUIRE_VEC=1` makes the skip
+fatal), because the ruling makes the package a thing a server installs and
+declaring it here would hand every app a platform binary for an optional
+feature. Verified by running: 22/22 with it present, and the agreement goes red
+when the distance is flipped to a similarity or the zero-vector guard removed.
+
+## 2026-09-20 — `@point`: where a row is, declared once and pruned by an index
+
+A coordinate is two numbers that have to be indexed separately and read as one, and
+`.lite` had no way to say so — so an application stored `lat Float?` / `lng Float?`, wrote
+its own haversine, and got the two cases nobody writes by hand wrong. `FJS-D316` and
+`FJS-D317` ruled the shape; the measurements are `IDEAS/geo.md`.
+
+```
+model Job {
+  site Json? @point(lat, lng)
+}
+```
+
+**One declaration, four things emitted.** Two `REAL GENERATED ALWAYS AS (json_extract(…))
+VIRTUAL` columns that store no bytes, a composite index over them, a `CHECK` the database
+enforces, and the filter that reads the columns by name — which is the load-bearing part: a
+`WHERE` that repeats the `json_extract` expression is a full `SCAN` with the index present,
+because SQLite matches the column and not the expression.
+
+**The `CHECK` needs `coalesce()` and this is the whole reason it does.** A `CHECK` fails
+only on `FALSE`, so `json_type(site, "$.lat") IN ("integer", "real")` is `NULL` for an
+object with no `lat` and the row is **accepted** — `{}`, `{lat: 40.7}` and
+`{latitude, longitude}` all stored cleanly under the naive spelling. The general form of
+the trap is now in `docs/gotchas.md`.
+
+**`near` is the only filter and distance the only ordering** (`FJS-D318`). The radius
+carries its unit — `within: '5mi'`, parsed by `@frontierjs/toolbelt/units` (`FJS-D319`) —
+the box prunes and a haversine in SQL measures, and the ordering is the query's rather than
+the page's, so a nearest-first list paginates (`FJS-D321`). The distance is not added to the
+row: the caller has the point and the centre, and one kit call is the number (`FJS-D320`).
+Everything else on a point field is refused by name, including `orderBy: { site: "asc" }`,
+which names the shape that works.
+
+**The gate on shipping it was a brute-force comparison**, not a set of hand-picked rows:
+`near` is run against a linear scan of the same fixture at the equator, across ±180°, near
+a pole and at mid-latitude, with the fixture sized to straddle the circle's edge. A
+prefilter that drops a row answers fewer rows with a 200, which is the defect
+Elasticsearch, qdrant and GeoBlacklight each shipped.
+
+**A centre may arrive as text.** `@frontierjs/toolbelt/query` reads a coordinate as a
+number only when it round-trips, which `51.507400` — what `toFixed(6)` writes — does not.
+The kit's stated answer is that the model has the last word, and `@point` is the model
+saying these two keys are Floats, so the reading is here. An empty coordinate is refused
+rather than read as `0`.
+
+## 2026-09-20 — `@accept` stops refusing a HEIF photograph for being the other reading of itself
+
+A HEIF file's `ftyp` brand decides which registered type it reads as: `heic`/`heix` answer
+`image/heic`, `mif1`/`msf1` answer `image/heif`. Both come off a phone and an app declares one of
+the two spellings. While `@accept` graded the uploader's WORD this never fired — the name said
+`image/heic` and `mimeMatches` is an equality — and `FJS-1184` then made the BYTES the grading
+input, so `@accept("image/heic")` began refusing a genuine `mif1` photo (`FJS-1194`).
+
+`mimeMatches` is no longer an equality: it asks `sameType` from `@frontierjs/toolbelt/mime`, which
+keeps *what a type is* in the kit and *what `@accept` means* here. The wildcard rule stays.
+
+**The equivalence was already written down and had never been executed.** The kit shipped a
+`typeMismatch` holding exactly this fact with no caller in the tree — what this file needs is the
+evidence VALUE, not a claimed/actual pair — so the one statement of it lived in code nothing ran.
+Three rows drive `serialize` with real `ftyp` bytes, and reverting to the equality reds exactly the
+`mif1` row while both controls stay green.
+
+## 2026-09-20 — three ways a JSON path extraction silently indexes nothing, now reported
+
+`Json @type(T)` ships with path filtering, and a path filter compiles to `json_extract()`, which the
+planner cannot match to an index — so every one of those reads is a full scan. **What indexes a path
+already exists**: a `@generated` column over it with an `@@index` on that. Measured, it is a VIRTUAL
+column costing no stored bytes and `SEARCH place USING INDEX idx_place_city (city=?)`.
+
+Three ways of writing that build cleanly and answer nothing, each now an `advise` rule:
+
+- **`json-arrow-answers-json`** (error). SQLite's two arrow operators differ in one character and in
+  what comes back: `->` answers the JSON REPRESENTATION, so a string member keeps its quotes and the
+  column holds `"Reno"` where the row holds `Reno`. The column builds, the index builds, `EXPLAIN`
+  reports `SEARCH … USING INDEX`, and the query matches no row — so even checking the query plan
+  confirms a working index. `->>` answers the value.
+- **`json-path-outside-the-declared-type`** (error, plus a warn). `addr ->> 'citty'` is legal SQL over
+  legal JSON: the path is not there, so the column is NULL for every row for the life of the table and
+  no write is ever refused. The `type` declaration is the only thing that knows better, and it also
+  catches an Int member landing in a String column — `->>` preserves the JSON type, so that column
+  then orders `10` before `9`.
+- **`index-over-a-json-document`** (warn). `@@index([addr])` indexes one entry per serialized
+  document, which answers *this exact document* and nothing else.
+
+**The parser's own warning for the third is removed rather than kept beside it.** It said less (no
+fix, no reason), fired on every boot of any app with that shape, and sat on the wrong side of a line
+this package already draws: the parser owns what cannot be EXPRESSED, `advise` owns legal-and-wrong,
+and an index over a Json column is legal and does work — for whole-document equality, and for a
+`@@unique` over a document. Two owners for one judgment is what made the `@@fts`-over-encrypted rule
+unreachable once, in the other direction.
+
+**A fourth rule was written, driven against the real apps, and deleted.** *A typed Json column with no
+member extracted* fired on `Order.meta Json @type(Meta)` where `Meta` is one free-text note — nobody
+filters on a note. Which member people filter by is a fact about the application and not about the
+seed, and `opportunities.js` is explicit that a false suggestion is how a reader collapses the section
+and never opens it again. The fact is said in the docs instead, and by the index rule, which fires
+only where somebody has already declared an index and therefore shown what they wanted.
+
+**`json-types.md` § Performance characteristics was advising the dangerous fix.** It said to write
+`CREATE INDEX … ON user (json_extract(addr,'$.city'))` by hand in a migration. SQLite takes it, and
+litestone only drops and restates indexes it can name — so the first migration that rebuilds that
+table takes the index with it and says nothing. Rewritten around the schema-declared form, with every
+claim in it executed rather than reasoned: the emitted DDL line, both query plans, that the column is
+VIRTUAL, and the row count through the client.
+
+`advise` is silent on `example` and `basecamp` — neither declares any of the three shapes. 13 tests in
+`advise.test.ts`, both directions. The roadmap's `@@index([address->'$.city'])` proposal is retired in
+place with the reason.
+
+## 2026-09-19 — `litestone validate`: which stored rows the schema would now refuse
+
+Every constraint here is enforced twice, and only one half travels with the table. `@email`, `@url`,
+`@regex`, `@length`, `@minItems`, an array's element type, the ISO convention on a `DateTime` and the
+shape of a `Json @type(T)` emit **no CHECK** — so tightening one governs the next write and says
+nothing about the rows already down. `litestone validate` is the only thing that asks.
+
+**The failure is worse than the backlog line said, which is why the command is broader than it asked
+for.** That line wanted *typed-JSON shape mismatches after a type's shape changes*. Measured, a `type`
+gaining a required member does not leave stale rows lying about — it makes every one of them
+**unwritable**, and the refusal names a column the caller never sent:
+
+```
+findUnique  → { id: 1, addr: { city: 'Reno' } }        the row reads perfectly
+update      → ValidationError — addr.zip: is required  and cannot be written
+autoMigrate → { main: { state: 'in-sync', applied: 0 } }
+```
+
+All three true at once. So the symptom reaches you as a ticket from whoever owned that row, about a
+field they were not editing, long after the deploy. Typed JSON is one of eight validators in that
+class, and running **the validator the write boundary already runs** covers all eight for less code
+than a typed-JSON-specific walker — `validate()` takes `(row, model, computedFns, typeMap, enums)`
+and a stored row is a payload with every column present.
+
+**Two findings, because they want different answers.** A model where EVERY row is refused is a deploy
+that half-landed — the rule is the thing to look at. Some rows refused is data that drifted, and the
+rows are named. Both are listed either way: a count with no row to open is not an answer somebody can
+act on. No threshold under the rollup; a model of one bad row is a model of one bad row, and a floor
+here would be a judgment the walk cannot make.
+
+**The walk reads through `asSystem()`**, deliberately — a caller-scoped read of a `@@gate("8")` model
+answers `[]`, which is the shape of a model with nothing wrong, so it would pass most confidently on
+the rows most worth protecting. Soft-deleted and template rows are in, since a restore is a write.
+`jsonl` and `logger` models are skipped by name.
+
+**Found while driving it: the command printed a green tick over a database it had just created.** Run
+where the config does not point at the real file, litestone makes the database, every model answers
+zero rows, and zero findings reads as a pass — the exact failure class the command exists to prevent
+(`mutationScore`'s rule, one surface over). It now names the file before the verdict, always, and
+reports *not one row between them — nothing was checked* as its own outcome. Both halves are pinned
+in `cli-smoke.test.ts` against the real binary, because every way this goes wrong in practice happens
+between argv and the client rather than inside the walk.
+
+Exits 1 on a finding, for a deploy pipeline beside `litestone release --strict`. 10 tests in
+`test/validate-rows.test.ts`, 2 in `cli-smoke`; suite 4953 pass. The page is
+[docs/validate.md](docs/validate.md).
+
+## 2026-09-19 — `@accept` grades the bytes, not the uploader's word
+
+[FJS-1184](../../ISSUES.md#fjs-1184). Every `mime` reaching `serialize` was a CLAIM — `value.type` off a
+browser `File`, which the client sets, or `extname()` for a path — and that claim was what `@accept`
+graded, what went onto the ref, and what the provider got as `contentType`. So `@accept("image/png")`
+was satisfied by any bytes at all provided they arrived named `.png`.
+
+`resolveType` prefers `sniff` over the claim and everything downstream reads one value, so the graded
+type and the stored type can never disagree. **`null` is no evidence and never *safe*** — most text
+formats carry no magic number, so unrecognized bytes keep the claim rather than being refused, which
+is what stops every `.txt` upload being rejected. A mismatch with **no** `@accept` is corrected and
+not refused: a declaration that does not exist implies nothing, and recording what the bytes are is
+the difference between storing evidence and storing a claim.
+
+**Two more fixed with it.** `File.type` comes back with its parameters attached —
+`text/plain;charset=utf-8` — and `mimeMatches` is an equality, so `@accept("text/plain")` refused the
+exact thing it was written to allow, for every upload that came from a browser; the claim is reduced
+through `baseType` now. And a `Buffer` types by its bytes instead of always `application/octet-stream`,
+so `@accept("image/png")` stops refusing a genuine PNG passed as raw bytes.
+
+**The stored KEY follows the resolved type too**, found by `example`'s catalog drive: the ref said
+`image/png` and the object was written as `…notes.txt`, and a static origin serves by extension and
+has no ref to read — so the row and the URL stated different things, which is the same defect one
+layer out. Only where the type is one the table can spell; with no evidence the caller's own name
+stands.
+
+**Nothing had ever executed `serialize`.** Every `@accept` test in the suite was over the parser, and
+a declaration that parses is not a declaration that binds. `test/file-type.test.ts` is 12 rows that
+drive it, each with its negative control.
+
+## 2026-09-19 — `FileStorage` reads the shared type table
+
+`guessMime`'s 16-entry table is `@frontierjs/toolbelt/mime` (`FJS-1186`). It was missing `.avif` and
+`.heic`, which is what a phone uploads — both stored as `application/octet-stream`, and that string
+is what `@accept` grades and what the provider is handed as `contentType`.
+
+The kit also carries `sniff`, which is what `FJS-1184` needs: `@accept` currently grades the
+uploader's own word for what the bytes are.
+
+## 2026-09-18 — a migration's filename stamp is UTC
+
+The stamp IS the apply order — `listMigrationFiles` sorts and nothing else records when a file was
+written — and it was read off the author's wall clock. At one instant `nextMigrationName` answered
+`20260919103333` in Los Angeles, `20260919173333` in UTC, `20260919193333` in Berlin and
+`20260920053333` in Auckland: nineteen hours and a date boundary, so a migration written in Los
+Angeles up to nineteen hours AFTER one written in Auckland sorted, and applied, before it
+(`FJS-1151`). The guard against a stamp at or below the directory's last one sees only the files on
+this checkout, so the shape that bites — two branches, each internally ordered, merged — was never in
+reach of it.
+
+`formatStamp` reads `getUTC*` and `bumpStamp` builds with `Date.UTC`, and the two had to move in one
+breath: reading UTC while CONSTRUCTING local shifts by the offset, so east of Greenwich the bump runs
+backwards — from `20260615120000` in Auckland it answered `20260615000001` — and the caller then
+falls through to the numeric branch meant for a stamp that is not a clock reading at all. Existing
+files keep their names; only the next stamp is computed.
+
+Two tests pin it, and each fails when its half is reverted: one sets `TZ` per case and brackets the
+answer with `toISOString()`, one steps the bump across midnight, a month end, a leap day and a year
+end. **A test here has to set `TZ` itself**, because `bun test` runs in UTC whatever the host is — the
+reason a file of clock assertions sat on this for its whole life (root `CLAUDE.md` § Live hazards).
+
+`@file`'s `:date` key segment is UTC for the same reason: it becomes part of a STORED object key, so
+a host-local reading files an upload made at 23:30 on the 31st under a different month depending on
+where the server is, while every key already written stays put.
+
+## 2026-09-19 — `@@index` documents the two arguments it has always accepted, and the backlog stops lying
+
+The reference said `@@index([field, …])`. The parser has taken `(sort: Asc | Desc)` per column and
+`where: <expr>` for as long as `ddl.js` has emitted them, and `@@unique`'s own entry names
+`@@index(where:)` in its prose — so the generated page, which `docs/roadmap.md` calls the authority on
+what the language accepts, contradicted itself on the same screen. Verified by parsing both forms, not
+by reading the emitter.
+
+`seeAlso` gained a `<level>:<word>` spelling with it, because the bare one could not reach this: a
+name is matched against the first row carrying it, and `unique` is a word at both levels, so pointing
+`@@index` at `@@unique` linked to `@unique` with nothing saying so. 36 existing links are ambiguous
+the same way and are unchanged — [FJS-1185](../../ISSUES.md#fjs-1185). The synonym `query plan` came
+off `@@index`: the entry's own text now says *query planner*, so the search already finds it.
+
+**Five backlog entries described work that had shipped**, across three files that each kept their own
+copy. `roadmap.md` had the `$rotateKey` encryption bug as a v1.0 blocker (32 tests pass), jsonschema
+views as unbuilt (`FJS-999` built them, and `@@external` models were never skipped), and npm publish
+as pending; `PROJECT_STATE.md` had `Money`, `@@transitions` and `@@index(where:)`, the last still
+written as *SQLite supports it natively*; `CLAUDE.md` had `Money` as a JSON column where
+[`FJS-D142`](../../DECISIONS.md#fjs-d142) ruled an Int. Both copies are now pointers — `roadmap.md` is
+the one list, and it is the one `roadmap-shipped` grades.
+
+**A fixed DEFECT is tombstoned where a shipped ATTRIBUTE is deleted**, which is the rule the cut ran
+on: `roadmap-shipped` reads the generated catalog, so a proposal for a word that exists fails on its
+own and needs no gravestone. A bug, a publish and a feature that is not an attribute are invisible to
+it and read as current until somebody runs the tests.
+
+What actually remains is vectors (`Embedding(n)`, argued in `IDEAS/chat-surface.md`), geo (`LatLng`,
+unargued and blocked on that rather than on code), `resolveMany()`, `@slug`'s collision half, a
+`validate` CLI, a JSON-path index hint, `introspect` emitting `@@db`, and an HTTP-cached field whose
+proposed name `@sync` is already taken by offline device sync.
+
 ## 2026-09-17 — Studio's principal note follows the principal picker into the rail
 
 The auth note explains what `--gate` and a missing per-request claim mean for the picker beside it.

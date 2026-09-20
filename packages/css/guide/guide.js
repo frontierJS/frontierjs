@@ -175,8 +175,8 @@ const SEMANTIC_COLORS = [
 const BTN_VARS = [
   ["--bg-mix", "The tone hue, and the whole tone. Set by tone classes (.primary, .danger, …) in tones.css. Registered inherits:false, so it applies only to the element carrying the class."],
   ["--tone-fill", "The requested fill — the tone if there is one, else the component default."],
-  ["--fill", "What actually gets painted: --tone-fill, luminance-capped if white text would otherwise fail contrast."],
-  ["--on-fill", "Text color, derived from the fill's luminance. Override per tone or theme with --on-bg-mix."],
+  ["--_fill", "What actually gets painted: --tone-fill, luminance-capped if white text would otherwise fail contrast."],
+  ["--_on-fill", "Text color, derived from the fill's luminance. Override per tone or theme with --on-bg-mix."],
   ["--btn-radius", "Border radius. Themable — Elite sets it to 0."],
   ["--btn-font-weight", "Default 600. Themes can override (e.g. Elite uses 700)."],
 ];
@@ -1102,7 +1102,7 @@ function compositionPage() {
   border-radius: var(--badge-radius,
                      var(--btn-radius));
   font-size:     var(--text-xs);
-  background:    var(--fill, var(--tone-fill));
+  background:    var(--_fill, var(--tone-fill));
 }`,
               'css',
               'sg-code-inline'
@@ -1188,7 +1188,7 @@ function compositionPage() {
         ${code(`/* surface.css — shared by every block primitive */
 :where(.surface, .card, .alert, .toast, .dialog, .popover, .drawer) {
   background:    var(--surface-bg);
-  border:        1px solid var(--surface-border);
+  border:        1px solid var(--_surface-border);
   border-radius: var(--card-radius);
 }
 
@@ -1201,8 +1201,8 @@ function compositionPage() {
   --surface-tint-color:  color-mix(in srgb, var(--bg-mix) 55%, var(--ink));
 
   --surface-bg:     var(--surface-tint-bg,     var(--surface));
-  --surface-border: var(--surface-tint-border, var(--rule));
-  --surface-color:  var(--surface-tint-color,  var(--ink));
+  --_surface-border: var(--surface-tint-border, var(--rule));
+  --_surface-color:  var(--surface-tint-color,  var(--ink));
 }`)}`
       )}
 
@@ -1847,14 +1847,14 @@ function tintSteps() {
 
 /*
  * The two constants the contrast derivation turns on, read out of the
- * chip base's own `--fill` expression rather than restated.
+ * chip base's own `--_fill` expression rather than restated.
  *
  * 0.35 is where the branch is: above it a hue keeps its color and takes
  * dark text, below it the fill is scaled down and keeps white. 0.1783 is
  * the luminance at which white text reaches 4.5:1.
  */
 function contrastConstants() {
-  const v = tokenValue('--fill') || ''
+  const v = tokenValue('--_fill') || ''
   const target = v.match(/([\d.]+)\s*\/\s*y/)
   const split = v.match(/y\s*-\s*([\d.]+)/)
   return { target: target && target[1], split: split && split[1] }
@@ -2909,18 +2909,18 @@ function cardsPage() {
 .card {
   /* the shared surface contract, set in surface.css */
   background: var(--surface-bg);
-  color: var(--surface-color);
-  border: 1px solid var(--surface-border);
+  color: var(--_surface-color);
+  border: 1px solid var(--_surface-border);
 }
 
 /* Variants — flip the var contract */
 .card.raised {
-  --surface-border: transparent;
+  --_surface-border: transparent;
   box-shadow: var(--shadow-md);
 }
 .card.outlined {
   --surface-bg: transparent;
-  --surface-border: var(--surface-tint-border, var(--rule-strong));
+  --_surface-border: var(--surface-tint-border, var(--rule-strong));
 }
 .card.ghost {
   --surface-bg: transparent;
@@ -3907,7 +3907,7 @@ function dialogsPage() {
 }
 .dialog > .surface-header {
   background: var(--dialog-header-bg, transparent);
-  color:      var(--dialog-header-color, var(--surface-color));
+  color:      var(--dialog-header-color, var(--_surface-color));
 }`),
       )}
 
@@ -5310,7 +5310,7 @@ function cheatSheetPage() {
     ],
     [
       'surface contract',
-      ['--surface-bg', '--surface-color', '--surface-border', '--card-radius']
+      ['--surface-bg', '--_surface-color', '--_surface-border', '--card-radius']
     ],
     ['field contract', ['--field-bg', '--field-color', '--field-border', '--field-radius']],
     ['table contract', ['--table-bg', '--table-border', '--table-head-bg']],
@@ -5351,7 +5351,7 @@ function cheatSheetPage() {
      */
     [
       'tonal mixing — chip lineage (color-mix, no lighten/darken)',
-      ['--tone-fill (requested)', '--fill (capped, painted)', '--on-fill (auto-contrast)']
+      ['--tone-fill (requested)', '--_fill (capped, painted)', '--_on-fill (auto-contrast)']
     ],
     [
       'tint ramp (tones.css — the ONE place the percentages live)',

@@ -55,15 +55,15 @@
   --tone-fill: var(--bg-mix, var(--color-secondary));
 
   position:  absolute;
-  z-index:   60;
+  z-index:   var(--z-tooltip);
   inset-block-end:   calc(100% + 0.5rem);
   inset-inline-start: 50%;
   translate: -50% 0;
 
   padding:       var(--space-xs) var(--space-sm);
   border-radius: var(--btn-radius);
-  background:    var(--fill, var(--tone-fill));
-  color:         var(--on-fill, white);
+  background:    var(--_fill, var(--tone-fill));
+  color:         var(--_on-fill, white);
   font-family:   var(--font-primary);
   font-size:     var(--text-xs);
   line-height:   1.35;
@@ -84,7 +84,7 @@
   inset-inline-start: 50%;
   translate:    -50% 0;
   border:       4px solid transparent;
-  border-block-start-color: var(--fill, var(--tone-fill));
+  border-block-start-color: var(--_fill, var(--tone-fill));
 }
 
 .tooltip-anchor:hover > .tooltip,
@@ -110,7 +110,7 @@
   inset-block-start: auto;
   inset-block-end:   100%;
   border-block-start-color: transparent;
-  border-block-end-color:   var(--fill, var(--tone-fill));
+  border-block-end-color:   var(--_fill, var(--tone-fill));
 }
 
 .tooltip.start,
@@ -136,12 +136,12 @@
 .tooltip.start::after {
   inset-inline-start: 100%;
   translate:          0 -50%;
-  border-inline-start-color: var(--fill, var(--tone-fill));
+  border-inline-start-color: var(--_fill, var(--tone-fill));
 }
 .tooltip.end::after {
   inset-inline-end: 100%;
   translate:        0 -50%;
-  border-inline-end-color: var(--fill, var(--tone-fill));
+  border-inline-end-color: var(--_fill, var(--tone-fill));
 }
 
 /* Long tooltips wrap instead of running off the viewport. */

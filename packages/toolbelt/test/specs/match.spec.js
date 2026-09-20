@@ -266,3 +266,79 @@ test('match: a column genuinely NAMED constructor is still compared', function (
   assert.equal(matchesQuery(fields, JSON.parse('{"id":"1","constructor":"red"}'),
                                     JSON.parse('{"constructor":"blue"}')), false)
 })
+
+/* ── near ───────────────────────────────────────────────────────────
+ *
+ * `FJS-D326`: a live list holding a proximity search grades an arriving row
+ * itself rather than answering `null` and re-fetching. `null` is for facts this
+ * side cannot know and a distance between two points it is holding is not one.
+ *
+ * The rows that matter are the ones where the answer is NOT the distance: a row
+ * with no location, a radius this side cannot read, and a stored pair under key
+ * names the model chose. Each is asserted for which of the three answers it
+ * gets, because two of them look alike and cost opposite mistakes — `false`
+ * REMOVES the row from a live list.
+ */
+
+const GEO_FIELDS = { id: { type: 'integer' }, site: { type: 'object' } }
+const CENTRE     = { lat: 51.5074, lng: -0.1278 }
+const at         = (site) => ({ id: 1, site })
+const within     = (w) => ({ site: { near: { ...CENTRE, within: w } } })
+
+test('match: near decides, and it is the same two steps as the SQL', function () {
+  assert.equal(matchesQuery(GEO_FIELDS, at({ lat: 51.4995, lng: -0.1248 }), within('5mi')), true,
+    'Westminster, ~1 km out')
+  assert.equal(matchesQuery(GEO_FIELDS, at({ lat: 55.9533, lng: -3.1883 }), within('5mi')), false,
+    'Edinburgh — and false REMOVES it, which is the answer a live list needs')
+  assert.equal(matchesQuery(GEO_FIELDS, at({ lat: 51.4995, lng: -0.1248 }), within('500m')), false,
+    'inside the box the radius prunes with, outside the circle')
+})
+
+test('match: a row with no location is in no circle, and that is decidable', function () {
+  // The SQL leads with `latCol IS NOT NULL`, so this is false rather than
+  // unknown — a row whose coordinate was cleared has to LEAVE the list.
+  assert.equal(matchesQuery(GEO_FIELDS, at(null), within('5mi')), false)
+})
+
+test('match: near reads the centre off a URL, where a coordinate may be text', function () {
+  // `toFixed(6)` does not round-trip, so `/query` hands the coordinate back as
+  // a string — correctly, with no model in the room. Both halves of a live list
+  // read it the same way or they disagree about the same row.
+  assert.equal(matchesQuery(GEO_FIELDS, at({ lat: 51.4995, lng: -0.1248 }),
+    { site: { near: { lat: '51.507400', lng: '-0.127800', within: '5mi' } } }), true)
+})
+
+test('match: what near cannot decide, it does not guess at', function () {
+  const undecidable = [
+    ['a radius in no unit this side knows', within('5 parsecs')],
+    ['a radius that is not there',          within(undefined)],
+    ['a centre that is not a point',        { site: { near: { lat: 'north', lng: 2, within: '5mi' } } }],
+    ['an empty centre, which is not 0,0',   { site: { near: { lat: '', lng: '', within: '5mi' } } }],
+  ]
+  for (const [label, query] of undecidable) {
+    assert.equal(matchesQuery(GEO_FIELDS, at({ lat: 51.4995, lng: -0.1248 }), query), null, label)
+  }
+
+  // The keys are the MODEL's — `@point(y, x)` is legal — and this side holds no
+  // schema, so an unreadable pair is a key-name question rather than a location
+  // outside the circle. Guessing `false` here empties the list.
+  assert.equal(matchesQuery(GEO_FIELDS, at({ y: 51.4995, x: -0.1248 }), within('5mi')), null)
+
+  // And a `select` that dropped the column answers null for near like anything else.
+  assert.equal(matchesQuery(GEO_FIELDS, { id: 1 }, within('5mi')), null)
+})
+
+test('match: the two spellings of a stored pair both read', function () {
+  // `@point(latitude, longitude)` is as ordinary as `@point(lat, lng)`, and four
+  // files of one real application normalized between them by hand.
+  assert.equal(matchesQuery(GEO_FIELDS, at({ latitude: 51.4995, longitude: -0.1248 }), within('5mi')), true)
+})
+
+test('match: near composes with the filters beside it', function () {
+  const q = { status: 'open', site: { near: { ...CENTRE, within: '5mi' } } }
+  const row = (status, site) => ({ id: 1, status, site })
+  const fields = { ...GEO_FIELDS, status: { type: 'string' } }
+  assert.equal(matchesQuery(fields, row('open',   { lat: 51.4995, lng: -0.1248 }), q), true)
+  assert.equal(matchesQuery(fields, row('closed', { lat: 51.4995, lng: -0.1248 }), q), false)
+  assert.equal(matchesQuery(fields, row('open',   { lat: 55.9533, lng: -3.1883 }), q), false)
+})

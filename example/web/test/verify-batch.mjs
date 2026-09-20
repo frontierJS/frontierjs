@@ -30,20 +30,22 @@
  */
 
 import { db }  from '../../api/src/core/db.ts'
-import { instant }                     from '../../api/src/domain/payroll'
 import { planPayRun, calculatePayslipFor, completeIfDone, payPayRun, revertPayRun }
   from '../../api/src/domain/payroll'
 import calculatePayslip                from '../../api/src/jobs/calculate-payslip.job.ts'
 import sendPayslip, { sendPayslipJob } from '../../api/src/jobs/send-payslip.job.ts'
 import { occurrenceKey }               from '@frontierjs/toolbelt/history'
+import { plainDateIn, addToDate }       from '@frontierjs/toolbelt/datetime'
 
 import { sweepPayroll }                from './payroll-sweep.mjs'
 import { results, report } from './lib/report.mjs'
 
 const sys = db.asSystem()
 const RUN = String(Date.now()).slice(-6)
-const DAY = 86_400_000
-const ago = (d) => new Date(Date.now() - d * DAY).toISOString()
+// Days, not instants (`FJS-D288`). UTC is the calendar every drive here runs
+// the shop on.
+const TODAY = plainDateIn(Date.now(), 'UTC')
+const ago   = (d) => addToDate(TODAY, { days: -d })
 
 const { got, t } = results()
 const refused = async (fn) => { try { await fn(); return false } catch { return true } }
@@ -102,7 +104,7 @@ fixtures.employeeIds.push(gapped.id)
 
 const run = await sys.payRun.create({ data: {
   reference:   `PR-B${RUN}`,
-  periodStart: ago(30), periodEnd: ago(1), payDate: instant(),
+  periodStart: ago(30), periodEnd: ago(1), payDate: TODAY,
   periodsPerYear: 12, periodIndex: 5,
 } })
 fixtures.runIds.push(run.id)

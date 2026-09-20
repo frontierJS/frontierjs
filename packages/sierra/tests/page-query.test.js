@@ -114,6 +114,36 @@ describe('the search string is filters and directives', () => {
     ])
   })
 
+  test('a whole proximity search is URL-driven, both halves', async () => {
+    // A nearest-first list is the screen that is bookmarked and shared, so the
+    // centre, the radius and the ordering all have to survive a paste
+    // (`FJS-D323`). The radius stays TEXT — `5mi` is not a number — and the
+    // coordinates stay numbers, which is the one thing a round trip can get
+    // wrong in each direction.
+    installWindowMock('/orders/?site[near][lat]=51.5074&site[near][lng]=-0.1278&site[near][within]=5mi' +
+                      '&$orderBy[site][near][lat]=51.5074&$orderBy[site][near][lng]=-0.1278&$limit=20')
+    initRouter(TREE, components(), {}, { trailingSlash: 'always' })
+    await settle()
+
+    expect([page.query, page.directives]).toEqual([
+      { site: { near: { lat: 51.5074, lng: -0.1278, within: '5mi' } } },
+      { limit: 20, orderBy: { site: { near: { lat: 51.5074, lng: -0.1278 } } } },
+    ])
+  })
+
+  test('a coordinate that does not round-trip arrives as text, and says so', async () => {
+    // `toFixed(6)` is how a GPS reading reaches a URL, and `51.507400` is not
+    // a number by this kit's rule — it does not round-trip. The kit is right to
+    // leave it alone with no model in the room; the point DECLARATION is what
+    // reads it back as a Float, which is why the pinning is here and the fix is
+    // in Litestone.
+    installWindowMock('/orders/?site[near][lat]=51.507400&site[near][lng]=-0.127800')
+    initRouter(TREE, components(), {}, { trailingSlash: 'always' })
+    await settle()
+
+    expect(page.query).toEqual({ site: { near: { lat: '51.507400', lng: '-0.127800' } } })
+  })
+
   test('it reads the same table the API boundary strips by', () => {
     // One grammar, two boundaries. A directive named in one and not the other
     // becomes a filter on a column nobody declared.

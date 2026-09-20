@@ -623,9 +623,21 @@ describe('v.required completeness', () => {
     expect(S.validate({}).valid).toBe(false)
   })
 
-  it('v.required.date accepts date strings', () => {
-    const S = createSchema({ dob: v.required.date() })
-    expect(S.validate({ dob: '1990-01-01' }).valid).toBe(true)
+  it('v.required.instant accepts an instant string and coerces it to a Date', () => {
+    const S = createSchema({ seenAt: v.required.instant() })
+    expect(S.validate({ seenAt: '1990-01-01T09:00:00Z' }).valid).toBe(true)
+    expect(S.validate({}).valid).toBe(false)
+  })
+
+  // A DAY is not an instant, and the two must not share a coercion: parsing
+  // `1990-01-01` into a Date and storing that is UTC midnight, which is the
+  // day before west of Greenwich (`FJS-D288`).
+  it('v.required.plainDate takes the day as written and leaves it a string', () => {
+    const S = createSchema({ dob: v.required.plainDate() })
+    const ok = S.validate({ dob: '1990-01-01' })
+    expect(ok.valid).toBe(true)
+    expect(ok.data.dob).toBe('1990-01-01')
+    expect(S.validate({ dob: '1990-01-01T09:00:00Z' }).valid).toBe(false)
     expect(S.validate({}).valid).toBe(false)
   })
 

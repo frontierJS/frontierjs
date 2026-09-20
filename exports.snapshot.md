@@ -341,6 +341,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./directives (default)` | `src/directives/directives.js` | yes |
 | exports | `./gate (types)` | `src/gate/gate.d.ts` | yes |
 | exports | `./gate (default)` | `src/gate/gate.js` | yes |
+| exports | `./geo (types)` | `src/geo/geo.d.ts` | yes |
+| exports | `./geo (default)` | `src/geo/geo.js` | yes |
 | exports | `./glow` | `src/glow/glow.js` | yes |
 | exports | `./history` | `src/history/history.js` | yes |
 | exports | `./hooks` | `src/hooks/hooks.js` | yes |
@@ -350,6 +352,8 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./json` | `src/json/json.js` | yes |
 | exports | `./jsonschema` | `src/jsonschema/jsonschema.js` | yes |
 | exports | `./match` | `src/match/match.js` | yes |
+| exports | `./mime (types)` | `src/mime/mime.d.ts` | yes |
+| exports | `./mime (default)` | `src/mime/mime.js` | yes |
 | exports | `./predicate` | `src/predicate/predicate.js` | yes |
 | exports | `./query (types)` | `src/query/query.d.ts` | yes |
 | exports | `./query (default)` | `src/query/query.js` | yes |

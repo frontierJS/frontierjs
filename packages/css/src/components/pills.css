@@ -27,11 +27,11 @@
   font-size:     var(--text-xs);
   line-height:   1rem;
 
-  /* Skin. --fill is the effective background; chip.css derives readable
+  /* Skin. --_fill is the effective background; chip.css derives readable
      text from it. See the auto-contrast note there. */
   --tone-fill:    var(--bg-mix, var(--color-muted));
-  background:     var(--fill, var(--tone-fill));
-  color:          var(--on-fill, white);
+  background:     var(--_fill, var(--tone-fill));
+  color:          var(--_on-fill, white);
   border:         var(--border-width) solid transparent;
   font-family:    var(--font-primary);
   font-weight:    var(--pill-font-weight);

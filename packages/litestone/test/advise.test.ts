@@ -531,3 +531,132 @@ describe('the rule set', () => {
       }`)).toEqual([])
   })
 })
+
+// ─── a JSON path read into a column ───────────────────────────────────────────
+//
+// Three ways a path extraction is legal, builds, and answers nothing. All three
+// were measured against SQLite before the rules were written: `->` stores the
+// quoted form and an index over it is USED and still matches no row; a typo'd
+// member is NULL for every row for the life of the table; and an index over the
+// document itself cannot serve a path lookup at all.
+
+const TYPED = `type Addr { city String  n Int }`
+
+describe('a @generated column that reads a JSON path', () => {
+  test('`->` is reported — it keeps the quotes, so nothing matches', () => {
+    const f = findings(`${TYPED}
+      model P {
+        id   Int    @id
+        addr Json   @type(Addr)
+        city String @generated("addr -> '$.city'")
+      }`, 'json-arrow-answers-json')
+    expect(f).toHaveLength(1)
+    expect(f[0].field).toBe('city')
+    expect(f[0].message).toContain('->>')
+  })
+
+  test('`->>` and json_extract are both silent', () => {
+    for (const expr of [`addr ->> '$.city'`, `addr ->> 'city'`, `json_extract(addr, '$.city')`])
+      expect(findings(`${TYPED}
+        model P {
+          id   Int    @id
+          addr Json   @type(Addr)
+          city String @generated("${expr}")
+        }`, 'json-arrow-answers-json')).toHaveLength(0)
+  })
+
+  test('a member the type does not declare is reported, and the real members are named', () => {
+    const f = findings(`${TYPED}
+      model P {
+        id   Int    @id
+        addr Json   @type(Addr)
+        city String @generated("addr ->> 'citty'")
+      }`, 'json-path-outside-the-declared-type')
+    expect(f).toHaveLength(1)
+    expect(f[0].message).toContain("no member 'citty'")
+    expect(f[0].message).toContain('city, n')
+  })
+
+  test('a member declared Int, extracted into a String column, is a warning about ORDER', () => {
+    const f = findings(`${TYPED}
+      model P {
+        id   Int    @id
+        addr Json   @type(Addr)
+        n    String @generated("addr ->> 'n'")
+      }`, 'json-path-outside-the-declared-type')
+    expect(f).toHaveLength(1)
+    expect(f[0].severity).toBe('warn')
+    expect(f[0].message).toContain('10 before 9')
+  })
+
+  test('the matching declaration says nothing', () => {
+    expect(findings(`${TYPED}
+      model P {
+        id   Int    @id
+        addr Json   @type(Addr)
+        city String @generated("addr ->> 'city'")
+        n    Int    @generated("addr ->> 'n'")
+      }`, 'json-path-outside-the-declared-type')).toHaveLength(0)
+  })
+
+  test('an untyped Json column is not graded — it declares no members to be wrong about', () => {
+    expect(findings(`model P {
+        id   Int    @id
+        addr Json
+        city String @generated("addr ->> 'anything'")
+      }`, 'json-path-outside-the-declared-type')).toHaveLength(0)
+  })
+
+  test('a deeper path is not followed, and says nothing rather than guessing', () => {
+    expect(findings(`${TYPED}
+      model P {
+        id   Int    @id
+        addr Json   @type(Addr)
+        deep String @generated("addr ->> '$.city.sub'")
+      }`, 'json-path-outside-the-declared-type')).toHaveLength(0)
+  })
+
+  test('a TEMPLATE is a string being built, not a path being read', () => {
+    const all = findings(`model P {
+        id   Int    @id
+        a    String?
+        b    String?
+        both String? @generated(\`{a} {b}\`)
+      }`)
+    expect(all.filter(x => x.id.startsWith('json-'))).toHaveLength(0)
+  })
+})
+
+describe('an index over a Json column', () => {
+  test('@@index over the document is reported', () => {
+    const f = findings(`${TYPED}
+      model P {
+        id   Int  @id
+        addr Json @type(Addr)
+        @@index([addr])
+      }`, 'index-over-a-json-document')
+    expect(f).toHaveLength(1)
+    expect(f[0].message).toContain('json_extract()')
+  })
+
+  test('@@unique over the document is reported as the constraint it is', () => {
+    const f = findings(`${TYPED}
+      model P {
+        id   Int  @id
+        addr Json @type(Addr)
+        @@unique([addr])
+      }`, 'index-over-a-json-document')
+    expect(f).toHaveLength(1)
+    expect(f[0].message).toContain('may be what was meant')
+  })
+
+  test('an index over the EXTRACTED column is the shape it is asking for, and is silent', () => {
+    expect(findings(`${TYPED}
+      model P {
+        id   Int    @id
+        addr Json   @type(Addr)
+        city String @generated("addr ->> 'city'")
+        @@index([city])
+      }`, 'index-over-a-json-document')).toHaveLength(0)
+  })
+})

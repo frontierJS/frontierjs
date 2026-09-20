@@ -116,8 +116,8 @@
 
 .pagination-link[aria-current="page"] {
   --tone-fill: var(--bg-mix, var(--color-primary));
-  background:  var(--fill, var(--tone-fill));
-  color:       var(--on-fill, white);
+  background:  var(--_fill, var(--tone-fill));
+  color:       var(--_on-fill, white);
   cursor:      default;
 }
 

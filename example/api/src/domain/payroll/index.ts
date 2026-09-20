@@ -16,9 +16,10 @@
 
 // ─── who worked here, on what terms, on a given date ──────────────────────
 export {
-  instant, payAsAt, payAsAtMany, coveringAt, employedAt,
+  payAsAt, payAsAtMany, coveringAt, lastDayOf, employedAt,
   annualGross, weeklyGross, assertEffectiveFrom,
 } from './employment.ts'
+export type { PlainDate, PayWindowRow } from './employment.ts'
 
 // ─── the numbers a payroll is computed FROM, and the band walk ────────────
 export { ratesAsAt, allRatesAsAt, applyBands, contributionsOn, PERCENT_SCALE } from './payrates.ts'

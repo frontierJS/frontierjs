@@ -125,7 +125,7 @@
 /*
  * The marker is in the chip lineage (see chip.css), which is where the
  * inline-flex centering comes from and, more importantly, the auto-contrast
- * pair: --fill is --step-accent capped so text on it clears AA, --on-fill
+ * pair: --_fill is --step-accent capped so text on it clears AA, --_on-fill
  * is that text.
  *
  * Deriving it here instead produced 14 AA failures across the tone × theme
@@ -202,9 +202,9 @@
 }
 /* A completed marker is a solid fill; the lineage supplies both colors. */
 .step.complete .step-marker {
-  background:   var(--fill);
-  border-color: var(--fill);
-  color:        var(--on-fill);
+  background:   var(--_fill);
+  border-color: var(--_fill);
+  color:        var(--_on-fill);
 }
 
 .step[aria-current="step"] {

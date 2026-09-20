@@ -25,6 +25,8 @@ import type { TransportContext, RawRequest, RouteHandler, MiddlewareFn,
 import type { SessionVerifier }           from '../auth/types.ts'
 import type { TrustProxy } from './forwarded.ts'
 
+import { isCompressible } from '@frontierjs/toolbelt/mime'
+
 // ─── Module-level constants ────────────────────────────────────────────────
 
 // ─── Cookie helpers ──────────────────────────────────────────────────────────
@@ -47,21 +49,6 @@ function serializeSetCookie(
   if (opts.sameSite)               parts.push(`SameSite=${opts.sameSite.charAt(0).toUpperCase() + opts.sameSite.slice(1)}`)
   return parts.join('; ')
 }
-
-const COMPRESSIBLE_TYPES = new Set([
-  'application/json',
-  'application/ld+json',
-  'application/manifest+json',
-  'text/plain',
-  'text/html',
-  'text/css',
-  'text/csv',
-  'text/javascript',
-  'application/javascript',
-  'application/xml',
-  'text/xml',
-  'image/svg+xml',
-])
 
 // Below this threshold compression overhead exceeds the saving
 const MIN_COMPRESS_BYTES = 1024
@@ -855,7 +842,7 @@ export class HttpTransport {
       this._opts.compress !== false &&
       canDecorate &&
       acceptEncoding.includes('gzip') &&
-      COMPRESSIBLE_TYPES.has(rawContentType.split(';')[0].trim()) &&
+      isCompressible(rawContentType) &&
       !response.headers.has('content-encoding')
 
     // TRUE no-op fast path: nothing to add, nothing to rewrite, nothing to

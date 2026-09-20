@@ -78,20 +78,36 @@ function recordMigration(db, name, sql) {
 
 const STAMP = /^(\d{14})_/
 
+// UTC, and it is not a formatting preference: the stamp IS the apply order, and
+// a local reading makes that order a fact about where each author sits. At one
+// instant this answered 20260919103333 in Los Angeles, 20260919173333 in UTC,
+// 20260919193333 in Berlin and 20260920053333 in Auckland — nineteen hours and
+// a date boundary — so a migration written in Los Angeles up to nineteen hours
+// AFTER one written in Auckland sorts, and applies, before it.
+//
+// The guard below sees only the files on THIS checkout, so it cannot catch the
+// shape that actually bites: two branches, each internally ordered, merged.
 function formatStamp(d) {
   const pad = n => String(n).padStart(2, '0')
-  return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}` +
-         `${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`
+  return `${d.getUTCFullYear()}${pad(d.getUTCMonth()+1)}${pad(d.getUTCDate())}` +
+         `${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}`
 }
 
 // A stamp a person wrote by hand may not be a real clock reading (`99999999999999`
 // is a legal filename and sorts last on purpose). Add the second numerically
 // when it cannot be read as a date, so an unparseable stamp still yields a name
 // that sorts after it.
+//
+// `Date.UTC` here has to move WITH `formatStamp` above rather than after it:
+// building a local date and reading it back as UTC shifts the stamp by the
+// offset, so east of Greenwich the bump goes BACKWARDS — from `20260615120000`
+// in Auckland it answered `20260615000001` — and the guard on the next line
+// then falls through to the numeric branch, which exists for a stamp that is
+// not a clock reading at all.
 function bumpStamp(ts) {
   const y = +ts.slice(0, 4), mo = +ts.slice(4, 6), d = +ts.slice(6, 8)
   const h = +ts.slice(8, 10), mi = +ts.slice(10, 12), s = +ts.slice(12, 14)
-  const date = new Date(y, mo - 1, d, h, mi, s + 1)
+  const date = new Date(Date.UTC(y, mo - 1, d, h, mi, s + 1))
   if (!Number.isNaN(date.getTime()) && formatStamp(date) > ts) return formatStamp(date)
   return String(BigInt(ts) + 1n).padStart(14, '0')
 }

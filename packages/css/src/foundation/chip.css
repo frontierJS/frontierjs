@@ -32,8 +32,16 @@
  *
  * --tone-fill is the requested background (set per component, because the
  * untoned default differs: btn falls back to primary, pill and badge to
- * muted). From it we derive --fill, the color actually painted, and
- * --on-fill, text guaranteed to be readable on it.
+ * muted). From it we derive --_fill, the color actually painted, and
+ * --_on-fill, text guaranteed to be readable on it.
+ *
+ * The two outputs carry the --_ mark and the input does not, which is the
+ * whole of the tiering: --tone-fill is the knob and the pair below it are
+ * a derivation with two halves. Setting --_fill alone repaints the
+ * background and leaves --_on-fill deriving from a color that is no longer
+ * there — white on yellow, 1.07:1, rendering correctly and failing
+ * nothing. tokens.spec.js holds the package's half of that bargain: one
+ * owner per derived value.
  *
  * Both derivations read the same number: the fill's relative luminance.
  * The `y` channel of xyz-d65 is exactly WCAG's L, so no approximation is
@@ -63,12 +71,12 @@
  * syntax) on the old behavior rather than unstyled.
  */
 :where(.chip, .btn, .pill, .badge, .pagination-link, .tooltip, .avatar, .step-marker) {
-  --fill: color(from var(--tone-fill) xyz-d65
+  --_fill: color(from var(--tone-fill) xyz-d65
     calc(x * max(min(1, 0.1783 / y), clamp(0, (y - 0.35) * infinity, 1)))
     calc(y * max(min(1, 0.1783 / y), clamp(0, (y - 0.35) * infinity, 1)))
     calc(z * max(min(1, 0.1783 / y), clamp(0, (y - 0.35) * infinity, 1))));
 
-  --on-fill: var(--on-bg-mix,
+  --_on-fill: var(--on-bg-mix,
     color(from var(--tone-fill) xyz-d65
       calc(clamp(0, (0.35 - y) * infinity, 1) * 0.9505)
            clamp(0, (0.35 - y) * infinity, 1)

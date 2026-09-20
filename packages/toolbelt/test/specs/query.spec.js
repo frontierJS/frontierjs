@@ -178,3 +178,42 @@ test('query: a Date is an ISO instant', function () {
   const pairs = Object.fromEntries(encodePairs({ at: new Date('2026-08-23T00:00:00.000Z') }))
   assert.equal(pairs.at, '2026-08-23T00:00:00.000Z')
 })
+
+/* ── A point filter ─────────────────────────────────────────────────
+ *
+ * `FJS-D323` ruled that a proximity search travels as ordinary bracket
+ * notation rather than as a compact triple only the geo layer can read. That
+ * makes it a claim about THIS module: nothing was added for it, so what has to
+ * be pinned is that the shape it produces is the one the Data boundary takes,
+ * with the radius still text and the coordinates still numbers.
+ */
+
+const NEAR = { site: { near: { lat: 51.5074, lng: -0.1278, within: '5mi' } } }
+
+test('query: a near filter is bracket notation and nothing new', function () {
+  const s = encodeQueryString(NEAR)
+  assert.ok(s.includes('site[near][lat]=51.5074'), s)
+  assert.ok(s.includes('site[near][within]=5mi'), s)
+  assert.deepEqual(parseQueryString(s), NEAR)
+})
+
+test('query: a radius keeps its unit and a coordinate keeps its type', function () {
+  const q = parseQueryString('?site[near][lat]=0&site[near][lng]=-0.1278&site[near][within]=500m')
+  assert.equal(typeof q.site.near.lat, 'number', 'null island is a latitude, not an absent one')
+  assert.equal(q.site.near.lng, -0.1278)
+  assert.equal(q.site.near.within, '500m')
+})
+
+test('query: a fixed-precision coordinate stays text, for the model to read', function () {
+  // `toFixed(6)` is how a GPS reading reaches a URL and it does not round-trip,
+  // so the number rule leaves it alone — correctly, with no model in the room.
+  // Litestone's `@point` declaration is what reads it back as a Float; the
+  // pinning is here so the two halves cannot drift apart silently.
+  const q = parseQueryString('?site[near][lat]=51.507400')
+  assert.equal(q.site.near.lat, '51.507400')
+})
+
+test('query: a distance ordering survives the round trip', function () {
+  const d = { $orderBy: { site: { near: { lat: 51.5074, lng: -0.1278 } } } }
+  assert.deepEqual(parseQueryString(encodeQueryString(d)), d)
+})

@@ -23,34 +23,21 @@
 
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
-import { join, extname, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { isHashedAsset } from '../serve/hashed-asset.js'
 import { relativePathFor, withinRoot } from '../serve/served-path.js'
 import { bodyAnswer, methodAnswer, ALLOWED_METHODS } from '../serve/http-answers.js'
 
-const TYPES = {
-  '.js':   'text/javascript; charset=utf-8',
-  '.mjs':  'text/javascript; charset=utf-8',
-  '.css':  'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.map':  'application/json; charset=utf-8',
-  '.svg':  'image/svg+xml',
-  '.png':  'image/png',
-  '.jpg':  'image/jpeg',
-  '.webp': 'image/webp',
-  '.woff2': 'font/woff2',
-  // Below: everything a widget bundle can legitimately reference and this table
-  // answered `application/octet-stream` for. With `nosniff` set, that is not a
-  // guess the browser recovers from — a `.wasm` served that way cannot be
-  // `instantiateStreaming`'d at all, and `.woff` (not `2`) is still what an
-  // older face ships as.
-  '.woff': 'font/woff',
-  '.ico':  'image/x-icon',
-  '.gif':  'image/gif',
-  '.avif': 'image/avif',
-  '.wasm': 'application/wasm',
-}
+import { contentTypeFor } from '@frontierjs/toolbelt/mime'
+
+// The type table is `@frontierjs/toolbelt/mime` (`FJS-1186`). It used to be here,
+// and the reason it moved is written into the row: `.wasm` was added to THIS
+// file for the reason below and never reached `site/serve.js` beside it.
+//
+// With `nosniff` set, an `application/octet-stream` is not a guess the browser
+// recovers from — a `.wasm` served that way cannot be `instantiateStreaming`'d
+// at all, and `.woff` (not `2`) is still what an older face ships as.
 
 function cacheFor(path) {
   if (isHashedAsset(path)) return 'public, max-age=31536000, immutable'
@@ -138,7 +125,7 @@ export async function serveWidgets({
       return
     }
 
-    const type   = TYPES[extname(file)] ?? 'application/octet-stream'
+    const type   = contentTypeFor(file, { charset: true })
     const answer = bodyAnswer(body, type, {
       range:          req.headers.range,
       acceptEncoding: req.headers['accept-encoding'],

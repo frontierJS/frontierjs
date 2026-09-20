@@ -38,6 +38,8 @@ that need it wrote it twice, differently.
 | It is visible to review | `cartClaim.describe()` → `kind: 'bearer'`; `principal.snapshot.md` § Claims | *bearer* against *membership* is stated where access is reviewed |
 | A capability crossing an origin | `carts.handoff` / `carts.redeem` | a one-time code in the fragment, not the token in a URL |
 | A secret stored as an HMAC | `packages/auth/crypto.ts`, `auth.ts` (API keys, recovery codes) | the precedent for a link token at rest |
+| A ticket exchanged for a session, once | `client.auth.completeSignIn(code)` → `/auth/login/challenge`; `LoginChallenge` (`value @unique @guarded`, `expiresAt`, `attempts`) | the second factor's flow IS redeem-a-code-for-a-session, single-use and server-side |
+| Who mints a token | `@frontierjs/toolbelt/ids` — `generateCuid()`, `mintId(kind)` behind `@default(cuid())` | the shape check below can be DERIVED from the minter rather than spelled as a regex |
 | Proof it works | `bun run verify:cart`, 32 assertions | |
 
 `membershipClaim` is the framework-owned resolver for the OTHER kind. There is
@@ -168,9 +170,11 @@ policies. The two strengths are a claim value, which needs no mechanism. The
 legacy bare uuid becomes one `PortalLink` row per client with `scope: forms` and
 no expiry, retired by deleting rows rather than by editing code.
 
-### 3. The audit trail names a bearer — measured wrong today
+### 3. The audit trail names a bearer — ~~measured wrong today~~ **fixed**
 
-Probed against `packages/litestone/src/core/client.js` on Bun 1.3.11: a `@@log`
+Filed as [FJS-1195](../ISSUES.md#fjs-1195). Probed against
+`packages/litestone/src/core/client.js` on Bun 1.3.11, twice (2026-09-14 and
+2026-09-20): a `@@log`
 model written under `$setAuth({ cartToken: 'abc' })` records
 **`actorType: 'user'`, `actorId: null`**; the same write through `asSystem()`
 records `actorType: null`. The line is
@@ -179,9 +183,12 @@ is a user. So every stranger's basket edit in `example` is filed as *a user with
 no id*, which is neither who did it nor what kind of caller they were.
 
 maid.tech encodes the same fact by absence — a message with no `sentById` is from
-the client. The fix is a principal carrying `type: 'bearer'` and the link row's
-id as the actor, which `bearerClaim` can set because it read the row; the
-by-construction form has no row id and says `bearer` with a null actor.
+the client. Closed by [FJS-1195](../ISSUES.md#fjs-1195): `actorTypeOf(ctx)` grades the
+principal it was handed, and one carrying claims and no id is `bearer`.
+**Half of §3 remains and it is the ACTOR** — a bearer still writes a null
+`actorId`, because nothing hands the boundary a row id until `bearerClaim`
+reads one; the by-construction form has no row to name at all. That is this
+paper's § Open questions, unchanged.
 
 ### 4. Out of scope
 
@@ -254,7 +261,7 @@ not a battery.
   - **A** — header only; the page reads the link once from the URL fragment and holds it
   - **B** — redeem the link once for an httpOnly cookie scoped to the link row
   - **C** — any of the three, named by `from:`
-  - **Recommend B** — the fragment is never sent to a server and the cookie keeps the secret out of history, `Referer` and logs; `from:` stays a single choice per app, and the CSRF concern `cart-claim.ts` raises is a `SameSite=Strict` cookie on a surface with no cross-site writes
+  - **Recommend B** — the fragment is never sent to a server and the cookie keeps the secret out of history, `Referer` and logs; `from:` stays a single choice per app, and the CSRF concern `cart-claim.ts` raises is a `SameSite=Strict` cookie on a surface with no cross-site writes. **B has a precedent rather than needing a mechanism**: `LoginChallenge` is already a single-use, expiring ticket a POST trades for a session, and a portal link is the same act with a different question answered first
 - **Does the more sensitive strength need proof of the inbox, or only a live link?**
   - **A** — a live link is enough
   - **B** — `full` scope is minted only by redeeming an emailed one-time code

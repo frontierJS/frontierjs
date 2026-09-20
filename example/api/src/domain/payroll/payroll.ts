@@ -3,15 +3,20 @@
 // This is where `payslip.ts` (what one person is owed), `arrears.ts` (what an
 // earlier period still owes them) and `ledger.ts` (what the books record) meet.
 // Nothing here decides an amount on its own: every figure is read as at the
-// period END through the one as-at read, and every rate through the one band
-// walk, so a run recalculated in June produces March's numbers.
+// period's LAST DAY through the one as-at read, and every rate through the one
+// band walk, so a run recalculated in June produces March's numbers.
+//
+// The last day and not `periodEnd`. A period is `[periodStart, periodEnd)`
+// (`FJS-D288`), so `periodEnd` is the first day the run does not pay for, and a
+// raise opening on it belongs to the next run. `lastDayOf` is the one place the
+// subtraction is written.
 //
 // The two documents are the payslip — one per person, immutable — and the
 // journal — one per RUN, because the books record a payroll rather than a
 // person.
 
 import { occurrenceKey }                  from '@frontierjs/toolbelt/history'
-import { employedAt, payAsAtMany, instant } from './employment.ts'
+import { employedAt, payAsAtMany, lastDayOf } from './employment.ts'
 import { allRatesAsAt }                   from './payrates.ts'
 import { postJournal }                    from '../ledger.ts'
 import { arrearsFor }                     from './arrears.ts'
@@ -51,17 +56,17 @@ type Client = Record<string, any>
  * the run — nothing else in a batch of five thousand knows how big the batch
  * was.
  *
- * `at` is the period END, so somebody hired after the run was planned does not
- * move the finish line half way through.
+ * The question is asked on the period's LAST DAY, so somebody hired after the
+ * run was planned does not move the finish line half way through.
  */
 export async function planPayRun(client: Client, runId: number): Promise<{ run: any, employeeIds: number[] }> {
   const run = await client.payRun.findFirst({ where: { id: runId } })
   if (!run) throw payrollError('No such pay run', 404)
   if (run.status !== 'draft') throw payrollError(`${run.reference} is ${run.status}; only a draft can be planned`)
 
-  const at      = instant(run.periodEnd)
-  const staff   = await employedAt(client, at)
-  const windows = await payAsAtMany(client, staff.map((e: any) => e.id), at)
+  const on      = lastDayOf(run)
+  const staff   = await employedAt(client, on)
+  const windows = await payAsAtMany(client, staff.map((e: any) => e.id), on)
 
   // Employed with no pay window in force is a gap somebody left, and it is
   // excluded from the headcount rather than counted and skipped later — a run
@@ -95,11 +100,11 @@ export async function calculatePayslipFor(
   const person = await client.employee.findFirst({ where: { id: employeeId } })
   if (!person) throw payrollError('No such employee', 404)
 
-  const at      = instant(run.periodEnd)
-  const rates   = await allRatesAsAt(client, at)
-  const windows = await payAsAtMany(client, [employeeId], at)
+  const on      = lastDayOf(run)
+  const rates   = await allRatesAsAt(client, on)
+  const windows = await payAsAtMany(client, [employeeId], on)
   const window  = windows.get(employeeId)
-  if (!window) throw payrollError(`${person.reference} had no pay window in force on ${at}`)
+  if (!window) throw payrollError(`${person.reference} had no pay window in force on ${on}`)
 
   const period = draftPayslip(employeeId, window as any, rates, run.periodsPerYear, run.periodIndex)
 
@@ -291,7 +296,11 @@ export async function payPayRun(
   })
 
   await client.payRun.transition(run.id, 'pay')
-  await client.payRun.update({ where: { id: run.id }, data: { paidAt: instant() }, system: ['paidAt'] })
+  // An INSTANT, and deliberately: `paidAt` records the moment the books were
+  // posted, where every other date in this domain records a day somebody named.
+  await client.payRun.update({
+    where: { id: run.id }, data: { paidAt: new Date().toISOString() }, system: ['paidAt'],
+  })
 
   // The irreversible half, and it is handed out rather than done here.
   //

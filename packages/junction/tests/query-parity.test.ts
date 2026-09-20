@@ -64,6 +64,13 @@ const FILTERS: Array<[string, Record<string, unknown>]> = [
   ['numeric text',        { code: '5' }],
   ['text',                { status: 'active' }],
   ['an empty string',     { q: '' }],
+  // A point filter is the shape that asks both rules at once: three levels of
+  // bracket notation, two coordinates that must stay numbers, and a radius that
+  // must stay text — `'5mi'` is not a number and `'5'` alone is refused by the
+  // Data boundary, so a transport that stringifies one or parses the other is
+  // a proximity search that answers the wrong rows (`FJS-D323`).
+  ['a near filter',       { site: { near: { lat: 51.5074, lng: -0.1278, within: '5mi' } } }],
+  ['a near at 0,0',       { site: { near: { lat: 0, lng: 0, within: '500m' } } }],
 ]
 
 describe('a filter means the same thing on both transports', () => {
@@ -94,6 +101,11 @@ describe('a filter means the same thing on both transports', () => {
       id:         'object:{"in":[1,2]}',
     })
   })
+
+  test('a near filter keeps its numbers numbers and its radius text', async () => {
+    const { q } = await ask(overHttp, { site: { near: { lat: 51.5074, lng: -0.1278, within: '5mi' } } })
+    expect(q).toEqual({ site: 'object:{"near":{"lat":51.5074,"lng":-0.1278,"within":"5mi"}}' })
+  })
 })
 
 // ─── the same DIRECTIVE, down both transports ───────────────────────────────
@@ -114,6 +126,8 @@ const ORDERINGS: Array<[string, unknown]> = [
   ['two columns',        [{ sortOrder: 'asc' }, { name: 'asc' }]],
   ['a nulls placement',  { deletedAt: { dir: 'asc', nulls: 'last' } }],
   ['a relation hop',     { author: { name: 'asc' } }],
+  ['nearest first',      { site: { near: { lat: 51.5074, lng: -0.1278 } } }],
+  ['furthest first',     { site: { near: { lat: 51.5074, lng: -0.1278 }, dir: 'desc' } }],
 ]
 
 describe('an orderBy means the same thing on both transports', () => {

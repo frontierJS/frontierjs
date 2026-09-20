@@ -1,0 +1,50 @@
+<script>
+  // datepicker-days.mesa — the picker as a form field, over a PLAIN DATE.
+  //
+  // Two things the other two fixtures cannot reach. `name` is what makes the
+  // hidden input exist, and that input is the only thing a <Form> submits for
+  // this control — so it is where a day that shifted in the zone becomes a day
+  // that was SAVED wrong. And `startDate` is handed in as `YYYY-MM-DD`, the
+  // way a `String @date` column arrives, rather than as a timestamp.
+  //
+  // `enableFutureDates` is stated because `isFutureDate` compares against the
+  // real clock and not against `today`: without it every forward step lands on
+  // a day the grid refuses and the stepper is dead for the wrong reason.
+  import DatePicker from '../../../components/forms/DatePicker.mesa'
+
+  export let todayISO          = '2026-09-19'
+  export let startDateISO      = '2026-09-19'
+  export let endDateISO        = ''
+  export let isRange           = false
+  export let showStepper       = true
+  export let enableFutureDates = true
+  export let disabledDates     = []
+
+  const [y, m, d] = todayISO.split('-').map(Number)
+  const today = new Date(y, m - 1, d)
+
+  let startDate = startDateISO || undefined
+  let endDate   = endDateISO   || undefined
+  let changes   = 0
+
+  function record() { changes++ }
+</script>
+
+<DatePicker
+  name="dueOn"
+  label="Due"
+  today={today}
+  isRange={isRange}
+  showStepper={showStepper}
+  alwaysShow
+  isOpen
+  enableFutureDates={enableFutureDates}
+  disabledDates={disabledDates}
+  bind:startDate={startDate}
+  bind:endDate={endDate}
+  onDateChange={record}
+>
+  <button type="button" class="btn" id="dp-trigger">Pick a date</button>
+</DatePicker>
+
+<output id="changes">{changes}</output>

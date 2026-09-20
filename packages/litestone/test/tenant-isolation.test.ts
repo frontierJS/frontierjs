@@ -306,3 +306,75 @@ model App         { id Int @id  environmentId Int  slug String
     expect(r.errors.join()).toMatch(/unknown argument 'globl'.*only one is 'global'/)
   })
 })
+
+/**
+ * A fragment's bare tenant column, declared ahead of the app's own models.
+ *
+ * `Note` is what an imported `.lite` looks like after a host extends it: the
+ * tenant column is a plain scalar, because a fragment cannot name the host's
+ * column and so can never declare the relation (`FJS-D310`). Declaring it FIRST
+ * is the whole fixture — the carrier that decides the tenant values is the
+ * schema's, not the model's, and a synthetic value satisfies no foreign key.
+ */
+const FRAGMENT_FIRST = `
+  tenancy { strategy row  column workspaceId  claim workspaceId }
+
+  model Note {
+    id          Int    @id @default(autoincrement())
+    workspaceId Int
+    body        String
+  }
+
+  model Workspace {
+    id    Int    @id @default(autoincrement())
+    name  String
+    boards Board[]
+    @@tenant(none)
+  }
+
+  model Board {
+    id          Int       @id @default(autoincrement())
+    workspaceId Int
+    workspace   Workspace @relation(fields: [workspaceId], references: [id])
+    title       String
+  }
+`
+
+describe('the tenant values satisfy the schema, not the first model declared', () => {
+  test('a bare carrier declared first does not blind every model with a real key', async () => {
+    const env  = await createTestEnv({ schema: FRAGMENT_FIRST })
+    const rows = await env.verifyTenantIsolation()
+
+    // The defect answered `error` here — *no row could be seeded for tenant A*
+    // — for every model whose column is a foreign key, which is honest and
+    // reads exactly like a model that isolates correctly.
+    const errors = rows.filter(r => r.got === 'error')
+    expect(errors.map(r => r.message)).toEqual([])
+
+    // And the model that DID seed is not evidence on its own: the pairing is
+    // that the keyed model was crossed too.
+    expect(of(rows, 'Board').some(r => r.got === 'graded')).toBe(true)
+    expect(of(rows, 'Note').some(r => r.got === 'graded')).toBe(true)
+    expect(leaks(rows)).toEqual([])
+  })
+
+  test('a schema whose carriers are ALL bare still grades, on the synthetic value', async () => {
+    // The control for the fix: preferring a keyed carrier must not remove the
+    // fallback, or a schema whose tenant column references nothing stops being
+    // gradable at all.
+    const env = await createTestEnv({ schema: `
+      tenancy { strategy row  column tenantId  claim tenantId }
+
+      model Note {
+        id       Int    @id @default(autoincrement())
+        tenantId String
+        body     String
+      }
+    ` })
+    const rows = await env.verifyTenantIsolation()
+
+    expect(rows.filter(r => r.got === 'error').map(r => r.message)).toEqual([])
+    expect(of(rows, 'Note').some(r => r.got === 'graded')).toBe(true)
+    expect(leaks(rows)).toEqual([])
+  })
+})

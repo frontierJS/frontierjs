@@ -5,52 +5,28 @@
 import { join, extname, resolve, sep } from 'node:path'
 import { realpath }                     from 'node:fs/promises'
 
+import { contentTypeFor, isCompressible, isInlineSafe } from '@frontierjs/toolbelt/mime'
+
 // ─── Module-level constants ────────────────────────────────────────────────
 // Compiled once, never recreated per request.
 
-const COMPRESSIBLE: Record<string, 1> = {
-  'text/plain': 1, 'text/html': 1, 'text/css': 1,
-  'text/javascript': 1, 'text/xml': 1,
-  'application/javascript': 1, 'application/json': 1,
-  'application/xml': 1, 'image/svg+xml': 1,
-  'application/x-javascript': 1
-}
-
+// What may be CACHED is policy read off a URL, not a fact about the bytes, so
+// it stays here while the type table moves to `@frontierjs/toolbelt/mime`
+// (`FJS-1186`) — four packages kept one each and 24 of 32 extensions differed.
 const CACHEABLE: Record<string, 1> = {
   js: 1, css: 1, png: 1, jpg: 1, jpeg: 1, gif: 1, ico: 1, svg: 1,
   woff: 1, woff2: 1, ttf: 1, eot: 1, otf: 1, webp: 1,
   mp4: 1, mp3: 1, webm: 1, pdf: 1
 }
 
-const CONTENT_TYPES: Record<string, string> = {
-  html: 'text/html',
-  css:  'text/css',
-  js:   'text/javascript',
-  mjs:  'text/javascript',
-  json: 'application/json',
-  xml:  'application/xml',
-  svg:  'image/svg+xml',
-  png:  'image/png',
-  jpg:  'image/jpeg',
-  jpeg: 'image/jpeg',
-  gif:  'image/gif',
-  ico:  'image/x-icon',
-  webp: 'image/webp',
-  woff: 'font/woff',
-  woff2:'font/woff2',
-  ttf:  'font/ttf',
-  eot:  'application/vnd.ms-fontobject',
-  otf:  'font/otf',
-  mp4:  'video/mp4',
-  webm: 'video/webm',
-  mp3:  'audio/mpeg',
-  wav:  'audio/wav',
-  pdf:  'application/pdf',
-  txt:  'text/plain',
-  md:   'text/markdown',
-  map:  'application/json',
-  wasm: 'application/wasm',
-}
+// This root serves an app's own bundle AND, wherever a `File` column's local
+// provider points at it, bytes a stranger uploaded — and the handler cannot tell
+// the two apart. `nosniff` is the half that is safe for both: it binds the
+// browser to the declared type, which `@frontierjs/toolbelt/mime` now makes
+// correct across every server here. **It is not the whole answer** — an SVG
+// served inline still runs in this origin, and refusing that needs to know which
+// population the bytes came from ([FJS-1187](ISSUES.md#fjs-1187) option B).
+const NOSNIFF     = 'nosniff'
 
 const NOCACHE      = 'private, no-cache, no-store, max-age=0'
 const MAX_AGE      = 60        // seconds
@@ -115,6 +91,23 @@ export interface StaticOptions {
    * not named is still refused.
    */
   allowOutside?: string[]
+
+  /**
+   * These bytes came from strangers ([`FJS-D314`](../../../../DECISIONS.md#fjs-d314)).
+   *
+   * A `File` column's local provider publishes its objects under some root, and
+   * a root serving uploads is not the same thing as one serving the app's own
+   * bundle — but this handler cannot tell them apart, so the app says. Marked,
+   * anything outside the inline allow-list is answered as an `attachment`:
+   * an SVG is a document that may carry script and it runs in the origin that
+   * served it, which is stored XSS on the app's own domain.
+   *
+   * Left unmarked by DEFAULT and deliberately so — `isInlineSafe` refuses
+   * `text/javascript`, so applying this to a root holding an app's own bundle
+   * would break the app. An image is inline either way, so marking an uploads
+   * root costs a photograph nothing.
+   */
+  untrusted?: boolean
 }
 
 export async function serveStatic(
@@ -129,7 +122,8 @@ export async function serveStatic(
     etag      = '',
     compress  = true,
     index     = 'index.html',
-    allowOutside = []
+    allowOutside = [],
+    untrusted = false
   } = opts
 
   // Normalize and sanitize path — prevent directory traversal
@@ -156,7 +150,7 @@ export async function serveStatic(
   if (!await withinRoot(root, filePath, allowOutside)) return null
 
   const ext      = extname(filePath).slice(1).toLowerCase()
-  const mimeType = CONTENT_TYPES[ext] ?? 'application/octet-stream'
+  const mimeType = contentTypeFor(ext)
   const size     = file.size
   const mtime    = new Date(file.lastModified)
   const mtimeStr = mtime.toUTCString()
@@ -181,15 +175,22 @@ export async function serveStatic(
     })
   }
 
+  // Computed once and shared by both responses: a 206 declares the same type as
+  // the 200, so an attachment rule that reached one and not the other would hand
+  // back an inline copy of exactly the file the full response refused to inline.
+  const disposition = dispositionFor(mimeType, untrusted, filePath)
+
   // ── Range request (byte serving) ─────────────────────────────────────
   const rangeHeader = req.headers.get('range')
   if (rangeHeader) {
-    return serveRange(file, rangeHeader, mimeType, size, fileEtag, mtimeStr)
+    return serveRange(file, rangeHeader, mimeType, size, fileEtag, mtimeStr, disposition)
   }
 
   // ── Regular response ──────────────────────────────────────────────────
   const headers: Record<string, string> = {
     'content-type':  mimeType,
+    'x-content-type-options': NOSNIFF,
+    ...disposition,
     'etag':          fileEtag,
     'last-modified': mtimeStr,
     'cache-control': buildCacheControl(ext, maxAge),
@@ -198,7 +199,7 @@ export async function serveStatic(
 
   // ── Gzip compression ──────────────────────────────────────────────────
   const acceptEncoding = req.headers.get('accept-encoding') ?? ''
-  const canCompress    = compress && acceptEncoding.includes('gzip') && COMPRESSIBLE[mimeType]
+  const canCompress    = compress && acceptEncoding.includes('gzip') && isCompressible(mimeType)
 
   if (canCompress && size > 256) {
     // Cached by path+mtime+size — identical requests reuse the compressed
@@ -250,6 +251,20 @@ async function realRoot(root: string): Promise<string | null> {
  * OPERATOR is told instead, once per path, because a symlinked asset directory
  * is a real deployment shape and silently serving nothing would be a day lost.
  */
+/**
+ * `Content-Disposition` for an untrusted root, and nothing for any other.
+ *
+ * The filename is the one the object is stored under rather than anything a
+ * caller sent — it is already sanitized by `resolveKey`, and quoting a value
+ * from a request into a header is how a header gets split.
+ */
+function dispositionFor(mimeType: string, untrusted: boolean, filePath: string): Record<string, string> {
+  if (!untrusted || isInlineSafe(mimeType)) return {}
+  const name = filePath.split(/[\\/]/).pop() ?? 'download'
+  const safe = name.replace(/[^A-Za-z0-9._-]/g, '_')
+  return { 'content-disposition': `attachment; filename="${safe}"` }
+}
+
 async function withinRoot(root: string, filePath: string, allowOutside: string[]): Promise<boolean> {
   if (!root) return true
 
@@ -299,7 +314,8 @@ async function serveRange(
   mimeType: string,
   size:     number,
   etag:     string,
-  mtime:    string
+  mtime:    string,
+  disposition: Record<string, string>
 ): Promise<Response> {
 
   const match = RANGE_RE.exec(range)
@@ -326,6 +342,8 @@ async function serveRange(
     status: 206,
     headers: {
       'content-type':  mimeType,
+      'x-content-type-options': NOSNIFF,
+      ...disposition,
       'content-range': `bytes ${start}-${end}/${size}`,
       'content-length': String(chunkSize),
       'accept-ranges': 'bytes',

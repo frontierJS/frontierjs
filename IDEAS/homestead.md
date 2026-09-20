@@ -22,7 +22,7 @@ the feature in `example/` that proves each one.**
 
 Release rides along in the vision paper and is a different body of work.
 Artifact kinds, provisioning from declarations, the single binary and the byte
-budget belong to `depot` (`IDEAS/package-map.md`, `IDEAS/deploy-plane.md`) and
+budget belong to the deploy work (`fli deploy`, `IDEAS/deploy-plane.md`) and
 are not phases here. The one place they touch is phase 4, which is where a byte
 budget stops being rhetorical.
 
@@ -659,7 +659,10 @@ declared.
 exactly is what makes the cache slot the one `load()` reads. So the device is as
 full as the declared window and no fuller — a device-sized window and a
 screen-sized one are two grains, and one option cannot be both while the cache is
-still underneath. That is the open question below rather than a gap here.
+still underneath. **Ruled since, and not in this phase's favor**: `FJS-D337` says
+the declaration means the DEVICE's window and the keyed warm is skipped for a
+model the device holds, falling back to this behavior wherever the database did
+not open. Phase 5 carries the change, because what unblocked it is `FJS-D334`.
 
 **Nothing re-warms on sign-in, and the gap that looks like is not one.**
 Everything declared was last fetched as the previous caller, and a gate refused
@@ -746,10 +749,89 @@ understand inside and out, it will be a hard fix.*
 **Ships:** conflict as a declared outcome rather than an accident.
 
 **The mechanism is argued in `IDEAS/conflict-as-data.md`** — a three-way
-comparison against the revision the held write was made against, and a conflict
-kept as a relation rather than thrown as an exception. It is read from Dolt, it
-needs no clock ruling, and it is what struck the `field` and `manual` costs in
-the table above.
+comparison against the revision the held write was made against. It is read from
+Dolt, it needs no clock ruling, and it is what struck the `field` and `manual`
+costs in the table above.
+
+**Its three questions were settled 2026-09-20 and the shape is now fixed.**
+
+- **The base row travels with the held write** (`FJS-D334`), and the comparison
+  runs at the Data boundary. `@version` is a counter — it says the row moved and
+  never which columns moved — so a per-column merge needs the row as it was
+  READ, and the only two sources are the device and `@@log(audit)`'s
+  before-snapshot. The audit route is refused: it covers only models declaring
+  the log, and Invariant 7 redacts a protected field in it, so a conflict on a
+  `@guarded` column would be undecidable for exactly the columns where being
+  wrong costs most. The device's copy is untrusted INPUT and never authority —
+  the server's row decides, the gate and the constraints run unchanged, and the
+  worst a forged base can do is make the device's own write look unconflicted,
+  which is what `server` does today.
+- **V1 ships no conflict relation** (`FJS-D335`). `FJS-D304` ships `append` and
+  `refuse` and nothing else until an app asks, so the deliverable is `field`,
+  and `field` needs no storage: it either merges — two people having touched
+  different columns — or it does not. The relation is `manual`'s cost, and a
+  table with no policy behind it is the shape `FJS-D298` refused once already.
+  The storage for the V1 outcome exists: `pending.js` parks a refused write in
+  `rejected` rather than dropping it, so a conflict is a rejected queue entry
+  carrying `base` / `local` / `remote` in place of a bare version mismatch.
+  **The cost is that it is PER DEVICE** — no fleet-wide count — which is payable
+  while a `field` conflict is rare by construction and the person holding it is
+  the person holding the device, and stops being payable the day `manual` ships.
+- **A conflict is resolved by whoever may write the ROW** (`FJS-D336`), with
+  Invariant 7's redaction covering a protected column: divergence is shown,
+  take-local or take-remote is offered, and neither value is displayed.
+
+#### The cell comparison and `field` — BUILT
+
+`core/three-way.js` plus one block inside `update`, and the shape is the one the
+mechanism paper asked for: given the held write, the row it was made against and
+the row as it stands, produce per column **unchanged**, **taken**, **agreed** or
+**conflicted**. Only `conflicted` reaches the caller.
+
+**`unchanged` is the outcome that makes it safe**, and it was not in the original
+sketch. A form submits the fields it HOLDS rather than the fields somebody typed
+in, so a patch claims every column on the screen; without dropping the ones whose
+value equals the base, a merge is a last-write-wins with extra steps. `agreed` is
+the other one worth having — two people writing the same value have nothing to
+decide.
+
+**It costs nothing on an uncontested write.** A version that still matches never
+reaches the comparison, so the extra read happens only on the losing side of a
+race.
+
+**Two refusals, both because silence here looks like the feature working.** A
+`base` on a model that does not declare `field` is refused by name, since a base
+nothing reads is indistinguishable from a merge that found no conflict. And a
+base-carrying patch naming an `@encrypted` or `@hashed` column is refused: the
+comparison reads the STORED value, ciphertext re-encrypts to different bytes
+every time, so it would report a conflict on every write naming that column —
+including one nobody else touched. A device cannot reach that anyway, since
+`host/browser.js` refuses `@encrypted` outright.
+
+**`SyncConflictError` is deliberately not a `VersionConflictError`.** Sierra's
+`isStaleWrite()` is `409 && retryable` and re-reads and re-applies
+automatically; doing that here re-sends the whole patch and overwrites the other
+writer's column with nothing said. `retryable` is false, and the flag is pinned
+by a test in litestone rather than in the package that reads it.
+
+#### What is left of phase 5 — the transport
+
+Nothing yet carries a base from a device to the boundary, so `field` is reachable
+only by a direct `db.<model>.update({ base })`. Sierra's half is one line at a
+call site that already holds what it needs — `_read.get(ctx.id)` IS the row the
+screen read, and it is already consulted there for `@version`. **Junction's half
+is a decision rather than a line**: a base is a ROW, so it cannot travel as a
+header the way `idempotencyKey` does, and a write's body today IS its `data`.
+Carrying one means an envelope on write requests, which is a new wire shape and
+wants its own hearing.
+
+**And phase 5 carries `FJS-D337` with it**, because the two are one call: a
+device required to supply the base is a device whose copy is load-bearing, which
+is what the read side was waiting on. The declared window becomes the DEVICE's
+and the keyed cache warm is skipped for a model the device holds — conditional
+on the database having OPENED, since `localDb()` answers null on any failure and
+a skipped warm over a database that never opened is an empty screen with nothing
+said.
 
 **One footgun to carry in from the start**: a concurrent delete beside a
 property update produces a row that is neither — Weidner's example is an item
@@ -882,11 +964,10 @@ following the declaration rather than by adding one.
     and the day an app needs a real one, C's declaration is the subset language A
     would have had to invent.
 
-- **Q10 — when a device has a database, is the declared window the SCREEN's question or the DEVICE's?** Open, and phase 4 shipped the conservative reading. `offlineQuery`'s directives must match the screen's exactly or the warm fills a cache slot nothing reads — but the same warm now fills the device's tables, where a query engine does not care which question put a row there. So the one declaration is serving two grains: a screen shows 40 rows and a device should hold rather more.
-  - **A** — one declaration, meaning the screen's question. What ships today: the device is as full as the declared window, and an app that wants more must accept a cache slot nothing reads
-  - **B** — a second key beside it (`offlineQuery: { directives, hydrate: { limit: 500 } }`) — two grains, named, with the cache keeping its exact-match rule
-  - **C** — when `offline: { db: true }` and the model is in the device schema, the declaration means the DEVICE's window and the keyed cache warm is skipped for that model, since SQL answers the screen's question anyway
-  - **Recommend C, once the database is not allowed to fail** — it is the only one that removes a grain rather than naming one, and the cache is genuinely redundant for a model the device holds. What stops it today is that `localDb()` answers null on any failure by design, and under C a device that could not open leaves the screen with a cache keyed to a window it never asks for. B is the safe middle and costs an option; A is honest and costs fullness. The decision is really *may the local database be load-bearing*, which is the same question phase 5 has to answer for writes
+- ~~**Q10 — when a device has a database, is the declared window the SCREEN's question or the DEVICE's?**~~ **Answered 2026-09-20 (`FJS-D337`): C — the DEVICE's, and the keyed cache warm is skipped for that model, wherever the database actually opened.** Phase 4 shipped A, the conservative reading. C was picked over A (one declaration meaning the screen's question: the device is as full as the declared window, and an app wanting more accepts a cache slot nothing reads) and B (a second key beside it, `offlineQuery: { directives, hydrate: { limit: 500 } }` — two grains, named, with the cache keeping its exact-match rule).
+  - It is the only option that REMOVES a grain rather than naming one: with SQL on the device the keyed cache is a second answer to a question the database answers anyway.
+  - **The blocker this question named turned out not to need B.** `localDb()` answers null on any failure by design, so skipping the warm on the CONFIG saying `db: true` would leave a device whose database could not open with an empty screen and nothing said — § V's last question, failed. The fix is a condition rather than a different option: `configureLocalDb()` opens eagerly, so whether it opened is a fact available when the warm runs, and a warm that finds it did not fills the cache under the screen's question, which is A.
+  - **And the question it was really asking was settled beside it.** *May the local database be load-bearing* is answered by `FJS-D334`: a device required to supply the base row for a per-column merge is one whose copy is load-bearing, so the read side follows the write side rather than being decided on its own.
 
 ## See also
 

@@ -11,7 +11,7 @@ resolve by `fli check`'s `invariant-enforcer`.
 enforced, which is the whole reason this file exists — so the gap is written down
 rather than left to be rediscovered.
 
-Covered: **17 of 19**.
+Covered: **18 of 19**.
 
 ### 1. Dependency direction
 
@@ -38,7 +38,10 @@ Covered: **17 of 19**.
 
 ### 4. One owner per translation
 
-**none** — nothing in this repo fails when it stops being true.
+| Kind | What | Covers |
+| --- | --- | --- |
+| `fli check` | `seam-owner` | a seam's stated owner exists and is where the name is declared |
+| `fli check` | `seam-listed` | every seam the skill explains is named in CLAUDE.md's key list |
 
 ### 5. One owner per `app.<thing>`
 
@@ -144,6 +147,5 @@ Nothing here fails when these stop being true. Each is a rule to write, or a
 statement that no mechanical check can reach it — and until one of the two is
 recorded, neither has been decided.
 
-- **4. One owner per translation**
 - **16. Runnable examples are verified, not sketches**
 

@@ -87,7 +87,17 @@ The API is chainable and terminal at `.bytes()` / `.blob()` / `.buffer()` /
    answers what the bytes *are*, so *this `.png` is an SVG* becomes decidable at the
    Data boundary instead of being mitigated at the response.
 
-That second item is the one worth filing whether or not the derivatives are built.
+**Filed 2026-09-19 as [FJS-1184](../ISSUES.md#fjs-1184)**, and probed sharper than
+written here: `@accept` grades `value.type` off the browser `File` — the uploader's
+own word — and that same string is then persisted as `ref.mime` and handed to the
+provider as `contentType`. So the declaration whose whole job is *what may be stored
+here* is satisfied by any bytes named `.png`.
+
+**The adoption itself is ruled**: [`FJS-D311`](../DECISIONS.md#fjs-d311) takes
+`Bun.Image` as the transformer and `placeholder()` as the placeholder, as a
+capability the `FileStorage` plugin is GIVEN rather than one it imports — a `Bun.`
+reference in litestone's import graph would break its Node proving. Who owns the
+derivative store is still open, and this file's own answer is the dead one.
 
 ---
 

@@ -30,33 +30,17 @@
 
 import { createServer } from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
-import { join, extname, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 
 import { isHashedAsset } from '../serve/hashed-asset.js'
 import { relativePathFor, withinRoot } from '../serve/served-path.js'
 import { bodyAnswer, methodAnswer } from '../serve/http-answers.js'
 
-const TYPES = {
-  '.html':  'text/html; charset=utf-8',
-  '.js':    'text/javascript; charset=utf-8',
-  '.mjs':   'text/javascript; charset=utf-8',
-  '.css':   'text/css; charset=utf-8',
-  '.json':  'application/json; charset=utf-8',
-  '.map':   'application/json; charset=utf-8',
-  '.txt':   'text/plain; charset=utf-8',
-  '.xml':   'application/xml; charset=utf-8',
-  '.svg':   'image/svg+xml',
-  '.png':   'image/png',
-  '.jpg':   'image/jpeg',
-  '.jpeg':  'image/jpeg',
-  '.gif':   'image/gif',
-  '.webp':  'image/webp',
-  '.avif':  'image/avif',
-  '.ico':   'image/x-icon',
-  '.woff2': 'font/woff2',
-  '.woff':  'font/woff',
-}
+import { contentTypeFor } from '@frontierjs/toolbelt/mime'
 
+// The type table is `@frontierjs/toolbelt/mime` (`FJS-1186`). This file is the
+// reason the row exists: it gained `.avif` in the pass that added `.wasm` to
+// `widget/serve.js` and never gained `.wasm` itself.
 
 function cacheFor(path) {
   if (isHashedAsset(path)) return 'public, max-age=31536000, immutable'
@@ -151,7 +135,7 @@ export async function serveSite({
 
     if (file) {
       const body   = await readFile(file)
-      const type   = TYPES[extname(file)] ?? 'application/octet-stream'
+      const type   = contentTypeFor(file, { charset: true })
       const answer = bodyAnswer(body, type, {
         range:          req.headers.range,
         acceptEncoding: req.headers['accept-encoding'],

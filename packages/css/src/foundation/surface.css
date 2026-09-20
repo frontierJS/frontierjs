@@ -45,13 +45,13 @@
    * later layer would beat them.
    */
   --surface-bg:     var(--surface-tint-bg,     var(--surface-ground, var(--surface)));
-  --surface-border: var(--surface-tint-border, var(--rule));
-  --surface-color:  var(--surface-tint-color,  var(--ink));
+  --_surface-border: var(--surface-tint-border, var(--rule));
+  --_surface-color:  var(--surface-tint-color,  var(--ink));
 
   display:       block;
   background:    var(--surface-bg);
-  color:         var(--surface-color);
-  border:        var(--border-width) solid var(--surface-border);
+  color:         var(--_surface-color);
+  border:        var(--border-width) solid var(--_surface-border);
   border-radius: var(--card-radius);
   font-family:   var(--font-primary);
   /*
@@ -70,17 +70,17 @@
    */
   &.raised {
     --surface-bg:     var(--surface-tint-bg, var(--surface-raised));
-    --surface-border: transparent;
+    --_surface-border: transparent;
     box-shadow:       var(--shadow-md);
   }
   &.outlined {
     --surface-bg:     transparent;
-    --surface-border: var(--surface-tint-border, var(--rule-strong));
+    --_surface-border: var(--surface-tint-border, var(--rule-strong));
     box-shadow:       none;
   }
   &.ghost {
     --surface-bg:     transparent;
-    --surface-border: transparent;
+    --_surface-border: transparent;
     box-shadow:       none;
   }
 }
@@ -150,7 +150,7 @@
  */
 @media (hover: hover) {
   :where(a, button):where(.surface, .card, .tile):hover {
-    --surface-border: color-mix(
+    --_surface-border: color-mix(
       in srgb,
       var(--bg-mix, var(--color-primary)) 55%,
       var(--surface-tint-border, var(--rule))
@@ -198,13 +198,13 @@ dialog:where(.dialog, .drawer, .surface):not([open]) {
 }
 .surface-header {
   justify-content: space-between;
-  border-bottom:   var(--border-width) solid var(--surface-border);
+  border-bottom:   var(--border-width) solid var(--_surface-border);
   font-weight:     600;
-  color:           var(--surface-color);
+  color:           var(--_surface-color);
 }
 .surface-footer {
   justify-content: flex-end;
-  border-top:      var(--border-width) solid var(--surface-border);
+  border-top:      var(--border-width) solid var(--_surface-border);
   background:      color-mix(in srgb, var(--ink) 3%, transparent);
 }
 .surface-body {

@@ -66,13 +66,25 @@ if (serveOnly) {
     // The page owns its own boot — an import map, the design system's
     // stylesheet and page.js — and sets this last.
     ready: 'window.__kitReady',
-    extend: ({ evaluate }) => ({
+    extend: (browser) => ({
       /** Mount a fixture by name — `fixtures/<name>.mesa`. */
-      mount: (fixture, props = {}) => evaluate(
+      mount: (fixture, props = {}) => browser.evaluate(
         `return await window.kitMount(${JSON.stringify(`/kit/test/browser/fixtures/${fixture}.mesa`)}, ${JSON.stringify(props)});`
       ),
+      /** Put the page in a named IANA zone, for a spec about local time.
+       *
+       *  Every runner here is UTC — `bun test` forces it and CI is UTC anyway
+       *  — which is the one zone where a local-midnight bug and a correct
+       *  component render identical bytes. Call it BEFORE `mount`: a `Date`
+       *  fixes its local fields when it is built, so a component already on
+       *  screen goes on answering in the zone it was mounted in. The teardown
+       *  clears it, so a spec cannot leak a zone into the next one. */
+      timezone: (id) => browser.cmd('Emulation.setTimezoneOverride', { timezoneId: id ?? '' }),
     }),
-    teardown: 'return window.kitUnmount();',
+    teardown: async (browser) => {
+      await browser.cmd('Emulation.setTimezoneOverride', { timezoneId: '' })
+      await browser.evaluate('return window.kitUnmount();')
+    },
     coverage: { all: componentNames(), show: showGap, noun: 'components' },
     notes: () => compileWarnings.map(([file, w]) => `${file.replace(PKG, '')} — ${w}`),
   })

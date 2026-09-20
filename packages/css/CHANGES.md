@@ -1,5 +1,73 @@
 # Changes — @frontierjs/css
 
+## 2026-09-20 — three variable tiers, and the name carries which (`FJS-1192`)
+
+`--fill` was the best-named property in the package and it is the OUTPUT of
+`chip.css`'s auto-contrast. Setting it repainted the background and left
+`--on-fill` deriving from the `--tone-fill` that was no longer painted, so
+`.btn { --fill: yellow }` rendered white text at **1.07:1** — measured in Chrome
+150 — through a plausible name, with nothing rendering wrong or failing.
+
+Counted first: 179 custom properties, 89 in `tokens.css`, 44 set outside it, and
+**14 set in one file and read in another**. Those 14 are the ambiguous set, and
+they do not all resolve the same way — `--bg-mix` and `--on-bg-mix` are knobs a
+caller sets, and **`--tone-ink` and `--tint-surface`/`--tint-rule`/`--tint-ink`
+turned out to be published READ surfaces**, named in `README.md` and asserted by
+`tones.spec.js` as *an app gets the same three colors the components use*. Four
+were renamed on the first pass and reverted when their own tests said so.
+
+So four properties are now private and carry `--_`: `--_fill`, `--_on-fill`,
+`--_surface-color`, `--_surface-border`. Nothing else moved and no rendering
+changed — zero sites outside this package set any of them, checked before the
+rename.
+
+`tokens.spec.js` holds the package's half: one owner per `--_` derivation, no
+dead private property, and no published name growing a private twin. It cannot
+stop an app writing `--_fill` — CSS has no private — and says so. `README.md`
+§ *Which variables are yours* is the consumer half.
+
+**The rename also found the hole it fell into.** `guide/` reads this package's
+variables and is the one consumer that ships inside it, so eight reads in
+`guide.css` and `guide.js` pointed at names nothing declared any more and the
+whole suite stayed green — the reference site's swatches would have rendered
+transparent. `guide.spec.js` now fails a guide read of a variable no stylesheet
+declares. Only a read with NO fallback counts, and the code the guide DISPLAYS
+is cut first: `var(--zebra)`, `var(--color-brand)` and a `var(--bp-md)` inside a
+media query shown precisely because it does not work are all prose, not style.
+
+## 2026-09-20 — the stacking ladder is five tokens, not five literals (`FJS-1191`)
+
+`z-index` was `20` in `frame.css`, `50` in `popovers.css`, `60` in `tooltips.css`,
+`100` in `toasts.css` and `1000` in `a11y.css` — a coherent ladder recorded
+nowhere a reader could find, so the sixth component picks a number by grepping.
+Now `--z-topbar` … `--z-skip-link` in `tokens.css`, same values, no rendering
+change, with the gaps left for an app's own sticky sub-header.
+
+`tokens.spec.js` refuses a literal rung outside `tokens.css`, requires the ladder
+to ascend in the documented order, and fails a rung nothing reads. `0` and `1`
+stay legal: a component ordering two of its own parts inside a stacking context
+it just made — the connector behind a `.step-marker`, the focused `.field` lifted
+clear of its neighbor — is not on the global ladder. `.dialog` and `.drawer` get
+no rung because `<dialog>` sits in the top layer above every one of them.
+
+## 2026-09-20 — a file input's button, and a textarea that fits its value
+
+Two type-specific tweaks in `form-core.css`.
+
+`input[type="file"]::file-selector-button` is styled for the first time
+(`FJS-1189`). It was the one control the package covered nowhere, so every form
+shipped the UA's grey button beside fields that are all `.field` — `example`'s
+stocktake screen writes a bare `<input type="file">` and renders exactly that. It
+is written flat rather than by borrowing `.btn.outlined`, because `--tone-ink` is
+registered `inherits: false` and a pseudo-element computes nothing from a tone it
+does not have.
+
+`textarea.field` takes `field-sizing: content` with bounds in `lh` rather than a
+fixed `min-height: 80px` (`FJS-1190`). Twelve lines took the old box from 80px to
+80px and now take it to 241px, capped at `16lh`; the `4lh` floor resolves to the
+same 80px the fixed box had. `resize: vertical` stays — the browser sizes it to
+the value, the reader overrides that for what they are about to type.
+
 ## 2026-09-18 — `dracula.css` and `twilight.css`
 
 Two dark themes, both full-surface like `basecamp.css`: accents, three surfaces, the

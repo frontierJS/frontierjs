@@ -41,19 +41,64 @@ that rewrites stored bytes.
 write. The page is [json-types.md](json-types.md); the entry is
 [reference.snapshot.md](reference.snapshot.md#type-field).
 
----
+### ~~$rotateKey — 3 failing tests~~ — FIXED
 
-## Before v1.0 publish
+Carried here as a release blocker long after it stopped being one. `$rotateKey`
+refuses while a column it cannot carry exists and rotates nothing, and runs one
+transaction per DATABASE (`FJS-253`, `FJS-714`). 32 tests across
+`test/key-rotation.test.ts` and the main suite.
 
-These block the first public release.
+**A fixed DEFECT is tombstoned where a shipped ATTRIBUTE is not**, and the
+difference is what grades it: `roadmap-shipped` reads the generated catalog, so
+a proposal for a word that now exists fails the check on its own. A bug this
+file called blocking is invisible to that, and reads as current until somebody
+runs the tests.
 
-### Fix $rotateKey (3 failing tests)
+### ~~jsonschema — views support~~ — SHIPPED
 
-`$rotateKey` re-encrypts all `@secret(rotate: true)` fields. There are 3 known failing tests — root cause unknown, likely a key derivation or IV reuse issue in the encryption layer. Must be resolved before publish.
+`generateJsonSchema()` emits a `$def` per `view` with its own `x-gate`, in the
+definition table rather than a list of its own (`FJS-999`). `@@external` models
+were never skipped either, which is the half of the old entry that was simply
+wrong. The page is [jsonschema.md](jsonschema.md).
 
-### Publish to npm
+### ~~A JSON-path spelling for `@@index`~~ — ALREADY EXPRESSIBLE, NOT BUILT
 
-Package is written and working. The unscoped name `litestone` is blocked by npm's similarity check (support ticket filed). Publishing as `@frontierjs/litestone`. Pre-publish checklist is in [publishing.md](publishing.md).
+Proposed as `@@index([address->'$.city'])`. It is not built and should not be:
+`@generated` plus an ordinary `@@index` already says it, from the schema, today.
+
+```lite
+city String @generated("addr ->> 'city'")
+@@index([city])
+```
+```
+"city" TEXT GENERATED ALWAYS AS (addr ->> 'city') VIRTUAL
+SEARCH place USING INDEX idx_place_city (city=?)
+```
+
+A `->` operator would be a second spelling for a sentence the language already
+has, and would coin a token to save six characters. What the proposal was really
+reaching for is GRADING — opaque SQL is checked against the `Json @type(T)`
+declaration by nothing — and that is answered by three `advise` rules rather
+than by a word (litestone CHANGES 2026-09-20). If those rules turn out to be too
+narrow in practice, the coining question comes back with evidence behind it.
+
+The page is [json-types.md](json-types.md) § Performance characteristics.
+
+### ~~`litestone validate`~~ — SHIPPED
+
+Walks the stored rows and reports the ones the schema would now refuse. The page
+is [validate.md](validate.md). It grew past the backlog line that asked for it
+(*typed-JSON shape mismatches*) once the failure was measured: a `type` gaining
+a required member does not leave stale rows lying about, it makes every one of
+them **unwritable**, and the refusal names a column the caller never sent. Typed
+JSON is one of eight boundary validators with no CHECK behind it, and running
+the validator the write boundary already runs covers all eight for less code
+than a typed-JSON-specific walker.
+
+### ~~Publish to npm~~ — SHIPPED
+
+`@frontierjs/litestone` publishes. The unscoped name is still blocked and is in
+§ Known issues, which is where a thing nobody can act on belongs.
 
 ---
 
@@ -77,11 +122,31 @@ Stored as BLOB (float32 array). Requires `sqlite-vec` extension. Queries via `fi
 const results = await db.document.findSimilar({
   vector:    await embed(query),
   limit:     10,
-  threshold: 0.8,   // cosine similarity
+  threshold: 0.8,   // cosine DISTANCE — measured, 0 is identical and 2 is opposite
 })
 ```
 
 Plugin handles auto-embedding on write (pass an `embed` function to the plugin config).
+
+**Argued** in [`IDEAS/chat-surface.md`](../../../IDEAS/chat-surface.md) § Part 2,
+where the claim is that the gate and the row policies apply to retrieval for
+free — a passage the caller may not read cannot ground an answer. The cost is
+not the column: `sqlite-vec` is a loadable extension, so this is a distribution
+question before it is a language one.
+
+**The block above is SUPERSEDED BY RULING — read
+[`IDEAS/embedding.md`](../../../IDEAS/embedding.md) and treat nothing here as the
+design.** Measured 2026-09-20: the wasm engine carries `OMIT_LOAD_EXTENSION`, so
+the extension is server-only by construction and is an optional accelerator rather
+than the mechanism (`FJS-D331`); `vec0` measures no faster than a plain scan at
+0.1.9, which is exact brute force, so the virtual table is refused. The
+declaration is `embedding Bytes @vector(1536)` and not a parameterized scalar
+(`FJS-D332`), retrieval is `orderBy: { embedding: { near: v } }` on `findMany`
+and not a `findSimilar()` verb (`FJS-D333`), the distance is returned on the row
+instead of a `threshold` option (`FJS-D329`, and the `threshold` above was
+inverted — the function is a distance), the column is out of the default `select`
+(`FJS-D328`), and the caller holds the query vector rather than litestone calling
+a model (`FJS-D330`).
 
 ### LatLng type + findNear()
 
@@ -107,7 +172,16 @@ const nearby = await db.property.findNear({
 })
 ```
 
-Haversine formula in JS — no SQLite extension required.
+Haversine formula in JS — no SQLite extension required, which makes this the
+smaller of the two by a wide margin.
+
+**Unargued**, and that is the blocker rather than the code.
+[`IDEAS/package-map.md`](../../../IDEAS/package-map.md) records geo as a gap
+with no home and zero hits in the tree, and
+[`IDEAS/stressors.md`](../../../IDEAS/stressors.md) has it as *named, unargued*.
+A paper comes before a column: where the distance math lives (a toolbelt kit, on
+the `/units` precedent), and whether `orderBy: 'distance'` is a directive or a
+fourth thing a query may sort by.
 
 ---
 
@@ -146,6 +220,14 @@ model User {
 
 Useful for enrichment data (Stripe, HubSpot, Clearbit) you want queryable locally without a full ETL pipeline.
 
+**The word is taken.** `@@sync(policy)` is offline device sync and ships —
+[reference.snapshot.md](reference.snapshot.md#sync-model). One name over two
+unrelated mechanisms is what *familiarity vs. precision* refuses, so this
+proposal needs its own noun before it needs an implementation. The vendor half
+is settled elsewhere: a connector to a named vendor is the app's, per
+[`FJS-D153`](../../../DECISIONS.md#fjs-d153), so what litestone could own here
+is the CACHE and its invalidation and never the call.
+
 ### resolveMany() — polymorphic batch resolver
 
 Batch-loads multiple models by a polymorphic nullable FK in one SQL query, eliminating N+1 patterns in polymorphic relations.
@@ -163,10 +245,6 @@ const resolved = await db.resolveMany(items, {
 ### introspect.js — emit @@db(name)
 
 When introspecting a multi-database schema, emit `@@db(name)` on models if the target database is known at introspect time (e.g., from a litestone.config.js in the same directory).
-
-### jsonschema.js — views support
-
-`generateJsonSchema()` currently skips `@@external` models. Views should be included with a read-only flag in the output schema.
 
 ---
 
@@ -196,5 +274,4 @@ db.product.findMany({ cache: { ttl: 60 } })
 
 | Issue | Status |
 |---|---|
-| `$rotateKey` — 3 failing tests, encryption bug | Blocking v1.0 |
-| npm unscoped name `litestone` blocked by similarity check | Support ticket filed |
+| npm unscoped name `litestone` blocked by similarity check | Support ticket filed, not chased. `@frontierjs/litestone` publishes regardless |

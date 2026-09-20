@@ -14,6 +14,8 @@
 
 import { gzipSync } from 'node:zlib'
 
+import { isCompressible } from '@frontierjs/toolbelt/mime'
+
 /** What a static origin does. Sent on a 405, which is what makes one useful. */
 export const ALLOWED_METHODS = 'GET, HEAD, OPTIONS'
 
@@ -35,7 +37,9 @@ export function methodAnswer(method) {
 // A body is worth compressing when it is text and there is enough of it. Below
 // roughly a packet the deflate header costs more than it saves, and an image or
 // a font is already compressed — gzipping one spends CPU to grow the response.
-const COMPRESSIBLE = /^(?:text\/|application\/(?:javascript|json|xml|manifest\+json)|image\/svg\+xml)/
+// Which types are worth it is `@frontierjs/toolbelt/mime` (`FJS-1186`) — this
+// was a regex and junction's was an exact-match map of ten, so `text/markdown`
+// compressed on one server and not on the other.
 const MIN_COMPRESS_BYTES = 1024
 
 /**
@@ -51,7 +55,7 @@ const MIN_COMPRESS_BYTES = 1024
  */
 export function compressed(body, contentType, acceptEncoding) {
   if (!body || body.length < MIN_COMPRESS_BYTES) return null
-  if (!COMPRESSIBLE.test(String(contentType ?? ''))) return null
+  if (!isCompressible(String(contentType ?? ''))) return null
   if (!/\bgzip\b/.test(String(acceptEncoding ?? ''))) return null
   return { body: gzipSync(body), encoding: 'gzip' }
 }

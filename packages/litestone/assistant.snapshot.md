@@ -365,6 +365,9 @@ Shapes the parser accepts and something later refuses. Check every proposal agai
 - **a queued write references a model whose id only the server can assign** (warn). @@sync says a write may be made with no server reachable. Two of them in one session is the ordinary case — a parent and then its children — and the child has to name a parent that has no id yet, because the id is assigned by the INSERT that has not happened. Unless the parent declares an id the client can mint, there is nothing to write in the foreign key.
 - **a syncable model carries bytes and has no key a client can state** (warn). A write held on a device is replayed in two halves — the row, then its bytes as a patch naming that row. The patch needs an id, and a model whose @id only the server assigns has none until the row has landed, so a write carrying a file is not held at all.
 - **a required File on a syncable model cannot be written offline** (warn). The row half of a held write replays WITHOUT its bytes — that is what makes a small correction independent of a large photograph. A File column that is required therefore has no value on the replayed create, and the boundary refuses the row the device thought it had saved.
+- **a @generated column reads a JSON path with `->`, which keeps the quotes** (error). SQLite has two arrow operators and they differ in one character and in what comes back. `->` answers the JSON REPRESENTATION, so a string member arrives still quoted — the column holds `"Reno"` where the row holds `Reno`, and every comparison against a plain value misses. `->>` answers the SQL value. Nothing catches this downstream: the column builds, an index over it builds, EXPLAIN reports SEARCH ... USING INDEX, and the query returns no rows. `->` also stringifies a number, so an Int member lands in a TEXT column.
+- **a @generated column reads a member the Json column's type does not declare** (error). A `Json @type(T)` column has a declared shape and the SQL that reads it is graded against that shape by nothing. A misspelled member is valid SQL over valid JSON: json_extract answers NULL for a path that is not there, so the column is null for every row, forever, and no write is ever refused. The type declaration is the only thing that knows better.
+- **an index over a Json column indexes the document, not anything inside it** (warn). The column holds one serialized document, so the index holds one entry per document — which answers *this exact document* and nothing else. A path filter cannot use it: json_extract() is opaque to the planner, so the query is a full scan with the index sitting beside it being written on every insert. What indexes a path is a @generated column over that path with an @@index on THAT.
 
 ## Opportunities
 
@@ -1182,6 +1185,16 @@ An amount, stored as a whole number of minor units. The scale is DERIVED from th
 total Int @money(USD)
 ```
 
+#### `@point` (<latKey>, <lngKey>)
+
+tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · see also: `type`, `generated`
+
+The Json value on this field is a coordinate, and these two of its keys carry it. The whole declaration of one — an object, two numeric keys, ±90 / ±180, both or neither — because that floor is the same in every application, which is why the attribute carries it rather than a shape each schema declares (@money is the same move). The keys are NAMED because the value is the app's: @point(lat, lng) and @point(latitude, longitude) are both ordinary, and inferring them from the shape is silently wrong for the model whose `lat` is a lathe setting. Two VIRTUAL generated columns are emitted beside it, <field><Key>, and a composite index over the pair: they store nothing and the index holds the numbers, which is what lets a point live in one JSON value and still be pruned by a b-tree. A query names those COLUMNS — a WHERE that repeats json_extract() reads as a full SCAN even with the index present, because SQLite matches the column and not the expression. The shape and range CHECKs are emitted with coalesce(), since a CHECK fails only on FALSE and the natural spelling admits every object that has no coordinate at all. @type beside it grades the REST of the object and may only NARROW the range; not with @encrypted, whose bytes json_extract reads as no location.
+
+```lite
+site Json @point(lat, lng)
+```
+
 **Decide who may**
 
 #### `@allow` ('read'|'write'|'all', <expression>)
@@ -1210,14 +1223,14 @@ The row's identity IS the tuple. Sugar over `@id` on each named field, which is 
 
 **Shape the table**
 
-#### `@@index` ([field, …])
+#### `@@index` ([field [(sort: Asc | Desc)], …][, where: <expr>])
 
-tier: **essential** · legal in: in a model, in a trait · also called: performance, speed up, query plan
+tier: **essential** · legal in: in a model, in a trait · also called: performance, speed up · see also: `unique`
 
-An index over one or more columns.
+An index over one or more columns. A direction is part of what the index IS, so it earns its place on a COMPOSITE whose columns disagree — SQLite walks a b-tree either way, and a lowercase `desc` is the client's own `orderBy` spelling and means the same thing. The index NAME is derived from the field list alone, so adding a direction does not rename an existing index; the migrator sees the change through the sorts. `where:` emits a partial index, and on a @@softDelete model it is ANDed with the live-rows clause rather than replacing it — that clause is what makes the index reachable on such a model at all, so honoring the declaration by dropping it would silently un-optimize every read. The predicate goes through the query planner, which is why it may not compare against a value the way @@unique(where:) may.
 
 ```lite
-@@index([customerId, createdAt])
+@@index([customerId, createdAt(sort: Desc)])
 ```
 
 #### `@@unique` ([field, …][, nullsDistinct: true | where: <expr>])

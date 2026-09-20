@@ -215,6 +215,9 @@ const asDir = (v) => (String(v).toLowerCase() === 'desc' ? 'desc' : 'asc')
  * means *nothing is sorted*, which is not the same as sorted ascending by
  * nothing — a caller marking a header tests the key.
  *
+ * A `near` value is the one structure that is not an ordering and stops the
+ * descent — see below.
+ *
  * @param {unknown} orderBy
  * @returns {{ key: string, dir: 'asc' | 'desc' }}
  */
@@ -238,7 +241,16 @@ export function orderByPair(orderBy) {
 
   const [key, value] = entries[0]
 
-  // Anything structured in the value position is one level further down.
+  // A distance ordering is an ordering ARGUMENT, not another ordering: the
+  // column a header marks is the point field, and descending into
+  // `{site:{near:{lat,lng}}}` answers `lat` — a column no table has, so the
+  // header that is sorted shows nothing and never reverses (`FJS-1077`'s shape
+  // on a value the wire now carries).
+  if (value !== null && typeof value === 'object' && !Array.isArray(value) && value.near !== undefined) {
+    return { key, dir: asDir(value.dir) }
+  }
+
+  // Anything else structured in the value position is one level further down.
   if (value !== null && typeof value === 'object') return orderByPair(value)
 
   // `{'0': '-name'}` — an array of strings that lost its shape in transport.

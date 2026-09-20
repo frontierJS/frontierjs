@@ -278,6 +278,22 @@ test('directives: the pair is read off a REAL url, which is where it broke', fun
     'bracket indices come back as an object, so Array.isArray is false for a caller who wrote one')
 })
 
+test('directives: a distance ordering marks the point column, not a coordinate', function () {
+  // The value under a point field is an ARGUMENT, not another ordering, and the
+  // descent that reaches `{name:'desc'}` through an array wrapper walks straight
+  // past it to `lat` — a column no table has, so the header that IS sorted shows
+  // nothing and never reverses. FJS-1077's shape on a value the wire now carries
+  // (`FJS-D323`).
+  const pairFor = (qs) => orderByPair(parseDirectives(parseQueryString(qs)).orderBy)
+
+  assert.deepEqual(pairFor('$orderBy[site][near][lat]=51.5074&$orderBy[site][near][lng]=-0.1278'),
+    { key: 'site', dir: 'asc' })
+  assert.deepEqual(orderByPair({ site: { near: { lat: 0, lng: 0 }, dir: 'desc' } }),
+    { key: 'site', dir: 'desc' }, 'furthest first is still the same column')
+  assert.deepEqual(orderByPair([{ site: { near: { lat: 0, lng: 0 } } }, { id: 'asc' }]),
+    { key: 'site', dir: 'asc' }, 'and it is reached through the array wrapper like any other')
+})
+
 test('directives: a numeric key is only residue when the value is not a direction', function () {
   // The ambiguity is real and is decided on the value. `{'0':'desc'}` is a
   // column named 0 sorted descending — absurd, and still better than descending

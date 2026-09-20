@@ -534,12 +534,19 @@ what proves the screens.
 `DRIVES.md`'s tables, then one real automation in basecamp. Anything orion needs
 and cannot express is filed against the framework, per the README.
 
-*Status 2026-09-15: the `example` half is done.* `verify:automations` passes 37
+*Status 2026-09-20: both halves are built; the basecamp install is not finished
+([`FJS-1197`](../ISSUES.md#fjs-1197)).* The basecamp automation is the one an
+operator wants — a failed release pages the workspace's ops channel, through the
+real job, the real flow, conduit and a real receiver — and installing it found
+[`FJS-1161`](../ISSUES.md#fjs-1161) and [`FJS-1159`](../ISSUES.md#fjs-1159),
+both ruled. What it did not finish is the seed, `db/schema.d.ts`, the table
+count and three junction snapshots, and four schema-derived checks are red.
+
+*The `example` half was done 2026-09-15.* `verify:automations` passes 37
 assertions and has a row in both tables. Building it found `FJS-1162`–`FJS-1166`,
 all fixed — two in orion's model nodes, a missing channel, and three below orion
 (toolbelt's `make()`, `<Form>`, mesa's `{#each}`) — and `FJS-1167`, which
-question 24 ruled (`FJS-D295`: the owner or an administrator) and is closed. The
-basecamp automation is not started.
+question 24 ruled (`FJS-D295`: the owner or an administrator) and is closed.
 
 ---
 

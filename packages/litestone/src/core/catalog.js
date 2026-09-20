@@ -627,6 +627,15 @@ const FIELD = [
     { seeAlso: ['scale'] }
   ),
   t(
+    'point',
+    'field',
+    'shape',
+    '(<latKey>, <lngKey>)',
+    "The Json value on this field is a coordinate, and these two of its keys carry it. The whole declaration of one — an object, two numeric keys, ±90 / ±180, both or neither — because that floor is the same in every application, which is why the attribute carries it rather than a shape each schema declares (@money is the same move). The keys are NAMED because the value is the app's: @point(lat, lng) and @point(latitude, longitude) are both ordinary, and inferring them from the shape is silently wrong for the model whose `lat` is a lathe setting. Two VIRTUAL generated columns are emitted beside it, <field><Key>, and a composite index over the pair: they store nothing and the index holds the numbers, which is what lets a point live in one JSON value and still be pruned by a b-tree. A query names those COLUMNS — a WHERE that repeats json_extract() reads as a full SCAN even with the index present, because SQLite matches the column and not the expression. The shape and range CHECKs are emitted with coalesce(), since a CHECK fails only on FALSE and the natural spelling admits every object that has no coordinate at all. @type beside it grades the REST of the object and may only NARROW the range; not with @encrypted, whose bytes json_extract reads as no location.",
+    'site Json @point(lat, lng)',
+    { seeAlso: ['type', 'generated'] }
+  ),
+  t(
     'keepVersions',
     'field',
     'stamp',
@@ -867,10 +876,10 @@ const MODEL = [
     'index',
     'model',
     'shape',
-    '([field, …])',
-    'An index over one or more columns.',
-    '@@index([customerId, createdAt])',
-    { extraFields: 'customerId Int\n  createdAt DateTime' }
+    '([field [(sort: Asc | Desc)], …][, where: <expr>])',
+    "An index over one or more columns. A direction is part of what the index IS, so it earns its place on a COMPOSITE whose columns disagree — SQLite walks a b-tree either way, and a lowercase `desc` is the client's own `orderBy` spelling and means the same thing. The index NAME is derived from the field list alone, so adding a direction does not rename an existing index; the migrator sees the change through the sorts. `where:` emits a partial index, and on a @@softDelete model it is ANDed with the live-rows clause rather than replacing it — that clause is what makes the index reachable on such a model at all, so honoring the declaration by dropping it would silently un-optimize every read. The predicate goes through the query planner, which is why it may not compare against a value the way @@unique(where:) may.",
+    '@@index([customerId, createdAt(sort: Desc)])',
+    { extraFields: 'customerId Int\n  createdAt DateTime', seeAlso: ['model:unique'] }
   ),
   t(
     'id',
@@ -964,7 +973,7 @@ const MODEL = [
     'model',
     'operate',
     '(policy)',
-    'This model\'s rows may be written with no server reachable: the client holds the write and replays it when one is. The argument is the COLLISION policy and nothing else — whether a model leaves the device, and in which direction, is a separate question this attribute has not been asked. All three policies behave identically on a reachable network; each decides what happens to a write nobody is standing over when it lands. `server` drops the revision the device read, so the replay applies to whatever the row holds by then. `append` says rows are only ever added, which is what makes a collision impossible rather than resolved — a held patch, remove or restore is refused by name. `refuse` carries the revision and the Data boundary refuses the replay if the row moved, which is why it needs an @version column and is refused without one. There is no default and silence is not permission: a model that declares nothing is not syncable, and an offline client refuses to queue a write against it by name rather than dropping it, because a model nobody thought about would otherwise lose a row with nothing said. It crosses to the browser as `x-sync`, and its ABSENCE is what a client reads as a refusal.',
+    'This model\'s rows may be written with no server reachable: the client holds the write and replays it when one is. The argument is the COLLISION policy and nothing else — whether a model leaves the device, and in which direction, is a separate question this attribute has not been asked. All four policies behave identically on a reachable network; each decides what happens to a write nobody is standing over when it lands. `server` drops the revision the device read, so the replay applies to whatever the row holds by then. `append` says rows are only ever added, which is what makes a collision impossible rather than resolved — a held patch, remove or restore is refused by name. `refuse` carries the revision and the Data boundary refuses the replay if the row moved, which is why it needs an @version column and is refused without one. `field` carries the revision AND the row the write was made against, and compares them a column at a time: two people who edited different columns both win, and only a column they both moved is a conflict — so it needs @version for the same reason `refuse` does. There is no default and silence is not permission: a model that declares nothing is not syncable, and an offline client refuses to queue a write against it by name rather than dropping it, because a model nobody thought about would otherwise lose a row with nothing said. It crosses to the browser as `x-sync`, and its ABSENCE is what a client reads as a refusal.',
     '@@sync(server)',
     {
       seeAlso: ['gate', 'version', 'transitions'],
@@ -1318,6 +1327,7 @@ export const DOCS = {
   'field:big': 'exact-numbers.md',
   'field:scale': 'exact-numbers.md',
   'field:money': 'exact-numbers.md',
+  'field:point': 'geo.md',
   'field:keepVersions': 'file-storage.md',
   'field:log': 'audit-logging.md',
 
@@ -1453,7 +1463,7 @@ export const TIERS = {
     'field:map', 'field:sequence', 'field:edge', 'field:scoped', 'field:hardDelete', 'field:sealed', 'field:capability', 'field:big',
     'field:keepVersions', 'field:upper', 'field:slug', 'field:phone', 'field:markdown',
     'field:accept', 'field:startsWith', 'field:check',
-    'field:version', 'field:scale', 'field:money', 'field:log',
+    'field:version', 'field:scale', 'field:money', 'field:point', 'field:log',
     'field:endsWith', 'field:contains', 'field:minItems', 'field:maxItems', 'field:uniqueItems',
     'field:type','field:lt', 'field:gt',
     // model attributes
@@ -1523,7 +1533,7 @@ export const SYNONYMS = {
   'model:allow':       ['rls', 'row level security'],
   'model:tenant':      ['workspace', 'organization', 'organisation'],  // spelling-exempt — a searcher's word, not ours
   'model:external':    ['legacy table', 'existing table'],
-  'model:index':       ['performance', 'speed up', 'query plan'],
+  'model:index':       ['performance', 'speed up'],
   'model:label':       ['display name', 'human name'],
   'model:trait':       ['mixin', 'shared fields'],
   'schema:valueset':   ['lookup table', 'shared enum'],

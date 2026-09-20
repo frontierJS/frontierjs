@@ -123,7 +123,17 @@ const CLEAN = {
   // it — the file a runner is pointed at, which starts the app that app.ts
   // assembles without starting.
   'api/index.ts':                       "import app from './src/app.ts'\nawait app.start()\n",
-  'api/src/app.ts':                     '// api\n',
+  // A local FileStorage beside the static mount that publishes it, so
+  // `untrusted-upload-root` RUNS on the clean tree rather than skipping — a rule
+  // that only ever skips is the failure this file exists to prevent — and finds
+  // nothing, because the mount says where its bytes came from. That pair IS the
+  // shape an app with a `File` column is meant to be in (`FJS-D314`): one
+  // directory, marked once, and an SVG uploaded to it can no longer run in the
+  // app's own origin.
+  'api/src/app.ts':
+    "const STORAGE_ROOT = './db/public'\n" +
+    "const plugins = [FileStorage({ provider: 'local', localPath: STORAGE_ROOT })]\n" +
+    "export default { http: { static: { root: STORAGE_ROOT, untrusted: true } } }\n",
   'api/config/junction.config.js':      'export default {}\n',
   'web/index.html':                     '<!doctype html>\n<body><div id="app"></div></body>\n',
   'web/config/vite.config.js':          'export default { server: { port: 8010, strictPort: true } }\n',
@@ -316,6 +326,47 @@ describe('the clean app', () => {
     // rules could not see is the result this file is written to make impossible.
     expect(skipped).toEqual([])
     expect(ran.length).toBe(RULES.filter(r => r.scope === 'app').length)
+  })
+})
+
+describe('a static root serving uploads says so (FJS-D314)', () => {
+  // Every firing is PAIRED with the shape one word away, because the rule is a
+  // flag's absence and a rule that fired on every static mount would satisfy any
+  // test asking only about the unmarked one.
+  const app = (mount, provider = "provider: 'local', localPath: STORAGE_ROOT") =>
+    "const STORAGE_ROOT = './db/public'\n" +
+    `const plugins = [FileStorage({ ${provider} })]\n` +
+    `export default { http: { static: { ${mount} } } }\n`
+
+  test('an unmarked mount sharing the provider\'s directory names both', () => {
+    const root = tree('uur-bad', { 'api/src/app.ts': app('root: STORAGE_ROOT') })
+    const { findings } = only(root, 'untrusted-upload-root')
+    expect(findings.length).toBe(1)
+    expect(findings[0].message).toContain('STORAGE_ROOT')
+    expect(findings[0].message).toContain('untrusted: true')
+  })
+
+  test('marking it fires nothing', () => {
+    const root = tree('uur-good', { 'api/src/app.ts': app('root: STORAGE_ROOT, untrusted: true') })
+    expect(only(root, 'untrusted-upload-root').findings).toEqual([])
+  })
+
+  test('an S3 provider is not in this path at all, so the rule SKIPS', () => {
+    // The bucket serves those bytes and junction never sees them. A rule that
+    // fired here would be telling an app to mark a mount that carries no
+    // uploads, which is how a check gets turned off wholesale.
+    const root = tree('uur-s3', { 'api/src/app.ts': app('root: STORAGE_ROOT', "provider: 'r2', bucket: 'x'") })
+    const { findings, skipped } = only(root, 'untrusted-upload-root')
+    expect(findings).toEqual([])
+    expect(skipped.length).toBe(1)
+  })
+
+  test('a local provider with no static mount skips rather than guessing', () => {
+    const root = tree('uur-nomount', {
+      'api/src/app.ts': "const STORAGE_ROOT = './db/public'\n" +
+                        "const plugins = [FileStorage({ provider: 'local', localPath: STORAGE_ROOT })]\n",
+    })
+    expect(only(root, 'untrusted-upload-root').skipped.length).toBe(1)
   })
 })
 
@@ -3157,5 +3208,118 @@ describe('schema-in-memory', () => {
       'api/src/db.ts': "await createClient({ schema: 'model X { id Int @id }' })\n",
     })
     expect(only(root, 'schema-in-memory').skipped).toBeTruthy()
+  })
+})
+
+
+// ─── seams ────────────────────────────────────────────────────────────────────
+//
+// Both rules grade a CLAIM rather than the code: the `bridge-index` skill says
+// where a seam lives, and a claim that has rotted reads as correct from every
+// angle. The cases that matter are the two ways the parser was wrong on its
+// first run — a bullet naming where a seam is consumed as well as where it
+// lives, and a bullet carrying two verbs where the owner declares one of them.
+
+const SEAMS = (body) => ({
+  '.claude/skills/bridge-index/SKILL.md': `# Bridge index\n\n**Data → API**\n${body}\n`,
+})
+
+describe('seam-owner', () => {
+  test('a stated owner that is not in the tree fails', () => {
+    // The package is real and the file is not — which is how a seam that moved
+    // inside its own package reads, and the only shape that rots quietly.
+    const root = tree('seam-gone', {
+      ...SEAMS('- `$setAuth(user)` — the checkpoint — `litestone/src/core/client.js`'),
+      'packages/litestone/src/index.js': 'export const x = 1\n',
+    })
+    const { findings } = only(root, 'seam-owner', { scope: 'repo' })
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/is not in the tree/)
+  })
+
+  test('only a real package may be an owner — a specifier and an alias are not paths', () => {
+    // All three are shaped exactly like a path and none of them is one: a
+    // relative mention, an import specifier, and a Vite alias. Reading any of
+    // them as the owner reports a dead path against prose that is correct.
+    const root = tree('seam-lookalike', SEAMS([
+      '- `generateJsonSchema(schema)` — consumed by sierra\'s `build/schema-plugin.js`',
+      '- `resource.options(field)` — said where the count is, in `@frontierjs/ui/utils.js`',
+      '- `appSrcDir(root)` — `@` is the surface\'s own src, so `@/api.js` differs per surface',
+    ].join('\n')))
+    expect(only(root, 'seam-owner', { scope: 'repo' }).findings).toEqual([])
+  })
+
+  test('a stated owner that only re-exports fails, and names where from', () => {
+    // The shape that rots invisibly: the name IS in that module's surface, so
+    // every import of it works and the declaration is somewhere else entirely.
+    const root = tree('seam-reexport', {
+      ...SEAMS('- `matchesQuery(fields, record, query)` — the decision — `sierra/src/junction/field-rules.js`'),
+      'packages/sierra/src/junction/field-rules.js': "export { matchesQuery } from '@frontierjs/toolbelt/match'\n",
+    })
+    const { findings } = only(root, 'seam-owner', { scope: 'repo' })
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/@frontierjs\/toolbelt\/match/)
+  })
+
+  test('the owner is the FIRST path — a second one is where the seam is consumed', () => {
+    const root = tree('seam-consumed', {
+      ...SEAMS('- `createJunctionClient()` — `junction/src/client/index.ts`, consumed at `sierra/src/junction/index.js`'),
+      'packages/junction/src/client/index.ts': 'export function createJunctionClient() {}\n',
+      'packages/sierra/src/junction/index.js': "export { createJunctionClient } from '@frontierjs/junction/client'\n",
+    })
+    expect(only(root, 'seam-owner', { scope: 'repo' }).findings).toEqual([])
+  })
+
+  test('a bullet carries every verb the seam answers to, and one of them is enough', () => {
+    const root = tree('seam-pair', {
+      ...SEAMS('- `ctx.enqueue(job, payload)` / `deliverOutbox(app)` — `junction/src/core/outbox.ts`'),
+      'packages/junction/src/core/outbox.ts': 'export function deliverOutbox(app) {}\n',
+    })
+    expect(only(root, 'seam-owner', { scope: 'repo' }).findings).toEqual([])
+  })
+
+  test('a bullet naming no owner is silent — that gap is published, not failed', () => {
+    // Fifty-nine of eighty-five name none. A red build for that honesty makes
+    // deleting the bullet the fastest way to green.
+    const root = tree('seam-unowned', SEAMS('- `$tapEvents(fn)` — every write, announced'))
+    expect(only(root, 'seam-owner', { scope: 'repo' }).findings).toEqual([])
+  })
+
+  test('no skill is a skip, not a pass', () => {
+    const root = tree('seam-noskill', { 'CLAUDE.md': '# x\n' })
+    expect(only(root, 'seam-owner', { scope: 'repo' }).skipped).toBeTruthy()
+  })
+})
+
+describe('seam-listed', () => {
+  const KEYS = (names) => ({ 'CLAUDE.md': `# x\n\n## Bridge index\n\n**Data → API** — ${names}\n\n## Next\n` })
+
+  test('a seam the skill explains and the key list never named fails', () => {
+    // `signIn` was exactly this: its own bullet, its own ruling, and § Bridge
+    // index answered *is there an owner for this already* with no.
+    const root = tree('seam-unlisted', {
+      ...SEAMS('- `signIn` → `completeSignIn(code)` — the client holds the ticket'),
+      ...KEYS('`client.auth.*`'),
+    })
+    const { findings } = only(root, 'seam-listed', { scope: 'repo' })
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/signIn/)
+    expect(findings[0].message).toMatch(/Data → API/)
+  })
+
+  test('a seam the key list names under any spelling is silent', () => {
+    const root = tree('seam-listed-ok', {
+      ...SEAMS('- `signIn` → `completeSignIn(code)` — the client holds the ticket'),
+      ...KEYS('`client.auth.*` · `signIn` → `completeSignIn(code)`'),
+    })
+    expect(only(root, 'seam-listed', { scope: 'repo' }).findings).toEqual([])
+  })
+
+  test('no § Bridge index at all reports nothing — an app has no key list to keep', () => {
+    const root = tree('seam-nosection', {
+      ...SEAMS('- `signIn` — the client holds the ticket'),
+      'CLAUDE.md': '# x\n',
+    })
+    expect(only(root, 'seam-listed', { scope: 'repo' }).findings).toEqual([])
   })
 })

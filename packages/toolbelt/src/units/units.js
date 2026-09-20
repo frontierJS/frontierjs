@@ -413,3 +413,94 @@ export function allocate(amount, ratios) {
 
   return parts.map((v) => v * sign)
 }
+
+// ─── length ───────────────────────────────────────────────────────────────
+//
+// A radius is stated with its unit — `within: '5mi'` — so that nobody writes
+// `radius * 1609.34` by hand, which is what a meters-only API produces: two
+// files of one real application do exactly that, each with its own constant.
+// The vocabulary is here rather than in `/geo` because what a quantity MEANS is
+// this kit's question; `/geo` is the math over numbers, and it reads these.
+
+const LENGTH = Object.freeze({
+  mm: 0.001,
+  cm: 0.01,
+  m:  1,
+  km: 1000,
+  in: 0.0254,
+  ft: 0.3048,
+  yd: 0.9144,
+  mi: 1609.344,
+  nmi: 1852,
+})
+
+/** Every unit `parseLength` accepts, longest spelling first. */
+export const LENGTH_UNITS = Object.freeze(Object.keys(LENGTH))
+
+/**
+ * `'5mi'` → metres.
+ *
+ * A bare number is METRES rather than an error, because a caller who computed
+ * one has already made the choice this function exists to record; a string
+ * without a unit is refused, since `'5'` in a URL is a radius somebody meant to
+ * spell and the silent reading of it is the bug the unit suffix prevents.
+ *
+ * The unit is matched case-insensitively and `KM`/`Km` are the same unit. A
+ * negative or zero radius is refused: a filter that admits nothing is a mistake
+ * with no second reading.
+ *
+ * @param {string|number} value
+ * @returns {number} metres
+ */
+export function parseLength(value) {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || value <= 0)
+      throw new Error(`parseLength: a distance must be a positive number, got ${value}`)
+    return value
+  }
+  if (typeof value !== 'string' || value.trim() === '')
+    throw new Error('parseLength: expected a string like \'5mi\' or a number of metres')
+
+  const m = /^\s*(-?\d+(?:\.\d+)?)\s*([a-z]+)\s*$/i.exec(value)
+  if (!m)
+    throw new Error(
+      `parseLength: cannot read '${value}' — expected a number and a unit, one of ${LENGTH_UNITS.join(', ')}`)
+
+  const [, magnitude, rawUnit] = m
+  const unit = rawUnit.toLowerCase()
+  if (!(unit in LENGTH))
+    throw new Error(`parseLength: unknown unit '${rawUnit}' — one of ${LENGTH_UNITS.join(', ')}`)
+
+  const metres = Number(magnitude) * LENGTH[unit]
+  if (!(metres > 0))
+    throw new Error(`parseLength: a distance must be greater than zero, got '${value}'`)
+  return metres
+}
+
+/**
+ * Metres → the shortest honest string, in the caller's system.
+ *
+ * Adaptive the way `formatBytes` is: one decimal while the number is small
+ * enough for the decimal to carry information, none once it is not. `imperial`
+ * reads feet under a tenth of a mile and miles above it, which is the split a
+ * person doing the reading already has in their head.
+ *
+ * @param {number} metres
+ * @param {{ imperial?: boolean, decimals?: number }} [opts]
+ * @returns {string}
+ */
+export function formatDistance(metres, opts = {}) {
+  const n = asNumber(metres)
+  if (!Number.isFinite(n)) return '—'
+  const { imperial = false, decimals } = opts
+  const fixed = (v, d) => v.toFixed(decimals ?? d)
+
+  if (imperial) {
+    const miles = n / LENGTH.mi
+    if (miles < 0.1) return `${fixed(n / LENGTH.ft, 0)} ft`
+    return `${fixed(miles, miles < 10 ? 1 : 0)} mi`
+  }
+  if (n < 1000) return `${fixed(n, 0)} m`
+  const km = n / 1000
+  return `${fixed(km, km < 10 ? 1 : 0)} km`
+}

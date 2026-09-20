@@ -34,6 +34,15 @@
 // contents, so a UI fact resolves its data half and reports the screen half as
 // `unverified`. Run 1 measured that gap at fourteen of sixty.
 //
+// ── Not `core/ask.js`, and the split is the corpus ───────────────────────────
+//
+// That module is the same operation pointed the other way: a CONTRIBUTOR's
+// question resolved against the WORKSPACE's registers, where this one resolves
+// a CUSTOMER's words against an APP's own seed. Different reader, different
+// corpus, different verdicts — `exists` / `needs us` here, a citation there.
+// They share `terms()` and the rule that a tie is ambiguous, and `ask.js`
+// imports both rather than restating them.
+//
 // Zero dependencies beyond `@frontierjs/toolbelt/inflect`, plain ESM, node or bun.
 
 import { singularize, words as splitWords, humanize } from '@frontierjs/toolbelt/inflect'

@@ -31,11 +31,11 @@
 //
 // ─── Bitemporality, which shows up here and only here ─────────────────────
 //
-// Two questions about one instant:
+// Two questions about one day:
 //
 //   *what did March's payslip say when March said it*  — the payslip, frozen
-//   *what do we now believe March owed*                — recompute at March's
-//                                                        period end
+//   *what do we now believe March owed*                — recompute on March's
+//                                                        last day
 //
 // The schema holds VALID time only: `effectiveFrom`/`effectiveTo` say when
 // terms were in force and nothing says when we learnt them. So the first
@@ -44,7 +44,7 @@
 // today's belief. `@@log(audit)` holds the other axis as a log nothing can be
 // joined against, which is not the same thing as a dimension.
 
-import { instant, payAsAtMany }  from './employment.ts'
+import { lastDayOf, payAsAtMany } from './employment.ts'
 import { allRatesAsAt }          from './payrates.ts'
 import { draftPayslip }          from './payslip.ts'
 import type { PayslipDraft }     from './payslip.ts'
@@ -77,7 +77,7 @@ export type Arrears = {
  *
  * Per paid run, one comparison in three terms:
  *
- *     what we now believe the period owed        (recomputed at its period end)
+ *     what we now believe the period owed        (recomputed on its last day)
  *   − what the payslip said it owed              (its own lines, corrections excluded)
  *   − what has already been put right since      (adjustment lines naming that run)
  *
@@ -119,20 +119,19 @@ export async function arrearsFor(client: Client, employeeId: number): Promise<Ar
 
   for (const run of runs) {
     const slip = held.find((s: any) => s.payRunId === run.id)
-    const at   = instant(run.periodEnd)
+    const on   = lastDayOf(run)
 
-    // As we believe it NOW. The same read the run itself made, at the same
-    // instant, against a terms table that has since been corrected — which is
-    // the whole of what a backdate does and the only reason these two numbers
-    // can differ.
-    const windows = await payAsAtMany(client, [employeeId], at)
+    // As we believe it NOW. The same read the run itself made, on the same day,
+    // against a terms table that has since been corrected — which is the whole
+    // of what a backdate does and the only reason these two numbers can differ.
+    const windows = await payAsAtMany(client, [employeeId], on)
     const window  = windows.get(employeeId)
     // Nothing in force is not a correction. It is somebody having deleted a
     // window under a paid period, and inventing a delta from it would silently
     // claw back a payslip that was legitimately issued.
     if (!window) continue
 
-    const rates = await allRatesAsAt(client, at)
+    const rates = await allRatesAsAt(client, on)
     const now   = draftPayslip(employeeId, window as any, rates, run.periodsPerYear, run.periodIndex)
 
     // What the payslip said about ITSELF. A correction it happens to carry for

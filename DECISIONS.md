@@ -893,6 +893,12 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d322"></a>2026-09-20 · `FJS-D322` — Does `@@geo` imply `@guarded` — No. Declare it, and the parser warns when a point is ungated on a model whose `@@gate` is above STRANGER.
+
+Asked in [`IDEAS/geo.md`](IDEAS/geo.md) § Open questions. **A** was picked over **B** (yes, opt out — a residential coordinate is a person's address).
+
+The paper's recommendation, taken as written: a shop's location is public and a silent default that redacts it produces the empty-screen failure in the audit trail instead of the UI, which is worse than the same mistake on a screen because nobody is looking. The warning is where the safety lives.
+
 ### <a id="fjs-d303"></a>2026-09-16 · `FJS-D303` — Q4 — does a policy predicate cross to the browser, and for which Models — The boolean stays the default and shipping the predicate is something a Model opts into.
 
 Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **B** was picked over **A** (the predicate text crosses for every Model, since the server re-checks and the disclosure is mostly of rules a determined reader could infer from the UI).
@@ -2579,6 +2585,102 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d337"></a>2026-09-20 · `FJS-D337` — Q10 — when a device has a database, is the declared window the SCREEN's question or the DEVICE's — the device's, and the keyed cache warm is skipped for that model, wherever the database actually opened.
+
+Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **C** was picked over **A** (one declaration, meaning the screen's question — what phase 4 shipped: the device is as full as the declared window, and an app wanting more must accept a cache slot nothing reads), **B** (a second key beside it, `offlineQuery: { directives, hydrate: { limit: 500 } }` — two grains, named, with the cache keeping its exact-match rule).
+
+The paper's recommendation, with the condition § V's last question requires. C is the only option that REMOVES a grain rather than naming one: with SQL on the device the keyed cache is a second answer to a question the database answers anyway, and [`FJS-D334`](#fjs-d334) settles the direction regardless — a device that must supply the base for a merge is a device whose copy is load-bearing. **The blocker the paper named is real and is not a reason to take B.** `localDb()` answers null on any failure by design, so skipping the warm on the CONFIG saying `db: true` would leave a device whose database could not open with an empty screen and nothing said. The fix is a condition rather than a different option: `configureLocalDb()` opens eagerly, so whether the database opened is a fact available when the warm runs, and a warm that finds it did not fills the cache under the screen's question, which is A. The declaration then means one thing and the fallback is the old behavior, where B names two grains permanently to avoid one conditional.
+
+### <a id="fjs-d336"></a>2026-09-20 · `FJS-D336` — Is a conflict resolvable by whoever is looking at it — by whoever may write the ROW, and a protected column carries the fact of divergence and neither value.
+
+Asked in [`IDEAS/conflict-as-data.md`](IDEAS/conflict-as-data.md) § Open questions as Q3. **A** was picked over **B** (a higher standing, declared: choosing between two people's values is an act neither could do alone), **C** (the row's gate alone, no redaction — if you may write the row you may see both candidates).
+
+Resolving is a write to the row, and the gate already answers who may make one, so no second ladder is coined — which § V's concept-budget question refuses B on by itself. Invariant 7 is the rest of it: an `@encrypted`, `@guarded` or `@secret` column logs as `[redacted]` and may not become readable through a new door, so a conflict on one is shown as divergence with take-local or take-remote and no display of either side. C is [`FJS-976`](ISSUES.md#fjs-976)'s shape on a new surface — a screen offering a value the row's own read path refuses.
+
+### <a id="fjs-d335"></a>2026-09-20 · `FJS-D335` — What a conflict relation costs a model that never has one — nothing, because V1 ships no relation: an unmergeable write stays a rejected entry in the pending queue, carrying the comparison.
+
+Asked in [`IDEAS/conflict-as-data.md`](IDEAS/conflict-as-data.md) § Open questions as Q2, which asked how to price the relation and is answered by removing it.
+
+[`FJS-D304`](#fjs-d304) ships `append` and `refuse` and nothing else until an app asks, so phase 5's deliverable is `field` — and `field` needs no storage at all: it either merges, two people having touched different columns, or it does not. Keeping both versions until somebody picks is `manual`, and the relation is `manual`'s cost. A table with no policy behind it is the shape [`FJS-D298`](#fjs-d298) refused once already: a value that parses and resolves nothing reads exactly like one that works. **The storage for the V1 outcome also already exists** — `pending.js` parks a refused write in `rejected` rather than dropping it, lists them, and `discard(key)` is somebody choosing to let one go — so a conflict is a rejected queue entry carrying `base`/`local`/`remote` in place of a bare version mismatch. Nothing is coined: no Model, no `db.$conflicts(accessor)`, no generated screen, no `fli check` rule for a policy no app can declare. § IV *batteries vs. smallness*. **The cost is stated rather than hidden: the conflict is PER DEVICE**, invisible to anyone else and with no fleet-wide count — acceptable while a `field` conflict is rare by construction and the person holding it is the person holding the device, and no longer acceptable the day `manual` ships, which is when the relation gets built as the paper describes it.
+
+### <a id="fjs-d334"></a>2026-09-20 · `FJS-D334` — Where a per-column merge gets its base, and where it runs — the device sends the row it read, and the comparison runs at the Data boundary.
+
+Asked in [`IDEAS/conflict-as-data.md`](IDEAS/conflict-as-data.md) § Open questions as Q1. **A** was picked over **B** (on the device, before the write is sent: the client has the base and its own row, and sends a narrowed patch the server cannot conflict on).
+
+The paper's recommendation on WHERE, taken as written, plus the half it did not ask. **A per-column comparison needs the row as it was READ**, and `@version` is a counter: it says the row moved and can never say which columns moved. Two sources could supply it. `@@log(audit)`'s before-snapshot is written already, but it covers only models that declare the log and Invariant 7 redacts a protected field in it, so a conflict on a `@guarded` column would be undecidable for exactly the columns where being wrong costs most. **So the device sends the base, as untrusted INPUT and never as authority**: the server's row decides, the gate and the constraints run unchanged, and the worst a forged base can do is make the device's own write look unconflicted, which is what `server` does today. B is refused on the paper's own argument — a patch narrowed against a server row the device read at an unknown time is the same staleness one layer earlier, with no constraint check behind it. **This is also what makes homestead Q10 decidable** ([`FJS-D337`](#fjs-d337)): a device required to supply the base is a device whose copy is load-bearing, which was that question's real subject.
+
+### <a id="fjs-d333"></a>2026-09-20 · `FJS-D333` — Is retrieval a new verb, or an `orderBy` on `findMany` — `orderBy: { embedding: { near: v } }` on the ordinary read.
+
+Asked in [`IDEAS/embedding.md`](IDEAS/embedding.md) § Open questions. **A** was picked over **B** (`db.doc.findSimilar({ vector, limit })`, a verb of its own, as the roadmap sketch has it).
+
+The paper's recommendation, taken as written: `search()` earned its verb because FTS5 is a different engine on a different table, which is what the language tells adopters in those words; a vector column is not, it sits on the model's own table. So the ordering composes with `where`, `select`, `include`, cursors, `@@softDelete`, the tenant filter, both row policies and the gate **by doing nothing at all**, where B would restate every one of `findMany`'s options and then have to keep them in sync. It is also § V's six-months-out tiebreak answered: no second surface to learn, and the free composition is a consequence of where the column lives rather than a promise in a document.
+
+### <a id="fjs-d332"></a>2026-09-20 · `FJS-D332` — How is a vector DECLARED — `embedding Bytes @vector(1536)`, an attribute on existing storage.
+
+Asked in [`IDEAS/embedding.md`](IDEAS/embedding.md) § Open questions. **B** was picked over **A** (`embedding Embedding(1536)`, a ninth scalar), **C** (`@@vec([embedding])`, the `@@fts` shape over a `vec0` table).
+
+The paper's recommendation, taken as written: the storage already exists and only the marker is new, which is `FJS-D288` (`String @date` rather than a `Date` type) and geo's `@point` a third time. A is not one new type but the grammar's **first parameterized scalar** — `SCALAR_TYPES` is a flat set — whose parameter then has to travel into the DDL, the differ, the JSON Schema, `select`, `orderBy`, patch semantics, the audit trail and the import tiers, and it spends a scalar on a `Bytes` with a promise attached. C is refused on the measurement rather than on taste: `vec0` is exact brute force at 0.1.9 and measured *slower* than a plain scan at 50k, so its shadow table, triggers, differ rule, soft-delete rule and hot-path JOIN would be paid in full for a ratio below one.
+
+### <a id="fjs-d330"></a>2026-09-20 · `FJS-D330` — Who holds the query vector — the caller, or litestone — The caller passes floats; litestone never calls a model.
+
+Asked in [`IDEAS/embedding.md`](IDEAS/embedding.md) § Open questions. **A** was picked over **B** (a paved road where the *text* is the argument and litestone calls an app-registered embedder).
+
+The paper's recommendation, taken as written: B puts a vendor network call with a deadline inside a read, and therefore inside whatever transaction the read is in; that is exactly what `IDEAS/orion-port.md` keeps out of its executor loop. It also splits the failure: under B a model timeout surfaces as a failed query. One line at the call site keeps the failure attributable and keeps `FJS-D153` intact — the vendor stays the app's.
+
+### <a id="fjs-d329"></a>2026-09-20 · `FJS-D329` — Does V1 ship a distance cutoff, or the distance itself — No cutoff. The ordering puts the computed distance on the row, the way `search()` already returns `_rank`, and the app filters on it.
+
+Asked in [`IDEAS/embedding.md`](IDEAS/embedding.md) § Open questions. **A** was picked over **B** (`maxDistance:` as a declared filter beside the ordering).
+
+The paper's recommendation, taken as written: the precedent exists and is the same shape (`withRank` / `_rank`), it hands the app the number instead of a knob it has to guess, the grounding decision stays where the domain knowledge is, and B remains addable later without a break. A cutoff shipped now is the config flag § IV's paved-road row says widens the shoulder and records nothing.
+
+### <a id="fjs-d328"></a>2026-09-20 · `FJS-D328` — Is a vector column in the default `select` — The attribute excludes it; naming it in `select` is how you get it.
+
+Asked in [`IDEAS/embedding.md`](IDEAS/embedding.md) § Open questions. **A** was picked over **B** (a general `@lazy`-shaped rule, which is a second concept and would want other users before it earns a word), **C** (no exclusion; the column behaves like any other and the cost is documented).
+
+The paper's recommendation, taken as written: the declaration already knows the size class, so excluding it there restates nothing, and C ships a performance trap whose failure is a slow list nobody attributes to the schema. B is the right shape only if a second kind of oversized column turns up; coining it for one user is the concept budget spent early.
+
+### <a id="fjs-d321"></a>2026-09-20 · `FJS-D321` — Can a query order by distance, and how does that travel — `orderBy: { home: { near: center } }`, structured, the way `@frontierjs/toolbelt/query` already carries structure in a query string.
+
+Asked in [`IDEAS/geo.md`](IDEAS/geo.md) § Open questions. **A** was picked over **B** (no distance ordering; filter with `near` and sort the page client-side).
+
+The paper's recommendation, taken as written: , and it is what makes V1 = B above — a page sorted after it was selected is the wrong twenty rows, silently, and the expression is already computed to do the filtering. The `$orderBy` DIRECTIVE is untouched (Invariant 10): the directive is still one key on the wire, and what changed is the shape of the value it carries.
+
+### <a id="fjs-d320"></a>2026-09-20 · `FJS-D320` — Does the distance come back with the row — No; the row carries its point and the caller knows the center, so the client computes it with the same kit function the server used.
+
+Asked in [`IDEAS/geo.md`](IDEAS/geo.md) § Open questions. **B** was picked over **A** (yes, as a transient the query adds when it filtered or sorted by `near`).
+
+The paper's recommendation, taken as written: it is derivable from data already on the row, which is the question § V asks first; A spends an envelope field and a name that can collide with a real column to save a subtraction. If a screen wants *2.3 mi away*, one kit call answers it with no server contract at all.
+
+### <a id="fjs-d319"></a>2026-09-20 · `FJS-D319` — How is a distance stated — A string carrying its unit: `within: '5mi'`, parsed by one function in the kit.
+
+Asked in [`IDEAS/geo.md`](IDEAS/geo.md) § Open questions. **A** was picked over **B** (meters, always, a bare number), **C** (an object, `within: { miles: 5 }`).
+
+The paper's recommendation, taken as written: B is the shape that ends in callers multiplying by 1609.34 by hand, which both geo files in the client app do, and a bare number in a URL is unreadable at the one moment somebody is debugging it. `@frontierjs/toolbelt/units` already owns *what a quantity means*, so the parse has an owner and is not a second vocabulary.
+
+### <a id="fjs-d318"></a>2026-09-20 · `FJS-D318` — What is in V1 — A, plus distance ordering, so a nearest-first list paginates correctly.
+
+Asked in [`IDEAS/geo.md`](IDEAS/geo.md) § Open questions. **B** was picked over **A** (the declaration and the filter: `@@geo`, a `near` filter at the Data boundary, the index, the range refusals, `x-geo`. Nothing leaves the boundary that is not a row), **C** (B, plus areas: a polygon column, containment, and the measurement's provenance).
+
+The paper's recommendation, taken as written: under A a list screen can filter but cannot sort, and nearest-first is most of what anybody asks a coordinate for; sorting a page in the client is wrong by construction the moment there is a second page, which sends the app straight back to the math this record exists to delete. C is a second noun, a second storage question and a provenance design, and it is the half neither engine can index (§ *What both engines already hold*).
+
+### <a id="fjs-d317"></a>2026-09-20 · `FJS-D317` — Where does the marker live — what earns a field `near` — A marker on the FIELD: `site Json @type(Geo) @point(lat, lng)`.
+
+Asked in [`IDEAS/geo.md`](IDEAS/geo.md) § Open questions. **D** was picked over **A** (the type's NAME: any `@type(Geo)` field is a point), **B** (SHAPE inference: a type with `lat`/`lng` Floats is a point), **C** (a marker on the TYPE: `type Geo @point(lat, lng) { … }`), **E** (a framework-SHIPPED type the app imports, known by identity).
+
+The paper's recommendation, taken as written: measured against the parser: `type Geo @point(lat, lng) {` **does not parse** (`Expected LBRACE, got '@'`), and the same marker inside the braces is refused with the language's own sentence — *`@@index` not allowed in a type — types describe value shapes, not models*. So C is two new concepts, a grammatical position and a widening of what a type may say, while D is a new WORD in an existing grammar: `site Json @type(Geo) @point(lat, lng)` already parses and fails only as an unknown attribute name. **`@money` is the precedent** — a currency is a shape fact declared once and the attribute is still written on every money column, because it states the column's ROLE — so a per-field marker is this language's normal shape rather than a redundancy. A is magic over a user-chosen identifier, B is derived where it should be declared and silently wrong for the model whose `lat` means something else, and E does not answer the question on its own: an identity still has to be read by something, which is A with extra steps.
+
+### <a id="fjs-d316"></a>2026-09-20 · `FJS-D316` — How is a point DECLARED — two fields or one — A declared TYPE in a JSON column with the numbers generated back out: `type Geo { lat Float @gte(-90) @lte(90) · lng Float … }` + `site Json @type(Geo)` + two `@generated("json_extract(site, '$.lat')")` columns and an index over them.
+
+Asked in [`IDEAS/geo.md`](IDEAS/geo.md) § Open questions. **G** was picked over **A** (one column holding a composite value (`site Geo` as text, JSON or WKB)), **B** (two `Float` columns grouped by `@@geo(site: latitude, longitude)`), **C** (a `Geo` scalar the DDL expands to `site_lat` / `site_lng`), **D** (`Geo` as parse-time sugar that expands to B before anything else sees it), **E** (a read-side FIELD over the two real columns, spelled as an expression: `site Geo @derived(point(latitude, longitude))`), **F** (the same read-side field, spelled as an attribute naming its two sibling columns: `site Json @geo(latitude, longitude)`).
+
+The paper's recommendation, taken as written: it is the only option atomic in BOTH directions: `site` is one field the caller reads AND writes, which is the one cost F could only mitigate (F is read-side, so you read `site` and write the pair). **It needs no language change**: run through litestone's own `parse()` and `generateDDL()` it is `valid: true` and emits two `GENERATED ALWAYS AS (…) VIRTUAL` columns in a `STRICT` table plus the composite index, and against `bun:sqlite` the planner uses that index (`SEARCH job USING INDEX idx_job_siteLat_siteLng`) while `VIRTUAL` stores nothing. The range checks live in the declared type, the JSON Schema already carries the shape so a control needs no `x-*` keyword to find it, and a polygon later is a second type rather than a second attribute. Both guarantees hold at the DB: a `CHECK` over generated columns is legal and refuses a half-set point and an out-of-range one. **Its cost is adoption** — every app in the survey starts from a `latitude`/`longitude` pair, and G is a data migration where F is one added line; that is the trade to weigh, since the cheapest adoption and the best shape are not the same option, and § *Is the pair the value?* prices both sides. **The other half of G's cost is measured**: a `TEXT` column has no type floor, so `"hello"` and `{"latitude": …, "longitude": …}` both store as a row with no location, where two `REAL` columns in a `STRICT` table refuse the first outright — and the `CHECK` that closes it must be emitted by the framework, since its natural spelling (`json_type(site,'$.lat') IN ('integer','real')`) evaluates to NULL for a missing key and a `CHECK` fails only on FALSE. A is refused outright by the survey; C adds field-to-columns 1:N; D's sugar stops being true at the boundary; E needs a `point()` value kind in three evaluators.
+
+### <a id="fjs-d315"></a>2026-09-20 · `FJS-D315` — Does the bbox use a composite index, an R*Tree, or a cell id — Composite `(lat, lng)` index. No second table, no triggers, no join, and the filter stays a `WHERE` on the same table that every policy, gate and other filter already AND-s into.
+
+Asked in [`IDEAS/geo.md`](IDEAS/geo.md) § Open questions. **A** was picked over **B** (an R*Tree shadow table: measured present in both engines, documented on D1, available on Turso, and measured ~2× faster at every scale tested. Costs a virtual table per point, three triggers to keep it honest, a migration differ that must not drop what it did not declare, a `@@softDelete` interaction (a soft delete is an UPDATE, so the row stays unless a trigger says otherwise), and a query that becomes a JOIN. **Also: R*Tree coordinates are 32-bit floats**, so it is a PREFILTER and never the answer — one run showed 2 rows of 1,304 differing at the boundary. That is exactly how it would be used here (bbox, then exact haversine), so it is a constraint rather than a defect), **C** (a cell id column (geohash / S2 / H3)).
+
+The paper's recommendation, taken as written: for V1, and the honest reason is the corrected number: 2× for a shadow table, three triggers, a differ rule, a soft-delete rule and a JOIN in the one code path every other filter composes into is not a trade to take before a real app is slow. It was arguably a trade to take at 11×. B changes no declaration when it lands, so the app that gets big pays for it then; what it does change is the query path, which is the reason to write that path once with the join in mind. C stays rejected: a second representation of a coordinate, recomputed on every write, and geohash's prefix seam brings the eight-neighbor probe back anyway.
+
 ### <a id="fjs-d307"></a>2026-09-16 · `FJS-D307` — Q9 — what fills the local database, and which source answers a read — B's read path, plus a declared PREFETCH: a screen or a resource says which queries it must have before it needs them, and warming them is an ordinary read through B's own mechanism
 
 Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **C** was picked over **A** (a replica. A declared subset of the server's rows is kept current by a change feed over the existing WebSocket, and every read goes local, always, reachable or not), **B** (a cache that fills itself. A read goes to the server when it answers and the rows are written locally as they pass; with no server the same query runs against what is there. Nothing new is declared).
@@ -2675,6 +2777,16 @@ Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **A** was
 
 The paper's recommendation, taken as written: both of A's values are stated by the schema's author and READABLE in the schema, where every timestamp policy is supplied by a library and has to be trusted; Weidner's warning about behavior that comes from a library you do not understand is the argument, and it generalizes past CRDTs. C would ship values that parse and resolve nothing, which phase 1 already refused once. B is right that `field` beats `lww` and that is a reason to skip `lww`, not a reason to do `field` before the two that cost nothing.
 
+**Amended 2026-09-20 — the *nothing else until an app asks* clause is spent, and
+`field` is next.** [`FJS-D334`](#fjs-d334), [`FJS-D335`](#fjs-d335) and
+[`FJS-D336`](#fjs-d336) settle `field`'s mechanism and make it phase 5's
+deliverable, so the wait this ruling imposed ended on the ruling that answered
+what it was waiting for. Nothing else in the set moves: `lww` stays refused on
+the argument above, and `manual` and `crdt` stay where they were. What this
+ruling got right and is kept for is the ORDER — `append` and `refuse` first,
+because a policy readable in the schema beats one supplied by a library, and
+because both were free.
+
 ### <a id="fjs-d298"></a>2026-09-16 · `FJS-D298` — Q1 — what does a Model declare about sync, and what does silence mean — `@@sync(<policy>)` from a closed set, with no default: a Model that declares nothing is not syncable, and an offline client refuses to queue a write against it.
 
 Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **A** was picked over **B** (every Model is syncable under a server-wins default, and `@@sync` exists only to widen that to last-write-wins or a manual merge).
@@ -2723,8 +2835,25 @@ across twelve zones, each with a negative control — `setUTCMonth` rolls 31
 January into March, and midnight minus the day's offset misses a day that starts
 at 01:00 (Santiago).
 
-**Payroll is not converted.** Its effective-dated rates and pay windows are the
-same shape and a second pass; the row that covers them is `FJS-1152`.
+**Payroll was converted second**, on 2026-09-18 (`FJS-1153`): the same four
+columns over pay windows, rate bands, pay runs and payslips, plus `Employee`'s
+pair. Two things the billing pass did not reach came out of it. **A pay period
+takes billing's interval** — `[start, end)` — so terms are read on the period's
+LAST day and a raise opening on `periodEnd` belongs to the next run, which is
+one answer to *what does a period cover* rather than two in one application.
+And **the domain keeps no clock at all**: every as-at read requires its day, so
+the zone is spent at the service, the job, the seed and the drive, which is this
+record's two-crossings rule stated as a signature. `PlanVersion` stays an
+instant and is the contrast worth keeping — a price changes at a moment, a
+salary changes on a day.
+
+**What it cost was a framework defect, `FJS-1182`**: junction mapped both
+`format: 'date'` and `format: 'date-time'` onto one field type whose coercion is
+`new Date(value)`, so a `String @date` column could not be written through the
+API — the boundary parsed the day and litestone then refused it, naming the
+format it had just been handed. Invisible until payroll because every `@date`
+column shipped before it is server-written. The field type is now `instant` or
+`plainDate`, and the second coerces nothing.
 
 The nine questions, answered before the edits: one origin (the seed says which
 columns are days, and the kit is the only arithmetic); no new concept (a plain
@@ -5259,7 +5388,45 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d326"></a>2026-09-20 · `FJS-D326` — Does the live store grade an arriving record against a `near` filter — Teach `@frontierjs/toolbelt/match` the `near` predicate.
+
+Asked in [`IDEAS/geo.md`](IDEAS/geo.md) § Open questions. **A** was picked over **B** (answer `null`, the *ask the server* escape that kit already has).
+
+The paper's recommendation, taken as written: `/match`'s `null` exists for facts the client cannot know, and a distance between two points it is holding is not one of them; under B every live list re-fetches on every arriving row, which is the cost that made the kit exist.
+
+### <a id="fjs-d324"></a>2026-09-20 · `FJS-D324` — What is the cursor key for a distance-ordered page — `(distance, id)`, with the center carried inside the cursor so the next page recomputes the same order.
+
+Asked in [`IDEAS/geo.md`](IDEAS/geo.md) § Open questions. **A** was picked over **B** (no cursor pagination on a distance order: offset only, and say so), **C** (return the distance as a column and cursor on it like any other).
+
+The paper's recommendation, taken as written: a nearest-first list is exactly the screen that scrolls, so B gives the feature away at the moment it is used; C is the transient this record already declined, and it makes the cursor depend on a value the caller could have changed. A needs the center in the cursor and a tiebreak on `id`, both of which the existing cursor machinery can carry.
+
+### <a id="fjs-d323"></a>2026-09-20 · `FJS-D323` — How does a `near` filter travel on a query string — The kit's existing bracket notation: `?site[near][lat]=40.71&site[near][lng]=-100.23&site[near][within]=5mi`.
+
+Asked in [`IDEAS/geo.md`](IDEAS/geo.md) § Open questions. **B** was picked over **A** (a compact triple the geo layer parses: `?site.near=40.71,-100.23,5mi`), **C** (split keys: `?site.near=40.71,-100.23&site.within=5mi`).
+
+The paper's recommendation, taken as written: the kit already owns *what a query string MEANS*, and structure in it is bracket notation; A and C each invent a second structure syntax that only the geo feature knows, which is the shape `FJS-D125` exists to prevent. It is longer to read and it is parsed by the three readers that already exist rather than by a fourth.
+
+### <a id="fjs-d314"></a>2026-09-19 · `FJS-D314` — a static mount says whether its bytes came from strangers. `untrusted: true` answers `attachment` for anything the inline allow-list refuses, and `fli check` grades the mount that should have said so.
+
+Asked in [`IDEAS/untrusted-bytes.md`](IDEAS/untrusted-bytes.md) § Open questions. **A** was picked over **B** (the local provider owns its own mount, so the headers arrive by construction and there is no flag to forget. Litestone cannot serve HTTP (Invariant 1), so this is a bridge rather than a move: the provider supplies the policy and junction mounts it), **C** (invert the default everywhere: `attachment` unless `isInlineSafe`, with an app naming its own exceptions. Fail-closed by construction, and blunt — it breaks the ordinary SPA that serves its own HTML and JS from a static root), **D** (nothing at the transport; declare it at the Data boundary instead, by requiring `@accept` on a `File` column. Invariant 6's shape, and it settles nothing here: an app may legitimately declare `@accept("image/svg+xml")` for a logo uploader and the disposition question returns unchanged).
+
+The paper's recommendation, taken as written: the fail-open objection is the whole argument for B, and the second fact above shrinks it (the flag lands on a mount that is entirely uploads) while `fli check` closes it properly, which is this framework's standing answer to a declaration somebody forgets: a declaration plus a rule that fires when it is absent. B puts a serving policy in a package that cannot serve, for one header. C is the right default in a world where a static root held one population, and it does not. **D is worth doing on its own terms and is not an alternative to any of these.**.
+
 ### <a id="fjs-d301"></a>2026-09-16 · `FJS-D301` — Q5 — what happens to a `File` column in a queued mutation — Two queues. The mutation carries a reference the CLIENT minted and drains through the ordinary path; a second queue owns the upload, with its own local table, its own retry and objects that are immutable once named.
+
+**What it does NOT change.** Every other static root is untouched, which is the
+whole reason this is a flag rather than a default: `isInlineSafe('text/javascript')`
+is false, so inverting the default over a root holding an app's own bundle breaks
+the app. An image stays inline under the flag too — a product photograph is
+`isInlineSafe` — so the only responses that change are the ones nobody should have
+been rendering in their own origin.
+
+**The flag is fail-open and the check is what closes it.** A declaration somebody
+forgets is this framework's oldest failure shape, and the standing answer is a
+declaration plus a rule that fires when it is absent — a local `FileStorage` whose
+`publicBase` points into a static root that is not marked is decidable from config
+alone. Shipping the flag without the rule would be half of A, and the half that
+reads as done.
 
 Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **B** was picked over **A** (one queue. The bytes ride with the mutation, and a write with a photograph on it is a write like any other).
 
@@ -8131,6 +8298,12 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 `core/errors.ts`.
 
 ## UI substrate (Mesa)
+
+### <a id="fjs-d327"></a>2026-09-20 · `FJS-D327` — Does `@frontierjs/ui` ship a map control — No. `x-geo` is published, `controlFor()` resolves a validated lat/lng pair, and an app that wants a map brings its own.
+
+Asked in [`IDEAS/geo.md`](IDEAS/geo.md) § Open questions. **A** was picked over **B** (yes, a `<MapField>` over a tile provider).
+
+The paper's recommendation, taken as written: a map is a rendering library plus a tile VENDOR (the client app carries `leaflet`, `leaflet-draw` and `svelte-map-leaflet` for one), which is a battery with tendrils and a vendor choice `FJS-D153` keeps out of this repo. Two number inputs that refuse ±90/±180 and show the point's own value is a control the kit can own without lying about what it is.
 
 ### <a id="fjs-d257"></a>2026-09-09 · `FJS-D257` — Autosave is a `<Form>` prop, not an app-side controller, because the trigger it needs is `dirty` and only the form has it.
 
@@ -11781,6 +11954,53 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d331"></a>2026-09-20 · `FJS-D331` — May a server run the JS path, or is the extension required there — The JS path exists on both engines; the extension is an optional accelerator a server may install.
+
+Asked in [`IDEAS/embedding.md`](IDEAS/embedding.md) § Open questions. **A** was picked over **B** (the extension is required on a server; the JS path is browser-only).
+
+The paper's recommendation, taken as written: measured, the extension is 2.1× at 50k, and what B demands in exchange is a platform-specific binary on five targets with no musl build, on every server, forever. B also gives the two paths different status, which is how the one nobody runs rots; under A both are load-bearing and the oracle that holds them together is a test somebody notices failing. Two implementations is a real cost either way — A does not make it free, it makes it honest.
+
+### <a id="fjs-d325"></a>2026-09-20 · `FJS-D325` — Are the convex hull and the spherical buffer in the kit — Out. Distance, bbox, point-in-polygon, area, centroid — five small functions with no shared machinery.
+
+Asked in [`IDEAS/geo.md`](IDEAS/geo.md) § Open questions. **A** was picked over **B** (in, because a crew's working area is the one thing the real application could not do without them).
+
+The paper's recommendation, taken as written: a hull and a buffer are a geometry library with a spine, and half a geometry library is a battery that has stopped being severable (§ IV). One consumer asked; a second one flips this.
+
+**Taken as a starting point and marked for review**, at the owner's request: this is the cut that ships first, not the cut that settles it. The line to watch is the one the paper already names — one consumer asked, and a second one flips it. What a review would weigh is whether the rougher answer the five functions give (a bounding box around a centroid) is being worked around by hand in an app, which is the *paved road vs. the workaround* measurement rather than an argument.
+
+### <a id="fjs-d311"></a>2026-09-19 · `FJS-D311` — a `File` column's placeholder is `Bun.Image.placeholder()`, and the image transformer behind it is the runtime's own native. Nothing is installed and nothing is wrapped.
+
+Asked in [`IDEAS/package-map.md`](IDEAS/package-map.md) § Open questions. **A** was
+picked over **B** (ThumbHash: ~25 bytes against a data URL's hundreds, small enough
+to live in the row rather than in a second request, and its decoder is pure enough
+to be a toolbelt kit).
+
+The paper's recommendation, taken as written: a blur is cosmetic, so the failure is
+proportional and the concept budget decides it. A base64 blur ships no decoder, adds
+no format, and has the same owner as the resize beside it.
+
+**B reopens on a measurement and on nothing else**: a list response carrying N
+placeholders is where the byte difference stops being theoretical. Until somebody
+runs that, the smaller encoding is an optimization with no number attached.
+
+**This settles the transformer with it.** `Bun.Image` is measured in
+[`IDEAS/bun-natives.md`](IDEAS/bun-natives.md) — an 811 KB PNG to a 30 KB webp in
+~25 ms, with `resize`, `rotate`, `flip`, `flop`, `modulate`, five encoders,
+`metadata()` and `placeholder()` — and it is a runtime native rather than a
+dependency, which is why `media` is not a package
+([`IDEAS/package-map.md`](IDEAS/package-map.md) § media). A `Bun.` reference in
+litestone's import graph would break its Node proving, so the transformer is a
+capability the `FileStorage` plugin is **given** and never one it imports: the
+default is the native where the runtime has it, refused by name where it does not,
+and an app wanting a libvips toolkit — sprites, watermarks, SVG minification —
+passes its own. That seam is also what keeps `metadata()` available to
+[FJS-1184](ISSUES.md#fjs-1184), where the real format of stored bytes is the
+question.
+
+**What is NOT settled here** is who owns the derivative store. `IDEAS/bun-natives.md`
+answered junction's `IFileStorage`, which [`FJS-D260`](#fjs-d260) deleted; the live
+candidate is litestone's provider seam, and the nine have not been run against it.
 
 ### <a id="fjs-d297"></a>2026-09-15 · `FJS-D297` — offline-first is core and is decomposed by owner. There is no offline package: the six pieces have six existing homes, and **Homestead** is the name of the work, not of a module.
 

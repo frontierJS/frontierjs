@@ -34,7 +34,7 @@ title: Person
   import { employees } from '@/resources/Employee.mesa'
   import { payslips }  from '@/resources/Payslip.mesa'
   import { session } from '@/session.js'
-  import { day } from '@/datetime.js'
+  import { day, span } from '@/datetime.js'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../money.js'
 
@@ -133,10 +133,16 @@ title: Person
       rate:         record.rate,
       hoursPerWeek: record.hoursPerWeek,
     }
-    // Absent means now. Stated means a correction — and an empty box must send
-    // NOTHING rather than an empty string, which `assertEffectiveFrom` would
-    // compare as an instant before every window there is.
-    if (record.effectiveFrom) pay.effectiveFrom = new Date(record.effectiveFrom).toISOString()
+    // Absent means today in the shop's calendar, which the server decides.
+    // Stated means a correction — and an empty box must send NOTHING rather
+    // than an empty string, which `assertEffectiveFrom` would compare as a day
+    // before every window there is.
+    //
+    // The box is an `<input type="date">` and the column is `String @date`, so
+    // what it holds is already the value that travels. Putting it through
+    // `new Date(…).toISOString()` read the typed day as UTC midnight and handed
+    // the server back a different day west of Greenwich.
+    if (record.effectiveFrom) pay.effectiveFrom = record.effectiveFrom
 
     const opened = await employees.service.invoke('setPay', page.params.id, pay)
     toasts.success(pay.effectiveFrom
@@ -156,8 +162,7 @@ title: Person
     if (!asAt) { wasOn = null; askErr = null; return }
     asking = true; askErr = null
     try {
-      wasOn = await employees.service.invoke('payOn', page.params.id,
-        { at: new Date(asAt).toISOString() })
+      wasOn = await employees.service.invoke('payOn', page.params.id, { at: asAt })
     } catch (e) {
       wasOn = null
       // Nothing in force is an ANSWER, not a failure — before they were hired,
@@ -201,7 +206,7 @@ title: Person
 
   <Alert tone="muted">
     The answer comes from the server, not from the table below. The half-open
-    interval — <code>effectiveFrom &lt;= at &lt; effectiveTo</code> — has one
+    interval — <code>effectiveFrom &lt;= on &lt; effectiveTo</code> — has one
     owner in <code>api/src/domain/payroll</code>, and a second reading of it
     written into this page would be a wrong salary once per raise.
   </Alert>
@@ -272,7 +277,7 @@ title: Person
       {#snippet row(s)}
         <tr data-payslip={s.id}>
           <td><Mono size="xs">{s.reference}</Mono></td>
-          <td>{day(s.periodStart)} – {day(s.periodEnd)}</td>
+          <td>{span(s.periodStart, s.periodEnd)}</td>
           <td class="text-right" data-gross={s.gross}>{money(s.gross)}</td>
           <td class="text-right" data-net={s.net}>{money(s.net)}</td>
         </tr>

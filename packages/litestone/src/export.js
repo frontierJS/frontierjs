@@ -277,13 +277,15 @@ export async function runExport(db, name, opts = {}) {
   // logged by default — for good reason, they are high volume — but a bulk
   // extract is the single event most worth having a record of, and `$audit` is
   // the verb for something that is not a write.
+  //
+  // Through the SCOPED client, and naming neither actor field: who the caller
+  // is has one grader (`actorTypeOf`), and a second `system ? 'system' : 'user'`
+  // here filed an extract taken by a bearer as a user.
   if (audit) {
     try {
-      await db.$audit({
+      await client.$audit({
         operation: 'export',
         model:     dataset.name,
-        actorId:   system ? null : (as?.id ?? null),
-        actorType: system ? 'system' : 'user',
         meta:      manifest,
       })
     } catch { /* a trail that refused must not lose the extract that already left */ }

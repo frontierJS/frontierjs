@@ -70,6 +70,6 @@
 }
 .dialog > .surface-header {
   background:          var(--dialog-header-bg,     transparent);
-  color:               var(--dialog-header-color,  var(--surface-color));
-  border-bottom-color: var(--dialog-header-border, var(--surface-border));
+  color:               var(--dialog-header-color,  var(--_surface-color));
+  border-bottom-color: var(--dialog-header-border, var(--_surface-border));
 }

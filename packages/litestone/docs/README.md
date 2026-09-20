@@ -49,6 +49,7 @@
 - [testing.md](testing.md) — makeTestClient, Factory, Seeder, generateGateMatrix, generateValidationCases
 - [onquery-logging.md](onquery-logging.md) — onQuery, $tapQuery, event shape, telemetry patterns
 - [cli.md](cli.md) — all commands with flags
+- [validate.md](validate.md) — `litestone validate`: which STORED rows the schema would now refuse. The half the migration differ cannot see, because a boundary validator leaves no CHECK behind
 - [import.md](import.md) — `litestone import`: a Prisma/Rails/Postgres/Frappe schema read into `.lite`, and the graded list of what the reading could not express
 - [studio.md](studio.md) — browser UI panels, REPL, acting-as picker
 - [publishing.md](publishing.md) — npm scope, pre-publish checklist, version strategy

@@ -699,7 +699,10 @@ Surfaces, borders and text-on-surface still use the raw token — only solid fil
 are capped. So `--color-primary` is unchanged everywhere it reads as a brand
 accent; it is adjusted only where text has to sit on top of it.
 
-To pin an exact fill, set `--on-bg-mix` (text) or override `--fill` directly.
+To pin an exact fill, set `--tone-fill` — the knob the cap reads — and the text
+follows. `--on-bg-mix` pins the text alone. Not `--_fill`: that is the capped
+OUTPUT, and setting it leaves `--_on-fill` deriving from a color that is no
+longer painted (`FJS-1192`, README § Which variables are yours).
 
 ### Surface variants now beat the tone tint (behavior change in v0.6)
 `.raised` / `.outlined` / `.ghost` are declared after the tone recipe, so each
@@ -831,7 +834,7 @@ later.
    only the ring is accent), but that is one component avoiding the problem,
    not the problem being solved.
 
-   It is a real fix — probably a `--on-surface-accent` derived the way `--fill`
+   It is a real fix — probably a `--on-surface-accent` derived the way `--_fill`
    is — but it changes the look of five shipped components, so it wants a
    deliberate decision rather than a drive-by.
 5. **`.text-*` utilities enumerate the seven tones.** utilities.css lists

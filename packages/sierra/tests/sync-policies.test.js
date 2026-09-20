@@ -66,6 +66,7 @@ model Guard  { id String @id @default(uuid())  name String  v Int @version  @@ga
 model Ledger { id String @id @default(uuid())  name String                  @@gate("0.0.0.0")  @@sync(append) }
 model Plain  { id String @id @default(uuid())  name String  v Int @version  @@gate("0.0.0.0") }
 model Photo  { id String @id @default(uuid())  name String  damage File?    @@gate("0.0.0.0")  @@sync(append) }
+model Merge  { id String @id @default(uuid())  name String  v Int @version  @@gate("0.0.0.0")  @@sync(field) }
 `
 
 /** A failure the client attaches no code to — a request that never got a reply. */
@@ -116,6 +117,7 @@ describe('the policy reaches the browser as itself', () => {
     expect(schemaFor('Guard')['x-sync']).toBe('refuse')
     expect(schemaFor('Ledger')['x-sync']).toBe('append')
     expect(schemaFor('Plain')['x-sync']).toBeUndefined()
+    expect(schemaFor('Merge')['x-sync']).toBe('field')
   })
 })
 
@@ -162,6 +164,34 @@ describe('append — rows are only ever added', () => {
     await ledger.service.invoke('adjust', 'ROW-1', { delta: 3 }).catch(() => {})
     expect(held().length).toBe(1)
     expect(held()[0].method).toBe('adjust')
+  })
+
+  // ── field — built at the boundary, not yet reachable from here ────────────
+  //
+  // `@@sync(field)` merges a held write column by column against the row it was
+  // made against, and the comparison lives at the Data boundary (`FJS-D334`).
+  // Nothing here carries that row yet, so a held write would go up with its
+  // revision and no base and be refused on the revision alone — which is
+  // `refuse` behaving correctly under a declaration that promises more.
+  //
+  // The refusal is what keeps that from being a green screen over a feature
+  // that is off: a policy that parses and resolves nothing reads exactly like
+  // one that works, which is why `FJS-D298` closed the set in the first place.
+  test('a held patch is refused BY NAME while the base cannot travel', async () => {
+    const merge = createResource('merges', { model: 'Merge' })
+    const err = await merge.service.patch('ROW-1', { name: 'mine' }).catch(e => e)
+    expect(err.code).toBe('NO_BASE_CARRIED')
+    expect(String(err.message)).toMatch(/@@sync\(field\)/)
+    expect(String(err.message)).toMatch(/behave as @@sync\(refuse\)/)
+    expect(held().length).toBe(0)
+  })
+
+  test('a create is held — it was made against no row', async () => {
+    _proxy.create = offline
+    const merge = createResource('merges', { model: 'Merge' })
+    await merge.save({ name: 'first' }).catch(() => {})
+    expect(held().length).toBe(1)
+    expect(held()[0].method).toBe('create')
   })
 
   // The control. A refusal that fired on reads would break every screen, and

@@ -24,6 +24,10 @@
       "types": "./src/gate/gate.d.ts",
       "default": "./src/gate/gate.js"
     },
+    "./geo": {
+      "types": "./src/geo/geo.d.ts",
+      "default": "./src/geo/geo.js"
+    },
     "./glow": "./src/glow/glow.js",
     "./history": "./src/history/history.js",
     "./hooks": "./src/hooks/hooks.js",
@@ -35,6 +39,10 @@
     "./json": "./src/json/json.js",
     "./jsonschema": "./src/jsonschema/jsonschema.js",
     "./match": "./src/match/match.js",
+    "./mime": {
+      "types": "./src/mime/mime.d.ts",
+      "default": "./src/mime/mime.js"
+    },
     "./predicate": "./src/predicate/predicate.js",
     "./query": {
       "types": "./src/query/query.d.ts",

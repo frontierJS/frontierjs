@@ -268,6 +268,7 @@ describe('enumerated argument values', () => {
     // classifies it, where the hand-written inclusion list above let one drift
     // in silence.
     const NOT_ARGUMENT_VALUES: Record<string, string> = {
+      SYNC_NEEDS_VERSION:          'which @@sync policies name a revision, so cannot work without an @version column — a rule about the set, not a value beside it',
       REPEATABLE_MODEL_ATTRS:      'which model attributes may appear twice — a rule about repetition, not a value',
       REPEATABLE_FIELD_ATTRS:      'the same, for field attributes',
       TYPE_FORBIDDEN_FIELD_TYPES:  'what a `type` block may not hold — a restriction, not an enumeration a caller picks from',
@@ -378,9 +379,13 @@ describe('catalog shape', () => {
 
   test('seeAlso and excludes name real rows', () => {
     const words = new Set(CATALOG.map(r => r.word))
+    const keys  = new Set(CATALOG.map(r => `${r.level}:${r.word}`))
+    // A seeAlso may name a level, which is how a row reaches the @@unique the
+    // bare word would have resolved to @unique.
+    const known = (ref: string) => ref.includes(':') ? keys.has(ref) : words.has(ref)
     for (const row of CATALOG)
       for (const ref of [...(row.seeAlso ?? []), ...(row.excludes ?? [])])
-        expect({ row: typed(row), ref, known: words.has(ref) }).toEqual({ row: typed(row), ref, known: true })
+        expect({ row: typed(row), ref, known: known(ref) }).toEqual({ row: typed(row), ref, known: true })
   })
 
   test('excludes is symmetric — a pair that cannot coexist says so on both sides', () => {

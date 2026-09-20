@@ -307,7 +307,7 @@ describe('generated migration', () => {
     expect(onDisk).toContain(generateDDL(r.schema))
   })
 
-  test('applies to a fresh database — 50 tables, FK-clean, all STRICT', () => {
+  test('applies to a fresh database — 59 tables, FK-clean, all STRICT', () => {
     const path = freshDb()
     const raw  = new Database(path)
     const tables = raw.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
@@ -345,7 +345,11 @@ describe('generated migration', () => {
     // (`FJS-967`). 51 with `LoginChallenge`, a login that has passed a password
     // and owes a second factor — auth's, imported, `@@tenant(none)` because it
     // belongs to a person the way `Session` does (`FJS-D261`).
-    expect(tables.length).toBe(51)
+    // 59 with orion's eight — Flow, FlowVersion, FlowLayout, FlowCredential,
+    // Run, RunStep, Wait and KvEntry — imported from `@frontierjs/orion`, three
+    // of them extended here with `workspaceId` because a fragment cannot name
+    // the host's tenant column (`FJS-D310`).
+    expect(tables.length).toBe(59)
     expect(raw.query('PRAGMA foreign_key_check').all()).toEqual([])
 
     const nonStrict = tables.filter((t: string) => {

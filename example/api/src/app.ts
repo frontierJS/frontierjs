@@ -21,6 +21,7 @@ import { createCaravan }                        from '@frontierjs/caravan'
 import { conduit }                              from '@frontierjs/conduit'
 import { notificationsPlugin }                  from '@frontierjs/notifications'
 import { orion }                                from '@frontierjs/orion/plugin'
+import { mcpPlugin }                            from '@frontierjs/mcp'
 import { mailerPlugin, outbox }                 from '@frontierjs/junction'
 
 import { db, shops, DEFAULT_SHOP, DEV_KEY, STORAGE_ROOT, TIME_ZONE_FLOOR } from './core/db.ts'
@@ -288,7 +289,12 @@ const app = createApp({
     // Static is matched on the raw path and is not prefixed, so the leading
     // `storage/` in `keyPattern` is what puts the segment in the URL.
     http: {
-      static: { root: STORAGE_ROOT, maxAge: 3600 },
+      // `untrusted` — every byte under here arrived on a form somebody filled
+      // in, so anything outside the inline allow-list is answered as an
+      // attachment ([FJS-D314](../../../DECISIONS.md#fjs-d314)). The product
+      // photographs are images and stay inline; what changes is that an SVG
+      // uploaded to a `File` column can no longer run in this origin.
+      static: { root: STORAGE_ROOT, maxAge: 3600, untrusted: true },
 
       // The basket token, declared once. A caller-varied header has two
       // readers and neither is optional: cross-origin the CORS preflight
@@ -350,6 +356,21 @@ app.configure(metricsPlugin())
 // grow one — those belong to `fli db:export`, where an operator typed them and
 // the manifest recorded it (`FJS-D230`).
 app.configure(exportPlugin())
+
+// ─── The agent surface ────────────────────────────────────────────────────
+//
+//   POST /api/mcp   —  an MCP client, scoped by the caller's own standing
+//
+// The same argument as the extract above, one surface along: what an agent may
+// reach is the gate that already grades every read and write, rather than prose
+// in a system prompt. A tool call goes through `app.service(name)`, so the hook
+// pipeline, the transaction and the announcement are the ones an HTTP call gets
+// (`FJS-D258`).
+//
+// `keepAliveMs` is under this app's `http.idleTimeout`. The SDK's own default
+// is 15s against Bun's 10s, which is a stream that dies before its first
+// keep-alive frame — every time, and silently.
+app.configure(mcpPlugin({ name: 'shop', version: '1.0.0', keepAliveMs: 5_000 }))
 
 // ── The devtools console ──────────────────────────────────────────────────
 //

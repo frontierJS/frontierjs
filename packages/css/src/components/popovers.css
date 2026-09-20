@@ -86,7 +86,7 @@
   padding:    var(--space-md) var(--space-lg);
   box-shadow: var(--shadow-md);
   font-size:  var(--text-sm);
-  z-index:    50;
+  z-index:    var(--z-popover);
   --overlay-from: translateY(-4px);
 }
 
@@ -100,7 +100,7 @@
 /* Native [popover] attribute support — kill the default UA styling */
 [popover].popover {
   margin:    0;
-  border:    var(--border-width) solid var(--surface-border);
+  border:    var(--border-width) solid var(--_surface-border);
   inset:     unset;
   position:  fixed;
 }

@@ -693,9 +693,31 @@ export async function createTestEnv(opts = {}) {
             // A candidate the column refuses is skipped, not fatal. Whether the
             // rows actually landed on both sides is asserted below, which is
             // the check that matters.
+            //
+            // Under declared row tenancy every row must land in the tenant the
+            // READER holds, or the tenant rule filters all of them and the
+            // policy under test is never reached — which reports as *every
+            // seeded row falls on the same side* and names the wrong rule
+            // (`FJS-1201`). A stated candidate still wins, so a policy that
+            // compares the tenant column itself keeps a row on each side.
+            const tCol = schema.tenancy?.strategy === 'row'
+              ? (model.fields.some(f => f.name === schema.tenancy.column) ? schema.tenancy : null)
+              : null
             let lastRefusal = null
             const seed = async (overrides) => {
-              try { seeded.push(await factory.createOne(overrides)) }
+              // The tenant column is stamped with the READER's claim rather than
+              // left to the factory, which generates a fresh value per row: the
+              // tenant rule then filters every row before the policy under test
+              // is reached, and the report names that policy as ungraded when
+              // the rule that excluded them was tenancy (`FJS-1201`). A stated
+              // override still wins, so a policy comparing the tenant column
+              // itself keeps a row on each side.
+              const withTenant = tCol ? { [tCol.column]: who[tCol.claim], ...overrides } : overrides
+              // Where that column is itself a foreign key, the claim names a
+              // parent that has to exist — the same reason the candidate loop
+              // below calls this.
+              if (tCol) await _ensureParent(schema, model, tCol.column, who[tCol.claim], chain)
+              try { seeded.push(await factory.createOne(withTenant)) }
               catch (err) { lastRefusal = err.message }
             }
             await seed({})
@@ -923,7 +945,7 @@ export async function createTestEnv(opts = {}) {
           // the next assertion.
           const parents = new Map()
           let rowA
-          try { rowA = await _seedForTenant(schema, model.name, va, chain, parents) }
+          try { rowA = await _seedForTenant(schema, model.name, va, chain, parents, { actor: A }) }
           catch (err) {
             out.push({ model: model.name, op: null, actor: null, got: 'error',
               message: `${model.name} — no row could be seeded for tenant A, so nothing about this model was crossed: ${err.message}` })
@@ -988,7 +1010,7 @@ export async function createTestEnv(opts = {}) {
 
             if (optionalScoped.length) {
               let orphan = null
-              try { orphan = await _seedForTenant(schema, model.name, va, chain, new Map(), { optional: false }) }
+              try { orphan = await _seedForTenant(schema, model.name, va, chain, new Map(), { optional: false, actor: A }) }
               catch { /* it cannot exist unparented, which is the answer this asks for */ }
 
               if (orphan) {
@@ -1002,7 +1024,7 @@ export async function createTestEnv(opts = {}) {
 
               restore(built.db, before)
               parents.clear()
-              try { rowA = await _seedForTenant(schema, model.name, va, chain, parents) }
+              try { rowA = await _seedForTenant(schema, model.name, va, chain, parents, { actor: A }) }
               catch { rowA = null }
             }
           }
@@ -1035,7 +1057,7 @@ export async function createTestEnv(opts = {}) {
 
               restore(built.db, before)
               parents.clear()
-              try { rowA = await _seedForTenant(schema, model.name, va, chain, parents) }
+              try { rowA = await _seedForTenant(schema, model.name, va, chain, parents, { actor: A }) }
               catch { rowA = null }
             }
           }
@@ -1064,7 +1086,7 @@ export async function createTestEnv(opts = {}) {
             }
             restore(built.db, before)
             parents.clear()
-            try { rowA = await _seedForTenant(schema, model.name, va, chain, parents) }
+            try { rowA = await _seedForTenant(schema, model.name, va, chain, parents, { actor: A }) }
             catch { rowA = null }
           }
 
@@ -1094,7 +1116,7 @@ export async function createTestEnv(opts = {}) {
 
               restore(built.db, before)
               parents.clear()
-              try { rowA = await _seedForTenant(schema, model.name, va, chain, parents) }
+              try { rowA = await _seedForTenant(schema, model.name, va, chain, parents, { actor: A }) }
               catch { rowA = null }
               if (!rowA) break
             }
@@ -1110,7 +1132,7 @@ export async function createTestEnv(opts = {}) {
                 message: `${model.name}#${_rowId(schema, model.name, mine)} was seeded for tenant A and tenant A cannot ${op} it, so the refusals asserted above are not distinguished from a model no ${op} reaches` })
               restore(built.db, before)
               parents.clear()
-              try { rowA = await _seedForTenant(schema, model.name, va, chain, parents) }
+              try { rowA = await _seedForTenant(schema, model.name, va, chain, parents, { actor: A }) }
               catch { rowA = null }
             }
           }
@@ -1187,8 +1209,21 @@ export async function createTestEnv(opts = {}) {
           for (const [field, value] of Object.entries(matching))
             await _ensureParent(schema, model, field, value, chain)
 
+          // Under declared row tenancy the reader holds a claim and an ordinary
+          // factory row carries a generated value for the same column, so the
+          // two never agree: the row is filtered out by the tenant rule before
+          // any field policy is reached, and every scoped model with a
+          // protected column reports as unchecked (`FJS-1201`). Seeding through
+          // the tenant-aware path puts the row — and every parent a delegated
+          // rule reads through — in the tenant the reader actually holds.
+          const tRow = schema.tenancy?.strategy === 'row' ? schema.tenancy : null
           let seeded
-          try { seeded = await chain(model.name).createOne(matching) }
+          try {
+            seeded = tRow
+              ? await _seedForTenant(schema, model.name, who[tRow.claim], chain, new Map(),
+                                     { actor: who, extra: matching })
+              : await chain(model.name).createOne(matching)
+          }
           catch (err) {
             mismatches.push({
               model: model.name, field: null, level: null, got: 'error', thrown: err.message,
@@ -2734,13 +2769,24 @@ function _tenantStamp(schema, model, principal) {
  */
 async function _tenantValues(schema, chain) {
   const t = schema.tenancy
-  const carrier = schema.models.find(m =>
+  const carriers = schema.models.filter(m =>
     _isValidatable(m, schema) && _tenantColumn(schema, m) === t.column)
-  if (!carrier) return [null, null]
+  if (!carriers.length) return [null, null]
 
-  const rel = carrier.fields.find(f =>
+  const relOn = (m) => m.fields.find(f =>
     f.type.kind === 'relation' && !f.type.array &&
     f.attributes.some(a => a.kind === 'relation' && a.fields?.[0] === t.column))
+
+  // The values are the whole schema's, so the carrier that decides them must be
+  // one whose column is a FOREIGN KEY wherever any carrier's is: a synthetic
+  // string satisfies no constraint, and every scoped model with a real key then
+  // fails to seed with `FOREIGN KEY constraint failed` — which reports as a
+  // model nothing was crossed on rather than as a wrong answer. Reaching for
+  // the first carrier made that depend on model ORDER, so a package fragment
+  // declaring a bare tenant column ahead of the app's own models took the
+  // decision (`FJS-1199`).
+  const carrier = carriers.find(relOn) ?? carriers[0]
+  const rel     = relOn(carrier)
 
   if (rel) {
     const pk  = rel.attributes.find(a => a.kind === 'relation')?.references?.[0]
@@ -2769,10 +2815,24 @@ async function _tenantValues(schema, chain) {
  * of them its rule delegated through.
  */
 async function _seedForTenant(schema, modelName, tenant, chain, parents = new Map(), opts = {}) {
-  const { seen = new Set(), depth = 8, optional = true } = opts
+  const { seen = new Set(), depth = 8, optional = true, actor = null, extra = null } = opts
   const model     = schema.models.find(m => m.name === modelName)
   const column    = _tenantColumn(schema, model)
   const overrides = column ? { [column]: tenant } : {}
+
+  // A column defaulting to `auth().id` names the row's OWNER, and seeding runs
+  // on the system client, where that default has no caller to read — the
+  // factory fills an FK sentinel instead, so the row belongs to nobody. A model
+  // whose write rule is `ownerId == auth().id` then refuses the very tenant the
+  // crossing is asserted FROM, which reports `unreachable` and makes every
+  // refusal below it prove nothing about tenancy (`FJS-1200`). The stamp is
+  // derived rather than stated: the declaration already says whose row this is.
+  for (const f of (actor ? model?.fields ?? [] : [])) {
+    const d = f.attributes?.find(a => a.kind === 'default')?.value
+    if (d?.kind !== 'call' || d.fn !== 'auth' || f.name === column) continue
+    const v = actor[d.field ?? 'id']
+    if (v !== undefined && v !== null) overrides[f.name] = v
+  }
 
   for (const field of model?.fields ?? []) {
     if (field.type.kind !== 'relation' || field.type.array) continue
@@ -2802,13 +2862,15 @@ async function _seedForTenant(schema, modelName, tenant, chain, parents = new Ma
     let   row = parents.get(key)
     if (!row) {
       row = await _seedForTenant(schema, field.type.name, tenant, chain, parents,
-                                 { seen: new Set([...seen, modelName]), depth: depth - 1, optional })
+                                 { seen: new Set([...seen, modelName]), depth: depth - 1, optional, actor })
       parents.set(key, row)
     }
     overrides[fk] = row[rel.references?.[0] ?? _idField(schema, field.type.name)]
   }
 
-  return chain(modelName).createOne(overrides)
+  // A caller's own values win: they are what the rule under test compares, and
+  // the tenant column is not among them.
+  return chain(modelName).createOne({ ...overrides, ...(extra ?? {}) })
 }
 
 /**

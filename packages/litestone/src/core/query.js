@@ -2,6 +2,15 @@
 
 import { ValidationError } from './validate.js'
 
+// The boxes a radius reduces to, and the column names a @point derives. Both
+// are owned elsewhere on purpose: the browser grades an arriving row against
+// the same boxes this compiles into SQL (`@frontierjs/toolbelt/geo`), and the
+// DDL that emitted the columns names them with the same function the WHERE has
+// to name them with.
+import { boundingBox, distance, isPoint } from '@frontierjs/toolbelt/geo'
+import { parseLength } from '@frontierjs/toolbelt/units'
+import { pointColumns } from './parser.js'
+
 // ─── identifier quoting ───────────────────────────────────────────────────────
 //
 // Invariant 8 — a caller-supplied name never enters a SQL pattern. Two failures
@@ -263,6 +272,108 @@ const TEXT_OP_REFUSALS = {
   boolean: (k, op) => `"${k}" is a Boolean, stored as 0/1, so "${op}" can never match — compare it to true or false`,
 }
 
+/**
+ * The great-circle distance between a point column pair and a literal centre,
+ * as a SQL expression in metres.
+ *
+ * The haversine rather than the spherical law of cosines, for the same reason
+ * `@frontierjs/toolbelt/geo` uses it: the two agree at city scale and the law
+ * of cosines loses precision for points a few metres apart, which is the scale
+ * a delivery and a technician are measured at. Both SQL engines carry the math
+ * functions this needs — measured, not assumed, and neither compiles them in by
+ * default in every build, which is why it is written down here.
+ *
+ * Three parameters are pushed, in this order: lat, lat, lng.
+ */
+function haversineSql(latCol, lngCol, centre, params) {
+  params.push(centre.lat, centre.lat, centre.lng)
+  return `(2 * 6371008.8 * asin(min(1.0, sqrt(` +
+    `power(sin((radians(?) - radians(${latCol})) / 2), 2) + ` +
+    `cos(radians(${latCol})) * cos(radians(?)) * ` +
+    `power(sin((radians(?) - radians(${lngCol})) / 2), 2)` +
+    `))))`
+}
+
+/**
+ * A centre as the caller stated it → two numbers, or `null` when it is not one.
+ *
+ * A numeric STRING is a centre. `@frontierjs/toolbelt/query` reads a query
+ * string with no model in the room, so a coordinate becomes a number only if it
+ * round-trips — and `?site[near][lat]=51.507400`, which is what `toFixed(6)`
+ * writes and what almost every GPS reading in a URL looks like, does not. The
+ * kit's stated rule for exactly that case is that the model has the last word,
+ * and `@point(lat, lng)` is the model saying these two keys are Floats.
+ *
+ * An empty string is not zero here: `Number('')` is 0, so a caller who sent
+ * `?site[near][lat]=` would otherwise be searching the Gulf of Guinea.
+ */
+export function centreOf(spec) {
+  const num = (v) => {
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null
+    if (typeof v !== 'string' || v.trim() === '') return null
+    const n = Number(v)
+    return Number.isFinite(n) ? n : null
+  }
+  if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return null
+  const lat = num(spec.lat)
+  const lng = num(spec.lng)
+  return lat === null || lng === null ? null : { lat, lng }
+}
+
+/**
+ * `where: { site: { near: { lat, lng, within: '5mi' } } }` → SQL.
+ *
+ * Box first, then the exact measurement — the same two steps in the same order
+ * as the browser's `isNear`, so a live list and the server cannot disagree
+ * about a row on the edge.
+ *
+ * **The box is a LIST.** A radius crossing ±180° is two boxes ORed together;
+ * one box with `west > east` matches nothing and reports nothing, which is the
+ * defect this shape exists to make unwritable. A box that reaches a pole says
+ * `full` and the longitude clause is DROPPED rather than emitted as a
+ * tautology — an index on (lat, lng) prunes on the leading column anyway, and a
+ * clause that admits everything only costs the planner.
+ */
+function nearSql(col, field, point, spec, params) {
+  const where = ['where', field]
+  if (!spec || typeof spec !== 'object' || Array.isArray(spec))
+    throw new ValidationError([{ path: where, message:
+      `"near" takes { lat, lng, within } — got ${Array.isArray(spec) ? 'an array' : typeof spec}` }])
+
+  const centre = centreOf(spec)
+  if (!centre)
+    throw new ValidationError([{ path: where, message:
+      `"near" needs a numeric lat and lng — got ${JSON.stringify({ lat: spec.lat, lng: spec.lng })}` }])
+  const { lat, lng } = centre
+  const { within } = spec
+  if (within == null)
+    throw new ValidationError([{ path: where, message:
+      `"near" needs a radius: { lat, lng, within: '5mi' }` }])
+
+  let metres
+  try { metres = parseLength(within) }
+  catch (e) { throw new ValidationError([{ path: where, message: e.message }]) }
+
+  let boxes
+  try { boxes = boundingBox({ lat, lng }, metres) }
+  catch (e) { throw new ValidationError([{ path: where, message: e.message }]) }
+
+  const [latName, lngName] = pointColumns(field, point)
+  const latCol = `${col.prefix}${quoteIdent(latName)}`
+  const lngCol = `${col.prefix}${quoteIdent(lngName)}`
+
+  const boxSql = boxes.map((b) => {
+    const parts = [`${latCol} BETWEEN ? AND ?`]
+    params.push(b.south, b.north)
+    if (!b.full) { parts.push(`${lngCol} BETWEEN ? AND ?`); params.push(b.west, b.east) }
+    return `(${parts.join(' AND ')})`
+  }).join(' OR ')
+
+  const exact = `${haversineSql(latCol, lngCol, { lat, lng }, params)} <= ?`
+  params.push(metres)
+  return `(${latCol} IS NOT NULL AND (${boxSql}) AND ${exact})`
+}
+
 // Every operator `buildWhere` answers, in one set. Read by the typed-JSON walk,
 // which cannot tell a sub-key from an operator without it and reported an
 // operator as a missing field (FJS-206).
@@ -448,7 +559,7 @@ function buildTypedJsonClauses(colExpr, where, typeDecl, path, params, typedJson
 // into `fromExprMap` because the two mean different things at the one identifier
 // point below: a `@from` field is a SUBQUERY and self-qualifying, where a mapped
 // field is an ordinary column that still takes the table alias.
-export function buildWhere(where, params, fromExprMap = null, tableAlias = null, typedJsonMap = null, relFilter = null, fieldKinds = null, columnMap = null) {
+export function buildWhere(where, params, fromExprMap = null, tableAlias = null, typedJsonMap = null, relFilter = null, fieldKinds = null, columnMap = null, pointMap = null) {
   if (!where) return ''
   if (typeof where === 'string') return where
 
@@ -511,17 +622,17 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
 
   for (const [key, val] of Object.entries(where)) {
     if (key === 'AND') {
-      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap)).filter(Boolean)
+      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap, pointMap)).filter(Boolean)
       if (parts.length) clauses.push(`(${parts.join(' AND ')})`)
       continue
     }
     if (key === 'OR') {
-      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap)).filter(Boolean)
+      const parts = val.map(w => buildWhere(w, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap, pointMap)).filter(Boolean)
       if (parts.length) clauses.push(`(${parts.join(' OR ')})`)
       continue
     }
     if (key === 'NOT') {
-      const inner = buildWhere(val, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap)
+      const inner = buildWhere(val, params, fromExprMap, tableAlias, typedJsonMap, relFilter, fieldKinds, columnMap, pointMap)
       if (inner) clauses.push(`NOT (${inner})`)
       continue
     }
@@ -557,6 +668,33 @@ export function buildWhere(where, params, fromExprMap = null, tableAlias = null,
         throw new Error('where.$raw must be a value returned by the sql`` tag or a plain SQL string')
       }
       continue
+    }
+
+    // ── @point ──────────────────────────────────────────────────────────────
+    //
+    // The ONE operator a point answers. Everything else is refused by name,
+    // because the stored value is JSON and JSON compares as text: `equals` on a
+    // coordinate would match the serialized bytes, key order and punctuation
+    // included, and answer an empty list with a 200 — which is the same shape
+    // `TEXT_OP_REFUSALS` exists for one column kind over.
+    const pointInfo = pointMap?.[key]
+    if (pointInfo && val !== null && typeof val === 'object' && !Array.isArray(val)) {
+      const ops = Object.keys(val)
+      const other = ops.filter(o => o !== 'near')
+      if (other.length)
+        throw new ValidationError([{ path: ['where', key], message:
+          `"${other[0]}" cannot be asked of "${key}" — it is a @point, and the only filter a point answers is ` +
+          `"near": { lat, lng, within: '5mi' }. Its coordinate columns are derived and not filterable directly.` }])
+      if (ops.includes('near')) {
+        clauses.push(nearSql({ prefix: aliasPrefix }, key, pointInfo, val.near, params))
+        continue
+      }
+    }
+    if (pointInfo && (val === null || typeof val !== 'object')) {
+      if (val === null) { clauses.push(`${aliasPrefix}${quoteIdent(columnMap?.[key] ?? key)} IS NULL`); continue }
+      throw new ValidationError([{ path: ['where', key], message:
+        `"${key}" is a @point and cannot be compared to a value — ask it "near": { lat, lng, within: '5mi' }, ` +
+        `or \`null\` for the rows that have no location` }])
     }
 
     // ── Typed JSON path pushdown ────────────────────────────────────────────
@@ -800,7 +938,7 @@ function rawOrderPart(val, outParams) {
   return val.sql.trim()
 }
 
-export function buildOrderBy(orderBy, outParams = [], columnMap = null) {
+export function buildOrderBy(orderBy, outParams = [], columnMap = null, pointMap = null) {
   if (!orderBy) return ''
   const items = Array.isArray(orderBy) ? orderBy : [orderBy]
   const parts  = []
@@ -808,6 +946,31 @@ export function buildOrderBy(orderBy, outParams = [], columnMap = null) {
     for (const [field, dir] of Object.entries(item)) {
       const col = columnMap?.[field] ?? field
       if (field === '$raw') { parts.push(rawOrderPart(dir, outParams)); continue }
+
+      // orderBy: { site: { near: { lat, lng } } } — nearest first.
+      //
+      // The order has to be the QUERY's, not the page's: a list sorted after it
+      // was selected is the wrong twenty rows, silently, the moment there is a
+      // second page (`FJS-D321`). The expression is the same haversine the
+      // filter measures with, so a row cannot sort into a position its own
+      // filter disagrees with.
+      const pointInfo = pointMap?.[field]
+      if (pointInfo && dir !== null && typeof dir === 'object' && dir.near) {
+        const centre = centreOf(dir.near)
+        if (!centre)
+          throw new Error(`orderBy ${field}.near needs a numeric lat and lng`)
+        const [latName, lngName] = pointColumns(field, pointInfo)
+        const d = String(dir.dir ?? 'asc').toUpperCase()
+        if (d !== 'ASC' && d !== 'DESC')
+          throw new Error(`orderBy direction must be 'asc' or 'desc', got: ${dir.dir}`)
+        parts.push(`${haversineSql(quoteIdent(latName), quoteIdent(lngName), centre, outParams)} ${d}`)
+        continue
+      }
+      if (pointInfo)
+        throw new Error(
+          `orderBy "${field}" is a @point and sorts by nothing on its own — ` +
+          `it holds JSON, which orders as text. Say { ${field}: { near: { lat, lng } } } for nearest first.`)
+
       // Relation orderBy — { relation: { field: 'asc' } } — handled separately
       if (dir !== null && typeof dir === 'object') {
         // Object form: { field: { dir: 'asc', nulls: 'last' } }
@@ -930,7 +1093,7 @@ export function extractNamedAggs(args) {
 //     LEFT JOIN "teams" _ob_author_team ON _ob_author_team."id" = _ob_author."teamId"
 //   → ORDER BY _ob_author_team."name" ASC
 
-export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTable = (m) => m, outParams = []) {
+export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTable = (m) => m, outParams = [], pointMap = null) {
   if (!orderBy) return { joinClauses: [], orderParts: [] }
 
   const items       = Array.isArray(orderBy) ? orderBy : [orderBy]
@@ -954,6 +1117,23 @@ export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTab
         entries.push({ flat: true, raw: true, sql: rawOrderPart(val, outParams) })
         continue
       }
+      // A point ordered by distance is FLAT — it reads two columns of this
+      // table. Without this it looks like a relation hop (an object value under
+      // a name that is not a column) and is refused as a relation that does not
+      // exist, which is the one wrong answer available here.
+      const pt = pointMap?.[key]
+      if (pt && val && typeof val === 'object' && val.near) {
+        const centre = centreOf(val.near)
+        if (!centre) throw new Error(`orderBy ${key}.near needs a numeric lat and lng`)
+        const [latName, lngName] = pointColumns(key, pt)
+        const d = String(val.dir ?? 'asc').toUpperCase()
+        if (d !== 'ASC' && d !== 'DESC')
+          throw new Error(`orderBy direction must be 'asc' or 'desc', got: ${val.dir}`)
+        entries.push({ flat: true, sql:
+          `${haversineSql(quoteIdent(latName), quoteIdent(lngName), centre, outParams)} ${d}` })
+        continue
+      }
+
       // Flat scalar form:  { col: 'asc'|'desc' }
       if (val === null || typeof val !== 'object') {
         const d = String(val).toUpperCase()
@@ -1375,10 +1555,29 @@ export function decodeCursor(token, fields = null) {
       '. Reload the first page.')
   }
 
+  // A distance key is the one sort value that is not in a column, so it
+  // carries its own CENTRE — the next page has to recompute the same order,
+  // and a caller who moved the map between pages is resuming into an ordering
+  // that never existed. Refused by name rather than answering a page from a
+  // different sort (`FJS-D324`).
+  const nearFields = new Map((fields ?? []).filter(f => f.near).map(f => [f.col, f.near]))
+  for (const [col, centre] of nearFields) {
+    const v = value[col]
+    const bad = v !== null && (
+      typeof v !== 'object' || Array.isArray(v) ||
+      !Array.isArray(v.at) || v.at.length !== 2 ||
+      (v.d !== null && typeof v.d !== 'number'))
+    if (bad) refuse(`holds no distance for "${col}", which this list orders by`)
+    if (v !== null && (v.at[0] !== centre.lat || v.at[1] !== centre.lng)) refuse(
+      `was minted around ${v.at[0]}, ${v.at[1]} and this page is ordered around ` +
+      `${centre.lat}, ${centre.lng} — a distance order resumes only from its own center. ` +
+      'Reload the first page.')
+  }
+
   // A value is bound as a parameter, so a structure is a bind SQLite refuses —
   // a 500 for a token somebody edited.
   for (const [col, v] of Object.entries(value))
-    if (v !== null && (typeof v === 'object' || typeof v === 'function')) refuse(
+    if (!nearFields.has(col) && v !== null && (typeof v === 'object' || typeof v === 'function')) refuse(
       `holds a ${Array.isArray(v) ? 'list' : 'structure'} for "${col}", and a sort key is a single value`)
 
   return value
@@ -1404,11 +1603,26 @@ export function normalizeOrderBy(orderBy) {
     Object.entries(item)
       .filter(([, dir]) => {
         if (dir === null) return false
+        // A distance ordering is a sort key even though its value is not in a
+        // column — the cursor computes it. Without this it was filtered out
+        // here and the page resumed from the TIEBREAK alone: measured on seven
+        // rows, `ORDER BY <distance> LIMIT 2` paged `WHERE id > 2`, so each
+        // page was an id-window re-sorted and the nearest row arrived on page
+        // two, with a 200 (`FJS-D324`).
+        if (typeof dir === 'object' && dir.near != null) return true
         if (typeof dir === 'object') return dir.dir != null  // object form with dir key
         return true
       })
       .map(([col, dir]) => {
         const d = (typeof dir === 'object' ? dir.dir : dir).toUpperCase()
+        // A row with no location is at no distance, so it sorts after every row
+        // that has one whichever way the ordering runs — and `nulls` is what
+        // both the ORDER BY and the cursor's comparison read.
+        if (dir !== null && typeof dir === 'object' && dir.near != null) {
+          const centre = centreOf(dir.near)
+          if (!centre) throw new Error(`orderBy ${col}.near needs a numeric lat and lng`)
+          return { col, dir: dir.dir ? d : 'ASC', nulls: 'LAST', near: centre }
+        }
         return { col, dir: d, nulls: nullsPosition(dir, d) }
       })
   )
@@ -1479,6 +1693,20 @@ export function buildCursorWhere(fields, cursorValues, params, columnMap = null)
 
   const quote = (col) => `"${columnMap?.[col] ?? col}"`
 
+  // The sort EXPRESSION for a field. A column is its own name; a distance key
+  // is the same haversine the ORDER BY measures with, re-emitted here so the
+  // comparison and the ordering cannot disagree. It pushes three binds of its
+  // own, so it is built in the position its `?`s appear in the text — this
+  // function's params are positional and that ordering is the correctness.
+  const expr = (f) => f.near
+    ? haversineSql(quote(f.latCol), quote(f.lngCol), f.near, params)
+    : quote(f.col)
+
+  // *This row has no value on this field.* For a distance that is the POINT
+  // being absent, asked of the generated column so the test costs no binds —
+  // the expression would be NULL for the same rows and three params dearer.
+  const isNull = (f) => `${quote(f.near ? f.latCol : f.col)} IS NULL`
+
   // Where the NULLs sit for this field. Stated by `cursorFields`; defaulted
   // here to SQLite's own so a hand-built field list cannot silently get DESC's
   // answer wrong — the direction decides it, not the absence of a key.
@@ -1486,10 +1714,11 @@ export function buildCursorWhere(fields, cursorValues, params, columnMap = null)
 
   /** The row is tied with the cursor on this field. */
   const equal = (f) => {
-    const v = cursorValues[f.col]
-    if (f.nullable && (v === null || v === undefined)) return `${quote(f.col)} IS NULL`
+    const v = f.near ? cursorValues[f.col]?.d ?? null : cursorValues[f.col]
+    if (f.nullable && (v === null || v === undefined)) return isNull(f)
+    const e = expr(f)
     params.push(v)
-    return `${quote(f.col)} = ?`
+    return `${e} = ?`
   }
 
   /**
@@ -1503,20 +1732,21 @@ export function buildCursorWhere(fields, cursorValues, params, columnMap = null)
    */
   const after = (f) => {
     const { col, dir } = f
-    const v = cursorValues[col]
+    const v = f.near ? cursorValues[col]?.d ?? null : cursorValues[col]
 
-    if (!f.nullable) { params.push(v); return `${quote(col)} ${dir === 'ASC' ? '>' : '<'} ?` }
+    if (!f.nullable) { const e = expr(f); params.push(v); return `${e} ${dir === 'ASC' ? '>' : '<'} ?` }
 
     const nulls = nullsOf(f)
     // Sitting ON a null: everything non-null follows it, but only where the
     // nulls come first. Where they come last, nothing on this field does.
     if (v === null || v === undefined)
-      return nulls === 'LAST' ? null : `${quote(col)} IS NOT NULL`
+      return nulls === 'LAST' ? null : `${quote(f.near ? f.latCol : col)} IS NOT NULL`
 
+    const e = expr(f)
     params.push(v)
-    const cmp = `${quote(col)} ${dir === 'ASC' ? '>' : '<'} ?`
+    const cmp = `${e} ${dir === 'ASC' ? '>' : '<'} ?`
     // The nulls sort after every value, so they are still to come.
-    return nulls === 'LAST' ? `(${cmp} OR ${quote(col)} IS NULL)` : cmp
+    return nulls === 'LAST' ? `(${cmp} OR ${isNull(f)})` : cmp
   }
 
   const clauses = []
@@ -1543,10 +1773,24 @@ export function buildCursorWhere(fields, cursorValues, params, columnMap = null)
 }
 
 // Extract cursor values from a row given the orderBy fields
+/**
+ * The row's position in this ordering, as the next page will compare against it.
+ *
+ * Every ordinary sort key is a column and is read straight off the row. A
+ * distance is not: it is computed here with the SAME kit function the SQL's
+ * haversine agrees with, and it carries the CENTRE it was measured from, so a
+ * page minted around one point cannot be resumed around another (`FJS-D324`).
+ * That is also `FJS-D320` being consistent — the distance is derived on this
+ * side rather than returned as a column.
+ */
 export function extractCursorValues(row, fields) {
   const values = {}
-  for (const { col } of fields) {
-    values[col] = row[col]
+  for (const f of fields) {
+    if (!f.near) { values[f.col] = row[f.col]; continue }
+    const p = row[f.col]
+    values[f.col] = isPoint(p)
+      ? { d: distance(p, f.near), at: [f.near.lat, f.near.lng] }
+      : null
   }
   return values
 }

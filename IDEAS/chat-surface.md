@@ -103,6 +103,13 @@ is indistinguishable from a correct one, and what it leaks is records.
 
 ## Part 2 — `Embedding(n)` and `findSimilar()`
 
+**Superseded by `IDEAS/embedding.md` (2026-09-20), which measured the engines and
+changed both names in this heading.** The claim below survives and is strengthened
+— a prefilter measures as a 3–4× cut to the scan, so the gate does not merely
+apply for free, it pays for itself — but the column is `Bytes @vector(n)` and the
+retrieval is an `orderBy` on `findMany`, not a verb. Read that record for the
+shape; this section is kept for what a chatbot needs on top of it.
+
 Listed in `packages/litestone/CLAUDE.md` § Backlog as
 `Embedding(1536)` + `findSimilar()` + cosine, and as one row in
 `IDEAS/ecosystem-gaps.md`'s four-item table with the verdict already applied —

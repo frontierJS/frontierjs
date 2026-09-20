@@ -260,6 +260,34 @@
   --screen-pad:     1.5rem;
 
   /*
+   * ── Stacking order ────────────────────────────────────────
+   *
+   * The whole ladder, in one place, because the question it answers is
+   * *what sits above what* and that is not answerable from any single
+   * component file. Each rung is named for the term that occupies it.
+   *
+   * The gaps are for an app: a consumer with a sticky sub-header puts it
+   * at 30 without touching a rung, and one with a full-screen loader puts
+   * it between toast and skip link.
+   *
+   * A component that creates its own stacking context and orders two of
+   * its own parts inside it — the connector behind a .step-marker, the
+   * focused .field lifted over its neighbor — uses 0 and 1 and is not on
+   * this ladder. tokens.spec.js allows exactly those two values and
+   * requires a token for anything above.
+   *
+   * Not here: .dialog and .drawer. They are <dialog>, which the browser
+   * promotes to the top layer, above every z-index on this list including
+   * the skip link. Giving them a rung would be a number that decides
+   * nothing.
+   */
+  --z-topbar:     20;
+  --z-popover:    50;
+  --z-tooltip:    60;
+  --z-toast:     100;
+  --z-skip-link: 1000;
+
+  /*
    * ── Tone as text ──────────────────────────────────────────
    *
    * The lightness window a tone may occupy, in oklch, when it is rendered

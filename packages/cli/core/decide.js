@@ -178,7 +178,11 @@ function trimStop(text) { return String(text).trim().replace(/[.?!;:,]+$/, '') }
 
 function capitalize(text) { return text.charAt(0).toUpperCase() + text.slice(1) }
 
+// UTC, because this date is WRITTEN INTO a register row and read by everybody
+// afterwards: a decision recorded at 23:30 in Auckland and one recorded twenty
+// minutes later in Los Angeles would otherwise be dated two days apart, in a
+// file whose whole job is to say when something was settled.
 function isoDate(d) {
   const p = n => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+  return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`
 }

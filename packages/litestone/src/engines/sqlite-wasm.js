@@ -86,6 +86,22 @@ export async function createSqliteWasmEngine({ load, vfs = DEFAULT_VFS, capacity
   return {
     name: `sqlite-wasm/${vfs}`,
     sync: true,
+
+    // ─── no vector capability, and it is not a gap ────────────────────────
+    //
+    // This build's own compile-option list carries `SQLITE_OMIT_LOAD_EXTENSION`
+    // (read out of `sqlite3.wasm` beside `ENABLE_FTS5`, `ENABLE_RTREE` and
+    // `THREADSAFE=0`), so the extension mechanism is compiled out: there is no
+    // flag, no VFS trick and no second entry point that reaches it, and
+    // `sqlite-vec` can never run here at any version. SQLite's own `vec1` is
+    // separately compiled too, so it does not change this either.
+    //
+    // Stated rather than omitted because absent-by-oversight and
+    // absent-by-construction read identically from `core/engine.js`, and this
+    // one is the reason `FJS-D331` requires the JS path to be load-bearing
+    // instead of a fallback.
+    vector: null,
+
     open(path, { readonly = false } = {}) {
       // ':memory:' is SQLite's own spelling and needs no pool handle. Litestone
       // uses it for every pristine schema it builds to diff against, so it is

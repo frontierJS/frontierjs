@@ -170,7 +170,10 @@ three read the same declarations. Build the reader once.
    (`FJS-521`) — and the clock belongs there by ruling, since unattended recurring
    work is the queue's (`FJS-D36`).
 
-Proposed home: **`@frontierjs/marshal`** (see `IDEAS/package-map.md`).
+Proposed home: **not a package.** `@pii` / `@retain` are rules at the Data boundary
+and ship as `.lite` syntax, the data map and DSAR as `fli` commands — `warden`'s
+precedent ([`FJS-D147`](../DECISIONS.md#fjs-d147)). `marshal` stays the name of the
+work (`IDEAS/package-map.md`).
 
 ## Open questions
 

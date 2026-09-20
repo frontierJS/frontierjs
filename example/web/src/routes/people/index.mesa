@@ -31,7 +31,7 @@ title: People
   import { payWindows } from '@/resources/PayWindow.mesa'
   import { session } from '@/session.js'
   import { prefs } from '@/prefs.js'
-  import { day } from '@/datetime.js'
+  import { day, today } from '@/datetime.js'
   import { useStore } from '@frontierjs/sierra/junction'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../money.js'
@@ -82,7 +82,9 @@ title: People
 
   /** Employed is a question about DATES, never about having a pay window —
    *  phase 2's finding, on screen. Somebody who left keeps their history. */
-  const isHere = (e) => !e.endedOn || new Date(e.endedOn) > new Date()
+  // A DAY compared with a day: `endedOn` is the first day they are NOT here,
+  // and `today()` is the shop's own date rather than this browser's.
+  const isHere = (e) => !e.endedOn || e.endedOn > today()
 
   /** What the open window is worth a year, which is the magnitude a band table
    *  is written in. `rate` means two different things under the two bases and

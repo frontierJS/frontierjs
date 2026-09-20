@@ -27,7 +27,7 @@ title: Pay run
   import { journalEntries } from '@/resources/JournalEntry.mesa'
   import { employees }     from '@/resources/Employee.mesa'
   import { session } from '@/session.js'
-  import { day } from '@/datetime.js'
+  import { day, span } from '@/datetime.js'
   import { page } from '@frontierjs/sierra/router'
   import { money } from '../../money.js'
 
@@ -179,7 +179,7 @@ title: Pay run
     {#snippet action()}
       <div class="cluster">
         <Pill tone={TONE[run.status] ?? 'muted'} data-status={run.status}>{run.status}</Pill>
-        <Badge tone="muted">{day(run.periodStart)} – {day(run.periodEnd)}</Badge>
+        <Badge tone="muted">{span(run.periodStart, run.periodEnd)}</Badge>
         {#if run.approvedBy}<Badge tone="info" data-approved>approved by {run.approvedBy}</Badge>{/if}
       </div>
     {/snippet}

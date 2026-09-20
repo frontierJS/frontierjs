@@ -1,5 +1,14 @@
 # Changes — @frontierjs/caravan
 
+## 2026-09-18 — the cron search steps by a minute of real time
+
+`findNext` walked candidate minutes with `next.setMinutes(next.getMinutes() + 1)`, which reads and
+writes the HOST's wall clock — and the zone this search is for is the `timeZone` it was given, never
+the host's. Across a fall-back the step can cross an ambiguous hour and skip sixty candidate minutes
+the schedule should have been asked about. It steps by `60_000` ms now, which needs no zone at all.
+
+Found sweeping for local-clock readings alongside `FJS-1150` and `FJS-1151`.
+
 ## 2026-09-17 — `registrations()` answers the declaration, and a row is not one
 
 `jobs.snapshot.md` could not be committed and nobody could see why. `schedule()`

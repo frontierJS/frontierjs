@@ -20,8 +20,8 @@
  *
  * ─── The two assertions that are the point ────────────────────────────────
  *
- * `raise.theSameInstantAnswersTheSame` — read a past instant, give somebody a
- * raise, read the same instant again. A backdated-looking answer here is a
+ * `raise.theSameDayAnswersTheSame` — read a past day, give somebody a raise,
+ * read the same day again. A backdated-looking answer here is a
  * payslip that reprints differently from how it was issued, which is the whole
  * failure effective dating exists to prevent.
  *
@@ -40,8 +40,9 @@
  */
 
 import { db } from '../../api/src/core/db.ts'
-import { payAsAt, payAsAtMany, employedAt, weeklyGross, annualGross, instant, coveringAt }
+import { payAsAt, payAsAtMany, employedAt, weeklyGross, annualGross, coveringAt }
   from '../../api/src/domain/payroll'
+import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
 import { ratesAsAt, allRatesAsAt, applyBands, contributionsOn, PERCENT_SCALE }
   from '../../api/src/domain/payroll'
 import { sweepPayroll } from './payroll-sweep.mjs'
@@ -49,8 +50,10 @@ import { results, report } from './lib/report.mjs'
 
 const sys = db.asSystem()
 const RUN = String(Date.now()).slice(-6)
-const DAY = 24 * 60 * 60 * 1000
-const ago = (d) => new Date(Date.now() - d * DAY).toISOString()
+// Days, not instants (`FJS-D288`). `TZ` is what a drive gets to name, and UTC
+// is what every other drive here runs the shop's calendar in.
+const TODAY = plainDateIn(Date.now(), 'UTC')
+const ago   = (d) => addToDate(TODAY, { days: -d })
 
 const { got, t } = results()
 const refused = async (fn) => { try { await fn(); return false } catch { return true } }
@@ -83,21 +86,26 @@ t('asAt.beforeHireIsNothing',      await payAsAt(sys, dana.id, ago(1200)) === nu
 t('asAt.aClosedWindowAnswersItsOwnRate',
   (await payAsAt(sys, dana.id, ago(300)))?.rate === first.rate)
 t('asAt.theOpenWindowAnswersToday',
-  (await payAsAt(sys, dana.id, new Date()))?.rate === current.rate)
+  (await payAsAt(sys, dana.id, TODAY))?.rate === current.rate)
 
-// Half-open, `[from, to)`. The instant a window opens belongs to the NEW one
-// and to nothing else — two readers disagreeing about this boundary is a wrong
-// salary once per raise, and never reproducible because it depends on which
-// row the database happened to return first.
-t('asAt.theBoundaryInstantBelongsToTheNewWindow',
+// Half-open, `[from, to)`. The DAY a window opens belongs to the NEW one and to
+// nothing else — two readers disagreeing about this boundary is a wrong salary
+// once per raise, and never reproducible because it depends on which row the
+// database happened to return first.
+t('asAt.theBoundaryDayBelongsToTheNewWindow',
   (await payAsAt(sys, dana.id, current.effectiveFrom))?.id === current.id)
-t('asAt.theInstantBeforeItBelongsToTheOld',
-  (await payAsAt(sys, dana.id, new Date(new Date(current.effectiveFrom).getTime() - 1)))?.id === first.id)
+t('asAt.theDayBeforeItBelongsToTheOld',
+  (await payAsAt(sys, dana.id, addToDate(current.effectiveFrom, { days: -1 })))?.id === first.id)
+
+// The column holds a date and nothing else. A `DateTime` here is what
+// `FJS-D288` took out: the same window read at 19:00 in New York and at 19:00
+// in Auckland answered two different days.
+t('asAt.aWindowIsDatedInDays', /^\d{4}-\d{2}-\d{2}$/.test(current.effectiveFrom))
 
 // ─── The batch, which is what a pay run asks ──────────────────────────────
 
 const ids   = [dana.id, ira.id, wren.id]
-const at    = instant(ago(300))
+const at    = ago(300)
 const many  = await payAsAtMany(sys, ids, at)
 const oneByOne = new Map()
 for (const id of ids) {
@@ -110,7 +118,7 @@ t('batch.agreesWithReadingThemOneAtATime',
 
 // Absent rather than mapped to null, so a caller iterating the map cannot pay
 // somebody who had no terms in force.
-const beforeAnyone = await payAsAtMany(sys, ids, instant(ago(1200)))
+const beforeAnyone = await payAsAtMany(sys, ids, ago(1200))
 t('batch.omitsSomebodyWithNoWindowAtAll', beforeAnyone.size === 0)
 
 // ─── Employed is a different question from paid ───────────────────────────
@@ -120,9 +128,9 @@ t('batch.omitsSomebodyWithNoWindowAtAll', beforeAnyone.size === 0)
 // the only thing that says otherwise.
 const wrenTerms = await sys.payWindow.findMany({ where: { employeeId: wren.id } })
 t('leaver.stillHasAnOpenPayWindow', wrenTerms.some(w => w.effectiveTo === null))
-t('leaver.isStillAnsweredByTheAsAtRead', (await payAsAt(sys, wren.id, new Date())) !== null)
+t('leaver.isStillAnsweredByTheAsAtRead', (await payAsAt(sys, wren.id, TODAY)) !== null)
 
-const employedNow    = await employedAt(sys, new Date())
+const employedNow    = await employedAt(sys, TODAY)
 const employedBefore = await employedAt(sys, ago(90))
 t('employed.excludesSomebodyWhoHasLeft',
   !employedNow.some(e => e.id === wren.id))
@@ -131,7 +139,7 @@ t('employed.includedThemBeforeTheyWent',
 t('employed.stillHasTheOthers',
   employedNow.some(e => e.id === dana.id) && employedNow.some(e => e.id === ira.id))
 
-// ─── The raise, and the instant that must not move ────────────────────────
+// ─── The raise, and the day that must not move ────────────────────────────
 
 const mine = await sys.employee.create({ data: {
   reference: `EMP-V${RUN}`, name: `Vera Verify ${RUN}`, email: `vera.${RUN}@drive.test`,
@@ -143,12 +151,16 @@ await sys.payWindow.create({ data: {
   effectiveFrom: ago(400),
 } })
 
-const past       = instant(ago(200))
+const past       = ago(200)
 const beforeRaise = await payAsAt(sys, mine.id, past)
 
 // The raise, spelled exactly as `employees.setPay` spells it — close the open
-// window at the instant the next opens, then open it.
-const raiseAt = instant()
+// window on the day the next opens, then open it.
+//
+// Yesterday and not today, because the window the constraint section below
+// closes is this one: a window that opened today cannot also end today, since
+// `[d, d)` covers no days. `assertEffectiveFrom` refuses that by name.
+const raiseAt = ago(1)
 const open    = await sys.payWindow.findFirst({ where: { employeeId: mine.id, effectiveTo: null } })
 await sys.payWindow.update({ where: { id: open.id }, data: { effectiveTo: raiseAt } })
 const opened  = await sys.payWindow.create({ data: {
@@ -158,10 +170,10 @@ const opened  = await sys.payWindow.create({ data: {
 const afterRaise = await payAsAt(sys, mine.id, past)
 const closed     = await sys.payWindow.findFirst({ where: { id: open.id } })
 
-t('raise.theSameInstantAnswersTheSame',   afterRaise?.id === beforeRaise?.id && afterRaise?.rate === beforeRaise?.rate)
+t('raise.theSameDayAnswersTheSame',       afterRaise?.id === beforeRaise?.id && afterRaise?.rate === beforeRaise?.rate)
 t('raise.theOldRateIsUntouched',          closed.rate === 3_000_000)
 t('raise.theWindowsTouchWithNoGap',       closed.effectiveTo === opened.effectiveFrom)
-t('raise.todayAnswersTheNewRate',         (await payAsAt(sys, mine.id, new Date()))?.rate === 3_600_000)
+t('raise.todayAnswersTheNewRate',         (await payAsAt(sys, mine.id, TODAY))?.rate === 3_600_000)
 t('raise.leavesExactlyOneOpenWindow',
   (await sys.payWindow.findMany({ where: { employeeId: mine.id, effectiveTo: null } })).length === 1)
 
@@ -226,10 +238,10 @@ t('constraint.andExactlyOneIsOpen', windows.filter(w => !w.effectiveTo).length =
 // transaction, and the constraint refuses the second row rather than ordering
 // the two writes.
 const shut = await sys.payWindow.update({
-  where: { id: opened.id }, data: { effectiveTo: instant() },
+  where: { id: opened.id }, data: { effectiveTo: TODAY },
 })
 const next = await sys.payWindow.create({ data: {
-  employeeId: mine.id, basis: 'salary', rate: 9_900_000, hoursPerWeek: 40, effectiveFrom: instant(),
+  employeeId: mine.id, basis: 'salary', rate: 9_900_000, hoursPerWeek: 40, effectiveFrom: TODAY,
 } })
 t('constraint.closingFirstMakesRoomForTheNext', !!next.id && !!shut.effectiveTo)
 await sys.payWindow.delete({ where: { id: next.id } })
@@ -255,13 +267,13 @@ t('gross.theSameRateMeansTwoDifferentThings',
   !== weeklyGross({ basis: 'hourly', rate: 52_000, hoursPerWeek: 40 }))
 
 // The interval is spelled once and exported, so a caller building its own query
-// cannot disagree with the module about which window covers an instant.
+// cannot disagree with the module about which window covers a day.
 t('interval.isSpelledOnceAndExported',
   JSON.stringify(coveringAt('X')) === JSON.stringify({ effectiveFrom: { lte: 'X' }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: 'X' } }] }))
 
 // ─── The rates, and the walk ──────────────────────────────────────────────
 
-const bands = await ratesAsAt(sys, 'incomeTax', new Date())
+const bands = await ratesAsAt(sys, 'incomeTax', TODAY)
 t('rates.theBandsAreInForce', bands.length >= 3)
 t('rates.theyComeBackInThresholdOrder',
   bands.every((b, i) => i === 0 || b.fromAmount > bands[i - 1].fromAmount))
@@ -315,7 +327,7 @@ t('walk.underTheFirstThresholdThereIsNothingToShow',
 
 // ── The four kinds, and what must not be netted ───────────────────────────
 
-const rates = await allRatesAsAt(sys, new Date())
+const rates = await allRatesAsAt(sys, TODAY)
 const all   = contributionsOn(rates, ANNUAL)
 
 t('kinds.allFourAreAnswered',
@@ -353,7 +365,7 @@ const openBand = await sys.payRate.create({ data: {
 const beforeChange = await ratesAsAt(sys, 'incomeTax', ago(100))
 const wasApplied   = beforeChange.find(b => b.id === openBand.id)?.percent
 
-const changedAt = instant()
+const changedAt = TODAY
 await sys.payRate.update({ where: { id: openBand.id }, data: { effectiveTo: changedAt } })
 const newBand = await sys.payRate.create({ data: {
   kind: 'incomeTax', fromAmount: FLOOR, toAmount: null, percent: 1500, effectiveFrom: changedAt,
@@ -362,7 +374,7 @@ const newBand = await sys.payRate.create({ data: {
 t('rateChange.thePastStillAnswersTheOldPercent',
   (await ratesAsAt(sys, 'incomeTax', ago(100))).find(b => b.id === openBand.id)?.percent === wasApplied)
 t('rateChange.todayAnswersTheNewOne',
-  (await ratesAsAt(sys, 'incomeTax', new Date())).find(b => b.fromAmount === FLOOR)?.percent === 1500)
+  (await ratesAsAt(sys, 'incomeTax', TODAY)).find(b => b.fromAmount === FLOOR)?.percent === 1500)
 t('rateChange.theOldBandIsNotRestated',
   (await sys.payRate.findFirst({ where: { id: openBand.id } })).percent === 1000)
 t('rateChange.aPercentCannotBeEditedInPlace',
@@ -416,8 +428,9 @@ const expected = {
   'asAt.beforeHireIsNothing': true,
   'asAt.aClosedWindowAnswersItsOwnRate': true,
   'asAt.theOpenWindowAnswersToday': true,
-  'asAt.theBoundaryInstantBelongsToTheNewWindow': true,
-  'asAt.theInstantBeforeItBelongsToTheOld': true,
+  'asAt.theBoundaryDayBelongsToTheNewWindow': true,
+  'asAt.theDayBeforeItBelongsToTheOld': true,
+  'asAt.aWindowIsDatedInDays': true,
   'batch.agreesWithReadingThemOneAtATime': true,
   'batch.omitsSomebodyWithNoWindowAtAll': true,
   'leaver.stillHasAnOpenPayWindow': true,
@@ -425,7 +438,7 @@ const expected = {
   'employed.excludesSomebodyWhoHasLeft': true,
   'employed.includedThemBeforeTheyWent': true,
   'employed.stillHasTheOthers': true,
-  'raise.theSameInstantAnswersTheSame': true,
+  'raise.theSameDayAnswersTheSame': true,
   'raise.theOldRateIsUntouched': true,
   'raise.theWindowsTouchWithNoGap': true,
   'raise.todayAnswersTheNewRate': true,

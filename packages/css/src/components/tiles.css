@@ -46,7 +46,7 @@
   font-size:   var(--text-3xl);
   font-weight: 700;
   line-height: 1.15;
-  color:       var(--surface-color);
+  color:       var(--_surface-color);
   /* Tabular figures so a column of tiles does not jitter as values change. */
   font-variant-numeric: tabular-nums;
 }

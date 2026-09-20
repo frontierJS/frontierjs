@@ -40,14 +40,22 @@ export interface SchedulerStats {
 // operator per field.
 //
 // What is junction's is WHEN it looks and on which clock: this scheduler is
-// in-process, has no persistence and no zone, so it reads the host clock. That
-// is the half a grammar cannot answer, and it is why the kit takes clock parts
-// rather than a Date.
+// in-process and has no persistence, and it reads the clock in UTC. That is the
+// half a grammar cannot answer, and it is why the kit takes clock parts rather
+// than a Date.
+//
+// UTC and not the host, because a schedule is declared once and runs in two
+// places: `0 9 * * *` matched 16:00Z on a laptop in Los Angeles, 09:00Z in the
+// container it deploys to, and neither in Berlin — one expression, three
+// schedules, with nothing in the app saying which it was on (`FJS-1150`).
+// Caravan, which owns the clock for anything durable (`FJS-D36`), already reads
+// a stated zone over the same kit; this one states no zone, so it names the one
+// that is the same everywhere.
 
 import { parseCron as parseCronFields, cronMatches } from '@frontierjs/toolbelt/cron'
 
 /**
- * The expression as a predicate over an instant on the HOST clock.
+ * The expression as a predicate over an instant, read in UTC.
  *
  * Exported because the mapping is the only part of this that can be wrong now,
  * and it is the classic place to be wrong: `getMonth()` is 0-11 and cron's
@@ -59,11 +67,11 @@ export function cronMatcher(expr: string): (date: Date) => boolean {
   const fields = parseCronFields(expr)
   return function matchCron(date: Date): boolean {
     return cronMatches(fields, {
-      minutes: date.getMinutes(),
-      hours:   date.getHours(),
-      date:    date.getDate(),
-      month:   date.getMonth() + 1,
-      day:     date.getDay(),
+      minutes: date.getUTCMinutes(),
+      hours:   date.getUTCHours(),
+      date:    date.getUTCDate(),
+      month:   date.getUTCMonth() + 1,
+      day:     date.getUTCDay(),
     })
   }
 }

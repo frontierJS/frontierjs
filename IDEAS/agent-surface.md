@@ -369,7 +369,7 @@ are in the ruling rather than restated here.
 
 ## See also
 
-- `IDEAS/package-map.md` — where it sits among the proposed packages
+- `IDEAS/package-map.md` — the roster; this one shipped as `@frontierjs/mcp`
 - `IDEAS/compliance-from-the-seed.md` — the audit and disclosure half
 - `IDEAS/slices.md` — the "a Gate is harder for an agent to get wrong" argument, in
   its original context

@@ -1136,8 +1136,9 @@ language stops being reviewable.
 - `IDEAS/compliance-from-the-seed.md` — the audit half, which this feeds
 - `CLAUDE.md` § Live hazards — *a `@@gate` refuses, a `@@allow` filters*, the hazard
   this whole file is downstream of
-- `IDEAS/package-map.md` § tier 1 — the `warden` row, which is this idea under a
-  reserved package name, and `IDEAS/overview.md` 4.5 beside 2.19 for the same reason
+- `IDEAS/package-map.md` § Absorbed — the struck `warden` row, which is this idea
+  under a reserved package name, and `IDEAS/overview.md` 4.5 beside 2.19 for the same
+  reason
 - `DECISIONS.md` § Outpost — the naming rule that rejects `warden` as a package name
 - `ISSUES.md` § `FJS-519` — `asSystem()` is all-or-nothing, which is why the standing
   table cannot be graded by capability and why per-tenant credentials cannot be

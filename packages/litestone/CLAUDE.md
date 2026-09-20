@@ -46,6 +46,12 @@ src/
     encryption.js  — @encrypted/@hashed primitives + comparisonEncoderFor():
                      the one owner of "how a value becomes the bytes a column
                      holds", asked by both a where and a policy predicate
+    vector.js      — what a vector IS (float32 layout, the two write guards) and
+                     the JS half of comparing two. `FJS-1193`'s engine half; the
+                     SQL half is `engine.vector.cosineDistance` where an engine
+                     has one, and the browser NEVER does — that build carries
+                     `SQLITE_OMIT_LOAD_EXTENSION`, so the JS path is the
+                     mechanism rather than a fallback (`FJS-D331`)
 
   plugins/
     gate.js        — GatePlugin: level-based access control
@@ -138,6 +144,11 @@ src/
                      `database` blocks come out: `db:` overrides `main` and
                      nothing else, so a second block keeps a server path a
                      browser refuses
+  validate-rows.js — which STORED rows the schema would now refuse. The half the
+                     migration differ cannot see: a boundary validator emits no
+                     CHECK, so tightening one leaves the column where it was and
+                     makes every row that breaks it unwritable, reading fine.
+                     Runs the same validate() a write runs, as system. CLI only
   release.js       — the release surface + classifyPivot(): can N-1 and N serve
                      one database at once? Never imported by production code
   tenant.js        — createTenantRegistry()
@@ -425,7 +436,11 @@ declared. One authored string, all three realms.
 @@softDelete                     enable soft delete (requires deletedAt DateTime?)
 @@softDelete(cascade)            soft delete + cascade to FK children that also have @@softDelete
 @@fts([field1, field2])          FTS5 full-text search virtual table
-@@index([col1, col2])            composite index
+@@index([col1, col2])            composite index. `([a, b(sort: Desc)])` gives a column a
+                                 direction; `where: expr` makes it partial, ANDed with
+                                 @@softDelete's live-rows clause rather than replacing it.
+                                 The predicate reaches the planner, so unlike @@unique(where:)
+                                 it may not compare against a value
 @@id([col1, col2])               the row's identity IS the tuple. Sugar over `@id` on each
                                  named field, so every reader already handles it — what it
                                  adds is the key's column ORDER, which is prefix-matched and
@@ -488,6 +503,18 @@ declared. One authored string, all three realms.
 @@log(dbName)                    model-level audit log: all writes fire a log entry
 @@tenant(none)                   under `tenancy { strategy row }`: this model spans tenants
 @@tenant(column: "accountId")    …or is scoped by a column of its own
+@@sync(server|append|refuse|field)  this model's rows may be written with no
+                                 server reachable; the argument is the COLLISION policy and
+                                 nothing else. No default — silence means not syncable, and an
+                                 offline client refuses to queue a write. All four are identical
+                                 on a reachable network and differ only for a HELD write:
+                                 `server` drops the revision the device read · `append` refuses
+                                 to hold a patch/remove/restore by name · `refuse` keeps the
+                                 revision and the boundary refuses a replay if the row moved ·
+                                 `field` keeps the revision AND the row the write was made
+                                 against, compares per COLUMN, and refuses only a column both
+                                 writers moved. `refuse` and `field` need @version and are
+                                 refused at parse without it
 ```
 
 ### `@@softDelete` and `@hardDelete`
@@ -1260,6 +1287,7 @@ litestone explain [@word] [--visibility] [--json]        # the language, no sche
 litestone catalog --snapshot [--check]                   # the language surface, committed
 litestone catalog --reference [--check]                  # docs/reference.snapshot.md, the A-Z page
 litestone advise [--json]                                # legal-and-wrong, plus legal-and-MISSING
+litestone validate [--only=A,B] [--json]                 # which STORED rows the schema would now refuse; exits 1
 litestone assistant [--bare] [--out=<path>] [--purpose=<path>]  # a chat-model schema assistant + this schema + PURPOSE.md, to paste
 litestone assistant --snapshot [--check]                 # assistant.snapshot.md — the URL form, no schema
 litestone jsonschema [--out=./schemas/] [--format=flat]
@@ -1600,14 +1628,9 @@ Suites cover: parser, DDL, migrations, autoMigrate, client CRUD, soft delete, so
 
 ## Backlog
 
-- Publish `@frontierjs/litestone` to npm
-- `introspect.js` — emit `@@db(name)` if multi-DB target is known at introspect time
-- `jsonschema.js` — views support
-- Vector search: `Embedding(1536)` type + `findSimilar()` + cosine similarity
-- `Money` type — stored as JSON: `{ amount, currency, scale }`
-- `LatLng` type + `findNear()` — Haversine in JS
-- `@slug(source: title)` — auto-slug with collision handling (basic `@slug` transform built; collision-resistant version pending)
-- `CREATOR` (level 3) — document "submit but can't manage" pattern more clearly
+**`docs/roadmap.md`.** This list was a third copy of it and named three things
+that ship — npm, jsonschema views, and `Money`, which it had as JSON where
+`FJS-D142` ruled an Int.
 
 ---
 

@@ -278,12 +278,16 @@ const staffToken = (await (await fetch(`${API}/api/auth/login`, {
 const asStaff = { authorization: `Bearer ${staffToken}` }
 
 const photo = readFileSync(join(ROOT, 'db/seed-media/fjs-hoodie-navy.png'))
-const upload = (name, type, alt) => {
+// `bytes` defaults to the real photograph, so a call that varies only the NAME
+// and the declared TYPE is a correctly-typed file wearing the wrong label —
+// which is a different question from a file of the wrong KIND, and the two used
+// to be one call here.
+const upload = (name, type, alt, bytes = photo) => {
   const fd = new FormData()
   fd.append('productId', '1')
   fd.append('alt', alt)
   fd.append('position', '99')
-  fd.append('file', new File([photo], name, { type }))
+  fd.append('file', new File([bytes], name, { type }))
   return fetch(`${API}/api/product-images`, { method: 'POST', headers: asStaff, body: fd })
 }
 
@@ -314,14 +318,52 @@ const served = await fetch(viaGet.file)
 check('and the URL serves the bytes that went up',
       [served.status, served.headers.get('content-type'), (await served.arrayBuffer()).byteLength],
       [200, 'image/png', photo.byteLength])
+// This mount is `untrusted: true` (`FJS-D314`), so anything outside the inline
+// allow-list is an attachment — and an image is INSIDE it. Asserted because the
+// expensive mistake is one word in that list: a photograph answered as a
+// download renders nowhere, and every screen in the app shows an empty box.
+// The attachment half is junction's own suite; it cannot be reached from here,
+// because every `File` column in this app declares `@accept` and none of them
+// accepts a type the allow-list refuses.
+check('…inline, because a photograph is what the allow-list is for',
+      [served.headers.get('content-disposition'), served.headers.get('x-content-type-options')],
+      [null, 'nosniff'])
 
 // `@accept("image/png, image/jpeg, image/webp")` is a Data-boundary rule, so it
 // refuses the same file the picker would have filtered out. Both halves exist
 // on purpose: the dialog is a courtesy and this is the guard.
-const wrong = await upload('notes.txt', 'text/plain', 'not a photograph')
+//
+// **It grades the BYTES** (`FJS-1184`). This call used to send the photograph
+// under a `.txt` name and assert a 400, which asserted that the LABEL was
+// graded — and a label is the one part of an upload the caller controls, so any
+// bytes at all satisfied the rule provided they arrived named `.png`. Real text
+// goes up now, and the row below is the other half of the same change.
+const notAnImage = new TextEncoder().encode('not a photograph, just words')
+const wrong = await upload('notes.txt', 'text/plain', 'not a photograph', notAnImage)
 check('a file the column does not accept is refused', wrong.status, 400)
 check('…naming the type and the list',
       (await wrong.json()).message, m => /text\/plain/.test(m) && /image\/png/.test(m))
+
+// The photograph, misnamed. A phone that writes `.txt`, a browser that sends
+// `application/octet-stream`, a file somebody renamed — the bytes are a PNG and
+// the column accepts PNG, so it stores, and it stores as what it IS rather than
+// as what the upload claimed. Under the old rule this was the 400 above.
+const mislabeled = await upload('notes.txt', 'text/plain', 'a photo with the wrong name')
+check('a real photograph with the wrong name is accepted', mislabeled.status, 201)
+const fixedId = (await mislabeled.json()).id
+const fixed   = await (await fetch(`${API}/api/product-images/${fixedId}`, { headers: asStaff })).json()
+const fixedBytes = await fetch(fixed.file)
+check('…and is served as what the bytes are, not what the name said',
+      fixedBytes.headers.get('content-type'), 'image/png')
+// The stored KEY has to agree with the ref, or a static origin — which serves by
+// extension and has no ref to read — answers text/plain for bytes the row calls
+// image/png.
+check('…under a key the extension of which matches', fixed.file.endsWith('.png'), true)
+// Removed HERE rather than with the rest at the end: the gallery's decode check
+// below is `every(naturalWidth > 0)` over the swatches, and the images lazy-load
+// (two assertions above depend on that), so one more row pushes a swatch out of
+// view and it reads as a photograph that failed to decode.
+await fetch(`${API}/api/product-images/${fixedId}`, { method: 'DELETE', headers: asStaff })
 
 // ── and the same thing, done by a person ──────────────────────────────────
 //

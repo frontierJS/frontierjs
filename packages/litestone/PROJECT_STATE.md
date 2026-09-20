@@ -209,34 +209,22 @@ bun test
 
 ---
 
-## Outstanding work before publish
+## Publishing
 
-In recommended order:
-
-1. ✅ All publish-blockers cleared
-2. ✅ Comparison table audited and rewritten for honesty
-3. ✅ Performance audit + fast paths + doctor PERF checks
-4. ✅ `trait` feature (v1.1)
-5. ✅ `type` feature + typed JSON path pushdown (v1.2)
-6. **`npm publish --access public`** under `@frontierjs`
-
-The unscoped `litestone` name is still blocked by npm's similarity check (support ticket filed, not chased recently). `@frontierjs/litestone` is publishable now.
+`@frontierjs/litestone` publishes. The unscoped `litestone` name is still blocked
+by npm's similarity check — support ticket filed, not chased — and nothing
+depends on it.
 
 ---
 
-## Backlog (post-publish, ranked)
+## Backlog
 
-1. **`Money` type** — JSON-stored `{ amount, currency, scale }`. The `type` feature now in place is the right primitive to build this on (`type Money { amount Int; currency String; scale Int }` plus runtime helpers).
-2. **`LatLng` + `findNear()`** — Haversine in JS. Self-contained.
-3. **`Embedding(n)` + `findSimilar()`** — needs `sqlite-vec` extension as soft dependency. Bigger distribution story.
-4. **`@slug(source: title)`** — common pattern, small change.
-5. **`@@transitions` full DSL** — already partially in place via `transitionMap`; promote to first-class.
-6. **Expression index emission from schema** — `@@index([col], where: "...")` partial index syntax; SQLite supports it natively.
-7. **`litestone validate` CLI** — walk rows and report typed-JSON shape mismatches after a type's shape changes.
-8. **JSON path index hint in `@@index`** — `@@index([address->'$.city'])` to emit `CREATE INDEX ... ON t (json_extract(address, '$.city'))`.
-9. **`CREATOR` role doc** — flagged repeatedly; just write the doc paragraph scoping the "submit but can't manage" pattern.
-10. **HTTP endpoint helper** — `@frontierjs/litestone-http` package or doc-only example. The `db.query()` work makes this a one-liner.
-11. **`resolveMany()`** — polymorphic batch resolver.
+**`docs/roadmap.md` is the one list and this section is not a second copy.** It
+held one, five of whose eleven entries described features that had shipped:
+`Money`, `@@transitions` and `@@index(where:)` among them, the last still
+written as *SQLite supports it natively* beside a `ddl.js` that had been
+emitting it. A backlog kept in two files is one file going stale, and this is
+the copy nothing grades — `roadmap-shipped` reads the other.
 
 ---
 
