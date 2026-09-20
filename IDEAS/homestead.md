@@ -823,7 +823,12 @@ screen read, and it is already consulted there for `@version`. **Junction's half
 is a decision rather than a line**: a base is a ROW, so it cannot travel as a
 header the way `idempotencyKey` does, and a write's body today IS its `data`.
 Carrying one means an envelope on write requests, which is a new wire shape and
-wants its own hearing.
+wants its own hearing. Filed as `FJS-1202`.
+
+**Meanwhile sierra refuses to hold a `field` write by name** (`NO_BASE_CARRIED`)
+rather than letting it go up with its revision and no base, be refused on the
+revision alone, and behave as `refuse` under a declaration promising more — the
+same rule `append` already follows, for the reason `FJS-D298` closed the set.
 
 **And phase 5 carries `FJS-D337` with it**, because the two are one call: a
 device required to supply the base is a device whose copy is load-bearing, which

@@ -10,7 +10,7 @@ import { applyBusyTimeout, busyTimeoutFor, validateBusyTimeout } from './pragmas
 import { resolve, join, dirname, extname, tmpdir, pathToFileURL,
          existsSync, mkdirSync, mkdtempSync, statSync } from '#host'
 import { resolveAnchor, noteMintedDirectory } from './db-path.js'
-import { parse, parseFile } from './parser.js'
+import { parse, parseFile, pointColumns } from './parser.js'
 import { modelToTableName, modelToAccessor, updatedAtFields, isStoredField } from './ddl.js'
 import { buildSealMap } from './seal.js'
 import { buildValueSetMap, enforceValueSets } from './valuesets.js'
@@ -24,7 +24,7 @@ import {
   deserializeRow, serializeRow,
   coerceBooleans, serializeBooleans, centreOf,
   encodeCursor, decodeCursor,
-  normalizeOrderBy, buildCursorWhere, extractCursorValues,
+  normalizeOrderBy, buildCursorWhere, extractCursorValues, cursorOrderSql,
   filterableKeysFor, sortableKeysFor, aggregatableKeysFor, opaqueSortKind, OPAQUE_SORT,
 } from './query.js'
 import { validate, applyTransforms, buildValidationMap, validateJsonPatch, ValidationError } from './validate.js'
@@ -5686,6 +5686,20 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // an `OR` is what stops SQLite using the index the whole keyset scan exists
     // for. A column that cannot be null compiles exactly what it always did.
     for (const f of fields) f.nullable = _isNullable(f.col)
+
+    // A distance key is measured off two GENERATED columns rather than read out
+    // of one, so the field carries their names — `buildCursorWhere` is a pure
+    // function with no model in scope and the point declaration is here.
+    for (const f of fields) {
+      if (!f.near) continue
+      const pt = _pointMap[f.col]
+      if (!pt) throw new Error(
+        `${modelName}.findManyCursor: orderBy "${f.col}" is not a @point, so it has no distance to page by`)
+      const [latName, lngName] = pointColumns(f.col, pt)
+      f.latCol = latName
+      f.lngCol = lngName
+    }
+
     const uniqueCols = _upsertUniqueCols()
     if (fields.some(f => uniqueCols.has(f.col))) return fields
 
@@ -8795,6 +8809,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // an ORDER BY the planner has to be re-measured against for no gain.
       return fields.map(f => {
         const dir      = f.dir.toLowerCase()
+        // A distance key round-trips as a distance key. This answer is used as
+        // the scan's ACTUAL orderBy and is handed to `cursorFor`, so collapsing
+        // it to `{ site: 'asc' }` would name the one spelling a point refuses —
+        // the ordinary page 400s and the window is never minted. The nulls
+        // position is `buildOrderBy`'s own for this shape and is not restated.
+        if (f.near) return { [f.col]: { near: f.near, dir } }
         const implicit = f.dir === 'DESC' ? 'LAST' : 'FIRST'
         return { [f.col]: f.nulls && f.nulls !== implicit
           ? { dir, nulls: f.nulls.toLowerCase() }
@@ -8942,10 +8962,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // arrangement and the cursor was compared against another, which is the
       // same lost-rows failure as `FJS-780` one layer up. `fields` carries the
       // position now, defaulted to SQLite's own where nothing stated it.
-      const orderSql = fields.map(({ col, dir, nulls }) => {
-        const implicit = dir === 'DESC' ? 'LAST' : 'FIRST'
-        return `"${col}" ${dir}${nulls && nulls !== implicit ? ` NULLS ${nulls}` : ''}`
-      }).join(', ')
+      const orderSql = cursorOrderSql(fields, params)
 
       // Fetch limit + 1 to detect hasMore
       const fetchLimit = limit + 1

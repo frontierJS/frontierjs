@@ -159,6 +159,7 @@ strict off-the-shelf draft-07 validator will not follow `#/$defs/…`.
 | `contentEncoding` | field | `Bytes` → `base64` |
 | `pattern` | field | `@regex`, `@startsWith`/`@endsWith`/`@contains` (anchored, regex-escaped), and `@time` |
 | `x-time` | field | `@time` → `{ seconds }`. Picks the control and enforces nothing — the refusal is the `pattern` |
+| `x-geo` | field | `@point(lat, lng)` → `{ lat, lng }`, the two KEY NAMES the coordinate is stored under. Picks the control and enforces nothing — the refusal is the table's `CHECK`. **Inside the non-null branch**, beside `x-time`: a consumer reads that branch, so a keyword on the outer object is silently absent for every optional column |
 | `minLength` / `maxLength` | field | `@length(min, max)` |
 | `minimum` / `maximum` | field | `@gte` / `@lte` |
 | `exclusiveMinimum` / `exclusiveMaximum` | field | `@gt` / `@lt` |

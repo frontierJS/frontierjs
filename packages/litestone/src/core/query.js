@@ -7,7 +7,7 @@ import { ValidationError } from './validate.js'
 // the same boxes this compiles into SQL (`@frontierjs/toolbelt/geo`), and the
 // DDL that emitted the columns names them with the same function the WHERE has
 // to name them with.
-import { boundingBox, distance, isPoint } from '@frontierjs/toolbelt/geo'
+import { boundingBox, isPoint } from '@frontierjs/toolbelt/geo'
 import { parseLength } from '@frontierjs/toolbelt/units'
 import { pointColumns } from './parser.js'
 
@@ -283,14 +283,28 @@ const TEXT_OP_REFUSALS = {
  * functions this needs — measured, not assumed, and neither compiles them in by
  * default in every build, which is why it is written down here.
  *
- * Three parameters are pushed, in this order: lat, lat, lng.
+ * `lat` and `lng` are SQL expressions — the generated columns, normally. Each
+ * may instead be a BIND, passed as `{ sql: '?', param: v }`, which is how a
+ * cursor compares the row's distance against the distance of the point it is
+ * carrying: same text, same engine, same inputs, so the two agree to the bit.
+ * Comparing against a distance computed in JS does not — SQLite's `power`,
+ * `asin` and `radians` are a different libm associating in a different order,
+ * and one ulp is enough to make `d > ?` true for the cursor's own row, which
+ * serves it twice, or false for the next one, which loses it.
+ *
+ * Binds land in the order the `?`s appear in the text, which is the only
+ * ordering positional parameters have.
  */
-function haversineSql(latCol, lngCol, centre, params) {
-  params.push(centre.lat, centre.lat, centre.lng)
+function haversineSql(lat, lng, centre, params) {
+  const A = typeof lat === 'string' ? { sql: lat } : lat
+  const B = typeof lng === 'string' ? { sql: lng } : lng
+  const push = (v) => { if (v !== undefined) params.push(v) }
+  push(centre.lat); push(A.param); push(A.param)
+  push(centre.lat); push(centre.lng); push(B.param)
   return `(2 * 6371008.8 * asin(min(1.0, sqrt(` +
-    `power(sin((radians(?) - radians(${latCol})) / 2), 2) + ` +
-    `cos(radians(${latCol})) * cos(radians(?)) * ` +
-    `power(sin((radians(?) - radians(${lngCol})) / 2), 2)` +
+    `power(sin((radians(?) - radians(${A.sql})) / 2), 2) + ` +
+    `cos(radians(${A.sql})) * cos(radians(?)) * ` +
+    `power(sin((radians(?) - radians(${B.sql})) / 2), 2)` +
     `))))`
 }
 
@@ -963,7 +977,11 @@ export function buildOrderBy(orderBy, outParams = [], columnMap = null, pointMap
         const d = String(dir.dir ?? 'asc').toUpperCase()
         if (d !== 'ASC' && d !== 'DESC')
           throw new Error(`orderBy direction must be 'asc' or 'desc', got: ${dir.dir}`)
-        parts.push(`${haversineSql(quoteIdent(latName), quoteIdent(lngName), centre, outParams)} ${d}`)
+        // A row with no location is at no distance, not at zero. The expression
+        // is NULL for it and SQLite sorts a NULL first ascending, so without
+        // this a nearest-first list opens with every row that has no
+        // coordinate — measured, and with a 200.
+        parts.push(`${haversineSql(quoteIdent(latName), quoteIdent(lngName), centre, outParams)} ${d} NULLS LAST`)
         continue
       }
       if (pointInfo)
@@ -1130,7 +1148,7 @@ export function buildRelationOrderBy(orderBy, modelName, relationMap, modelToTab
         if (d !== 'ASC' && d !== 'DESC')
           throw new Error(`orderBy direction must be 'asc' or 'desc', got: ${val.dir}`)
         entries.push({ flat: true, sql:
-          `${haversineSql(quoteIdent(latName), quoteIdent(lngName), centre, outParams)} ${d}` })
+          `${haversineSql(quoteIdent(latName), quoteIdent(lngName), centre, outParams)} ${d} NULLS LAST` })
         continue
       }
 
@@ -1563,11 +1581,9 @@ export function decodeCursor(token, fields = null) {
   const nearFields = new Map((fields ?? []).filter(f => f.near).map(f => [f.col, f.near]))
   for (const [col, centre] of nearFields) {
     const v = value[col]
-    const bad = v !== null && (
-      typeof v !== 'object' || Array.isArray(v) ||
-      !Array.isArray(v.at) || v.at.length !== 2 ||
-      (v.d !== null && typeof v.d !== 'number'))
-    if (bad) refuse(`holds no distance for "${col}", which this list orders by`)
+    const pair = (a) => Array.isArray(a) && a.length === 2 && a.every(n => typeof n === 'number')
+    const bad = v !== null && (typeof v !== 'object' || Array.isArray(v) || !pair(v.at) || !pair(v.p))
+    if (bad) refuse(`holds no position for "${col}", which this list orders by distance`)
     if (v !== null && (v.at[0] !== centre.lat || v.at[1] !== centre.lng)) refuse(
       `was minted around ${v.at[0]}, ${v.at[1]} and this page is ordered around ` +
       `${centre.lat}, ${centre.lng} — a distance order resumes only from its own center. ` +
@@ -1614,15 +1630,17 @@ export function normalizeOrderBy(orderBy) {
         return true
       })
       .map(([col, dir]) => {
-        const d = (typeof dir === 'object' ? dir.dir : dir).toUpperCase()
         // A row with no location is at no distance, so it sorts after every row
         // that has one whichever way the ordering runs — and `nulls` is what
-        // both the ORDER BY and the cursor's comparison read.
+        // both the ORDER BY and the cursor's comparison read. Asked FIRST: a
+        // near order states no direction of its own, so reading `dir.dir` up
+        // here throws on the ordinary spelling.
         if (dir !== null && typeof dir === 'object' && dir.near != null) {
           const centre = centreOf(dir.near)
           if (!centre) throw new Error(`orderBy ${col}.near needs a numeric lat and lng`)
-          return { col, dir: dir.dir ? d : 'ASC', nulls: 'LAST', near: centre }
+          return { col, dir: String(dir.dir ?? 'asc').toUpperCase(), nulls: 'LAST', near: centre }
         }
+        const d = (typeof dir === 'object' ? dir.dir : dir).toUpperCase()
         return { col, dir: d, nulls: nullsPosition(dir, d) }
       })
   )
@@ -1702,6 +1720,13 @@ export function buildCursorWhere(fields, cursorValues, params, columnMap = null)
     ? haversineSql(quote(f.latCol), quote(f.lngCol), f.near, params)
     : quote(f.col)
 
+  // The cursor's own position, as the SAME expression over the point it is
+  // carrying — so `=` on the row that minted it is exactly true.
+  const cursorExpr = (f) => {
+    const [lat, lng] = cursorValues[f.col].p
+    return haversineSql({ sql: '?', param: lat }, { sql: '?', param: lng }, f.near, params)
+  }
+
   // *This row has no value on this field.* For a distance that is the POINT
   // being absent, asked of the generated column so the test costs no binds —
   // the expression would be NULL for the same rows and three params dearer.
@@ -1714,8 +1739,9 @@ export function buildCursorWhere(fields, cursorValues, params, columnMap = null)
 
   /** The row is tied with the cursor on this field. */
   const equal = (f) => {
-    const v = f.near ? cursorValues[f.col]?.d ?? null : cursorValues[f.col]
+    const v = cursorValues[f.col]
     if (f.nullable && (v === null || v === undefined)) return isNull(f)
+    if (f.near) return `${expr(f)} = ${cursorExpr(f)}`
     const e = expr(f)
     params.push(v)
     return `${e} = ?`
@@ -1732,9 +1758,16 @@ export function buildCursorWhere(fields, cursorValues, params, columnMap = null)
    */
   const after = (f) => {
     const { col, dir } = f
-    const v = f.near ? cursorValues[col]?.d ?? null : cursorValues[col]
+    const v = cursorValues[col]
+    const op = dir === 'ASC' ? '>' : '<'
+    const compare = () => {
+      if (f.near) return `${expr(f)} ${op} ${cursorExpr(f)}`
+      const e = expr(f)
+      params.push(v)
+      return `${e} ${op} ?`
+    }
 
-    if (!f.nullable) { const e = expr(f); params.push(v); return `${e} ${dir === 'ASC' ? '>' : '<'} ?` }
+    if (!f.nullable) return compare()
 
     const nulls = nullsOf(f)
     // Sitting ON a null: everything non-null follows it, but only where the
@@ -1742,9 +1775,7 @@ export function buildCursorWhere(fields, cursorValues, params, columnMap = null)
     if (v === null || v === undefined)
       return nulls === 'LAST' ? null : `${quote(f.near ? f.latCol : col)} IS NOT NULL`
 
-    const e = expr(f)
-    params.push(v)
-    const cmp = `${e} ${dir === 'ASC' ? '>' : '<'} ?`
+    const cmp = compare()
     // The nulls sort after every value, so they are still to come.
     return nulls === 'LAST' ? `(${cmp} OR ${isNull(f)})` : cmp
   }
@@ -1774,14 +1805,41 @@ export function buildCursorWhere(fields, cursorValues, params, columnMap = null)
 
 // Extract cursor values from a row given the orderBy fields
 /**
+ * The cursor fields → the `ORDER BY` the keyset scan walks.
+ *
+ * Here rather than inline in `findManyCursor` because it is the same list
+ * `buildCursorWhere` compares against, and the two disagreeing is the failure
+ * that loses rows: emitted as `"site" ASC`, a distance key sorted the JSON
+ * DOCUMENT as text while the cursor compared a distance, so every page was a
+ * different arrangement of the same rows with a 200.
+ *
+ * Binds land in the caller's `params`, so this is called at the point the
+ * `ORDER BY` is appended — after the WHERE's own binds and before the limit.
+ */
+export function cursorOrderSql(fields, params) {
+  return fields.map((f) => {
+    const implicit = f.dir === 'DESC' ? 'LAST' : 'FIRST'
+    const nulls    = f.nulls && f.nulls !== implicit ? ` NULLS ${f.nulls}` : ''
+    const col = f.near
+      ? haversineSql(`"${f.latCol}"`, `"${f.lngCol}"`, f.near, params)
+      : `"${f.col}"`
+    return `${col} ${f.dir}${nulls}`
+  }).join(', ')
+}
+
+/**
  * The row's position in this ordering, as the next page will compare against it.
  *
  * Every ordinary sort key is a column and is read straight off the row. A
- * distance is not: it is computed here with the SAME kit function the SQL's
- * haversine agrees with, and it carries the CENTRE it was measured from, so a
- * page minted around one point cannot be resumed around another (`FJS-D324`).
- * That is also `FJS-D320` being consistent — the distance is derived on this
- * side rather than returned as a column.
+ * distance is not — and what is carried is the POINT rather than the distance,
+ * which is what makes the comparison exact: the next page measures the cursor's
+ * point with the same expression it measures every row with, where a number
+ * computed on this side would differ from SQLite's in the last bits and serve
+ * a row twice or lose it.
+ *
+ * The CENTRE rides along, because a distance order only means anything relative
+ * to one and a caller who moved the map between pages is resuming into an
+ * ordering that never existed (`FJS-D324`).
  */
 export function extractCursorValues(row, fields) {
   const values = {}
@@ -1789,7 +1847,7 @@ export function extractCursorValues(row, fields) {
     if (!f.near) { values[f.col] = row[f.col]; continue }
     const p = row[f.col]
     values[f.col] = isPoint(p)
-      ? { d: distance(p, f.near), at: [f.near.lat, f.near.lng] }
+      ? { at: [f.near.lat, f.near.lng], p: [Number(p.lat ?? p.latitude), Number(p.lng ?? p.longitude ?? p.lon)] }
       : null
   }
   return values

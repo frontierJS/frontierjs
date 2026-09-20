@@ -14,11 +14,16 @@ owned, so the gap is written down rather than left to be rediscovered.
 would let junction and orion share litestone's types, so each declares the shape it
 holds. The count is here because it is the only place that cost is visible.
 
-Seams: **85**. With a stated owner: **67**. Stated and missing: **0**.
+Seams: **87**. With a stated owner: **87**. Stated and missing: **0**.
 
-**Every callable seam names an owner.** The 18 without one are not callables — a `$` on
-a wire, a schema keyword, a context property, a header. No line anywhere declares `x-version`,
-so *which file owns it* is the wrong question and an empty cell is the answer, not a gap.
+**Every seam names an owner.** A callable is graded by where it is DECLARED; a key — a `$` on a
+wire, a schema keyword, a header — has no declaration anywhere, so its owner is where it is
+MINTED and the question asked of that file is whether it contains the string at all. That is a
+weaker claim, and it is the one a file can answer.
+
+**10 of those checks are marked weak** and the mark is the point: asking whether
+junction contains the string `log` proves nothing, where `x-fjs-build` is nearly a proof. A row
+that claimed the strong check while holding the weak one would be worse than no row.
 
 ## Most restated
 
@@ -44,7 +49,8 @@ so *which file owns it* is the wrong question and an empty cell is the answer, n
 | `withLitestoneDb(db)` | `packages/junction/src/core/litestone.ts` | yes | 1 |
 | `gateAuth()` | `packages/junction/src/core/litestone.ts` | yes | — |
 | `validateInput(type)` | `packages/junction/src/core/litestone.ts` | yes | — |
-| `needsBackfill` | `packages/cli/core/backfills.js` | not a callable | — |
+| `customMethodGrade(method, declared, levels)` | `packages/junction/src/core/litestone.ts` | yes | — |
+| `needsBackfill` | `packages/cli/core/backfills.js` | mentioned | — |
 | `sessionGateLevel(user)` | `packages/junction/src/core/litestone.ts` | yes | — |
 | `toDataPrincipal(user)` | `packages/junction/src/core/litestone.ts` | yes | — |
 | `resolveTenancy(schema)` / `registry.tenantFor({host, headers, principal})` | `packages/litestone/src/core/tenancy.js` | yes | — |
@@ -60,45 +66,46 @@ so *which file owns it* is the wrong question and an empty cell is the answer, n
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
 | `generateJsonSchema(schema)` | `packages/litestone/src/jsonschema.js` | yes | — |
-| `ctx.system` | `packages/junction/src/core/context.ts` | not a callable | — |
-| `ctx.transients` | **none** | — | — |
-| `ServiceTypes` | **none** | — | — |
-| `@label` | **none** | — | — |
+| `ctx.system` | `packages/junction/src/core/context.ts` | mentions `system` — weak | — |
+| `ctx.transients` | `packages/junction/src/core/litestone.ts` | mentioned | — |
+| `ServiceTypes` | `packages/litestone/src/tools/typegen.js` | mentioned | — |
+| `@label` | `packages/litestone/src/jsonschema.js` | mentioned | — |
 | `buildFieldRules()` / `validateAgainstFields()` / `coerceToSchema()` / `normalizeBlanks()` | `packages/sierra/src/junction/field-rules.js` | yes | — |
 | `controlFor(rule, {field, model})` / `formFieldList(fields, {only, except, model})` | `packages/sierra/src/junction/field-rules.js` | yes | — |
 | `labelFieldInfo(fields, fallback, declared)` | `packages/sierra/src/junction/field-rules.js` | yes | — |
-| `x-values` | **none** | — | — |
+| `x-values` | `packages/litestone/src/jsonschema.js` | mentioned | — |
 | `resource.options(field)` | `packages/sierra/src/junction/resource.js` | yes | 4 |
 | `toFieldErrors(err)` | `packages/sierra/src/junction/field-rules.js` | yes | — |
-| `$context.form` | **none** | — | — |
+| `$context.form` | `packages/ui/components/forms/Form.mesa` | mentions `form` — weak | — |
 | `buildRelations()` / `buildGate()` / `canAtLevel()` | `packages/sierra/src/junction/field-rules.js` | yes | — |
-| `x-version` | **none** | — | — |
-| `retryable` | **none** | — | — |
+| `x-version` | `packages/litestone/src/jsonschema.js` | mentioned | — |
+| `retryable` | `packages/junction/src/core/errors.ts` | mentioned | — |
 | `buildTransitions()` / `transitionsAt()` | `packages/sierra/src/junction/field-rules.js` | yes | — |
 | `modelNameFor()` / `schemaFor()` | `packages/sierra/src/junction/schema-registry.js` | yes | — |
 | `authUserModel(db)` / `authMachineryModels(db)` | `packages/auth/schema.ts` | yes | — |
-| `extend model X { … }` | **none** | — | — |
-| `attachments` | **none** | — | — |
+| `extend model X { … }` | `packages/litestone/src/core/parser.js` | mentions `extend` — weak | — |
+| `attachments` | `packages/junction/src/core/attachments.ts` | mentioned | — |
 ## Machine ↔ control plane
 
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
 | `signRequest()` / `verifyRequest()` | `packages/toolbelt/src/signature/signature.js` | yes | 1 |
 | `requestMeta().traceparent` / `.tracestate` | `packages/junction/src/core/context.ts` | yes | 1 |
-| `ctx.$raw.rawBody` | **none** | — | — |
+| `ctx.$raw.rawBody` | `packages/junction/src/transport/http.ts` | mentioned | — |
 ## API internals
 
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
-| `$` / `enterCall(ctx, fn)` / `currentCall()` | `packages/junction/src/core/context.ts` | not a callable | — |
-| `$.config` / `app.configFor(tenant)` | `packages/junction/src/core/config-scope.ts` | not a callable | — |
-| `$.log` | **none** | — | — |
+| `$` / `enterCall(ctx, fn)` / `currentCall()` | `packages/junction/src/core/context.ts` | mentions `$` — weak | — |
+| `$.config` / `app.configFor(tenant)` | `packages/junction/src/core/config-scope.ts` | mentions `config` — weak | — |
+| `$.log` | `packages/junction/src/core/context.ts` | mentions `log` — weak | — |
 | `bridge.toContext()` / `toResponse()` | `packages/junction/src/transport/bridge.ts` | yes | 2 |
 | `toFrameworkError()` | `packages/junction/src/core/errors.ts` | yes | — |
 | `wrapResult(raw, service, method)` / `unwrapResult()` / `isServiceResult()` | `packages/junction/src/core/envelope.ts` | yes | — |
 | `enterRequest(src, fn)` / `reenterAs(user, fn)` | `packages/junction/src/core/context.ts` | yes | — |
-| `ctx.directives` | **none** | — | — |
+| `ctx.directives` | `packages/junction/src/transport/bridge.ts` | mentioned | — |
 | `collectCustomMethods(def, name, methods?)` | `packages/junction/src/core/service.ts` | yes | — |
+| `CALL_OPTIONS_AT` | `packages/junction/src/core/app.ts` | mentioned | — |
 | `svc.pipelines(appHooks)` | `packages/junction/src/core/service.ts` | yes | — |
 | `svc.describe()` | `packages/junction/src/core/service.ts` | yes | 10 |
 | `isBuiltService(v)` / `Symbol.for('junction.service')` | `packages/junction/src/core/service.ts` | yes | — |
@@ -119,25 +126,25 @@ so *which file owns it* is the wrong question and an empty cell is the answer, n
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
 | `client.setCallHeader(name, value)` | `packages/junction/src/client/index.ts` | yes | — |
-| `x-fjs-build` | **none** | — | — |
+| `x-fjs-build` | `packages/junction/src/core/build-id.ts` | mentioned | — |
 | `wsSend()` / `flushSendQueue()` | `packages/junction/src/transport/send-queue.ts` | yes | 2 |
 | `publish()` | `packages/junction/src/transport/channels.ts` | yes | 2 |
 | `createJunctionClient()` / `client.resource(name)` | `packages/junction/src/client/index.ts` | yes | — |
 | `resource.save(data, { mode })` | `packages/sierra/src/junction/resource.js` | yes | 4 |
-| `client.auth.*` | **none** | — | — |
-| `signIn` | **none** | — | — |
+| `client.auth.*` | `packages/junction/src/client/index.ts` | mentions `auth` — weak | — |
+| `signIn` | `packages/junction/src/client/index.ts` | mentioned | — |
 | `client.auth.providers()` | `packages/junction/src/client/index.ts` | yes | 1 |
-| `tokenStorage` | **none** | — | — |
-| `client.nodes` / `resource.record(id)` | `packages/junction/src/client/nodes.ts` | not a callable | — |
+| `tokenStorage` | `packages/junction/src/client/index.ts` | mentioned | — |
+| `client.nodes` / `resource.record(id)` | `packages/junction/src/client/nodes.ts` | mentions `nodes` — weak | — |
 | `matchesQuery(fields, record, query)` | `packages/toolbelt/src/match/match.js` | yes | — |
-| `$after` / `endCursor` / `resource.more()` | **none** | — | — |
+| `$after` / `endCursor` / `resource.more()` | `packages/toolbelt/src/directives/directives.js` | mentioned | — |
 | `comparatorFor(orderBy)` | `packages/junction/src/core/query-values.ts` | yes | 1 |
 ## UI
 
 | Seam | Owner | Declared in | Other sites |
 | --- | --- | --- | --- |
-| `*.mount.js` | `packages/sierra/src/scanner/walk.js` | not a callable | — |
-| `page.query` / `page.directives` | **none** | — | — |
+| `*.mount.js` | `packages/sierra/src/scanner/walk.js` | mentions `mount` — weak | — |
+| `page.query` / `page.directives` | `packages/sierra/src/router/page-fields.js` | mentions `query` — weak | — |
 | `watchProxy()` / `createSignal()` / `createRoot(fn)` | `packages/mesa/src/runtime.js` | yes | — |
 | `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | yes | 5 |
 | `renderComponent(src, opts)` | `packages/mesa/src/render-component.js` | yes | — |

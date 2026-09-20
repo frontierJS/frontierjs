@@ -465,6 +465,80 @@ export class BasecampSeeder extends Seeder {
           data: { ruleId: rules[0].id, channelId: channels[0].id },
         })
 
+        // The automation an operator actually wants, and the one this app runs:
+        // a failed release pages the workspace's ops channel. Same definition
+        // `api/test/automation.test.ts` drives end to end, so the seeded row and
+        // the tested one cannot drift into two different answers.
+        //
+        // Seeded ACTIVE, with `currentVersion` pointing at the version below —
+        // a draft flow renders an automations screen that looks like the feature
+        // was never installed, which is the state a seed exists to avoid. The
+        // write order is the model's own rule: `currentVersion` is not writable
+        // while a flow is active, so the version is stamped on the draft and the
+        // status moves after.
+        if (channels[0]) {
+          const flow = await sys.flow.create({
+            data: {
+              workspaceId: ws.id,
+              name:        'Page ops when a release fails',
+              description: 'Every finished release is an update to status; only a failed one pages.',
+              ownerId:     owner.id,
+            },
+          })
+          await sys.flowVersion.create({
+            data: {
+              flowId:   flow.id,
+              version:  1,
+              authorId: owner.id,
+              definition: {
+                name:  'Page ops when a release fails',
+                nodes: {
+                  t: { id: 't', type: 'trigger.model', config: {
+                    model: { type: 'literal', value: 'Deployment' },
+                    on:    { type: 'literal', value: ['update'] },
+                  } },
+                  page: { id: 'page', type: 'basecamp.page', config: {
+                    channelId: { type: 'literal', value: channels[0].id },
+                    title:     { type: 'template', parts: [
+                      { type: 'literal', value: 'Release failed: ' },
+                      { type: 'ref', path: '$.trigger.record.toImage' },
+                    ] },
+                    severity: { type: 'literal', value: 'critical' },
+                    dedupKey: { type: 'template', parts: [
+                      { type: 'literal', value: 'basecamp:deploy:' },
+                      { type: 'ref', path: '$.trigger.record.id' },
+                    ] },
+                  } },
+                },
+                edges: [{ id: 't-page', from: 't', to: 'page', condition: {
+                  type: 'fn', name: 'eq',
+                  args: [{ type: 'ref', path: '$.trigger.record.status' },
+                         { type: 'literal', value: 'failed' }],
+                } }],
+              },
+            },
+          })
+          await sys.flow.update({ where: { id: flow.id }, data: { currentVersion: 1 } })
+          await sys.flow.update({ where: { id: flow.id }, data: { status: 'active' } })
+        }
+
+        // The credential a flow's `http.request` node sends with. Named the
+        // SAME in every workspace on purpose: `FlowCredential.name` is
+        // `@unique`, and the tenancy block scopes it to `(workspaceId, name)`
+        // (`FJS-D310`) — so a seed that named it `crm-${index}` would pass
+        // whether or not that scoping survived, and this one does not.
+        await sys.flowCredential.create({
+          data: {
+            workspaceId: ws.id,
+            name:        'crm',
+            provider:    'example-crm',
+            address:     'https://crm.example.test/api',
+            auth:        'api_key',
+            header:      'X-Api-Key',
+            secret:      `seeded-not-a-real-key-${index}`,
+          },
+        })
+
         // API keys are not a Factory. Each one needs a REAL credential from
         // auth — the row is only the operational half, and a key pointing at no
         // credential is refused by apiKeyGuard as "no record in Basecamp",
@@ -908,6 +982,12 @@ if (import.meta.main) {
     // and left out here survives a --force, and the next run collides with a
     // row it cannot see. Six had already been left out this way.
     for (const model of [
+      // Orion's, children first. `wait` and `runStep` hang off `run`, `run` and
+      // `flowLayout` off `flow`, and `flowVersion` is what `flow.currentVersion`
+      // points at — so the flow goes last of the six. `flowCredential` and
+      // `kvEntry` stand alone.
+      'wait', 'runStep', 'run', 'flowLayout', 'flowVersion', 'flow',
+      'flowCredential', 'kvEntry',
       'jobRun', 'job', 'deploymentStep', 'deployment', 'appNetwork', 'appServer',
       'dashboardWidget', 'dashboard', 'recipeRun', 'recipe', 'cleanupRun', 'diskUsage',
       'domain', 'app', 'flagOverride', 'featureFlag', 'environment', 'project',

@@ -139,6 +139,16 @@ const _CARRIED = [
   // word. The pattern beside it is the enforcement; this is what picks a
   // control that knows the value is a number it may not treat as one.
   'x-big',
+  // `x-geo` is `@point(lat, lng)`: the two KEY NAMES the coordinate is stored
+  // under. Carried for `x-time`'s reason and it is the sharpest case after
+  // `x-big` — a point column is a `Json` column, and `Json` is the one thing
+  // the schema deliberately stops describing, so with nothing else on the rule
+  // a generated form offers a JSON document editor for a latitude and a
+  // longitude, which is the workaround the declaration exists to retire. The
+  // names travel rather than being assumed, because `@point(latitude,
+  // longitude)` is as ordinary as `@point(lat, lng)` and a control writing the
+  // other spelling writes a document the database's own CHECK refuses.
+  'x-geo',
 ]
 
 /**
@@ -446,7 +456,7 @@ export function defaultControlFor(rule) {
 /**
  * Which control this field gets.
  *
- *   { control: 'input'|'textarea'|'select'|'checkbox'|'picker'|'datetime'|'json'|null,
+ *   { control: 'input'|'textarea'|'select'|'checkbox'|'picker'|'datetime'|'geo'|'json'|null,
  *     type?, options?, model?, valueField?, relation?, reason? }
  *
  * `control: null` is an answer, not an omission — a read-only column and a type
@@ -533,6 +543,13 @@ function _builtinControl(rule) {
   // own answer to who may write. What the form holds until submit is the
   // browser `File` itself; nothing has to invent a pending state, and a form
   // abandoned half-filled uploads nothing at all.
+  // A point is a `Json` column and would otherwise reach `case null` below and
+  // be handed the document editor. Asked here, ahead of the type switch, for
+  // the same reason a `File` column is: the type is not what separates them.
+  if (rule['x-geo']) {
+    return { control: 'geo', latKey: rule['x-geo'].lat, lngKey: rule['x-geo'].lng }
+  }
+
   if (rule['x-litestone-file']) {
     return {
       control:  'file',
@@ -745,7 +762,7 @@ export function registeredDisplays() {
  * How this column's value is RENDERED.
  *
  *   { display: 'text'|'number'|'money'|'time'|'date'|'boolean'|'enum'|
- *              'relation'|'file'|'json'|'list'|'markdown'|null,
+ *              'relation'|'file'|'geo'|'json'|'list'|'markdown'|null,
  *     …whatever that renderer needs, reason? }
  *
  * `display: null` is an answer and not an omission, exactly as `controlFor`'s
@@ -821,6 +838,8 @@ function _builtinDisplay(rule) {
   // Before the Json branch, for the reason the control table has the same
   // ordering: a File column $refs FileRef, which derefs to an ordinary object,
   // so a document viewer would render a storage key, a bucket and a provider.
+  if (rule['x-geo']) return { display: 'geo', geo: rule['x-geo'] }
+
   if (rule['x-litestone-file']) return { display: 'file' }
 
   // The declaration decides, never the JS type. Both of these are integers.

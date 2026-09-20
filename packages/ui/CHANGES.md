@@ -1,5 +1,44 @@
 # Changes
 
+## 2026-09-20 — `GeoField`, and the half-coordinate it refuses
+
+The control a `@point` column gets: two number boxes that refuse ±90/±180, show the point's
+own value, and write the pair under the keys the model declared. **No map** (`FJS-D327`) — a
+map is a rendering library plus a tile VENDOR, which is a battery with tendrils and a vendor
+choice this repo does not make; an app that wants one registers its own control over the
+same `x-geo` and replaces this.
+
+**Half a coordinate is why this is a control and not an attribute on an input.** Two
+elements hold one value, so the moment somebody types a latitude and tabs past the other box
+there is text on screen that is not a value. Writing `{lat, lng: null}` makes a 400 out of it
+at submit, on the database's own CHECK; writing `null` throws away what they typed. The
+control hands back nothing, reports through `$context.form.reportInvalid` and names the two
+keys it needs — and RETRACTS when the pair is completed, which is the half that would
+otherwise turn the guard into a lock. Clearing BOTH boxes is not a refusal: a row with no
+location is ordinary and that is what clearing the field means.
+
+The drive asks the wiring end to end — `x-geo` → `geo` (Sierra's table) → `GeoField` (the
+dispatcher) — because a break in either link renders a JSON textarea over a coordinate and
+the form still looks fine.
+
+**And one stale step in the Json drive, found on the way.** The retraction assertions clicked
+into the textarea and pressed Backspace, where a click lands where the pointer is — in a
+pretty-printed document, the middle of a line — so it deleted a character out of
+`"keep": 1` and left the `%` exactly where it was: a still-broken box graded as a retraction
+that never happened. The caret is now placed the same way it is placed to TYPE the `%`, four
+lines above.
+
+## 2026-09-20 — § What bites here gains two headings over the form bullets
+
+`### Controls — the table, and contributing one` and `### Validation, and when a message may
+appear`. No sentence changed; the section is 34 KB under one heading and these are two subjects a
+reader arrives looking for by name.
+
+**Measured rather than felt.** `fli ws:ask "how do I contribute a control to the ui kit"` answered
+with the component listing under `## Layout`, because a listing mentions more of the question's
+words than one bullet does and nothing in the file was named after the task. With the heading it
+answers with the control table and `registerControl`.
+
 ## 2026-09-20 — `DatePicker` reads the chip derivation by its new name
 
 [`FJS-1192`](../../ISSUES.md#fjs-1192) renamed `@frontierjs/css`'s derived

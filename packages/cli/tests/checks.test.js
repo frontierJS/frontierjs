@@ -10,6 +10,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs'
 import { join }   from 'path'
 import { tmpdir } from 'os'
 
+import { keyLiteral, weakLiteral } from '../core/seams.js'
 import { RULES, runChecks, findApps, applyFixes, verdictOf,
          BASELINE_FILE, readBaseline, gradeBaseline, writeBaseline } from '../core/checks.js'
 
@@ -3283,6 +3284,39 @@ describe('seam-owner', () => {
     // deleting the bullet the fastest way to green.
     const root = tree('seam-unowned', SEAMS('- `$tapEvents(fn)` — every write, announced'))
     expect(only(root, 'seam-owner', { scope: 'repo' }).findings).toEqual([])
+  })
+
+  test('a key is graded by MENTION — it has no declaration to point at', () => {
+    const root = tree('seam-key', {
+      ...SEAMS('- `x-fjs-build` — which build this is — `junction/src/core/build-id.ts`'),
+      'packages/junction/src/core/build-id.ts': 'export const H = "x-fjs-build"\n',
+    })
+    expect(only(root, 'seam-owner', { scope: 'repo' }).findings).toEqual([])
+  })
+
+  test('a key its stated owner never mentions fails', () => {
+    const root = tree('seam-key-gone', {
+      ...SEAMS('- `x-fjs-build` — which build this is — `junction/src/core/build-id.ts`'),
+      'packages/junction/src/core/build-id.ts': 'export const H = "x-other-header"\n',
+    })
+    const { findings } = only(root, 'seam-owner', { scope: 'repo' })
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/never mentions/)
+  })
+
+  test('a key whose literal is an extension asks about the wrong string', () => {
+    // `*.mount.js` is about `mount`. Taking the last dotted segment asked
+    // whether the owner contains `js`, which every JavaScript file does.
+    expect(keyLiteral('*.mount.js')).toBe('mount')
+    expect(keyLiteral('ctx.$raw.rawBody')).toBe('rawBody')
+    expect(keyLiteral('client.auth.*')).toBe('auth')
+  })
+
+  test('a weak check is marked weak, not passed off as a strong one', () => {
+    expect(weakLiteral('log')).toBe(true)
+    expect(weakLiteral('$')).toBe(true)
+    expect(weakLiteral('x-fjs-build')).toBe(false)
+    expect(weakLiteral('transients')).toBe(false)
   })
 
   test('no skill is a skip, not a pass', () => {

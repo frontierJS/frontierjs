@@ -160,6 +160,30 @@ Everything else on a point field is refused by name: `equals`, `contains` and
 `site: 'x'` says the same, and `orderBy: { site: 'asc' }` names the shape that
 works. `where: { site: null }` is ordinary and finds the rows with no location.
 
+## Paging a nearest-first list
+
+A nearest-first list is the screen that scrolls, so the ordering is only worth
+having if the cursor walks it. It does — `findManyCursor` pages a distance
+order, and junction's `find` mints the first window's edge off an ordinary page
+the same way it does for any other sort.
+
+**The cursor carries the point, not the distance** (`FJS-D324`). That is what
+makes the comparison exact: SQLite's `power`, `asin` and `radians` are a
+different libm associating in a different order from JavaScript's, so a distance
+computed on this side differs from the column's in the last bits — and one ulp
+is enough to serve the cursor's own row a second time or lose the next one. The
+next page measures the carried point with the **same expression** it measures
+every row with, so the tie is true by construction.
+
+**It carries the center too, and a page resumes only from its own.** A caller
+who moved the map between pages is resuming into an ordering that never existed,
+and that is refused by name rather than answered.
+
+**A row with no location sorts last, both directions.** The distance expression
+is `NULL` for it and SQLite sorts a `NULL` first ascending, so without an
+explicit `NULLS LAST` the nearest place to London is the row with no coordinate
+at all.
+
 ## Off a query string
 
 A proximity search travels as the bracket notation
@@ -179,6 +203,23 @@ model having the last word, exactly as the kit's own contract says it should.
 An EMPTY coordinate is not zero: `?site[near][lat]=` is refused, because
 `Number('')` is `0` and the alternative is a silent search of the Gulf of
 Guinea.
+
+## On a screen
+
+The declaration reaches a form with nothing written anywhere: `x-geo` carries
+the two key names, sierra's `controlFor` answers `geo`, and `@frontierjs/ui`
+binds that name to `GeoField` — two number boxes that refuse ±90/±180 and write
+the pair under the keys the model declared.
+
+**No map** (`FJS-D327`). A map is a rendering library plus a tile VENDOR, which
+is a vendor choice this repo does not make; an app that wants one registers its
+own control over the same `x-geo`, which replaces the kit's.
+
+**Half a coordinate is the case the control exists for.** Two elements hold one
+value, so a latitude typed and a longitude tabbed past is text on screen that is
+not a value — and `{ lat, lng: null }` is exactly what the CHECK refuses. The
+control hands back nothing and names the two keys it needs; clearing BOTH boxes
+is a row with no location, which is ordinary.
 
 ## The arithmetic
 

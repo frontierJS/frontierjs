@@ -387,6 +387,14 @@ src/
   (`resource.formFields()`, `resource.options(fk)`) rather than importing this
   package, and `@frontierjs/ui`'s own form suite imports the real table by
   relative path instead of deciding for itself what a `Float` is.
+- **Three columns are decided on a KEYWORD and cannot be decided on the type**,
+  and they sit above the type switch in `_builtinControl` for that reason: a
+  `File` column, a `@values` binding, and a `@point`. A point and an ordinary
+  `Json` column are both `{}` in the schema — no `type` at all — so a table
+  branching on the type gives a coordinate the document editor, which is the
+  workaround `@point` exists to retire. `x-geo` also carries the KEY NAMES;
+  a control assuming `lat`/`lng` over a model that declared
+  `latitude`/`longitude` writes a document the database's own CHECK refuses.
 - **A write drops the columns the server owns, and `@version` is the one that
   must survive it.** `stripReadOnly(rules, data, { keep })` runs FIRST in
   `_call`'s create/patch pipeline — before coerce, blank and validate, so nothing

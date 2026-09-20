@@ -1156,6 +1156,26 @@ function applyValidators(schema, attributes) {
         schema.pattern = '^-?\\d+$'
         schema['x-big'] = true
         break
+      // A `@point` column is a `Json` column, and `Json` is the one thing this
+      // schema deliberately stops describing — so without this the control
+      // table offers a JSON document editor for a coordinate, which is the
+      // workaround the whole feature exists to retire.
+      //
+      // The two KEY NAMES travel, because they are the model's: `@point(lat,
+      // lng)` and `@point(latitude, longitude)` are both ordinary, and a
+      // control that assumed one writes a document the CHECK refuses. An
+      // affordance like `x-gate` and `x-values` — the range is enforced at the
+      // Data boundary whatever a form does with it (Invariant 6).
+      //
+      // Emitted HERE, beside `x-money` and `x-time`, because a nullable column
+      // is `anyOf: [<the type>, {type: null}]` and a consumer reads the
+      // non-null branch: a keyword on the outer object is carried for a
+      // required column and silently absent for an optional one, which is most
+      // of them.
+      case 'point':
+        schema['x-geo'] = { lat: attr.lat, lng: attr.lng }
+        break
+
       case 'money':
         // Three shapes and a reader has to tell them apart: a stated currency,
         // one held per row in a sibling column, and the app's default. The

@@ -1,5 +1,79 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-20 — question scaffolding stops scoring
+
+The first phrasing tried outside the graded set — *why is there no formatter* — tied four rulings and
+never surfaced `FJS-D32`, whose title is the only one containing the word *formatter*. `no` and
+`there` were scoring like real words.
+
+`core/intent.js` strips filler already and its set is deliberately small, because that corpus is a
+customer describing a feature and the noise there is `every` and `per`. This corpus is a contributor
+asking a question, where what survives the trigger strip is `is`, `there`, `no`, `does`. **Two sets
+because there are two corpora**, not because one was copied. `is there`, `do i` and `can i` join the
+trigger strip.
+
+No movement on the graded set, which is the point: a fix that only helps the questions it was written
+for is a fix to the questions.
+
+## 2026-09-20 — recipe went 2/4 to 4/4 on four headings, and no router change
+
+The graded set's two misses were both `recipe` — *how do I declare a job*, *how do I contribute a
+control* — and the tuning had been stopped there, because the last three scorer changes each traded
+one question for another. The reason was measurable and it was not in this package.
+
+**`recipe` works exactly where a package map has a heading named after the task.** litestone has 54
+headings and answers *how do I make a computed field* out of `## Computed fields` in 210 tokens.
+`caravan`, `ui`, `toolbelt`, `orion` and `jetty` have three each — `Layout`, `What bites here`,
+`Proving a change` — so every fact in them sits in one block named after nothing, and a component
+listing under `## Layout` mentions more of a question's words than the one bullet that answers it.
+
+Four headings were added, two to each of `caravan` and `ui`, over subjects those sections already
+turn between. No sentence moved and nothing here changed: **2/4 → 4/4, 22/24 → 24/24 on the set.**
+Median tokens-to-fact 60 → 63.
+
+**A heading is an index entry**, which is the finding rather than the fix. The other five intents
+resolve against a register built for them — `DECISIONS.md`, `ISSUES.md`, `DRIVES.md`,
+`seams.snapshot.md` — and *how do I* has none, so the package map is the index and its headings are
+the keys. `IDEAS/intent-recognizer.md` records the same shape for a screen.
+
+**What this does not show is generalization.** The headings were chosen knowing the two questions.
+They are defensible as structure — those sections do turn where the headings now sit — but the set
+is 24 questions that the router and now the corpus have both been fitted against. The baseline in
+`tests/ask.test.js` ratchets at 24 and the next honest number comes from questions written cold.
+
+## 2026-09-20 — every seam names an owner, and a key is graded by where it is MINTED
+
+`seams.snapshot.md` shipped with 26 of 85 owners and the file said the rest were not a gap: *no line
+anywhere declares `x-version`, so which file owns it is the wrong question*. **That was wrong about
+the question.** A key has no declaration, but it has a minter — one place that writes it — and a
+producer is exactly what Invariant 4 means by one owner per translation. It is the ownership least
+visible to anybody grepping, because there is nothing to grep for.
+
+All 87 seams now name one. Twenty-six were already written, forty-one callables were filled from the
+tree, and the last eighteen are keys resolved to where each is minted: `x-version`, `x-values` and
+`@label` to `litestone/src/jsonschema.js`, `retryable` to junction's `toFrameworkError`,
+`x-fjs-build` to `core/build-id.ts`, `$after` to the one row in `toolbelt/src/directives`,
+`page.query` to sierra's `router/page-fields.js`.
+
+**One closed itself.** `$context.form`'s bullet had named `ui/components/forms/Form.mesa` since it
+was written, and the path pattern only admitted `.js` and `.ts` — Invariant 18 makes a `.mesa` source
+in this workspace, so the owner had been there all along and was refused by a regex.
+
+**`seam-owner` grades a key or the eighteen would have been unfalsifiable**, which is the thing this
+module exists to prevent. It asks the only question a file can answer about a string that is never
+declared: does the owner contain it. The receiver is dropped first — `ctx.`, `$.`, `client.` and
+`page.` are where a key is READ — and an extension segment with it, since `*.mount.js` is about
+`mount` and asking for `js` asks every JavaScript file.
+
+**Ten of those checks are marked weak and the mark is the point.** Asking whether junction contains
+the string `log` proves nothing; `x-fjs-build` is nearly a proof. `invariants.snapshot.md` already
+settled how to write that down — a partial enforcer names its half, because a row claiming the whole
+check while holding a corner of it is the most misleading thing the file can carry.
+
+`client.auth.*` reduces to `*`, a quantifier with nothing to repeat, and threw the moment that seam
+was given an owner — a key had never reached the re-export read before. Escaping is one helper now
+rather than a `$` special case.
+
 ## 2026-09-20 — `fli ws:ask` answers with a citation and says what the answer cost
 
 `PHILOSOPHY.md` §III claims you should know where something lives before you go looking for it. That
@@ -19,11 +93,24 @@ grading is a string compare with no judge model, which is the only way the score
 thing in six months. It also forces the useful shape: *where does this live* is answerable and
 *summarize this* is not.
 
-**Two byte counts, and only one of them is the metric.** `read` is what came back, which is what
-lands in a context window or in a person's head; `scanned` is what had to be opened to find it, which
-is what says whether a small model could have taken the same walk. Measured over the graded set:
-**median 42 tokens read, 24 of 24 correct, 14 MB scanned.** Per intent it runs 6 tok/question for a
-recipe and 49 for a locate.
+**Two byte counts, and only one of them is the metric.** `read` is the SPAN a reader must take in to
+have the answer; `scanned` is what had to be opened to find it, which is what says whether a small
+model could have taken the same walk. Measured over the graded set: **median 60 tokens read, 22 of
+24 carrying the right payload, 24 of 24 citing the right document, 14 MB scanned.**
+
+**`read` counts the payload and never the pointer, and the first version of it did not.** Counting
+what came back made `recipe` the cheapest intent in the table at six tokens — for a citation to
+`packages/litestone/CLAUDE.md`, which is 39,000 tokens to then read. A metric that rewards the
+shallowest possible answer measures nothing, and `ruling` and `status` had the same shape one size
+down, citing a heading line and a truncated title. So a row carries a `payload` — the ruling's body,
+the issue's row, the paragraph that answers — and `line` is only how it prints. The honest numbers
+are higher and they are the first ones that mean what they say: owner 25 tok, blast 5, locate 69,
+status 85, recipe 229, ruling 731.
+
+**A citation pins the document and, for a recipe, not the answer** — the router was 4/4 on the file
+while handing back a component listing for *how do I contribute a control*. So a question may carry
+`contains`, a phrase read out of the tree that the payload must hold. It can only ever make the
+score worse, which is the direction an assertion may be added in without tainting the key.
 
 **The key is written against the tree, in its own file, and it was not touched.** `core/questions.js`
 holds twenty-four questions whose citations were resolved by reading the artefacts before the
@@ -44,10 +131,19 @@ junction's devtools plugin, because `devtools({ port, auth })` is a seam. And tw
 answer are not ambiguous — a drive has a row in each of `DRIVES.md`'s two tables and they tied with
 each other.
 
-**One of those was a finding about the corpus rather than the code.** `DRIVES.md`'s second table —
+**Two of those were findings about the corpus rather than the code.** `DRIVES.md`'s second table —
 what a CHANGE needs, in the words somebody would use — is the half written for exactly this
 question, and the walk was reading only the first. No Covers cell contains the phrase *pay run*; the
-mapping row does.
+mapping row does. And a package map is not paragraphs: `packages/ui/CLAUDE.md` § What bites here is
+34 KB with TWO blank lines in it, so the unit these documents are written in is the top-level bullet
+— *bold the claim, then say what it cost* — one fact each.
+
+**`recipe` is 2 of 4 and the tuning stopped there on purpose.** The last three scorer changes each
+traded one question for another, which is overfitting to twenty-four questions rather than improving
+a lookup. The other five intents ask *which row* and have exactly one right one; *how do I* does not,
+because no register holds how to do things — it is prose in a package map, and several blocks partly
+answer. That is the same gap `IDEAS/intent-recognizer.md` records for a screen: an index that does
+not exist. The number is a baseline in `tests/ask.test.js` that may rise and may never fall.
 
 ## 2026-09-20 — `fli ws:seams` resolves the bridge index against the tree
 

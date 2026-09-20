@@ -1,5 +1,40 @@
 # Changes — Basecamp
 
+## 2026-09-20 — the orion install is finished, and it found three framework defects
+
+The paragraph at the end of the entry below said the install was not finished, which is a to-do in a
+history file and is how it sat: [`FJS-1197`](../../ISSUES.md#fjs-1197) is the row it should have been.
+
+**The seed writes the automation this app actually runs.** Every workspace gets the page-ops flow —
+the same definition `api/test/automation.test.ts` drives end to end, so the seeded row and the tested
+one cannot drift into two answers — seeded ACTIVE, because a draft renders an automations screen that
+looks like the feature was never installed. Each workspace also gets a `FlowCredential` named `crm`,
+the SAME name in both: `name` is `@unique` and the tenancy block scopes it to `(workspaceId, name)`
+([`FJS-D310`](../../DECISIONS.md#fjs-d310)), so a seed naming it `crm-1` and `crm-2` would pass whether
+or not that scoping survived, and this one does not. Orion's eight models joined the `--force` wipe
+list, children first.
+
+**What is NOT seeded says why**, which is what `db/test/seed.test.ts` asks of every table: `run`,
+`run_step`, `wait` and `kv_entry` are engine output and a seed run starts no process — the line
+`alert_event` and `notification` already sit on — and `flow_layout` is where the builder drew each
+node, with no builder yet ([`FJS-1198`](../../ISSUES.md#fjs-1198)). That one stops being exempt the
+day something can write one, and the test's reverse control is what will say so.
+
+**Four schema-derived checks were red and three of them were the framework's**, not this app's.
+`verifyTenantIsolation` was grading nothing for fourteen of this app's own models —
+`Invitation`, `Secret`, `ApiKey`, `Server`, `Project`, `Environment`, `App`, `Domain`, `Deployment`
+and more — because orion's imported `Flow` carries a bare `workspaceId` and is declared at
+`schema.lite:531`, ahead of `WorkspaceMember` at `:643`, so the tenant values were fabricated and
+satisfied no foreign key. Closed as [`FJS-1199`](../../ISSUES.md#fjs-1199),
+[`FJS-1200`](../../ISSUES.md#fjs-1200) and [`FJS-1201`](../../ISSUES.md#fjs-1201). **This is the app
+earning its keep**: none of the three is visible from a schema that imports no fragment.
+
+`db/schema.d.ts` is regenerated, and the table count moved 51 → 59 with the reason beside it in the
+same running list the other eight sit in; the test's title had drifted to 50 before orion and is
+corrected. 406 pass / 6 fail → **412 / 0**. Three junction snapshots remain, blocked on a
+`db:reset` the developer has to consent to.
+
+
 ## 2026-09-16 — orion is installed, and its uniques are per workspace
 
 `@frontierjs/orion` is wired in: `db/schema.lite` imports `orion.lite` and extends `Flow`,

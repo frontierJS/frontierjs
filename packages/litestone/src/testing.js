@@ -2773,20 +2773,14 @@ async function _tenantValues(schema, chain) {
     _isValidatable(m, schema) && _tenantColumn(schema, m) === t.column)
   if (!carriers.length) return [null, null]
 
-  const relOn = (m) => m.fields.find(f =>
+  // The carrier is whichever model is declared first, and that is allowed to be
+  // a fragment's bare column: the value it yields is made to satisfy the schema
+  // downstream, where the row is seeded, rather than chosen to satisfy it here
+  // (`FJS-1199`).
+  const carrier = carriers[0]
+  const rel     = carrier.fields.find(f =>
     f.type.kind === 'relation' && !f.type.array &&
     f.attributes.some(a => a.kind === 'relation' && a.fields?.[0] === t.column))
-
-  // The values are the whole schema's, so the carrier that decides them must be
-  // one whose column is a FOREIGN KEY wherever any carrier's is: a synthetic
-  // string satisfies no constraint, and every scoped model with a real key then
-  // fails to seed with `FOREIGN KEY constraint failed` — which reports as a
-  // model nothing was crossed on rather than as a wrong answer. Reaching for
-  // the first carrier made that depend on model ORDER, so a package fragment
-  // declaring a bare tenant column ahead of the app's own models took the
-  // decision (`FJS-1199`).
-  const carrier = carriers.find(relOn) ?? carriers[0]
-  const rel     = relOn(carrier)
 
   if (rel) {
     const pk  = rel.attributes.find(a => a.kind === 'relation')?.references?.[0]
@@ -2867,6 +2861,12 @@ async function _seedForTenant(schema, modelName, tenant, chain, parents = new Ma
     }
     overrides[fk] = row[rel.references?.[0] ?? _idField(schema, field.type.name)]
   }
+
+  // Where the tenant column is itself a foreign key, the claim names a parent
+  // that has to exist. A model scoped through a PARENT never reaches this — its
+  // own chain is built above — which is exactly the case no caller can patch
+  // from outside, since the value never appears in its predicate.
+  if (column) await _ensureParent(schema, model, column, tenant, chain)
 
   // A caller's own values win: they are what the rule under test compares, and
   // the tenant column is not among them.

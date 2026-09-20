@@ -814,7 +814,14 @@ export async function run(t) {
   `), 1, 'and the message appears once, where a server error would')
 
   // The retraction is the half that turns a guard into a lock if it is missing.
+  //
+  // The caret is placed the same way it was to TYPE the `%`, and for the same
+  // reason: a click lands where the pointer is, which in a pretty-printed
+  // document is the middle of a line, so a bare Backspace deletes a character
+  // out of `"keep": 1` and leaves the `%` exactly where it was — a still-broken
+  // box graded as a retraction that did not happen.
   await t.clickAt('#guarded [name=payload]')
+  await t.evaluate(`${guarded}.setSelectionRange(${guarded}.value.length, ${guarded}.value.length); return true;`)
   await t.press('Backspace')
   await t.clickAt('#save')
   await t.eventually(`document.querySelector('#saves').textContent`, '1',
@@ -840,6 +847,7 @@ export async function run(t) {
     'a hand-written form refuses too — the report came from a control on screen')
 
   await t.clickAt('#handwritten [name=payload]')
+  await t.evaluate(`${hand}.setSelectionRange(${hand}.value.length, ${hand}.value.length); return true;`)
   await t.press('Backspace')
   await t.clickAt('#hand-save')
   await t.eventually(`document.querySelector('#hand-saves').textContent`, '1',

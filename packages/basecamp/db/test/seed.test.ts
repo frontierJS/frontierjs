@@ -88,6 +88,20 @@ const NOT_SEEDED: Record<string, string> = {
   // step along: the evaluator reads a series, a seed run starts no process, so
   // there is nothing for a threshold to be crossed by.
   alert_event:  'a threshold crossed by readings a seed run never took',
+
+  // Orion. The flow itself IS seeded — an operator authors it, and an
+  // automations screen with no flow on it reads as a feature that was never
+  // installed. What is exempt below is everything the ENGINE writes, which is
+  // the same line `alert_event` and `notification` sit on: a seed run starts no
+  // process, so nothing has fired.
+  run:      'a flow that has fired, which a seed run makes nothing do',
+  run_step: 'one stage of a run that has not happened',
+  wait:     'a run suspended mid-flight — a state, not data',
+  kv_entry: "written by a flow's store node while it runs",
+  // The one exemption here that is not about time: a layout is where the
+  // BUILDER drew each node, and the canvas is not built (FJS-1198). It stops
+  // being exempt the day something can write one.
+  flow_layout: 'where the builder drew each node, and there is no builder yet',
   // Written by this app's own senders when something happens — a deploy
   // finishing, a rule firing, somebody accepting an invitation. A seed run
   // makes none of those happen, and a hand-written row would carry a `type` no

@@ -56,7 +56,7 @@ import { docWordUnknown, docCitesDead, docClaimsCount, docInvariantRef,
          COUNTABLES, checkRulesCountable, docStatusStale, docMapNarration,
          docUncheckedCount } from './doc-audit.js'
 import { invariantCoverage }                   from './invariants.js'
-import { seamOwnership, unlisted, SKILL as SEAM_SKILL } from './seams.js'
+import { seamOwnership, unlisted, keyLiteral, SKILL as SEAM_SKILL } from './seams.js'
 
 export const RULES = [
   { id: 'model-name-case',      scope: 'app',  severity: 'error', invariant: 2,
@@ -4059,7 +4059,21 @@ function seamOwner({ root }) {
       continue
     }
 
-    if (r.kind !== 'fn' || r.inOwner) continue
+    // A key is never declared, so the question a file can answer about one is
+    // whether it mentions it at all. That is a weaker claim than a declaration
+    // and it catches the failure that happens: the minting moved, the bullet
+    // did not. Without it, twenty-four owners were unfalsifiable.
+    if (r.kind === 'key') {
+      if (r.mentioned) continue
+      findings.push({ file, line: r.line,
+        message: `\`${r.names[0]}\` names \`${r.owner}\`, which never mentions \`${keyLiteral(r.names[0])}\`. ` +
+                 `A key has no declaration to point at, so the owner is where it is MINTED — and a file ` +
+                 `that does not contain the string is not minting it.`,
+      })
+      continue
+    }
+
+    if (r.inOwner) continue
 
     findings.push({ file, line: r.line,
       message: r.reexport

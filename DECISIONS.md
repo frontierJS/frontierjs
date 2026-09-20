@@ -11955,6 +11955,81 @@ the file puts the judgement where judgement lives.
 
 ## Dependencies & the ecosystem
 
+### <a id="fjs-d254"></a>2026-09-20 · `FJS-D254` — The interface tier gets two more constraints and no build: a user-facing sentence is never assembled from pieces, and a locale is an argument rather than ambient state.
+
+[`FJS-D12`](#fjs-d12) reserved the i18n seam with six constraints and no code,
+and it reached exactly as far as the schema does — every schema-derived string is
+addressable, so the catalog is generated rather than excavated. It said nothing
+about the strings a person types into a `.mesa` file, which is most of them.
+[`IDEAS/lexicon.md`](IDEAS/lexicon.md) argues the delta; this takes the two halves
+of it that cost nothing today, and defers the rest to V2 with the original.
+
+**Why only two, when the paper proposes four.** The other two need a build. A
+marked string carrying a mandatory description needs marking syntax in mesa first,
+and grammar declared as `{#plural}` / `{#select}` is that same syntax plus a kit.
+Those are V2 with catalogs, where `FJS-D12` already put them. The two here are
+constraints on code not yet written, which is the only kind of thing that ruling
+took and the reason it aged well.
+
+**7. A user-facing sentence is never assembled from pieces.** Not by
+concatenation, not by interpolating one translated fragment into another, not by
+composing prose across two components. A sentence with an element inside it is one
+unit and the element is a parameter of it — `You have <Link>3 orders</Link>
+pending` is one message, never three. This is the only constraint here whose
+absence is unrecoverable: word order differs by language, so a concatenation is a
+sentence that can only ever be English, and it compiles, renders and tests green
+until a catalog arrives a year of call sites later. It also pays before any
+catalog exists, because a spliced sentence is usually worse English than a whole
+one. **The rule follows the ruling**, over `.mesa` source, warn-tier, on
+`check-baseline.json`'s ratchet — concatenation and interpolation into prose are
+both visible in the file, so nothing has to be marked first. That was the
+authority the paper's candidate rules were missing.
+
+**8. A locale is an argument, and no mechanism holds an ambient one.** A page has
+one locale; an email has one per recipient, and a notification job renders ten
+messages for ten people in one loop. So the renderer is a factory that takes a
+locale — `createLexicon({ locale, catalog })`, which is
+`createDatetime({ timeZone, now })`'s shape and exists for the same reason: the
+kit holds no clock and no locale, so a caller holding one can hold ten. Sierra
+keeps one instance per page, a mail job one per recipient, and any `page.locale`
+is a convenience over the argument rather than the mechanism. Built ambient-first
+— a signal, a context, a module-level `setLocale()` — the email tier cannot be
+added afterwards without changing every signature, and the browser is the surface
+least able to notice.
+
+**Two facts behind constraint 8 that were guesses when `FJS-D12` was written, and
+are measured now** (Bun 1.3.11, Node 22.21, 2026-09-20). `Intl` is a runtime API
+and not a browser one: both runtimes carry full ICU and agree on plural
+categories, date and money formatting, collation, segmentation and locale
+fallback, so there is no separate server tier to design and a prerender, a
+notification and an email reach the same API a page does. And constraint 6's
+single formatting owner has already arrived without being named — `Intl` appears
+in three files, as `toolbelt/units` for money and `toolbelt/datetime` for dates,
+so that constraint is met and a call-site formatting filter would breach it rather
+than serve it. Currency is the proof: the code comes off the row, never off the
+locale.
+
+**Two consequences that fall out, neither of which is a new constraint.** The
+owners are four and not one — mesa holds language syntax, a toolbelt kit holds
+`Intl`, sierra holds the locale as it holds the theme, and the app holds the
+words; a proposal naming one of them for all four cannot be built, because mesa is
+the leaf and `FJS-D111` already ruled state out of toolbelt. And
+`Intl.supportedValuesOf` is host-dependent — 306 currencies against 162, 445 time
+zones against 418 — so [`IDEAS/declared-semantics.md`](IDEAS/declared-semantics.md)
+and [`IDEAS/time-and-recurrence.md`](IDEAS/time-and-recurrence.md) both propose
+refusing an unknown code against a list that differs by runtime, which is a defect
+in those papers rather than in this ruling.
+
+Still deferred to V2 with `FJS-D12`: marking syntax, the mandatory description,
+declared grammar, catalogs, locale negotiation, per-locale data, and `lexicon` as
+a package. Still reserved: `strings.snapshot.md`, `db.$setLocale()`, per-locale
+prerender.
+
+Closes `FJS-D254`, and amends `FJS-D12` by adding constraints 7 and 8.
+*Lives in:* [`IDEAS/lexicon.md`](IDEAS/lexicon.md) ·
+`packages/toolbelt/src/units/units.js` · `packages/toolbelt/src/datetime/datetime.js`
+· `packages/cli/core/checks.js` (the rule constraint 7 authorizes, once written).
+
 ### <a id="fjs-d331"></a>2026-09-20 · `FJS-D331` — May a server run the JS path, or is the extension required there — The JS path exists on both engines; the extension is an optional accelerator a server may install.
 
 Asked in [`IDEAS/embedding.md`](IDEAS/embedding.md) § Open questions. **A** was picked over **B** (the extension is required on a server; the JS path is browser-only).
@@ -12680,6 +12755,8 @@ Closes `FJS-D16`; fixes `FJS-038` and the duplication half of `FJS-059`.
 (`parseFile`).
 
 ### <a id="fjs-d12"></a>2026-08-15 · `FJS-D12` — FrontierJS ships English, and the seam is reserved by six constraints rather than by a catalog.
+
+**Status:** amended-by [`FJS-D254`](#fjs-d254) — two constraints added for the interface tier, 7 and 8. The six below are unchanged, and so is the V2 deferral.
 
 The premise the row was filed under
 expired before the ruling did: it said i18n had to be decided *before* schema→UI

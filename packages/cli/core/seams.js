@@ -108,13 +108,63 @@ const TICKED  = /`([^`]+)`/g
 // and a Vite alias (`@/api.js`) — is whether the first segment NAMES A PACKAGE.
 // That is read off the tree rather than guessed at, so a new package needs no
 // edit here and a plausible-looking non-path can never become an owner.
-const SRCPATH = /`((?:packages\/)?[a-z@][a-zA-Z0-9@._-]*\/[a-zA-Z0-9/._-]+\.[cm]?[jt]s)`/g
+// `.mesa` counts: Invariant 18 makes a resource file source in this workspace,
+// and `$context.form` is provided by one — so excluding the extension refused an
+// owner the bullet had already written down.
+const SRCPATH = /`((?:packages\/)?[a-z@][a-zA-Z0-9@._-]*\/[a-zA-Z0-9/._-]+\.(?:[cm]?[jt]s|mesa))`/g
 
 function packageDirs(root) {
   try {
     return new Set(readdirSync(join(root, 'packages'), { withFileTypes: true })
       .filter(e => e.isDirectory()).map(e => e.name))
   } catch { return new Set() }
+}
+
+/**
+ * Every regex metacharacter, not just `$`.
+ *
+ * `client.auth.*` reduces to `*`, which is a quantifier with nothing to repeat
+ * — the whole walk threw the moment that seam was given an owner, because a key
+ * had never reached the re-export read before.
+ */
+const rx = s => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+/**
+ * The text a KEY is written as where it is minted.
+ *
+ * A key has no declaration, so `seam-owner` could not grade one and eighteen
+ * owners went in unfalsifiable — the exact thing this module exists to stop.
+ * What it CAN ask is whether the stated owner mentions the key at all, which
+ * catches the failure that actually happens: the minting moved and the bullet
+ * did not. The receiver is dropped because `ctx.`, `$.`, `client.` and `page.`
+ * are where the key is READ, never where it is written.
+ */
+const EXT = new Set(['js', 'ts', 'mjs', 'mts', 'cjs', 'mesa', 'lite'])
+
+export function keyLiteral(name) {
+  const bare = String(name).split(/[\s(]/)[0]
+    .replace(/^(?:ctx|client|page|\$)\./, '')
+    .replace(/\.\*$/, '')
+    .replace(/^\*\./, '')
+  if (!bare.includes('.')) return bare
+  // `*.mount.js` is about `mount`, and taking the last segment asked whether
+  // the owner contains the string `js`, which every JavaScript file does.
+  const parts = bare.split('.').filter(x => x && !EXT.has(x))
+  return parts[parts.length - 1] ?? bare
+}
+
+/**
+ * Is asking *does the owner contain this string* worth anything for this key?
+ *
+ * For `x-fjs-build` it is nearly a proof. For `$` it is nothing, and for `log`
+ * or `auth` it is close to nothing — every file in junction contains both. The
+ * weakness is RECORDED rather than hidden, on `invariants.snapshot.md`'s
+ * argument: a row claiming a whole check while holding a corner of it is the
+ * most misleading thing the file can carry.
+ */
+export function weakLiteral(lit) {
+  if (lit.length <= 2) return true
+  return lit.length < 7 && !/[-@$_A-Z]/.test(lit)
 }
 
 /** `app.runAs(id, fn)` → `runAs`. The identifier a parser would find. */
@@ -188,7 +238,7 @@ function walk(dir, out = []) {
  * object or class method, an interface member, a property holding a function.
  */
 function declarations(id) {
-  const e = id.replace(/[$]/g, '\\$')
+  const e = rx(id)
   return new RegExp(
     `^\\s*(?:export\\s+)?(?:async\\s+)?(?:function|const|let|class)\\s+${e}\\b` +
     `|^\\s*(?:export\\s+)?(?:async\\s+)?${e}\\s*[(<]` +
@@ -234,7 +284,8 @@ export function reexportOf(root, ownerPath, ids) {
   const text = read(join(root, ownerPath))
   if (text === null) return null
   for (const id of ids) {
-    const e  = id.replace(/[$]/g, '\\$')
+    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(id)) continue   // `*` is not a name
+    const e  = rx(id)
     const re = new RegExp(`export\\s*\\{[^}]*\\b${e}\\b[^}]*\\}\\s*from\\s*['"]([^'"]+)['"]`)
     const m  = text.match(re)
     if (m) return m[1]
@@ -276,6 +327,11 @@ export function seamOwnership({ root, index = null } = {}) {
     const held = seam.kind === 'fn' && seam.owner !== null
       && ids.some(x => sitesFor(idx, x).some(s => s.startsWith(`${seam.owner}:`)))
 
+    // A key is graded by MENTION in its owner, the only question a file can
+    // answer about a string that is never declared.
+    const mentioned = seam.kind === 'key' && seam.owner !== null
+      && (read(join(root, seam.owner)) ?? '').includes(keyLiteral(seam.names[0]))
+
     const ownerExists = seam.owner !== null && existsSync(join(root, seam.owner))
     const reexport    = ownerExists && !held ? reexportOf(root, seam.owner, ids) : null
     const inOwner     = held
@@ -287,6 +343,7 @@ export function seamOwnership({ root, index = null } = {}) {
       impl,
       ownerExists,
       inOwner,
+      mentioned,
       reexport,
       restated: seam.owner === null ? Math.max(0, sites.length - 1) : Math.max(0, sites.length - 1),
       broken:   seam.owner !== null && !ownerExists,
@@ -324,10 +381,19 @@ export function renderSeams(rows) {
   const gapKey = rows.filter(r => r.owner === null && r.kind === 'key')
   out.push(`Seams: **${rows.length}**. With a stated owner: **${owned.length}**. Stated and missing: **${broken.length}**.`)
   out.push('')
-  if (!gapFn.length) {
+  if (!gapFn.length && !gapKey.length) {
+    out.push('**Every seam names an owner.** A callable is graded by where it is DECLARED; a key — a `$` on a')
+    out.push('wire, a schema keyword, a header — has no declaration anywhere, so its owner is where it is')
+    out.push('MINTED and the question asked of that file is whether it contains the string at all. That is a')
+    out.push('weaker claim, and it is the one a file can answer.')
+    out.push('')
+    const weak = rows.filter(r => r.kind === 'key' && r.owner && weakLiteral(keyLiteral(r.names[0])))
+    out.push(`**${weak.length} of those checks are marked weak** and the mark is the point: asking whether`)
+    out.push('junction contains the string `log` proves nothing, where `x-fjs-build` is nearly a proof. A row')
+    out.push('that claimed the strong check while holding the weak one would be worse than no row.')
+  } else if (!gapFn.length) {
     out.push(`**Every callable seam names an owner.** The ${gapKey.length} without one are not callables — a \`$\` on`)
-    out.push('a wire, a schema keyword, a context property, a header. No line anywhere declares `x-version`,')
-    out.push('so *which file owns it* is the wrong question and an empty cell is the answer, not a gap.')
+    out.push('a wire, a schema keyword, a context property, a header, whose owner is where it is MINTED.')
   } else {
     out.push(`**${gapFn.length} callable seam(s) name no owner**, and ${gapKey.length} of the rest are not callables —`)
     out.push('a `$` on a wire, a schema keyword, a header — for which an empty cell is the answer, not a gap.')
@@ -359,7 +425,9 @@ export function renderSeams(rows) {
       : !r.ownerExists ? `\`${r.owner}\` — **does not resolve**`
       : `\`${r.owner}\``
     const found = r.owner === null ? '—'
-      : r.kind === 'key'  ? 'not a callable'
+      : r.kind === 'key'  ? (!r.mentioned ? '**not mentioned**'
+                             : weakLiteral(keyLiteral(r.names[0])) ? `mentions \`${esc(keyLiteral(r.names[0]))}\` — weak`
+                             : 'mentioned')
       : r.inOwner         ? 'yes'
       : r.reexport        ? `**re-exported from \`${esc(r.reexport)}\`**`
       :                     '**name not found**'

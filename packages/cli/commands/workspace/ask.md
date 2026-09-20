@@ -52,8 +52,10 @@ const tok = (b) => Math.round(b / 4)
 if (flag.score) {
   const s = scoreQuestions({ root, questions: QUESTIONS })
   echo('')
-  echo(`  intent   ${s.intentHits}/${s.total}`)
-  echo(`  citation ${s.hits}/${s.total}`)
+  const cited = s.rows.filter(r => r.got === r.cite).length
+  echo(`  intent            ${s.intentHits}/${s.total}`)
+  echo(`  citation          ${cited}/${s.total}`)
+  echo(`  payload           ${s.hits}/${s.total}`)
   echo(`  median tokens-to-fact  ${tok(s.medianRead)}  (${s.medianRead} bytes)`)
   echo(`  scanned to get there   ${Math.round(s.totalScanned / 1024)} KB over ${s.total} question(s)`)
   echo('')
@@ -67,7 +69,11 @@ if (flag.score) {
     if (r.hit && !flag.verbose) continue
     const mark = r.hit ? '✓' : '✗'
     echo(`  ${mark}  ${(r.intent ?? '?').padEnd(7)} ${r.status.padEnd(10)} ${r.q}`)
-    if (!r.hit) echo(`      want ${r.cite}   got ${r.got ?? '—'}`)
+    if (r.hit) continue
+    // A payload miss cites the right document, so printing want/got alone
+    // reads as `want X got X` and looks like a bug in the report.
+    if (r.got === r.cite) echo(`      ${r.cite} is right; the payload does not carry "${r.contains}"`)
+    else                  echo(`      want ${r.cite}   got ${r.got ?? '—'}`)
   }
   echo('')
   if (s.hits < s.total) echo(`  ${s.total - s.hits} miss(es). Each one is a fact with no home, or with two — not a question to reword.`)

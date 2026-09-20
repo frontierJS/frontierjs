@@ -1,5 +1,15 @@
 # Changes — @frontierjs/caravan
 
+## 2026-09-20 — § What bites here is two subjects and now says so
+
+`### Declaring a job` and `### Claiming, running and releasing one`. Nothing moved and no sentence
+changed: the section had eighteen bullets under one heading and turned, halfway down, from *what a
+job file is* to *what happens to a row while it runs*.
+
+**A heading is an index entry, and the measurement is what prompted it.** `fli ws:ask "how do I
+declare a job in caravan"` answered with a bullet about tenant columns, because the whole section
+was one block and nothing in it was named after the task. With the heading it answers `defineJob`.
+
 ## 2026-09-18 — the cron search steps by a minute of real time
 
 `findNext` walked candidate minutes with `next.setMinutes(next.getMinutes() + 1)`, which reads and

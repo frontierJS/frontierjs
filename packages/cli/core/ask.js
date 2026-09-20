@@ -24,9 +24,17 @@
 // *you should know where something lives before you go looking for it*, made
 // falsifiable. So every resolver reports two byte counts:
 //
-//   read     what came back — the row, the heading. The metric.
+//   read     the SPAN a reader must take in to have the answer. The metric.
 //   scanned  what had to be opened to find it. What says whether a small model,
 //            or a person, could have taken the same walk unaided.
+//
+// `read` counts the PAYLOAD and never the pointer, and the difference is not
+// academic: counting what came back made `recipe` the cheapest intent in the
+// table at six tokens, because it answered with a path to a 39,000-token file.
+// A metric that rewards the shallowest possible answer measures nothing, so a
+// row carries `payload` — the ruling's body, the issue's row, the paragraph
+// that answers — and `line` is only how it prints. Where the row IS the answer,
+// as an owner's path is, the two are the same string.
 //
 // A question that costs a lot is not a retrieval bug. It is a fact with no home,
 // or with two — which is what `IDEAS/intent-recognizer.md` § *Read it backwards*
@@ -61,7 +69,7 @@ const TRIGGERS = [
 ]
 
 /** The trigger words themselves are not the subject, so they come back out. */
-const STRIP = /\b(what proves|which drive|what drive|how do i prove|what should i run|who owns|which file owns|where do i add|who is the owner|who declares|why|is there an?|open issue|known problem|known issue|where is|where does|where are|where do i|which file|which module|how do i|how does|how can i|how to|live|lives|the|a|an|change|changes|prove|proves|cover|covers)\b/g
+const STRIP = /\b(what proves|which drive|what drive|how do i prove|what should i run|who owns|which file owns|where do i add|who is the owner|who declares|why|is there an?|open issue|known problem|known issue|where is|where does|where are|where do i|which file|which module|how do i|how does|how can i|how to|is there|do i|can i|live|lives|the|a|an|change|changes|prove|proves|cover|covers)\b/g
 
 export function classify(text) {
   const t = String(text ?? '').toLowerCase()
@@ -81,8 +89,26 @@ function subjectOf(t) {
 // token is compared against the row verbatim, and the singularized terms are
 // compared against its prose. A row matching on either counts.
 
+/**
+ * Filler in a QUESTION, which is not the filler `intent.js` strips.
+ *
+ * Its `STOP` is small on purpose — that corpus is a customer describing a
+ * feature, where `every` and `per` are the noise. Here the corpus is a
+ * contributor asking, and what survives the trigger strip is `is`, `there`,
+ * `no`, `does`. Each scored like a real word: *why is there no formatter*
+ * tied four rulings on `no` alone and never surfaced `FJS-D32`, which is the
+ * one whose title contains `formatter`. Two sets because there are two
+ * corpora, not because one of them was copied.
+ */
+const ASK_STOP = new Set([
+  'is', 'are', 'was', 'be', 'there', 'no', 'not', 'it', 'its', 'this', 'that',
+  'does', 'do', 'did', 'has', 'have', 'with', 'when', 'any', 'some', 'about',
+  'from', 'into', 'as', 'at', 'so', 'if', 'or', 'but',
+])
+
 function tokens(subject) {
-  const raw = subject.split(/[\s,()]+/).filter(w => w.length > 1)
+  const raw = subject.split(/[\s,()]+/)
+    .filter(w => w.length > 1 && !ASK_STOP.has(w))
 
   // Adjacent pairs, both spellings. A compound noun is ONE concept and this
   // repo says so in Axiom 2 — *pay run* split into `pay` and `run` matched a
@@ -92,7 +118,7 @@ function tokens(subject) {
   for (let i = 0; i < raw.length - 1; i++) {
     pairs.push(`${raw[i]} ${raw[i + 1]}`, raw[i] + raw[i + 1])
   }
-  return { raw, words: terms(subject), pairs }
+  return { raw, words: terms(subject).filter(w => !ASK_STOP.has(w)), pairs }
 }
 
 /**
@@ -104,11 +130,22 @@ function tokens(subject) {
  * fixed in a ripgrep pass the day before, arriving through a different door.
  */
 function hasWord(hay, tok) {
+  // A long token may carry a short inflection: `contribute` has to reach
+  // `contributed`, which singularizing does not do and which lost the one
+  // paragraph in `packages/ui/CLAUDE.md` that answers how to add a control.
+  // Gated on LENGTH, so `port` still cannot arrive at `important` this way —
+  // three letters of slack on a ten-letter word is an ending, on a four-letter
+  // word it is a different word.
+  const slack = tok.length >= 6 ? 3 : 0
+
   let i = 0
   while ((i = hay.indexOf(tok, i)) !== -1) {
     const before = hay[i - 1] ?? ' '
-    const after  = hay[i + tok.length] ?? ' '
-    if (!/[a-z0-9_]/.test(before) && !/[a-z0-9_]/.test(after)) return true
+    if (!/[a-z0-9_]/.test(before)) {
+      const rest = hay.slice(i + tok.length)
+      const tail = (rest.match(/^[a-z]*/) ?? [''])[0]
+      if (tail.length <= slack && !/[a-z0-9_]/.test(rest[tail.length] ?? ' ')) return true
+    }
     i += tok.length
   }
   return false
@@ -197,7 +234,8 @@ function seamRows(root) {
   if (text === null) return { rows: [], scanned: 0 }
   const rows = rowsOf(text, /^\| ((?:`[^`]+`(?: \/ `[^`]+`)*)) \| ([^|]+) \| ([^|]*) \| ([^|]*) \|$/gm,
     m => m[2].includes('none') ? null : {
-      key: m[1], hay: m[1], cite: (m[2].match(/`([^`]+)`/) ?? [])[1] ?? null, line: m[0].trim(),
+      key: m[1], hay: m[1], cite: (m[2].match(/`([^`]+)`/) ?? [])[1] ?? null,
+      line: m[0].trim(), payload: m[0].trim(),
     })
   return { rows: rows.filter(r => r.cite), scanned: bytes(text) }
 }
@@ -212,7 +250,7 @@ function mapRows(root) {
     scanned += bytes(text)
     for (const line of text.split('\n')) {
       const p = line.match(/`((?:packages|scripts)\/[a-zA-Z0-9/._-]+\.[cm]?[jt]s)`/)
-      if (p) rows.push({ key: p[1], hay: line, cite: p[1], line: line.trim().slice(0, 200) })
+      if (p) rows.push({ key: p[1], hay: line, cite: p[1], line: line.trim().slice(0, 200), payload: line.trim() })
     }
   }
   return { rows, scanned }
@@ -238,11 +276,18 @@ const WALKS = {
     return { ...best([...a.rows, ...b.rows], tk), scanned: a.scanned + b.scanned }
   },
 
+  // The answer to *why* is the RULING, not its title. Citing the heading line
+  // scored 46 tokens for something a reader still had to go and open.
   ruling: (root, tk) => {
     const text = read(join(root, DECISION))
     if (text === null) return { status: 'missing', hits: [], scanned: 0 }
-    const rows = rowsOf(text, /^#+ <a id="(fjs-d\d+)"><\/a>([^\n]+)$/gm,
-      m => ({ hay: m[2], cite: m[1].toUpperCase(), line: m[0].slice(0, 200) }))
+    const heads = [...text.matchAll(/^#+ <a id="(fjs-d\d+)"><\/a>([^\n]+)$/gm)]
+    const rows  = heads.map((m, i) => ({
+      hay:     m[2],
+      cite:    m[1].toUpperCase(),
+      line:    m[0].slice(0, 200),
+      payload: text.slice(m.index, heads[i + 1]?.index ?? text.length).trim(),
+    }))
     return { ...best(rows, tk), scanned: bytes(text) }
   },
 
@@ -250,7 +295,8 @@ const WALKS = {
     const text = read(join(root, ISSUES))
     if (text === null) return { status: 'missing', hits: [], scanned: 0 }
     const rows = rowsOf(text, /^\| <a id="fjs-\d+"><\/a>(FJS-\d+) \| ([^|]*) \| ([^|]{0,400})/gm,
-      m => ({ hay: `${m[2]} ${m[3]}`, cite: m[1], line: `${m[1]} — ${m[3].trim().slice(0, 160)}` }))
+      m => ({ hay: `${m[2]} ${m[3]}`, cite: m[1],
+              line: `${m[1]} — ${m[3].trim().slice(0, 160)}`, payload: m[0] }))
     return { ...best(rows, tk), scanned: bytes(text) }
   },
 
@@ -266,10 +312,12 @@ const WALKS = {
     if (text === null) return { status: 'missing', hits: [], scanned: 0 }
 
     const covers = rowsOf(text, /^\| `([^`]+)`: `([^`]+)` \|([^|]*)\|([^|]{0,300})/gm,
-      m => ({ key: m[2], hay: m[4], cite: `${m[1]}:${m[2]}`, line: `${m[1]}: ${m[2]} — ${m[4].trim().slice(0, 140)}` }))
+      m => ({ key: m[2], hay: m[4], cite: `${m[1]}:${m[2]}`,
+              line: `${m[1]}: ${m[2]} — ${m[4].trim().slice(0, 140)}`, payload: `${m[1]}: ${m[2]}` }))
 
     const needs = rowsOf(text, /^\| ([^|`][^|]{0,240}) \| `([^`]+)`: `([^`]+)`/gm,
-      m => ({ key: m[3], hay: m[1], cite: `${m[2]}:${m[3]}`, line: `${m[2]}: ${m[3]} — ${m[1].trim().slice(0, 140)}` }))
+      m => ({ key: m[3], hay: m[1], cite: `${m[2]}:${m[3]}`,
+              line: `${m[2]}: ${m[3]} — ${m[1].trim().slice(0, 140)}`, payload: `${m[2]}: ${m[3]}` }))
 
     return { ...best([...covers, ...needs], tk), scanned: bytes(text) }
   },
@@ -277,18 +325,81 @@ const WALKS = {
   // A recipe is a package's own CLAUDE.md, and which package is the whole
   // question. The candidate list is the directory listing, so a new package
   // needs no edit here.
+  // A package's own map, down to the PARAGRAPH.
+  //
+  // The citation stays the document — a line number in an answer key breaks the
+  // next time somebody edits above it — but what comes back is the block that
+  // answers. `##` was too coarse to be that block: caravan has three headings
+  // and *What bites here* is most of the file. The house writes a claim in bold
+  // and then what it cost, so the paragraph is the unit the prose already has.
   recipe: (root, tk) => {
     let scanned = 0
     const rows = []
     for (const name of packages(root)) {
-      const f = `packages/${name}/CLAUDE.md`
-      if (!existsSync(join(root, f))) continue
-      const head = (read(join(root, f)) ?? '').slice(0, 600)
-      scanned += bytes(head)
-      rows.push({ key: name, hay: head, cite: f, line: f })
+      const f    = `packages/${name}/CLAUDE.md`
+      const text = read(join(root, f))
+      if (text === null) continue
+      scanned += bytes(text)
+      for (const b of docBlocks(text)) {
+        if (b.text.length < 40) continue
+        rows.push({
+          key: `${name} ${b.heading}`, hay: b.text, cite: f,
+          line: b.text.replace(/\s+/g, ' ').slice(0, 180), payload: b.text,
+        })
+      }
     }
     return { ...best(rows, tk), scanned }
   },
+}
+
+/**
+ * A document as the spans somebody would actually read.
+ *
+ * A whole SECTION where one is small enough to be the answer — litestone's
+ * *Computed fields* is 841 bytes and includes the example, which is the answer
+ * — and its paragraphs where it is not, because caravan has three headings and
+ * *What bites here* is most of the file.
+ *
+ * **Fence-aware in both passes.** A blank line inside a code block is not a
+ * paragraph break: splitting on it cut `computed.js` in half and answered *how
+ * do I make a computed field* with the one-line blurb above the example.
+ */
+export function docBlocks(text, maxWhole = 2500) {
+  const sections = []
+  let fence = false
+  let cur = { heading: '', lines: [] }
+
+  for (const l of text.split('\n')) {
+    if (/^\s*```/.test(l)) fence = !fence
+    const h = fence ? null : l.match(/^#+ (.+)$/)
+    if (h) { if (cur.lines.length) sections.push(cur); cur = { heading: h[1], lines: [l] } }
+    else cur.lines.push(l)
+  }
+  if (cur.lines.length) sections.push(cur)
+
+  const out = []
+  for (const s of sections) {
+    const body = s.lines.join('\n').trim()
+    if (!body) continue
+    if (body.length <= maxWhole) { out.push({ heading: s.heading, text: body }); continue }
+
+    // A blank line is not the only break, and in these documents it is barely a
+    // break at all: `packages/ui/CLAUDE.md` § What bites here is 34 KB with TWO
+    // blank lines in it, so splitting on them returned the whole section as one
+    // block. The unit this house actually writes in is the top-level bullet —
+    // *bold the claim, then say what it cost* — one fact each.
+    let f = false
+    let buf = []
+    const flush = () => { const t = buf.join('\n').trim(); if (t) out.push({ heading: s.heading, text: t }); buf = [] }
+    for (const l of s.lines) {
+      if (/^\s*```/.test(l)) f = !f
+      if (!f && l.trim() === '')   { flush(); continue }
+      if (!f && /^[-*+] /.test(l)) { flush(); buf.push(l); continue }
+      buf.push(l)
+    }
+    flush()
+  }
+  return out
 }
 
 function packages(root) {
@@ -315,7 +426,7 @@ export function ask({ root, text }) {
   if (!intent) return { text, intent: null, subject, status: 'unclassified', hits: [], read: 0, scanned: 0 }
 
   const out  = WALKS[intent](root, tokens(subject))
-  const read = out.hits.reduce((n, h) => n + bytes(h.line ?? ''), 0)
+  const read = out.hits.reduce((n, h) => n + bytes(h.payload ?? h.line ?? ''), 0)
   return { text, intent, subject, status: out.status, hits: out.hits, read, scanned: out.scanned ?? 0 }
 }
 
@@ -331,8 +442,15 @@ export function scoreQuestions({ root, questions }) {
     const a = ask({ root, text: q.q })
     return {
       ...q, ...a,
-      got: a.hits[0]?.cite ?? null,
-      hit: a.status === 'resolved' && a.hits[0]?.cite === q.cite,
+      got:  a.hits[0]?.cite ?? null,
+      // A citation pins the document; for a recipe it does not pin the ANSWER,
+      // and the router was 4/4 on the file while handing back a component
+      // listing for *how do I contribute a control*. `contains` is a phrase
+      // read out of the tree that the payload must carry. It can only ever make
+      // the score worse, which is the direction an assertion may be added in.
+      held: q.contains ? (a.hits[0]?.payload ?? '').includes(q.contains) : true,
+      hit:  a.status === 'resolved' && a.hits[0]?.cite === q.cite
+            && (!q.contains || (a.hits[0]?.payload ?? '').includes(q.contains)),
       intentHit: a.intent === q.intent,
     }
   })

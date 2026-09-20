@@ -1,12 +1,12 @@
 ---
 id: lexicon
-status: proposed
+status: partial
 dated: 2026-09-20
 ---
 
 # Idea — `lexicon`: the half of i18n the ruling did not reach
 
-**Status: PROPOSED. Nothing is built.** `FJS-D12` ruled i18n on 2026-08-15 —
+**Status: PARTIAL. Two of the four statements below are ruled; nothing is built.** `FJS-D12` ruled i18n on 2026-08-15 —
 English for alpha, six constraints holding the seam open, the build deferred to
 V2 — and that ruling is not restated here. What this file carries is the delta:
 the ruling addresses strings the SCHEMA derives, and says nothing about strings a
@@ -117,6 +117,15 @@ signature.
   validator or a snapshot comparing the joined string passes on one runtime and
   fails on the other.
 
+## `lexicon` is a codename, never a package
+
+`FJS-D12` reserved it as a package for V2. **It is not one and will not be.** The
+four owners below are the argument: syntax is mesa's, `Intl` is a toolbelt kit's,
+the active locale is sierra's, and the words are the app's — which leaves a
+package nothing to own. The word stays as the name of the WORK, the way
+`IDEAS/package-map.md` already lists it, so that *lexicon* names a topic in a
+conversation and never an install.
+
 ## Four owners, not one word
 
 A proposal that says *the framework* owns i18n cannot be built, because two of
@@ -186,20 +195,23 @@ NAVIGATION, which per-locale prerender already makes cheap.
 Four statements, which is what `FJS-D254` needs to rule and the most this file can
 propose.
 
-1. **A marked string is explicit, carries a mandatory description, and its
-   address is derived** from the text and that description together. This is
+1. *(V2 — needs marking syntax.)* **A marked string is explicit, carries a
+   mandatory description, and its address is derived** from the text and that description together. This is
    `FJS-D12` constraint 1 — derive the address, never author it — extended to the
    tier the ruling did not reach, and it means no `.lite` syntax changes.
-2. **A marked string is one unit, and a nested element inside it is an implicit
-   parameter.** No user-facing sentence is assembled from pieces. It is first
+2. **Ruled 2026-09-20 as `FJS-D12` constraint 7 (`FJS-D254`).** A marked string is
+   one unit, a nested element inside it is an implicit parameter, and no
+   user-facing sentence is assembled from pieces. It is first
    among the four because it is the only one that cannot be retrofitted: a
    concatenation is a sentence that can only ever be English, and the call sites
    are already written by the time a catalog arrives.
-3. **Grammar is declared and its semantics come from `Intl`** — plural, ordinal,
+3. *(V2 — needs the same syntax plus a kit.)* **Grammar is declared and its
+   semantics come from `Intl`** — plural, ordinal,
    select, list. Mesa owns the block, a toolbelt kit owns the `Intl` call and the
    category list, the catalog owns the words. Money and dates stay with the owners
    they already have, and gain no call-site syntax.
-4. **Locale is an argument, and sierra holds it like the theme.** The renderer is
+4. **Ruled 2026-09-20 as `FJS-D12` constraint 8 (`FJS-D254`).** Locale is an
+   argument, and sierra holds it like the theme. The renderer is
    `createLexicon({ locale, catalog })`; `page.locale` is sierra's per-page
    instance and `db.$setLocale()` the Data-side flavor already reserved. This is
    what keeps the package severable, and it is the only one of the four that the
@@ -210,17 +222,16 @@ propose.
 Two rules, both `fli check` over `.mesa`, both English-only, no runtime and no
 package:
 
-- **a marked string carries a description** — nothing to enforce until a marking
-  exists, so this one waits on the syntax
-- **a user-facing sentence is not assembled from pieces** — gradeable against
-  source today, since concatenation and interpolation into prose are both visible
-  in the file
+- **a user-facing sentence is not assembled from pieces** — **authorized**, as
+  `FJS-D12` constraint 7. Gradeable against source today, since concatenation and
+  interpolation into prose are both visible in the file and nothing has to be
+  marked first. Warn-tier, on `check-baseline.json`'s ratchet. **Not written yet**
+- ~~**a marked string carries a description**~~ — still waits on the syntax,
+  which is V2. Nothing to enforce until a marking exists
 
-**Neither can land as written.** `fli check` may only grade a claim with an
-authority in the tree, and `FJS-D12` does not say either of these. A rule ahead
-of its ruling is a rule arguing a paragraph, which is the thing the check surface
-exists not to do. So the order is: rule the interface tier, then the rules follow
-from it.
+**The order was: rule the interface tier, then the rules follow from it.** `fli
+check` may only grade a claim with an authority in the tree, and when this was
+written `FJS-D12` said neither of these. It now says the first.
 
 **One thing does not wait on the ruling**, because it is a defect in two other
 proposals rather than a rule about this one: `declared-semantics.md` and
@@ -229,7 +240,8 @@ proposals rather than a rule about this one: `declared-semantics.md` and
 refuse against a shipped list, the way `toolbelt/units` already does, or record
 that a currency valid under Bun and refused under Node is acceptable.
 
-Filed as `FJS-D254`.
+Filed as `FJS-D254`; **ruled 2026-09-20**, which added constraints 7 and 8 to
+`FJS-D12` and left the rest with the original deferral.
 
 ## Sources
 

@@ -24,6 +24,8 @@ bin/
 
 ## What bites here
 
+### Declaring a job
+
 - **A job file is named by its file, and a mismatch throws at load.**
   `send-email.job.ts` is `send-email`; a `defineJob` naming anything else is
   refused rather than registered, because a handler answering to `send-emial`
@@ -41,6 +43,8 @@ bin/
   the timer kept firing for a job nobody could see (`FJS-D36`). It unbinds the
   CLOCK only — the handler stays, because a run already queued under that name
   has to find something to execute.
+### Claiming, running and releasing one
+
 - **A running row is OWNED, and only an owner's silence releases it.** One
   jobs.db is opened by as many processes as the deployment has, so recovery
   cannot mean *set every `running` row back to `pending`* — that is a second

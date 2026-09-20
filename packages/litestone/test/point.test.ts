@@ -403,3 +403,109 @@ describe('what a point refuses', () => {
     await refusesQuery({ orderBy: { site: { near: { lat: 'x', lng: 2 } } } }, /needs a numeric lat and lng/)
   })
 })
+
+// ── paging a distance order ─────────────────────────────────────────────────
+//
+// A nearest-first list is exactly the screen that scrolls, so the cursor is the
+// half of `FJS-D321` that decides whether the ordering is worth having. Two
+// defects lived here and both answered 200:
+//
+//   - `normalizeOrderBy` dropped a near order, so the page resumed from the
+//     TIEBREAK alone — each page was an id-window re-sorted, and on seven rows
+//     the nearest one arrived on page two;
+//   - the distance expression is NULL for a row with no location and SQLite
+//     sorts a NULL first ascending, so the nearest place to London was the row
+//     with no coordinate at all.
+
+describe('a distance order paginates', () => {
+  const SCRAMBLED = [
+    { name: 'Edinburgh',   site: { lat: 55.9533, lng: -3.1883 } },
+    { name: 'Camden',      site: { lat: 51.5390, lng: -0.1426 } },
+    { name: 'Brighton',    site: { lat: 50.8225, lng: -0.1372 } },
+    { name: 'Westminster', site: { lat: 51.4995, lng: -0.1248 } },
+    { name: 'Nowhere',     site: null },
+    { name: 'Reading',     site: { lat: 51.4543, lng: -0.9781 } },
+    { name: 'Croydon',     site: { lat: 51.3762, lng: -0.0982 } },
+  ]
+  const nearest = { site: { near: LONDON } }
+
+  it('puts a row with no location last, not first', async () => {
+    const db = await placesDb(SCRAMBLED)
+    const rows = await db.place.findMany({ orderBy: nearest })
+    expect(rows[rows.length - 1].name).toBe('Nowhere')
+    expect(rows[0].name).toBe('Westminster')
+  })
+
+  it('walks the whole list in the order the unpaginated read gives', async () => {
+    // The gate. Insertion order is deliberately not distance order, so a cursor
+    // paging by the tiebreak alone cannot accidentally agree.
+    const db = await placesDb(SCRAMBLED)
+    const want = (await db.place.findMany({ orderBy: nearest })).map((r: any) => r.name)
+
+    const got: string[] = []
+    let cursor: string | null = null
+    for (let i = 0; i < 20; i++) {
+      const page: any = await db.place.findManyCursor({
+        limit: 2, orderBy: nearest, ...(cursor ? { cursor } : {}),
+      })
+      got.push(...page.items.map((r: any) => r.name))
+      if (!page.hasMore) break
+      cursor = page.nextCursor
+    }
+    expect(got).toEqual(want)
+    expect(got.length).toBe(SCRAMBLED.length)   // no row served twice, none lost
+  })
+
+  it('compares the cursor with the same expression it orders by', async () => {
+    // The cursor carries the POINT and not a distance, and that is what makes
+    // the tie exact: a number computed here differs from SQLite's haversine in
+    // the last bits, and one ulp serves the cursor's own row a second time.
+    // Measured before the fix: page two opened with the row page one ended on.
+    const db = await placesDb(SCRAMBLED)
+    const p1: any = await db.place.findManyCursor({ limit: 2, orderBy: nearest })
+    const token = JSON.parse(Buffer.from(p1.nextCursor, 'base64url').toString('utf8'))
+    expect(token.site).toEqual({ at: [LONDON.lat, LONDON.lng], p: [51.5390, -0.1426] })
+
+    const p2: any = await db.place.findManyCursor({ limit: 2, orderBy: nearest, cursor: p1.nextCursor })
+    expect(p2.items.map((r: any) => r.name)).toEqual(['Croydon', 'Reading'])
+  })
+
+  it('refuses a cursor minted around a different center', async () => {
+    // A distance order means nothing without one, so a caller who moved the map
+    // between pages is resuming into an ordering that never existed.
+    const db = await placesDb(SCRAMBLED)
+    const p1: any = await db.place.findManyCursor({ limit: 2, orderBy: nearest })
+    await expect(db.place.findManyCursor({
+      limit: 2, cursor: p1.nextCursor,
+      orderBy: { site: { near: { lat: 53.4808, lng: -2.2426 } } },
+    })).rejects.toThrow(/resumes only from its own center/)
+  })
+
+  it('round-trips through the window junction actually mints', async () => {
+    // Junction's `find` walks an ordinary page in `orderTotal`'s ordering and
+    // mints the first window's edge off its last row, so that ordering is the
+    // SCAN's and not a description of it. Collapsed to `{ site: 'asc' }` it
+    // names the one spelling a point refuses: the ordinary page 400s and the
+    // window is never minted.
+    const db = await placesDb(SCRAMBLED)
+    const ordered: any = db.place.orderTotal(nearest)
+    expect(ordered[0].site.near).toEqual(LONDON)
+
+    const rows: any = await db.place.findMany({ orderBy: ordered, limit: 3 })
+    expect(rows.map((r: any) => r.name)).toEqual(['Westminster', 'Camden', 'Croydon'])
+
+    const edge = db.place.cursorFor(rows[rows.length - 1], ordered)
+    const next: any = await db.place.findManyCursor({ limit: 3, orderBy: ordered, cursor: edge })
+    expect(next.items.map((r: any) => r.name)).toEqual(['Reading', 'Brighton', 'Edinburgh'])
+  })
+
+  it('pages furthest-first too', async () => {
+    const db = await placesDb(SCRAMBLED)
+    const p1: any = await db.place.findManyCursor({ limit: 2, orderBy: { site: { near: LONDON, dir: 'desc' } } })
+    expect(p1.items.map((r: any) => r.name)).toEqual(['Edinburgh', 'Brighton'])
+    const p2: any = await db.place.findManyCursor({
+      limit: 2, orderBy: { site: { near: LONDON, dir: 'desc' } }, cursor: p1.nextCursor,
+    })
+    expect(p2.items.map((r: any) => r.name)).toEqual(['Reading', 'Croydon'])
+  })
+})

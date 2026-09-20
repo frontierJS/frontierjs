@@ -18,7 +18,7 @@ components/
   forms/      Form · Field · Fieldset · Label · Input · Textarea · Select ·
               Checkbox · RadioGroup · Switch · Slider · NumberInput · Combobox ·
               MultiSelect · DatePicker · DateTimeInput · JsonInput · FileUpload ·
-              FileField · Button
+              FileField · GeoField · Button
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
               Breadcrumbs · Callout · EmptyState · Avatar(+Group) · Sparkline ·
               Json · …
@@ -118,6 +118,8 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   the wall clock, so `onvalue(iso)` is the callback that carries a value. A
   `Date` column is still a plain `input type="date"` — no zone, nothing to
   lose.
+### Controls — the table, and contributing one
+
 - **`<Form>` with no children generates its field list, and the control table is
   not in this package.** It asks the resource — `resource.formFields({only,
   except})` and `resource.options(fk)` — because this kit peers only on mesa and
@@ -138,6 +140,8 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   `{ name, field, value, onvalue, options }`; **put `name` on the element that
   emits input** or the form's dirty tracking and blur-reveal cannot see the
   field. A name nobody bound renders nothing and says which half is missing.
+### Validation, and when a message may appear
+
 - **The live-validation rule lives in `Form.mesa`, once**: on input an error may
   only be *removed*, never added. Do not re-implement it per control. A submit
   reveals every field and then asks them — and **refuses only over a control the
@@ -196,6 +200,18 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   hidden at 0,0 while a click aimed at its confirm button landed behind it
   (`FJS-402`). The frame callback is kept as a re-place for a panel whose content
   resized.
+- **A `@point` column is a `Json` column and must not get the document editor.**
+  `forms/GeoField.mesa` is two number boxes refusing ±90/±180; Sierra's table
+  answers `geo` off `x-geo`, which also carries the KEY NAMES — `@point(latitude,
+  longitude)` is as ordinary as `@point(lat, lng)`, and a control assuming one
+  writes a document the database's own CHECK refuses. **No map** (`FJS-D327`);
+  an app that wants one registers its own control over the same keyword.
+  **Half a coordinate is the case it exists for**: two elements hold one value,
+  so a latitude typed and a longitude tabbed past is text on screen that is not
+  a value, and `{lat, lng: null}` is precisely what the CHECK rejects. The
+  control hands back nothing, reports through `$context.form.reportInvalid` and
+  RETRACTS when the pair completes — without the retraction the guard is a lock.
+  Clearing both boxes is a row with no location, which is ordinary.
 - **A `Json` column is the one shape with no schema under it, and both halves of
   the answer are new.** `display/Json.mesa` reads a document and
   `forms/JsonInput.mesa` edits one; Sierra's table answers `json` where the

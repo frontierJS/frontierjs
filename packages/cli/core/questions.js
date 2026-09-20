@@ -103,11 +103,15 @@ export const QUESTIONS = [
 
   // ─── recipe ────────────────────────────────────────────────────────────────
   { intent: 'recipe', cite: 'packages/litestone/CLAUDE.md',
-    q: 'how do I make a computed field in litestone' },
+    q: 'how do I make a computed field in litestone',
+    contains: '// computed.js' },
   { intent: 'recipe', cite: 'packages/caravan/CLAUDE.md',
-    q: 'how do I declare a job in caravan' },
+    q: 'how do I declare a job in caravan',
+    contains: 'defineJob' },
   { intent: 'recipe', cite: 'packages/ui/CLAUDE.md',
-    q: 'how do I contribute a control to the ui kit' },
+    q: 'how do I contribute a control to the ui kit',
+    contains: 'registerControl' },
   { intent: 'recipe', cite: 'packages/mesa/CLAUDE.md',
-    q: 'how does mesa decide a file is mesa and not markdown' },
+    q: 'how does mesa decide a file is mesa and not markdown',
+    contains: 'The file EXTENSION decides the language' },
 ]

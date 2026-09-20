@@ -1,5 +1,20 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-20 — a point column resolves to a point control
+
+`controlFor` asks `x-geo` ahead of the type switch, for the reason a `File` column is asked
+there: the TYPE is not what separates them. A point and an ordinary `Json` column are both
+`{}` in the schema — no `type` at all — so a table branching on the type cannot tell them
+apart and both got the document editor.
+
+It answers `geo` and carries `latKey`/`lngKey` through to the control, so a form writes the
+pair under the keys the model declared rather than a spelling it assumed. `displayFor`
+answers `geo` too, instead of printing the document's punctuation into a table cell.
+
+**The kit's answer is replaceable and the test says so**: `FJS-D327` keeps a tile vendor out
+of this repo, so an app that wants a map registers its own resolver over the same `x-geo` —
+the ordinary `registerControl` route, last registered asked first, no fork.
+
 ## 2026-09-20 — `@@sync(field)` is refused here rather than silently behaving as `refuse`
 
 Phase 5 of `IDEAS/homestead.md`. The merge itself is built at the Data boundary

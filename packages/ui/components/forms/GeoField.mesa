@@ -1,0 +1,236 @@
+<script module>
+  // ── the pair ⇄ two boxes ──────────────────────────────────────────────────
+  //
+  // A `@point` column holds ONE value and a person types two numbers, so both
+  // edges convert. The keys are the model's — `@point(lat, lng)` and
+  // `@point(latitude, longitude)` are both ordinary — and they arrive on the
+  // field descriptor as `latKey`/`lngKey`, because a control writing the other
+  // spelling writes a document the database's own CHECK refuses.
+
+  /** A box's text → the number the column takes, or `null` for an empty box. */
+  export function readCoord(text) {
+    if (typeof text !== 'string' || text.trim() === '') return null
+    const n = Number(text)
+    return Number.isFinite(n) ? n : NaN
+  }
+
+  /**
+   * What the boxes hold → the value, plus what is wrong with it.
+   *
+   * Three states and only the third is a refusal:
+   *
+   *   both empty  → `null`. A row with no location is ordinary, and it is what
+   *                 clearing the field means.
+   *   both filled → the pair, under the declared keys.
+   *   one filled  → NO value and a message. Half a coordinate is the shape the
+   *                 CHECK exists to refuse, and it is the one a form produces
+   *                 by accident — somebody types a latitude and tabs past the
+   *                 other box. Writing `{ lat, lng: null }` makes a 400 out of
+   *                 it at submit; writing `null` throws away what they typed.
+   */
+  export function readPair(latText, lngText, latKey = 'lat', lngKey = 'lng') {
+    const lat = readCoord(latText)
+    const lng = readCoord(lngText)
+
+    if (lat === null && lng === null) return { value: null, message: '' }
+    if (Number.isNaN(lat) || Number.isNaN(lng)) return { value: undefined, message: 'a coordinate is a number' }
+    if (lat === null || lng === null) {
+      return { value: undefined, message: `needs both — ${latKey} and ${lngKey}` }
+    }
+    if (lat < -90 || lat > 90)   return { value: undefined, message: `${latKey} is outside ±90` }
+    if (lng < -180 || lng > 180) return { value: undefined, message: `${lngKey} is outside ±180` }
+
+    return { value: { [latKey]: lat, [lngKey]: lng }, message: '' }
+  }
+
+  /**
+   * The stored value → what a box shows.
+   *
+   * Read through BOTH spellings rather than only the declared one: the value
+   * on screen may have come from a row written before the column was declared
+   * a point, and a box that silently showed nothing for it would be an edit
+   * that erases a coordinate.
+   */
+  export function showCoord(value, key, ...aliases) {
+    if (!value || typeof value !== 'object') return ''
+    for (const k of [key, ...aliases]) {
+      const v = value[k]
+      if (typeof v === 'number' && Number.isFinite(v)) return String(v)
+      if (typeof v === 'string' && v.trim() !== '' && Number.isFinite(Number(v))) return v
+    }
+    return ''
+  }
+</script>
+
+<script>
+  // GeoField.mesa
+  // The control a `@point` column gets — two number boxes and no map.
+  //
+  // A map is a rendering library plus a tile VENDOR, which is a battery with
+  // tendrils and a vendor choice this repo keeps out (`FJS-D327`, `FJS-D153`).
+  // What the kit can own without lying about what it is: two inputs that refuse
+  // ±90/±180, show the point's own value, and write the pair under the keys the
+  // model declared. An app that wants a map registers its own control over the
+  // same `x-geo` and this is what it replaces.
+  //
+  // Inside a generated form nothing is written at all: Sierra's control table
+  // answers `geo` for a column carrying `x-geo`, and the kit binds it here.
+  //
+  //   <Form {resource}>
+  //     <GeoField name="site" value={record.site} onvalue={(p) => record.site = p} />
+  //   </Form>
+  //
+  // ── Why there is no `oninput` ────────────────────────────────────────────
+  //
+  // For `DateTimeInput`'s reason, one degree sharper: there are TWO elements
+  // and the value is neither of them. `e.target.value` here is half a
+  // coordinate, which is the one thing that must never reach the write.
+
+  import Field from './Field.mesa'
+  import { uid, resolveError, resolveRule, stated, lockedBy } from '../../utils.js'
+
+  export let value    = null          // { lat, lng } under the declared keys, or null
+  export let disabled = undefined     // undefined = ask the form; false overrides it
+  export let required = undefined
+  export let readonly = false
+
+  // One entry from `resource.formFields()`. `latKey`/`lngKey` ride on it, put
+  // there by `controlFor` off `x-geo`; a hand-written call may state them
+  // instead, and the default is the common spelling rather than a guess at the
+  // model's — a wrong key is refused by the boundary rather than stored.
+  export let field  = undefined
+  export let latKey = undefined
+  export let lngKey = undefined
+
+  // Field integration
+  export let name        = ''
+  // `undefined` is "not stated" and `''` is "no label, deliberately".
+  export let label       = undefined
+  export let hint        = ''
+  export let error       = ''
+  export let errors      = undefined
+  export let badge       = undefined
+  export let help        = undefined
+  export let removable   = false
+  export let onremovekey = undefined
+
+  export let onvalue = undefined      // ({lat,lng} | null) => void — nothing while half-typed
+  export let onblur  = undefined
+  export let onfocus = undefined
+
+  export var id = ''
+  const fieldId = id || uid('geo')
+
+  const form = $context.form
+
+  const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
+  const rule = resolveRule(form, name)
+  const resolvedRequired = stated(required, rule?.required)
+
+  const lat = latKey ?? field?.latKey ?? rule?.['x-geo']?.lat ?? 'lat'
+  const lng = lngKey ?? field?.lngKey ?? rule?.['x-geo']?.lng ?? 'lng'
+
+  // What the boxes hold. Seeded from the value and owned by the control after
+  // that — a person mid-edit has one box filled, which is not a value, so the
+  // text cannot be derived from one.
+  let latText = showCoord(value, lat, 'lat', 'latitude')
+  let lngText = showCoord(value, lng, 'lng', 'longitude', 'lon')
+
+  // What the control itself refuses, as opposed to what the server said.
+  let localError = ''
+
+  const displayError = resolveError(form, name, error, errors) || localError
+
+  let latEl
+  export function focus() { latEl?.focus() }
+
+  function commit() {
+    const { value: next, message } = readPair(latText, lngText, lat, lng)
+    setLocalError(message)
+    if (next === undefined) return      // half a coordinate is not a value
+    value = next
+    onvalue?.(next)
+  }
+
+  // One place, for `JsonInput`'s reason: a control that reports its refusal and
+  // never retracts it is a form that can never be submitted again.
+  function setLocalError(message) {
+    localError = message
+    form?.reportInvalid?.(name, message)
+  }
+</script>
+
+{#snippet control()}
+  <!--
+    `.field-row` joins the two boxes. Each carries its own `aria-label`, because
+    the field's label names the PAIR and "Site" twice tells a screen reader
+    nothing about which box it is in.
+
+    The name goes on the LATITUDE element alone — a form's dirty tracking and
+    its blur-reveal key on it, and two elements under one name would report the
+    field twice.
+  -->
+  <div class="field-row">
+    <input
+      bind:this={latEl}
+      class="field"
+      id={fieldId}
+      name={name || undefined}
+      type="number"
+      inputmode="decimal"
+      step="any"
+      min={-90}
+      max={90}
+      placeholder={lat}
+      aria-label={`${label ?? name} ${lat}`}
+      value={latText}
+      disabled={resolvedDisabled}
+      required={resolvedRequired}
+      readonly={readonly}
+      aria-invalid={!!displayError || null}
+      on:input={(e) => { latText = e.target.value; commit() }}
+      on:blur={onblur}
+      on:focus={onfocus}
+      {...$attributes}
+    />
+    <input
+      class="field"
+      type="number"
+      inputmode="decimal"
+      step="any"
+      min={-180}
+      max={180}
+      placeholder={lng}
+      aria-label={`${label ?? name} ${lng}`}
+      value={lngText}
+      disabled={resolvedDisabled}
+      required={resolvedRequired}
+      readonly={readonly}
+      aria-invalid={!!displayError || null}
+      on:input={(e) => { lngText = e.target.value; commit() }}
+      on:blur={onblur}
+      on:focus={onfocus}
+    />
+  </div>
+{/snippet}
+
+{#if label || name}
+  <Field
+    id={fieldId}
+    name={name}
+    label={label}
+    required={resolvedRequired}
+    badge={badge}
+    help={help}
+    hint={hint}
+    error={error || localError}
+    errors={errors}
+    removable={removable}
+    onremovekey={onremovekey}
+    {class}
+  >
+    {@render control()}
+  </Field>
+{:else}
+  {@render control()}
+{/if}

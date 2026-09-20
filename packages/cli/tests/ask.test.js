@@ -70,8 +70,12 @@ describe('matching', () => {
 
   test('a two-letter name is a name — `ui` was filtered out as noise', () => {
     const root = tree('ask-ui', {
-      'packages/ui/CLAUDE.md':        '# ui\n\nMesa component kit.\n',
-      'packages/litestone/CLAUDE.md': '# litestone\n\nSchema language and client.\n',
+      'packages/ui/CLAUDE.md':
+        '# ui\n\n## What bites here\n\n- **A contributed control is two registrations.** ' +
+        'The kit binds a name and sierra resolves it, because one side runs in plain node.\n',
+      'packages/litestone/CLAUDE.md':
+        '# litestone\n\n## What bites here\n\n- **A gate is declared in the schema.** ' +
+        'Never in a hook, and the server enforces it whatever the client believes.\n',
     })
     expect(ask({ root, text: 'how do i contribute a control to the ui kit' }).hits[0].cite)
       .toBe('packages/ui/CLAUDE.md')
@@ -113,6 +117,26 @@ describe('matching', () => {
     expect(a.hits).toHaveLength(2)
   })
 
+  test('question scaffolding does not score — `no` is not a word here', () => {
+    // The first phrasing tried outside the graded set: *why is there no
+    // formatter* tied four rulings on `no` alone and never surfaced the one
+    // whose title contains `formatter`.
+    const root = tree('ask-stop', {
+      'DECISIONS.md': [
+        '### <a id="fjs-d32"></a>2026-08-15 · `FJS-D32` — FrontierJS adopts a linter and refuses a formatter.',
+        '',
+        'The refusal is measured rather than preferred.',
+        '',
+        '### <a id="fjs-d02"></a>2026-08-15 · `FJS-D02` — a custom method is a METHOD. There is no fourth noun.',
+        '',
+        'Nothing else.',
+      ].join('\n') + '\n',
+    })
+    const a = ask({ root, text: 'why is there no formatter' })
+    expect(a.status).toBe('resolved')
+    expect(a.hits[0].cite).toBe('FJS-D32')
+  })
+
   test('nothing matching is missing, not a guess', () => {
     const root = tree('ask-miss', { ...SEAMS('| `wsSend()` | `packages/junction/src/x.ts` | yes | — |') })
     expect(ask({ root, text: 'who owns the quantum flux capacitor' }).status).toBe('missing')
@@ -143,14 +167,31 @@ describe('the graded set', () => {
     }
   })
 
-  test('the router answers the set', () => {
+  test('every question classifies to the intent it was written for', () => {
+    expect(scoreQuestions({ root, questions: QUESTIONS }).intentHits).toBe(QUESTIONS.length)
+  })
+
+  test('the citation is right for every question', () => {
+    // Which DOCUMENT holds the answer is the part the router is good at.
     const s = scoreQuestions({ root, questions: QUESTIONS })
-    expect(s.intentHits).toBe(s.total)
-    expect(s.hits).toBe(s.total)
+    for (const r of s.rows) expect(r.got).toBe(r.cite)
+  })
+
+  test('a baseline, ratcheting — it may rise and may never fall', () => {
+    // It was 22 of 24, both misses `recipe`, and the fix was not in this
+    // package: `caravan` and `ui` each had three headings, so every fact in
+    // them lived in one block named after nothing. Four headings later it is
+    // 24, with no change to the router or the key. A heading is an index entry.
+    const s = scoreQuestions({ root, questions: QUESTIONS })
+    expect(s.hits).toBeGreaterThanOrEqual(24)
+    expect(s.byIntent.recipe.hit).toBeGreaterThanOrEqual(4)
   })
 
   test('tokens-to-fact stays small — the whole point of the measurement', () => {
+    // The PAYLOAD, not the pointer. Counting what came back made `recipe` the
+    // cheapest intent in the table at six tokens, for a path to a 39,000-token
+    // file.
     const s = scoreQuestions({ root, questions: QUESTIONS })
-    expect(s.medianRead).toBeLessThan(1200)     // ~300 tokens, a generous ceiling
+    expect(s.medianRead).toBeLessThan(1600)
   })
 })

@@ -30,6 +30,14 @@ export type VerificationPurpose = 'passwordReset' | 'emailVerify' | 'oauthLink'
 
 export type MetricType = 'counter' | 'gauge' | 'histogram'
 
+export type FlowStatus = 'draft' | 'active' | 'paused' | 'archived'
+
+export type FlowRunStatus = 'pending' | 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled'
+
+export type FlowStepStatus = 'pending' | 'running' | 'completed' | 'failed' | 'skipped'
+
+export type FlowCredentialAuth = 'none' | 'bearer' | 'api_key' | 'hmac'
+
 export type AccountType = 'individual' | 'organization'
 
 export type WorkspaceType = 'personal' | 'team' | 'enterprise'
@@ -657,6 +665,430 @@ export interface MetricHourWhere extends WhereBase {
 export type MetricHourOrderBy =
   | { [K in keyof Omit<MetricHour, never>]?: OrderDir }
   | Array<{ [K in keyof Omit<MetricHour, never>]?: OrderDir }>
+
+// ─── Flow ────────────────────────────────────────────────────────
+
+export interface Flow {
+  id: string
+  name: string
+  description?: string | null
+  status: FlowStatus
+  currentVersion?: number | null
+  ownerId: string
+  runsPerMinute?: number | null
+  maxWrites: number
+  createdAt: string
+  updatedAt: string
+  workspaceId: string
+}
+
+export interface FlowCreate {
+  id?: string
+  name: string
+  description?: string | null
+  status?: FlowStatus
+  currentVersion?: number | null
+  ownerId: string
+  runsPerMinute?: number | null
+  maxWrites?: number
+  workspaceId: string
+}
+
+export interface FlowUpdate {
+  id?: string
+  name?: string
+  description?: string | null
+  status?: FlowStatus
+  currentVersion?: number | null
+  ownerId?: string
+  runsPerMinute?: number | null
+  maxWrites?: number
+  workspaceId?: string
+}
+
+export interface FlowWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  name?: string | WhereOp<string> | null
+  description?: string | WhereOp<string> | null
+  status?: FlowStatus | WhereOp<FlowStatus> | null
+  currentVersion?: number | WhereOp<number> | null
+  ownerId?: string | WhereOp<string> | null
+  runsPerMinute?: number | WhereOp<number> | null
+  maxWrites?: number | WhereOp<number> | null
+  createdAt?: string | WhereOp<string> | null
+  updatedAt?: string | WhereOp<string> | null
+  workspaceId?: string | WhereOp<string> | null
+  AND?: FlowWhere[]
+  OR?:  FlowWhere[]
+  NOT?: FlowWhere
+}
+
+export type FlowOrderBy =
+  | { [K in keyof Omit<Flow, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Flow, never>]?: OrderDir }>
+
+// ─── FlowVersion ─────────────────────────────────────────────────
+
+export interface FlowVersion {
+  id: string
+  flowId: string
+  version: number
+  definition: unknown
+  authorId?: string | null
+  createdAt: string
+}
+
+export interface FlowVersionCreate {
+  id?: string
+  flowId: string
+  version: number
+  definition: unknown
+  authorId?: string | null
+}
+
+export interface FlowVersionUpdate {
+  id?: string
+  flowId?: string
+  version?: number
+  definition?: unknown
+  authorId?: string | null
+}
+
+export interface FlowVersionWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  flowId?: string | WhereOp<string> | null
+  version?: number | WhereOp<number> | null
+  definition?: unknown | WhereOp<unknown> | null
+  authorId?: string | WhereOp<string> | null
+  createdAt?: string | WhereOp<string> | null
+  AND?: FlowVersionWhere[]
+  OR?:  FlowVersionWhere[]
+  NOT?: FlowVersionWhere
+}
+
+export type FlowVersionOrderBy =
+  | { [K in keyof Omit<FlowVersion, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<FlowVersion, never>]?: OrderDir }>
+
+// ─── FlowLayout ──────────────────────────────────────────────────
+
+export interface FlowLayout {
+  id: string
+  flowId: string
+  layout: unknown
+  updatedAt: string
+}
+
+export interface FlowLayoutCreate {
+  id?: string
+  flowId: string
+  layout?: unknown
+}
+
+export interface FlowLayoutUpdate {
+  id?: string
+  flowId?: string
+  layout?: unknown
+}
+
+export interface FlowLayoutWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  flowId?: string | WhereOp<string> | null
+  layout?: unknown | WhereOp<unknown> | null
+  updatedAt?: string | WhereOp<string> | null
+  AND?: FlowLayoutWhere[]
+  OR?:  FlowLayoutWhere[]
+  NOT?: FlowLayoutWhere
+}
+
+export type FlowLayoutOrderBy =
+  | { [K in keyof Omit<FlowLayout, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<FlowLayout, never>]?: OrderDir }>
+
+// ─── Run ─────────────────────────────────────────────────────────
+
+export interface Run {
+  id: string
+  flowVersionId: string
+  status: FlowRunStatus
+  trigger?: unknown | null
+  /** @encrypted */
+  context?: unknown | null
+  currentStage: number
+  actorId?: string | null
+  startedAt?: string | null
+  endedAt?: string | null
+  error?: string | null
+  createdAt: string
+  heartbeatAt?: string | null
+}
+
+export interface RunCreate {
+  id?: string
+  flowVersionId: string
+  status?: FlowRunStatus
+  trigger?: unknown | null
+  context?: unknown | null
+  currentStage?: number
+  actorId?: string | null
+  startedAt?: string | null
+  endedAt?: string | null
+  error?: string | null
+  heartbeatAt?: string | null
+}
+
+export interface RunUpdate {
+  id?: string
+  flowVersionId?: string
+  status?: FlowRunStatus
+  trigger?: unknown | null
+  context?: unknown | null
+  currentStage?: number
+  actorId?: string | null
+  startedAt?: string | null
+  endedAt?: string | null
+  error?: string | null
+  heartbeatAt?: string | null
+}
+
+export interface RunWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  flowVersionId?: string | WhereOp<string> | null
+  status?: FlowRunStatus | WhereOp<FlowRunStatus> | null
+  trigger?: unknown | WhereOp<unknown> | null
+  context?: unknown | WhereOp<unknown> | null
+  currentStage?: number | WhereOp<number> | null
+  actorId?: string | WhereOp<string> | null
+  startedAt?: string | WhereOp<string> | null
+  endedAt?: string | WhereOp<string> | null
+  error?: string | WhereOp<string> | null
+  createdAt?: string | WhereOp<string> | null
+  heartbeatAt?: string | WhereOp<string> | null
+  AND?: RunWhere[]
+  OR?:  RunWhere[]
+  NOT?: RunWhere
+}
+
+export type RunOrderBy =
+  | { [K in keyof Omit<Run, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Run, never>]?: OrderDir }>
+
+// ─── RunStep ─────────────────────────────────────────────────────
+
+export interface RunStep {
+  id: string
+  runId: string
+  nodeId: string
+  status: FlowStepStatus
+  attempts: number
+  fromCache: boolean
+  startedAt?: string | null
+  durationMs?: number | null
+  output?: unknown | null
+  error?: string | null
+  logs?: unknown | null
+}
+
+export interface RunStepCreate {
+  id?: string
+  runId: string
+  nodeId: string
+  status: FlowStepStatus
+  attempts?: number
+  fromCache?: boolean
+  startedAt?: string | null
+  durationMs?: number | null
+  output?: unknown | null
+  error?: string | null
+  logs?: unknown | null
+}
+
+export interface RunStepUpdate {
+  id?: string
+  runId?: string
+  nodeId?: string
+  status?: FlowStepStatus
+  attempts?: number
+  fromCache?: boolean
+  startedAt?: string | null
+  durationMs?: number | null
+  output?: unknown | null
+  error?: string | null
+  logs?: unknown | null
+}
+
+export interface RunStepWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  runId?: string | WhereOp<string> | null
+  nodeId?: string | WhereOp<string> | null
+  status?: FlowStepStatus | WhereOp<FlowStepStatus> | null
+  attempts?: number | WhereOp<number> | null
+  fromCache?: boolean | WhereOp<boolean> | null
+  startedAt?: string | WhereOp<string> | null
+  durationMs?: number | WhereOp<number> | null
+  output?: unknown | WhereOp<unknown> | null
+  error?: string | WhereOp<string> | null
+  logs?: unknown | WhereOp<unknown> | null
+  AND?: RunStepWhere[]
+  OR?:  RunStepWhere[]
+  NOT?: RunStepWhere
+}
+
+export type RunStepOrderBy =
+  | { [K in keyof Omit<RunStep, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<RunStep, never>]?: OrderDir }>
+
+// ─── Wait ────────────────────────────────────────────────────────
+
+export interface Wait {
+  id: string
+  resumeKey: string
+  runId: string
+  nodeId: string
+  timeoutAt?: string | null
+  createdAt: string
+}
+
+export interface WaitCreate {
+  id?: string
+  resumeKey: string
+  runId: string
+  nodeId: string
+  timeoutAt?: string | null
+}
+
+export interface WaitUpdate {
+  id?: string
+  resumeKey?: string
+  runId?: string
+  nodeId?: string
+  timeoutAt?: string | null
+}
+
+export interface WaitWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  resumeKey?: string | WhereOp<string> | null
+  runId?: string | WhereOp<string> | null
+  nodeId?: string | WhereOp<string> | null
+  timeoutAt?: string | WhereOp<string> | null
+  createdAt?: string | WhereOp<string> | null
+  AND?: WaitWhere[]
+  OR?:  WaitWhere[]
+  NOT?: WaitWhere
+}
+
+export type WaitOrderBy =
+  | { [K in keyof Omit<Wait, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<Wait, never>]?: OrderDir }>
+
+// ─── FlowCredential ──────────────────────────────────────────────
+
+export interface FlowCredential {
+  id: string
+  name: string
+  provider: string
+  address: string
+  auth: FlowCredentialAuth
+  header?: string | null
+  encoding?: string | null
+  /** @encrypted */
+  secret?: string | null
+  createdAt: string
+  updatedAt: string
+  workspaceId: string
+}
+
+export interface FlowCredentialCreate {
+  id?: string
+  name: string
+  provider: string
+  address: string
+  auth?: FlowCredentialAuth
+  header?: string | null
+  encoding?: string | null
+  secret?: string | null
+  workspaceId: string
+}
+
+export interface FlowCredentialUpdate {
+  id?: string
+  name?: string
+  provider?: string
+  address?: string
+  auth?: FlowCredentialAuth
+  header?: string | null
+  encoding?: string | null
+  secret?: string | null
+  workspaceId?: string
+}
+
+export interface FlowCredentialWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  name?: string | WhereOp<string> | null
+  provider?: string | WhereOp<string> | null
+  address?: string | WhereOp<string> | null
+  auth?: FlowCredentialAuth | WhereOp<FlowCredentialAuth> | null
+  header?: string | WhereOp<string> | null
+  encoding?: string | WhereOp<string> | null
+  secret?: string | WhereOp<string> | null
+  createdAt?: string | WhereOp<string> | null
+  updatedAt?: string | WhereOp<string> | null
+  workspaceId?: string | WhereOp<string> | null
+  AND?: FlowCredentialWhere[]
+  OR?:  FlowCredentialWhere[]
+  NOT?: FlowCredentialWhere
+}
+
+export type FlowCredentialOrderBy =
+  | { [K in keyof Omit<FlowCredential, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<FlowCredential, never>]?: OrderDir }>
+
+// ─── KvEntry ─────────────────────────────────────────────────────
+
+export interface KvEntry {
+  id: string
+  scope: string
+  key: string
+  value: unknown
+  expiresAt?: string | null
+  updatedAt: string
+  workspaceId: string
+}
+
+export interface KvEntryCreate {
+  id?: string
+  scope: string
+  key: string
+  value: unknown
+  expiresAt?: string | null
+  workspaceId: string
+}
+
+export interface KvEntryUpdate {
+  id?: string
+  scope?: string
+  key?: string
+  value?: unknown
+  expiresAt?: string | null
+  workspaceId?: string
+}
+
+export interface KvEntryWhere extends WhereBase {
+  id?: string | WhereOp<string> | null
+  scope?: string | WhereOp<string> | null
+  key?: string | WhereOp<string> | null
+  value?: unknown | WhereOp<unknown> | null
+  expiresAt?: string | WhereOp<string> | null
+  updatedAt?: string | WhereOp<string> | null
+  workspaceId?: string | WhereOp<string> | null
+  AND?: KvEntryWhere[]
+  OR?:  KvEntryWhere[]
+  NOT?: KvEntryWhere
+}
+
+export type KvEntryOrderBy =
+  | { [K in keyof Omit<KvEntry, never>]?: OrderDir }
+  | Array<{ [K in keyof Omit<KvEntry, never>]?: OrderDir }>
 
 // ─── User ────────────────────────────────────────────────────────
 
@@ -3691,6 +4123,14 @@ export interface ServiceTypes {
   metricSerieses: MetricSeries
   metricPoints: MetricPoint
   metricHours: MetricHour
+  flows: Flow
+  flowVersions: FlowVersion
+  flowLayouts: FlowLayout
+  runs: Run
+  runSteps: RunStep
+  waits: Wait
+  flowCredentials: FlowCredential
+  kvEntries: KvEntry
   users: User
   accounts: Account
   workspaces: Workspace
@@ -3854,6 +4294,14 @@ export interface LitestoneClient {
   readonly metricSeries: TableClient<MetricSeries, MetricSeriesCreate, MetricSeriesUpdate, MetricSeriesWhere>
   readonly metricPoint: TableClient<MetricPoint, MetricPointCreate, MetricPointUpdate, MetricPointWhere>
   readonly metricHour: TableClient<MetricHour, MetricHourCreate, MetricHourUpdate, MetricHourWhere>
+  readonly flow: TableClient<Flow, FlowCreate, FlowUpdate, FlowWhere>
+  readonly flowVersion: TableClient<FlowVersion, FlowVersionCreate, FlowVersionUpdate, FlowVersionWhere>
+  readonly flowLayout: TableClient<FlowLayout, FlowLayoutCreate, FlowLayoutUpdate, FlowLayoutWhere>
+  readonly run: TableClient<Run, RunCreate, RunUpdate, RunWhere>
+  readonly runStep: TableClient<RunStep, RunStepCreate, RunStepUpdate, RunStepWhere>
+  readonly wait: TableClient<Wait, WaitCreate, WaitUpdate, WaitWhere>
+  readonly flowCredential: TableClient<FlowCredential, FlowCredentialCreate, FlowCredentialUpdate, FlowCredentialWhere>
+  readonly kvEntry: TableClient<KvEntry, KvEntryCreate, KvEntryUpdate, KvEntryWhere>
   readonly user: TableClient<User, UserCreate, UserUpdate, UserWhere>
   readonly account: TableClient<Account, AccountCreate, AccountUpdate, AccountWhere>
   readonly workspace: TableClient<Workspace, WorkspaceCreate, WorkspaceUpdate, WorkspaceWhere>

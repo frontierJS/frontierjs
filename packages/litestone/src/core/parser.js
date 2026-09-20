@@ -1365,6 +1365,21 @@ class Parser {
       // whose `lat` is a lathe setting.
       case 'point':   return { kind: 'point', ...this.parsePoint() }
 
+      // ── @vector — what a row MEANS ────────────────────────────────────────
+      //
+      // `@vector(1536)` on a `Bytes` field: the column holds that many float32
+      // dimensions and can be ordered by similarity. A marker on storage that
+      // already exists rather than a ninth scalar (`FJS-D332`) — `Embedding(n)`
+      // would be this grammar's first PARAMETERIZED type, and the parameter
+      // would then have to travel into the DDL, the differ, the JSON Schema,
+      // `select`, `orderBy`, patch semantics and the audit trail. `String @date`
+      // (`FJS-D288`) and `@point` above are the same decision twice already.
+      //
+      // The dimension is the column's, stated once. Two vectors of different
+      // lengths have no comparison, so everything downstream reads it from here
+      // rather than from the bytes in hand.
+      case 'vector':  return { kind: 'vector', dim: this.parseParenNumber() }
+
       // ── Typed JSON ────────────────────────────────────────────────────────
       // @type(Address)            — strict by default: extra keys reject
       // @type(Address, strict: false)  — loose: extra keys silently kept
@@ -6214,6 +6229,52 @@ function validate(schema) {
           }
         }
       }
+    }
+  }
+
+  // ── @vector validation ──────────────────────────────────────────────────────
+  //
+  // `FJS-1193`. Every refusal here is a shape where the comparison would be
+  // computed over bytes that are not a vector — and that does not fail loudly:
+  // a wrong length throws at the first read, but a wrong COLUMN silently ranks
+  // rows by nonsense, which reads exactly like a working similarity search.
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      const vec = field.attributes.find(a => a.kind === 'vector')
+      if (!vec) continue
+      const at = `Model '${model.name}', field '${field.name}'`
+
+      if (field.type.name !== 'Bytes')
+        errors.push(`${at}: @vector requires a Bytes field, got ${field.type.name} — a vector is a BLOB of float32`)
+      if (field.type.array)
+        errors.push(`${at}: @vector cannot be an array — the attribute describes one vector`)
+      if (!Number.isInteger(vec.dim) || vec.dim < 1)
+        errors.push(`${at}: @vector(${vec.dim}) — the dimension is a positive whole number of float32 values`)
+
+      // The bytes are compared arithmetically, so anything that changes them
+      // between write and read makes every distance meaningless. Ciphertext is
+      // the sharp one: it reads as a valid blob of the right length under
+      // deterministic encryption and ranks by nothing at all.
+      for (const kind of ['encrypted', 'secret', 'hashed']) {
+        if (field.attributes.some(a => a.kind === kind))
+          errors.push(`${at}: @vector cannot be combined with @${kind} — the distance is computed over the stored bytes, and encoded bytes rank by nothing`)
+      }
+
+      // No column to compare.
+      for (const kind of ['computed', 'from', 'derived', 'transient', 'edge']) {
+        if (field.attributes.some(a => a.kind === kind))
+          errors.push(`${at}: @vector needs a stored column and @${kind} is not one`)
+      }
+
+      // A vector is 6 kB of float32 that is equal to nothing and orders as
+      // opaque text. `@unique` builds an index over it, and `@@fts` would
+      // tokenize it — both are real DDL over bytes no reader can use.
+      if (field.attributes.some(a => a.kind === 'unique'))
+        errors.push(`${at}: @vector cannot be @unique — two embeddings are near or far, never equal`)
+      if (field.attributes.some(a => a.kind === 'id'))
+        errors.push(`${at}: @vector cannot be @id — a row is not identified by what it means`)
+      if ((model.attributes ?? []).some(a => a.kind === 'fts' && (a.fields ?? []).includes(field.name)))
+        errors.push(`${at}: @vector cannot be named in @@fts — FTS5 indexes text, and these bytes are not text`)
     }
   }
 

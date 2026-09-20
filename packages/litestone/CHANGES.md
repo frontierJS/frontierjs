@@ -1,5 +1,99 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-20 — `x-geo`, so a coordinate stops being offered a JSON editor
+
+A `@point` column is a `Json` column, and `Json` is the one thing this schema deliberately
+stops describing — so the control table answered `json` for it and a generated form rendered
+a document editor over a latitude and a longitude, which is the workaround the declaration
+exists to retire, drawn by the framework itself.
+
+`x-geo` carries the two KEY NAMES, because they are the model's: `@point(lat, lng)` and
+`@point(latitude, longitude)` are both ordinary, and a control assuming one writes a
+document the database's own CHECK refuses. An affordance like `x-gate` and `x-values` — the
+range is enforced at the Data boundary whatever a form does with it (Invariant 6).
+
+**Emitted beside `x-money` and `x-time` rather than on the field object**, which is the
+detail worth keeping: a nullable column is `anyOf: [<the type>, {type: "null"}]` and every
+consumer reads the non-null branch, so a keyword on the outer object is carried for a
+required column and silently absent for an optional one — and an optional coordinate is most
+of them. Written the obvious way first and caught by a test over a `Json?` column.
+
+## 2026-09-20 — three executed checks were grading nothing under row tenancy
+
+[`FJS-1199`](../../ISSUES.md#fjs-1199), [`FJS-1200`](../../ISSUES.md#fjs-1200) and
+[`FJS-1201`](../../ISSUES.md#fjs-1201), all found installing orion into basecamp, all the same
+shape: **a check that answers *nothing was crossed here* reads exactly like a check that found
+nothing wrong.** Fourteen of basecamp's own models — `Invitation`, `Secret`, `ApiKey`, `Server`,
+`Project`, `Environment`, `App`, `Domain`, `Deployment` and more — were ungraded by
+`verifyTenantIsolation`, with the suite naming the reason on every run.
+
+**A seeded row now satisfies the schema it is seeded into.** `_seedForTenant` ensures the row its
+stamped tenant column NAMES exists, so a fabricated tenant value is made to satisfy the foreign key
+where the row is written rather than being chosen to satisfy it upstream — which also covers a model
+scoped through a PARENT, where the value appears in no predicate and nothing outside could patch it.
+
+**A seeded row now has an owner.** Seeding runs on the system client, so `@default(auth().id)` had no
+caller to read and the factory filled an FK sentinel; the row belonged to nobody and a model whose
+write rule is `ownerId == auth().id` refused the very tenant the crossing is asserted FROM. Every
+`auth()` default is stamped with the acting principal's own value, threaded through the parent walk.
+Derived rather than stated — the declaration already says whose row it is — so no app writes a
+fixture and no option is coined.
+
+**And a seeded row is in the reader's tenant.** `verifyFieldProtection` and `verifyRowPolicies` each
+build a reader holding a tenant claim and then seeded through a plain factory, which generates a
+fresh value for that same column per row: the tenant rule filtered everything before the rule under
+test was reached, and both named the wrong rule as ungraded. Two different repairs, because the two
+seed differently — field protection goes through the tenant-aware path, row policies stamp the column
+and ensure its parent, since replacing that checker's seeder traded one model for ten (measured). A
+stated override still wins in both, so a policy comparing the tenant column keeps a row on each side.
+
+**One fix was built and reverted**, which is the part worth keeping: preferring a tenant carrier whose
+column is a real foreign key also repaired basecamp, but with the parent ensured no test could tell
+the two apart, and an unfalsifiable behavior change is what `PHILOSOPHY.md` § V's last question
+refuses. The attempt to separate them with a constrained `@id` surfaced only a third limitation — the
+factory cannot build one.
+
+`test/tenant-isolation.test.ts` gains three sections and the controls that make them mean something:
+an all-bare schema, so the synthetic fallback is not removed; a protected model scoped through a
+PARENT, because a column-scoped one is already repaired by the candidate loop. Each is red with its
+own half reverted. litestone 5058, basecamp 406/6 → 412/0, junction 2395, testing 33.
+
+
+## 2026-09-20 — a distance order pages, and two ways it answered wrong rows with a 200
+
+`FJS-D321` put the ordering in the query so a nearest-first list paginates. It did not, and
+neither failure said anything.
+
+**`normalizeOrderBy` dropped a near order**, because its value is an object with no `dir`
+key — so the cursor fields were the appended TIEBREAK alone, and each page was
+`WHERE id > n ORDER BY <distance>`: an id-window re-sorted. Measured on seven rows with a
+limit of two, page one was `Edinburgh, Camden` and the nearest row arrived on page two.
+
+**And a row with no location led the list.** The distance expression is `NULL` for it and
+SQLite sorts a `NULL` first ascending, so `Nowhere` was the nearest place to London. The
+near ordering emits `NULLS LAST` now, in both directions — a row at no distance is not at
+zero, and it is not the furthest either.
+
+**The cursor carries the POINT rather than the distance** (`FJS-D324`), which is the part
+worth writing down. SQLite's `power`, `asin` and `radians` are a different libm associating
+in a different order from JavaScript's, so a distance computed here differs from the
+column's in the last bits — measured, one ulp made `d > ?` true for the cursor's own row and
+page two opened with the row page one ended on. The next page now measures the carried point
+with the **same expression** it measures every row with, so the tie is exact by
+construction and no rounding tolerance has to be invented. The center rides along and a page
+resumes only from its own, refused by name otherwise.
+
+`cursorOrderSql` is the one owner of *these cursor fields → an ORDER BY*, because
+`findManyCursor` builds its own SQL and had written `"site" ASC` — sorting the JSON
+DOCUMENT as text while the cursor compared a distance. `orderTotal` round-trips a distance
+key as a distance key for the same reason: its answer IS the scan's ordering and is handed
+to `cursorFor`, so collapsing it to `{ site: 'asc' }` named the one spelling a point
+refuses.
+
+**The gate is a walk.** The whole list is paged two at a time and compared against the
+unpaginated read, over a fixture whose insertion order is deliberately not its distance
+order — so a cursor paging by the tiebreak alone cannot accidentally agree.
+
 ## 2026-09-20 — `@@sync(field)`: two writers, different columns, both of them win
 
 Phase 5 of `IDEAS/homestead.md`, the Data-boundary half (`FJS-D334`,

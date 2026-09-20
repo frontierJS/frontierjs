@@ -378,3 +378,99 @@ describe('the tenant values satisfy the schema, not the first model declared', (
     expect(leaks(rows)).toEqual([])
   })
 })
+
+/**
+ * A model whose write rule is ownership, under declared row tenancy.
+ *
+ * `ownerId @default(auth().id)` names the row's owner, and seeding runs on the
+ * system client where that default has no caller to read. The row then belongs
+ * to nobody, the acting tenant cannot update it, and the check reports
+ * `unreachable` — true, and it means the model is graded by nothing.
+ */
+const OWNED = `
+  tenancy { strategy row  column workspaceId  claim workspaceId }
+
+  model Workspace {
+    id    Int    @id @default(autoincrement())
+    docs  Doc[]
+    name  String
+    @@tenant(none)
+  }
+
+  model Doc {
+    id          Int       @id @default(autoincrement())
+    workspaceId Int
+    workspace   Workspace @relation(fields: [workspaceId], references: [id])
+    ownerId     String    @default(auth().id)
+    title       String
+    @@allow('read',   true)
+    @@allow('update', ownerId == auth().id)
+    @@allow('delete', ownerId == auth().id)
+  }
+`
+
+describe('an owner-scoped model is seeded as the tenant acting on it', () => {
+  test('the acting tenant owns its own row, so a refusal means tenancy', async () => {
+    const env  = await createTestEnv({ schema: OWNED })
+    const rows = await env.verifyTenantIsolation()
+
+    // The defect: `Doc … was seeded for tenant A and tenant A cannot update it`.
+    expect(rows.filter(r => r.got === 'unreachable').map(r => r.message)).toEqual([])
+    expect(of(rows, 'Doc').some(r => r.got === 'graded')).toBe(true)
+    expect(leaks(rows)).toEqual([])
+  })
+})
+
+describe('the two policy checkers seed into the tenant their reader holds', () => {
+  // Both build a reader carrying a tenant claim and then seed through a plain
+  // factory, which generates a fresh value for that same column on every row —
+  // so the tenant rule filtered every row before the rule under test was
+  // reached, and each check named the wrong rule as ungraded.
+  const PROTECTED = `
+    tenancy { strategy row  column workspaceId  claim workspaceId }
+
+    model Workspace {
+      id     String @id
+      notes  Note[]
+      name   String
+      @@tenant(none)
+    }
+
+    model Note {
+      id          Int       @id @default(autoincrement())
+      workspaceId String
+      workspace   Workspace @relation(fields: [workspaceId], references: [id])
+      ownerId     String    @default(auth().id)
+      body        String
+      @@allow('read',   ownerId == auth().id)
+      @@allow('update', ownerId == auth().id)
+    }
+
+    // Scoped through its PARENT, which is the shape that bites: a delegated
+    // tenant rule is a check() through the relation, and the candidate values a
+    // checker builds off a predicate cannot satisfy one -- only seeding the
+    // whole chain into the reader's tenant can.
+    model Comment {
+      id        Int      @id @default(autoincrement())
+      noteId    Int
+      note      Note     @relation(fields: [noteId], references: [id])
+      body      String
+      apiToken  String?  @guarded
+    }
+  `
+
+  test('a protected column on a scoped model is actually reached', async () => {
+    const env = await createTestEnv({ schema: PROTECTED })
+    // The defect reported `the seeded row was not visible to a SYSADMIN(7)
+    // reader`, which reads as a row-policy problem and was tenancy.
+    expect((await env.verifyFieldProtection()).map((m: any) => m.message)).toEqual([])
+  })
+
+  test('a policy on a scoped model gets rows on both sides', async () => {
+    const env    = await createTestEnv({ schema: PROTECTED })
+    const graded = await env.verifyRowPolicies()
+    // The defect reported *all N seeded rows fall on the same side of the
+    // policy (all excluded)* — naming a policy that had never been consulted.
+    expect(graded.filter((m: any) => /fall on the same side/.test(m.message)).map((m: any) => m.message)).toEqual([])
+  })
+})

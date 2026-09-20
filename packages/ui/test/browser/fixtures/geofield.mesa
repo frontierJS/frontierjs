@@ -1,0 +1,58 @@
+<script>
+  // geofield.mesa — GeoField standing alone, and inside a generated <Form>
+  // where nothing about it is written at all.
+  //
+  // The second one is the half that proves the WIRING rather than the
+  // component: Sierra's control table answers `geo` for a column carrying
+  // `x-geo` and `@frontierjs/ui`'s dispatcher binds that name here, and a break
+  // in either link renders a JSON textarea over a latitude and a longitude,
+  // which is the workaround `@point` exists to retire.
+  import GeoField from '../../../components/forms/GeoField.mesa'
+  import Form     from '../../../components/forms/Form.mesa'
+  import Button   from '../../../components/forms/Button.mesa'
+  import { formFieldList } from '@frontierjs/sierra/field-rules'
+
+  let value = { lat: 51.5074, lng: -0.1278 }
+  let seen  = undefined
+  let seenCount = 0
+
+  // The keys a model may actually declare. `x-geo` is what litestone emits for
+  // `@point(latitude, longitude)`, and a control that assumed `lat`/`lng` would
+  // write a document the database's own CHECK refuses.
+  const FIELDS = {
+    name: { type: 'string', required: true, title: 'Name' },
+    site: { required: false, title: 'Site', 'x-geo': { lat: 'latitude', lng: 'longitude' } },
+  }
+
+  const RESOURCE = {
+    context:     { model: 'Visit', service: 'visits', idField: 'id' },
+    fields:      FIELDS,
+    formFields:  (opts) => formFieldList(FIELDS, opts),
+    options:     () => Promise.resolve({ options: [], total: 0, truncated: false }),
+    make:        () => ({ name: 'Depot', site: { latitude: 40.7128, longitude: -74.006 } }),
+    validate:    () => [],
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    service:     {},
+  }
+
+  let record = RESOURCE.make()
+  let saves  = 0
+  let sent   = undefined
+</script>
+
+<h2>standing alone — the pair in, the pair out</h2>
+<GeoField label="Site" name="site" value={value} onvalue={(p) => { seen = p; seenCount++ }} />
+
+<output id="seen">{JSON.stringify(seen)}</output>
+<output id="seen-count">{seenCount}</output>
+
+<h2>generated — nothing here names a control</h2>
+<Form id="generated" resource={RESOURCE} bind:record={record}
+      onsubmit={(r) => { saves++; sent = r.site }}>
+  {#snippet actions()}
+    <Button type="submit" id="save">Save</Button>
+  {/snippet}
+</Form>
+
+<output id="saves">{saves}</output>
+<output id="sent">{JSON.stringify(sent)}</output>

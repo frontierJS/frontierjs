@@ -20,6 +20,7 @@
   import Combobox      from './Combobox.mesa'
   import DateTimeInput from './DateTimeInput.mesa'
   import FileField     from './FileField.mesa'
+  import GeoField      from './GeoField.mesa'
   import MultiSelect   from './MultiSelect.mesa'
   import Input         from './Input.mesa'
   import JsonInput     from './JsonInput.mesa'
@@ -142,6 +143,17 @@
       component: FileField,
       props: ({ field: f, value: v, onvalue }) => ({
         name: f.name, field: f, value: v, onvalue: (next) => onvalue(next),
+      }),
+    },
+    // A `@point` column. The value is ONE thing and the control is two boxes,
+    // so `onvalue` again — and here it is sharper than anywhere else, because
+    // `e.target.value` is half a coordinate, which is exactly what the
+    // database's own CHECK refuses. Half-typed, the control hands back nothing
+    // at all and tells the form why.
+    geo: {
+      component: GeoField,
+      props: ({ field: f, value: v, onvalue }) => ({
+        name: f.name, field: f, value: v, onvalue: (point) => onvalue(point),
       }),
     },
     datetime: {
