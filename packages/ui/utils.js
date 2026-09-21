@@ -311,3 +311,26 @@ export function splitRecent(options = []) {
 export const RECENT_GROUP = 'Recently used'
 /** …and the rest of the list. NOT "All": the head is not in it. */
 export const REST_GROUP   = 'Everything else'
+
+/*
+ * ── Banded scales ────────────────────────────────────────────────────
+ */
+
+/**
+ * Which band a value falls in, given ascending thresholds.
+ *
+ * A threshold is the END of its band and is INCLUSIVE, so
+ * `bandIndex([10, 30], 10)` is 0 and `bandIndex([10, 30], 11)` is 1. N
+ * thresholds make N+1 bands; the last one is open-ended.
+ *
+ * It is here rather than inside `Thresholds.mesa` because the component is
+ * never the only reader: the caller that tuned the cuts is coloring a map, a
+ * table or a chart from the same numbers, and `values.filter(t => v > t).length`
+ * written out at the far end is the copy that disagrees the first time an
+ * endpoint changes hands.
+ */
+export function bandIndex(thresholds, value) {
+  let band = 0
+  for (const t of thresholds) if (value > t) band++
+  return band
+}

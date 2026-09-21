@@ -1,0 +1,48 @@
+<script>
+  // thresholds.mesa — a banded scale over a skewed distribution.
+  //
+  // Log scale and a long tail on purpose: that is the shape the component
+  // exists for, and it is the one where a position-space bug is invisible on a
+  // linear axis (every bucket the same width, every conversion the identity).
+  //
+  // The data is generated rather than typed so the tail is real — 600 values,
+  // most of them small, a handful in the thousands.
+  import Thresholds from '../../../components/forms/Thresholds.mesa'
+
+  const DEFAULTS = [10, 30, 100]
+
+  const data = (() => {
+    const out = []
+    // deterministic: a spec asserting counts cannot depend on Math.random
+    let seed = 7
+    const next = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648
+    // squared, so the tail is a tail: most values small, a handful in the
+    // thousands — the shape a log axis exists for
+    for (let i = 0; i < 600; i++) out.push(Math.max(1, Math.round(2 ** (next() ** 2 * 12))))
+    return out
+  })()
+
+  let values = DEFAULTS.slice()
+  let last   = ''
+
+  function apply(next) {
+    values = next
+    last   = JSON.stringify(next)
+  }
+</script>
+
+<div id="tuner">
+  <Thresholds
+    bind:values={values}
+    {data}
+    scale="log"
+    min={1}
+    max={4096}
+    defaults={DEFAULTS}
+    bandLabels={['simple', 'fine', 'hairy', 'awful']}
+    note="the shipped cuts"
+    onchange={apply}
+  />
+</div>
+
+<output id="out">{last}</output>

@@ -201,9 +201,10 @@ Every line above reaches four places at once. Writing the equivalent as
 
 `String` · `Int` · `Float` · `Bytes` · `Boolean` · `DateTime` · `Json` · `File`
 
-**`Text`, `Integer`, `Real` and `Blob` do not parse.** They are the old names,
-cut rather than aliased, and the tokenizer answers with the replacement. If you
-are reaching for one you are writing SQL or Prisma from memory.
+**`Text`, `Integer`, `Real` and `Blob` are not types of this language.** A field
+typed with one is read as a reference to an enum or a model and refused as
+*unknown type*. If you are reaching for one you are writing SQL or Prisma from
+memory; the eight above are the whole list.
 
 **There is no `Decimal` and no `Numeric`.** An exact number is `Int @scale(n)`
 — an integer column with the point declared — and money is `@money`, which is

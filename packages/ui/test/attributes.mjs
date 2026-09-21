@@ -51,6 +51,7 @@ const PROPS = {
   'forms/MultiSelect':   { options: ['alpha', 'beta'] },
   'forms/RadioGroup':    { name: 'plan', items: [{ value: 'a', label: 'A' }] },
   'forms/Select':        { options: ['alpha', 'beta'] },
+  'forms/Thresholds':    { values: [10, 30], data: [1, 4, 12, 40, 90] },
   'layout/Tab':          { id: 'one' },
   'layout/TabPanel':     { id: 'one' },
   'overlay/CommandPalette': { open: true, items: [{ id: 'a', label: 'Alpha' }] },

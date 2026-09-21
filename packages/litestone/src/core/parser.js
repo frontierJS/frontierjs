@@ -24,17 +24,6 @@ const SCALAR_TYPES = new Set([
   'String', 'Int', 'Float', 'Bytes', 'Boolean', 'DateTime', 'Json', 'File'
 ])
 
-// Old type names → new names. Used by the tokenizer to emit a clear migration
-// error pointing the user at the new name. We don't accept the old names —
-// this is a hard cut. Pre-publish, no aliases. Codemod script in
-// `tools/codemod-rename-types.js` for users with existing .lite files.
-const RENAMED_TYPES = new Map([
-  ['Text',    'String'],
-  ['Integer', 'Int'],
-  ['Real',    'Float'],
-  ['Blob',    'Bytes'],
-])
-
 const KEYWORDS = new Set([
   'model', 'enum', 'function', 'import', 'database', 'view', 'trait', 'type', 'true', 'false'
 ])
@@ -806,18 +795,6 @@ class Parser {
 
   parseFieldType() {
     const t = this.eat(TK.IDENT)
-    // Hard-cut renamed scalar types — point users at the new spelling. This
-    // is checked before SCALAR_TYPES so the error is descriptive instead of
-    // letting the type fall through as an unknown enum reference.
-    const renamed = RENAMED_TYPES.get(t.value)
-    if (renamed) {
-      throw new ParseError(
-        `Type '${t.value}' was renamed to '${renamed}'. ` +
-        `Update your schema (no aliases are accepted). ` +
-        `Run 'litestone codemod' to migrate .lite files automatically.`,
-        t,
-      )
-    }
     const isScalar = SCALAR_TYPES.has(t.value)
     const array    = !!this.maybeEat(TK.LBRACKET) && !!this.eat(TK.RBRACKET)
     const optional = !!this.maybeEat(TK.QUESTION)
@@ -4634,7 +4611,7 @@ function validate(schema) {
           && (field.type.kind !== 'relation' || !field.attributes.some(a => a.kind === 'relation' && a.fields))
         if (!arrayAllowed.has(field.type.name) && !enumNames.has(field.type.name)
             && field.type.kind !== 'relation' && !isImplicitM2M) {
-          errors.push(`Model '${model.name}', field '${field.name}': array [] is only supported for Text, Integer, File, an enum name, or a model name for many-to-many (got ${field.type.name})`)
+          errors.push(`Model '${model.name}', field '${field.name}': array [] is only supported for String, Int, File, an enum name, or a model name for many-to-many (got ${field.type.name})`)
         }
         // Mark as implicit m2m relation
         if (isImplicitM2M) field.type.kind = 'implicitM2M'

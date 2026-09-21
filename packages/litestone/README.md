@@ -2250,8 +2250,6 @@ rather than a surprise.
 
 ```
 litestone init                       scaffold schema.lite + litestone.config.js
-litestone codemod [path]             migrate .lite files to renamed types
-                                       --dry-run  --no-backup
 
 litestone migrate create [label]     diff schema → write a migration file
 litestone migrate dry-run [label]    preview the SQL, write nothing

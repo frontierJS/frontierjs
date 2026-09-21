@@ -31,6 +31,10 @@ const CASES = [
   ['components/forms/Textarea.mesa',    {},                          ['field']],
   ['components/forms/Checkbox.mesa',    { label: 'Yes' },            ['field-check']],
   ['components/forms/Switch.mesa',      { label: 'On' },             ['field-check', 'switch']],
+  // The Reset button is the assertion: this control composes another kit
+  // component, so a broken compose renders a plot with no way back.
+  ['components/forms/Thresholds.mesa',  { values: [10, 30], data: [1, 4, 40], defaults: [10, 30], label: 'Cuts' },
+                                                                 ['field-group', 'btn', 'outlined']],
   ['components/display/Badge.mesa',     { tone: 'success' },         ['badge', 'success']],
   ['components/display/Pill.mesa',      { tone: 'warning' },         ['pill', 'warning']],
   ['components/display/Tag.mesa',       {},                          ['pill', 'removable', 'pill-close']],

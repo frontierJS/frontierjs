@@ -193,9 +193,6 @@ const HELP = `
 
   ${bold('Commands')}
     ${cyan('litestone init')}                      create schema.lite + litestone.config.js
-    ${cyan('litestone codemod')} [path]            migrate .lite files to renamed types
-    ${dim('  --dry-run')}                            preview without writing
-    ${dim('  --no-backup')}                          skip .bak files
     ${cyan('litestone migrate create')} [label]    diff schema → write migration file
     ${cyan('litestone migrate dry-run')} [label]   preview migration SQL, no file written
     ${cyan('litestone migrate apply')}             apply all pending migrations
@@ -544,77 +541,6 @@ function migrationDirsFor(parseResult, cfg) {
 }
 
 // ─── Commands ─────────────────────────────────────────────────────────────────
-
-// Migrate .lite files from the old type names (Text/Integer/Real/Blob) to the
-// new ones (String/Int/Float/Bytes). Word-boundary replacement so we don't
-// trample identifiers that happen to contain the old name as a substring.
-//
-// Defaults: rewrite in place, skip node_modules / .git / migrations directory.
-// Pass --dry-run to print the changes without writing. Pass --no-backup to
-// skip the .bak files (default writes filename.lite.bak alongside).
-async function cmdCodemod(target) {
-  header('litestone codemod')
-
-  const dryRun  = flag('dry-run')
-  const backup  = !flag('no-backup')
-  const root    = target ? resolve(target) : process.cwd()
-  const renames = [
-    [/\bText\b/g,    'String'],
-    [/\bInteger\b/g, 'Int'],
-    [/\bReal\b/g,    'Float'],
-    [/\bBlob\b/g,    'Bytes'],
-  ]
-
-  // Walk root looking for .lite files. Skip the obvious throw-away dirs.
-  const SKIP_DIRS = new Set(['node_modules', '.git', 'migrations', 'dist', 'build'])
-  const files = []
-  function walk(dir) {
-    let entries
-    try { entries = readdirSync(dir, { withFileTypes: true }) }
-    catch { return }
-    for (const e of entries) {
-      if (e.name.startsWith('.') && e.name !== '.') continue
-      if (SKIP_DIRS.has(e.name)) continue
-      const full = join(dir, e.name)
-      if (e.isDirectory()) walk(full)
-      else if (e.isFile() && e.name.endsWith('.lite')) files.push(full)
-    }
-  }
-  walk(root)
-
-  if (!files.length) {
-    console.log(`  ${dim('no .lite files found under')} ${rel(root)}`)
-    return
-  }
-
-  let totalEdits = 0
-  for (const f of files) {
-    const before = readFileSync(f, 'utf8')
-    let after = before
-    let edits = 0
-    for (const [re, name] of renames) {
-      after = after.replace(re, () => { edits++; return name })
-    }
-    if (!edits) {
-      console.log(`  ${dim('·')} ${rel(f)} ${dim('(no changes)')}`)
-      continue
-    }
-    totalEdits += edits
-    if (dryRun) {
-      console.log(`  ${yellow('~')} ${rel(f)} ${dim(`(${edits} change${edits === 1 ? '' : 's'})`)}`)
-      continue
-    }
-    if (backup) writeFileSync(f + '.bak', before, 'utf8')
-    writeFileSync(f, after, 'utf8')
-    console.log(`  ${green('✓')} ${rel(f)} ${dim(`(${edits} change${edits === 1 ? '' : 's'}${backup ? ', backup written' : ''})`)}`)
-  }
-
-  console.log()
-  console.log(dryRun
-    ? `  ${dim('dry-run — no files written. Total changes that would be made:')} ${totalEdits}`
-    : `  ${green('✓')}  rewrote ${totalEdits} occurrence${totalEdits === 1 ? '' : 's'} across ${files.length} file${files.length === 1 ? '' : 's'}`
-  )
-}
 
 async function cmdInit() {
   header('litestone init')
@@ -3154,17 +3080,6 @@ async function cmdStudio(cfg) {
           return json({ valid: true, warnings: parsed.warnings ?? [], diffs })
         }
 
-        // POST /api/schema-codemod — migrate renamed scalar types in editor source
-        if (path === '/api/schema-codemod') {
-          const { source } = body
-          if (typeof source !== 'string') return json({ error: 'source required' }, 400)
-          let out = source
-          let changes = 0
-          for (const [from, to] of [['Integer', 'Int'], ['Text', 'String'], ['Real', 'Float'], ['Blob', 'Bytes']]) {
-            out = out.replace(new RegExp(`\\b${from}\\b`, 'g'), () => { changes++; return to })
-          }
-          return json({ source: out, changes })
-        }
 
         // ── Tenant registry ─────────────────────────────────────────────────
 
@@ -6831,7 +6746,6 @@ async function main() {
   }
 
   if (cmd === 'init')   { await cmdInit();   return }
-  if (cmd === 'codemod') { await cmdCodemod(sub ?? null); return }
   if (cmd === 'seed') {
     const cfg = await loadConfig()
     if (sub === 'run') { await cmdSeedRun(rest[0] ?? null, cfg); return }

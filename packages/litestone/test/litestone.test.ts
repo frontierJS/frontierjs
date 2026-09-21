@@ -216,7 +216,7 @@ describe('parser', () => {
   // schemas) got a stack trace the moment a schema had a typo in it.
   test('parseFile answers a bad schema the way parse does — a result, not a throw', () => {
     const dir = tmpDir('parse-error')
-    const bad = 'model User { id Text @id }'    // Text is renamed, hard-rejected
+    const bad = 'model User { id Nope @id }'    // Nope is no type and no enum
     writeFileSync(join(dir, 'schema.lite'), bad)
 
     expect(parse(bad).valid).toBe(false)
@@ -224,7 +224,7 @@ describe('parser', () => {
     let r: any
     expect(() => { r = parseFile(join(dir, 'schema.lite')) }).not.toThrow()
     expect(r.valid).toBe(false)
-    expect(r.errors.join(' ')).toContain('was renamed to')
+    expect(r.errors.join(' ')).toContain("unknown type 'Nope'")
   })
 
   // ─── import "..." into <db> ───────────────────────────────────────────────
@@ -349,7 +349,7 @@ database other { path "./other.db" }
 
   test('a ParseError in an IMPORTED file names that file, not the root', () => {
     const dir = tmpDir('parse-error-import')
-    writeFileSync(join(dir, 'broken.lite'), 'model Session { id Text @id }')
+    writeFileSync(join(dir, 'broken.lite'), 'model Session { id Int @id')
     writeFileSync(join(dir, 'schema.lite'), 'import "./broken.lite"\nmodel User { id Int @id }')
 
     const r = parseFile(join(dir, 'schema.lite'))
@@ -23051,41 +23051,21 @@ describe('co-FK propagation — allowChildFkOverride: true', () => {
 })
 
 // ┌────────────────────────────────────────────────────────────────────────────┐
-// │  Type rename — hard cut migration error                                     │
+// │  Scalar types                                                               │
 // └────────────────────────────────────────────────────────────────────────────┘
 
-describe('type rename — hard-cut migration', () => {
-  // The DSL renamed Text→String, Integer→Int, Real→Float, Blob→Bytes. No
-  // aliases. Old names produce a parse error pointing at the new spelling and
-  // mentioning the codemod, so users with existing .lite files get a clear
-  // upgrade path instead of a cryptic "unknown enum reference" error.
+describe('scalar types', () => {
+  // Eight words, and a name outside them is an enum or a relation reference
+  // resolved in the second pass. A word that is neither reaches the reader as
+  // `unknown type`, which is the only answer the parser has for a typo.
 
-  test('Text emits migration error pointing at String', () => {
-    const r = parse('model T { id Int @id; body Text }')
+  test('a word that is no scalar, enum or model is an unknown type', () => {
+    const r = parse('model T { id Int @id; body Nope }')
     expect(r.valid).toBe(false)
-    expect(r.errors.join('\n')).toContain("'Text' was renamed to 'String'")
-    expect(r.errors.join('\n')).toContain('codemod')
+    expect(r.errors.join('\n')).toContain("unknown type 'Nope'")
   })
 
-  test('Integer → Int', () => {
-    const r = parse('model T { id Integer @id }')
-    expect(r.valid).toBe(false)
-    expect(r.errors.join('\n')).toContain("'Integer' was renamed to 'Int'")
-  })
-
-  test('Real → Float', () => {
-    const r = parse('model T { id Int @id; price Real }')
-    expect(r.valid).toBe(false)
-    expect(r.errors.join('\n')).toContain("'Real' was renamed to 'Float'")
-  })
-
-  test('Blob → Bytes', () => {
-    const r = parse('model T { id Int @id; data Blob }')
-    expect(r.valid).toBe(false)
-    expect(r.errors.join('\n')).toContain("'Blob' was renamed to 'Bytes'")
-  })
-
-  test('new names work end-to-end', async () => {
+  test('every scalar parses end-to-end', async () => {
     const r = parse(`
       model Item {
         id     Int     @id

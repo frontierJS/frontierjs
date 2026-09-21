@@ -1,0 +1,361 @@
+<script>
+  // Thresholds.mesa
+  // The cut points of a banded scale, tuned against the distribution they cut.
+  //
+  // N thresholds make N+1 bands, and a threshold is the END of its band. The
+  // histogram behind the handles is the whole reason this is one component
+  // rather than a slider beside a chart: a cut is right when the picture stops
+  // changing much as you cross it, and that is only legible while the bars, the
+  // band colors, the per-band counts and the handles read off ONE scale.
+  //
+  //   <Thresholds bind:values={cuts} data={scores} defaults={shipped}
+  //               scale="log" bandLabels={['simple','fine','hairy','awful']}
+  //               onchange={redraw} />
+  //
+  // `scale="log"` is for a distribution that is one tall bar and sixty empty
+  // ones on a linear axis — a count, a duration, a file size. It is an option
+  // because no reading of `data` can say which axis the PERSON thinks in.
+  //
+  // What it does not do is decide anything downstream: the caller colors its
+  // own map, table or chart, and reads the band of a value with `bandIndex()`
+  // from `@frontierjs/ui/utils` — the same function the bars here are colored
+  // by, so the picture and the thing it is tuning cannot disagree.
+
+  import Field  from './Field.mesa'
+  import Button from './Button.mesa'
+  import { tone as toTone, cx, humanize, bandIndex, resolveError, stated, lockedBy } from '../../utils.js'
+
+  // ── Props ───────────────────────────────────────────────────────────────────
+
+  export let values     = []          // number[] — the cut points. bindable
+  export let data       = []          // number[] — the distribution; [] draws no plot
+  export let min        = undefined   // default: 0, or 1 on a log scale
+  export let max        = undefined   // default: the largest of `data` and `values`
+  export let step       = 1
+  export let scale      = 'linear'    // 'linear' | 'log'
+  export let defaults   = undefined   // number[] — draws Reset, and the drift note
+  export let bandLabels = []          // names for the values.length + 1 bands
+  export let format     = undefined   // (value: number) => string
+  export let tone       = ''          // one of the 7 css tones; '' is primary
+  export let note       = ''          // what to say while the cuts are the defaults
+  export let disabled   = undefined   // undefined = ask the form; false overrides it
+  export let onchange   = undefined   // (values: number[]) => void
+
+  // Field integration — the same shape every control in the kit has.
+  export let name       = ''
+  // `undefined` is "not stated" and `''` is "no label, deliberately".
+  export let label      = undefined
+  export let hint       = ''
+  export let error      = ''
+  export let errors     = undefined
+
+  const form             = $context.form
+  const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
+  const resolvedLabel    = stated(label, name ? humanize(name) : undefined)
+  const displayError     = resolveError(form, name, error, errors)
+  const t                = toTone(tone)
+
+  // ── The scale ───────────────────────────────────────────────────────────────
+
+  const isLog = scale === 'log'
+
+  // Spread would blow the stack on a real distribution, so both ends are folded.
+  const largest = (list) => list.reduce((m, v) => (v > m ? v : m), -Infinity)
+
+  // A log axis has no zero. A caller asking for one gets 1 rather than a NaN
+  // that renders as an empty plot with nothing said.
+  const lo = (() => {
+    const asked = min ?? (isLog ? 1 : 0)
+    return isLog ? Math.max(1, asked) : asked
+  })()
+  const hi = (() => {
+    const asked = max ?? Math.max(largest(data), largest(values), lo + 1)
+    return asked > lo ? asked : lo + 1
+  })()
+
+  const span    = isLog ? Math.log(hi / lo) : hi - lo
+  const posOf   = (v) => {
+    const c = v < lo ? lo : v > hi ? hi : v
+    return span > 0 ? (isLog ? Math.log(c / lo) : c - lo) / span : 0
+  }
+  const valueAt = (fraction) => (isLog ? lo * Math.exp(fraction * span) : lo + fraction * span)
+
+  const decimals = Number.isInteger(step) ? 0 : (String(step).split('.')[1]?.length ?? 0)
+  const snap = (v) => parseFloat((Math.round((v - lo) / step) * step + lo).toFixed(decimals))
+
+  // A native range input is integers over a linear track, so a log scale is
+  // driven in POSITION units and converted at both edges. It stays a native
+  // input either way: the keyboard, the touch target and the announcement are
+  // the platform's, and a hand-drawn track has to re-earn all three.
+  const TICKS      = 1000
+  const toSlider   = (v) => (isLog ? Math.round(posOf(v) * TICKS) : v)
+  const fromSlider = (p) => (isLog ? snap(valueAt(Number(p) / TICKS)) : snap(Number(p)))
+  const sliderMin  = isLog ? 0 : lo
+  const sliderMax  = isLog ? TICKS : hi
+  const sliderStep = isLog ? 1 : step
+
+  // A caller's list is data. An unordered one draws bands that hold nothing, so
+  // it is ordered here rather than refused — being wrong costs one odd picture.
+  const cuts = values.slice().sort((a, b) => a - b)
+  const gap  = isLog ? Math.max(step, 1) : step
+
+  // ── The plot ────────────────────────────────────────────────────────────────
+
+  // Buckets are equal-width in POSITION, which on a log axis makes them equal
+  // RATIO — so a bar and the cut marker over it are measured the same way and
+  // cannot drift apart by a half-bucket.
+  const bins = isLog
+    ? Math.max(4, Math.ceil(Math.log2(hi / lo)) + 1)
+    : Math.max(8, Math.min(32, Math.ceil(Math.sqrt(data.length)) || 8))
+
+  const plot = (() => {
+    if (!data.length) return null
+
+    const counts = new Array(bins).fill(0)
+    for (const v of data) counts[Math.min(bins - 1, Math.floor(posOf(v) * bins))]++
+    const peak = counts.reduce((m, c) => (c > m ? c : m), 1)
+
+    const bars = counts.map((c, i) => {
+      const band = bandIndex(cuts, valueAt((i + 0.5) / bins))
+      return {
+        height: `${Math.round((c / peak) * 100)}%`,
+        // The top band is the accent at full strength and band 0 is nearly the
+        // ground it stands on, so the ramp comes out of the theme's own color
+        // rather than a private palette six themes would have to be reconciled
+        // against by hand.
+        mix: `${Math.round(18 + 82 * (cuts.length ? band / cuts.length : 1))}%`,
+      }
+    })
+
+    const perBand = new Array(cuts.length + 1).fill(0)
+    for (const v of data) perBand[bandIndex(cuts, v)]++
+    const bands = perBand.map((n, b) => {
+      const from = b === 0 ? lo : cuts[b - 1]
+      const to   = b === cuts.length ? hi : cuts[b]
+      return { n, at: `${((posOf(from) + posOf(to)) / 2) * 100}%`, label: bandLabels[b] ?? '' }
+    })
+
+    return { bars, bands, total: data.length }
+  })()
+
+  const fmt      = (v) => (format ? format(v) : String(v))
+  const rowLabel = (i) => (bandLabels[i] ? `${bandLabels[i]} ends` : `band ${i} ends`)
+
+  // The bars are a picture of numbers that are already on the page in the
+  // outputs; what is NOT anywhere else is how many rows each band holds, so the
+  // plot is labeled with that rather than hidden.
+  const plotLabel = plot
+    ? `${plot.total} values in ${cuts.length + 1} bands — ` +
+      plot.bands.map((b, i) => `${b.label || `band ${i}`}: ${b.n}`).join(', ')
+    : ''
+
+  const moved = Array.isArray(defaults) &&
+    (defaults.length !== cuts.length || defaults.some((d, i) => d !== cuts[i]))
+  const noteText = moved ? `moved from ${defaults.map(fmt).join(' · ')}` : note
+
+  // ── Moving one ──────────────────────────────────────────────────────────────
+
+  let rowsEl
+
+  // A range input the person is dragging owns its own DOM value; a NEIGHBOR
+  // pushed aside by that drag has to be told, or its handle stays where it was
+  // while the readout beside it says something else.
+  function syncRows(next) {
+    if (!rowsEl) return
+    const inputs = rowsEl.querySelectorAll('input[type="range"]')
+    next.forEach((v, k) => { if (inputs[k]) inputs[k].value = String(toSlider(v)) })
+  }
+
+  function commit(i, raw) {
+    const n     = cuts.length
+    // Bounded so the pushes below stay inside the scale: a cut driven to `hi`
+    // with two above it would pile three handles on the end of the track.
+    const floor = lo + gap * i
+    const ceil  = hi - gap * (n - 1 - i)
+    const next  = cuts.slice()
+    next[i] = Math.min(Math.max(raw, floor), ceil)
+    // A cut may not pass its neighbors, or a band holds nothing and the ramp
+    // reads as a color with no meaning.
+    for (let k = i - 1; k >= 0; k--) next[k] = Math.min(next[k], next[k + 1] - gap)
+    for (let k = i + 1; k < n; k++)  next[k] = Math.max(next[k], next[k - 1] + gap)
+    values = next
+    syncRows(next)
+    onchange?.(next)
+  }
+
+  function reset() {
+    if (!Array.isArray(defaults)) return
+    const next = defaults.slice()
+    values = next
+    syncRows(next)
+    onchange?.(next)
+  }
+</script>
+
+{#snippet control()}
+  <!--
+    The spread lands on the ROOT here, not on a control — unlike every
+    single-element field in the kit. There are N range inputs and a plot, so
+    there is no one element a caller's `id` could go on that an
+    `aria-describedby` would then be pointing at the right thing.
+  -->
+  <div class={cx('fjs-thresholds', t)} {...$attributes}>
+    {#if plot}
+      <div class="fjs-th-counts">
+        {#each plot.bands as band, b}
+          <em class="fjs-th-count" style:left={band.at} title={band.label}>{band.n}</em>
+        {/each}
+      </div>
+
+      <div class="fjs-th-plot" role="img" aria-label={plotLabel} style:--fjs-th-bins={String(bins)}>
+        <div class="fjs-th-bars">
+          {#each plot.bars as bar, i}
+            <i style:--fjs-th-h={bar.height} style:--fjs-th-mix={bar.mix}></i>
+          {/each}
+        </div>
+        {#each cuts as cut, i}
+          <span class="fjs-th-mark" style:left="{posOf(cut) * 100}%"></span>
+        {/each}
+        <em class="fjs-th-bound fjs-th-lo">{fmt(lo)}</em>
+        <em class="fjs-th-bound fjs-th-hi">{fmt(hi)}</em>
+      </div>
+    {/if}
+
+    <div class="fjs-th-rows" bind:this={rowsEl}>
+      {#each cuts as cut, i}
+        <label class="fjs-th-row">
+          <span class="fjs-th-rowlabel">{rowLabel(i)}</span>
+          <input
+            type="range"
+            min={sliderMin}
+            max={sliderMax}
+            step={sliderStep}
+            value={toSlider(cut)}
+            disabled={resolvedDisabled}
+            aria-valuetext={fmt(cut)}
+            aria-invalid={!!displayError || null}
+            on:input={(e) => commit(i, fromSlider(e.target.value))}
+          />
+          <output class="fjs-th-value">{fmt(cut)}</output>
+        </label>
+      {/each}
+    </div>
+
+    {#if defaults || noteText}
+      <div class="cluster gap-2xs">
+        {#if defaults}
+          <Button variant="outlined" size="sm" disabled={resolvedDisabled} onclick={reset}>Reset</Button>
+        {/if}
+        {#if noteText}
+          <span class="fjs-th-note">{noteText}</span>
+        {/if}
+      </div>
+    {/if}
+  </div>
+{/snippet}
+
+{#if label || name}
+  <!--
+    `label` goes through unresolved: Field resolves it off the same rule, and
+    `label || name` here would hand it the raw column as an EXPLICIT label and
+    make the schema's own `@label` unreachable.
+  -->
+  <Field name={name} label={label} hint={hint} error={error} errors={errors} {class}>
+    {@render control()}
+  </Field>
+{:else}
+  <div class="fjs-thresholds-bare" {class}>
+    {@render control()}
+  </div>
+{/if}
+
+<style>
+  /* @frontierjs/css has no term for a banded scale, so this draws itself — out
+     of the same tokens as everything else, so it themes with the page.
+     --bg-mix is what a tone class sets; the fallback keeps it primary. */
+  .fjs-thresholds {
+    display:        grid;
+    gap:            var(--space-2xs);
+    --fjs-th-accent: var(--bg-mix, var(--color-primary));
+  }
+
+  .fjs-th-counts {
+    position:    relative;
+    block-size:  1rem;
+    inline-size: 100%;
+  }
+  .fjs-th-count {
+    position:           absolute;
+    transform:          translateX(-50%);
+    font-style:         normal;
+    font-size:          var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+    color:              var(--ink-mute);
+    white-space:        nowrap;
+  }
+
+  .fjs-th-plot {
+    position:      relative;
+    block-size:    var(--fjs-th-height, 5rem);
+    inline-size:   100%;
+    border-radius: var(--card-radius);
+    background:    var(--surface-sunken);
+    overflow:      hidden;
+  }
+  .fjs-th-bars {
+    position:              absolute;
+    inset:                 0;
+    display:               grid;
+    grid-template-columns: repeat(var(--fjs-th-bins, 12), 1fr);
+    align-items:           end;
+    gap:                   1px;
+  }
+  .fjs-th-bars i {
+    display:       block;
+    block-size:    var(--fjs-th-h, 0%);
+    min-block-size: 1px;
+    border-radius: 2px 2px 0 0;
+    background:    color-mix(in oklab, var(--fjs-th-accent) var(--fjs-th-mix, 100%), transparent);
+  }
+  .fjs-th-mark {
+    position:    absolute;
+    inset-block: 0;
+    inline-size: 1px;
+    background:  var(--ink);
+    opacity:     0.45;
+  }
+  .fjs-th-bound {
+    position:   absolute;
+    inset-block-start: 2px;
+    font-style: normal;
+    font-size:  var(--text-2xs);
+    color:      var(--ink-mute);
+  }
+  .fjs-th-lo { inset-inline-start: 4px; }
+  .fjs-th-hi { inset-inline-end:   4px; }
+
+  .fjs-th-rows { display: grid; gap: 2px; }
+  .fjs-th-row {
+    display:               grid;
+    grid-template-columns: minmax(4rem, 8rem) 1fr 3rem;
+    align-items:           center;
+    gap:                   var(--space-2xs);
+  }
+  .fjs-th-row input {
+    inline-size:  100%;
+    accent-color: var(--fjs-th-accent);
+  }
+  .fjs-th-rowlabel {
+    font-size: var(--text-xs);
+    color:     var(--ink-mute);
+  }
+  .fjs-th-value {
+    font-size:            var(--text-xs);
+    text-align:           end;
+    font-variant-numeric: tabular-nums;
+  }
+  .fjs-th-note {
+    font-size: var(--text-xs);
+    color:     var(--ink-mute);
+  }
+</style>

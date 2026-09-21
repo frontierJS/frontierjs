@@ -595,7 +595,7 @@ minimum bar and spending everything else on `only`.**
   Sierra. Ranked nowhere because it proposes nothing to build; kept because its
   finding is an instrument — four features scored differently on `web/` and on
   `site/`, and two were correct on one surface and wrong on the other
-- `IDEAS/stressors.md` — ten popular product shapes worth trying to BUILD here,
+- `IDEAS/stressors.md` — popular product shapes worth trying to BUILD here,
   ranked by what each one breaks first. Ranked nowhere itself because it proposes
   no feature; kept because the method produced 4.36, and because its first finding
   needed no exercise at all — i18n has zero hits in every package's source and in

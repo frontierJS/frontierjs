@@ -66,6 +66,7 @@ the package has no root entry.
 | a calendar, a date range, presets | `@frontierjs/ui/components/forms/DatePicker.mesa` |
 | a day a screen walks one at a time | the same, with `showStepper` — a prev/next pair beside the trigger. It steps only onto days the calendar would let you click, so the buttons go dead at the edge of `disabledDates` / `enabledDates` and at the past and future bounds |
 | a stepper with its own formatting · a range | `@frontierjs/ui/components/forms/NumberInput.mesa` · `@frontierjs/ui/components/forms/Slider.mesa` |
+| the cut points of a banded scale — a heat ramp, alert levels, price tiers — tuned against the distribution they cut | `@frontierjs/ui/components/forms/Thresholds.mesa`. The band of a value is `bandIndex()` from `@frontierjs/ui/utils`, which is what the plot colors itself by, so the picture and whatever it is tuning cannot disagree |
 | a `Json` column | `@frontierjs/ui/components/forms/JsonInput.mesa` |
 | a `File` column · a free-standing dropzone | `@frontierjs/ui/components/forms/FileField.mesa` · `@frontierjs/ui/components/forms/FileUpload.mesa` |
 | a label, hint and error around a control of your own | `@frontierjs/ui/components/forms/Field.mesa`, or `@frontierjs/ui/components/forms/Label.mesa` alone |
@@ -157,6 +158,7 @@ The callbacks disagree:
 | `Checkbox` · `Switch` | `onchange` | `checked` |
 | `RadioGroup` · `Combobox` · `MultiSelect` | `onchange` | the value (an array for `multiple`) |
 | `NumberInput` · `Slider` | `onchange` | `{ value }`, or `{ start, end }` for a range |
+| `Thresholds` | `onchange` | the cuts, ascending — an array, also written back through `bind:values` |
 | `DateTimeInput` · `JsonInput` · `FileField` | `onvalue` | an ISO instant · a parsed document · a `File`, `null` to clear, `undefined` to keep |
 | `FileUpload` | `onchange` | `File[]` |
 
@@ -221,7 +223,7 @@ caller's value replaces the component's own. Where they land is not uniform:
 | display · layout · feedback · `Modal` · `Drawer` | the outermost element |
 | `Popover` · `DropdownMenu` · `ConfirmationPopover` | the wrapper around the TRIGGER, never the panel |
 | every form control | the `<input>`, `<select>` or `<textarea>`, so `<label for>` and `aria-describedby` reach it |
-| `FileUpload` · `DatePicker` · `Slider` | the visible dropzone · the wrapper · the wrapper |
+| `FileUpload` · `DatePicker` · `Slider` · `Thresholds` | the visible dropzone · the wrapper · the wrapper · the root, since there are N range inputs and no one control an `aria-describedby` could mean |
 
 **`class` merges with the component's own classes**; on a form control it lands
 on the wrapper while other attributes reach the control. Where a component

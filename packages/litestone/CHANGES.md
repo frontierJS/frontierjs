@@ -1,5 +1,31 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-21 — the renamed scalar types are gone, along with the migration for them
+
+`Text`, `Integer`, `Real` and `Blob` were held in a `RENAMED_TYPES` map so the
+tokenizer could answer with the new spelling and point at a codemod. That map is
+a migration path for `.lite` files written before the rename, and no such file
+exists anywhere: nothing has shipped. The parser now knows eight scalar types and
+nothing else. A field typed `Text` parses as a reference to an enum or a model
+and is refused in the second pass as `unknown type 'Text'`.
+
+Removed with it: `litestone codemod`, its help entry and its three CLI smoke
+tests; the `POST /api/schema-codemod` route and Studio's ⚕ Codemod button; the
+four rename tests; the § Type rename section of `PROJECT_STATE.md`.
+
+Two readers were leaning on it and both are fixed. `AGENTS.md` said the tokenizer
+answers with the replacement, which it no longer does. And the array refusal
+formatted `Text, Integer, File` where the allow-set it prints from is `String,
+Int, File` — an agent that followed that sentence wrote `Text[]` and was refused
+again (`FJS-606`).
+
+One test was proving the wrong thing by accident: *a ParseError in an IMPORTED
+file names that file* used `id Text @id` as its broken schema, which was a
+tokenizer throw carrying a token, and file attribution is a property of a
+ParseError. A validate-phase error carries no file. It now uses an unclosed
+model block, which is a ParseError on purpose rather than by coincidence.
+
+
 ## 2026-09-20 — the flag hints under a command's result are TTY-only
 
 Seven commands end by listing what else they accept — `jsonschema`, `types`, `access`, `ddl`,

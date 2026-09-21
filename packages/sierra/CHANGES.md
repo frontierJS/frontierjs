@@ -1,5 +1,12 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-21 — `mesa:slot` is named once
+
+`MESA_SLOT_TAG` in `build/slot-rewrite.js` holds the one name Sierra adds to Mesa's `mesa:`
+namespace. Mesa's own `MESA_ELEMENTS` cannot carry it — the rewrite runs before the compiler sees
+the tag — so a reader of that list alone is one word short, and the tag was previously a string
+inside two regexes and a call.
+
 ## 2026-09-20 — the TLA control flipped, which is the control doing its job
 
 `app-import.js` records a build's first real import failure because a module

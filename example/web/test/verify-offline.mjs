@@ -5,34 +5,29 @@
  * reason `verify-catalog` does: what it proves spans them, and a drive that
  * joined a running pair would grade whichever build those were serving.
  *
- * ─── What is under test, and what is not yet ──────────────────────────────
+ * ─── What is under test ──────────────────────────────────────────────────
  *
- * This is phase 0 of the Homestead work (`IDEAS/homestead.md`): the harness
- * learning to go offline, and a NEGATIVE CONTROL that says what the app does
- * about it today, which is lose the write.
+ * The Homestead work (`IDEAS/homestead.md`) end to end, in the order a device
+ * meets it: a write made with no server is HELD and replayed once the network
+ * returns (`FJS-D298`–`FJS-D300`); a photograph drains behind the row it
+ * belongs to, as a second queue (`FJS-D301`); a write survives the page that
+ * made it; a whole stocktake is walked with nothing sent, under a key the
+ * BROWSER minted; and two writers on one row merge per column, or conflict and
+ * name the column (`FJS-D334`, `FJS-D338`).
  *
- * **Writing it first changed what phase 1 is — twice, and the first change was
- * wrong.** There is no retry in the Junction client. A write made offline is
- * lost, and the queue phase 1 adds is the first thing that will hold one.
+ * **The masked outage is the subtle one and it is asserted deliberately.**
+ * Chrome's offline emulation refuses new connections and carries frames on a
+ * socket that is already open, so a write made in the first seconds of an
+ * outage leaves on a socket nothing has confirmed and lands late with the
+ * screen never told anything. That is a requirement rather than a defect: a
+ * queue entry clears on an ACKNOWLEDGEMENT and never on a send.
  *
- * What made it LOOK like a retry: the client's WebSocket is same-origin in dev,
- * because the dev server proxies `/api` and `/ws`, and Chrome's offline mode
- * refuses new connections while carrying frames on one that is already open. So
- * the call went out over a socket the emulation had not touched and arrived
- * when the network returned. The first version of this drive severed sockets by
- * ORIGIN — to spare vite's HMR channel, which reloads the page when its socket
- * closes — and that rule skipped the only socket that mattered, reported
- * *nothing to cut*, and made the delivery look like the client trying again.
- * Vite's socket is told apart by its subprotocol, `vite-hmr`, and never by
- * where it points.
- *
- * So this file takes three readings of one act, and the contrast is the point:
- * with the socket severed the write is lost; with the socket left open the
- * outage is MASKED and the write lands late with the screen never told
- * anything; and across a reload it is lost again. The middle one is a
- * requirement phase 1 inherits — a queue entry clears on an acknowledgement and
- * never on a send, or a write that left on a socket nobody has confirmed is
- * counted as delivered.
+ * **Sever sockets by subprotocol, never by origin.** The client's WebSocket is
+ * same-origin in dev because the dev server proxies `/api` and `/ws`, so a rule
+ * that spares vite's HMR channel by ORIGIN — to stop the page reloading when
+ * its socket closes — skips the only socket that matters, reports *nothing to
+ * cut*, and makes a masked delivery look like a client that retried. Vite's
+ * socket is told apart by `vite-hmr` and never by where it points.
  *
  * ─── The trap this file exists to stay out of ─────────────────────────────
  *
@@ -179,8 +174,8 @@ try {
   //
   // Before anything about the app: does the network control work at all? A
   // control that silently does nothing would make every assertion below pass
-  // for the wrong reason — the write would land, and "lost" would never be
-  // asserted because the page was never offline.
+  // for the wrong reason — the write would simply land, and nothing about
+  // holding one would have been asserted, because the page was never offline.
 
   console.log('\n  offline — the instrument')
 
@@ -210,9 +205,9 @@ try {
     fetch('${API}/api/products?$limit=1').then(r => r.ok).catch(() => 'refused')
   `), true)
 
-  // ─── the negative control ────────────────────────────────────────────────
+  // ─── held, then replayed ─────────────────────────────────────────────────
 
-  console.log('\n  offline — a write made with no server (today: lost)')
+  console.log('\n  offline — a write made with no server')
 
   await send('Page.navigate', { url: UI + '/' }, sessionId)
   await until(`!!document.querySelector('header button')`, 'the shell')
@@ -296,7 +291,7 @@ try {
   // ── the positive control ────────────────────────────────────────────────
   //
   // Whether the form below reaches the server AT ALL, with the network up. It
-  // is here because `lost` and `never attempted` are the same reading
+  // is here because `held` and `never attempted` are the same reading
   // otherwise: a selector that stopped matching, or a submit button that stayed
   // disabled, would leave the ledger unchanged and the offline assertion would
   // pass while proving nothing.
@@ -340,7 +335,7 @@ try {
       .filter(t => /on hand/i.test(t.textContent)).length
   `)
 
-  const lost = await net.withOffline(async () => {
+  const held = await net.withOffline(async () => {
     // What the screen IS, before asking it to do anything. A form that is gone
     // is a finding and not a TypeError, and the drive has to say which.
     const screen = await evaluate(`
@@ -382,29 +377,28 @@ try {
 
   console.log(`      (severed ${net.severed} app socket(s) for the offline block)`)
   check('the adjustment form is still on screen with the network down',
-        lost.screen, v => v.form === true)
-  // The half that keeps `lost` honest: the button was present, enabled and
+        held.screen, v => v.form === true)
+  // The half that keeps `held` honest: the button was present, enabled and
   // clicked while the network was down. Without this, a form that quietly went
   // away — a session that could not be refreshed offline would do it — reads as
-  // a write that was made and lost.
+  // a write that was made and held, when nothing was ever submitted.
   check('the correction was actually submitted with the network down',
-        lost.screen?.atSubmit ?? null, v => v?.enabled === true)
-  check('the screen did not claim the correction landed', lost.toastsNow, toastsBefore)
+        held.screen?.atSubmit ?? null, v => v?.enabled === true)
+  check('the screen did not claim the correction landed', held.toastsNow, toastsBefore)
 
   // Nothing reached the server while the page was being told it could not.
-  check('nothing reached the server while the page was offline', lost.duringOffline, before)
+  check('nothing reached the server while the page was offline', held.duringOffline, before)
 
   check('back online', await net.waitOnline(), true)
 
   // Give a queue every chance to exist before concluding there is none: wait
-  // out a reconnect and then some, so `lost` is a reading and not a race.
+  // out a reconnect and then some, so the count is a reading and not a race.
   await new Promise(r => setTimeout(r, 5000))
   const after = await ledger()
 
-  // Phase 1. The write was recorded before it was sent, kept when it could not
-  // go, and replayed on the socket's own `connect` — and the key it carries is
-  // what makes that safe to do when nobody can say whether the first attempt
-  // arrived. This line read `after === before` for the whole of phase 0.
+  // The write was recorded before it was sent, kept when it could not go, and
+  // replayed on the socket's own `connect`. The key it carries is what makes
+  // replaying safe when nobody can say whether the first attempt arrived.
   check('the correction was HELD and replayed once the network returned', after, before + 1)
 
   // ─── the outage that has not been noticed yet ────────────────────────────

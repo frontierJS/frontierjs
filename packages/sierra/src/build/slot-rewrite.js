@@ -22,6 +22,12 @@
 // and `page-header` are the natural spellings, and the package's "an unknown
 // `mesa:*` name is an error" does not reach this: `mesa:slot` IS known — it is
 // the attribute that did not match.
+// The one name Sierra adds to Mesa's `mesa:` namespace — Mesa's own
+// `MESA_ELEMENTS` does not carry it, because the rewrite below runs before the
+// compiler ever sees the tag. Named here so the tag is a declaration rather
+// than a string a reader has to grep the regexes for.
+export const MESA_SLOT_TAG = 'mesa:slot'
+
 const SLOT_NAME_RE = /^[a-zA-Z_$][a-zA-Z0-9_$]*$/
 
 function assertSlotNames(source, tag, file) {
@@ -57,7 +63,7 @@ function suggestSlotName(value) {
  * Rewrite <mesa:slot name="X">content</mesa:slot> on PAGE files.
  */
 export function rewriteMesaSlots(source, file = null) {
-  assertSlotNames(source, 'mesa:slot', file)
+  assertSlotNames(source, MESA_SLOT_TAG, file)
 
   const slotRe = /<mesa:slot\s+name="([a-zA-Z_$][a-zA-Z0-9_$]*)"\s*>([\s\S]*?)<\/mesa:slot>/g
   const foundNames = []

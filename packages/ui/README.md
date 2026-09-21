@@ -96,7 +96,7 @@ The old six-value `variant` conflated the two, which is why `outline` and
 ## What's in the box
 
 **forms** — `Form` `Button` `Field` `Fieldset` `Label` `Input` `Textarea`
-`Select` `Checkbox` `Switch` `RadioGroup` `NumberInput` `Slider` `Combobox`
+`Select` `Checkbox` `Switch` `RadioGroup` `NumberInput` `Slider` `Thresholds` `Combobox`
 `MultiSelect` `DatePicker` `DateTimeInput` `JsonInput` `FileUpload`
 
 **display** — `Badge` `Pill` `Tag` `Dot` `Kbd` `Mono` `Divider` `Breadcrumbs`

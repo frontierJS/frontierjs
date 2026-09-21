@@ -1,12 +1,12 @@
 ---
 id: homestead
 status: partial
-dated: 2026-09-16
+dated: 2026-09-21
 ---
 
 # Idea — Homestead: the offline engine, in the order it can be proved
 
-**Status: PHASES 0 TO 3 BUILT; 4 PART-BUILT (the budget, the seams, the browser client, the `@@sync` vocabulary, the schema a device gets, the declared read, and the local database); 5 PROPOSED.** Dated 2026-09-16. The name and the
+**Status: PHASES 0 TO 3 BUILT; 4 PART-BUILT (the budget, the seams, the browser client, the `@@sync` vocabulary, the schema a device gets, the declared read, and the local database); 5 BUILT.** Dated 2026-09-16, status line amended 2026-09-21: phase 5 landed on `FJS-D334` and `FJS-D338`, and `example`'s `verify:offline` drives all of it end to end. The name and the
 decomposition are ruled (`FJS-D297`): offline-first is core rather than a
 package, each piece goes to the owner it already has, and **Homestead names the
 body of work and not a module** — nothing imports it and no directory carries it.
@@ -745,8 +745,14 @@ understand inside and out, it will be a hard fix.*
 
 ### Phase 5 — two writers, one row
 
-**Owners:** Litestone. **Answers:** Q4, which follows from `FJS-D298`. **Size:** M–L.
+**Owners:** Litestone. **Answers:** Q4, which follows from `FJS-D298`. **BUILT.**
+**Implements:** `FJS-D334` (where the base comes from and where the comparison runs), `FJS-D338` (how it reaches the boundary). **Size:** M–L.
 **Ships:** conflict as a declared outcome rather than an accident.
+
+`src/core/three-way.js` is the comparison, `@@sync(field)` is what admits a base
+(`update` refuses one on any other policy, by name), and the crossing is
+`example`'s `verify:offline` § two writers, one row — the only place the
+envelope, the bridge, the service and a real row all run at once.
 
 **The mechanism is argued in `IDEAS/conflict-as-data.md`** — a three-way
 comparison against the revision the held write was made against. It is read from

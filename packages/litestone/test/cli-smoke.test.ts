@@ -600,53 +600,6 @@ model Vault {
     expect(existsSync(join(dir, 'test.db'))).toBe(true)
   })
 
-  test('codemod: rewrites old type names in .lite files in place', async () => {
-    // Hard-cut migration helper. After the Text/Integer/Real/Blob → String/
-    // Int/Float/Bytes rename, this command walks .lite files and applies
-    // word-boundary replacements. Default: writes .bak alongside.
-    const dir = makeFixtureDir('codemod-basic', {
-      schema: `model U { id Integer @id; name Text; data Blob?; price Real }`,
-    })
-    const r = await runCli(dir, ['codemod'])
-    expect(r.exit).toBe(0)
-    const after = readFileSync(join(dir, 'schema.lite'), 'utf8')
-    expect(after).toContain('id Int @id')
-    expect(after).toContain('name String')
-    expect(after).toContain('data Bytes')
-    expect(after).toContain('price Float')
-    expect(after).not.toContain('Integer')
-    expect(after).not.toContain('Text')
-    expect(after).not.toContain('Blob')
-    expect(after).not.toContain(' Real')
-    expect(existsSync(join(dir, 'schema.lite.bak'))).toBe(true)
-    const bak = readFileSync(join(dir, 'schema.lite.bak'), 'utf8')
-    expect(bak).toContain('Integer')   // backup preserves original
-  })
-
-  test('codemod --dry-run: prints changes but writes nothing', async () => {
-    const dir = makeFixtureDir('codemod-dryrun', {
-      schema: `model U { id Integer @id; name Text }`,
-    })
-    const before = readFileSync(join(dir, 'schema.lite'), 'utf8')
-    const r = await runCli(dir, ['codemod', '--dry-run'])
-    expect(r.exit).toBe(0)
-    expect(r.stdout + r.stderr).toContain('dry-run')
-    const after = readFileSync(join(dir, 'schema.lite'), 'utf8')
-    expect(after).toBe(before)   // unchanged
-    expect(existsSync(join(dir, 'schema.lite.bak'))).toBe(false)
-  })
-
-  test('codemod --no-backup: rewrites without .bak file', async () => {
-    const dir = makeFixtureDir('codemod-nobackup', {
-      schema: `model U { id Integer @id }`,
-    })
-    const r = await runCli(dir, ['codemod', '--no-backup'])
-    expect(r.exit).toBe(0)
-    expect(existsSync(join(dir, 'schema.lite.bak'))).toBe(false)
-    const after = readFileSync(join(dir, 'schema.lite'), 'utf8')
-    expect(after).toContain('Int @id')
-  })
-
   test('full pipeline: schema with trait + type → migrate → types → jsonschema', async () => {
     // Exercises every CLI surface that sees the post-splice schema:
     //   - migrate create / migrate apply (column emission for trait fields)

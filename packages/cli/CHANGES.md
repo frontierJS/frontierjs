@@ -1,5 +1,159 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-20 — `fli ws:terms` counts the vocabulary this workspace asks a newcomer to learn
+
+*How many words must somebody hold to read this repo* had no answer, and the two §V questions that
+ask it — *does this enlarge the concept budget*, *does it introduce another origin* — were the two
+with no artefact behind them ([`FJS-1211`](../../ISSUES.md)). `ws:terms` is the exploratory half of
+the answer: one model, three presentations (`--as=list` · `--as=page` · `--as=json`), the shape
+[`FJS-D223`](../../DECISIONS.md#fjs-d223) already ruled for the atlas.
+
+**Three vocabularies, never one number.** Concepts (a mental model is built from these), language
+words (`.lite` from its own catalog, Mesa grepped and marked as grepped), and api identifiers
+(1,587 declared, 741 of them at an entry point a consuming app can reach). A single frequency count
+averages three things learned three different ways and describes none of them.
+
+**Ranked by spread rather than count**, because a term in twelve packages is core vocabulary and
+three hundred hits in one file is local jargon.
+
+**Nothing is excluded — a non-concept is CLASSIFIED.** Measured before the module was written: the
+noise in a prose scan is not stop words, it is proper nouns, with `Vite`, `Chrome` and `Java` all
+outranking `Resource`. A dropped word leaves nothing behind to notice, so `product`, `external` and
+`common` are classes somebody can open and disagree with.
+
+**Two measurements were wrong until they were run.** Counting every occurrence of a word § 2
+forbids reported `table` 2,490 times — markdown tables — so the drift column counts a forbidden word
+only where it is used AS A TERM, capitalized mid-sentence, with words § 2 blesses in another sense
+left out entirely. And a dash, colon or semicolon was allowed to precede a term until the list
+filled with `An`, `Whether` and `For`: this house opens a clause with them, so the next word is
+capitalized by grammar.
+
+**The page is driven in a real browser, and that is what found the styling bug.** `.tile` carried
+`var(--border)`, which `@frontierjs/css` does not define, so the whole declaration was dropped and
+the tiles rendered borderless with nothing reported. It now uses the package's own tile anatomy and
+only tokens that exist.
+
+**Every path the page prints opens in the editor.** `vscode://file/<absolute>` on each file in the
+where column, each forbidden word's top files, and each language word's source — 4,495 of them,
+every one asserted to resolve to a file that exists, because a baked-in path that has gone is a link
+that silently opens nothing and is the one failure the page cannot show on screen. The absolute path
+is what makes the written page local to the machine that wrote it, which this one already is: it is
+ungated and gitignored, and that is exactly why the links belong here and not in a committed
+snapshot, where they would point at somebody else's home directory. No line number — the scan reads
+a document with its code spans and fences stripped, so an offset into what it read is not an offset
+into the file.
+
+**A source chip counts per LENS, and the Language tab was inert until it did.** The chips were built
+from the prose scan alone, so unchecking the IDEAS folder moved Concepts and Classified-out, did
+nothing to API — correctly, since no source file lives there — and did nothing to Language, which
+was a real gap: a language word carried no owner at all, so nothing could reach it. A `.lite` word
+now declares litestone and a Mesa block declares mesa, and switching litestone off takes that tab
+from 134 rows to the 11 Mesa blocks. Each chip shows what its source contributes to the VISIBLE
+vocabulary and dims where that is zero, because IDEAS reading `2,985` on the API tab describes
+nothing the reader is looking at, and an inert control reads as a broken one.
+
+**A source can be switched off, and the numbers are recomputed rather than the rows hidden.** Every
+row carries where its count came from, so unchecking `IDEAS/` — design records for work not started,
+whose vocabulary is proposals rather than the framework — recounts each term against the reduced
+tree: `Data` goes 19/494 to 18/339, `Homestead` 6/21 to 5/14, and 268 terms that exist only there
+leave the table. Hiding the rows instead would have kept a term read forty times in `IDEAS/` and
+twice in a package at its old spread, which is the number a filter then answers against. Both
+filters gained an upper bound too, which is how a term used everywhere is excluded to see what is
+left.
+
+**A term can be more than one word.** `Data realm` is vocabulary where `data` alone is too generic
+to be any, and until now only § 2's own multiword entries were scanned at all — `Gate ladder`,
+`Chain of Responsibility` — and only to be counted for the dead-doctrine column. A phrase named in
+either authored half is a row in the concepts table like any word, with its spread, its status and
+its meaning. **And the scan proposes candidates**: every adjacent pair the prose writes, in three
+or more packages, filtered for the shapes that are sentences rather than terms — a participle in
+front (`Verified state`), a verb behind (`Litestone emits`), a joiner between. `Data boundary` in
+17 packages, `Litestone client` in 15, `Data realm` in 11, none of them named anywhere. Proposing
+is all it does: what makes a pair a term is somebody writing the row.
+
+**Somebody else's nouns are named, and the concepts tab is this framework's again.** `Apache`,
+`SvelteKit`, `Vixie`, `Kysely`, `Shopify`, `Kubernetes`, `Fowler`, `Berlin` — a web server, a
+meta-framework, the author of cron, an ORM, a vendor, an orchestrator, a citation and a time zone —
+all read as concepts OF this framework, because the only thing separating them from `Resource` was
+a capital letter. 313 of them are classed `external` now, grouped by what they are: databases,
+platforms, frameworks, vendors, web-platform APIs, people, places. Concepts 1,141 → 822. They are
+not deleted — `external` is a class and the Classified out tab holds every one, which is what makes
+a word in the WRONG class findable. Month and day abbreviations joined the dropped list beside the
+full names they already sat next to.
+
+**Ordinary English is DROPPED rather than classed out.** `DROPPED` in `core/terms.js` holds 122
+words grammar capitalizes — `the`, `every`, `run`, `set`, `request` — and they are removed before
+the classifier runs, because a class is a row a reader has to read past and the reason for reading
+one, a word in the wrong class, cannot apply to `the`. A plural is dropped with its singular: the
+fold merges into a HOST row and a dropped word leaves none, so `Views` and `Requests` would
+otherwise survive as terms of their own. `COMMON` is filtered against the list at definition, so
+one word cannot sit in both. **What was dropped is counted and printed** — 122 words, 1,506
+occurrences, a tile of its own on the page — since a list quietly eating a real term is the one
+failure an exclusion can have.
+
+**A row prints its class in a column beside its status.** `external` was
+always a class — 103 words this framework does not define and only names, `JavaScript`, `Vite`,
+`Docker`, `Feathers` — but it lived in the row's data and nowhere on screen. It is a column now — term,
+spread, count, status, class — and a `class` select sits beside `status` in the filter bar. It
+stays a CLASS rather than becoming a fifth status in
+`VOCABULARY.md`: a status is the stance this framework takes on a word, and there is no stance to
+take on somebody else's product name — a status saying so would be a second origin for what the
+`EXTERNAL` list in `core/terms.js` already holds.
+
+**The `mesa:` language words are read off the two declarations rather than grepped.** A grep over
+mesa's source answers `mesa:frobnicate`, which is the compiler's own example of a name that does
+not exist, and `mesa:line`, which is a source location — so the vocabulary held its own
+counter-example. The list is now `MESA_ELEMENTS` in mesa's compiler plus `MESA_SLOT_TAG` in
+sierra's slot rewriter, both read as TEXT because the cli depends on neither package; the source is
+still grepped for USAGE, so a declared element nobody has written yet shows a count of zero rather
+than being absent. A grep with no declaration left to read is the fallback, and `grepped` on every
+row is what says so, because an empty language tab would read as Mesa having no words.
+
+**The corpus walk skipped a source directory because of its NAME.** `build` is on the
+output-directory skip list and sierra's compile-time rewriters live in `src/build/`, so 74 api
+identifiers and every use of `mesa:slot` were invisible — the count read 1, out of a comment in
+mesa. A directory under a `src/` is source whatever it is called. API identifiers 1,587 → 1,661.
+
+**The register is not its own corpus.** `VOCABULARY.md` is a list OF terms rather than prose that
+uses them, so it is out of the scan — labelling a word must not raise the count that argued for
+labelling it.
+
+**`VOCABULARY.md` is the authored half and it holds only real vocabulary.** The file carries term,
+status, meaning and a note; `ws:terms` reads it and joins each row to what the tree does with the
+word, so a term is defined in one place and measured in another. A word that is NOT a term of this
+framework is not labelled there — it is excluded in `core/terms.js`, where the classifier can act on
+it, because a row saying *this is not a term* would be a second way of saying what a list in the
+scanner already says and nothing would read it. § 2 outranks the file where they disagree. Seeded at
+spread ≥ 4: 87 terms, 11 of them already ruled in § 2.
+
+**Plurals fold rather than being excluded.** `Users`, `Resources` and `Releases` are neither separate
+vocabulary nor noise, so a plural merges into its singular when the singular was also seen, carrying
+its count and its packages — and a word that merely ends in an s and stands alone is left as written.
+That took the spread ≥ 4 band from 115 to 87 and surfaced six terms that had been split in half by
+their own plurals: `Channel`, `Job`, `Suite`, `Component`, `Page` and `Rule`.
+
+**Filters are one reader over every tab.** A row declares term, status, spread and count, so
+spread ≥ N, count ≥ N and a status pick work the same on concepts, language words and identifiers —
+a tab with a new column costs no filter code. A tab whose rows have no spread declares `0` rather
+than omitting the attribute, since a missing one and a zero both read as `NaN` and would hide the
+whole table. Driving it found the API table capped at 1,200 rows while its own tile counted 1,587:
+a filter answering about a set the reader cannot see. Uncapped.
+
+**The page follows the reader's OS into the dark, and a theme name is not a luminance claim.** The
+light/dark default is `press` and `field` — the package's own pair, where `field` is an ink ground
+written for the pages a project generates about itself and `press` says in its own header that it is
+the same discipline on the opposite ground. Reading the NAMES would have picked `midnight`, which is
+a light theme with a purple accent, measured at `rgb(245,245,245)`. The class goes on `<html>` and is
+set by a script in `<head>`, because a theme applied after the first paint is a white flash on a page
+somebody opened to read in the dark; the picker then persists a choice that survives a reload. Driven
+under both emulated OS preferences: ink ground at `rgb(12,14,13)` dark, paper at `rgb(232,226,212)`
+light.
+
+**Ungated on purpose.** The page carries no `generated by:` line and is not named `*.snapshot.*`, so
+the `snapshots` phase does not adopt it — the exclude lists are still being refined and a gated
+artifact would fail the build on every tuning pass. `FJS-1211` is where the gated `ws:dictionary`
+this becomes is filed.
+
 ## 2026-09-20 — `fli new` prints 54 lines instead of 130, and `--verbose` is the way back
 
 A scaffold composes five commands, and each of those is a whole command elsewhere: its own banner,

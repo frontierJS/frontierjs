@@ -1,5 +1,20 @@
 # Changes — example
 
+## 2026-09-21 — `verify:offline`'s header caught up with its own assertions
+
+The file was committed with a header written during Homestead phase 0 — *there is no retry in
+the Junction client, a write made offline is lost* — and its body asserted the opposite on the
+line beneath the one that said so. The reading it described was superseded before the file was
+first committed; phase 5 was appended later and the header was not touched either time.
+
+What the drive proves is now what the header says: a write held and replayed, bytes draining
+behind the row they belong to, a write surviving the page that made it, a stocktake walked under
+a browser-minted key, and two writers on one row merging per column. The section banner *(today:
+lost)* and the reading variable named `lost` went with it — a write that is held and replayed is
+not a lost one, and a name is the first thing a reader believes.
+
+55 assertions, unchanged in count and in behavior. Nothing under `src/` moved.
+
 ## 2026-09-20 — `verify:automations` types an expression
 
 Seven more assertions, and the pair that matters is what each field does with the shape it holds:

@@ -1,5 +1,14 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-21 — the `mesa:` namespace is a declaration, not a string inside an error
+
+`MESA_ELEMENTS` names all eight elements once and the typo error prints it, where the list used to
+be a literal inside the message and nothing outside the compiler could ask what the namespace
+holds. A reader that grepped for the names answered `mesa:frobnicate` — this file's own example of
+a name that does NOT exist, taken from the comment beside the reporting loop — and `mesa:line`,
+which is a source location. Exported, because the thing asking is `fli ws:terms` counting the
+language a developer has to learn.
+
 ## 2026-09-15 — a destructured `{#each}` item follows its row
 
 [`FJS-1164`](../../ISSUES.md#fjs-1164). An unkeyed row is rebound in place when its position

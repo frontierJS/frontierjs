@@ -67,6 +67,14 @@ core/
                 edges and code touched recently, every term printed with its
                 row. `WEIGHTS` is one frozen table and no flag moves it.
                 Proposals are not ranked; nothing measurable separates them
+  terms.js      the vocabulary this workspace asks a newcomer to learn, counted in
+                three lenses that are learned differently — concepts, language
+                words, api identifiers. Ranked by SPREAD, because a term in
+                twelve packages is core and three hundred hits in one file is
+                jargon. Nothing is excluded: a non-concept is CLASSIFIED, so a
+                word in the wrong class can be found. Exploratory and ungated —
+                its page carries no generator line, and `FJS-1211` is where the
+                gated `ws:dictionary` it becomes is filed
   proofs.js     which drive proves a change — owns `DRIVES_FILE`, parses its
                 table and resolves both its columns. A PARSE and never
                 a second table; not a build graph, and it must not become one

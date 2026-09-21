@@ -16,7 +16,7 @@ starts its server and stays up, for looking at a component in a real browser.
 ```
 components/
   forms/      Form · Field · Fieldset · Label · Input · Textarea · Select ·
-              Checkbox · RadioGroup · Switch · Slider · NumberInput · Combobox ·
+              Checkbox · RadioGroup · Switch · Slider · Thresholds · NumberInput · Combobox ·
               MultiSelect · DatePicker · DateTimeInput · JsonInput · FileUpload ·
               FileField · GeoField · Button
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
@@ -118,6 +118,14 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
   the wall clock, so `onvalue(iso)` is the callback that carries a value. A
   `Date` column is still a plain `input type="date"` — no zone, nothing to
   lose.
+- **A native range input holds its own DOM value, and Mesa writes it back only
+  when the NUMBER changes.** `Thresholds` moves several at once — one drag
+  pushes its neighbors aside, and a drag held against a bound produces event
+  after event that changes nothing — so the handle stays where the pointer left
+  it with a readout beside it saying something else. That is what `syncRows` is
+  for, and the tripwire is the bounded-drag block in `thresholds.spec.mjs`:
+  without the sync the three handles read `0,83,0` against cuts of `1,2,3`.
+  Anything else in the kit driving a native `<input type="range">` inherits it.
 ### Controls — the table, and contributing one
 
 - **`<Form>` with no children generates its field list, and the control table is

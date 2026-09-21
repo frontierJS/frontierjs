@@ -432,33 +432,6 @@ await db.account.create({
 **Test count:** 1125 (was 1117). 8 new co-FK tests covering strict overwrite,
 permissive opt-out, multi-level nesting, and null-parent guard.
 
-### Type rename — hard cut
-
-Schema DSL renamed for alignment with TypeScript / Prisma / GraphQL conventions.
-Pre-publish, no aliases.
-
-| Old        | New      |
-| ---------- | -------- |
-| `Text`     | `String` |
-| `Integer`  | `Int`    |
-| `Real`     | `Float`  |
-| `Blob`     | `Bytes`  |
-
-Old names produce a parse error pointing at the new spelling and mentioning
-the codemod. Works end-to-end across parser, DDL, validator, JSON-schema
-generator, type-gen, introspect, and tests.
-
-**`litestone codemod [path]`** — walks `.lite` files under cwd (or `path`),
-applies word-boundary renames, writes `.bak` alongside (skip with
-`--no-backup`). `--dry-run` previews. Skips `node_modules`, `.git`,
-`migrations`, `dist`, `build`.
-
-**Caveat:** word-boundary regex can't read English. Comments containing
-`Real`/`Text`/`Integer`/`Blob` will get rewritten too. Trivial to fix by hand
-post-codemod; not worth the complexity of an actual lexer in the codemod.
-
-**Test count:** 1133 (was 1125). 5 type-rename tests + 3 codemod tests.
-
 ### `@time` validator
 
 24-hour clock validation for `String` fields.

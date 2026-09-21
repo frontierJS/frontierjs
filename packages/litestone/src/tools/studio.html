@@ -1472,7 +1472,6 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
         <span class="lite-status-dot" id="liteStatusDot"></span>
         <span class="text-muted" id="liteStatusText">—</span>
       </span>
-      <button class="btn outlined" onclick="liteCodemod()" title="Migrate renamed types (Integer→Int, Text→String, …)">⚕ Codemod</button>
       <button class="btn primary" onclick="liteSave()" id="liteSaveBtn" disabled>Save</button>
       <button class="btn outlined" onclick="liteReload()">↺ Reload</button>
     </div>
@@ -7540,17 +7539,7 @@ function erExport(format) {
   img.src = url
 }
 
-// ── Codemod + live diff for the schema editor ─────────────────────────────────
-
-async function liteCodemod() {
-  const ed = document.getElementById('liteEditor')
-  const res = await api('/schema-codemod', { source: ed.value })
-  if (res.error) { toast(res.error, 'err'); return }
-  if (!res.changes) { toast('No renamed types found — schema is current', 'ok'); return }
-  ed.value = res.source
-  ed.dispatchEvent(new Event('input'))
-  toast(`Codemod: ${res.changes} rename${res.changes === 1 ? '' : 's'} applied — review and Save`, 'ok')
-}
+// ── Live diff for the schema editor ──────────────────────────────────────────
 
 let _liteDiffTimer = null
 function liteQueueDiff() {

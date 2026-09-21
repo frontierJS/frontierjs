@@ -13,9 +13,8 @@
 //
 // 2. authSchemaFragments() emitted `model users` (matching the plural calls, so
 //    the two bugs concealed each other) and used the type names `Text` and
-//    `Integer`. Litestone lists both in RENAMED_TYPES and rejects them outright
-//    — "no aliases are accepted" — so the fragments `fli auth:install` injects
-//    would not parse at all against current Litestone.
+//    `Integer`, neither of which Litestone has — so the fragments
+//    `fli auth:install` injects would not parse at all against it.
 //
 // This test closes the loop the two bugs left open: the schema this package
 // ships must parse, and every accessor this package calls must exist in it.
@@ -48,7 +47,9 @@ describe('authSchemaFragments', () => {
   })
 
   test('uses current scalar type names', () => {
-    // Text / Integer / Real / Blob are in RENAMED_TYPES and hard-rejected.
+    // Text / Integer / Real / Blob are no scalars of this language; a field
+    // typed with one parses as an enum reference and is refused in the second
+    // pass as an unknown type, which is a worse sentence to read than this test.
     const frag = authSchemaFragments('main')
     for (const removed of ['Text', 'Integer', 'Real', 'Blob']) {
       expect(frag).not.toMatch(new RegExp(`\\s${removed}\\??\\s`))

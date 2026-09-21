@@ -4838,7 +4838,7 @@ export function buildBlock(data, option = {}) {
             // a misspelling read as "the feature does not work" (`FJS-023`).
             ctx.analysis.errors.push(
               `<mesa:${n.elArg}> is not a Mesa element. Known: ` +
-              `boundary, mounted, element, window, document, body, portal, head.`
+              `${MESA_ELEMENTS.join(', ')}.`
             )
           }
           return
@@ -9576,6 +9576,12 @@ export async function compile(source, config = {}) {
 // every code block and ASCII diagram, and a <textarea> also loses the initial
 // value the source declared — and it happens in the compiler, so SSR and the
 // client are wrong identically and no hydration mismatch can report it.
+// The whole `mesa:` namespace, named once. The list used to live inside the
+// error string that reports a typo, where nothing outside the compiler could
+// ask what the namespace holds — a reader grepping for the names picked up
+// `<mesa:frobnicate>` out of a comment and listed it as one.
+export const MESA_ELEMENTS = ['boundary', 'mounted', 'element', 'window', 'document', 'body', 'portal', 'head']
+
 const PRESERVE_WHITESPACE = new Set(['pre', 'textarea'])
 
 function compactDOM(dom, full) {

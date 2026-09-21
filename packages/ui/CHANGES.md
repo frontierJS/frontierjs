@@ -1,5 +1,28 @@
 # Changes
 
+## 2026-09-20 — `Thresholds`, a banded scale tuned against its own distribution
+
+N cut points over a histogram of the values they cut: the bars are colored by the band they fall
+in, each band carries its count, and both follow the handles live. Generalized from the tuner on
+the code graph `fli project:map` writes, where the question it answers was first asked — a cut is
+right when the picture stops changing much as you cross it, and that is only legible while the
+bars, the colors, the counts and the handles read off ONE scale.
+
+`scale="log"` is the option, for a distribution that is one tall bar and sixty empty ones on a
+linear axis; `defaults` draws Reset and the note saying what the cuts were moved from. Buckets are
+equal-width in POSITION, which on a log axis makes them equal ratio, so a bar and the marker over
+it cannot drift apart by a half-bucket. The band of a value is `bandIndex(thresholds, value)` in
+`utils.js`, exported because the caller coloring its own map from the same cuts is the second
+reader, and a copy written out at the far end is what disagrees first.
+
+Two things the browser drive holds that nothing else can reach. A cut dragged past its neighbors
+pushes them, and the pushed HANDLES have to move with the numbers — Mesa writes an input back only
+when its value changes, and a drag held against a bound changes nothing after the first event, so
+without the hand sync the handles read `0,83,0` against cuts of `1,2,3`. And the bars and the
+markers are cross-read against each other: the band a bar is COLORED, ranked among the ramp's
+steps, against the band its own center falls in by the markers. 25 assertions, and both traps were
+confirmed by breaking the component and watching the spec fail.
+
 ## 2026-09-20 — a `<Textarea>` the app rewrites
 
 Its value was the element's CHILD TEXT, and `el.value` stops reflecting that text the moment
@@ -260,11 +283,11 @@ from one open form carried a revision the row had already passed. Only the
 version column is taken — merging the whole answer would overwrite what was
 typed while the request was out.
 
-## 2026-09-09 — `Cell`'s dash had no colour
+## 2026-09-09 — `Cell`'s dash had no color
 
 `FJS-1059`. `.muted { color: var(--text-muted) }` names a token nothing
 defines, so the declaration was dropped whole and the *nothing here* dash took
-the surrounding text colour. It is `--ink-mute`; `.text-muted` is the utility
+the surrounding text color. It is `--ink-mute`; `.text-muted` is the utility
 class built on it, and the class name read as a token name.
 
 `fli check`'s `css-token-undefined` already covers this and grades an APP, so
@@ -1013,7 +1036,7 @@ The consequence: **a control given a `name` always had a visible label.** That
 is what the `<Form>` shorthand wants and it is wrong everywhere else — a filter
 bar, a search box, a toolbar, anywhere the name is there because a submit
 handler reads it. Found in basecamp, where a three-control filter bar rendered
-one labeled control 38px tall beside two unlabelled ones, and the labeled one
+one labeled control 38px tall beside two unlabeled ones, and the labeled one
 had *two* labels: the invented one and the `visually-hidden` one its caller had
 already supplied.
 
