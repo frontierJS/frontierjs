@@ -29,7 +29,7 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 // refusal costs the same. The remaining difference is a database read, which is
 // three orders of magnitude below the bcrypt and not separable from noise.
 //
-// The cost is asserted against BCRYPT_COST in tests/flows.test.ts: raise the
+// The cost is asserted against BCRYPT_COST in test/flows.test.ts: raise the
 // cost and this literal has to be regenerated, or the gap quietly reopens.
 export const DUMMY_HASH = '$2b$12$rbdqjSKMTYmj64JolfD1NOrdSG1SE3VW2XQ25qeYqQsRXuWq1WpYy'
 
@@ -84,7 +84,7 @@ export function generateToken(): string {
 // silently signed out, about once in 16.7 million logins. Uniform entropy is
 // worth less than a routing rule that cannot collide; 122 bits is unguessable.
 //
-// `token-shape` in tests/flows.test.ts pins this, so a change here fails loudly
+// `token-shape` in test/flows.test.ts pins this, so a change here fails loudly
 // rather than at that rate.
 
 export function generateSessionToken(): string {

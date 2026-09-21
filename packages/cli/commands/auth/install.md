@@ -49,7 +49,7 @@ const { shippedFile } = await import(resolve(global.fliRoot, 'core/app-schema.js
 // A shipped `.lite` file has to parse standalone, so it spells the attribute out
 // rather than carrying a placeholder — `packages/auth/schema.ts` makes the same
 // substitution for a caller assembling the schema in memory, and auth's
-// `tests/schema-accessors.test.ts` lifts this arrow out of this file and runs it
+// `test/schema-accessors.test.ts` lifts this arrow out of this file and runs it
 // against the shipped bytes, so the two cannot disagree. Anchored to the line:
 // both files discuss the attribute in their own headers, and a bare substring
 // replace rewrote that prose too.

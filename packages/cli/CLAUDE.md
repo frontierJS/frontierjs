@@ -310,7 +310,7 @@ db/        deploy.lite + ddl.snapshot.sql — the deploy journal's models, and t
            does not parse
 cli/src/   the CLI's own source tree
 web/       the browser-facing side
-tests/     one file per module under core/, plus the deploy pipeline's own
+test/     one file per module under core/, plus the deploy pipeline's own
            layer: plan (the rows a transition would write), journal (the rows
            it does write, through the REAL runner against a real SQLite file),
            revert (the seven refusals, and what each one's way out is), machine
@@ -344,7 +344,7 @@ tests/     one file per module under core/, plus the deploy pipeline's own
   thrown error instead of rethrowing** — `status` is the exit code and
   `stdout`/`stderr` are what the child wrote, so a probe reads the same two keys
   whether it succeeded or not; `exitCode` and `code` are neither of them there.
-  A signal still stops everything. `tests/exec-options.test.js` reads every
+  A signal still stops everything. `test/exec-options.test.js` reads every
   `exec({…})` in every shipped command, because a command is markdown and a
   compile is not a run.
 - **Never shell out to a bare `fli`.** That is a GLOBAL install, present on the
@@ -747,7 +747,7 @@ tests/     one file per module under core/, plus the deploy pipeline's own
   calls `surfaceFile` and `generatedBy` rather than restating them, which is what
   makes the collapse permanent. The command module imports it the same way it
   imports `readAppAtlas`, so one module answers both of `project:map`'s questions
-  about the app, and `tests/project-helpers.test.js` reaches the parser by plain
+  about the app, and `test/project-helpers.test.js` reaches the parser by plain
   import rather than through a regex over a `<script>` block.
 - **`app:atlas` and `project:map` are TWO commands and `FJS-D223` does not reach
   them** (`FJS-D240`). D223's test is ONE READER — `core/repo-atlas.js` reads no
@@ -780,7 +780,7 @@ tests/     one file per module under core/, plus the deploy pipeline's own
   declaration and a view as well. *No resource binds to this service* is a
   COLUMN in the services panel rather than an issue — an API-only service is
   correctly bound by nothing, and 24 such rows pushed the real findings off the
-  page. `tests/viewer-issues.test.js` reaches the two pure functions by
+  page. `test/viewer-issues.test.js` reaches the two pure functions by
   evaluating the page's script block with the browser stubbed; every negative in
   it is PAIRED with a finding that must still fire, or a `collectIssues`
   returning nothing would pass.
@@ -788,7 +788,7 @@ tests/     one file per module under core/, plus the deploy pipeline's own
   runs nowhere until it is named there.** It is not a glob and adding one is
   silent — the file passes in isolation and is absent from `bun run test`.
 - **`readApiSurface` is graded against the real committed snapshots, not only the
-  fixture.** The fixture in `tests/project-helpers.test.js` describes itself as *a
+  fixture.** The fixture in `test/project-helpers.test.js` describes itself as *a
   trimmed copy of the real shape*, and a copy is frozen at the moment it was
   written — the only failure it can catch is one somebody hand-typed into it.
   **The oracle is each snapshot's own summary line** (`N services · N routes · N
@@ -875,7 +875,7 @@ tests/     one file per module under core/, plus the deploy pipeline's own
   symmetrical**, which is the part worth knowing — `transition()` resolves a
   move NAME, so the target-state spelling works for `update()` and throws here,
   unless the move is unnamed (`pending -> paid` names itself `paid`). Both
-  directions are pinned in `tests/checks.test.js`, and writing one of them the
+  directions are pinned in `test/checks.test.js`, and writing one of them the
   wrong way round is what found it.
 - **A rule that OVER-fires costs more than one that is missing.** `ci.mjs`'s
   `structure` phase now runs `runChecks` over the apps AND over this repo's own
@@ -939,7 +939,7 @@ tests/     one file per module under core/, plus the deploy pipeline's own
   `.editorconfig`, the workflow. That set is the framework's real opinion about
   tooling and far more people will read it than will read this repo, so it is one
   module with the reasoning attached rather than string literals in
-  `project/new.md`, and `tests/app-config.test.js` asserts each default. Two
+  `project/new.md`, and `test/app-config.test.js` asserts each default. Two
   rules it encodes: **the config is a dependency the app extends in a line**
   (`@frontierjs/config`), and **`fli check` runs first** in `bun run check`,
   because it is the half a linter cannot reach.
@@ -996,7 +996,7 @@ tests/     one file per module under core/, plus the deploy pipeline's own
   way here deliberately: a backticked `fli <name>` is a claim that you can run
   it, which is the whole thing this grades — the rule caught this paragraph.)
 - **A test file no script names never runs, and `test-files-run` is the rule.**
-  This package's own `tests/pipe.test.js` pinned `FJS-379` and had never
+  This package's own `test/pipe.test.js` pinned `FJS-379` and had never
   executed. **A new test file here has to be added to the `test` script** — the
   runner does not walk the directory, which is the shape the rule exists for.
 - **`register-check.js` grades a register row against its own table's HEADER,
@@ -1123,14 +1123,14 @@ directory and running what comes out. A change to `core/checks.js` also needs
 `node scripts/ci.mjs --fast`, because the repo is its other caller.
 
 **The codegraph page has its own drive and it is not in `test`**: `bun run
-test:browser:codegraph` writes the page and opens it. `tests/codegraph.test.js`
+test:browser:codegraph` writes the page and opens it. `test/codegraph.test.js`
 asserts its script PARSES, which is a different question from whether it runs —
 a `const` read before its declaration and a backtick in a comment inside the
 `String.raw` block each render a page that draws its tiles and has a dead
 control on it.
 
 **The GUI has its own drive and it is not in `test`**: `bun run test:browser`
-(`tests/browser/`, one spec per panel, over mesa's harness by relative path)
+(`test/browser/`, one spec per panel, over mesa's harness by relative path)
 needs Chrome. A change to `web/index.html` is proved there and nowhere else —
 the page is built from strings, so every class in it is a claim about a
 stylesheet nobody linked at author time, and a missing one renders as unstyled

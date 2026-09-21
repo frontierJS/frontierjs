@@ -27,18 +27,18 @@ the plan, module by module, and the rulings it rests on are
 | `src/engine/nodes/` | the built-in node implementations, and the worker pool behind `data.code` |
 | `src/engine/triggers/registry.ts` | which flow answers which trigger |
 | `src/engine/ports.ts` | what the nodes need from the host — the model writes, service calls, job dispatch, notifications, outbound calls, the AI models, the key-value store — and `HostCatalog`, what the compiler checks a node's names against |
-| `tests/engine/` | the engine's suites, one directory per module |
-| `tests/engine-boundary.test.ts` | the rule that `src/engine/` imports nothing outside itself but `@frontierjs/toolbelt` |
-| `tests/store.test.ts` | the schema's access rules with real principals, and the store's statement count and status moves against a real litestone |
-| `tests/runner.test.ts` | runs on a real Caravan queue: one job per run, idempotent starts and resumes, wait deadlines, a lost dispatch, cron, an activation reaching a second instance |
-| `tests/crash.test.ts` | a worker PROCESS SIGKILLed mid-stage, and a second one finishing the run; the same for an inline sync run, handed over by the sweep |
-| `tests/models.test.ts` | phase 4's done-when against a litestone host: a write typed at compile time, a write refused by the gate |
-| `tests/limits.test.ts` | the kill switch, runs per minute, the row ceiling and the dry run (`FJS-D283`) |
-| `tests/plugin.test.ts` | `orion()` in a real Junction app: the owner through `runAs`, the model trigger, both routes, conduit, AI, an app job and a real notification |
-| `tests/tenancy.test.ts` | orion under `strategy database` and `strategy row`, through the plugin, every landing paired with the other tenant |
-| `tests/services.test.ts` | the services over HTTP with real principals, and `verifyTransportParity` over all three — phase 5's done-when |
-| `tests/outbound.test.ts` | a flow's outside call on the wire, against a local server |
-| `tests/fixtures/` | `host.ts` — the schema, a node registry and test nodes that leave evidence on disk; `app.ts` — an app with two gated models, notifications' model and orion's catalog; `notifications/` — the one notification a flow sends; `worker.ts` — the process the crash test kills |
+| `test/engine/` | the engine's suites, one directory per module |
+| `test/engine-boundary.test.ts` | the rule that `src/engine/` imports nothing outside itself but `@frontierjs/toolbelt` |
+| `test/store.test.ts` | the schema's access rules with real principals, and the store's statement count and status moves against a real litestone |
+| `test/runner.test.ts` | runs on a real Caravan queue: one job per run, idempotent starts and resumes, wait deadlines, a lost dispatch, cron, an activation reaching a second instance |
+| `test/crash.test.ts` | a worker PROCESS SIGKILLed mid-stage, and a second one finishing the run; the same for an inline sync run, handed over by the sweep |
+| `test/models.test.ts` | phase 4's done-when against a litestone host: a write typed at compile time, a write refused by the gate |
+| `test/limits.test.ts` | the kill switch, runs per minute, the row ceiling and the dry run (`FJS-D283`) |
+| `test/plugin.test.ts` | `orion()` in a real Junction app: the owner through `runAs`, the model trigger, both routes, conduit, AI, an app job and a real notification |
+| `test/tenancy.test.ts` | orion under `strategy database` and `strategy row`, through the plugin, every landing paired with the other tenant |
+| `test/services.test.ts` | the services over HTTP with real principals, and `verifyTransportParity` over all three — phase 5's done-when |
+| `test/outbound.test.ts` | a flow's outside call on the wire, against a local server |
+| `test/fixtures/` | `host.ts` — the schema, a node registry and test nodes that leave evidence on disk; `app.ts` — an app with two gated models, notifications' model and orion's catalog; `notifications/` — the one notification a flow sends; `worker.ts` — the process the crash test kills |
 | `bench/checkpoint.ts` | what one checkpoint costs at 10, 100 and 1,000 nodes; `bun run bench` |
 | `web/routes.js` | the directory a host mounts — `export { default } from '@frontierjs/orion/routes'` in a `*.mount.js` (`FJS-D282`) |
 | `web/routes/` | the screens: flows, a flow, runs, a run, credentials, and the section layout |
@@ -69,7 +69,7 @@ the plan, module by module, and the rulings it rests on are
   the actor has to read it.** A new node that calls out and does not check
   `ctx.dryRun` sends from a dry run; `notSent` is how it records instead.
 - **`src/engine/` imports nothing but itself, Node builtins and
-  `@frontierjs/toolbelt`**, and `tests/engine-boundary.test.ts` fails the suite
+  `@frontierjs/toolbelt`**, and `test/engine-boundary.test.ts` fails the suite
   otherwise. The kit is the one package `FJS-D26` licenses everybody to import;
   a framework package is what the rule is against. A host capability
   reaches the engine as an interface in `ports.ts` or `runtime/`, supplied at
@@ -91,7 +91,7 @@ the plan, module by module, and the rulings it rests on are
   the same, and `bun run bench` is how to see it.
 - **`asSystem()` does not consult `@@transitions`**, and the store writes
   through it, so `Run`'s declared moves bind the engine only through
-  `tests/store.test.ts`'s walk. A new status the scheduler reaches needs a path
+  `test/store.test.ts`'s walk. A new status the scheduler reaches needs a path
   in that walk, or an undeclared move ships green.
 - **`Flow.ownerId` and `FlowVersion.authorId` are access grants.** A run acts as
   the owner (`FJS-D276`), so each is stamped from the caller, a create naming
@@ -113,9 +113,9 @@ the plan, module by module, and the rulings it rests on are
   consumes the `Wait` row stops a second resume even under a different id. The
   run job falls back to the checkpoint when the row is gone only on
   `attempts > 1`, since a first attempt finding it consumed is somebody else's
-  resume. `tests/runner.test.ts`'s replay row fails with either removed.
+  resume. `test/runner.test.ts`'s replay row fails with either removed.
 - **A worker process with no server exits.** Caravan unrefs every timer, because
-  a host's HTTP server holds the process open. `tests/fixtures/worker.ts` holds
+  a host's HTTP server holds the process open. `test/fixtures/worker.ts` holds
   itself open for that reason, and the crash test reports a worker that exited
   rather than waiting fifteen seconds for a run nobody is running.
 - **`Run.heartbeatAt` set means an inline process owns the run.** A sync webhook
@@ -158,7 +158,7 @@ the plan, module by module, and the rulings it rests on are
   A run's job carries it, a resume key carries it, an activation records it;
   something that starts a flow without one starts it in no tenant, which under
   `strategy database` is a refusal and under `strategy row` a flow nobody can
-  see. `tests/tenancy.test.ts` pairs every landing with the other tenant.
+  see. `test/tenancy.test.ts` pairs every landing with the other tenant.
 - **A tenant's client is LEASED.** `host.open` and `app.withDb` hand out a
   client the pool may evict once released, so it is used inside the call that
   opened it and never kept — which is why the runner's actor is a callback, and

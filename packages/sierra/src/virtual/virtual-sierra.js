@@ -451,7 +451,7 @@ export function _generateVirtualSierra(config, tableOutput) {
   return generateVirtualSierra(config, tableOutput, '/config/sierra.config.js')
 }
 
-// Named export for unit testing — see tests/frontier-resolution.test.js
+// Named export for unit testing — see test/frontier-resolution.test.js
 export function _resolveFrontierSubpathForTest(id, searchRoots) {
   return _resolveFrontierSubpath(id, searchRoots)
 }

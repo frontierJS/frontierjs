@@ -80,7 +80,7 @@ index.ts     public API
   through a call that was meant to be refused.
 - **A sequence of logins is inexpressible at the shipped drift, so the TOTP tests
   run two harnesses.** `totpDrift: 1` means three valid steps and `confirmTotp`
-  spends one, so a user can finish exactly one more login. `tests/totp-login.test.ts`
+  spends one, so a user can finish exactly one more login. `test/totp-login.test.ts`
   declares `totpDrift: 10` for the rows that need several. The rejected
   alternative was an injectable clock — a seam on the login path that exists only
   for tests, and a forgeable one the day it reaches a caller. **Never give a code
@@ -126,7 +126,7 @@ index.ts     public API
   silently stops. The substitution is **line-anchored** because both files
   discuss the attribute in their own headers, and a bare `replaceAll` rewrote
   that prose into a lie. That rule is the one thing the CLI still restates — it
-  cannot import this file — so `tests/schema-accessors.test.ts` lifts its arrow
+  cannot import this file — so `test/schema-accessors.test.ts` lifts its arrow
   out of `install.md` and runs it against the shipped bytes.
 - **`cookieAuth: true` works end to end** — the plugin declares the mode via
   `app.http.setAuthCookie('session')` and Junction reads it (FJS-002).
@@ -157,7 +157,7 @@ index.ts     public API
 - **`onCredentialChanged` is the one OBSERVER, and it is written through one
   helper.** `credentialChanged()` in `auth.ts` writes the audit entry and tells
   the app, so a new credential write that calls `audit()` directly records the
-  change and tells nobody — `tests/credential-events.test.ts` fails on it. A new
+  change and tells nobody — `test/credential-events.test.ts` fails on it. A new
   kind of change is a name in `CREDENTIAL_EVENTS` and a call through the helper.
 - **`account-recovery` is the one service that takes somebody else's id, and its
   floor is SYSADMIN(7) with no option** (`FJS-D264`). It grades both people with

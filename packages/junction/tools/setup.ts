@@ -383,7 +383,7 @@ async function runAllChecks(): Promise<CheckResult[]> {
     detail: testFiles.length > 0
       ? `${testFiles.length} test file${testFiles.length > 1 ? 's' : ''}`
       : 'No test files found',
-    fix: 'Create tests/ directory and add *.test.ts files' })
+    fix: 'Create test/ directory and add *.test.ts files' })
 
   return results
 }
@@ -754,7 +754,7 @@ async function runWizard(): Promise<void> {
         if (create) {
           if (!exists('tests')) fs.mkdirSync(path.join(cwd, 'tests'))
           writeStarterTest()
-          console.log(ok('tests/app.test.ts created'))
+          console.log(ok('test/app.test.ts created'))
           console.log(note('Run: bun test'))
         }
         break
@@ -832,7 +832,7 @@ function writeStarterService(name: string): void {
 }
 
 function writeStarterTest(): void {
-  writeOut('tests/app.test.ts', genTests({}))
+  writeOut('test/app.test.ts', genTests({}))
 }
 
 async function scaffoldNewProject(): Promise<void> {
@@ -856,7 +856,7 @@ async function scaffoldNewProject(): Promise<void> {
   console.log(ok('config/default.ts'))
   console.log(ok('config/production.ts'))
   console.log(ok('app.ts'))
-  console.log(ok('tests/app.test.ts'))
+  console.log(ok('test/app.test.ts'))
   console.log(ok('.env (with generated ENCRYPTION_KEY)'))
   console.log(ok('.gitignore'))
 }

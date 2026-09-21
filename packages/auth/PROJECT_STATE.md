@@ -31,17 +31,17 @@ cleanup.ts   createAuthCleanupJobs() — expiry sweeps
 crypto.ts    hashing / token generation
 totp.ts      RFC 6238 codes, base32, recovery codes — clockless (`FJS-D261`)
 types.ts
-tests/harness.ts               real Litestone db + auth, shared by the suites
-tests/schema-accessors.test.ts schema fragments + accessor naming (pre-existing)
-tests/flows.test.ts            the IAuth methods, failure paths, gate enforcement
-tests/routes.test.ts           /auth/* against a real Junction app
-tests/totp.test.ts             RFC 4648 and RFC 6238 published vectors
-tests/totp-login.test.ts       enrollment, the two-step login, recovery, the ceiling
-tests/credential-events.test.ts every change told to onCredentialChanged, from its real verb
-tests/account-recovery.test.ts  resetTotp over HTTP: the SYSADMIN floor, peers, self, support
+test/harness.ts               real Litestone db + auth, shared by the suites
+test/schema-accessors.test.ts schema fragments + accessor naming (pre-existing)
+test/flows.test.ts            the IAuth methods, failure paths, gate enforcement
+test/routes.test.ts           /auth/* against a real Junction app
+test/totp.test.ts             RFC 4648 and RFC 6238 published vectors
+test/totp-login.test.ts       enrollment, the two-step login, recovery, the ceiling
+test/credential-events.test.ts every change told to onCredentialChanged, from its real verb
+test/account-recovery.test.ts  resetTotp over HTTP: the SYSADMIN floor, peers, self, support
 ```
 
-The file list above is the core; `tests/` also holds the OAuth, support-mode,
+The file list above is the core; `test/` also holds the OAuth, support-mode,
 services and cleanup suites.
 
 ## Verified state
@@ -59,7 +59,7 @@ The suites need a real Chrome-free bun only, but they DO build a real SQLite
 database per file under `os.tmpdir()`. Those dirs are reaped at **process exit**,
 not in `afterAll` — `@@log(audit)` flushes asynchronously through the jsonl
 driver after the awaited call returns, and tearing the directory down early
-raced it into `SQLITE_READONLY_DBMOVED`. See the note in `tests/harness.ts`;
+raced it into `SQLITE_READONLY_DBMOVED`. See the note in `test/harness.ts`;
 it is consistent with the audit-logger landmine in `../../CLAUDE.md`.
 
 ---
@@ -94,7 +94,7 @@ own `role` or `emailVerified`, an ADMINISTRATOR does both. This is *not* the
 "gates fail open" failure from `VERIFYING.md` — verified by running.
 
 **The CLI hand-copy is in sync, and a test says so now.** It has drifted
-three times, so `tests/schema-accessors.test.ts` parses both copies and compares
+three times, so `test/schema-accessors.test.ts` parses both copies and compares
 what they DECLARE — gate, row policies, field policies, model for model. Prose
 asking two files to stay together is the thing that failed; comments may differ,
 an access rule may not. Verified by breaking it: dropping the row policy from the
@@ -115,11 +115,11 @@ are `account` service methods; the gate ladder and `authMethod` are unchanged.
 Verified at three distances:
 
 - **The arithmetic** against RFC 4648's and RFC 6238's published vectors
-  (`tests/totp.test.ts`), which are the only assertions here written by
+  (`test/totp.test.ts`), which are the only assertions here written by
   somebody other than the implementation.
 - **The provider and both transports** against a harness app — every refusal
-  paired with the succeeding call (`tests/totp-login.test.ts`,
-  `tests/services.test.ts`, `tests/support-refusals.test.ts`).
+  paired with the succeeding call (`test/totp-login.test.ts`,
+  `test/services.test.ts`, `test/support-refusals.test.ts`).
 - **A real app** — `example`: `verify:users` registers a fresh account, enrolls
   it, and signs in through `example`'s per-shop provider proxy and tenant
   database, with codes from an authenticator written in the drive rather than
@@ -132,7 +132,7 @@ shell's code box, and `verify:users` drives both in Chrome. Open: passkeys.
 
 ## Typecheck baseline: 4
 
-All 4 are nullable assertions in `tests/schema-accessors.test.ts`. **Zero**
+All 4 are nullable assertions in `test/schema-accessors.test.ts`. **Zero**
 diagnostics in the package's own source or public surface — but see finding 7:
 that is mostly because the route layer is typed `any`.
 
@@ -158,7 +158,7 @@ that is mostly because the route layer is typed `any`.
   `authCleanup.start()` into `boot()` and `.stop()` into `shutdown()` — and
   neither dogfooding app does: `example` never starts it, and `basecamp` runs a
   `basecamp-cleanup` of its own. It uses Junction's `createScheduler`, not
-  Caravan, so Caravan's state is irrelevant to it. `tests/cleanup.test.ts` covers
+  Caravan, so Caravan's state is irrelevant to it. `test/cleanup.test.ts` covers
   it now, through `sweepNow()` rather than a restated predicate (`FJS-1000`).
 - Password strength: nothing validates it. `password: 'x'` is accepted.
 - Multi-process: the rate limiter is an in-process `Map`, documented as such.

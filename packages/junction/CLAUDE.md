@@ -282,7 +282,7 @@ src/
   comes from `describe().methods`. **The header is the only address and that is
   ruled** (`FJS-D218`): a second path form would be a second place for the gate,
   the idempotency claim and the allow-list to be applied, and the collapsed
-  operation is a fact about OpenAPI rather than about the design. `tests/openapi-round-trip.test.ts` calls every
+  operation is a fact about OpenAPI rather than about the design. `test/openapi-round-trip.test.ts` calls every
   documented operation against the app that produced the spec, which is the only
   shape that catches drift nobody predicted. The docs page is hand-written HTML
   with two caller-supplied values in it and its CDN reference is PINNED.
@@ -308,7 +308,7 @@ src/
   ENCODED value, which is what makes `get()` hand back something a caller cannot
   mutate the cache through. `getOrSet` is the read-through and is single-flight.
   Do not hand-clone around it — `buildCacheHooks` did, and a hook's clone cannot
-  be true of a driver it has never heard of. `tests/cache-conformance.test.ts`
+  be true of a driver it has never heard of. `test/cache-conformance.test.ts`
   runs one body against both; a test per driver cannot see a divergence at all.
 
 - **A payload key that names no field of the model is a 400; a field the caller
@@ -364,7 +364,7 @@ src/
   `attachments` is mapped straight through; anything new needs the same line, and
   reading a fallback in the consumer instead is a second answer to where the
   block lives. **Eleven keys were in that state at once** (`FJS-1066`), which is
-  why `tests/config-surface.test.ts` now reads both interfaces off their source
+  why `test/config-surface.test.ts` now reads both interfaces off their source
   and fails a key added without a behavioral row.
 
 - **`junction.config.js` DECLARES, `app.configure()` CONSTRUCTS, and what the
@@ -850,7 +850,7 @@ src/
   erroring), and `ServiceRow`'s member mapping. An interface has no implicit
   index signature, so handing one straight to a proxy generic over
   `Record<string, unknown>` fails the constraint and silently widens back — the
-  whole feature compiles and types nothing. `tests/client-types.test.ts`
+  whole feature compiles and types nothing. `test/client-types.test.ts`
   compiles a fixture with `tsc` because no runtime assertion can see any of this.
 - **A 401 keeps the server's own sentence.** `_request` used to throw
   `Unauthorized` before reading the body, so `Invalid credentials` never reached
@@ -1139,36 +1139,36 @@ src/
   said. Same for `Connection.__joinMeta` and `Channel.__presenceWrapped`.
   **An assertion to `Record<string, unknown>` is the smell**: nine of the
   twenty-five here were reaching a field the type already had.
-- **The whole package must stay at zero, `tests/` and `example/` included.**
+- **The whole package must stay at zero, `test/` and `example/` included.**
   `index.ts` + `src/**` is what an app compiles (the `exports` map points at
   `.ts` and nothing emits `.d.ts`, so junction's own errors land in every app's
   `tsc` and editor — `FJS-268`), and there is no baseline left to hide behind:
   junction is absent from `scripts/typecheck-baselines.json`, which means 0.
-  **The reason `tests/` counts is not tidiness.** They are the only code here
+  **The reason `test/` counts is not tidiness.** They are the only code here
   that uses junction the way an app does, so an error in one is an error a user
   gets — driving the last 138 to zero found eleven defects in the shipped types,
   including a custom method's `ctx` being an implicit `any` and
   `app.events.on('x', () => arr.push(n))` refusing to compile (`FJS-034`).
 - **A cast in a test is a claim about the shipped type; read it before adding
   one.** The two that are legitimate here have one owner each in
-  `tests/helpers.ts` — `stubbable` (Bun's `typeof fetch` carries `preconnect`,
+  `test/helpers.ts` — `stubbable` (Bun's `typeof fetch` carries `preconnect`,
   so no plain stub is assignable) and `asRecord` (a key the type does not
   declare, which is Invariant 5 working). Anything else is usually the type
   being wrong.
 - **Fake clients hide real bugs.** Cross-package behavior goes in
-  `tests/real-litestone-client.test.ts`, against a real client.
+  `test/real-litestone-client.test.ts`, against a real client.
 - **No test file may name a port.** Bun runs every file in ONE process and an
   app's `stop()` does not finish before the next file's `start()` begins, so a
   shared port means a socket is answered by another file's app mid-shutdown —
   which reached the client as `Expected 101 status code` and was reported as the
   connection-cap assertion failing, one run in three and then every run
   (`FJS-900`). Three files bound 3396 and four bound 3397. Ask for `port: 0` and
-  read `app.http.port` back after `start()`. `tests/test-ports.test.ts` refuses a
+  read `app.http.port` back after `start()`. `test/test-ports.test.ts` refuses a
   second file naming the same port.
 
 - **Nothing here mocks a module any more, and it must stay that way.**
   `mock.module()` is applied PROCESS-WIDE by bun and never undone, so
-  `tests/email.test.ts`'s five calls on the smtp shim made every later file grade
+  `test/email.test.ts`'s five calls on the smtp shim made every later file grade
   the mock — measured, five assertions green in isolation and failing in the full
   run — and three suites spawned a subprocess to escape it. The transport is
   INJECTED now: `createSystemSender(config, { transport })`, defaulting to the
@@ -1313,7 +1313,7 @@ and handed on.
 ### The six fields, and their rules
 
 The substance of a `ServiceContext` is not its field list, it is that each of
-these behaves differently. `tests/context-contract.test.ts` asserts all six by
+these behaves differently. `test/context-contract.test.ts` asserts all six by
 running them, because none of it is expressible as a type — and one of them was
 documented here for months while being false.
 
@@ -1457,7 +1457,7 @@ code, so it is owed nothing.
 **It is a second store on purpose, not a widening of `runInServiceCall`.** That
 one holds the service NAME and is read by litestone's write tap to suppress a
 double announcement, so widening it to this span would stop a write inside an
-`afterCommit` effect from being announced at all. `tests/call-scope.test.ts`
+`afterCommit` effect from being announced at all. `test/call-scope.test.ts`
 asserts the narrow store is already closed by `afterCommit`, so a later merge
 fails loudly.
 
@@ -1475,14 +1475,14 @@ the announcement are. `app.principal()` is what a job asks for the caller.
 opens the scope for every ordinary path — HTTP, a socket frame,
 `app.service(x).find()`. What it does not cover is a hand-built context calling
 a method as a plain function, which several suites here do
-(`tests/populate.test.ts`, `tests/real-litestone-client.test.ts`); those pass
+(`test/populate.test.ts`, `test/real-litestone-client.test.ts`); those pass
 because `createBaseService`'s CRUD reads the ctx PARAMETER, and a method reading
 `$` would have no way in at all. It nests and restores, so a direct call inside
 a real one leaves the outer scope as it found it. Also on
 `@frontierjs/junction/testing` beside `testCtx`, which is the thing that
 produces the context it needs.
 
-`tests/call-scope.test.ts` runs all of it, including the leaks: 25 concurrent
+`test/call-scope.test.ts` runs all of it, including the leaks: 25 concurrent
 calls each seeing only their own, a nested call not overwriting its parent's
 `locals`, and a throw leaving no scope standing.
 

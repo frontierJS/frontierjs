@@ -1,5 +1,20 @@
 # Changes — example
 
+## 2026-09-21 — `verify:shell` watches the warm rather than reading it back
+
+`FJS-D337` stops the warm writing a list-cache slot for a model the device keeps, and that slot
+was two things here: the fallback the hydration block emptied, and the SIGNAL that the warm's
+`find` had come back. With it gone the call itself is the only fact, so the drive taps the app's
+socket before its first script runs and reloads under the tap — one attached afterwards is one
+that missed — and waits for the `inventory.find` frame to settle. `warmOffline` awaits the
+write-through, so a settled call means the rows are on the device rather than in flight to it.
+
+The ruling gets an assertion of its own in a real browser: no `fjs-lists` key mentions the
+service after a warm. Removing the condition in sierra turns exactly that one red.
+
+The two cache-emptying probes now answer *empty* for a store that was never created as well as
+for one cleared here, which after the ruling is the ordinary case rather than a failure.
+
 ## 2026-09-21 — `verify:offline`'s header caught up with its own assertions
 
 The file was committed with a header written during Homestead phase 0 — *there is no retry in

@@ -64,7 +64,7 @@ export function resolveBuildId(config: { build?: unknown } | null | undefined): 
   // module is imported by the BROWSER CLIENT for the two wire names above — and
   // a client is compiled under the app's own tsconfig, which has no node types.
   // The bare spelling put `Cannot find name 'process'` into every consuming
-  // app's `tsc`, which is FJS-268's class exactly; `tests/client-types.test.ts`
+  // app's `tsc`, which is FJS-268's class exactly; `test/client-types.test.ts`
   // is what caught it, by compiling a fixture the way an app does.
   const proc = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
   const env  = proc?.env?.FJS_BUILD

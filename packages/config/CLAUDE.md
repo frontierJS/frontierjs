@@ -46,7 +46,7 @@ test/            the claims above, asserted
 - **`.editorconfig` is a hand copy** — EditorConfig has no extends mechanism, so
   the scaffold writes the text. `editorconfig` here is the original and
   `packages/cli/core/app-config.js` holds the copy; `test/config.test.js`
-  asserts byte equality from this side and `packages/cli/tests/app-config.test.js`
+  asserts byte equality from this side and `packages/cli/test/app-config.test.js`
   from the other. Change one, change both.
 - **Adding a rule is a minor, not a patch.** It can fail an app's CI on code that
   has not changed. That is the price of the config being a dependency, and the

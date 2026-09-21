@@ -199,7 +199,7 @@ bug than the one it set out to fix.
 a signal, and `externalSignals` is still the answer for it.
 
 The drift test that guarded the map is gone with the map.
-`sierra/tests/no-module-signals.test.js` replaced it and asserts the stronger
+`sierra/test/no-module-signals.test.js` replaced it and asserts the stronger
 thing: `src/` exports none, and the plugin declares none.
 
 ---

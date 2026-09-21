@@ -25,7 +25,7 @@ tree today; everything else is argued. Read nothing here as behavior
 `IDEAS/`, `ISSUES.md`, `DECISIONS.md` and `IDEAS/overview.md` for `geo`, `spatial`,
 `latitude`, `polygon`: zero rows, zero rulings, zero defects. `.lite` has eight
 scalars — `String Int Float Bytes Boolean DateTime Json File` — and no attribute
-names a place. `IDEAS/prior-art.md` lists what to read and names no geospatial
+names a place. `IDEAS/review-prior-art.md` lists what to read and names no geospatial
 project. **So this file is the reservation**, and the evidence it reserves against
 is a live client application that has been running the workaround for two years.
 
@@ -1354,13 +1354,13 @@ index without a type system built for geometry.
 
 ### Ash / `AshGeo` — the split this proposal is making
 
-`prior-art.md`'s convergence table gains a row after all. AshGeo is **an extension,
+`review-prior-art.md`'s convergence table gains a row after all. AshGeo is **an extension,
 not core**: PostGIS-backed types for resource attributes, `st_*` available inside
 Ash expressions, and — the interesting half — **validations backed by `Topo` that
 answer `contains?` without hitting the database.** That is precisely the division
 proposed here: a declared column and a Data-boundary filter on one side, pure
 geometry usable on either end on the other. Two designs arriving separately at the
-same seam is the evidence `prior-art.md` says to weight.
+same seam is the evidence `review-prior-art.md` says to weight.
 
 ### Cell indexes — geohash, S2, H3
 

@@ -2223,7 +2223,7 @@ const CHECKS = {
   // the worst way: the suite is green, the count goes up as files are added, and
   // the one file nobody listed is the one written last — which is the one
   // written for the defect just fixed. Measured here first: `packages/cli`'s own
-  // `tests/pipe.test.js` pins `FJS-379` and had never been run by `bun run test`.
+  // `test/pipe.test.js` pins `FJS-379` and had never been run by `bun run test`.
   //
   // Only where the script HAND-LISTS files. `bun test` and `vitest run` discover
   // their own, and a package that lets its runner walk the directory cannot have

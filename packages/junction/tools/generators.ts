@@ -435,7 +435,7 @@ await app.start()
 `
 }
 
-// ─── tests/app.test.ts ────────────────────────────────────────────────────
+// ─── test/app.test.ts ────────────────────────────────────────────────────
 
 export function genTests(o: GenInput): string {
   const a = opts(o)
@@ -484,7 +484,7 @@ export function genTests(o: GenInput): string {
   })
 ` : ''
 
-  return `// tests/app.test.ts
+  return `// test/app.test.ts
 import { describe, it, expect } from 'bun:test'
 import { createTestApp, request, healthPlugin${a.firstService ? `, createService` : ''} } from '@frontierjs/junction'
 ${a.firstService ? `import { create${pascal}Service } from '../services/${a.firstService}.service.ts'` : ''}
@@ -565,7 +565,7 @@ config/
 .env               ← secrets (git-ignored)
 app.ts             ← entry point
 services/          ← one file per service
-tests/             ← test files
+test/             ← test files
 \`\`\`
 
 ## Choices made at init

@@ -55,7 +55,7 @@ are half-declared today — in TypeScript, where the seed's readers cannot reach
 **Ash — an action is a declaration with an implementation attached.** The action's
 arguments, its policy and its changes are declared; the code that does the work is
 a module the declaration names. This is that shape, minus Ash's host language.
-`prior-art.md` covers Ash in depth.
+`review-prior-art.md` covers Ash in depth.
 
 **`@@transitions` — the same move, already made once here.** A state move is
 declared in the seed with its gate, and the boundary refuses an undeclared move.
@@ -148,4 +148,4 @@ code saying the contract belongs in the seed. **Tier:** Assessment.
 
 - `kernel-and-projections.md` — §1 the pipeline, §3 generated conformance
 - `agent-surface.md` — the MCP projection this would make fully graded
-- `prior-art.md` — Ash
+- `review-prior-art.md` — Ash

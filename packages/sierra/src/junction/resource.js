@@ -1438,10 +1438,13 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       if (stamp === _loadIssued) {
         _rememberRows(rows)
         _cachedAt = null
+        // Both, where the warm writes one or the other: skipping the slot
+        // needs the write-through to have LANDED (`FJS-D337`), and this one is
+        // not awaited — the rows are already in hand and the screen is not
+        // waiting on a disk — so the fact is not available here to skip on.
         if (key) listCache().remember(key, rows).catch(() => {})
         // And into the device's own tables, where a query engine can answer a
-        // question nobody asked before the outage (`FJS-D307`). Not awaited:
-        // the rows are already in hand and the screen is not waiting on a disk.
+        // question nobody asked before the outage (`FJS-D307`).
         if (key && localDbConfigured()) writeThrough(model, rows).catch(() => {})
       }
       return rows

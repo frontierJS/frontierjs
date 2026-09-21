@@ -185,7 +185,7 @@ Two cautions, both inherited from above rather than new:
 - `IDEAS/compliance-from-the-seed.md` — the same declarations, read for audit
 - `IDEAS/operational-edge.md` — `atlas`, which the per-route classification feeds
 - `IDEAS/one-mental-model.md` §6 — the target axis the classification is a property of
-- `IDEAS/package-map.md` — where a shared gate-reader would live
+- `IDEAS/map-packages.md` — where a shared gate-reader would live
 - `packages/sierra/src/build/prerender.js` — the build step this attaches to
 - `packages/sierra/src/junction/field-rules.js` — `buildGate()` / `canAtLevel()`
 - `CLAUDE.md` § Bridge index — the island marker's "props as rendered" note, which is

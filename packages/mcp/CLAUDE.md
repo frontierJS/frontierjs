@@ -12,7 +12,7 @@ spoken to an agent.
 ```
 index.ts              the public surface — projectTools, resolveModel, the types
 src/projection.ts     all of it
-tests/projection.test.ts
+test/projection.test.ts
 ```
 
 ## What it owns
@@ -87,7 +87,7 @@ grading on any keyword in it, and which three it may grade on is the design.
 ## Which drive proves a change
 
 `bun run test`, then `example`: `verify:mcp`. They are not the same question.
-`tests/plugin.test.ts` proves the PROTOCOL and the crossings — what junction did
+`test/plugin.test.ts` proves the PROTOCOL and the crossings — what junction did
 to the request body before the handler saw it, and whether the level a route
 reads is the level the boundary grades with — against a Junction app on a real
 port. `verify:mcp` proves the ANSWERS: a real `@modelcontextprotocol/client`, a

@@ -19,10 +19,10 @@ paragraphs, help articles, terms, a changelog, an FAQ, the words in an email
 template, a launch post. **This framework has a whole surface for publishing that
 text and no model for the text itself.**
 
-The register does not mention it. A search of `IDEAS/package-map.md`,
+The register does not mention it. A search of `IDEAS/map-packages.md`,
 `IDEAS/overview.md` and `IDEAS/ecosystem-gaps.md` on 2026-09-03 returns zero hits
 for `cms`, `content model`, `editorial`, `non-technical` and `non-developer`. The
-thirty unbuilt packages in `package-map.md` cover charts, media, flags, bulk data,
+thirty unbuilt packages in `map-packages.md` cover charts, media, flags, bulk data,
 demo data, i18n, compliance, agents, offline, observability — and nothing for
 copy.
 
@@ -277,5 +277,5 @@ solved it is weak evidence that it is not the first thing anyone reaches for.
 - `packages/sierra/src/scanner/classify.js` — `.md` as a route extension
 - `packages/sierra/src/postbuild/markdown-pages.js` — the outward direction
 - `example/site/` — the surface with no content model
-- `IDEAS/package-map.md` § `lexicon` — the reserved per-locale prerender
-- `IDEAS/package-map.md` § `foundry` — where an editing surface would live
+- `IDEAS/map-packages.md` § `lexicon` — the reserved per-locale prerender
+- `IDEAS/map-packages.md` § `foundry` — where an editing surface would live

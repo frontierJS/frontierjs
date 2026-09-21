@@ -344,7 +344,7 @@ result deserves its own noun. It probably does not.
 
 ## See also
 
-- `IDEAS/package-map.md` — where a local-first implementation lands, and why it is no package
+- `IDEAS/map-packages.md` — where a local-first implementation lands, and why it is no package
 - `IDEAS/offline-first-and-release.md` — the same seam from the offline direction
 - `website/projects.json` — the Convex entry, which records the trade this refines
 - `packages/junction/src/client/index.ts` — `resource()`, `Store`, the three defects

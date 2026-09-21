@@ -1,5 +1,13 @@
 # Changes — @frontierjs/mcp
 
+## 2026-09-21 — the suite directory is `test/`
+
+**`tests/` is a surface, not a suite.** In an FJS app it sits beside `api/` and `web/` and holds
+what belongs to no single surface, while a surface's own tests are its `test/` (Invariant 3). A
+package is not an app — it has one `src/` — so its suite is `test/`, and this one moved. Eight
+packages spelled it plural and eleven singular with nothing in the tree deciding between them,
+which made the directory name a coin flip on every file added.
+
 ## 2026-09-20 — the bun floor is `1.4.0`
 
 This package is bun-only and declared no `engines` at all, so it stated its runtime nowhere. An
@@ -152,7 +160,7 @@ columns across `example` (`Credential.value`, the OAuth tokens, `Session.token`,
 `@guarded`, a field a caller WRITES when creating a credential. Encryption at rest
 is not a read policy and the two must not be conflated.
 
-**A real drive, finally.** `tests/plugin.test.ts` boots a real Junction app over a
+**A real drive, finally.** `test/plugin.test.ts` boots a real Junction app over a
 real Litestone client on a real port and speaks JSON-RPC to it — 13 rows, every
 visibility one a PAIR a rung apart, and a move that actually moves the row.
 **Two of those rows were one row that claimed the wrong thing**, and driving the

@@ -38,7 +38,7 @@
   "license": "MIT",
   "_built": "2026-05-07",
   "scripts": {
-    "test": "bun test tests/",
+    "test": "bun test test/",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "publishConfig": {

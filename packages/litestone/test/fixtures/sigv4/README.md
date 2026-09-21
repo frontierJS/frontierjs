@@ -1,6 +1,6 @@
 # SigV4 fixtures
 
-Copied unmodified from AWS's signing test suite, `tests/aws-signing-test-suite/v4/` in
+Copied unmodified from AWS's signing test suite, `test/aws-signing-test-suite/v4/` in
 [awslabs/aws-c-auth](https://github.com/awslabs/aws-c-auth) at commit
 `c4bc791ac6985eedb503e882cd450cc5b344c2f2`, Apache License 2.0.
 

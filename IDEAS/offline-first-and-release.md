@@ -21,7 +21,7 @@ shape Deployment (Release) and bundling from the start.
 ## Where this stands today: re-probed, and it has moved
 
 **Re-probed 2026-09-15, and the 2026-08-02 answer no longer holds.** Three of the
-four parts `IDEAS/package-map.md` listed as one offline engine have moved, and
+four parts `IDEAS/map-packages.md` listed as one offline engine have moved, and
 **none of them moved for offline** — each was built to settle a different problem and landed
 here as a side effect. A survey written in prose has no generator, so this one
 goes stale the way the last one did; every claim below names the file it was read

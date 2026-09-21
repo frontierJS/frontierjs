@@ -35,7 +35,7 @@ entirely, since a dense vector does not encode a port number. An index over pros
 a lexical pass beside the semantic one, which `menu(index)` over a seed does not,
 because a seed's vocabulary is closed.
 
-**Run 3 has been made and it priced the agent** (`intent-recognizer-run-3.md`) — run
+**Run 3 has been made and it priced the agent** (`run-intent-recognizer-3.md`) — run
 2's fifteen asks answered by a grounded agent on three models, graded blind against
 the code. Opus 5 wrote fifteen sendable replies with no false claim; Sonnet 5 six,
 with five misleading; Haiku 4.5 none, with three misleading. **The agent is a
@@ -45,7 +45,7 @@ have passed every one. It also filed eight defects in `example`. The next
 measurement is a lean harness pricing Opus per ask; as run it was about $1.14, and
 an estimate without the harness's overhead is about $0.59.
 
-**Run 2 has been made and it turned the record** (`intent-recognizer-run-2.md`) — a
+**Run 2 has been made and it turned the record** (`run-intent-recognizer-2.md`) — a
 hundred messages through the built resolver against a blind key. Words alone answered
 18% once a miss stopped counting as an absence; a translator picking off the index's
 own menu, 43%; and a right verdict made a sendable reply three times in fifteen. **A
@@ -56,7 +56,7 @@ next measurement is an agent grounded in the app, graded on whether every claim 
 makes is true.
 
 **Run 1 has been made and amended this record** — sixty synthetic requests against
-`example`, resolved by hand (`intent-recognizer-run-1.md`). Committed artefacts
+`example`, resolved by hand (`run-intent-recognizer-1.md`). Committed artefacts
 alone answered 31; with the UI realm indexed, 45. Seventy-two percent never
 reached the Data realm. The verdicts grew from four to six, the Data rung split in
 two, and the subtype question closed.
@@ -523,7 +523,7 @@ the customer-facing word can be loose while the verdict stays precise.
 **The falsification run was set a bar before it ran**: seven in ten answered by
 lookup alone keeps the shape, four in ten changes it. **Run 1 landed at 5.2 — 31 of
 60 — and 7.5 with the UI realm indexed**, so the design survives on a condition, and
-the condition is an index of what each screen shows (`intent-recognizer-run-1.md`).
+the condition is an index of what each screen shows (`run-intent-recognizer-1.md`).
 
 **Run 1 was synthetic and resolved by a person who had just read the seed.** It can
 disprove the design and cannot confirm it. The next run that counts is real mail
@@ -574,7 +574,7 @@ is.
 
 ## See also
 
-`intent-recognizer-run-1.md` (sixty synthetic requests, resolved by hand) ·
+`run-intent-recognizer-1.md` (sixty synthetic requests, resolved by hand) ·
 `oracle-reasoning.md` (the birth moment, and rules 1–3 used throughout) ·
 `fli app:atlas` (`FJS-D240`, the API-realm index) · `lexicon.md` (the string catalog,
 a neighbor rather than the index this needs) · `polymorphic-relations.md` (the one Data shape the language cannot

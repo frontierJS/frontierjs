@@ -168,7 +168,7 @@ that is where every check in the hazard catalog lives.
 The one shape with no good reason was named here as *a hand-listed `node a.js &&
 node b.js`, which is where a new test file gets forgotten silently*. That is now
 `fli check`'s `test-files-run` (repo scope), and its first run found
-`packages/cli`'s own `tests/pipe.test.js` — the file written to reproduce
+`packages/cli`'s own `test/pipe.test.js` — the file written to reproduce
 `FJS-379` — run by nothing, with the suite green every time. A runner pointed at
 a directory cannot have this problem, so the rule skips those packages entirely:
 the argument for that shape is now enforced rather than restated. What is still

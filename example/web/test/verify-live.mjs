@@ -393,8 +393,8 @@ try {
   // gone is the feature rather than a witness to it. What would settle it is a
   // marker for *no frame has arrived yet*, which is not reachable from the
   // page. Optimism and its rollback are asserted where they can be
-  // negative-controlled: `junction/tests/nodes.test.ts` and
-  // `sierra/tests/resource-record.test.js`.
+  // negative-controlled: `junction/test/nodes.test.ts` and
+  // `sierra/test/resource-record.test.js`.
 
   // ─── Who ELSE received it ───────────────────────────────────────────────
   //

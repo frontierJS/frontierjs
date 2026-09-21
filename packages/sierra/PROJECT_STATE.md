@@ -67,7 +67,7 @@ whether a gated read still fails a static build.
 ## Unconfirmed
 
 - `packages/sierra/example/` (the app on 8030) is exercised by no suite here —
-  `tests/static-safety.test.js` is the only test naming an example path, and it
+  `test/static-safety.test.js` is the only test naming an example path, and it
   uses its own fixture. Whether that example still runs was not checked.
 - Whether the widget drive's fixture covers what a MINIFIED widget does; the root
   map says it does not, and `example`: `verify:widget` is named as the drive that

@@ -50,7 +50,7 @@ started while the first is still awaiting.
 
 **The bug class is already proven here and was fixed once, locally.** Sierra's
 router carries the last-to-*finish* hazard as a hardening suite of its own
-(`packages/sierra/tests/router-hardening.test.js`; root `CLAUDE.md` §*Which
+(`packages/sierra/test/router-hardening.test.js`; root `CLAUDE.md` §*Which
 drive proves a change*), with a slow load that was not superseded still
 committing as its negative control. **The router solved it for navigations and
 for nothing else.** A typed search box, a filter bar and `resource.more()` are
@@ -242,7 +242,7 @@ as behavior.
 - `form-actions.md` — where the no-JS baseline belongs, not here.
 - `derived-suspense.md` — Mesa already tracks pending per derived value, which
   is a different fact from *a call is open* and does not cover item 2.
-- `prior-art.md` — a reading list; htmx belongs on it as evidence of the
+- `review-prior-art.md` — a reading list; htmx belongs on it as evidence of the
   opposite bet made well.
 
 ## Prior art — sources

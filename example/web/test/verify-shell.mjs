@@ -263,34 +263,74 @@ try {
   // read direction was a claim with nothing behind it. The warm a resource
   // declares now fills the tables, at boot and whenever the identity changes.
   //
-  // **Both halves of the setup are what make this an assertion.** The screen
-  // has not been opened in this browser, so nothing was ever written through a
-  // `load()`; and the list cache is emptied first, because the warm fills it
-  // under the SAME question this screen asks — so with it in place the screen
-  // renders identically whether or not a row ever reached the device.
+  // **Two halves make it an assertion, and `FJS-D337` moved one of them.** The
+  // screen has not been opened in this browser, so nothing was ever written
+  // through a `load()` — and the warm no longer fills the list cache for a
+  // model the device kept, so there is no slot under the question this screen
+  // asks. The cache is emptied anyway, as the control that says so: with an
+  // entry in place the screen renders identically whether or not a row ever
+  // reached the device.
   //
-  // The cache entry is also the thing worth waiting on: it means the warm's
-  // `find` came back. `warmOffline` writes the device immediately after and
-  // awaits it, so the poll below is covering a worker round trip rather than a
-  // network one.
+  // **What is left to wait on is the call itself.** The slot used to be both
+  // the fallback and the signal that the warm's `find` came back; with the slot
+  // gone the frame is the only fact, so it is tapped before the app's first
+  // script and the page reloaded under the tap. One attached afterwards is one
+  // that missed. `warmOffline` awaits the write-through, so a settled call
+  // means the rows are on the device rather than in flight to it.
 
   console.log('\n  offline — a screen this device has never opened')
 
-  const WARM_KEY = `
+  await send('Page.addScriptToEvaluateOnNewDocument', {
+    source: `
+      (() => {
+        const seen = { asked: null, done: false }
+        globalThis.__fjsWarm = seen
+        const Prev = globalThis.WebSocket
+        globalThis.WebSocket = new Proxy(Prev, {
+          construct(target, args) {
+            const sock = new target(...args)
+            // An own property over the prototype's, so the client's own send
+            // is the one being watched rather than a second socket.
+            const pass = sock.send.bind(sock)
+            sock.send = (payload) => {
+              try {
+                const f = JSON.parse(payload)
+                if (f && f.type === 'service_call' && f.service === 'inventory' && f.method === 'find') seen.asked = f.id
+              } catch {}
+              return pass(payload)
+            }
+            sock.addEventListener('message', (e) => {
+              try { if (seen.asked !== null && JSON.parse(e.data).id === seen.asked) seen.done = true } catch {}
+            })
+            return sock
+          },
+        })
+      })()
+    `,
+  }, sessionId)
+
+  await send('Page.navigate', { url: UI + '/' }, sessionId)
+  await until(`!!document.querySelector('header button')`, 'the shell under the tap')
+  await until(
+    `!!globalThis.__fjsWarm && (__fjsWarm.done
+      || performance.getEntriesByType('resource').some(e => e.name.includes('/api/inventory')))`,
+    'the declared read to be warmed')
+
+  // The ruling itself, in a real browser: one grain, and it is the device's.
+  check('the warm wrote no keyed slot for a model the device keeps', await evaluate(`
     new Promise(res => {
       const req = indexedDB.open('fjs-lists')
-      req.onerror   = () => res(0)
+      req.onerror   = () => res(-1)
       req.onsuccess = () => {
         const db = req.result
         if (!db.objectStoreNames.contains('lists')) return res(0)
-        const tx = db.transaction('lists', 'readonly')
+        const tx  = db.transaction('lists', 'readonly')
         const all = tx.objectStore('lists').getAll()
         all.onsuccess = () => res(all.result.filter(r => String(r.key).includes('inventory')).length)
-        all.onerror   = () => res(0)
+        all.onerror   = () => res(-1)
       }
     })
-  `
-  await until(WARM_KEY, 'the declared read to be warmed')
+  `), 0)
 
   const hydrated = await net.withOffline(async () => {
     const cleared = await evaluate(`
@@ -299,10 +339,13 @@ try {
         req.onerror   = () => res('no database')
         req.onsuccess = () => {
           const db = req.result
-          if (!db.objectStoreNames.contains('lists')) return res('no store')
+          // A store that was never created and one emptied here are one fact —
+          // nothing is left to answer from. Since FJS-D337 the warm writes no
+          // slot, so a device-held model may reach this with no store at all.
+          if (!db.objectStoreNames.contains('lists')) return res('empty')
           const tx = db.transaction('lists', 'readwrite')
           tx.objectStore('lists').clear()
-          tx.oncomplete = () => res('cleared')
+          tx.oncomplete = () => res('empty')
           tx.onerror    = () => res('failed')
         }
       })
@@ -316,7 +359,7 @@ try {
     return { cleared, ledger: await evaluate(`document.querySelectorAll('tr.movement').length`) }
   })
 
-  check('the cache was emptied before the question was asked', hydrated.cleared, 'cleared')
+  check('the cache held nothing under the question', hydrated.cleared, 'empty')
   check('a screen never opened online still has its ledger', hydrated.ledger, v => v > 0)
 
   check('back online after the hydration block', await net.waitOnline({ socket: false }), true)
@@ -433,10 +476,13 @@ try {
         req.onerror   = () => res('no database')
         req.onsuccess = () => {
           const db = req.result
-          if (!db.objectStoreNames.contains('lists')) return res('no store')
+          // A store that was never created and one emptied here are one fact —
+          // nothing is left to answer from. Since FJS-D337 the warm writes no
+          // slot, so a device-held model may reach this with no store at all.
+          if (!db.objectStoreNames.contains('lists')) return res('empty')
           const tx = db.transaction('lists', 'readwrite')
           tx.objectStore('lists').clear()
-          tx.oncomplete = () => res('cleared')
+          tx.oncomplete = () => res('empty')
           tx.onerror    = () => res('failed')
         }
       })
@@ -465,7 +511,7 @@ try {
     }
   })
 
-  check('the list cache really was emptied',        fromSql.cleared, 'cleared')
+  check('the list cache really was empty',          fromSql.cleared, 'empty')
   check('the device kept SQLite\'s own files',      fromSql.opfs, v => Array.isArray(v) && v.length > 0)
   check('and the ledger came back without a cache', fromSql.ledger, ledgerOnline)
 

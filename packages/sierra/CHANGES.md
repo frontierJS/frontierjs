@@ -1,5 +1,34 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-21 — the declared window is the DEVICE's
+
+`FJS-D337`, and the half phase 5 carried. `warmOffline()` filled two stores with one answer —
+the device's tables and a list-cache slot keyed by the declared question — and with SQL
+underneath, the slot is a second answer to a question the tables answer anyway, and a narrower
+one: it replays the exact query it was given and nothing else. So the warm now writes the slot
+only where the rows did NOT reach the device.
+
+**The condition is the write-through having landed, never the config.** `localDb()` answers null
+on any failure by design — no OPFS, a worker that will not start, a device out of quota — so
+reading `offline: { db: true }` as *the device holds this* would leave such a device with an
+empty screen and nothing said. `kept` was already computed and reported; it now decides.
+
+`load()` is unchanged and says why: its write-through is deliberately not awaited, so the fact
+the warm skips on is not available while a screen is rendering.
+
+`test/local-db.test.js` grades both halves — a kept model gets no slot, and one the device
+refused falls back to the slot and is read back through a real `load()` with the network down.
+
+## 2026-09-21 — the suite directory is `test/`
+
+**`tests/` is a surface, not a suite.** In an FJS app it sits beside `api/` and `web/` and holds
+what belongs to no single surface, while a surface's own tests are its `test/` (Invariant 3). A
+package is not an app — it has one `src/` — so its suite is `test/`, and this one moved. Eight
+packages spelled it plural and eleven singular with nothing in the tree deciding between them,
+which made the directory name a coin flip on every file added.
+
+`test:safety`, `test:widgets` and `test:installable` name the new path.
+
 ## 2026-09-21 — `mesa:slot` is named once
 
 `MESA_SLOT_TAG` in `build/slot-rewrite.js` holds the one name Sierra adds to Mesa's `mesa:`
@@ -16,7 +45,7 @@ after that resolved to a half-built namespace, so the next reader got
 and the cause was gone. Four messages of that shape once hid a schema parse
 error naming a file and a line.
 
-`tests/build-imports.test.js` carried a spawned NEGATIVE control asserting the
+`test/build-imports.test.js` carried a spawned NEGATIVE control asserting the
 runtime really does lose it, with a comment saying that if this ever stops being
 true the recording has stopped being load-bearing and this is the test that
 should say so. **It just said so.** The pinned runtime re-throws the original
@@ -213,7 +242,7 @@ stub the seam costs **1 kB**, which is the baseline's new 278.
 litestone client — against 278. That is `FJS-D302`'s ratchet doing its job: a
 number to agree to rather than inherit.
 
-`tests/local-db.test.js` (15) grades the seam against a stand-in client, in
+`test/local-db.test.js` (15) grades the seam against a stand-in client, in
 pairings: the database answering beside the database declining, since `null`
 means *cannot answer* and must fall through rather than render as an empty list.
 The engine itself is litestone's and is driven in a real browser by that
@@ -258,7 +287,7 @@ answer, which is `load()`'s other half and nothing else.
 **It writes under `listKey`, the same function the read uses**, and that is the
 whole of how this feature fails: a warm keyed even slightly differently fills a
 slot nothing looks under, and nothing about the app looks wrong until the outage.
-So every test in `tests/offline-query.test.js` is *warmed, then offline, then
+So every test in `test/offline-query.test.js` is *warmed, then offline, then
 read* rather than *the warm ran* — probed by breaking the key, which turns 6 of
 the 13 red, and by routing the warm through `load()`, which turns exactly the
 store case red.
@@ -289,7 +318,7 @@ app's decision.
 
 `FJS-D304`. All three policies are identical on a reachable network — the argument decides what happens
 to a write nobody is standing over when it lands — and each now differs from the others in a way a test
-can see (`tests/sync-policies.test.js`; 4 of its rows go red with the change reverted).
+can see (`test/sync-policies.test.js`; 4 of its rows go red with the change reverted).
 
 **`server` now DROPS the revision from a held write, and that is a fix.** The resource stamps the
 `@version` onto every patch so a stale edit is refused, which is right for a write somebody is standing
@@ -435,7 +464,7 @@ holds a write the network could not carry. `junction/pending.js` is the queue; `
 write funnel is where it hooks in; a model opts in with `@@sync(server)` and nothing else changes.
 
 **Queue-first, one path.** The entry is written BEFORE the call goes out, not in a catch after it
-fails — what PowerSync does, and for the reason it does it (`IDEAS/prior-art.md` § 4): a catch-based
+fails — what PowerSync does, and for the reason it does it (`IDEAS/review-prior-art.md` § 4): a catch-based
 queue has two routes to the server with a seam between them, and the seam is where a write goes
 twice or not at all. What is stored is what the resource's hooks produced — coerced, blank-stripped,
 validated, version-stamped — because that is what a replay has to send.
@@ -492,7 +521,7 @@ all computed from the first, and `build-tree` stores the second relative to the 
 table, the prerender and the dev static-data endpoint all resolve a mounted file unchanged. A mount
 naming no directory is refused by name rather than producing a section with no routes, a URL the app
 already has is still a conflict, and the dev server watches every mounted directory, so a route added
-to a package appears without a restart. `tests/scanner-mount.test.js`.
+to a package appears without a restart. `test/scanner-mount.test.js`.
 
 ## 2026-09-13 — `AGENTS.md` ships
 
@@ -510,7 +539,7 @@ a warning naming the rule and Chrome's own error id, since an app a browser will
 nowhere — the page loads and the install button never appears. A `public/manifest.webmanifest`
 nothing links is reported too. The rules were measured against Chrome 150 rather than taken from
 memory, which corrected two: no service worker and no 512px icon are required, and an icon's REAL
-size is read, so a 32px file declaring `512x512` is refused. `tests/browser/installable.mjs`
+size is read, so a 32px file declaring `512x512` is refused. `test/browser/installable.mjs`
 (`bun run test:installable`) grades 26 cases against `Page.getInstallabilityErrors` and fails on
 any disagreement; with the icon floor dropped to 100px it reds exactly the 143px case.
 
@@ -524,7 +553,7 @@ node holding one screen's includes would hand them to every other list over the 
 on the service, or a reconnect (jittered up to 2s), re-reads the window; a burst during a read is ONE
 more read. Growing the window widens the limit instead of resuming from a cursor, because the next push
 re-reads all of it anyway. The other answer — merge the push over the held row — was refused: it is free
-and goes stale in silence once a push moves a key an include was read through. `tests/resource-list.test.js`
+and goes stale in silence once a push moves a key an include was read through. `test/resource-list.test.js`
 carries six rows, with the push paired against a store-backed control that loses the relation; every
 mutant tried reds at least one.
 
@@ -534,7 +563,7 @@ warns once per view, naming the keys and the call that fixes it. A bare scalar u
 deliberately not flagged: `createdAt` and `updatedAt` are in no schema mode the build emits, so reading
 those as composed would warn on every list. Gated on `import.meta.env?.DEV` — measured in basecamp's
 production bundle, the warning text is absent while an ungated warning from the same file is present, and
-removing the gate puts it back. Every other mutant reds a row of `tests/resource-list.test.js`.
+removing the gate puts it back. Every other mutant reds a row of `test/resource-list.test.js`.
 
 ## 2026-09-12 — a page served from a custom scheme keeps its router
 
@@ -553,7 +582,7 @@ store subscription, where the filters live, the load, its re-run on a change, an
 `apply`, `sort`, `more`, `reload` and `destroy`. It owns no markup. `state: 'url'` is the default and
 makes the address bar the list, with nothing held here; `state: 'local'` is the embedded list that must
 not navigate, and `where` scopes it OVER the filters so a bar can neither see nor widen the scope.
-`IDEAS/list-controller.md` carries the argument; `tests/resource-list.test.js` drives it through the
+`IDEAS/list-controller.md` carries the argument; `test/resource-list.test.js` drives it through the
 real router and Junction's real client, and every mutant tried reds at least one row — the route guard,
 replace-versus-merge, `where` under the filters, the local re-run, the debounce, a default filter
 merged under the URL, and the `columns:` default.
@@ -856,7 +885,7 @@ not state its own order anywhere.
 field's SOURCE model, whose resource is minted inside `relatedResource` carrying
 nobody's declaration — so an app had no way to change a picker's order at all,
 and the suite could not see it: it asserts `getOptions()`, which an app calls
-directly, and never the `options()` crossing. `tests/options-order.test.js` is
+directly, and never the `options()` crossing. `test/options-order.test.js` is
 that crossing, and every row is asserted beside the default, because a mechanism
 that sent the declared order and one that sent nothing are the same observation
 from a test that only asks about the declared case.
@@ -943,7 +972,7 @@ beside them throws rather than emptying `assets/`. An SPA shell that survived
 prerendering keeps its whole graph with nothing special-cased, which is what
 stops the pass assuming what the prerenderer wrote.
 
-`tests/prune-unreachable.test.js`, 7 tests, **5 red with the pass stubbed to a
+`test/prune-unreachable.test.js`, 7 tests, **5 red with the pass stubbed to a
 no-op and the refusal red on its own with the root check removed**. Drives:
 `example` `verify:site` 45/45, `verify:shop` 13/13, `verify:account` 32/32, and
 the island fixture in a real browser.
@@ -969,7 +998,7 @@ products, where the filing measured 3.
 Its third part is split out as `FJS-904` rather than closed with it: a
 `target: static` build ships the whole SPA client, and walking reachability from
 the prerendered HTML puts **204 KB of 312 KB — 65% — unreachable from any page
-the build emitted**, the SPA entry alone being 124 KB. `tests/tools/reach.mjs`
+the build emitted**, the SPA entry alone being 124 KB. `test/tools/reach.mjs`
 is the probe.
 
 ## 2026-09-05 — a shadow root the host owns, and a sourcemap cached for a year (`FJS-825`)
@@ -1103,7 +1132,7 @@ out, and the error-phase form carries the discarded failure on `cause`: the
 original is gone by then, and without it the report is only "your hook is wrong"
 while the outage is invisible.
 
-Every refusal in `tests/resource-hook-chain.test.js` is paired with the
+Every refusal in `test/resource-hook-chain.test.js` is paired with the
 legitimate hook one line away — an `around` that short-circuits WITH an answer,
 one that answers `null` on purpose, an `error` hook that recovers with a
 fallback — because a guard that refused both would make the phase useless for
@@ -1530,7 +1559,7 @@ is how a service nobody could resolve looked like a shop with no variants in it
 holding an island, and that island's graph reaching `@frontierjs/sierra/junction`
 through a store. Neither reproduces. Every documented shape was run against a
 real build under `bun --bun`, including the composite nobody had tried, and all
-of them built and exited 0. What closes them is `tests/fixtures/layout-island/`
+of them built and exited 0. What closes them is `test/fixtures/layout-island/`
 and the prerender test over it, with a negative control that fails when the
 store is not really reached; the cause of the fix was not bisected and is not
 claimed.
@@ -1808,7 +1837,7 @@ package. Same shape as `FJS-059`, same answer.
 `fieldShape`, so there is one owner of *what type is this field* — the matcher
 needs exactly that much of a field and nothing more.
 
-`tests/live-filter.test.js` keeps the SEAM, which is the half only this side can
+`test/live-filter.test.js` keeps the SEAM, which is the half only this side can
 answer, plus one line asserting the re-export IS the toolbelt function rather
 than a copy made here to fix an import. Its 31 behavioral cases are in
 `toolbelt/test/specs/match.spec.js`. sierra 1114 pass.
@@ -1883,7 +1912,7 @@ no request at all.
 `FJS-341` restated: a live store answering with a revision nobody on the screen
 had read won the race `@version` exists to lose, and making the row live is
 exactly the change that could bring it back. The node is the synced truth; the
-view is what this screen READ; a draft is in neither. `tests/resource-record.test.js`
+view is what this screen READ; a draft is in neither. `test/resource-record.test.js`
 asserts it against Junction's real client rather than a stand-in — a fake would
 not have nodes at all.
 
@@ -2074,9 +2103,9 @@ shape `FJS-439` had already found once. Only the import is guarded now, and the
 warning carries the cause, since a companion that will not import is almost
 always its own imports throwing rather than the file being absent.
 
-All three survived because `tests/static-paths.test.js` restates what the plugin
+All three survived because `test/static-paths.test.js` restates what the plugin
 does — scan, import, build the message by hand — so every assertion passed
-against a function nothing called. `tests/scanner-plugin.test.js` calls
+against a function nothing called. `test/scanner-plugin.test.js` calls
 `buildStart` through a context that behaves like rollup's and asserts the three
 outcomes.
 
@@ -2250,7 +2279,7 @@ itself are the ones that never reach this function.
 
 `_fieldOf` reads `field` first, then `path` — joined when nested, since no form
 field is named `address.city` and saying so beats reporting none. An empty path
-stays a whole-payload failure. 5 cases in `tests/field-errors-writer.test.js`,
+stays a whole-payload failure. 5 cases in `test/field-errors-writer.test.js`,
 built against the real class rather than a literal.
 
 Found in a real browser: `example` refusing a value-set save through
@@ -2260,7 +2289,7 @@ Found in a real browser: `example` refusing a value-set save through
 
 ## 2026-08-22 — a `@values` column renders from its set
 
-1039 tests, 0 fail. 12 in `tests/value-sets.test.js`.
+1039 tests, 0 fail. 12 in `test/value-sets.test.js`.
 
 The client half of `FJS-412`. `x-values` arrives on the rule as `rule.values`,
 and two branches read it.
@@ -2302,8 +2331,8 @@ suppress (`FJS-353`), so both sides name where the number comes from.
 
 ## 2026-08-22 — a picker's display column is declared, and a guess says so
 
-1026 tests, 0 fail. 21 new across `tests/label-field.test.js` and
-`tests/resource-no-client.test.js`.
+1026 tests, 0 fail. 21 new across `test/label-field.test.js` and
+`test/resource-no-client.test.js`.
 
 `labelFieldFor` guessed from eight conventional column names, then the first
 plain string, then the id — and every step down that ladder was a worse answer
@@ -2609,7 +2638,7 @@ and this side holds no schema), so they stay opaque and reload rather than guess
 ## 2026-08-16 — one word each: `params`, `locals`, `directives`
 
 962 tests, unchanged — the rename is covered by the suite that already existed
-(`tests/resource-directives.test.js`, was `resource-params.test.js`).
+(`test/resource-directives.test.js`, was `resource-params.test.js`).
 
 This package had **three** different things behind the word `params`:
 
@@ -2797,7 +2826,7 @@ Three things were wrong on the way and are now asserted rather than remembered:
 - **Discovery was nearly a glob**, which would have shipped a form's four
   components as four half-widgets on no host page.
 
-`tests/fixtures/widget-site/verify.mjs` is what found the first two: 21
+`test/fixtures/widget-site/verify.mjs` is what found the first two: 21
 assertions in real Chrome over a plain host page with hostile CSS — element
 upgrade, props from `data-*`, a delegated click inside the shadow root,
 isolation in both directions, the selector form, a late-inserted host, one
@@ -2833,7 +2862,7 @@ frontmatter is warned about by the scanner rather than silently overwritten on
 every navigation. They are assigned only when the search actually changed: a
 layout outlives a navigation, and a filter bar watching `page.query` would
 re-ask the server on every navigation under it if a fresh object arrived each
-time. 11 tests in `tests/page-query.test.js`; three in `navigation.test.js`
+time. 11 tests in `test/page-query.test.js`; three in `navigation.test.js`
 changed, which are the ones that documented the conflation.
 
 ## 2026-08-15 — a prefetch asks as the user, and its answer does not outlive them (FJS-041)
@@ -2912,7 +2941,7 @@ An older Litestone with no `parseFile` keeps working for the schemas it could
 always handle, and warns **by name** for the one case it cannot. A silent
 fallback there is the same bug wearing a version number.
 
-`tests/schema-generation.test.js` § *a schema that imports another file*, checked
+`test/schema-generation.test.js` § *a schema that imports another file*, checked
 against a negative control — including that an enum declared in the imported file
 lands in `$defs` and resolves as a `$ref`, since a dangling one is a control with
 no options.
@@ -2929,7 +2958,7 @@ console warning. Both call `@frontierjs/toolbelt/inflect` now.
 irregular table travels with the module, so the registry indexes `people`,
 `children` and the rest, and `{ model: … }` is back to meaning what it says: a
 service named for something other than its model, or a word no rule can reach
-(`lenses`/`Lens`). `tests/resource-model-name.test.js` moved the irregulars into
+(`lenses`/`Lens`). `test/resource-model-name.test.js` moved the irregulars into
 the resolves-without-help table and took a misspelling — `companie` — as its
 example of a real miss.
 
@@ -2968,7 +2997,7 @@ the compiler already is: a bare `@frontierjs/mesa/vite/hmr` resolves to the
 node_modules copy bun leaves for a `workspace:*` dep, which is the last
 install's snapshot. **A miss is not fatal** — HMR turns off and edits
 full-reload, the same thing `canInject` does for output it cannot wrap — so the
-wiring is the half that breaks quietly. `tests/hmr-boundary.test.js` boots a real
+wiring is the half that breaks quietly. `test/hmr-boundary.test.js` boots a real
 dev server and asks what only a dev server can answer: did a `.mesa` module come
 back wrapped, and does `/@frontierjs/sierra/hmr-client` serve Mesa's client. The
 second is asserted on a line that exists only in Mesa's copy, so serving a stale
@@ -3052,7 +3081,7 @@ The pair is one shape twice: **a path predicate that is true in the workspace
 for a different reason than it is true in an install.** The suites cannot see
 either, because an app in this repo resolves sierra to `packages/sierra/` and
 aliases the ui kit to `packages/ui/` — neither is a node_modules path at all.
-`tests/node-modules-allowance.test.js` now writes its ids the way an INSTALLED
+`test/node-modules-allowance.test.js` now writes its ids the way an INSTALLED
 app produces them, and covers both. — @frontierjs/sierra
 
 ## 2026-08-14 — `sierra routes` — the route table as a committed file
@@ -3115,7 +3144,7 @@ Reproduced before fixing, against the published 0.1.2: `fli new demo --yes
 --auth --source npm`, `bun run build` → exit 1. With the fix → exit 0, four
 route chunks, sitemap, speculation rules.
 
-`tests/node-modules-allowance.test.js` pins it by driving the real `transform`
+`test/node-modules-allowance.test.js` pins it by driving the real `transform`
 with ids shaped the way an **installed** app produces them. That detail is the
 test: one written with workspace paths passes against the bug. Checked against a
 negative control — restoring the old literal fails it — rather than trusted for
@@ -3160,8 +3189,8 @@ Measured before finishing: 4 warnings over 97 app components, all
 which is what RULE 13 exists to say. After: **0 over all 218 `.mesa` in the
 repo**. Strict costs nothing.
 
-`tests/external-signals.test.js` is gone with the map it guarded.
-`tests/no-module-signals.test.js` replaces it with the stronger property, held in
+`test/external-signals.test.js` is gone with the map it guarded.
+`test/no-module-signals.test.js` replaces it with the stronger property, held in
 both directions: `src/` exports no module-level signal, and the plugin declares
 none. `signal()` itself stays — `presence(channelId)` returns one from a call,
 which no map could ever have described.
@@ -3484,7 +3513,7 @@ The tag scanner skips attribute expressions by brace and quote depth rather
 than scanning to the first `>`, because an ordinary handler contains one:
 `onclick={() => run(id)}` ends a `[^>]*>` match inside the arrow, and the tag
 is then read as never closed — which would have suppressed the warning for
-everything after it. Both cases are pinned in `tests/warnings.test.js`.
+everything after it. Both cases are pinned in `test/warnings.test.js`.
 
 ## 2026-08-04 — resource.service.action(): custom actions over HTTP
 
@@ -3566,7 +3595,7 @@ fails, but it fails *informatively* — `@length(3,20)` names the field and the
 rule — and an empty text box is what the user actually sees. There is no such
 honest empty for a numeric key.
 
-Five tests in `tests/make-from-schema.test.js`, one of which pins the crux:
+Five tests in `test/make-from-schema.test.js`, one of which pins the crux:
 `0` produces no validation error at all, `null` produces "customerId is
 required".
 
@@ -3607,7 +3636,7 @@ Same contract as `canAtLevel()`, and for the same reasons:
 A resource whose model declares no machine returns `[]` rather than pretending,
 matching how `fields` and `relations` already degrade.
 
-`tests/resource-transitions.test.js` builds its fixture by running litestone's
+`test/resource-transitions.test.js` builds its fixture by running litestone's
 parser and `generateJsonSchema` over a `.lite` source rather than hand-writing
 the defs, so drift between what litestone emits and what the client reads fails
 here instead of in an app. 724 tests green (was 707).
@@ -3629,7 +3658,7 @@ What does not help:
 - awaiting `requestAnimationFrame` — **hangs**; rAF stalls after one or two
   frames.
 
-The working pattern is in `tests/fixtures/island-site/verify.mjs`: **scroll
+The working pattern is in `test/fixtures/island-site/verify.mjs`: **scroll
 first**, before the observers matter, and do it inside a nested scroll container
 so the rest of the page stays where the other assertions need it.
 
@@ -3705,7 +3734,7 @@ Also: both hook loops now iterate a snapshot (`[..._beforeGuards]`,
 `[..._afterHooks]`). Guards may await, and a registration landing during that
 await was previously picked up by the in-flight loop.
 
-**New:** `tests/boot-guard-order.test.js` — 3 tests.
+**New:** `test/boot-guard-order.test.js` — 3 tests.
 
 Note: `activeRoute` is now null for one extra microtask after `initRouter`
 returns. `RouterView` already gates on `{#if activeRoute}` and the boot
@@ -3775,7 +3804,7 @@ Also removed:
   Recomputed k+1 times at creation for k sources and had no unsubscribe path.
   Use Mesa's `createMemo`.
 
-`tests/build.test.js` gained two guards asserting the bridge is *not* emitted.
+`test/build.test.js` gained two guards asserting the bridge is *not* emitted.
 
 ### ⚠ Behavior change: `.subscribe()` coalesces
 
@@ -3853,7 +3882,7 @@ each navigation commit.
 bare `prefetch` links scheduled 100 idle callbacks that all timed out together at
 2 s and stampeded.
 
-**New:** `tests/prefetch-dedupe.test.js` — 10 tests.
+**New:** `test/prefetch-dedupe.test.js` — 10 tests.
 
 ## 6. Layouts load per route instead of all at boot
 
@@ -3882,7 +3911,7 @@ A failing layout is reported and skipped rather than aborting the navigation:
 a broken layout should not make a route unreachable, and `resolveChain()`
 already omits missing entries.
 
-**New:** `tests/layout-loading.test.js` — 7 tests.
+**New:** `test/layout-loading.test.js` — 7 tests.
 
 **Also added:** `_resetInternals()` in `internals.js`. `_fileToComponent`,
 `_layoutParents`, `_chainCache` and `_entryCache` are module-scoped for the
@@ -3925,7 +3954,7 @@ over 328 path × option combinations and 270 `normalizePath` cases: identical
 throughout, including case-insensitive statics, percent-encoded params, all
 three `trailingSlash` modes, catch-all fallthrough and malformed input.
 
-**New:** `tests/match-semantics.test.js` — 20 tests locking the observable
+**New:** `test/match-semantics.test.js` — 20 tests locking the observable
 behavior so a future optimization has something to fail against.
 **New:** `smoke-test/probes/match-bench.mjs` — rerunnable benchmark.
 
@@ -3963,7 +3992,7 @@ builds into a `DocumentFragment` and swaps once instead of appending row-by-row,
 and iterates the ring newest-first via a generator instead of copying and
 reversing.
 
-**New:** `tests/devtools-perf.test.js` — 13 tests covering ring semantics,
+**New:** `test/devtools-perf.test.js` — 13 tests covering ring semantics,
 index/eviction consistency and frame coalescing.
 **New devDependency:** `happy-dom`, for the DOM the coalescing tests need.
 
@@ -4021,7 +4050,7 @@ Two smaller things in the same file:
   every response payload stayed reachable for the tab's lifetime. Now
   `debug: true`. The wildcard event logger is `debug: 'verbose'`.
 
-**New:** `tests/junction-boot.test.js` — 7 tests using fake timers, covering
+**New:** `test/junction-boot.test.js` — 7 tests using fake timers, covering
 synchronous return, `whenReady` resolution on connect, the 2 s fallback, and the
 single-socket property.
 
@@ -4055,7 +4084,7 @@ old path guesses as fallbacks for packages that declare neither.
 `@frontierjs/junction/client` to `<pkg>/client`. It now derives per-subpath
 aliases from each sibling package's exports map.
 
-**New:** `tests/frontier-resolution.test.js` — 11 tests over the export shapes
+**New:** `test/frontier-resolution.test.js` — 11 tests over the export shapes
 the four packages actually use.
 
 ### How this was missed
@@ -4067,7 +4096,7 @@ it fails outright under `bun link`.
 
 The build passed locally only because, earlier in the same session, symlinks had
 been added under `sierra/node_modules/@frontierjs/` for an unrelated probe. Those
-made both the app build *and* `tests/junction-boot.test.js` pass for the wrong
+made both the app build *and* `test/junction-boot.test.js` pass for the wrong
 reason. Removing them reproduced the reported error immediately.
 
 The lesson is narrow and worth keeping: **a package's own `node_modules` must
@@ -4099,7 +4128,7 @@ a reload. No error, no warning.
 
 Both specifiers now declare them.
 
-**New:** `tests/external-signals.test.js` — 13 tests. Walks `src/` for
+**New:** `test/external-signals.test.js` — 13 tests. Walks `src/` for
 `export const x = signal(...)`, parses the `externalSignals` map out of
 `mesa-plugin.js`, and asserts they agree in both directions: every exported
 signal is declared under both the scoped and bare specifier, and nothing is
@@ -4156,7 +4185,7 @@ $: (status.connected, status.reconnecting)
 **`sierra/junction` is now absent from `externalSignals`** — there is nothing for
 the accessor rewrite to do. That is the point of the exercise: the compiler no
 longer needs to know anything about this part of Sierra, so it cannot drift out
-of sync with it. `tests/external-signals.test.js` still passes because both
+of sync with it. `test/external-signals.test.js` still passes because both
 sides went empty together.
 
 Verified end to end against the real runtime — module writes through its proxy,
@@ -4329,7 +4358,7 @@ read when a resource module is first evaluated, so an HMR update would not take.
 Configured as `schema: './db/schema.lite'` in `sierra.config.js`; omit to
 auto-detect, `false` to disable.
 
-**New:** `tests/schema-generation.test.js` — 14 tests.
+**New:** `test/schema-generation.test.js` — 14 tests.
 
 ### Two resolution traps, both previously hit in this file
 
@@ -4398,7 +4427,7 @@ doubled segment, and a CDP pass signs in as admin, submits the generated form
 (new row reads `42` and a `null` slug) and deletes it — the API agreeing the row
 is gone — with 0 console errors.
 
-`tests/sierra-config-path.test.js` — 9 tests, including one asserting no resolution
+`test/sierra-config-path.test.js` — 9 tests, including one asserting no resolution
 ever contains `config/config`.
 
 ---

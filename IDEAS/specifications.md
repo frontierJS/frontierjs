@@ -523,6 +523,6 @@ rulings, which a spec would *propose* rather than impose.
 ## See also
 
 - `kernel-and-projections.md`: the kernel these entries are the outside of
-- `prior-art.md`: Ash, the closest shared bet
+- `review-prior-art.md`: Ash, the closest shared bet
 - `one-mental-model.md`: the extension-point catalog
 - `.claude/skills/bridge-index/SKILL.md`: the seams most API entries were read from

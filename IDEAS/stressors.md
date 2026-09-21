@@ -247,3 +247,71 @@ is an `FJS-###` in this repo's `ISSUES.md` the hour it is found, not at the end 
 half these exercises are abandoned mid-way and the finding is the only thing that
 was worth having. A fix lands in the framework tree with a drive in `example/`;
 **the stressor itself proves nothing**, because nothing here runs it.
+
+### What the first run learned about running one
+
+*Folded back from the calendly stressor, 2026-09-21 — twenty-four ids and one
+design record. Generic only; anything that was about scheduling stayed in that
+app's `PLAN.md`.*
+
+**One SESSION per phase, and let `PLAN.md` carry the rest.** Measured on the
+first run: the conversation re-read **418M** tokens of itself against **3.9M**
+of new file content — about 107:1 — because every turn re-reads everything
+before it. A request costs in proportion to how much conversation precedes it,
+not to how hard it is: the same size of request read **36M** of context mid-run
+and **2.5M** after a compaction, fourteen times cheaper for comparable work. So
+the plan file is not documentation, it is the HANDOFF, and a phase that ends
+should end a session. Phase granularity and no finer — the ninth question was
+answered well partly because the same session still held `FJS-D143` and the
+first question's answer, and a boundary drawn per-task would have cost that.
+
+**Give the sharpest question its own phase, before any screen exists.** Rank the
+questions by what the answer is worth and run them in that order, not in the
+order a product would be built. Calendly's hardest question needed no UI at all,
+and a UI-first plan reaches it in week three or never. This is the single rule
+that cost the most to learn and the one most worth copying.
+
+**Name the question before building the feature, and pick the hard version of
+the feature on purpose.** Reminders could be *24 hours before* or *08:00 on the
+morning of, in the invitee's zone*. The first is easy precisely because a
+duration needs no zone — building it would have produced a working feature and
+no finding. When two shapes of a feature exist, the one that touches the seam is
+the one to build, and saying so in the plan stops it being quietly traded away
+later.
+
+**Open every generated page once, and CHANGE a value while you are there.** A
+walkthrough that only presses buttons with their default values proves the page
+renders. It does not prove the page works: a `<Select>` whose handler discarded
+what you picked survived a drive that pressed *Add window* without touching a
+field. Type into every control, pick a non-default option, submit.
+
+**An assertion about one layer is evidence about that layer and nothing else.**
+A form was verified twice at the API — a `POST` without the field created the
+row — and shipped unsubmittable, because the resource's `validate` step runs in
+the BROWSER and refused first. If a person will use it through a screen, the
+evidence has to come from the screen.
+
+**Clearing a false candidate is a result, and it belongs in the row.** One of
+the strongest-looking findings of the last run dissolved on measurement — a
+queue's `delay` takes a duration while its table stores an instant, which looks
+exactly like a known category error and turned out to be exact to the
+millisecond. Writing *not a finding, measured, here is the number* into the row
+is what stops the next person spending a day re-suspecting it. A weak row is
+worse than none; a cleared suspicion is worth keeping.
+
+**A gap needs a RULING, not only a row.** An `FJS-###` says *this cannot be
+done*. It does not say whether it should be possible, so it sits `open` forever
+and the next stressor re-derives it. The deliverable line says *and at most one
+design record* for this reason — when the run is over, look at the ids and ask
+which one is a decision wearing a bug report's clothes. Usually exactly one is.
+
+**The run does not end when the phases do — and this is the cheapest phase
+there is.** Seven of the last run's twenty-four ids were found AFTER it closed,
+by somebody using the app for ordinary reasons. **Measured, per finding:** a
+bug reported from the screen cost 20–55k output tokens and produced a filed id
+apiece; the big open-ended build phases cost 100–210k each and produced ids at
+several times the price. *Use your own app for an hour* reads like a nicety
+until the ratio is on the page. Budget for it, and treat *the author using their own app for an hour*
+as a phase rather than as an accident. It is also the only phase that finds the
+failures that look like the product working: a page reporting *no times
+available* over an API it never reached.

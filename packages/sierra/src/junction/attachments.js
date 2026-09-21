@@ -3,7 +3,7 @@
  *
  * Phase 2 of the Homestead work (`IDEAS/homestead.md`), ruled by `FJS-D301`.
  * Two queues rather than one, which is where every SDK that has had to do this
- * ended up (`IDEAS/prior-art.md` § 4), and the reasons are not stylistic:
+ * ended up (`IDEAS/review-prior-art.md` § 4), and the reasons are not stylistic:
  *
  *   · **A 4MB photograph must not block a 200-byte correction.** One FIFO
  *     carrying both makes the small write wait on the large one over exactly

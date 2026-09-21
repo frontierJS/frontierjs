@@ -442,7 +442,7 @@ const expected = {
   // refuses before anything is dispatched, and no longer by caravan's `unique`.
   // The end-to-end crossing it used to prove is not reachable through a named
   // move any more. Caravan's own suite holds the dedupe — four cases in
-  // `packages/caravan/tests/caravan.test.ts`, including a second dispatch while
+  // `packages/caravan/test/caravan.test.ts`, including a second dispatch while
   // the first is still queued — so nothing is uncovered; it is covered one
   // layer down instead of two layers up.
   'ship.twice': { status: 409, newBookings: 0 },

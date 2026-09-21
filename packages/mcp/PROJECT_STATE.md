@@ -19,8 +19,8 @@ inside the API that is already running; `projectTools()` is what it serves.
 - `schemaViews(schema, generate)` owns the audience. There is no way through this
   module to generate a `system`-audience schema.
 - **52 tests over two files, plus a drive.** `example`: `verify:mcp` is the only
-  place a real MCP client connects and the only one over an app with no `app.db`. `tests/projection.test.ts` is the rules against a
-  real `.lite` fixture; `tests/plugin.test.ts` boots a real Junction app over a
+  place a real MCP client connects and the only one over an app with no `app.db`. `test/projection.test.ts` is the rules against a
+  real `.lite` fixture; `test/plugin.test.ts` boots a real Junction app over a
   real Litestone client on a real port and speaks JSON-RPC to it.
 
 ## Measured over `example`, 2026-09-16

@@ -72,10 +72,10 @@ export const ENFORCERS = {
         covers: 'the substrate package only — that `@frontierjs/toolbelt` declares no dependency. ' +
                 'Nothing grades `Litestone ← Junction ← Sierra` itself' }],
 
-  5: [{ kind: 'test', at: 'packages/junction/tests/plugin-contract.test.ts',
+  5: [{ kind: 'test', at: 'packages/junction/test/plugin-contract.test.ts',
         covers: 'a second `app.claim(name)` throws naming the holder' }],
 
-  6: [{ kind: 'test', at: 'packages/sierra/tests/static-safety-real.mjs',
+  6: [{ kind: 'test', at: 'packages/sierra/test/static-safety-real.mjs',
         covers: 'the prerender half — a published route proves its reads against the model\'s own `@@gate`, ' +
                 'against a real Litestone client' }],
 
@@ -89,14 +89,14 @@ export const ENFORCERS = {
                 'PAIRED with the legal name one hop away, plus the invariant stated directly off the ' +
                 'query tap: the hostile name appears in no statement the client sent' }],
 
-  9: [{ kind: 'test', at: 'packages/junction/tests/patch-defaults.test.ts',
+  9: [{ kind: 'test', at: 'packages/junction/test/patch-defaults.test.ts',
         covers: 'presence, not truthiness — an explicit `null` clears where an absent key does not' },
       { kind: 'test', at: 'packages/litestone/test/valuesets.test.ts',
         covers: 'the same rule at the Data boundary, where `?` is what makes the key optional' }],
 
   10: [{ kind: 'test', at: 'packages/toolbelt/test/specs/directives.spec.js',
          covers: 'the grammar both boundaries read — `splitParams` onto `{query, directives}`' },
-       { kind: 'test', at: 'packages/junction/tests/query-directives.test.ts',
+       { kind: 'test', at: 'packages/junction/test/query-directives.test.ts',
          covers: 'that no `$`-prefixed key survives the bridge into `ctx.query`' }],
 
   11: [{ kind: 'test', at: 'packages/mesa/test/browser/runtime/specs/delegation.spec.mjs',
@@ -113,7 +113,7 @@ export const ENFORCERS = {
   14: [{ kind: 'phase', at: 'typecheck',
          covers: 'a RAISED baseline fails; `scripts/typecheck-baselines.json` is the record' }],
 
-  15: [{ kind: 'test', at: 'packages/cli/tests/compiler.test.js',
+  15: [{ kind: 'test', at: 'packages/cli/test/compiler.test.js',
          covers: 'every shipped command file compiles AND the output is parsed' },
        { kind: 'test', at: 'packages/mesa/test/emission.test.js',
          covers: 'the compiler\'s own output is parsed rather than matched' }],

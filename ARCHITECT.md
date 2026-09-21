@@ -247,7 +247,7 @@ what is here is a question the mental model has not answered.
 
 ## 6. Auditing this repo
 
-The method that produced `IDEAS/coherence-review.md`, kept for reuse. One explorer per
+The method that produced `IDEAS/review-coherence.md`, kept for reuse. One explorer per
 package, this document as shared context, each returning the same shape:
 
 ```

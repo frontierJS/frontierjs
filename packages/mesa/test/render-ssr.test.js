@@ -961,7 +961,7 @@ describe('islands — client:* markers in SSR output', () => {
  *
  * These are structural assertions on compiler output. The computed-style proof
  * is in a real browser — happy-dom does not implement the cascade — and lives
- * in packages/sierra/tests/fixtures/island-site.
+ * in packages/sierra/test/fixtures/island-site.
  */
 describe('CSS scoping — selectors match the markup they are emitted with', () => {
   /** Compile and return { html, css, id }. */

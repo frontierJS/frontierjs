@@ -1158,12 +1158,12 @@ Four things worth knowing:
 
 Turn the whole pass off with `islands: false` in `sierra.config.js`.
 
-`tests/fixtures/island-site/` is a runnable app for this, and `verify.mjs` beside it
+`test/fixtures/island-site/` is a runnable app for this, and `verify.mjs` beside it
 proves the claims the only way they can be proved — clicking prerendered buttons in
 headless Chrome, and reading resource timing to confirm which chunks were fetched. It
 covers all five directives, per-island splitting, and CSS scoping. See its README.
 
-`tests/fixtures/widget-site/` is the same thing for the `widget` target: two widgets, a
+`test/fixtures/widget-site/` is the same thing for the `widget` target: two widgets, a
 plain host page written to be hostile (`button { background: red !important }`), and a
 drive that builds the scripts and proves the lot in Chrome — element upgrade, the
 selector form, a late-inserted host, shadow isolation in both directions, a delegated

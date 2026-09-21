@@ -557,7 +557,7 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
    * invisible in every roster — and then received `presence:join` and
    * `presence:update` for everyone else through the plain channel fan-out,
    * naming their user id and whatever meta the app publishes (`FJS-811`, found
-   * by tests/client-presence.test.ts). It could never assemble a roster from
+   * by test/client-presence.test.ts). It could never assemble a roster from
    * them, since a sync it is not sent, so this was disclosure with no feature
    * on the other side of it.
    *

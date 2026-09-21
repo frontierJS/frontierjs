@@ -1,5 +1,112 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-21 — the suite directory is `test/`
+
+**`tests/` is a surface, not a suite.** In an FJS app it sits beside `api/` and `web/` and holds
+what belongs to no single surface, while a surface's own tests are its `test/` (Invariant 3). A
+package is not an app — it has one `src/` — so its suite is `test/`, and this one moved. Eight
+packages spelled it plural and eleven singular with nothing in the tree deciding between them,
+which made the directory name a coin flip on every file added.
+
+The `test` script names its files one at a time, so all seventy-odd moved with it.
+
+## 2026-09-21 — the vocabulary scan learns whose word it is, and that a term can be two
+
+**A term can be more than one word.** `Data realm` is vocabulary where `data` alone is too generic
+to be any, and until now only § 2's own multiword entries were scanned at all — `Gate ladder`,
+`Chain of Responsibility` — and only to be counted for the dead-doctrine column. A phrase named in
+either authored half is a row in the concepts table like any word, with its spread, its status and
+its meaning. **And the scan proposes candidates**: every adjacent pair the prose writes, in three
+or more packages, filtered for the shapes that are sentences rather than terms — a participle in
+front (`Verified state`), a verb behind (`Litestone emits`), a joiner between. `Data boundary` in
+17 packages, `Litestone client` in 15, `Data realm` in 11, none of them named anywhere. Proposing
+is all it does: what makes a pair a term is somebody writing the row.
+
+**Somebody else's nouns are named, and the concepts tab is this framework's again.** `Apache`,
+`SvelteKit`, `Vixie`, `Kysely`, `Shopify`, `Kubernetes`, `Fowler`, `Berlin` — a web server, a
+meta-framework, the author of cron, an ORM, a vendor, an orchestrator, a citation and a time zone —
+all read as concepts OF this framework, because the only thing separating them from `Resource` was
+a capital letter. 313 of them are classed `external` now, grouped by what they are: databases,
+platforms, frameworks, vendors, web-platform APIs, people, places. Concepts 1,141 → 822. They are
+not deleted — `external` is a class and the Classified out tab holds every one, which is what makes
+a word in the WRONG class findable. Month and day abbreviations joined the dropped list beside the
+full names they already sat next to.
+
+**A component was posing as a coined concept, and now the api lens carries it.** A Mesa component
+is an identifier nothing writes as an export — the FILE is the declaration and the caller types the
+basename — so `EmptyState`, `StatCard`, `FilterBar` and 140 others reached the prose scan with
+nothing to say they were code. `apiTerms` reads `*.mesa` under each package (and no longer skips a
+package for having no `src/`, which is `@frontierjs/ui` entirely: its components ARE the package).
+Identifiers 1,661 → 1,809. **A COMPOUND identifier is then classed `api` rather than `concept`** —
+`EmptyState` is the component a screen mounts, `Empty state` is the condition it handles, and only
+the second is vocabulary. A one-word identifier is left alone, because `Plugin`, `Channel` and
+`Store` are English this framework also exports and § 2 rules two of them; a word § 2 blesses or
+VOCABULARY.md defines is never reclassed. Concepts 723 → 692, and both audit columns that ask *what
+is widespread and undefined* are empty for the first time.
+
+**`Writable derived` is the same shape and is named.** Every one of `Writable`'s five capitalized
+uses is the head of that phrase — mesa's `$: name = expr` — so the single word was a term that
+meant nothing on its own. The row matches case-insensitively, which is what makes one row cover
+`writable derived`, `Writable derived` and `Writable Derived` as the docs actually write them: 13
+uses across two packages.
+
+**`data` is dropped and the two terms under it are named.** 19 packages, 495 uses, and no meaning
+anybody could write in the Means column — while `Data boundary` (17 packages, 353 uses) and
+`Data realm` (11, 59) are the things the prose was actually saying. Both are VOCABULARY.md rows
+now, which is a thing a single-word scan could not hold. Every other `Data X` in the tree is
+one-off prose: `Data half`, `Data side`, `Data tier`, each a paraphrase of realm, none above five
+files.
+
+**A definition the scan cannot match is reported.** Dropping a word is a one-line edit in
+`terms.js` and it silently orphans a row in `VOCABULARY.md` — the file goes on carrying a term
+nothing measures, which is the one failure an authored half plus a generated half exists to make
+impossible. *Defined here, seen nowhere* is the new audit section; it is empty today.
+
+**Generic programming English is dropped too, and doctrine is what decides the edge.** `async`,
+`await`, `variable`, `method`, `interface`, `module`, `factory`, `instance` — words that would be
+the same in any repository, which is the test. What is NOT dropped is anything § 2 rules: a blessed
+word (`Context`, `Event`, `Signal`, `Target`) whose disappearance would hide dead doctrine, and a
+forbidden one (`State`, `Store`, `Flow`, `Payload`, `Pipeline`) whose disappearance would take the
+drift column with it — a word forbidden by doctrine and still in live prose is the whole reason
+that column exists. Concepts 822 → 722.
+
+**Ordinary English is DROPPED rather than classed out.** `DROPPED` in `core/terms.js` holds 122
+words grammar capitalizes — `the`, `every`, `run`, `set`, `request` — and they are removed before
+the classifier runs, because a class is a row a reader has to read past and the reason for reading
+one, a word in the wrong class, cannot apply to `the`. A plural is dropped with its singular: the
+fold merges into a HOST row and a dropped word leaves none, so `Views` and `Requests` would
+otherwise survive as terms of their own. `COMMON` is filtered against the list at definition, so
+one word cannot sit in both. **What was dropped is counted and printed** — 122 words, 1,506
+occurrences, a tile of its own on the page — since a list quietly eating a real term is the one
+failure an exclusion can have.
+
+**A row prints its class in a column beside its status.** `external` was
+always a class — 103 words this framework does not define and only names, `JavaScript`, `Vite`,
+`Docker`, `Feathers` — but it lived in the row's data and nowhere on screen. It is a column now — term,
+spread, count, status, class — and a `class` select sits beside `status` in the filter bar. It
+stays a CLASS rather than becoming a fifth status in
+`VOCABULARY.md`: a status is the stance this framework takes on a word, and there is no stance to
+take on somebody else's product name — a status saying so would be a second origin for what the
+`EXTERNAL` list in `core/terms.js` already holds.
+
+**The `mesa:` language words are read off the two declarations rather than grepped.** A grep over
+mesa's source answers `mesa:frobnicate`, which is the compiler's own example of a name that does
+not exist, and `mesa:line`, which is a source location — so the vocabulary held its own
+counter-example. The list is now `MESA_ELEMENTS` in mesa's compiler plus `MESA_SLOT_TAG` in
+sierra's slot rewriter, both read as TEXT because the cli depends on neither package; the source is
+still grepped for USAGE, so a declared element nobody has written yet shows a count of zero rather
+than being absent. A grep with no declaration left to read is the fallback, and `grepped` on every
+row is what says so, because an empty language tab would read as Mesa having no words.
+
+**The corpus walk skipped a source directory because of its NAME.** `build` is on the
+output-directory skip list and sierra's compile-time rewriters live in `src/build/`, so 74 api
+identifiers and every use of `mesa:slot` were invisible — the count read 1, out of a comment in
+mesa. A directory under a `src/` is source whatever it is called. API identifiers 1,587 → 1,661.
+
+**Neither is § 2.** A phrase is matched as plain text, so leaving ARCHITECT.md's own Use/Not table
+in the corpus let `Gate ladder` gain a use by being blessed. The section is cut at the boundaries
+`architectVocabulary` already reads it by; the rest of the file is ordinary prose and stays.
+
 ## 2026-09-20 — `fli ws:terms` counts the vocabulary this workspace asks a newcomer to learn
 
 *How many words must somebody hold to read this repo* had no answer, and the two §V questions that
@@ -60,59 +167,6 @@ leave the table. Hiding the rows instead would have kept a term read forty times
 twice in a package at its old spread, which is the number a filter then answers against. Both
 filters gained an upper bound too, which is how a term used everywhere is excluded to see what is
 left.
-
-**A term can be more than one word.** `Data realm` is vocabulary where `data` alone is too generic
-to be any, and until now only § 2's own multiword entries were scanned at all — `Gate ladder`,
-`Chain of Responsibility` — and only to be counted for the dead-doctrine column. A phrase named in
-either authored half is a row in the concepts table like any word, with its spread, its status and
-its meaning. **And the scan proposes candidates**: every adjacent pair the prose writes, in three
-or more packages, filtered for the shapes that are sentences rather than terms — a participle in
-front (`Verified state`), a verb behind (`Litestone emits`), a joiner between. `Data boundary` in
-17 packages, `Litestone client` in 15, `Data realm` in 11, none of them named anywhere. Proposing
-is all it does: what makes a pair a term is somebody writing the row.
-
-**Somebody else's nouns are named, and the concepts tab is this framework's again.** `Apache`,
-`SvelteKit`, `Vixie`, `Kysely`, `Shopify`, `Kubernetes`, `Fowler`, `Berlin` — a web server, a
-meta-framework, the author of cron, an ORM, a vendor, an orchestrator, a citation and a time zone —
-all read as concepts OF this framework, because the only thing separating them from `Resource` was
-a capital letter. 313 of them are classed `external` now, grouped by what they are: databases,
-platforms, frameworks, vendors, web-platform APIs, people, places. Concepts 1,141 → 822. They are
-not deleted — `external` is a class and the Classified out tab holds every one, which is what makes
-a word in the WRONG class findable. Month and day abbreviations joined the dropped list beside the
-full names they already sat next to.
-
-**Ordinary English is DROPPED rather than classed out.** `DROPPED` in `core/terms.js` holds 122
-words grammar capitalizes — `the`, `every`, `run`, `set`, `request` — and they are removed before
-the classifier runs, because a class is a row a reader has to read past and the reason for reading
-one, a word in the wrong class, cannot apply to `the`. A plural is dropped with its singular: the
-fold merges into a HOST row and a dropped word leaves none, so `Views` and `Requests` would
-otherwise survive as terms of their own. `COMMON` is filtered against the list at definition, so
-one word cannot sit in both. **What was dropped is counted and printed** — 122 words, 1,506
-occurrences, a tile of its own on the page — since a list quietly eating a real term is the one
-failure an exclusion can have.
-
-**A row prints its class in a column beside its status.** `external` was
-always a class — 103 words this framework does not define and only names, `JavaScript`, `Vite`,
-`Docker`, `Feathers` — but it lived in the row's data and nowhere on screen. It is a column now — term,
-spread, count, status, class — and a `class` select sits beside `status` in the filter bar. It
-stays a CLASS rather than becoming a fifth status in
-`VOCABULARY.md`: a status is the stance this framework takes on a word, and there is no stance to
-take on somebody else's product name — a status saying so would be a second origin for what the
-`EXTERNAL` list in `core/terms.js` already holds.
-
-**The `mesa:` language words are read off the two declarations rather than grepped.** A grep over
-mesa's source answers `mesa:frobnicate`, which is the compiler's own example of a name that does
-not exist, and `mesa:line`, which is a source location — so the vocabulary held its own
-counter-example. The list is now `MESA_ELEMENTS` in mesa's compiler plus `MESA_SLOT_TAG` in
-sierra's slot rewriter, both read as TEXT because the cli depends on neither package; the source is
-still grepped for USAGE, so a declared element nobody has written yet shows a count of zero rather
-than being absent. A grep with no declaration left to read is the fallback, and `grepped` on every
-row is what says so, because an empty language tab would read as Mesa having no words.
-
-**The corpus walk skipped a source directory because of its NAME.** `build` is on the
-output-directory skip list and sierra's compile-time rewriters live in `src/build/`, so 74 api
-identifiers and every use of `mesa:slot` were invisible — the count read 1, out of a comment in
-mesa. A directory under a `src/` is source whatever it is called. API identifiers 1,587 → 1,661.
 
 **The register is not its own corpus.** `VOCABULARY.md` is a list OF terms rather than prose that
 uses them, so it is out of the scan — labelling a word must not raise the count that argued for
@@ -266,7 +320,7 @@ the keys. `IDEAS/intent-recognizer.md` records the same shape for a screen.
 **What this does not show is generalization.** The headings were chosen knowing the two questions.
 They are defensible as structure — those sections do turn where the headings now sit — but the set
 is 24 questions that the router and now the corpus have both been fitted against. The baseline in
-`tests/ask.test.js` ratchets at 24 and the next honest number comes from questions written cold.
+`test/ask.test.js` ratchets at 24 and the next honest number comes from questions written cold.
 
 ## 2026-09-20 — every seam names an owner, and a key is graded by where it is MINTED
 
@@ -370,7 +424,7 @@ traded one question for another, which is overfitting to twenty-four questions r
 a lookup. The other five intents ask *which row* and have exactly one right one; *how do I* does not,
 because no register holds how to do things — it is prose in a package map, and several blocks partly
 answer. That is the same gap `IDEAS/intent-recognizer.md` records for a screen: an index that does
-not exist. The number is a baseline in `tests/ask.test.js` that may rise and may never fall.
+not exist. The number is a baseline in `test/ask.test.js` that may rise and may never fall.
 
 ## 2026-09-20 — `fli ws:seams` resolves the bridge index against the tree
 
@@ -440,7 +494,7 @@ once and the basenames follow it, so the eye lands on what differs.
 
 **The grouping is cosmetic and the count is not.** A role rule that stops matching would drop a file
 from a listing somebody is reading to decide what to commit, and a dropped row looks exactly like a
-clean file — so `tests/git-status.test.js` asserts every input path comes out exactly once, and that
+clean file — so `test/git-status.test.js` asserts every input path comes out exactly once, and that
 every role a rule can answer is in the renderer's print order.
 
 `core/git-status.js` is pure — the three git readings in as strings, a model out — so the command
@@ -489,7 +543,7 @@ at all.
 which is the order the two questions are asked in. Two renderers of one question is how the page
 comes to disagree with the terminal about what is dirty, so the grouping, the ordering and the roles
 are decided server-side and the page re-derives none of them. The bar is the kit's own Progress with
-a muted tone rather than a styled div (Invariant 13); `tests/browser/specs/tree.spec.mjs` asserts
+a muted tone rather than a styled div (Invariant 13); `test/browser/specs/tree.spec.mjs` asserts
 that and asserts the count — **the page groups by its OWN role list**, so a role the engine answers
 and the list omits drops those files in silence while the note goes on counting them. That spec
 failed on its first run: `.dir` prefix spans are siblings of the file spans, so the files carry a
@@ -735,7 +789,7 @@ policy reads the level as `auth().level`.
 
 ## 2026-09-15 — the intent pick test names `Invoice.dueOn`
 
-[`FJS-1171`](../../ISSUES.md#fjs-1171). `tests/intent.test.js` reads `example`'s real schema, and
+[`FJS-1171`](../../ISSUES.md#fjs-1171). `test/intent.test.js` reads `example`'s real schema, and
 `Invoice.dueAt` became `dueOn` there; the pick asked for a field that no longer existed and the
 verdict was `unhomed` on every run. The paired unpicked ask still misses, which is what the test
 is for.
@@ -834,7 +888,7 @@ refused without a reason. `fli register:decisions` and `fli register:decide` are
 `fli gui`'s front page has a *waiting on you* panel over `GET /api/decisions` and `POST /api/decide`,
 which refuses a request whose `Origin` is not the page's own host — the server answers CORS with `*`.
 
-`tests/checks.spec.mjs` graded the checks panel's severity order over the machine's own row too,
+`test/checks.spec.mjs` graded the checks panel's severity order over the machine's own row too,
 which is placed first whatever its severity; it failed only on a machine that is not ok while the
 project had an error, and grades the project's rows now.
 
@@ -930,7 +984,7 @@ which is loaded on every agent turn, and a turn that proves nothing never reads 
 byte for byte, into a root `DRIVES.md`; `core/proofs.js` owns the path as `DRIVES_FILE` and
 `core/preflight.js` imports it, so `fli proves`, `fli gui`'s panel, the atlas and the three rules
 (`proof-target`, `proof-drive-named`, `drive-preamble`) read the new file with no second path
-anywhere. The root `CLAUDE.md` keeps a pointer to `fli proves`. `tests/proofs.test.js` fails if
+anywhere. The root `CLAUDE.md` keeps a pointer to `fli proves`. `test/proofs.test.js` fails if
 either table header reappears in the root `CLAUDE.md`, where nothing would read it.
 
 ## 2026-09-14 — `fli test:snapshots --fix` writes the snapshots an app does not have yet
@@ -1047,14 +1101,14 @@ broke it would otherwise exit 0. Its first run found that `fli new` had never cr
 
 ## 2026-09-12 — `intent.js`: a miss is unhomed, and a fact may pick off the menu
 
-Run 2 (`IDEAS/intent-recognizer-run-2.md`) put a hundred messages through the resolver against a blind
+Run 2 (`IDEAS/run-intent-recognizer-2.md`) put a hundred messages through the resolver against a blind
 key and 21 of its 41 wrong answers were built on words that found nothing — *private note* missed
 `Customer.notes` and answered *you can do this* off the `@@extensible` pool. **A miss now answers
 `unhomed`** for every kind; `needs us` comes only from a positive fact (no state machine, two known
 states with no edge, a declaration the model lacks), and the pool is a note rather than a verdict.
 **`menu(index)`** lists every entry with its label and schema comment, and a fact may carry **`pick`** —
 one id off it, refused otherwise — so a translator matches meaning and the verdict is still decided here.
-Each fix is paired in `tests/intent.test.js` with the words that must still hit.
+Each fix is paired in `test/intent.test.js` with the words that must still hit.
 
 ## 2026-09-12 — `fli intent`: a candidate resolved against the app's own seed
 
@@ -1074,12 +1128,12 @@ the resolved identity requests dedupe by. It reads the parsed `db/schema.lite` a
   as `unverified`.
 
 `fli intent` loads the app's OWN litestone through its `exports` map, so this package still depends
-on no database. `tests/intent.test.js` asserts fourteen run 1 rows against `example`'s real artefacts.
+on no database. `test/intent.test.js` asserts fourteen run 1 rows against `example`'s real artefacts.
 
 ## 2026-09-12 — `fli make:desktop`
 
 **`core/desktop-surface.js` owns the `desktop/` surface** (`FJS-D263`), and `example/desktop/` is now
-its output rather than a hand-written shape: `tests/desktop-surface.test.js` regenerates it and
+its output rather than a hand-written shape: `test/desktop-surface.test.js` regenerates it and
 compares every file byte for byte, so `verify:desktop` — the only thing that builds a shell — proves
 what the generator writes. `--wraps web` writes the config, `deploy/build.mjs` and the Tauri crate
 under `shell/`; without it the surface also owns `src/`, a Vite root and a dev server on the new
@@ -1100,7 +1154,7 @@ Ten rules each restated which directories are surfaces, so a surface missing fro
 source that rule never read with nothing saying so. `SURFACES` and `CLIENT_SURFACES` replace all ten.
 A desktop-only app — `desktop/src/` beside `db/` — is graded as an app rather than skipped as a
 fixture, and every rule reading client source reads `desktop/src` as it reads `web/src`; the three
-rows in `tests/checks.test.js` go red with `desktop` taken back out of the list.
+rows in `test/checks.test.js` go red with `desktop` taken back out of the list.
 
 ## 2026-09-12 — a rule answering the wrong shape throws instead of passing
 
@@ -1171,7 +1225,7 @@ file. `scripts/scaffold-build.mjs` `pauseQueueCycle` is the crossing, in CI's
 sign-in landed on `/` signed out with nothing said. It renders the code box from
 `session.awaitingCode` now, sends it with `submitCode`, and offers *Start over*, which drops the
 pending attempt through `signOut`. The page is emitted from a string in `commands/project/new.md`,
-which `tests/generated-mesa.test.js` does not reach — it was compiled and its output parsed by hand;
+which `test/generated-mesa.test.js` does not reach — it was compiled and its output parsed by hand;
 the `scaffold` CI phase is what builds it inside a real app.
 
 ## 2026-09-12 — a scaffolded app can name its API origin at build time
@@ -1191,7 +1245,7 @@ left every other line reading correctly. Every `.claude/skills/*/SKILL.md` is no
 with a `Skill` column, the way the root `CLAUDE.md` already was; prose in a skill is not, because it
 is full of backticked words that are not skills. Its first run over the router found a real one:
 `discovery` is a per-user skill under `~/.claude/skills` and absent from this repo, so the router
-cites it in prose that says so rather than in a graded table. `tests/checks.test.js` carries the
+cites it in prose that says so rather than in a graded table. `test/checks.test.js` carries the
 pair plus the frontmatter case reported once however many skills cite it; removing the new reader
 reds the first.
 
@@ -1241,7 +1295,7 @@ shape moves forever.
 opens with `PRAGMA foreign_keys = ON` of its own — so the caller's answer was
 discarded, `DROP TABLE "transition"` cascaded, and the rebuild deleted every step
 of every transition ever recorded while reporting success. The negative control
-is what caught it: `tests/journal-migration.test.js` runs the same statements with
+is what caught it: `test/journal-migration.test.js` runs the same statements with
 keys on and asserts the steps are gone, which is the only way *the flag works* can
 be told from *nothing was ever at risk*.
 
@@ -1264,7 +1318,7 @@ itself as existing for. A journal saying paused over a missing file must accept
 another pause, and a journal saying serving over a present file must accept an
 unpause, because in each the refused command is the one that fixes the drift.
 
-**`openPauseJournal` is called for real in `tests/pause-journal.test.js`**, by
+**`openPauseJournal` is called for real in `test/pause-journal.test.js`**, by
 evaluating `_module.md`'s script block against a `localhost` machine and a temp
 journal. A destructure that did not land left `filePresent` undefined inside it,
 every test that compiles the file stayed green, and the first thing to notice was
@@ -1299,7 +1353,7 @@ the query the page had ARRIVED with, and every filter appeared to replace the la
 dogfooding a scaffolded app, not by a suite, because every suite here resolves mesa to
 `packages/mesa/` and cannot see what npm serves.
 
-The line comes out on the release that publishes the fix and not before. `tests/generated-mesa.test.js`
+The line comes out on the release that publishes the fix and not before. `test/generated-mesa.test.js`
 gained the assertion that grades it either way — a generated page that hands a query to a filter bar
 must compile that query as a derivation — and it belongs there rather than in mesa because the claim
 is about EMITTED code, and a generated page is a string inside a `.js` file until somebody scaffolds
@@ -1583,7 +1637,7 @@ The overrides are load-bearing and were not the thing to remove. The step is:
 `package.json`**, both dependency fields, since `cli` and `config` are
 legitimately dev ones. It runs after `fli scaffold Note`, so the source it reads
 includes the four files that command generates — which is what makes it the
-other end of the unit guard in `tests/app-config.test.js` rather than a copy:
+other end of the unit guard in `test/app-config.test.js` rather than a copy:
 that one reads the TEMPLATES against the catalog, this reads the app that was
 actually WRITTEN against its own manifest, and neither set contains the other.
 
@@ -1622,7 +1676,7 @@ does not NAME is not resolvable by name from its own source — which is the
 difference between that phase and a real `fli new`. Only `tutor` walks the
 registry path, and it caught both this and `tutor:ui` one lesson later.
 
-The guard is the cheap half of that, in `tests/app-config.test.js`: scan what
+The guard is the cheap half of that, in `test/app-config.test.js`: scan what
 the template modules write, and hold it against the catalog AND against the
 `useUI` block read out of `new.md` rather than restated. Two halves, measured
 separately — dropping toolbelt from the catalog reds 1, dropping it from the
@@ -1760,7 +1814,7 @@ rather than restating them, which is the half that makes the collapse permanent 
 `readAppAtlas`, so one module answers both of that command's questions about the app.
 
 **The test stopped reaching a parser through a regex over a `<script>` block.** Two of the three
-helpers `tests/project-helpers.test.js` used to extract are a plain import now; only
+helpers `test/project-helpers.test.js` used to extract are a plain import now; only
 `extractResourceMeta`, which genuinely lives in the namespace module, is still extracted. Measured:
 13 of its 31 rows red with the moved parser stubbed.
 
@@ -1895,7 +1949,7 @@ parameter now; `deploy/_module.md` already did this on all 18 of its `log.*`
 calls, which is what says it is the pattern rather than a workaround.
 
 `pview` becomes `pmap` on port 8501, with the tutor's `tools` lesson and
-`tests/pview-state.test.js` renamed with it. 1995 passing.
+`test/pview-state.test.js` renamed with it. 1995 passing.
 
 ## 2026-09-07 — `project:view`'s 33 warnings were all false, and the React viewer is gone
 
@@ -1916,7 +1970,7 @@ carry. They are filtered on the stated `x-litestone-kind` now — litestone's ha
 is `FJS-1016`.
 
 **Both survived because `collectIssues` had no test**, which is the finding under
-the findings. `tests/viewer-issues.test.js` grades it, every negative PAIRED with
+the findings. `test/viewer-issues.test.js` grades it, every negative PAIRED with
 a finding that must still fire — a function returning `[]` satisfies the
 negatives alone. Measured against the code it replaced: restoring the shape
 filter reds 2 and restoring the gateAuth check reds 1. Its DOM stub exists only
@@ -1924,7 +1978,7 @@ to get at the two pure functions; nothing in it asserts on the page.
 
 **The `test` script is an explicit file list**, so the new file ran nowhere until
 it was added to it — a test that exists and is never run. Every other file in
-`tests/` was already named; this one was the exception and briefly the proof.
+`test/` was already named; this one was the exception and briefly the proof.
 
 **24 `info` rows left Issues for the services panel.** *No resource binds to this
 service* is coverage, not a defect — an API-only service is correctly bound by
@@ -1963,7 +2017,7 @@ caller knows which it is. Its spawner is injectable, which is what lets all thre
 paths be exercised with no bun, no app and no boot.
 
 **And the surface parse is now graded against the files it actually reads.**
-`readApiSurface` had only the fixture in `tests/project-helpers.test.js`, which
+`readApiSurface` had only the fixture in `test/project-helpers.test.js`, which
 describes itself as *a trimmed copy of the real shape* — a copy is frozen at the
 moment it was written, so the only failure it could catch was one somebody
 hand-typed into it. The oracle is each snapshot's own `N services · N routes · N
@@ -2288,7 +2342,7 @@ filename is a second owner of one rule and only one of the two ever gets fixed.
 The link is not `data-open`, which stays hidden until a row answers on its port:
 a committed file is there whether or not anything is running, and a link that
 appeared only while a server was up would be absent exactly when somebody wants
-to read what the tree looks like. `tests/browser/specs/view.spec.mjs` asserts the
+to read what the tree looks like. `test/browser/specs/view.spec.mjs` asserts the
 bytes that come back carry the generator line, because the GUI serves its own
 dashboard for any path it does not recognize — so a wrong route reads as a
 working link until somebody looks at what loaded.
@@ -3738,7 +3792,7 @@ What survives is the call itself: `createClient`/`createTenantRegistry` handed a
 in the suite, beside a comment mentioning the hazard — this rule's own prose
 describes what it matches on, so it reads through `readCode`.
 
-`tests/checks.test.js` § `schema-in-memory` (6) · [checks.js](core/checks.js)
+`test/checks.test.js` § `schema-in-memory` (6) · [checks.js](core/checks.js)
 
 ## 2026-08-31 — the schema a tool reads is not the schema an app runs
 
@@ -3937,7 +3991,7 @@ it:
 - **`.select` is defined by nothing.** The panel was written with it; the class
   is `.field`. That is `FJS-545`'s shape one layer up — markup that looks styled
   and is not — and it is invisible to any assertion about what the page SAYS.
-  `tests/browser/specs/release.spec.mjs` probes computed style against a bare
+  `test/browser/specs/release.spec.mjs` probes computed style against a bare
   element, with a negative control that fails if the probe stops catching
   `select` and `stack-sm`.
 - **A count in a badge is a Pill.** `badges.css` says so at the top and notes
@@ -4067,7 +4121,7 @@ question — *which of the three answers did you mean* — and importing it woul
 make an engine that must run in a client app with only `@frontierjs/cli`
 installed depend on a framework package to answer a question about text.
 
-`tests/checks.test.js` grows a correctly-declared pair in its CLEAN tree, so the
+`test/checks.test.js` grows a correctly-declared pair in its CLEAN tree, so the
 rule RUNS there rather than skipping — the discipline that file already applies
 to `transition-methods`, `capability-ladder` and `service-as-system`.
 
@@ -4186,7 +4240,7 @@ testing. It now asserts the refusal names the step the lock is holding and offer
 Two other things the run turned up. `daemonBlindHint` is now one owner for *the
 daemon cannot see our work directory* — it matched the classic builder's wording
 only, so under BuildKit the same environment failed the journal cycle looking
-exactly like a broken Dockerfile. And `tests/lock.test.js` was written and not
+exactly like a broken Dockerfile. And `test/lock.test.js` was written and not
 run: it is in the `test` script now, which is the rule `fli check`'s
 `test-files-run` already publishes and the reason it exists.
 
@@ -4406,7 +4460,7 @@ on the target**, for a second reason on top: `.replace(/\n\s*/g, '; ')` turns
 `then` into `then;` and `do` into `do;`, and sh refuses both. The deploy lock,
 the container rename, the stop, the health poll, the restore, the cleanup, the
 rollback and both revert steps were all in that set — `sh -n` on the exact text
-each one sends, which is what `tests/deploy-scripts.test.js` now runs over every
+each one sends, which is what `test/deploy-scripts.test.js` now runs over every
 script the pipeline can produce.
 
 A tenth was worse than a syntax error: `deploy:setup` wrote its nginx config
@@ -4571,7 +4625,7 @@ else does.
 Also: git answers paths from the repository root, which is the project root only
 when the two are the same directory. A project one level down was matching
 against paths carrying a prefix its own table never writes — nothing, or worse,
-the wrong row. The endpoint rebases onto the project, and `tests/server.test.js`
+the wrong row. The endpoint rebases onto the project, and `test/server.test.js`
 runs that branch by default, because its `projectRoot` is `packages/cli`.
 
 
@@ -4716,7 +4770,7 @@ print, since an app may declare both and run the other.
 so there is nothing to walk and every surface the app has is one it starts.
 Narrowing to nothing there would skip the only check worth making.
 
-Nine cases in `tests/ports.test.js`, including the cycle, the indirection, and
+Nine cases in `test/ports.test.js`, including the cycle, the indirection, and
 the `cd web` false positive. `FJS-568`.
 
 ## 2026-08-26 — the deploy journal executes
@@ -4887,7 +4941,7 @@ declares that port. `FJS-557` stays open and is visible on the page — studio's
 tile has no start command because its command defaults to 5001 while the schema
 reserves 8502.
 
-**`tests/pview-state.test.js` boots the real command**, because the thing under
+**`test/pview-state.test.js` boots the real command**, because the thing under
 test is the WIRING — that the route exists, that it resolves `runnables.js` from
 `fliRoot`, and that its shape is the one the badge reads. Each of those is fine
 in isolation and can still be absent from the command file. It spawns, so it is
@@ -4979,7 +5033,7 @@ guessed, since a class nothing defines is markup that looks styled and is not.
 **`bun run test:browser` is this package's first browser drive**, over mesa's
 CDP harness by relative path, the way `@frontierjs/ui`'s drive reads it. Ten
 assertions, two mutation-checked. The page had never been rendered by anything —
-`tests/server.test.js` covered the API under it — and a dashboard is the worst
+`test/server.test.js` covered the API under it — and a dashboard is the worst
 thing to leave that way, because a row that renders as nothing looks exactly
 like a project with nothing in it. **Its first run corrected an assertion rather
 than the page**: *no open links are offered* expected zero and found two, which
@@ -5142,7 +5196,7 @@ does not, and both forms are here. The intermediate case is a warning rather tha
 silence, because the value does sit in a layer on the build host, readable with
 `docker build --target build`. The trace was then graded against the daemon on
 four shapes and two files at two depths: 8 of 8 agreed, and those eight are the
-fixtures in `tests/build-check.test.js`.
+fixtures in `test/build-check.test.js`.
 
 **It is not a `fli check` rule**, which is what the design record proposed. That
 surface reads the app's own tree, and the file most likely to be baked is the one
@@ -5364,7 +5418,7 @@ Its first run reported **sixteen**, every one inspected and real: one in
 `example` and fifteen in `basecamp`, including three dashboard widgets and the
 fleet screens where the row genuinely moves mid-deploy. The screen already
 converted to `record()` is silent, which is the rule's own negative control.
-Seven cases in `tests/checks.test.js`, and `CLEAN` grew a legitimate one-shot
+Seven cases in `test/checks.test.js`, and `CLEAN` grew a legitimate one-shot
 read so the rule RUNS over the clean tree rather than only ever skipping.
 
 # Changes
@@ -5512,8 +5566,8 @@ directly.
 847 tests, 86 of them new — 13 of which had been sitting on disk unrun.
 
 **`test-files-run`** (repo scope) — a hand-listed `test` script graded against
-the `*.test.*` files beside it. It found `packages/cli`'s own: **`tests/pipe.test.js`
-and `tests/generated-mesa.test.js` were run by nothing**, and the first of those
+the `*.test.*` files beside it. It found `packages/cli`'s own: **`test/pipe.test.js`
+and `test/generated-mesa.test.js` were run by nothing**, and the first of those
 is the file `CHANGES.md` cites as reproducing `FJS-379`. A test written to pin a
 fix, never once executed, in a suite that was green every time. Both pass; both
 are in the script now.
@@ -5525,7 +5579,7 @@ not read (it is the bare runner by nature, and reading it would make every
 hand-listing package look like it discovers), and only `*.test.*` counts: a stub
 or a client beside the tests is support code, named by whatever imports it.
 
-**`tests/docs.test.js` + `core/doc-commands.js`** — every `` `fli <command>` ``
+**`test/docs.test.js` + `core/doc-commands.js`** — every `` `fli <command>` ``
 named in a reference doc must resolve against the registry. `IDEAS/` is not
 graded, because an idea paper names commands that deliberately do not exist;
 neither are the registers or CHANGES, which are argument and history. What is
@@ -5739,7 +5793,7 @@ has the same shape. Measured both ways in a scratch directory: 980 bytes and two
 `Unhandled 'error' event` traces before, 0 bytes after, every run. It survived
 because merging stderr into the same pipe hides it completely — the trace goes
 into the pipe that just closed — so it is only visible the way a person actually
-types it, which is what `tests/pipe.test.js` reproduces.
+types it, which is what `test/pipe.test.js` reproduces.
 
 **`fli auth:install` no longer generates an `AUTH_SECRET`** (`FJS-360`), and the
 reason is in the file where the generation used to be: a session issued by
@@ -5904,13 +5958,13 @@ two of them emitting a different file. `core/resource-template.js` is the owner
 now, the same shape `core/crud-templates.js` already is for a generated CRUD page
 (Invariant 4).
 
-`tests/make-resource.test.js` runs the command for real into a temp app and grades
+`test/make-resource.test.js` runs the command for real into a temp app and grades
 what it wrote with `runChecks` — the same engine `fli check` gives a client app,
 which is the assertion that matters here because the failure class is the
 framework generating what the framework refuses. It runs `web:resource` as well and compares
 what the two emit with the names swapped out, so *they are one module* is proven
 by execution rather than by reading both files. It is the first test in this
-package to execute a generator at all — and while adding it, `tests/config.test.js`
+package to execute a generator at all — and while adding it, `test/config.test.js`
 turned out to be listed in no test script either: eight assertions that had never
 run. Both are in `package.json` now. Opening the generated file in the kit's
 browser drive found `FJS-400`, a defect in `<Form>` that no app in this repo could
@@ -5932,13 +5986,13 @@ installed the package off npm looks before filing a bug, and both lied.
   `fli list` banner. `/api/meta` already read `pkg.version`; its two `'0.1.0'`
   fallbacks are `null` now, because a fabricated version is worse than an absent
   one.
-- `tests/version.test.js` spawns the real binary for every surface and asserts
+- `test/version.test.js` spawns the real binary for every surface and asserts
   against `package.json`, so the next bump cannot re-open this.
 
 **The usage screen is paste-safe too.** Its two annotated examples marked what a
 command produces with a `->`, on lines that look exactly like something to
 select and paste — and a paste hands `fli` three junk argv entries. The marker
-is `#` now, which the shell reads as a comment, and `tests/help.test.js` asserts
+is `#` now, which the shell reads as a comment, and `test/help.test.js` asserts
 no arrow reaches the usage screen, the listing or a namespace page. Found the
 way these are always found: a reader pasted an arrow-annotated install line and
 npm went looking for a package named after the arrow.
@@ -6380,7 +6434,7 @@ and reopened it, so the file compiled to JavaScript that does not parse:
 `SyntaxError: Unexpected identifier 'transactional'`. The command was
 unrunnable from the day it was written.
 
-Invariant 15 is why this was caught at all: `tests/compiler.test.js` parses the
+Invariant 15 is why this was caught at all: `test/compiler.test.js` parses the
 output of every one of the 201 command files rather than trusting a clean
 compile. The suite had been failing on it and nothing here runs the suites in
 the pre-push tier, so it took a CI runner to say so (`FJS-009`).
@@ -6458,7 +6512,7 @@ real: `packages/mesa/mesa-bench/vite.config.js` had no `strictPort`, so a bench
 run can be served beside the one it is being compared against. Fixed rather than
 allowed.
 
-Four cases in `tests/checks.test.js` — above, below, only, and a closing tag,
+Four cases in `test/checks.test.js` — above, below, only, and a closing tag,
 which is not the injection point and never was.
 
 ## 2026-08-17 — `fli outbox:install` (`FJS-D35`)
@@ -6602,7 +6656,7 @@ custom element a stranger's page writes, so `booking.mesa` reaches HTML as
 no `index.mesa` builds nothing at all, which is correct for a widget's shared
 parts and wrong for one somebody is midway through writing.
 
-The clean-app fixture in `tests/checks.test.js` now carries the third surface,
+The clean-app fixture in `test/checks.test.js` now carries the third surface,
 because a rule that only ever skips is what that file exists to catch.
 
 ## 2026-08-15 — `auth:install` imports auth's models instead of copying them (FJS-265)
@@ -7306,7 +7360,7 @@ deepest part of a namespace, not a stranger to it.
 
 Verified by driving every deploy command against a fake `ssh` answering as a
 server running v0.3.4, v0.5.16, nothing, and an unparseable version — all four
-graded correctly at all three sites. Two new scenarios in `tests/zz-steps.test.js`
+graded correctly at all three sites. Two new scenarios in `test/zz-steps.test.js`
 pin the runtime halves, each checked against a negative control.
 
 ## 2026-08-14 — `deploy:local` is a gate: it stops lying, and it can fail
@@ -7347,8 +7401,8 @@ Fixed at the owner — the value is coerced toward the DECLARED type and then
 checked — which also unbroke `fli deploy:logs --tail 200`, the command's own
 documented example, and `cloudflare:dns`.
 
-Pinned by four scenarios in `tests/zz-steps.test.js` over a new
-`tests/fixtures/sibling-steps/`, each checked against a negative control:
+Pinned by four scenarios in `test/zz-steps.test.js` over a new
+`test/fixtures/sibling-steps/`, each checked against a negative control:
 widening the rule back fails the sibling test.
 
 ## 2026-08-14 — `fli scaffold <Model>` is run against a real installed app now
@@ -7550,7 +7604,7 @@ that had finished minutes earlier. Fixed in `core/runtime.js`: a throw now recor
 the error, sets `abort`, lets the loop finish so `runOnAbort` steps get their turn,
 and re-throws afterwards — so the exit code is unchanged and `runOnAbort` finally
 means *runs on abort or throw*, for every `_steps` command. Pinned by
-`tests/fixtures/cleanup-on-throw/`.
+`test/fixtures/cleanup-on-throw/`.
 
 **The health check polled a path the scaffold cannot serve, and rolled back
 working deploys** (`FJS-238`). `healthPlugin()` registers through `app.get()`, the

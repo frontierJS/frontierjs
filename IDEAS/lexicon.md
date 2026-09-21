@@ -123,7 +123,7 @@ signature.
 four owners below are the argument: syntax is mesa's, `Intl` is a toolbelt kit's,
 the active locale is sierra's, and the words are the app's — which leaves a
 package nothing to own. The word stays as the name of the WORK, the way
-`IDEAS/package-map.md` already lists it, so that *lexicon* names a topic in a
+`IDEAS/map-packages.md` already lists it, so that *lexicon* names a topic in a
 conversation and never an install.
 
 ## Four owners, not one word
@@ -347,7 +347,7 @@ Filed as `FJS-D254`; **ruled 2026-09-20**, which added constraints 7 and 8 to
 
 - `DECISIONS.md` § `FJS-D12` — the ruling and its six constraints
 - `IDEAS/ecosystem-gaps.md` § 4 — where the gap was first argued
-- `IDEAS/package-map.md` § Still proposed, and NOT a package — `lexicon` is the name
+- `IDEAS/map-packages.md` § Still proposed, and NOT a package — `lexicon` is the name
   of the WORK, decomposed across litestone, mesa and sierra, not a module
 - `Intl` surface measured on Bun 1.3.11 and Node 22.21, 2026-09-20 — the three
   traps above

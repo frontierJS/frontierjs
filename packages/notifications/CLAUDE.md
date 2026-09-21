@@ -26,7 +26,7 @@ drivers/
   inapp.ts        writes the record, publishes on app.channel()
   email.ts        renders lines → text/html, hands off to the mailer
 examples/         wiring.ts + two notifications + Notification.mesa
-tests/            harness.ts, fanout.test.ts, hook.test.ts, email-render.test.ts,
+test/            harness.ts, fanout.test.ts, hook.test.ts, email-render.test.ts,
                   define.test.ts, schema-fragment.test.ts + fixtures/notifications/
 ```
 

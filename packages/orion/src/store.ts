@@ -25,7 +25,7 @@
  * reaches the nodes that touch the app's data, never this file.
  *
  * `asSystem()` does not consult `@@transitions`, so the status moves this file
- * makes are held to the declaration by `tests/store.test.ts` and by nothing at
+ * makes are held to the declaration by `test/store.test.ts` and by nothing at
  * runtime.
  */
 

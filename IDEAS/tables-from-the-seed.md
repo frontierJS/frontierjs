@@ -215,7 +215,7 @@ say whether it is an instant or a wall clock; `Json`, which arrives as
 `{ type: null }` rather than `object` and which the control table already
 carries a comment about.
 
-Fourteen cases in `tests/display-for.test.js`. The one that states the design is
+Fourteen cases in `test/display-for.test.js`. The one that states the design is
 a PAIR on one column: `lines` is `@computed`, so `controlFor` answers
 `{ control: null, reason: 'readOnly' }` and `displayFor` answers `number` —
 either assertion alone is satisfied by a table that says the same thing about
@@ -324,7 +324,7 @@ Domain    ranked : hostname[identify] workspaceId[rest] appId[rest] …
 
 Every generated table in a row-tenant app led with the tenant column, which
 holds the same value in every row on screen. Ten cases in
-`tests/column-list.test.js`; measured against stubs, removing the rank sort reds
+`test/column-list.test.js`; measured against stubs, removing the rank sort reds
 2, the identify tier 2, the `only` path 3, and the over-limit reporting 1.
 
 **Building it found the next gap, and it is now closed.** The browser was
@@ -365,7 +365,7 @@ appears to have no computed columns and renders a screen that looks finished.
 **Read is not a superset of create**, which is why it is a third table and not a
 replacement: a `@transient` column — written once, never read back — is in both
 write modes and in neither display list. Four cases in
-`tests/resource-schema-modes.test.js`, including the pair that is the whole
+`test/resource-schema-modes.test.js`, including the pair that is the whole
 point: one resource, `lines` absent from `formFields()` and present in
 `columns()`, plus the patch round-trip asserted over both real apps. Measured
 against stubs: ignoring the read patch reds 2, pointing `columns()` at the write
@@ -462,7 +462,7 @@ a header is a word a person reads.
 
 Proven where the generator can be: `fli admin:generate` over `example` writes 98
 files, `fli check` reports nothing on them, and all 98 compile clean and emit
-JavaScript that parses (Invariant 15). `tests/generated-mesa.test.js` gained the
+JavaScript that parses (Invariant 15). `test/generated-mesa.test.js` gained the
 two shapes that were not covered — the ranked default and a pinned `only` — plus
 the admin variant with its gate notice and per-row delete, which nothing had ever
 compiled.
@@ -504,7 +504,7 @@ nothing about it changed.
 Accepting any line holding an arrow reported `total` for a
 `lines.forEach(x => { total = … })` sitting three lines under an unrelated
 one-shot read. The line must CONTINUE the call — a leading `.then` and nothing
-else. Three cases in `tests/checks.test.js`, two of them controls: a `.then`
+else. Three cases in `test/checks.test.js`, two of them controls: a `.then`
 that acts on the row rather than parking it, and the unrelated assignment. Both
 halves are load-bearing — removing the forward walk reds 1, removing the
 continuation guard reds 1.
@@ -684,7 +684,7 @@ the URL.
 `columns()`, so the bar offers filters over the columns the table shows.
 
 **The seam is graded by an ORACLE rather than restated.** The table and
-`buildWhere` are two statements of one rule, so `tests/filter-operators-real.mjs`
+`buildWhere` are two statements of one rule, so `test/filter-operators-real.mjs`
 puts every operator the table hands out to a REAL Litestone client over a column
 of that kind, and asserts every kind it refuses is refused by the boundary in
 the boundary's OWN words. It runs under bun beside `static-safety-real.mjs` and

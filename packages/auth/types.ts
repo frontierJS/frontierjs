@@ -9,7 +9,7 @@ import type { RateLimitHookOptions, SessionContext } from '@frontierjs/junction'
 /**
  * Every change `onCredentialChanged` is told about — each one an `operation`
  * the audit trail already records under the same name. A value because
- * `tests/credential-events.test.ts` reads `auth.ts` for any of these written
+ * `test/credential-events.test.ts` reads `auth.ts` for any of these written
  * straight to the trail, which would record the change and tell nobody.
  */
 export const CREDENTIAL_EVENTS = [

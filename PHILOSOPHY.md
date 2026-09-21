@@ -222,7 +222,7 @@ say.**
   consumer acts on it without reading anything else.
   A map sentence beginning *until*, *used to*, *before FJS-* is history that
   escaped its register.
-- **Assessment** — `IDEAS/` (`pros-and-cons.md` among them), a package's design notes. Carries
+- **Assessment** — `IDEAS/` (`review-pros-and-cons.md` among them), a package's design notes. Carries
   a `status` and a date in its frontmatter and is never cited as behavior.
 
 **Precedence is stated once.** Invariant, then ruling, then map, then package

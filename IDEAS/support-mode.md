@@ -300,7 +300,7 @@ Four phases. The first lands with no behavior change and no app edit.
    `POST /auth/support/{start,end}` in `packages/auth/plugin.ts`; `verifySession` following
    the columns and enforcing the expiry there; `SessionContext.support`; and
    `refuseInSupport()` at six call sites in `packages/auth/services.ts`.
-   `tests/support-mode.test.ts` (12) and `tests/support-refusals.test.ts` (9) — the second
+   `test/support-mode.test.ts` (12) and `test/support-refusals.test.ts` (9) — the second
    over a real Junction app, because the refusals are only true where a request meets them.
    Measured with each half stubbed: **3 of 12 fail without the resolution branch, exactly 1
    without the expiry comparison, 4 of 9 without the refusals.**
@@ -331,7 +331,7 @@ Four phases. The first lands with no behavior change and no app edit.
    reason)` on the channel manager, called by BOTH routes — a start as well as an end,
    which the plan had not said: after a start the operator's open tabs go on acting as
    themselves, and the two transports disagreeing about who the caller is is the same defect
-   in the other direction. `tests/disconnect-session.test.ts`, three rows, each PAIRED with a
+   in the other direction. `test/disconnect-session.test.ts`, three rows, each PAIRED with a
    session that must survive; all three fail if the close stops filtering.
    **Neither client call answers the new principal**: who the caller is now is
    `account.get('me')`, the same question asked of the same place, and a second answer here

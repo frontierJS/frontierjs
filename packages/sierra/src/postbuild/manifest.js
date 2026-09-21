@@ -11,7 +11,7 @@
  * The rules are Chrome's, measured rather than remembered: neither a 512px
  * icon nor a service worker is required, which are the two most often assumed.
  * Each problem carries Chrome's own error id, so
- * `tests/browser/installable.mjs` can hold this grader against
+ * `test/browser/installable.mjs` can hold this grader against
  * `Page.getInstallabilityErrors` case for case:
  *
  *   • a manifest, linked                                      no-manifest

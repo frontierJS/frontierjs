@@ -39,7 +39,7 @@
  * component watches with `$:`. The one caller left is `presence(channelId)`,
  * which returns a signal from a function call: no map could ever have described
  * that, and the caller holds the object rather than importing a name.
- * `tests/no-module-signals.test.js` is what keeps it that way.
+ * `test/no-module-signals.test.js` is what keeps it that way.
  */
 
 import { createSignal, createEffect } from '@frontierjs/mesa/runtime.js'

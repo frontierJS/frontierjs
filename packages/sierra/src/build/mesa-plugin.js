@@ -388,7 +388,7 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
           // its own. Sierra declares NONE: it exports no module-level signal, so
           // it has nothing to tell the compiler about (`FJS-060`). The map is an
           // app-facing escape hatch for a third-party package that does export
-          // one — and `tests/no-module-signals.test.js` is what keeps this
+          // one — and `test/no-module-signals.test.js` is what keeps this
           // package from quietly becoming such a package again.
           ...mesaOptions,
         })

@@ -386,7 +386,7 @@ export function scaffoldAndBuild({ keep = false, verbose = false, log = console.
     // Read off the app that was actually WRITTEN rather than off the templates,
     // which is the other end of the same rule: `fli scaffold Note` has just run,
     // so the source scanned here includes the four files it generated, and the
-    // unit guard in `packages/cli/tests/app-config.test.js` cannot reach those.
+    // unit guard in `packages/cli/test/app-config.test.js` cannot reach those.
     const imports = undeclaredFrameworkImports(app)
 
     // The control first. A walk that reached no source at all reports a clean
@@ -764,7 +764,7 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
     // than a caution: `04-build-api` re-vendors the workspace on every run, and
     // `bun pm pack` writes a fresh tarball each time, so under `--source local` a
     // redeploy of unchanged source is never byte-identical. The `same-bytes`
-    // refusal is therefore graded in `packages/cli/tests/revert.test.js`, where
+    // refusal is therefore graded in `packages/cli/test/revert.test.js`, where
     // two identical digests can be stated.
     //
     // What IS asserted here is that the second deploy is an ordinary one — a

@@ -240,7 +240,7 @@ jobs:
 //
 // It restates no package's reference (`FJS-D163`). Every line either points at
 // a file the installed tarball carries or names the `fli check` rule that grades
-// it, and `tests/app-config.test.js` holds both to their source: the pointers
+// it, and `test/app-config.test.js` holds both to their source: the pointers
 // to `exports.snapshot.md`, the rule ids to `RULES`, the commands to the
 // registry. The `scaffold` CI phase asks the installed app whether each pointer
 // resolves, which is the only place the published bytes are read.

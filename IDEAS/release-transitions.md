@@ -588,7 +588,7 @@ forms are in this repo. The intermediate case is not nothing (the value sits in 
 on the build host, readable with `docker build --target build`) so it is a warning
 rather than either silence or a refusal. **The trace was then graded against the
 daemon** on four shapes × two files at two depths: 8 of 8 agreed, and those eight are
-the fixtures in `tests/build-check.test.js`.
+the fixtures in `test/build-check.test.js`.
 
 **It found a real one on its first run.** Docker matches an ignore pattern with Go's
 `filepath.Match`, where a plain `*` does not cross a separator — so `db/*.db` excluded
@@ -1009,7 +1009,7 @@ journal record the half that did not run rather than hiding it.
 
 **And one thing is narrower than the proposal claimed.** The migration is proved
 against a real SQLite file through the real runner in
-`packages/cli/tests/journal-migration.test.js`, and NOT inside
+`packages/cli/test/journal-migration.test.js`, and NOT inside
 `deployJournalCycle`: that cycle's journal is created fresh at format 2, so there
 is nothing there to migrate, and the runner it would exercise is the same file
 the suite already drives. What the cycle gained instead is the half only it can

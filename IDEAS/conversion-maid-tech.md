@@ -42,7 +42,7 @@ produce.
 | `web/` | 478 files · 442 `.svelte` · 51,454 lines · 292 route files · 109 components · 36 resources | Svelte 5 in legacy mode, Routify v3, UnoCSS, Vite, spassr |
 | `embeds/` | 81 `.svelte` · 7,664 lines · 8 widgets | Vite/Rollup → standalone IIFE, embedded cross-origin on third-party sites |
 | `db/` | 25 models · 62 migrations · three SQLite files | Prisma, plus `images.db` and `logs.db` |
-| `tests/` | 45 `.ts` · 2,272 lines | Playwright, Page Object Model + factories, run sequentially |
+| `test/` | 45 `.ts` · 2,272 lines | Playwright, Page Object Model + factories, run sequentially |
 
 Domain rows, for weight: 148 accounts, 317 users, 113,632 clients, 109,632 form
 responses, 29,046 actions, 9,355 pages across 100 sites, 302 templates, 72

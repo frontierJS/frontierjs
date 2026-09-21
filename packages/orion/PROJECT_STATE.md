@@ -54,7 +54,7 @@
   and are edited as documents ([`FJS-1209`](../../ISSUES.md#fjs-1209)).
   The inspector and the JSON textarea
   are one model: the inspector parses it and serializes the whole definition
-  back. `tests/node-forms.test.ts` grades every built-in schema through the same
+  back. `test/node-forms.test.ts` grades every built-in schema through the same
   pipeline, so a property no control can render fails the suite.
 - Reads by the owner and an administrator both through `orion.lite`'s row
   policies, the administrator's via `auth().level` (`FJS-D296`).

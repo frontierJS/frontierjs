@@ -64,7 +64,7 @@ This is what a bespoke capture app would not have done.
 - **Phase 2** — both halves arise on their own rather than being staged. The damage photograph is a `File` in a queued write, and the session is created offline with its lines attaching to a parent the server has never seen, which is the dependent-write case exactly.
 - **Phase 3** — the counter's phone sleeps, or the tab is closed in the stockroom. Reopening offline has to show the session still in progress, or the feature is a toy.
 - **Phase 4** — *which variants have I not counted* is a QUERY. Against a local database it is the checklist re-running itself, which is what `IDEAS/live-queries.md` says the destination looks like.
-- **Phase 5** — two staff counting one stockroom is an ordinary Tuesday, and two counts of one variant in one session is a real conflict with a real policy choice behind it. Approach it as a question rather than a plan: ElectricSQL built bidirectional CRDT sync and abandoned it (`IDEAS/prior-art.md` § 4).
+- **Phase 5** — two staff counting one stockroom is an ordinary Tuesday, and two counts of one variant in one session is a real conflict with a real policy choice behind it. Approach it as a question rather than a plan: ElectricSQL built bidirectional CRDT sync and abandoned it (`IDEAS/review-prior-art.md` § 4).
 
 ### What proves it
 
@@ -139,7 +139,7 @@ left open the outage is MASKED: the call goes out, arrives when the network
 returns, and the screen is never told anything was wrong. So a queue entry
 clears on an **acknowledgement** and never on a send — Replicache's
 `lastMutationID` is the same mechanism under a different name
-(`IDEAS/prior-art.md` § 4). A write that left on a socket nobody has confirmed
+(`IDEAS/review-prior-art.md` § 4). A write that left on a socket nobody has confirmed
 is not delivered.
 
 **What phase 1 still inherits.** Severing is harsher than a real outage, which
@@ -181,7 +181,7 @@ declares no `@@sync` refuses to queue and says so by name.
 
 **Queue-first, and there is nothing to graft onto.** `verify:offline` measured
 that a write made offline is simply lost, so this is not a retry being extended.
-Prior art says build it as one path (`IDEAS/prior-art.md` § 4): PowerSync records
+Prior art says build it as one path (`IDEAS/review-prior-art.md` § 4): PowerSync records
 the write and its queue entry in one transaction, and sending is that queue
 draining, so there is no second route where a write goes twice or not at all.
 The FJS version of *one transaction* is the optimistic overlay `FJS-D138`
@@ -237,7 +237,7 @@ Two halves, and they are the same problem: the queue holding something the
 server has never seen.
 
 - **Bytes.** A `File` in a queued write. The field has converged here and FJS is
-  already shaped for it (`IDEAS/prior-art.md` § 4): metadata goes through the
+  already shaped for it (`IDEAS/review-prior-art.md` § 4): metadata goes through the
   ordinary queue, the bytes go to object storage, and attachments get a queue of
   their OWN — its own local table, its own retry interval, immutable objects
   named by an id the client minted. A `File` column already stores a reference
@@ -655,14 +655,13 @@ a second declaration beside the one that already says what to hold. The rows and
 the model are both in scope at the call site, so hydration is derived rather than
 declared.
 
-**The declaration still means the SCREEN's question**, because matching it
-exactly is what makes the cache slot the one `load()` reads. So the device is as
-full as the declared window and no fuller — a device-sized window and a
-screen-sized one are two grains, and one option cannot be both while the cache is
-still underneath. **Ruled since, and not in this phase's favor**: `FJS-D337` says
-the declaration means the DEVICE's window and the keyed warm is skipped for a
-model the device holds, falling back to this behavior wherever the database did
-not open. Phase 5 carries the change, because what unblocked it is `FJS-D334`.
+**The declaration meant the SCREEN's question here**, because matching it
+exactly is what makes the cache slot the one `load()` reads — so the device was
+as full as the declared window and no fuller. **`FJS-D337` ruled the other way
+and phase 5 built it**: the declaration is the DEVICE's window, the keyed warm is
+skipped for a model the device kept, and this behavior is what a device that
+could not keep the rows falls back to. What unblocked the question was
+`FJS-D334`.
 
 **Nothing re-warms on sign-in, and the gap that looks like is not one.**
 Everything declared was last fetched as the previous caller, and a gate refused
@@ -717,7 +716,7 @@ The candidates, ranked by what this framework already owns:
 | `server` | replay the operation; the server's state decides | nothing — a replayed operation already runs against whatever the server holds |
 | `refuse` | the write carries the revision it was made against and is refused if the row moved | almost nothing — `@version` crosses as `x-version`, `FJS-D138` already stores the revision a write was against, and `@@transitions` is already a compare-and-swap |
 | `append` | there is no collision, by construction — a scan, a count line, a ledger row | nothing to build: the declaration IS the implementation. It is also the principled answer rather than the cheap one — Weidner's first rule is that an operation which ADDS a unique new thing wants a set of unique things, and concurrent additions then cannot conflict at all |
-| `lww` | last write wins, for the whole row | a ruling on whose clock, which has one defensible answer — server receipt, never the device. **And it is the one candidate with an argument against it**: Weidner's *independent operations should act on independent state* (`IDEAS/prior-art.md` § 4) says a row-wide winner discards an edit to a column nobody contested |
+| `lww` | last write wins, for the whole row | a ruling on whose clock, which has one defensible answer — server receipt, never the device. **And it is the one candidate with an argument against it**: Weidner's *independent operations should act on independent state* (`IDEAS/review-prior-art.md` § 4) says a row-wide winner discards an edit to a column nobody contested |
 | `field` | last write wins per COLUMN, so two people editing different fields both win | ~~per-field metadata~~ — **struck 2026-09-18**: a three-way comparison against the revision the write was made against produces the same outcome and dates nothing, so this needs no metadata and no ruling about whose clock (`IDEAS/conflict-as-data.md`). **Not a refinement of `lww` but the correction of it** — if this framework resolves per column at all, this is the shape. Triplit resolves per property and Figma does the same |
 | `manual` | both versions are kept until something resolves them | ~~the most: conflict storage, a screen, a resolution path~~ — **struck 2026-09-18**: a conflict is a Model here, so the storage IS the declaration, the screen is generated and the resolution path is an ordinary write (`IDEAS/conflict-as-data.md`). Still the largest of the set, and its silent failure is a pile-up nothing counts. CouchDB keeps conflicting revisions on the document; Dolt keeps them as a queryable relation with a count beside it, which is the better lead |
 | `crdt` | values merge by type | out of scope. ElectricSQL built it and abandoned it |
@@ -745,8 +744,8 @@ understand inside and out, it will be a hard fix.*
 
 ### Phase 5 — two writers, one row
 
-**Owners:** Litestone. **Answers:** Q4, which follows from `FJS-D298`. **BUILT.**
-**Implements:** `FJS-D334` (where the base comes from and where the comparison runs), `FJS-D338` (how it reaches the boundary). **Size:** M–L.
+**Owners:** Litestone · Sierra. **Answers:** Q4, which follows from `FJS-D298`. **BUILT.**
+**Implements:** `FJS-D334` (where the base comes from and where the comparison runs), `FJS-D338` (how it reaches the boundary), `FJS-D337` (the read side the write side unblocked). **Size:** M–L.
 **Ships:** conflict as a declared outcome rather than an accident.
 
 `src/core/three-way.js` is the comparison, `@@sync(field)` is what admits a base
@@ -856,17 +855,32 @@ so the base reached the call site and vanished — anything a caller passes that
 reveals the degradation exactly: a `retryable: true` version conflict, which is
 the shape an automatic re-apply turns into silent data loss.
 
+#### The read side — `FJS-D337`, BUILT
+
+Phase 5 carried it, because the two are one call: a device required to supply the
+base is a device whose copy is load-bearing, which is what the read side was
+waiting on. `warmOffline()` filled the device's tables AND a slot keyed by the
+declared question; with SQL underneath, the slot is a second answer to a question
+the tables answer anyway, and a narrower one, so it is now written only where the
+rows did not reach the device.
+
+**The condition is the write-through having LANDED rather than the config saying
+`db: true`.** `localDb()` answers null on any failure by design, so a device that
+cannot open one would otherwise render an empty screen with nothing said. `kept`
+was already computed and reported by the warm; it now decides. `load()` is
+unchanged, and the boundary is why: its write-through is deliberately not
+awaited, so the fact to skip on does not exist while a screen is rendering.
+
+**What it cost was the drive's signal rather than the drive.** The slot
+`verify:shell` emptied was also how it knew the warm's `find` had come back, and
+a fact no longer written cannot be read back — so the drive taps the app's socket
+before its first script and reloads under the tap, waiting for that frame to
+settle. Removing the condition in sierra turns the new assertion red in a real
+browser: no cache key names the service after a warm.
+
 **What is left of phase 5 is `manual`**, and `FJS-D335` says it stays left: the
 conflict relation is `manual`'s cost, `FJS-D304` ships nothing else until an app
 asks, and a V1 conflict is a rejected queue entry carrying `base`/`local`/`remote`.
-
-**And phase 5 carries `FJS-D337` with it**, because the two are one call: a
-device required to supply the base is a device whose copy is load-bearing, which
-is what the read side was waiting on. The declared window becomes the DEVICE's
-and the keyed cache warm is skipped for a model the device holds — conditional
-on the database having OPENED, since `localDb()` answers null on any failure and
-a skipped warm over a database that never opened is an empty screen with nothing
-said.
 
 **One footgun to carry in from the start**: a concurrent delete beside a
 property update produces a row that is neither — Weidner's example is an item
@@ -932,7 +946,7 @@ following the declaration rather than by adding one.
   - **Recommend B** — strictness follows cost (§ IV), and the cost differs per Model, because a predicate can name a column whose reader was never meant to know it exists. It should not become a second declaration, though: a Model that declares `@@sync` has already said it will be evaluated with no server reachable, which is the same statement, so the disclosure follows from the sync declaration and nothing new is coined
 
 - ~~**Q5 — what happens to a `File` column in a queued mutation?**~~ **Answered 2026-09-16 (`FJS-D301`): B — two queues. The mutation carries a reference the CLIENT minted and drains through the ordinary path; a second queue owns the upload, with its own local table, its own retry and objects that are immutable once named.** It was filed
-  with no options; `IDEAS/prior-art.md` § 4 found them, and the field has
+  with no options; `IDEAS/review-prior-art.md` § 4 found them, and the field has
   converged on one shape.
   - **A** — one queue. The bytes ride with the mutation, and a write with a photograph on it is a write like any other
   - **B** — two queues. The mutation carries a reference the CLIENT minted and drains through the ordinary path; a second queue owns the upload, with its own local table, its own retry and objects that are immutable once named
@@ -1011,4 +1025,4 @@ following the declaration rather than by adding one.
 - `DECISIONS.md` § `FJS-D138` — the client data lifecycle; the intent overlay phase 1 builds on
 - `IDEAS/live-queries.md` — the live-query surface phase 4 is the destination of
 - `IDEAS/conflict-as-data.md` — phase 5's mechanism, read from Dolt
-- `IDEAS/package-map.md` — the roster row this work was decomposed out of
+- `IDEAS/map-packages.md` — the roster row this work was decomposed out of

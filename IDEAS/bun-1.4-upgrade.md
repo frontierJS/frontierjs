@@ -52,7 +52,7 @@ probe, three runtimes:
 | node | timed out at 2007 ms |
 
 **`fli` is `#!/usr/bin/env node`.** So the shipped behavior has always been the
-timeout, and `tests/proxy.test.js`'s *an upgrade to a name nothing claims is dropped
+timeout, and `test/proxy.test.js`'s *an upgrade to a name nothing claims is dropped
 rather than proxied somewhere* has been green for the wrong reason — the suite runs
 under Bun, the command runs under node, and only Bun 1.3 closed both directions on
 `end()`.
@@ -78,7 +78,7 @@ evaluator.
 
 ## 3. sierra's TDZ workaround has lost its reason
 
-`tests/build-imports.test.js`'s negative control asserts that re-importing a module
+`test/build-imports.test.js`'s negative control asserts that re-importing a module
 whose top-level await threw gives a TDZ error rather than the real one. Probed on
 one file:
 

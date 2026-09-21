@@ -27,7 +27,7 @@
     "@frontierjs/litestone": "workspace:*"
   },
   "scripts": {
-    "test": "bun test tests/",
+    "test": "bun test test/",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "files": [

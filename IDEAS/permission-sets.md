@@ -1109,7 +1109,7 @@ language stops being reviewable.
   that declares a grid and then gates it by ladder.
 - ~~**Is this `warden`, and is it a package?**~~ Ruled by `FJS-D147`: not a package. Seed
   syntax in litestone, where every other Data-boundary rule is declared, and the
-  `package-map.md` reservation is retired. The name question does not arise.
+  `map-packages.md` reservation is retired. The name question does not arise.
 - ~~**Does a permission narrow to a field?**~~ Yes, and both halves are settled.
   `@allow('write', …)` is already a compiled predicate per field (`FJS-D129`), and the
   column tier is `@capability` on the field (`FJS-D147`), opt-in per column because
@@ -1136,7 +1136,7 @@ language stops being reviewable.
 - `IDEAS/compliance-from-the-seed.md` — the audit half, which this feeds
 - `CLAUDE.md` § Live hazards — *a `@@gate` refuses, a `@@allow` filters*, the hazard
   this whole file is downstream of
-- `IDEAS/package-map.md` § Absorbed — the struck `warden` row, which is this idea
+- `IDEAS/map-packages.md` § Absorbed — the struck `warden` row, which is this idea
   under a reserved package name, and `IDEAS/overview.md` 4.5 beside 2.19 for the same
   reason
 - `DECISIONS.md` § Outpost — the naming rule that rejects `warden` as a package name

@@ -441,7 +441,7 @@ issue threads and are leads rather than probes.
   everywhere else, authorization lives in application code, so the vector index is
   a second copy of the corpus that no row policy reaches and retrieval is the
   place where a gate stops applying. Here the ordering is a clause on a read the
-  policy already filtered. `prior-art.md`'s convergence table is Ash-specific and this is a Drizzle
+  policy already filtered. `review-prior-art.md`'s convergence table is Ash-specific and this is a Drizzle
   convergence, so it does not belong there; what it belongs in is the sentence
   this framework can say and the others cannot.
 

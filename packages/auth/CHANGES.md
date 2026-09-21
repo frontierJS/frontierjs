@@ -1,5 +1,13 @@
 # Changes — @frontierjs/auth
 
+## 2026-09-21 — the suite directory is `test/`
+
+**`tests/` is a surface, not a suite.** In an FJS app it sits beside `api/` and `web/` and holds
+what belongs to no single surface, while a surface's own tests are its `test/` (Invariant 3). A
+package is not an app — it has one `src/` — so its suite is `test/`, and this one moved. Eight
+packages spelled it plural and eleven singular with nothing in the tree deciding between them,
+which made the directory name a coin flip on every file added.
+
 ## 2026-09-20 — the bun floor is `1.4.0`
 
 This package is bun-only and declared no `engines` at all, so it stated its runtime nowhere. An
@@ -14,7 +22,7 @@ minor behind reports the feature it cannot reach as MISSING rather than reportin
 `fli tinker`: `.resetPasswords [password]` sets every `password` credential to one value through
 `hashPassword`, so what it writes is what `login()` verifies. OAuth credentials keep their value and
 an account with no password gains none. Refused under `NODE_ENV=production` without `--force`.
-`tests/console.test.ts` grades it by signing in rather than by reading the column — measured, writing
+`test/console.test.ts` grades it by signing in rather than by reading the column — measured, writing
 the password unhashed reds 3 of its 4 rows — and pairs the production refusal with the same call
 forced.
 
@@ -24,7 +32,7 @@ forced.
 every account an operator creates — so the invitation such an account is sent (a reset link) answered
 409 and the person could never sign in. **An account with no credential at all now gets its first
 password from the link** (`FJS-D265`), and `password.reset` carries `firstPassword: true`. An account
-whose way in is an OAuth provider is still refused, for `FJS-987`'s reason. `tests/flows.test.ts`
+whose way in is an OAuth provider is still refused, for `FJS-987`'s reason. `test/flows.test.ts`
 holds the two one credential apart, and each control reds its own row.
 
 ## 2026-09-12 — a lost factor can be reset, and the person is told when anything changes
@@ -34,7 +42,7 @@ or reset, the factor on, off or reset, recovery codes regenerated or one used, a
 revoked, a provider linked or unlinked. `event` IS the audit operation, and both are written by one
 helper in `auth.ts`, so the trail and the notification cannot disagree about what happened. It is
 the first observer this provider holds: called after the write, awaited, and a throw is logged
-rather than raised. `tests/credential-events.test.ts` fires every event from its real verb, pairs
+rather than raised. `test/credential-events.test.ts` fires every event from its real verb, pairs
 each with the same verb refused telling nobody, and scans `auth.ts` for any credential operation
 written straight to the trail. Stubbing the observer out reds 12 of its 14 rows; the two still green
 are the rows asserting silence.
@@ -45,7 +53,7 @@ records `password.reset` now.
 
 **`account-recovery.resetTotp`**: a SYSADMIN(7) removes somebody else's lost second factor and ends
 their sessions (`FJS-D264`). The floor is auth's and the grading is the app's `services.level`,
-which the service refuses to run without. `tests/account-recovery.test.ts` pairs the reset with an
+which the service refuses to run without. `test/account-recovery.test.ts` pairs the reset with an
 admin refused, a peer refused, yourself refused, and a support episode refused — the episode's
 subject is a sysadmin there, because a subject at 4 is refused by the floor and that row would pass
 with the support refusal deleted. Measured with each stubbed: the floor, the peer rule and the
@@ -64,7 +72,7 @@ the re-check exists to stop. The second factor added three of those doors to `ch
 **One bucket for all four, keyed by the account**, through junction's own `rateLimitHook`, so spreading
 guesses across methods buys nothing. `services: { reauthenticationRateLimit }` defaults to login's
 `{ max: 10, window: '15 minutes' }`, so the side door is no wider than the front. Over budget is a 429,
-which the browser client does not read as a dead session. `tests/services.test.ts` refuses the RIGHT
+which the browser client does not read as a dead session. `test/services.test.ts` refuses the RIGHT
 password once the budget is spent, beside a second account unaffected and a method that asks for no
 password spending nothing; with the limiter stubbed out the right password is accepted and the row
 goes red.
@@ -79,7 +87,7 @@ typo on a settings screen cost the session that typed it, over HTTP and never ov
 **`ReauthenticationFailedError` is the answer and it is 403**: the caller proved who they are when the
 session was issued, and what was refused is the proof offered now. `InvalidCredentialsError` stays on
 `login()`, where there is no session to lose, and `InvalidSecondFactorError` stays on `completeLogin`
-for the same reason. `tests/services.test.ts` asserts the 403 beside the same token still answering
+for the same reason. `test/services.test.ts` asserts the 403 beside the same token still answering
 `account.get('me')`, which is the half a status assertion alone cannot see.
 
 ## 2026-09-12 — a second factor, and a password that is no longer the whole answer
@@ -120,7 +128,7 @@ rather than an address, so a hook rate-limiting on the address cannot see it and
 would refuse somebody who signs in and immediately opens their settings using the code still on their
 screen, and what it would buy is a replay by a caller who already holds the session.
 
-Two harnesses in `tests/totp-login.test.ts`, and the second is not a convenience: at the shipped
+Two harnesses in `test/totp-login.test.ts`, and the second is not a convenience: at the shipped
 `totpDrift: 1` only three steps are ever valid and `confirmTotp` spends one, so a SEQUENCE of logins
 is inexpressible. The alternative was an injectable clock — a seam on the login path that exists only
 for tests, and a forgeable one if it ever reached a caller.
@@ -320,7 +328,7 @@ directory is a Chrome profile and the numbers are larger; that is `FJS-361`.
 ## 2026-08-16 — the route layer is typed, and it found a hole the same hour (FJS-063, FJS-296)
 
 137 tests. Typecheck baseline unchanged at 4 — all of it still the two nullable
-assertions in `tests/schema-accessors.test.ts`.
+assertions in `test/schema-accessors.test.ts`.
 
 `register(app: App)`, `boot(app: App)`, every handler `(ctx: TransportContext)`,
 the return `Plugin`, and `createAuthServices(): Service[]`. Three `as any` casts
@@ -582,7 +590,7 @@ by path.
 **The peer range was `"*"`** — the pattern that produced the litestone dialect
 trap, where a floating range agreed with the workspace by luck. Now `^0.1.0`.
 
-**There was no `files` field**, so `npm pack` shipped `tests/`, `tsconfig.json`,
+**There was no `files` field**, so `npm pack` shipped `test/`, `tsconfig.json`,
 `PROJECT_STATE.md` and `CHANGES.md`. Now `["*.ts", "README.md"]` — 10 files.
 The consequence to know: a new source file at the package root ships, a new
 *directory* does not.
@@ -765,7 +773,7 @@ The marker test flipped: `routes.test.ts`'s `KNOWN GAP: a cookie alone does not
 authenticate a request` (asserting 401) is now `a cookie alone authenticates a
 request` (asserting 200), joined by four more covering no-cookie, a garbage
 cookie, the emptied cookie a logout leaves, and Bearer-beats-cookie precedence.
-Junction carries 12 of its own in `tests/auth-cookie.test.ts`, including the
+Junction carries 12 of its own in `test/auth-cookie.test.ts`, including the
 WebSocket upgrade — a cookie-authenticated app was otherwise connecting its
 socket anonymously, which is silent because an unauthenticated socket is a legal
 state.
@@ -797,7 +805,7 @@ notifications, basecamp and `sierra/example` were already writing — auth was t
 only package in the repo reaching out by path, and it resolved only because it
 sat inside the workspace. The peer range is `^0.1.0` rather than `"*"`, the
 pattern that caused the litestone dialect trap (`../../CLAUDE.md`), and `files`
-is `["*.ts", "README.md"]` — a 10-file tarball, with `tests/`, `tsconfig.json`
+is `["*.ts", "README.md"]` — a 10-file tarball, with `test/`, `tsconfig.json`
 and the markdown that is not the README no longer shipping.
 
 Re-proven the same way it was found: pack, install the tarball into an empty
@@ -816,13 +824,13 @@ was never about the range).
 Was: 7 tests, all on schema fragments and accessor naming, with all 13 IAuth
 methods and all 8 routes untested. Now **64 tests across 3 files**:
 
-- `tests/flows.test.ts` — every IAuth method on its failure paths, plus the
+- `test/flows.test.ts` — every IAuth method on its failure paths, plus the
   Data-boundary block: the three credential models refuse anonymous and
   signed-in callers alike, and `User`'s ladder is asserted through its
   refusals — by level, by row, and by field.
-- `tests/routes.test.ts` (23) — the 8 routes against a real `createTestApp()`,
+- `test/routes.test.ts` (23) — the 8 routes against a real `createTestApp()`,
   every status code, rate limiting, and cookie mode.
-- `tests/schema-accessors.test.ts` (7) — unchanged.
+- `test/schema-accessors.test.ts` (7) — unchanged.
 
 Everything in "the good news" above is now regression-protected, including the
 two facts this file previously told readers to assume were broken.
@@ -844,7 +852,7 @@ discarded. What is left between the paths is one database read.
 The rate limit blunted it, and the reason it was worth fixing anyway is that
 `requestPasswordReset` goes to real trouble not to reveal the same fact: the
 package had decided address existence is a secret and then leaked it out a
-different door. `tests/flows.test.ts` § login holds the timing assertion and the
+different door. `test/flows.test.ts` § login holds the timing assertion and the
 one that catches `DUMMY_HASH` drifting off `BCRYPT_COST`.
 
 #### 7. `plugin.ts` types `app` and `ctx` as `any` — **FIXED**
@@ -948,7 +956,7 @@ before reaching any of the model-name issues.
 Fragments now declare `User`, `Credential`, `Session`, `Verification` using
 `String` / `Int` / `Float` / `Boolean` / `DateTime`.
 
-**New:** `tests/schema-accessors.test.ts` — closes the loop the two bugs left
+**New:** `test/schema-accessors.test.ts` — closes the loop the two bugs left
 open: the schema this package ships must parse, and every accessor this package
 calls must exist in it. Verified against both implementations — the original
 fails at the parse step (`Type 'Text' was renamed`), the current one passes and
@@ -984,7 +992,7 @@ with no token, signs in again, and repeats.
 
 All four sites now use `findUnique({ where: { id } })`.
 
-**Test:** `tests/schema-accessors.test.ts` gained a check that cross-references
+**Test:** `test/schema-accessors.test.ts` gained a check that cross-references
 every table method the package calls against Litestone's actual surface —
 `get` was the only one missing, and it now fails loudly if another creeps in.
 

@@ -102,7 +102,7 @@ two open questions are closed by this and it keeps its other proposals.
 
 ### <a id="fjs-d258"></a>2026-09-10 · `FJS-D258` — the agent surface is `@frontierjs/mcp` and `herald` is withdrawn. A metaphor names an organ that owns a realm; a battery over one takes the plain word.
 
-`IDEAS/agent-surface.md` and `IDEAS/package-map.md` both carried **`herald`** for
+`IDEAS/agent-surface.md` and `IDEAS/map-packages.md` both carried **`herald`** for
 the MCP server derived from the seed. The package is right and the name is not.
 
 **The house already runs two naming systems and had never said so.** A metaphor
@@ -343,7 +343,7 @@ rather than a grammar error pointing at a colon.
 
 **What it does not settle.** *Is a single ordered 0–9 scale the right model at
 all* is a different question and stays open — `@@capabilities` (`FJS-D146`) is
-the grid beside the ladder, and `IDEAS/pros-and-cons.md` still argues the
+the grid beside the ladder, and `IDEAS/review-pros-and-cons.md` still argues the
 legibility cost this ruling accepts.
 
 `FJS-D43` · `FJS-D197` · `packages/litestone/src/core/parser.js`
@@ -436,7 +436,7 @@ word is `Run`, which the cli has already spent on runnables. It stays in
 
 ### <a id="fjs-d06"></a>2026-08-16 · `FJS-D06` — the coherence-review vocabulary, ruled. Three hook tiers not five, `Provider` is a third party, and `Slice` waits for a second author.
 
-The eight findings of `IDEAS/coherence-review.md` sat open for six
+The eight findings of `IDEAS/review-coherence.md` sat open for six
 weeks because they were filed as one row. They are not one question, and the
 prior art disagrees with the proposal on two of them.
 
@@ -548,7 +548,7 @@ Unblocks `FJS-D10`: `IAuth` partial acceptance and the `setters`/`getters`
 naming are answerable now, the `publish()` shorthand follows §1's tiering, and
 typed `createSchema` inference never depended on this at all.
 *Lives in:* `packages/junction/src/core/app.ts` (`claim`, `_metricsSources`) ·
-`ARCHITECT.md` §2 · `IDEAS/coherence-review.md` is the argument, still not a
+`ARCHITECT.md` §2 · `IDEAS/review-coherence.md` is the argument, still not a
 register.
 
 ### <a id="fjs-d03"></a>2026-08-15 · `FJS-D03` — Context is a per-realm concept. It is plural, it is documented, and it is not unified.
@@ -612,7 +612,7 @@ to its own children rather than the request's.
 
 **Enforcement is a test, not a rule.** A `fli check` rule cannot see a TypeScript
 interface from the file tree — but propagation, freezing and freshness are
-runtime behaviors, so `packages/junction/tests/context-contract.test.ts` asserts
+runtime behaviors, so `packages/junction/test/context-contract.test.ts` asserts
 all four by running them. Verified by breaking it: three go red against the old
 behavior. That is the enforcement that was actually available, and it is what
 would have caught a documented contract drifting from its code.
@@ -718,7 +718,7 @@ The technically-honest alternatives were all taken, which is worth recording so
 nobody re-proposes them: `daemon` is `AppType.daemon`, `worker` is **both**
 `ServerRole.worker` and `AppType.worker`, `node` is Node.js in a JavaScript
 framework, `runner` belongs to CI, `minion` to Salt, and `depot`/`porter`/
-`warden`/`marshal` are already claimed in `IDEAS/package-map.md`.
+`warden`/`marshal` are already claimed in `IDEAS/map-packages.md`.
 
 **Ruled now rather than later because three of the renamed names are wire
 contracts and nothing speaks them yet.** The Conduit target `outpost:<server-id>`,
@@ -1085,7 +1085,7 @@ password beside it. Adding a sign-in credential type means adding it to that
 test.
 
 *Lives in:* [auth.ts `confirmPasswordReset`](packages/auth/auth.ts) ·
-[tests/flows.test.ts](packages/auth/tests/flows.test.ts) · `example`: `verify:users` ·
+[test/flows.test.ts](packages/auth/test/flows.test.ts) · `example`: `verify:users` ·
 `FJS-987` · `FJS-1099`
 
 ### <a id="fjs-d264"></a>2026-09-12 · `FJS-D264` — resetting somebody else's second factor is SYSADMIN(7), stated by auth rather than asked of a guard. The level is the framework's floor; the grading stays the app's.
@@ -1126,7 +1126,7 @@ footnote: the floor is only as real as the grading under it.
 can hold to raise it to.
 
 *Lives in:* [services.ts](packages/auth/services.ts) · [auth.ts `resetTotp`](packages/auth/auth.ts) ·
-[tests/account-recovery.test.ts](packages/auth/tests/account-recovery.test.ts) · `example`: `verify:users` ·
+[test/account-recovery.test.ts](packages/auth/test/account-recovery.test.ts) · `example`: `verify:users` ·
 `FJS-D198` · `FJS-D06`
 
 ### <a id="fjs-d221"></a>2026-09-05 · `FJS-D221` — a row policy may name a column ONE relation away, written as a path. Two hops is a parse error.
@@ -1303,7 +1303,7 @@ and gzipped, on every build. A refusal that hides its own price is the shape
 that gets quietly reversed, and this one took an audit to find.
 
 *Lives in:* Invariant 6 · `packages/sierra/src/build/schema-plugin.js`
-(`stripProse`, `emittedSize`) · `packages/sierra/tests/schema-prose.test.js` ·
+(`stripProse`, `emittedSize`) · `packages/sierra/test/schema-prose.test.js` ·
 [`FJS-785`](ISSUES.md#fjs-785) · [`FJS-553`](ISSUES.md#fjs-553) ·
 [`FJS-554`](ISSUES.md#fjs-554) · [`FJS-264`](ISSUES_ARCHIVE.md)
 
@@ -1853,7 +1853,7 @@ the column holds, which is a fact about the column rather than a rule about it.
 So: **`Capability[]` for the column that holds grants, `@capability` for a column
 whose write is one.**
 
-**And it is seed syntax in litestone, not a package.** `IDEAS/package-map.md`
+**And it is seed syntax in litestone, not a package.** `IDEAS/map-packages.md`
 reserved `warden` as a tier-1 package; the reservation is retired. Three things
 argued against it and none for it: row tenancy and value sets both shipped as a seed
 declaration plus a battery with no package of their own; `FJS-D113` refused a
@@ -2615,6 +2615,22 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d346"></a>2026-09-21 · `FJS-D346` — Should *no two of these may overlap* be a declaration litestone owns — Yes, as a DATA-BOUNDARY declaration in `@@allow`'s tier, never as a DDL constraint, and the word must say which tier it is in.
+
+Asked in [`fjs-prototypes/calendly/PLAN.md`](IDEAS/stressors.md) § Q2, the calendly stressor's sharpest question. **B** was picked over **A** (grow a constraint that compiles to a real exclusion in the table definition, the way `@@check` does), **C** (rule that `db.$lock` plus a transaction is the honest answer, document it as the intended shape, and ship no new word).
+
+**A is not available, and that is a fact about the target rather than a matter of taste.** Uniqueness over a RANGE is spelled `EXCLUDE USING gist (host WITH =, tsrange(startsAt, endsAt) WITH &&)` in Postgres and has no SQLite equivalent — there is no exclusion constraint to lower onto. Litestone is SQLite-only **by position**, not as a stage it is passing through: its own README states the target and gives the reasons (one file to back up, replicate, ship in a container; Bun's native driver). So A does not mean *hard, later*, it means *never, while the position holds*, and a word whose whole promise is the DDL cannot be given one.
+
+**What decides between B and C is that the framework already ships both strengths and already teaches the difference.** `@@check` is compiled into the table and therefore holds against a seed, a migration, `asSystem()`, `fli tinker` and anything else that opens the file. `@@gate` and `@@allow` hold against every caller that goes through the client and not against raw SQL. Nobody calls `@@allow` dishonest for that, because the tier is named and documented. A range-exclusion declaration enforced at the Data boundary sits in exactly the second tier, beside the rules it will usually be written next to. **C treats that tier as disqualifying, and the schema is already full of counter-examples.**
+
+**The cost of C is the one the stressor actually measured.** With no declaration, the constraint lives in a service, and `AGENTS.md` tells every app author the opposite in as many words: *a hook guards the callers that pass through it; the schema guards every one, including a job, a seed and a migration.* An app following the framework's own stated principle has nowhere to put the most important rule it has. Worse, the substitute could not be taken at all — [`FJS-1216`](ISSUES.md#fjs-1216): `$setAuth` drops `$lock` from the client it returns, so no service can reach it — and its wait budget is read under a different name than it is typed under ([`FJS-1217`](ISSUES.md#fjs-1217)), which silently degrades it to try-once. C ratifies a shape resting on a primitive that was unreachable and, once reached, quietly weaker than its own types claimed.
+
+**So the word generates the mechanism rather than replacing it.** Serialisation is still required — two concurrent writers each see no conflict and both commit — so the declaration compiles to the lock plus the in-transaction query the calendly app wrote by hand. That is what makes `$lock` load-bearing and therefore graded, which is the second reason to prefer B: a primitive nothing declares is a primitive nobody tests, and both of its defects survived a release for exactly that reason.
+
+**The honest cost, stated plainly because the word must not hide it.** Raw SQL against the file, and a second process writing it directly, are unguarded — `@@check` remains the only word that holds there and it cannot express this, by definition, because it is a ROW check and cannot see another row. Any app for which that gap matters has a problem no schema in this language solves. The declaration must therefore be documented in `@@allow`'s tier and named in `fli explain --visibility` beside it, so that *what it holds against* is answered where the other boundary rules answer it, rather than being assumed from the company `@@check` keeps.
+
+**Two things this record does NOT rule, and they should not be assumed settled.** The spelling is open — the stressor's schema speculates `@@exclude([hostId], range: [startsAt, endsAt])` and nothing has graded it. And the SECOND face is a different shape and probably a different word: *a booking must fall INSIDE an availability window* is inclusion against a related row, not exclusion against a sibling, and the calendly schema's guess that *one word might carry both* now looks wrong. Both belong in the paper that designs the word. Prior record: [`FJS-1215`](ISSUES.md#fjs-1215) states the gap, [`FJS-1216`](ISSUES.md#fjs-1216) and [`FJS-1217`](ISSUES.md#fjs-1217) are the fallback's two defects and are **preconditions**: the declaration cannot ship on top of a primitive that cannot be reached and does not wait.
+
 ### <a id="fjs-d337"></a>2026-09-20 · `FJS-D337` — Q10 — when a device has a database, is the declared window the SCREEN's question or the DEVICE's — the device's, and the keyed cache warm is skipped for that model, wherever the database actually opened.
 
 Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **C** was picked over **A** (one declaration, meaning the screen's question — what phase 4 shipped: the device is as full as the declared window, and an app wanting more must accept a cache slot nothing reads), **B** (a second key beside it, `offlineQuery: { directives, hydrate: { limit: 500 } }` — two grains, named, with the cache keeping its exact-match rule).
@@ -2959,7 +2975,7 @@ boundary is `$tapEvents` and `WriteEvent`, typed in the generated client.
 the tripwires rather than instead of them. *Wrong without anything saying so* —
 yes: a write path that skips the event emission leaves a second tab stale and
 fails nothing locally; `example`'s `verify:live` and
-`packages/junction/tests/data-write-announcement.test.ts` are what see it.
+`packages/junction/test/data-write-announcement.test.ts` are what see it.
 
 **Adjudication.** *Batteries vs. smallness* — the core is admitted as litestone,
 and the realms above it stay severable projections. **Tier:** Register.
@@ -3300,8 +3316,8 @@ not ruled here.
 key, `orderColumnRefusal`), `src/jsonschema.js` (`x-values.order`),
 `packages/sierra/src/junction/resource.js` (`optionsOrder`, the one owner of a
 question three call sites answered separately). 11 tests in
-`test/valueset-order.test.ts` (23 with the head), 7 in `tests/options-order.test.js`
-(3 red with the resolver stubbed), 10 in `tests/options-recent.test.js` (5 red
+`test/valueset-order.test.ts` (23 with the head), 7 in `test/options-order.test.js`
+(3 red with the resolver stubbed), 10 in `test/options-recent.test.js` (5 red
 with the head stubbed, 1 with the scope dropped from its fetch, 2 with the rank's
 order discarded), and 9 rows of `example`'s `verify:values`, whose negative
 control is the alphabetical list beside the declared one. The builds are
@@ -5829,7 +5845,7 @@ depends on the dead spellings, so they are fixed rather than aliased.
 **The ninth question is the one this ruling is FOR, and a rule alone does not
 answer it.** Every key here was wrong with nothing saying so, and a rule stating
 where keys go would have been wrong the same way by the next key added. The
-artefact is `packages/junction/tests/config-surface.test.ts`: it reads both
+artefact is `packages/junction/test/config-surface.test.ts`: it reads both
 interfaces off their source and holds them against a table of behavioral rows in
 both directions, so a key added to either without a row fails on the next run.
 The rows go through a real listening server, because a middleware patches the
@@ -5839,7 +5855,7 @@ installer reds 5.
 
 *Lives in:* `packages/junction/src/config/index.ts` ·
 `packages/junction/src/core/app.ts` § `applyConfiguredMiddleware` /
-`applyConfiguredPlugins` · `packages/junction/tests/config-surface.test.ts` ·
+`applyConfiguredPlugins` · `packages/junction/test/config-surface.test.ts` ·
 `FJS-D199` · [`FJS-1066`](ISSUES.md#fjs-1066)
 
 ### <a id="fjs-d247"></a>2026-09-08 · `FJS-D247` — Litestone's write tap takes many subscribers and has one owner. Orion attaches to it; the data layer's ingest may not, because a post-commit Observer cannot be durable.
@@ -6256,7 +6272,7 @@ strict one, which is the shape this ruling exists to remove.
 
 *Lives in:* `packages/sierra/src/router/match.js` (`matchPattern`,
 `caseInsensitiveNearMiss`), `src/router/index.js` (`_nearMiss`), asserted in
-`tests/match-semantics.test.js` with controls both ways — the exact spelling
+`test/match-semantics.test.js` with controls both ways — the exact spelling
 still matches, and a path that is simply absent has no near miss, because a hint
 that answered for anything would turn every 404 into a wrong suggestion.
 Recorded against [`FJS-820`](ISSUES.md#fjs-820), which carried it as a deliberate
@@ -6486,7 +6502,7 @@ rolled back, because `methodSucceeded` is true either way.
 
 **Where the boundary is:** `CommitScope`, `commitScope()`, `runInCommitScope()`
 and `announcedInCommitScope()` in [core/context.ts](packages/junction/src/core/context.ts),
-asserted in [commit-scope.test.ts](packages/junction/tests/commit-scope.test.ts).
+asserted in [commit-scope.test.ts](packages/junction/test/commit-scope.test.ts).
 `owner` is answered at the moment the scope is created rather than inferred by
 the caller, because every proxy for it — is it empty, is a flag set — is also
 true of a scope somebody else opened a moment ago and has not filled yet.
@@ -6639,10 +6655,10 @@ deploy built.
 **What it cost to get right**: the browser client imports the wire names, and a
 client is compiled under the *app's* tsconfig with no node types — so a bare
 `process.env` put `Cannot find name 'process'` into every consuming app's `tsc`,
-which is `FJS-268`'s class. `tests/client-types.test.ts` caught it by compiling a
+which is `FJS-268`'s class. `test/client-types.test.ts` caught it by compiling a
 fixture the way an app does.
 
-`packages/junction/src/core/build-id.ts` · `tests/build-id.test.ts` ·
+`packages/junction/src/core/build-id.ts` · `test/build-id.test.ts` ·
 `packages/sierra/src/junction/index.js` · `_steps-docker/03-build-web.md`
 
 ### <a id="fjs-d159"></a>2026-08-29 · `FJS-D159` — a service filename derives ONE canonical name, and the filename's own spelling stays mounted as an alias.
@@ -6689,7 +6705,7 @@ the thing this ruling refuses. What covers those is the second half:
 *I could not ask* stop being the same empty list.
 
 *Lives in:* `packages/junction/src/core/loader.ts` (`deriveName`),
-`src/core/service.ts` (`ServiceRegistry`), `tests/service-name-kebab.test.ts`;
+`src/core/service.ts` (`ServiceRegistry`), `test/service-name-kebab.test.ts`;
 the alias is committed in every `surface.snapshot.md` as **also answers to**.
 
 ### <a id="fjs-d158"></a>2026-08-29 · `FJS-D158` — an attached service is declared in the app and bound per environment, and half-bound always refuses.
@@ -6762,7 +6778,7 @@ attachment nothing binds, deploys for real, and grades all three halves at once:
 the deploy fails, the operator's terminal carries the app's own refusal naming
 the service, and the release that was serving is still serving.
 
-`packages/junction/src/core/attachments.ts` · `tests/attachments.test.ts` ·
+`packages/junction/src/core/attachments.ts` · `test/attachments.test.ts` ·
 `packages/cli/commands/deploy/_module.md` § showContainerTail
 
 ### <a id="fjs-d157"></a>2026-08-29 · `FJS-D157` — a backfill is a durable row plus a Caravan job, and it is a cursor over one table rather than a durable workflow.
@@ -7392,8 +7408,8 @@ refusal, the filter/sort/aggregate reasons, the policy check),
 `src/core/litestone.ts` (`liftTransient`), `src/transport/bridge.ts`,
 `src/core/app.ts`; `packages/sierra/src/junction/field-rules.js` (`writeOnly`).
 Tests in `packages/litestone/test/transient-field.test.ts`,
-`packages/junction/tests/{context-contract,real-litestone-client}.test.ts`,
-`packages/sierra/tests/form-fields.test.js`. Proven in basecamp's `channels`,
+`packages/junction/test/{context-contract,real-litestone-client}.test.ts`,
+`packages/sierra/test/form-fields.test.js`. Proven in basecamp's `channels`,
 where `captureCredential` is deleted.
 
 ### <a id="fjs-d36"></a>2026-08-17 · `FJS-D36` — Caravan owns the clock; `app.scheduler` is in-process only.
@@ -7663,7 +7679,7 @@ Three consequences, all deliberate:
 
 Where it shows: `example`'s audit trail. The `book-courier` write now names the
 staff member who pressed Ship, where every background write used to say
-`system`. `caravan/tests/job-context.test.ts` runs all of it, including a user
+`system`. `caravan/test/job-context.test.ts` runs all of it, including a user
 demoted between the dispatch and the run.
 
 ### <a id="fjs-d20"></a>2026-08-16 · `FJS-D20` — the developer-facing auth API. A route is what ESTABLISHES a session; everything after it is a service. The browser half belongs to the client that holds the token.
@@ -7749,7 +7765,7 @@ that it has.
 Before this it wrapped them: both a Response and a ReadableStream have no
 enumerable own properties, so a service method that returned one answered
 `{"kind":"single","data":{}}` — an empty object with a 200, the stream destroyed
-and nothing said. 5 tests in `tests/envelope.test.ts`.
+and nothing said. 5 tests in `test/envelope.test.ts`.
 
 **What this does not decide.** Whether a service method may *declare* itself
 streaming — an action that yields frames through the hook pipeline — is a
@@ -7799,7 +7815,7 @@ overwrite.
 per-row to enforce and `restore({ where })` already answers the rows. It called
 a `restoreMany` that does not exist (`FJS-245`).
 *Lives in:* `packages/junction/src/core/litestone.ts` (`bulkByRow`), tests in
-`packages/junction/tests/bulk-partial-success.test.ts`.
+`packages/junction/test/bulk-partial-success.test.ts`.
 
 ### <a id="fjs-d01"></a>2026-08-13 · `FJS-D01` — A service is a definition and a compiled runtime, and `methods:` declares.
 
@@ -8195,7 +8211,7 @@ Rulings inside the ruling:
 
 *Lives in:* `packages/junction/src/core/service.ts`; consumed by
 `plugins/manifest`, `plugins/openapi`, `transport/health.ts`. 21 tests in
-`tests/method-policy.test.ts`; 7 of them fail if the enforcement is removed.
+`test/method-policy.test.ts`; 7 of them fail if the enforcement is removed.
 First consumer: `packages/basecamp`'s `/audit`, which drops four hand-written
 `MethodNotAllowed` stubs for one line.
 
@@ -8539,7 +8555,7 @@ and Invariant 10 keeps one owner for the crossing.
 
 **The seam is graded by an ORACLE, not restated.** `filterOpFor` and litestone's
 `buildWhere` are two statements of one rule, so
-`packages/sierra/tests/filter-operators-real.mjs` puts every operator the table
+`packages/sierra/test/filter-operators-real.mjs` puts every operator the table
 hands out to a REAL litestone client and asserts every kind it refuses is
 refused in the boundary's own words. It runs under bun beside
 `static-safety-real.mjs` for that file's reason: a fake boundary agrees with
@@ -8585,7 +8601,7 @@ are three rules whose whole value is being the same for both surfaces.
 
 *Lives in:* `packages/sierra/src/junction/field-rules.js` ·
 `packages/ui/controls.js` · `packages/ui/components/display/Cell.mesa`; pinned in
-`packages/sierra/tests/display-for.test.js`, whose sharpest row is a PAIR on one
+`packages/sierra/test/display-for.test.js`, whose sharpest row is a PAIR on one
 `@computed` column — no control, and a display — since either alone is satisfied
 by a table that says the same thing about everything.
 
@@ -8622,7 +8638,7 @@ added to `.lite` that does not appear is answerable without reading the page.
 *Lives in:* `packages/sierra/src/junction/field-rules.js` (`columnList`,
 `columnLabel`) · `packages/cli/core/crud-templates.js`, whose five-line `cell()`
 and second column mode are deleted by this ruling; pinned in
-`packages/sierra/tests/column-list.test.js`.
+`packages/sierra/test/column-list.test.js`.
 
 ### <a id="fjs-d244"></a>2026-09-08 · `FJS-D244` — A detail view is one level deep, its children are LINKS, and what the form cannot show is a surface of its own.
 Four answers, taken at the 80% and not the 20%.
@@ -8663,7 +8679,7 @@ leave the rest stale.
 
 *Lives in:* `packages/sierra/src/junction/resource.js` (`summary`, `children`) ·
 `packages/cli/core/crud-templates.js` · `packages/cli/commands/admin/generate.md`
-(`_routes.js`); pinned in `packages/sierra/tests/resource-schema-modes.test.js`.
+(`_routes.js`); pinned in `packages/sierra/test/resource-schema-modes.test.js`.
 Argued in `IDEAS/tables-from-the-seed.md`.
 
 ### <a id="fjs-d225"></a>2026-09-06 · `FJS-D225` — a stored value the list no longer offers is SHOWN, disabled and marked, never dropped.
@@ -9110,7 +9126,7 @@ write, so it is the one that had to be caught.
 `packages/mesa/src/compiler.js`, the `$sugar-decl` emit block beside
 `$dollar-decl`, and `BUILTIN_LOCALS` for the reservation. `emission.test.js`
 runs both spellings and asserts they are one binding;
-`packages/cli/tests/generated-mesa.test.js` reads the refused list off the
+`packages/cli/test/generated-mesa.test.js` reads the refused list off the
 compiler rather than restating it.
 
 ### <a id="fjs-d134"></a>2026-08-24 · `FJS-D134` — the component protocol is a fourth namespace, and a name in it is frozen where the other three are merely spelled.
@@ -9360,7 +9376,7 @@ generated table, detail view or filter bar to call it. `IDEAS/overview.md` 1.1.
 *Lives in:* `packages/sierra/src/junction/field-rules.js` (`registerControl`,
 `defaultControlFor`), `packages/ui/controls.js`,
 `packages/ui/components/forms/FormField.mesa`; pinned in
-`packages/sierra/tests/form-fields.test.js` and `packages/ui/test/form.mjs`
+`packages/sierra/test/form-fields.test.js` and `packages/ui/test/form.mjs`
 (a contributed control rendered in a real `<Form>`, negative-controlled).
 
 ### <a id="fjs-d18"></a>2026-08-15 · `FJS-D18` — Braces mean *run code*; parentheses mean *watch*. A block whose body only reads values is refused by name.
@@ -9482,7 +9498,7 @@ assertions) and nothing had ever asserted that the selector matches the markup.
 This is a **breaking change** for any component that styled a child's internals.
 *Lives in:* `packages/mesa/src/compiler.js` (`_appendScope`, `_scopeSelector`, the
 element writer), VISION **RULE 55**, `packages/mesa/CHANGES.md`;
-computed-style proof in `packages/sierra/tests/fixtures/island-site/verify.mjs`.
+computed-style proof in `packages/sierra/test/fixtures/island-site/verify.mjs`.
 
 ### <a id="fjs-d86"></a>2026-08-03 · `FJS-D86` — CSS scope ids are content-addressed, never generated.
 The component hash is `cssHash(styleContent)` — a pure function of the `<style>`
@@ -9540,8 +9556,8 @@ is the one case with no correct answer — the parent renders its children — s
 warns instead of being silently reinterpreted. A `client:static` **parent** never
 mounts, so it does not subsume anything inside it.
 *Lives in:* `packages/sierra/src/islands/loader.js`, pinned in
-`packages/sierra/tests/islands.test.js` and end-to-end in
-`tests/fixtures/island-site/` (`Outer.mesa` / `Inner.mesa`).
+`packages/sierra/test/islands.test.js` and end-to-end in
+`test/fixtures/island-site/` (`Outer.mesa` / `Inner.mesa`).
 
 ### <a id="fjs-d90"></a>2026-08-03 · `FJS-D90` — A prerendered page's CSS keeps its scoping; only the inlining targets flatten it.
 
@@ -10300,7 +10316,7 @@ already imports `readAppAtlas`, so one module answers both of that command's
 questions about the app.
 
 **The test stops reading a markdown `<script>` block to reach it.**
-`tests/project-helpers.test.js` extracted the module's source into a temp file
+`test/project-helpers.test.js` extracted the module's source into a temp file
 and re-exported three helpers; two of them are now a plain import, and only
 `extractResourceMeta` — which genuinely lives in the command module — is still
 extracted. A parser reached through a regex over a `<script>` block is one
@@ -10412,10 +10428,10 @@ The nine questions were answered before the first edit; the two that shaped the
 result are *can it be derived instead of restated* (the key comes from
 `$primaryKey`, so the guard is a comparison and not a reading) and *can this be
 wrong without anything saying so*, which is the measurement above. The tier is
-**Register**, and the artefact is `tests/composite-key.test.ts`, where every
+**Register**, and the artefact is `test/composite-key.test.ts`, where every
 refusal is PAIRED with the shape one column away that must still work ·
 [litestone.ts](packages/junction/src/core/litestone.ts) ·
-[composite-key.test.ts](packages/junction/tests/composite-key.test.ts) ·
+[composite-key.test.ts](packages/junction/test/composite-key.test.ts) ·
 [FJS-694](ISSUES_ARCHIVE.md) · [FJS-961](ISSUES.md#fjs-961)
 
 
@@ -11013,7 +11029,7 @@ makes between a call naming no principal and one naming `null`.
 *Lives in:* `packages/junction/src/plugins/webhooks/payload.ts` ·
 `packages/junction/src/plugins/webhooks/index.ts` ·
 `packages/junction/src/core/litestone.ts` (`accessorIfModel`) ·
-`packages/junction/tests/webhook-payload.test.ts` · `FJS-724` · `FJS-D175`.
+`packages/junction/test/webhook-payload.test.ts` · `FJS-724` · `FJS-D175`.
 
 ### <a id="fjs-d187"></a>2026-09-03 · `FJS-D187` — every document is one of four kinds, precedence is stated once, and a status is one of four words. `PHILOSOPHY.md` §VII holds the rule.
 
@@ -11132,7 +11148,7 @@ carries. Diagnosing this took a signed heartbeat, a real socket and an
 instrumented `$readAs`; the sentence is what makes the next one thirty seconds.
 
 *Lives in:* `packages/junction/src/transport/channels.ts` (`ChannelClaimsFn`,
-`gradeRecipients`, `tenancyHint`) · `packages/junction/tests/channel-claims.test.ts`
+`gradeRecipients`, `tenancyHint`) · `packages/junction/test/channel-claims.test.ts`
 · `packages/basecamp/api/src/app.ts` · `packages/basecamp/api/src/channels.ts`.
 *Closes:* [`FJS-749`](ISSUES.md).
 
@@ -11880,7 +11896,7 @@ only what is about its own layout — `paths` and `include`.
 
 `.editorconfig` is the single exception and it is a mechanical one: EditorConfig
 has no extends. It is therefore a hand copy, byte-pinned by a test on both sides
-(`packages/config/test` and `packages/cli/tests/app-config.test.js`) — the same
+(`packages/config/test` and `packages/cli/test/app-config.test.js`) — the same
 shape as every other hand copy in this repo.
 
 **An app gets a CI workflow**, because the alternative is that it never gets one,
@@ -11902,7 +11918,7 @@ this repo's own `scripts/typecheck.mjs`. `FJS-268` holds the underlying question
 of whether the framework should ship declarations.
 — `packages/cli/core/app-config.js`, `packages/config/`, `IDEAS/overview.md` 5.13.
 
-### <a id="fjs-d109"></a>2026-08-15 · `FJS-D109` — `drift-report.md` is retired; its synthesis is `IDEAS/coherence-review.md` and the rest is deleted.
+### <a id="fjs-d109"></a>2026-08-15 · `FJS-D109` — `drift-report.md` is retired; its synthesis is `IDEAS/review-coherence.md` and the rest is deleted.
 
 The twelve-package audit
 of 2026-07-31 wrote four things into one root-level file, and by now they had
@@ -11926,7 +11942,7 @@ days that its line-number citations were stale, and it had no line numbers at
 all. Keeping it as `docs/` would preserve the per-package snapshots, which is
 precisely the material that goes wrong quietly: a paragraph describing junction
 in July, read in November, with nothing in the text to say which. Git holds it.
-— `IDEAS/coherence-review.md` · `ARCHITECT.md` §6 keeps the audit METHOD, which
+— `IDEAS/review-coherence.md` · `ARCHITECT.md` §6 keeps the audit METHOD, which
 is reusable and outlives any run of it.
 
 ### <a id="fjs-d14"></a>2026-08-15 · `FJS-D14` — the four claimed folders are named: two collapse into one package, two are V2.
@@ -12106,7 +12122,7 @@ The paper's recommendation, taken as written: a hull and a buffer are a geometry
 
 ### <a id="fjs-d311"></a>2026-09-19 · `FJS-D311` — a `File` column's placeholder is `Bun.Image.placeholder()`, and the image transformer behind it is the runtime's own native. Nothing is installed and nothing is wrapped.
 
-Asked in [`IDEAS/package-map.md`](IDEAS/package-map.md) § Open questions. **A** was
+Asked in [`IDEAS/map-packages.md`](IDEAS/map-packages.md) § Open questions. **A** was
 picked over **B** (ThumbHash: ~25 bytes against a data URL's hundreds, small enough
 to live in the row rather than in a second request, and its decoder is pure enough
 to be a toolbelt kit).
@@ -12124,7 +12140,7 @@ runs that, the smaller encoding is an optimization with no number attached.
 ~25 ms, with `resize`, `rotate`, `flip`, `flop`, `modulate`, five encoders,
 `metadata()` and `placeholder()` — and it is a runtime native rather than a
 dependency, which is why `media` is not a package
-([`IDEAS/package-map.md`](IDEAS/package-map.md) § media). A `Bun.` reference in
+([`IDEAS/map-packages.md`](IDEAS/map-packages.md) § media). A `Bun.` reference in
 litestone's import graph would break its Node proving, so the transformer is a
 capability the `FileStorage` plugin is **given** and never one it imports: the
 default is the native where the runtime has it, refused by name where it does not,
@@ -12139,7 +12155,7 @@ candidate is litestone's provider seam, and the nine have not been run against i
 
 ### <a id="fjs-d297"></a>2026-09-15 · `FJS-D297` — offline-first is core and is decomposed by owner. There is no offline package: the six pieces have six existing homes, and **Homestead** is the name of the work, not of a module.
 
-`IDEAS/package-map.md` tier 2 proposed one package holding client SQLite, the
+`IDEAS/map-packages.md` tier 2 proposed one package holding client SQLite, the
 mutation queue, local gate evaluation and a conflict policy, on the argument that
 one engine on both sides is this framework's strongest structural advantage. The
 advantage is real and the packaging does not follow from it.
@@ -12181,7 +12197,7 @@ remains a file tree, a binary, and a database you own*.
 
 The name reaches back: [`FJS-D138`](#fjs-d138)'s sentence about what it declined
 to do, and the references in `IDEAS/live-queries.md`, `IDEAS/time-travel.md`,
-`IDEAS/package-map.md` and `IDEAS/overview.md`, are all edited to it. Nothing
+`IDEAS/map-packages.md` and `IDEAS/overview.md`, are all edited to it. Nothing
 shipped under the old name and no app could have depended on it, so it is a
 rename and not an alias (root `CLAUDE.md` § Evolution policy).
 

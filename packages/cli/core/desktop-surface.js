@@ -2,7 +2,7 @@
  * core/desktop-surface.js — what a `desktop/` surface IS.
  *
  * The one owner of the desktop surface's shape, called by `fli make:desktop`.
- * `example/desktop/` is this module's output and `tests/desktop-surface.test.js`
+ * `example/desktop/` is this module's output and `test/desktop-surface.test.js`
  * holds the two byte for byte, so `verify:desktop` — the only thing that builds
  * and runs a shell — proves what every generated app gets.
  *

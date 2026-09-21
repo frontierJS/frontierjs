@@ -1,5 +1,13 @@
 # Changes — @frontierjs/notifications
 
+## 2026-09-21 — the suite directory is `test/`
+
+**`tests/` is a surface, not a suite.** In an FJS app it sits beside `api/` and `web/` and holds
+what belongs to no single surface, while a surface's own tests are its `test/` (Invariant 3). A
+package is not an app — it has one `src/` — so its suite is `test/`, and this one moved. Eight
+packages spelled it plural and eleven singular with nothing in the tree deciding between them,
+which made the directory name a coin flip on every file added.
+
 ## 2026-09-20 — the bun floor is `1.4.0`
 
 This package is bun-only and declared no `engines` at all, so it stated its runtime nowhere. An
@@ -191,7 +199,7 @@ enumerate onto the app and `notify()` on an unconfigured app names the missing
 plugin instead of throwing about `undefined`.
 
 **`ctx.app.notify` from a service hook was never exercised (`FJS-050`).**
-`tests/hook.test.ts` is a real service with a real after hook, asserting the row
+`test/hook.test.ts` is a real service with a real after hook, asserting the row
 it writes field by field — the shape a UI reads — plus the WS frame that follows
 it and the throw a broken notification surfaces through the hook.
 

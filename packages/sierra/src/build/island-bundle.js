@@ -25,7 +25,7 @@
  * island below the fold costs nothing until it is scrolled to, and a
  * `client:media` island whose query never matches is never fetched at all.
  * Both are verified against resource timing in a real browser by
- * `tests/fixtures/island-site/verify.mjs`.
+ * `test/fixtures/island-site/verify.mjs`.
  *
  * The entry itself is shared across every page that has any island. It carries
  * the Mesa runtime and the loader, which are needed by all of them.

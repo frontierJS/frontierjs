@@ -17,7 +17,7 @@
  *
  * Keep this module free of imports — which is also why the defaults below are
  * restated rather than imported from index.js. They are checked against it by
- * `tests/prefetch-theme.test.js`, because two copies of a default is exactly
+ * `test/prefetch-theme.test.js`, because two copies of a default is exactly
  * the shape that drifts.
  */
 

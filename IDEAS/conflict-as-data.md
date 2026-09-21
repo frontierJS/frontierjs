@@ -28,14 +28,14 @@ database state can participate in a rollback. The rest of what it built was
 never read.
 
 Most of it is not for here — the storage engine is the wrong bet for a framework
-whose Data realm is a SQLite file, and that is argued in `prior-art.md` § 5.
+whose Data realm is a SQLite file, and that is argued in `review-prior-art.md` § 5.
 **One piece is directly under a phase this repository has already scheduled.**
 
 ---
 
 ## What Dolt does that the sync engines do not
 
-`prior-art.md` § 4 reads eleven sync engines and lands on a conflict vocabulary
+`review-prior-art.md` § 4 reads eleven sync engines and lands on a conflict vocabulary
 drawn from timestamps and CRDTs. Dolt is in neither family: it merges the way
 git merges, with a **base**.
 
@@ -144,7 +144,7 @@ Both rows are struck in that paper's vocabulary table, pointing here.
   conflicts are a relation, which in this framework means one Model and three
   derived surfaces rather than three built ones.
 
-**What is NOT corrected.** Phase 5 stays last, and `prior-art.md` § 4's fifth
+**What is NOT corrected.** Phase 5 stays last, and `review-prior-art.md` § 4's fifth
 finding stands — ElectricSQL built the ambitious version of this and dropped it.
 Three-way merge is the modest version: it decides what it can decide and hands
 back the rest as rows. Nothing here proposes that the framework resolve a
@@ -216,9 +216,9 @@ building it, which is phase 5 of `IDEAS/homestead.md`.
 
 - `IDEAS/homestead.md` — the owner of `@@sync`, its value set and phase 5. Read
   it first; this paper is one phase of it
-- `IDEAS/prior-art.md` § 5 — Dolt read as a whole, including the four mechanisms
+- `IDEAS/review-prior-art.md` § 5 — Dolt read as a whole, including the four mechanisms
   that point somewhere other than here
-- `IDEAS/prior-art.md` § 4 — the sync engines, and the conflict vocabulary this
+- `IDEAS/review-prior-art.md` § 4 — the sync engines, and the conflict vocabulary this
   paper is arguing with
 - `DECISIONS.md` `FJS-D138` — the stored intent that is this design's base
 - `DECISIONS.md` `FJS-D298`, `FJS-D304` — the ruled form of `@@sync` and the two

@@ -58,7 +58,7 @@ None of these is a defect on its own. The pattern is the finding.
 
 ## Prior art
 
-Read for this record; `prior-art.md` already covers Ash in depth and is not
+Read for this record; `review-prior-art.md` already covers Ash in depth and is not
 restated.
 
 **Ash Framework — one action lifecycle, policies on every action.** Every Ash
@@ -252,5 +252,5 @@ doctrine rather than the reverse.
 
 ## See also
 
-- `prior-art.md` — Ash in depth · `one-mental-model.md` — the extension-point catalog
+- `review-prior-art.md` — Ash in depth · `one-mental-model.md` — the extension-point catalog
 - `provable-enforcement.md` · `testing-realm.md`

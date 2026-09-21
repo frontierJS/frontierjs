@@ -328,7 +328,7 @@ A command that actually runs still pays zx once (~206ms for `crypto:keygen`), be
 
 `buildRegistry()` used to read and frontmatter-parse ~200 files on every invocation, including on every press of Tab. It now caches one parsed block per file at `~/.fli/cache/registry-<digest>.json`, keyed by mtime+size: a run stats what the walk finds and parses only what moved. ~13-23ms → ~4-7ms.
 
-Discovery still walks the directories — a cached file list would not notice a new command, and "drop a file, it runs" is the authoring model. The cache lives under `~/.fli/` for the same reason the temp root does. `FLI_NO_CACHE=1` bypasses it for one run; `fli completion:refresh` drops it via `clearRegistryCache()`. Invalidation is held by 4 tests in `tests/registry.test.js`.
+Discovery still walks the directories — a cached file list would not notice a new command, and "drop a file, it runs" is the authoring model. The cache lives under `~/.fli/` for the same reason the temp root does. `FLI_NO_CACHE=1` bypasses it for one run; `fli completion:refresh` drops it via `clearRegistryCache()`. Invalidation is held by 4 tests in `test/registry.test.js`.
 
 ### Temp files
 

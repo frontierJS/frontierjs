@@ -1,7 +1,7 @@
 // cache/index.ts
 // TTL cache with two drivers behind one interface: in-memory and SQLite.
 // Swapping the driver must not change an answer, which is what `codec` and
-// tests/cache-conformance.test.ts exist to hold — eleven behaviors used to
+// test/cache-conformance.test.ts exist to hold — eleven behaviors used to
 // differ between them and nothing said so (`FJS-898`).
 // Garbage collection runs on a fixed interval, not per get() call.
 
@@ -123,7 +123,7 @@ function makeGetOrSet(
 }
 
 // ─── ICache interface ─────────────────────────────────────────────────────
-// The contract every driver owes, held by tests/cache-conformance.test.ts:
+// The contract every driver owes, held by test/cache-conformance.test.ts:
 //   · a value round-trips through JSON, or set() throws naming the key
 //   · get() answers a fresh value — mutating it cannot reach the cache
 //   · clear() answers how many entries it removed

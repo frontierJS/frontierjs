@@ -346,7 +346,7 @@ are in the ruling rather than restated here.
   principal — it acts *for* a session and its ceiling is that session's level — and
   the objection was the background agent with no human behind it. The hold settles
   it without a tenth level on a scale that is already too linear
-  (`pros-and-cons.md` con #2): the ceiling stays the session's, and above a
+  (`review-pros-and-cons.md` con #2): the ceiling stays the session's, and above a
   threshold the call becomes a proposal instead of a write. A background agent with
   nobody behind it is then not a caller with special standing; it is a caller whose
   every protected move waits. What remains open is **who may approve** — which is a
@@ -369,7 +369,7 @@ are in the ruling rather than restated here.
 
 ## See also
 
-- `IDEAS/package-map.md` — the roster; this one shipped as `@frontierjs/mcp`
+- `IDEAS/map-packages.md` — the roster; this one shipped as `@frontierjs/mcp`
 - `IDEAS/compliance-from-the-seed.md` — the audit and disclosure half
 - `IDEAS/slices.md` — the "a Gate is harder for an agent to get wrong" argument, in
   its original context

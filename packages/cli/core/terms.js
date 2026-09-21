@@ -171,6 +171,26 @@ const DROPPED = new Set([
   'september', 'october', 'november', 'december',
   'mon', 'tue', 'tues', 'wed', 'thu', 'thurs', 'fri', 'sat', 'sun',
   'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec',
+  // Generic programming English. Every one reads as a noun and none of them
+  // is this framework's: they would be the same words in any repository,
+  // which is the test. A word § 2 blesses or forbids is NOT here — dropping
+  // a forbidden word takes the drift column with it, and dropping a blessed
+  // one hides dead doctrine.
+  'action', 'activity', 'append', 'async', 'await', 'batch', 'binary', 'buffer', 'buffers',
+  'class', 'cleanup', 'column', 'compile', 'compiled', 'compilation', 'composition', 'constraint', 'constraints',
+  'debug', 'delete', 'effect', 'effects', 'expression', 'factory', 'filter', 'flag', 'flags',
+  'graph', 'instance', 'integer', 'interface', 'log', 'method', 'module', 'number', 'operation',
+  'operations', 'package', 'packages', 'prototype', 'result', 'retry', 'scope', 'section', 'source',
+  'static', 'test', 'tests', 'timing', 'type', 'types', 'variable', 'verification', 'version',
+  'versions', 'virtual',
+  // `data` alone: 19 packages and no meaning anybody could write down. The
+  // terms under it are phrases and are named as such — `Data realm`,
+  // `Data boundary` — which is what a VOCABULARY.md row can hold and a
+  // single word here could not.
+  'data',
+  // `Writable` is never written alone here: all five uses are the head of
+  // `Writable derived`, which is the term and is a VOCABULARY.md row.
+  'writable',
 ])
 
 // ─── classes ──────────────────────────────────────────────────────────────────
@@ -265,28 +285,247 @@ const EXTERNAL = new Set([
 
 // Capitalized English that carries no concept. Kept as a class rather than a
 // delete for the same reason as everything else here.
-const COMMON = new Set([
-  'The', 'This', 'That', 'These', 'Those', 'There', 'Then', 'Than', 'And', 'But',
-  'Or', 'Not', 'If', 'It', 'Its', 'We', 'You', 'They', 'One', 'Two', 'Three',
-  'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Every', 'Each', 'Any',
-  'All', 'Both', 'Some', 'None', 'Never', 'Always', 'Where', 'When', 'What',
-  'Which', 'Who', 'Why', 'How', 'Because', 'Since', 'While', 'After', 'Before',
-  'Once', 'Only', 'Also', 'Still', 'Yet', 'Just', 'Now', 'Here', 'Read', 'Run',
-  'Use', 'Add', 'Write', 'Keep', 'Make', 'Take', 'Give', 'Left', 'Right', 'Same',
-  'Other', 'Another', 'Nothing', 'Something', 'Anything', 'Everything', 'Somebody',
-  'Nobody', 'Everybody', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday',
-  'Saturday', 'Sunday', 'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December', 'English',
-  'An', 'As', 'At', 'By', 'For', 'From', 'In', 'Into', 'Of', 'On', 'Out', 'Over',
-  'To', 'Up', 'With', 'Without', 'No', 'Yes', 'Found', 'Whether', 'Open', 'Close',
-  'Escape', 'Above', 'Below', 'Beside', 'Between', 'Being', 'Been', 'Was', 'Were',
-  'Had', 'Has', 'Have', 'Will', 'Would', 'Should', 'Could', 'Must', 'Can',
-  'Did', 'Does', 'Do', 'Is', 'Are', 'Am', 'Be', 'Let', 'Say', 'Said', 'Says',
-  'Most', 'More', 'Less', 'Least', 'Best', 'Worse', 'Worst', 'Good', 'Bad',
-  'New', 'Old', 'First', 'Second', 'Third', 'Last', 'Next', 'Real', 'Together',
-  'Moved', 'Kept', 'Measured', 'Ruled', 'Compressed', 'Zero', 'Better',
-  'Standard', 'Conventions', 'Explore', 'Multi', 'American', 'Ctrl', 'Enter',
-].filter(w => !DROPPED.has(w.toLowerCase())))
+const COMMON = new Set(
+  [
+    'The',
+    'This',
+    'That',
+    'These',
+    'Those',
+    'There',
+    'Then',
+    'Than',
+    'And',
+    'But',
+    'Or',
+    'Not',
+    'If',
+    'It',
+    'Its',
+    'We',
+    'You',
+    'They',
+    'One',
+    'Two',
+    'Three',
+    'Four',
+    'Five',
+    'Six',
+    'Seven',
+    'Eight',
+    'Nine',
+    'Ten',
+    'Every',
+    'Each',
+    'Any',
+    'All',
+    'Both',
+    'Some',
+    'None',
+    'Never',
+    'Always',
+    'Where',
+    'When',
+    'What',
+    'Which',
+    'Who',
+    'Why',
+    'How',
+    'Because',
+    'Since',
+    'While',
+    'After',
+    'Before',
+    'Once',
+    'Only',
+    'Also',
+    'Still',
+    'Yet',
+    'Just',
+    'Now',
+    'Here',
+    'Read',
+    'Run',
+    'Use',
+    'Add',
+    'Write',
+    'Keep',
+    'Make',
+    'Take',
+    'Give',
+    'Left',
+    'Right',
+    'Same',
+    'Other',
+    'Another',
+    'Nothing',
+    'Something',
+    'Anything',
+    'Everything',
+    'Somebody',
+    'Nobody',
+    'Everybody',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December',
+    'English',
+    'An',
+    'As',
+    'At',
+    'By',
+    'For',
+    'From',
+    'In',
+    'Into',
+    'Of',
+    'On',
+    'Out',
+    'Over',
+    'To',
+    'Up',
+    'With',
+    'Without',
+    'No',
+    'Yes',
+    'Found',
+    'Whether',
+    'Open',
+    'Close',
+    'Escape',
+    'Above',
+    'Below',
+    'Beside',
+    'Between',
+    'Being',
+    'Been',
+    'Was',
+    'Were',
+    'Had',
+    'Has',
+    'Have',
+    'Will',
+    'Would',
+    'Should',
+    'Could',
+    'Must',
+    'Can',
+    'Did',
+    'Does',
+    'Do',
+    'Is',
+    'Are',
+    'Am',
+    'Be',
+    'Let',
+    'Say',
+    'Said',
+    'Says',
+    'Most',
+    'More',
+    'Less',
+    'Least',
+    'Best',
+    'Worse',
+    'Worst',
+    'Good',
+    'Bad',
+    'New',
+    'Old',
+    'First',
+    'Second',
+    'Third',
+    'Last',
+    'Next',
+    'Real',
+    'Together',
+    'Moved',
+    'Kept',
+    'Measured',
+    'Ruled',
+    'Compressed',
+    'Zero',
+    'Better',
+    'Standard',
+    'Conventions',
+    'Explore',
+    'Multi',
+    'American',
+    'Ctrl',
+    'Enter',
+    // Common words:
+    'Against',
+    'Already',
+    'Ambition',
+    'Asked',
+    'Back',
+    'Beyond',
+    'Cannot',
+    'Center',
+    'Clean',
+    'Common',
+    'Complete',
+    'During',
+    'Even',
+    'Exactly',
+    'Facts',
+    'Follow',
+    'Full',
+    'Going',
+    'Half',
+    'Hard',
+    'Hello',
+    'Honest',
+    'Inside',
+    'Know',
+    'Learn',
+    'Mental',
+    'Multiple',
+    'Neither',
+    'Newest',
+    'Normal',
+    'Nowhere',
+    'Outside',
+    'Part',
+    'Plain',
+    'Previous',
+    'Quick',
+    'Roughly',
+    'Self',
+    'Several',
+    'So',
+    'Soft',
+    'Started',
+    'Stop',
+    'Temporary',
+    'Today',
+    'Top',
+    'Twice',
+    'Under',
+    'Unknown',
+    'Unlike',
+    'Useful',
+    'Whatever',
+    'White',
+    'Working',
+    'Your'
+  ].filter((w) => !DROPPED.has(w.toLowerCase()))
+)
 
 // ─── ARCHITECT.md § 2, the authored half ──────────────────────────────────────
 //
@@ -294,6 +533,15 @@ const COMMON = new Set([
 // status against it is the whole audit: blessed-and-unused is dead doctrine,
 // used-and-unnamed is vocabulary nobody defined, and a forbidden word in live
 // prose is the drift § 2 exists to prevent.
+
+// The § 2 section, cut out at the same boundaries `architectVocabulary` reads
+// it by — the heading and the next `## `.
+function withoutSectionTwo(text) {
+  const parts = text.split(/^## 2\. /m)
+  if (parts.length < 2) return text
+  const rest = parts[1].split(/^## /m)
+  return `${parts[0]}${rest.slice(1).map(s => `## ${s}`).join('')}`
+}
 
 export function architectVocabulary(root) {
   const file = join(root, 'ARCHITECT.md')
@@ -454,10 +702,11 @@ function apiTerms(root, packages) {
 
   for (const pkg of packages) {
     const dir = join(root, 'packages', pkg, 'src')
-    if (!existsSync(dir)) continue
     const entries = entryTargets(join(root, 'packages', pkg))
 
-    for (const path of walk(dir)) {
+    // `@frontierjs/ui` has no `src/` at all — its components ARE the package —
+    // so the walk below must not be what decides whether the package is read.
+    for (const path of existsSync(dir) ? walk(dir) : []) {
       const dot = path.lastIndexOf('.')
       if (!SOURCE_EXT.has(path.slice(dot))) continue
       if (/\.(test|spec)\./.test(path)) continue
@@ -474,6 +723,25 @@ function apiTerms(root, packages) {
         if (entries.has(rel)) row.entry = true
         rows.set(name, row)
       }
+    }
+
+    // A Mesa component is an identifier that is never written as an export: the
+    // FILE is the declaration and the caller types the basename. Without this
+    // pass `EmptyState`, `StatCard` and `FilterBar` reach the prose scan with
+    // nothing to say they are code, and land in the concepts table as though
+    // somebody had coined them.
+    for (const path of walk(join(root, 'packages', pkg))) {
+      if (!path.endsWith('.mesa')) continue
+      if (/[\\/](test|tests|fixtures|example)[\\/]/.test(path)) continue
+      const name = path.slice(path.lastIndexOf('/') + 1, -'.mesa'.length)
+      if (!/^[A-Z][A-Za-z0-9]*$/.test(name)) continue
+      const rel = relative(root, path)
+      const row = rows.get(name) ?? { term: name, count: 0, owners: new Set(), files: [], entry: false, byOwner: new Map() }
+      row.count += 1
+      row.owners.add(pkg)
+      row.byOwner.set(pkg, (row.byOwner.get(pkg) ?? 0) + 1)
+      if (row.files.length < 12) row.files.push(rel)
+      rows.set(name, row)
     }
   }
 
@@ -578,7 +846,13 @@ export function collectTerms({ root }) {
     const rel = relative(root, path)
     docs.push(rel)
     const owner = ownerOf(root, path)
-    const text  = proseOf(readFileSync(path, 'utf8'))
+    // § 2 is the doctrine's own list OF terms, and a phrase is matched as
+    // plain text, so leaving it in lets `Gate ladder` gain a use by being
+    // blessed — the same measurement-grades-its-own-input that keeps
+    // VOCABULARY.md out of the corpus entirely. The rest of ARCHITECT.md is
+    // ordinary prose and stays.
+    const raw  = readFileSync(path, 'utf8')
+    const text = proseOf(rel === 'ARCHITECT.md' ? withoutSectionTwo(raw) : raw)
 
     for (const [word, phrase] of phrases) {
       const hits = text.match(new RegExp(`\\b${word.replace(/\s+/g, '\\s+')}\\b`, 'gi'))
@@ -646,10 +920,22 @@ export function collectTerms({ root }) {
     concepts.set(phrase.term, phrase)
   }
 
+  const api = apiTerms(root, packages)
+    .sort((a, b) => b.spread - a.spread || b.count - a.count || a.term.localeCompare(b.term))
+
+  // An identifier is not a concept somebody coined, and a compound is how you
+  // tell: `EmptyState` is the component a screen mounts, while `Empty state` is
+  // the condition it handles, and only the second is vocabulary. A one-word
+  // identifier is left alone — `Plugin`, `Channel` and `Store` are English this
+  // framework also happens to export, and § 2 rules two of them.
+  const declared = new Set(api.map(r => r.term))
+  const compound = term => /[a-z][A-Z]/.test(term)
+
   const conceptRows = [...concepts.values()].map((row) => {
     const lower = row.term.toLowerCase()
     const klass = row.term.includes(' ') ? 'concept'
                 : language.has(lower) ? 'language'
+                : (declared.has(row.term) && compound(row.term) && !blessed.has(lower) && !authored.has(lower)) ? 'api'
                 : product.has(row.term) ? 'product'
                 : EXTERNAL.has(row.term) ? 'external'
                 : COMMON.has(row.term) ? 'common'
@@ -704,9 +990,6 @@ export function collectTerms({ root }) {
     // tab responded, and an inert control reads as a broken one.
     spread: 1, byOwner: { [row.owner]: row.count ?? 1 },
   })).sort((a, b) => a.lens.localeCompare(b.lens) || a.term.localeCompare(b.term))
-
-  const api = apiTerms(root, packages)
-    .sort((a, b) => b.spread - a.spread || b.count - a.count || a.term.localeCompare(b.term))
 
   const conceptsOnly = conceptRows.filter(r => r.class === 'concept')
 
@@ -775,6 +1058,13 @@ export function collectTerms({ root }) {
       // or one somebody deleted from VOCABULARY.md.
       unlabelled: conceptsOnly.filter(r => r.spread >= 4 && !r.label && !blessed.has(r.term.toLowerCase())),
       forbiddenUsed: forbidden.filter(r => r.count > 0),
+      // A row the scan can no longer see. Dropping a word is a one-line edit
+      // over here and it silently orphans a definition over there — the file
+      // goes on carrying a term nothing measures, which is the one failure
+      // authored-plus-generated is supposed to make impossible.
+      definedUnseen: [...authored.values()]
+        .filter(r => !byTerm.has(r.term.toLowerCase()))
+        .map(r => ({ term: r.term, status: r.status, means: r.means })),
       // Pairs the prose writes as one thing and nobody has named. A candidate
       // list rather than a finding: promoting one is a row in VOCABULARY.md,
       // and until somebody writes that row it is two words that travel
@@ -938,6 +1228,16 @@ function auditPane(model, root = '') {
       </table></div>`
     : '<p class="text-xs text-muted">no forbidden word appears in live prose.</p>'
 
+  const orphans = model.audit.definedUnseen.length
+    ? `<div class="table-wrap"><table class="table striped dense">
+        <thead><tr><th>defined</th><th>status</th><th>means</th></tr></thead>
+        <tbody>${model.audit.definedUnseen.map(r => row([
+          `<strong>${esc(r.term)}</strong>`, badgeFor(r.status),
+          r.means ? esc(r.means) : '<span class="text-xs text-muted">—</span>',
+        ])).join('')}</tbody>
+      </table></div>`
+    : '<p class="text-xs text-muted">every defined term is one the scan still sees.</p>'
+
   const pairs = model.audit.phraseCandidates.length
     ? `<div class="table-wrap"><table class="table striped dense">
         <thead><tr><th>phrase</th><th>spread</th><th>count</th></tr></thead>
@@ -959,6 +1259,9 @@ function auditPane(model, root = '') {
     ${model.audit.unlabelled.length
       ? conceptTable(model.audit.unlabelled, root)
       : '<p class="text-xs text-muted">every widespread term is listed.</p>'}
+    <div class="section-header"><h2 class="h5">Defined here, seen nowhere</h2>
+      <p class="text-xs text-muted">a VOCABULARY.md row the scan cannot match — the word left the prose, or it is excluded in terms.js and the definition was orphaned</p></div>
+    ${orphans}
     <div class="section-header"><h2 class="h5">Phrases nobody has named</h2>
       <p class="text-xs text-muted">two words the prose writes as one thing, in three or more packages — a candidate for a VOCABULARY.md row, where a word on its own is too generic to be one</p></div>
     ${pairs}
@@ -1049,6 +1352,7 @@ export function renderPage(model, css = null) {
             <option value="">any</option>
             <option value="concept">concept</option>
             <option value="external">external — somebody else's noun</option>
+            <option value="api">api — an identifier, not a coined word</option>
             <option value="product">product</option>
             <option value="common">common</option>
           </select></label>

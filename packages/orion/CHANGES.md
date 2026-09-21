@@ -1,5 +1,16 @@
 # Changes — @frontierjs/orion
 
+## 2026-09-21 — the suite directory is `test/`
+
+**`tests/` is a surface, not a suite.** In an FJS app it sits beside `api/` and `web/` and holds
+what belongs to no single surface, while a surface's own tests are its `test/` (Invariant 3). A
+package is not an app — it has one `src/` — so its suite is `test/`, and this one moved. Eight
+packages spelled it plural and eleven singular with nothing in the tree deciding between them,
+which made the directory name a coin flip on every file added.
+
+Its `test` script named the directory without a trailing slash, so it was the one a
+path rewrite missed and the suite collected nothing until it was fixed.
+
 ## 2026-09-20 — an expression, written as the language
 
 `compileExpression` turned `$.trigger.body.amount > 100` into the node the resolver runs, and the
@@ -28,7 +39,7 @@ expression nodes have a text form; the 44 that do not are named in
 **The only way this can be quietly wrong is a dropped bracket**, which produces text that parses and
 means something else. So every emission states the tightness it is read at — the parser's own ladder,
 with a comparison's operands at VALUE because the grammar hands it an `operand` — and
-`tests/engine/expression/emit.test.ts` compares TREES rather than strings over 41 sources: text →
+`test/engine/expression/emit.test.ts` compares TREES rather than strings over 41 sources: text →
 Expression → text → Expression. A string comparison would pass by construction, since the emitter's
 output is its own input by then. With the parenthesization removed it fails 7 of 49, and its control
 is a pair that genuinely disagrees — `a && (b || c)` against `a && b || c`, false and true on the
@@ -72,7 +83,7 @@ exists. Finding that out cost a defect in `@frontierjs/ui`: a `<Textarea>`'s val
 text, which the DOM ignores once anything has written to the element, so the edit was in the model
 and not on the screen ([`FJS-1207`](../../ISSUES.md#fjs-1207)).
 
-`tests/node-forms.test.ts` is what makes `configSchema` true rather than declared — it was read by
+`test/node-forms.test.ts` is what makes `configSchema` true rather than declared — it was read by
 nothing at all, not the compiler, not the executor — grading every built-in's schema through the
 same pipeline, so a property no control can render fails the suite instead of appearing as an empty
 box on a screen. 542 tests from 465; `verify:automations` 56 assertions from 37.
@@ -100,7 +111,7 @@ flow's schedule as a job to dispatch.
 retired by something that now exists rather than by judgement: `settings.jsx` (3,485) is the
 accounts, workspaces, members, invites and system-admin surface, which [`FJS-D269`](../../DECISIONS.md#fjs-d269)
 made the HOST app's and not orion's; `primitives.jsx` is `@frontierjs/ui`; `mock.js` is the schema
-and `tests/fixtures/`; `api.js` is a REST client against `/api/executions`, a noun this package no
+and `test/fixtures/`; `api.js` is a REST client against `/api/executions`, a noun this package no
 longer has; `tokens.js` is a color palette Invariant 13 forbids outright; `app.jsx` and
 `index.html` are sierra's routing and `_module.mesa`.
 
@@ -215,7 +226,7 @@ whose own tenant is another's. A credential and a key-value entry are read in th
 conduit target is named for tenant and credential both. The services read through the caller's
 client lifted to system, which keeps a row tenant's claim.
 
-`tests/tenancy.test.ts` asks it through the real plugin against a real tenant registry and a row
+`test/tenancy.test.ts` asks it through the real plugin against a real tenant registry and a row
 tenancy app, every landing paired with the other tenant's rows; dropping the tenant from the actor,
 the resume key, the webhook check, a re-dispatch or the sweep's walk each fails a row. Under
 `strategy row`, a credential name and a global store key are still unique across workspaces
@@ -224,7 +235,7 @@ the resume key, the webhook check, a re-dispatch or the sweep's walk each fails 
 ## 2026-09-15 — services
 
 Phase 5 of `IDEAS/orion-port.md`. `orion()` registers three services, and
-`tests/services.test.ts` drives them over HTTP with principals at USER(4),
+`test/services.test.ts` drives them over HTTP with principals at USER(4),
 ADMINISTRATOR(5) and SYSADMIN(7), then puts eighteen calls down HTTP and a
 WebSocket for four principals with `verifyTransportParity` and finds no mismatch.
 Removing the app's `channels()` fails it, which is what shows the socket was
@@ -279,7 +290,7 @@ Caravan's registrations and `app.notifications` — naming what the app has.
 
 **The runner's `models` option is `catalog`** (`HostCatalog`: `models`, `jobs`,
 `notifications`), one argument for everything a node's names are checked
-against. `tests/plugin.test.ts` installs the real notifications plugin and
+against. `test/plugin.test.ts` installs the real notifications plugin and
 asserts the in-app row and the email; removing the owner as actor, the job
 catalog, or the stable job id each fails a row.
 
@@ -292,7 +303,7 @@ run whose stamp went stale to the ordinary run job, which clears the stamp and
 resumes from the checkpoint. The row's proposed fix, a run job dispatched with a
 delay past the deadline, was not built: an inline run outlives its deadline by
 design, and that job would have run it a second time while it was still alive.
-`tests/crash.test.ts` kills an inline run's process mid-stage and asserts both
+`test/crash.test.ts` kills an inline run's process mid-stage and asserts both
 halves — no hand-over while the process beats, and one once it stops.
 
 **Activations reach every instance within one poll** (`FJS-1155`).
@@ -313,7 +324,7 @@ into a Junction app, and a flow can now read and write the app it runs in.
 **The done-when, twice.** A flow writing a field its model does not declare
 fails to compile, naming what the model accepts; a flow owned by a USER that
 creates an `Invoice` gated at ADMINISTRATOR fails with the gate's own sentence.
-`tests/models.test.ts` asks it of a litestone host and `tests/plugin.test.ts` of a
+`test/models.test.ts` asks it of a litestone host and `test/plugin.test.ts` of a
 Junction app, where the refusal is junction's resolver grading the session
 `app.runAs` rebuilt for the owner. Removing the compiler step fails four rows;
 handing the run the system client instead of the owner's fails the refusal.
@@ -344,7 +355,7 @@ a sync run is not recovered after a crash (`FJS-1156`).
 `FlowCredential` and a path and has no URL; orion's own conduit instance sends it,
 with a resolver reading the encrypted secret off the row, re-registering the
 target when the row's `updatedAt` moves, and carrying `runId:nodeId:attempt` as
-the idempotency key (`FJS-D273`). `tests/outbound.test.ts` asserts all of it on the
+the idempotency key (`FJS-D273`). `test/outbound.test.ts` asserts all of it on the
 wire of a local server. `ai` asks the app's `IAIModel` by name, `complete` only —
 the mockup's providers and three modes are gone (`FJS-D153`). The `store` node's
 port is async over `KvEntry`, scoped `flow`, `global` or `run`, and `workspaceId`
@@ -375,7 +386,7 @@ and one Caravan job and back: `start`, the `orion.run` job, `resume`,
 `scheduleFlow` / `unscheduleFlow` / `scheduleActiveFlows`, and a per-minute
 `orion.sweep`.
 
-**A process killed mid-stage finishes on another.** `tests/crash.test.ts`
+**A process killed mid-stage finishes on another.** `test/crash.test.ts`
 SIGKILLs a real worker with its third stage in flight and starts a second: it
 reclaims the job once the first stops heartbeating, reads the checkpoint, and
 completes the run. The stage before the kill ran once — the test fails with
@@ -491,7 +502,7 @@ same branch answers every non-`==` operator that way for a real policy, which is
 
 **The engine may import `@frontierjs/toolbelt` and nothing else.** `FJS-D26`
 licenses it — pure functions below the dependency graph — and
-`tests/engine-boundary.test.ts` now says so, with a framework package, a
+`test/engine-boundary.test.ts` now says so, with a framework package, a
 third-party package and an escape as its negative controls.
 
 ## 2026-09-14 — the engine lifted out of the mockup
@@ -521,7 +532,7 @@ which also carries `preconnect`. A test compiling a flow with
 `{ source, target }` edges now writes `{ from, to }`; it refused an unknown node
 type before the edges mattered, so it passed either way.
 
-`tests/engine-boundary.test.ts` is the enforcer for the engine rule: every import
+`test/engine-boundary.test.ts` is the enforcer for the engine rule: every import
 under `src/engine/` is relative and stays inside it, or a Node builtin. It grades
 itself on a synthetic source naming a framework package, a third-party package
 and an escape.

@@ -153,7 +153,7 @@ bin/
 - **The bin finds its database by asking `/proc`, and must not be given a
   default quietly.** With no `--db` it keeps the open files that carry Caravan's
   tables, and two is a refusal. On a developer's machine that search sees every
-  process, including another app's API, which is why `tests/bin.test.ts` narrows
+  process, including another app's API, which is why `test/bin.test.ts` narrows
   with `--pid` — an unscoped search in a test is the ambiguity refusal, not a
   result. It never calls `start()`, which would heartbeat and count itself.
 - **`pause`, `resume` and `drain` are operator verbs (`FJS-D198`).** Over HTTP
@@ -259,9 +259,9 @@ The principal is not visible in those assertions; read `example/db/audit/`
 afterwards, where a `book-courier` write names the staff member who shipped and
 a sweep cancel names `system`.
 
-A change to the claim or to a pause is `tests/queue-operator.test.ts`, whose
+A change to the claim or to a pause is `test/queue-operator.test.ts`, whose
 cross-instance rows use a real FILE — `:memory:` is a database per instance and
 agrees with any bug — and whose statement row asks the SQL directly, with an
-unpaused queue beside it. A change to the bin is `tests/bin.test.ts`, which
+unpaused queue beside it. A change to the bin is `test/bin.test.ts`, which
 SPAWNS it, and then `bun run ci -- --phase deploy`, whose `pauseQueueCycle` is
 the only place the bin runs inside a container with no `--pid`.

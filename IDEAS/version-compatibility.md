@@ -150,7 +150,7 @@ interesting claim is, and level 3 is the one that would be genuinely novel.
 
 ## What it unblocks
 
-- **`shift`** (`IDEAS/package-map.md`) — the codemod tool, deferred *"because it
+- **`shift`** (`IDEAS/map-packages.md`) — the codemod tool, deferred *"because it
   needs a stable surface to move between"*. A codemod needs a machine-readable
   diff of what moved. This produces one. `shift` is currently waiting on a thing
   nobody is building.
@@ -191,6 +191,6 @@ interesting claim is, and level 3 is the one that would be genuinely novel.
 - `exports.snapshot.md` — the surface, already committed
 - `CLAUDE.md` § Repo — the two traps, already named
 - `IDEAS/release-transitions.md` — the expand/contract classifier this borrows whole
-- `IDEAS/package-map.md` § `shift` — the codemod tool waiting on this
+- `IDEAS/map-packages.md` § `shift` — the codemod tool waiting on this
 - `IDEAS/command-surface.md` § `deprecated` — the same problem on the CLI surface
 - `IDEAS/ecosystem-gaps.md` § tier 3 — the one existing mention, as a doc gap

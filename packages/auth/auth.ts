@@ -130,7 +130,7 @@ export function createLitestoneAuth(
   //
   // The trail and `onCredentialChanged` are written through this one function,
   // so the two cannot name different events and a new credential write cannot
-  // reach one without the other. `tests/credential-events.test.ts` fails on an
+  // reach one without the other. `test/credential-events.test.ts` fails on an
   // `audit()` of one of these operations anywhere else in this file.
   //
   // Not gated on `hasAuditLog`: an app with no logger database still owes the

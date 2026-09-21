@@ -152,7 +152,7 @@ already have an answer to.
 
 ## See also
 
-- `IDEAS/package-map.md` — the UI half lands in `@frontierjs/ui`; `foundry` was
+- `IDEAS/map-packages.md` — the UI half lands in `@frontierjs/ui`; `foundry` was
   absorbed rather than built
 - `packages/litestone/docs/schema.md` § State transitions — the reference
 - `DECISIONS.md` `FJS-D150` — `@system` on a move

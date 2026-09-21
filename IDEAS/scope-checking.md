@@ -25,7 +25,7 @@ same function, so the documented way back was broken identically.
 Nothing in the tree could see it. **Four things had to be true at once, and each
 of them is a rule this repo keeps on purpose:**
 
-- **The parse sweep parses the wrong artefact.** `tests/compiler.test.js`
+- **The parse sweep parses the wrong artefact.** `test/compiler.test.js`
   compiles every command with an *empty* namespace module — `compileCli(src, '', file)`
   — but the runtime compiles it with the namespace's `_module.md` script prepended
   ([`core/runtime.js`](../packages/cli/core/runtime.js), `Command()` and

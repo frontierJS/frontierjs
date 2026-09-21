@@ -54,7 +54,7 @@ Each of these is answerable about the tree today and about no running app.
   half way makes the two differ, and the committed snapshot goes on being green
   because it is a fact about the branch.
 - An attachment was declared bound. **Is it bound now**, rather than at boot?
-  `packages/junction/tests/attachments.test.ts` grades the refusal and
+  `packages/junction/test/attachments.test.ts` grades the refusal and
   `deployJournalCycle` grades the operator reading it — both at start-up.
 - `invariants.snapshot.md` records which invariants resolve to an enforcer.
   **Do those enforcers run in the deployed build?** A build that dropped one is

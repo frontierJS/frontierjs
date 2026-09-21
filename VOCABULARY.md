@@ -43,7 +43,10 @@ before you meet it.
 | Channel | blessed |  |  |
 | Job | blessed |  |  |
 | Component | open |  |  |
-| Data | open |  |  |
+| Data realm | open |  | the first of the three — where `data` alone is too generic to be a term |
+| Writable derived | open |  | mesa `$: name = expr` — `Writable` alone means nothing |
+| Empty state | open |  | the condition a screen is in with nothing to show; `EmptyState` is the component that renders it |
+| Data boundary | open |  | where access is enforced; the widest phrase in the tree |
 | Invariant | open |  |  |
 | WebSocket | open |  |  |
 | State | open |  |  |

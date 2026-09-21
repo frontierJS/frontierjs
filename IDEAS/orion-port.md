@@ -123,7 +123,7 @@ enforcer, which is the only thing that stops it being wrong silently.
 ## Data
 
 **`packages/orion/db/orion.lite` is the schema**, imported by the host rather
-than pasted, and `packages/orion/tests/store.test.ts` grades it. Eight models:
+than pasted, and `packages/orion/test/store.test.ts` grades it. Eight models:
 `Flow`, `FlowVersion`, `FlowLayout`, `Run`, `RunStep`, `Wait`, `FlowCredential`
 and `KvEntry`. Names follow the README: `Run` rather than the mockup's
 `Execution`. The credential model is not `Credential` because that is
@@ -172,7 +172,7 @@ protected field as `[redacted]`. The split above is what reconciles them:
 output is redacted as its `RunStep` row is written. For a model node that needed
 no code: the row it answers is the row its OWNER's client read back, and a
 non-system reader never receives a `@guarded` or `@encrypted` column, so the
-protected value is absent before the step is recorded (`tests/models.test.ts`).
+protected value is absent before the step is recorded (`test/models.test.ts`).
 An `http.request` or `ai` output has no schema and is stored as returned, which
 the builder should say on the node.
 
@@ -207,8 +207,8 @@ the whole context; nothing written so far needs it.
 
 ## Execution
 
-`packages/orion/src/runner.ts` is this section, and `tests/runner.test.ts` and
-`tests/crash.test.ts` run it against a real Caravan queue and a real litestone
+`packages/orion/src/runner.ts` is this section, and `test/runner.test.ts` and
+`test/crash.test.ts` run it against a real Caravan queue and a real litestone
 database.
 
 **A run is one Caravan job.** `start` writes a pending `Run` and dispatches
@@ -234,7 +234,7 @@ starts at `currentStage`. Any node in that stage that finished before the crash
 runs again. For an `http.request` that is a second POST. The port states this on
 the node and passes a stable idempotency key (`runId:nodeId:attempt`) to conduit,
 rather than checkpointing per node and paying the per-step write the speed rule
-avoids. `tests/crash.test.ts` SIGKILLs a real worker process with a stage in
+avoids. `test/crash.test.ts` SIGKILLs a real worker process with a stage in
 flight and starts another: the stage before the kill runs once, the run
 completes, and the job took two attempts.
 
@@ -271,7 +271,7 @@ deadline, and a sync flow containing `flow.wait` is a compile error (`FJS-D280`)
 ## Triggers
 
 `packages/orion/src/plugin.ts` installs these into a Junction app, and
-`packages/orion/tests/plugin.test.ts` drives them through a real one.
+`packages/orion/test/plugin.test.ts` drives them through a real one.
 
 | Trigger | Source | Notes |
 | --- | --- | --- |
@@ -360,7 +360,7 @@ literal and are checked when the flow compiles, against Caravan's registrations
 and `app.notifications`.
 
 **Blast radius is day one** (`FJS-D283`), and each limit is asked where it is
-hardest in `tests/limits.test.ts`:
+hardest in `test/limits.test.ts`:
 
 - **The kill switch** is read by every trigger and again by the run job, so a run
   queued before a pause is cancelled rather than run, and a waiting run of a
@@ -380,7 +380,7 @@ hardest in `tests/limits.test.ts`:
 
 ## Services
 
-`packages/orion/src/services.ts` is this section, and `packages/orion/tests/services.test.ts`
+`packages/orion/src/services.ts` is this section, and `packages/orion/test/services.test.ts`
 runs it over HTTP with real principals and then over both transports.
 
 **Three services, each a model service over orion's own models**, so a read, a
@@ -414,7 +414,7 @@ is refused, because its job writes every checkpoint over whatever is underneath
 
 ## Tenancy
 
-`packages/orion/src/tenancy.ts` is this section, and `packages/orion/tests/tenancy.test.ts`
+`packages/orion/src/tenancy.ts` is this section, and `packages/orion/test/tenancy.test.ts`
 runs it under both strategies through the real plugin (`FJS-D294`).
 
 **Orion's models are the host's, so they are tenanted the way the host's are,**
@@ -502,8 +502,8 @@ service nodes with author-time typing, conduit, `IAIModel`, the credential
 model, dry run and the kill switch. *Done when* a flow writing a field its model
 does not declare fails to compile, and a flow run as a principal below a model's
 gate is refused by that gate. *Done 2026-09-14*: § Triggers and § Actions;
-`tests/models.test.ts` is the done-when against a litestone host and
-`tests/plugin.test.ts` against a Junction one, where the refusal is junction's
+`test/models.test.ts` is the done-when against a litestone host and
+`test/plugin.test.ts` against a Junction one, where the refusal is junction's
 own resolver grading the session `app.runAs` rebuilt. One scheduler defect
 surfaced: a node failing in a parallel stage ended the run while its sibling was
 still running, so the record named a step `running` in an ended run and the

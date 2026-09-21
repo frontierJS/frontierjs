@@ -28,7 +28,7 @@
 // **The pinned runtime no longer does this**: it re-throws the original every
 // time, the way node always has, so everything below about the TDZ is DORMANT
 // rather than load-bearing. It is kept because a property that changed once can
-// change back, and `tests/build-imports.test.js`'s control is the only thing in
+// change back, and `test/build-imports.test.js`'s control is the only thing in
 // this repo that would notice — it points at the runtime rather than at this
 // file, so it says which of the two is true rather than whether we handled it.
 //

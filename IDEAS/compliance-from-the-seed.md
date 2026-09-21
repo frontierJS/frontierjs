@@ -173,7 +173,7 @@ three read the same declarations. Build the reader once.
 Proposed home: **not a package.** `@pii` / `@retain` are rules at the Data boundary
 and ship as `.lite` syntax, the data map and DSAR as `fli` commands — `warden`'s
 precedent ([`FJS-D147`](../DECISIONS.md#fjs-d147)). `marshal` stays the name of the
-work (`IDEAS/package-map.md`).
+work (`IDEAS/map-packages.md`).
 
 ## Open questions
 
@@ -195,7 +195,7 @@ work (`IDEAS/package-map.md`).
 
 ## See also
 
-- `IDEAS/package-map.md` — `marshal`, and the packages it shares substrate with
+- `IDEAS/map-packages.md` — `marshal`, and the packages it shares substrate with
 - `IDEAS/agent-surface.md` — the same declarations read for a different purpose
 - `IDEAS/offline-first-and-release.md` — the outbound-surface command, in its
   original FOSS-hygiene framing

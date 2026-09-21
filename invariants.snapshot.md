@@ -47,7 +47,7 @@ Covered: **18 of 19**.
 
 | Kind | What | Covers |
 | --- | --- | --- |
-| test | `packages/junction/tests/plugin-contract.test.ts` | a second `app.claim(name)` throws naming the holder |
+| test | `packages/junction/test/plugin-contract.test.ts` | a second `app.claim(name)` throws naming the holder |
 
 ### 6. Access is declared in the schema, not in hooks
 
@@ -55,7 +55,7 @@ Covered: **18 of 19**.
 | --- | --- | --- |
 | `fli check` | `service-as-system` | asSystem() off the app client crosses tenants; off the request client it does not |
 | `fli check` | `gate-unreachable` | a declared @@gate level something can actually reach |
-| test | `packages/sierra/tests/static-safety-real.mjs` | the prerender half — a published route proves its reads against the model's own `@@gate`, against a real Litestone client |
+| test | `packages/sierra/test/static-safety-real.mjs` | the prerender half — a published route proves its reads against the model's own `@@gate`, against a real Litestone client |
 
 ### 7. Protected fields are redacted in the audit trail
 
@@ -73,7 +73,7 @@ Covered: **18 of 19**.
 
 | Kind | What | Covers |
 | --- | --- | --- |
-| test | `packages/junction/tests/patch-defaults.test.ts` | presence, not truthiness — an explicit `null` clears where an absent key does not |
+| test | `packages/junction/test/patch-defaults.test.ts` | presence, not truthiness — an explicit `null` clears where an absent key does not |
 | test | `packages/litestone/test/valuesets.test.ts` | the same rule at the Data boundary, where `?` is what makes the key optional |
 
 ### 10. A `$`-PREFIXED KEY is transport syntax only
@@ -81,7 +81,7 @@ Covered: **18 of 19**.
 | Kind | What | Covers |
 | --- | --- | --- |
 | test | `packages/toolbelt/test/specs/directives.spec.js` | the grammar both boundaries read — `splitParams` onto `{query, directives}` |
-| test | `packages/junction/tests/query-directives.test.ts` | that no `$`-prefixed key survives the bridge into `ctx.query` |
+| test | `packages/junction/test/query-directives.test.ts` | that no `$`-prefixed key survives the bridge into `ctx.query` |
 
 ### 11. The nearest delegation root owns an event
 
@@ -112,7 +112,7 @@ Covered: **18 of 19**.
 
 | Kind | What | Covers |
 | --- | --- | --- |
-| test | `packages/cli/tests/compiler.test.js` | every shipped command file compiles AND the output is parsed |
+| test | `packages/cli/test/compiler.test.js` | every shipped command file compiles AND the output is parsed |
 | test | `packages/mesa/test/emission.test.js` | the compiler's own output is parsed rather than matched |
 
 ### 16. Runnable examples are verified, not sketches

@@ -144,7 +144,7 @@ packages/junction/
 │
 ├── tools/                ← repl.ts, init.ts, setup.ts, build-app.ts, generators
 ├── example/              ← runnable apps (elegant.ts is the modern demo)
-└── tests/
+└── test/
 ```
 
 ---

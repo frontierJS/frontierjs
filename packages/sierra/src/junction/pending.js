@@ -11,7 +11,7 @@
  * The entry is written BEFORE the call goes out, not in a catch after it fails.
  * That is what every production sync engine does — PowerSync records the write
  * and its queue entry in one transaction and sending is that queue draining
- * (`IDEAS/prior-art.md` § 4) — and the reason is that a catch-based queue has
+ * (`IDEAS/review-prior-art.md` § 4) — and the reason is that a catch-based queue has
  * two routes to the server with a seam between them, and the seam is where a
  * write goes twice or not at all.
  *

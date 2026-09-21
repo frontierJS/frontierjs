@@ -999,7 +999,7 @@ export interface TotpStatus {
 // Re-declared rather than imported from ../auth/types.ts: this file is the
 // BROWSER bundle and that module is the server's IAuth contract, which pulls
 // in ServiceContext and the transport types behind it. The two shapes are
-// pinned against each other in tests/client-auth.test.ts.
+// pinned against each other in test/client-auth.test.ts.
 export interface OAuthConnection {
   id:        string
   /** The name the app configured the provider under — `google`, `okta`. */

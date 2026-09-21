@@ -90,7 +90,7 @@ not by anything that would have failed.
 Several suites assert **why** something is fast rather than how long it took, and none
 of them is called a performance test:
 
-- `packages/caravan/tests/scale.test.ts` asserts a QUERY PLAN — no `TEMP B-TREE` — and
+- `packages/caravan/test/scale.test.ts` asserts a QUERY PLAN — no `TEMP B-TREE` — and
   its header says why: a millisecond threshold in CI is a coin flip on a loaded machine.
 - The audit's H4 counts `getLevel` resolutions (0 across 200 gated reads) and M1 counts
   statements through `$tapQuery` (one per `upsert()`).

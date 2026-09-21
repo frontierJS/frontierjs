@@ -1,5 +1,15 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-21 — the suite directory is `test/`
+
+**`tests/` is a surface, not a suite.** In an FJS app it sits beside `api/` and `web/` and holds
+what belongs to no single surface, while a surface's own tests are its `test/` (Invariant 3). A
+package is not an app — it has one `src/` — so its suite is `test/`, and this one moved. Eight
+packages spelled it plural and eleven singular with nothing in the tree deciding between them,
+which made the directory name a coin flip on every file added.
+
+`test`, `test:all` and `test:browser` name the new path.
+
 ## 2026-09-20 — a write may carry the row it was made against
 
 `FJS-1202`, ruled `FJS-D338`. The transport half of `@@sync(field)`: litestone
@@ -22,7 +32,7 @@ validation for the wrong reason.
 **The socket needed none of it.** A `service_call` frame already carries caller
 extras under `meta` and spreads what it does not name, so `meta.base` is the
 existing slot. Both transports land on one `ctx.base`, and
-`tests/write-envelope.test.ts` is what grades them against each other — two
+`test/write-envelope.test.ts` is what grades them against each other — two
 transports doing genuinely different things, where neither side alone can see
 that they agree.
 
@@ -72,9 +82,9 @@ litestone, which files them as `actorId` and `subjectId`. A bearer principal has
 no id, so without it the write is recorded under nobody and a revocation cannot
 be investigated.
 
-Eight tests in `tests/bearer-claim.test.ts`, every refusal paired with the
+Eight tests in `test/bearer-claim.test.ts`, every refusal paired with the
 acceptance one argument away, plus the crossing end to end in
-`tests/audit-provenance.test.ts`. Not built: `lastUsedAt`, which is a write per
+`test/audit-provenance.test.ts`. Not built: `lastUsedAt`, which is a write per
 request and wants a measurement first.
 
 ## 2026-09-20 — three structured `orderBy` shapes all arrived as `desc`
@@ -293,7 +303,7 @@ The README and `example/` resolvers dropped `async`, which litestone now refuses
 **`app.withDb(fn)` calls `fn(db, user)`**, where `user` is the principal the client is scoped
 to with the resolver's claims applied. `$readAs` takes its subject as an argument, and the one
 `principal()` answers lacks what a resolver added, so under `strategy row` a question about
-somebody's standing was refused every tenant-scoped row; `tests/with-db.test.ts` asserts the
+somebody's standing was refused every tenant-scoped row; `test/with-db.test.ts` asserts the
 claimed principal reads its own tenant's row and the bare one does not. **`getTable` probes
 `'$setAuth' in` before `typeof`**: a system client has no `$setAuth` and a Litestone client throws
 on a property it lacks, so a hook that graded a caller itself and put `asSystem()` on
@@ -311,7 +321,7 @@ the tenant owns is refused. The client is leased for `fn`'s length, since the po
 **`app.onTenantClient(observer)`** is an Observer called once per tenant client the app opens, with
 its tenant, on the seam `tapTenantWrites` already runs on — how a plugin hears every tenant's writes
 when there is no one client to tap. Orion is the first caller of both (`FJS-D294`).
-`tests/with-db.test.ts` asks all three shapes against real clients and a real registry, each tenant
+`test/with-db.test.ts` asks all three shapes against real clients and a real registry, each tenant
 assertion paired with the other tenant's rows.
 
 ## 2026-09-13 — `AGENTS.md` ships
@@ -330,7 +340,7 @@ a body. The list is two tables now — **nothing in front of the body but the fl
 hook runs in front**, with the hooks named in run order — and the per-service *who may call* line
 carries the same hooks. The derived hooks are not counted, or every method would read as hooked.
 It still calls nothing graded that it cannot read: a named hook says what it is, and `anonymous` is
-as unread as the body. `tests/surface-snapshot.test.ts` puts `pay` and a hooked `ship` in the two
+as unread as the body. `test/surface-snapshot.test.ts` puts `pay` and a hooked `ship` in the two
 tables; counting the derived hooks reds it. Over `example`, 19 bare and 17 hooked.
 
 ## 2026-09-12 — a declared `gate:` is graded on a service over no model
@@ -342,7 +352,7 @@ reached `surface.snapshot.md` as *not enforced*, and a stranger ran the body. Th
 is read first now, because it needs nothing from a model; with no declaration and no gate
 there is still no floor, so an undeclared method there stays open. The floor-refusal warning
 fires only for a floor, since its advice (*declare `gate: 0`*) is wrong about a declaration.
-`tests/custom-method-gate.test.ts` drives a modelless `reports` service — a stranger 401, a
+`test/custom-method-gate.test.ts` drives a modelless `reports` service — a stranger 401, a
 user 403, staff through, and the undeclared `ping` beside it open to all three. With the old
 order restored, 3 of 18 fail. Neither app declared a gate there, so no snapshot moved.
 
@@ -384,7 +394,7 @@ the tenant registry's parsed schema** (`TenantRegistryLike.schema`), because ope
 it off a client would make a description tool create a database file; an app wrapper that does not
 forward it gets the floor reported as unknown rather than guessed.
 
-`tests/custom-method-gate.test.ts` asserts each grade against the gate's own answer for the same
+`test/custom-method-gate.test.ts` asserts each grade against the gate's own answer for the same
 caller — a rendering test alone passes with the two drifted apart.
 
 ## 2026-09-12 — `client.auth.signIn` answers a union, and `completeSignIn` is the other half
@@ -432,7 +442,7 @@ through Litestone's plugin.
 bytes are served by `http.static`. `example`: `verify:catalog` is unaffected and is
 still what proves that path.
 
-`tests/filestorage-safety.test.ts` went with the module. Its subject — the id that
+`test/filestorage-safety.test.ts` went with the module. Its subject — the id that
 escaped the root, the SVG served inline, the 206 answering an unsatisfiable range —
 is in git, and comes back as a function over a Litestone ref if a private file is
 ever proxied rather than redirected.
@@ -483,7 +493,7 @@ refused by name, because two registrations mount two routes on one path.
 `load-config` runs, so the value never arrived under any spelling. It routes to
 the `rateLimit` middleware now, which is the layer its section name claims.
 
-`tests/config-surface.test.ts` is the artefact the ruling turns on: it reads both
+`test/config-surface.test.ts` is the artefact the ruling turns on: it reads both
 interfaces off their own source and holds them against a table of behavioral rows
 in both directions, so a key added without a row fails on the next run. Every row
 goes through a real listening server, since a middleware patches the ROUTER and
@@ -502,7 +512,7 @@ names differ and the announcement stands — which was an argument in
 move made in NO service call, and that one passes with the suppression widened
 to *any call is announcing*.
 
-Two assertions in `tests/data-write-announcement.test.ts`, a pair. The move
+Two assertions in `test/data-write-announcement.test.ts`, a pair. The move
 inside `payments`' call reaches the channel as `orders pay`; the same move
 inside the owning service's call still announces once, because a fix that
 announced everything satisfies the first alone. Measured: widening the
@@ -676,7 +686,7 @@ order through `fli db:export` and none over HTTP. Every fixture in the junction
 test had handed `verifySession` a row-shaped object with `id` on it, which is
 why they all passed; there is a `userId`-shaped one now.
 
-`tests/export-endpoint.test.ts` is the proof — a real Litestone client and a real
+`test/export-endpoint.test.ts` is the proof — a real Litestone client and a real
 listening server, 13 tests — and `example`: `verify:export` is the other half,
 19 checks against a real shop. Measured against stubs: taking `ctx.user` instead of
 the resolved principal reds 2, the tenant-resolved client 1, `toDataPrincipal` 1,
@@ -714,7 +724,7 @@ what makes a re-scrape a no-op and lets a caller record on whatever schedule it
 already has — a heartbeat every thirty seconds keeps the later reading rather
 than doubling the row count.
 
-`tests/series-key.test.ts` — 6 rows. Stubbed: the escaping 2 red, the sort 1, the
+`test/series-key.test.ts` — 6 rows. Stubbed: the escaping 2 red, the sort 1, the
 bare-name case 1. `example`'s `verify:metrics` grades `record()` against the
 shipped plugin and both of its stubs fail the drive outright.
 
@@ -730,7 +740,7 @@ TEXT, split it on commas and refused it as a column name.
 writes a structure in bracket notation and the transport's parser already reads
 it back, so the fix is to pass the value through. The socket half spread the
 same map into a frame, so both transports were wrong together — which is why
-`tests/query-parity.test.ts` now asserts each ordering twice, that the two
+`test/query-parity.test.ts` now asserts each ordering twice, that the two
 AGREE and that what arrived is what was handed in. Agreement alone passes when
 both halves send the same broken text.
 
@@ -947,7 +957,7 @@ clause counts as the caller's filter and the guard never fires on a
 **`restore` is deliberately outside it.** It un-deletes, the way back is to
 remove again, and strictness follows what a mistake destroys.
 
-Six fixtures in `tests/bulk-partial-success.test.ts` used the unfiltered form as
+Six fixtures in `test/bulk-partial-success.test.ts` used the unfiltered form as
 a convenience and now carry a predicate that matches the rows they meant; each
 still asserts what it always did. Two new rows: the refusal paired with the same
 call carrying one predicate, and the soft-delete clause not counting as a
@@ -1012,7 +1022,7 @@ of the same place.
 
 ## The mail suites came home, and their assertions became real
 
-`tests/mail-injection.test.ts` and `tests/smtp-message.test.ts` each spawned a
+`test/mail-injection.test.ts` and `test/smtp-message.test.ts` each spawned a
 probe and asserted by matching the child's stdout. The fork had no cause left
 once nothing mocked a module, but moving them was never the work: an `ok <name>`
 line the parent greps for is an assertion that cannot fail when it is not
@@ -1028,12 +1038,12 @@ wrong. Three assertions were added because real ones made the gap visible —
 header shown reaching the wire beside the three injections, without which a guard
 that refused every header would have satisfied all three refusal rows.
 
-`tests/fixtures/` holds no mail probe now. 2234/0 three times running
+`test/fixtures/` holds no mail probe now. 2234/0 three times running
 (`FJS-909`).
 
 ## No test file names a port
 
-`tests/ws-limits.test.ts` had been failing about one whole-suite run in three
+`test/ws-limits.test.ts` had been failing about one whole-suite run in three
 and never alone; on the day five files were added to this package it began
 failing every run.
 
@@ -1050,7 +1060,7 @@ and two module-level-state theories before anything was changed.
 
 Every one binds `port: 0` and reads `app.http.port` back after `start()`, which
 is what `@frontierjs/testing`'s `listen: true` already does and for this reason.
-`tests/test-ports.test.ts` is the guard: no two files in this package may name
+`test/test-ports.test.ts` is the guard: no two files in this package may name
 the same port, decided from the source, because nothing else notices a collision
 until a suite goes red somewhere unrelated. It counts only the spellings that
 reach `createApp` — a `localhost:3000` URL is not one, since ten files name it as
@@ -1060,7 +1070,7 @@ the base of a client that never connects — and it excludes itself.
 
 ## The mail transport is injected, so nothing mocks a module
 
-Five `mock.module()` calls in `tests/email.test.ts`, all on the SMTP shim. Bun
+Five `mock.module()` calls in `test/email.test.ts`, all on the SMTP shim. Bun
 applies that process-wide and never undoes it, so a test's result depended on
 which other file had run first — and three suites here spawned a subprocess to
 escape it.
@@ -1070,7 +1080,7 @@ default being the real client. That is Outpost's injected runner, for the reason
 that package already gives: a test needs the failures — a 535, a refused
 connection, a timeout — and no test may reach a real mail server to get them.
 
-All five mocks are gone. `tests/smtp-starttls.test.ts` came back in process and
+All five mocks are gone. `test/smtp-starttls.test.ts` came back in process and
 stayed green in the full suite, which is the evidence the mock was the only
 cause rather than a claim that it was. Two suites still fork and their comments
 say so plainly; converting them means replacing stdout string matching with real
@@ -1112,7 +1122,7 @@ so the literal ended two lines early and the file the scaffold would write did
 not parse, while `bun run typecheck` stayed clean, because it grades the
 TypeScript holding the template and never the JavaScript it emits. That is
 Invariant 15 one package over, and the only thing covering it was the full-tier
-`scaffold` phase. `tests/scaffold-templates.test.ts` now extracts each template
+`scaffold` phase. `test/scaffold-templates.test.ts` now extracts each template
 and asserts it ends where its call ends — the symptom is a literal that stopped
 early, not a bad character, which is why the first version of that test passed
 with the defect reintroduced.
@@ -1468,7 +1478,7 @@ generic, because naming the fix to a caller hands an attacker the shape of it.
 Four shapes of cursor answered a 200 over the wire — an empty list, which a
 client reads as the end of the data — and a malformed one answered 500. The
 grading is litestone's, because that is where the ordering is known; what
-changed here is that `tests/window.test.ts` now asserts the status, which is the
+changed here is that `test/window.test.ts` now asserts the status, which is the
 half neither package can answer alone. `FJS-779`.
 
 ## The outbox relay gives up, waits, and stops evicting the tenants being served
@@ -2442,7 +2452,7 @@ inherit a half-open envelope.
 
 The tests run OUT OF PROCESS against a real fake MTA, and both halves are
 load-bearing: the MTA, because the assertion that matters is what reached the
-WIRE; the separate process, because `tests/email.test.ts` calls `mock.module()`
+WIRE; the separate process, because `test/email.test.ts` calls `mock.module()`
 on the shim that `export *`s this client and the replacement is process-wide and
 never undone — measured, five assertions went green in isolation and failed in
 the full run against a mock.
@@ -2556,7 +2566,7 @@ with `toFrameworkError` + `ctx.json`, which is the exit every service failure
 takes, so a fix applied to `errorResponse` alone would have changed nothing
 anybody could see.
 
-`tests/wire-safety.test.ts` is the new file and it runs against a real
+`test/wire-safety.test.ts` is the new file and it runs against a real
 Litestone client with a real `@secret` column, because the redaction list comes
 out of the schema and a fake client would agree with whatever it was handed.
 Both halves of the production branch are asserted with `NODE_ENV` really set —
@@ -2594,7 +2604,7 @@ write. Making it genuinely replace was ruled out rather than overlooked: junctio
 would have to synthesize the null-out set for every absent writable column and
 hand every caller a write that silently discards what they did not restate.
 
-5 of the 9 tests in `tests/update-semantics.test.ts` fail on the old wiring, and
+5 of the 9 tests in `test/update-semantics.test.ts` fail on the old wiring, and
 the pairs are the substance — a stale version is still a 409 (a validator that
 carried the key over a boundary that ignored it would pass the happy path), and
 omitting it is still refused, so the fix cannot read as *the boundary stopped
@@ -2629,7 +2639,7 @@ at `.add`.
 create single and bulk, update, patch by id and bulk. Enumerated, because the arg
 objects are built differently; what is not enumerated is the rule.
 
-**Every acceptance in `tests/system-fields.test.ts` is paired with the refusal of
+**Every acceptance in `test/system-fields.test.ts` is paired with the refusal of
 the identical payload** by a call that did not name the column, and 5 of its 13
 fail with the seam stubbed out. Three properties are the substance: naming a
 column widens one CALL and never the model; a caller sending the same key has it
@@ -2653,7 +2663,7 @@ a document or a scalar; two boundaries writing that sentence is how the two come
 to disagree. Carrying it grants nothing — the Data boundary throws on the key
 before any write, so the value never becomes a column.
 
-The crossing is graded in `tests/real-litestone-client.test.ts` against a real
+The crossing is graded in `test/real-litestone-client.test.ts` against a real
 client, which is the only place it can be: with litestone fixed and this side
 still stripping, every HTTP and WS caller keeps the silence, and a unit test on
 either side passes. Sierra needed no change — it already passes the key through.
@@ -2789,7 +2799,7 @@ reload prompt for a change that cannot reach them.
 deployed. `client.stale`, `client.serverBuild`, and a `stale` event that fires
 **once** — carrying both ids, so a screen can say which.
 
-`tests/client-types.test.ts` earned its keep: the client imports the wire names,
+`test/client-types.test.ts` earned its keep: the client imports the wire names,
 a client compiles under the APP's tsconfig with no node types, and a bare
 `process.env` put `Cannot find name 'process'` into every consuming app —
 `FJS-268`'s class, caught before it shipped.
@@ -3019,7 +3029,7 @@ have found it.
 
 Two values now — the raw header for parameter values, a lowercased copy for
 comparing the type — plus quote-stripping, which a boundary holding a space or a
-comma requires. `tests/multipart-boundary.test.ts`, negative-controlled.
+comma requires. `test/multipart-boundary.test.ts`, negative-controlled.
 
 
 ## 2026-08-26 — where an app's services are, probed rather than derived
@@ -3145,7 +3155,7 @@ reported itself complete.
 It is invisible in a fixture built one row at a time: an ordering only goes
 partial on a tie, and a tie on `createdAt` is a burst of writes inside one
 millisecond — the ordinary case for anything a hook writes. The existing
-non-unique walk in `tests/window.test.ts` passed because it ordered ASCENDING
+non-unique walk in `test/window.test.ts` passed because it ordered ASCENDING
 over sequential ids, where SQLite's own order and the total order agree by
 accident. It took building the thing: basecamp's audit trail, five rows sharing
 one timestamp across the 50-row edge, two of them gone.
@@ -3158,7 +3168,7 @@ for a position that cannot be named.
 
 ## 2026-08-26 — the suite is green on a full run
 
-`tests/heartbeat.test.ts` § *holds a connection that answers the ping* asserted
+`test/heartbeat.test.ts` § *holds a connection that answers the ping* asserted
 `app.channels.stats().connections` is 1 and found 2 on every full run, passing in
 isolation — one red on `bun run test` for as long as it existed, and
 `knownTestFailures` carried no entry, so the tests phase was red for everyone.
@@ -3237,7 +3247,7 @@ so one row cannot be in it twice.** Growing a window is where that shows — the
 server resumes from the edge, but a row can arrive on the socket in between and
 be in both the list and the slice.
 
-14 cases in `tests/window.test.ts`, including a walk over a **non-unique**
+14 cases in `test/window.test.ts`, including a walk over a **non-unique**
 ordering through a real request. Green: 1509 tests, typecheck clean.
 
 ## 2026-08-26 — `config.mail`, so a from-address can be a tenant's
@@ -3398,7 +3408,7 @@ its default from-address at construction, which stays boot-scope until there is 
 config key for it to read, and that key is `FJS-D126`'s business rather than this
 change's.
 
-14 tests. Junction's suite is currently flaky in `tests/heartbeat.test.ts` under
+14 tests. Junction's suite is currently flaky in `test/heartbeat.test.ts` under
 concurrent edits to `transport/channels.ts` — untouched here, and it passes run
 alone.
 
@@ -3469,7 +3479,7 @@ materialized array, so most of what it hands back is this store's own view —
 and once a node carries an unconfirmed mutation, writing that view back would
 commit the optimistic value as if the server had sent it.
 
-28 cases in `tests/nodes.test.ts`. Green: 1490 tests, typecheck clean.
+28 cases in `test/nodes.test.ts`. Green: 1490 tests, typecheck clean.
 
 ## 2026-08-25 — the principal, committed (`FJS-514`)
 
@@ -3527,7 +3537,7 @@ Committed for both apps: `example` (`strategy database`, a `bearer` resolver) an
 by delegation, 14 exempt, which is the same split litestone's
 `verifyTenantIsolation` reaches independently).
 
-11 tests. Junction's own suite is currently flaky in `tests/heartbeat.test.ts`
+11 tests. Junction's own suite is currently flaky in `test/heartbeat.test.ts`
 under concurrent edits to `transport/channels.ts`; that file is untouched here and
 the failure does not reproduce running the file alone.
 
@@ -3570,7 +3580,7 @@ One claim in the report did not survive contact: the port was released promptly
 even before the fix. A graceful stop stops ACCEPTING at once, and only its
 promise is the part that hangs.
 
-7 tests in `tests/shutdown.test.ts`, timings included — a test that only
+7 tests in `test/shutdown.test.ts`, timings included — a test that only
 asserted `stop()` resolves passed before the fix as well.
 
 ## 2026-08-25 — a `readOnly` column with a default made its model uncreatable
@@ -3604,7 +3614,7 @@ override belongs anyway. A value the caller DOES send still travels, which
 
 Found declaring `redemptions Int @default(0) @system` on `example`'s new
 `Discount`; the shape has been reachable since `@system` existed. Two cases in
-`tests/patch-defaults.test.ts`, beside the patch ones. Green: 1412.
+`test/patch-defaults.test.ts`, beside the patch ones. Green: 1412.
 
 ## 2026-08-25 — sign-in worked for everyone except a browser on another origin
 
@@ -3717,7 +3727,7 @@ that over-fires costs more than one that is missing. The name-based soft warning
 in `defineEnv` stays and now says why it is there.
 
 **A taken `@unique` value is a 409 with a field on it**, from litestone's side of
-the boundary (`FJS-441`) — `tests/unique-conflict.test.ts` measures what reaches
+the boundary (`FJS-441`) — `test/unique-conflict.test.ts` measures what reaches
 a browser through a real client, including that no response body contains
 `UNIQUE constraint failed` or the physical table name.
 
@@ -3835,7 +3845,7 @@ between asking and running is refused rather than replayed. Storing a tenant is
 not storing a session: an id names which rows, and the standing is still derived
 from the re-resolved principal.
 
-`tests/tenant-scope.test.ts` (11) and four cases in `tests/outbox.test.ts`, all
+`test/tenant-scope.test.ts` (11) and four cases in `test/outbox.test.ts`, all
 against a real Litestone client — the failure here is a caller being served
 somebody else's rows, which looks exactly like success from anywhere not holding
 both.
@@ -3862,7 +3872,7 @@ package that assumed a string say so now.
 types; running the parser over it would turn a filter that genuinely says the
 string `'5'` into 5.
 
-`tests/query-parity.test.ts` puts one call down both transports and compares —
+`test/query-parity.test.ts` puts one call down both transports and compares —
 13 cases, which no unit test on either side can see. Two things it caught:
 `$wrap=false` arrives as a boolean now, and reading only the string spelling
 made the tri-state collapse; and `$first` was being sent as the string `'true'`,
@@ -4290,7 +4300,7 @@ returns before any of it and runs no user code, so it is owed nothing.
 
 **It is a second store, deliberately, and not `runInServiceCall`.** That one is read by
 litestone's write tap to suppress a double announcement, and widening it to this span would
-stop a write inside an `afterCommit` effect from being announced at all. `tests/call-scope.test.ts`
+stop a write inside an `afterCommit` effect from being announced at all. `test/call-scope.test.ts`
 asserts the narrow store is already closed by `afterCommit`, so a later merge fails loudly.
 
 **`db` and `me` are not enumerable.** They are accessors, not data, and listing them in
@@ -4339,7 +4349,7 @@ call in the app to change nothing), and no store at all means this call IS the e
 caller, so the ownership is structural rather than conventional. It was never in the
 package's public surface; `requestMeta()` is unchanged.
 
-**`tests/request-scope.test.ts` is the gate**, and it asserts from OUTSIDE: a service method
+**`test/request-scope.test.ts` is the gate**, and it asserts from OUTSIDE: a service method
 that records `requestMeta()`, driven down each entry point in turn. Neither shipped failure
 is visible from inside the entry point that has it — the app runs, the call answers, and
 what is missing is a store nobody in that file reads. Both mutations were re-applied and
@@ -4441,7 +4451,7 @@ that rule does not reach. `LitestoneTable | unknown` is not the fix and looks li
 union with `unknown` collapses to `unknown`, the trap `FJS-034` hit on
 `ServiceDefinition`. The cost is that any accessor name resolves, traded knowing a
 Litestone client throws on an unknown property and an app wanting compile-time names
-generates its own types. `tests/context-db-types.ts` is compiled rather than run.
+generates its own types. `test/context-db-types.ts` is compiled rather than run.
 
 
 ## 2026-08-20 — the keepalive with no client half (`FJS-366`)
@@ -4470,7 +4480,7 @@ a frame the sender was alive to send. And **the client's default interval was
 
 `channels(setup, { heartbeatInterval, heartbeatTimeout })` are the knobs.
 `startHeartbeat()` stays, at 15s, for a client whose server predates this.
-`tests/heartbeat.test.ts` runs the loop against real sockets at 100ms/400ms.
+`test/heartbeat.test.ts` runs the loop against real sockets at 100ms/400ms.
 
 
 ## 2026-08-19 — a 404 that named `undefined` (`FJS-359`)
@@ -4542,7 +4552,7 @@ plain-object db has no opinion at all — against a fake the collision check
 no-ops and ships.
 
 `ctx.reserved` is fresh per call and does not propagate, on the same terms as
-`locals` and `transients`; `tests/context-contract.test.ts` runs all six fields
+`locals` and `transients`; `test/context-contract.test.ts` runs all six fields
 rather than describing them. `describe()` reports the reservation for the same
 reason it reports `allowBulk` — a caller cannot tell a reserved key from a
 column by looking at the URL (`FJS-337`).
@@ -4689,7 +4699,7 @@ name for the string form, `true` for a function, `false` for the opt-out, `null`
 for a service that declares nothing. `null` is not `false` — one asks the
 default, the other refuses it.
 
-Eleven tests in `tests/publish-default.test.ts`, against the **real** channel
+Eleven tests in `test/publish-default.test.ts`, against the **real** channel
 manager rather than a stub with a recording `publish`: the whole question is
 which channel a frame resolves onto, and a stub that ignores the resolver
 answers it by construction. Three mutants, all killed — dropping the fallback,
@@ -4722,7 +4732,7 @@ also carries `@id`, litestone writes what it is given, and
 Taking the whole thing would have let any caller rewrite a primary key through
 a PATCH.
 
-Four tests in `tests/real-litestone-client.test.ts` run through `autoValidate`
+Four tests in `test/real-litestone-client.test.ts` run through `autoValidate`
 before the service, including that one; three fail against the version of this
 fix they each guard.
 
@@ -4836,7 +4846,7 @@ service passing `ctx.data` on whole would fail the write rather than the field.
 between them is who writes it — `locals` is scratch a hook keeps its own state
 in, `transients` is call INPUT the framework parsed, the way `directives` is the
 input the bridge splits off a query. Fresh `{}` per call, does not propagate, no
-seed option, `{}` on a model that declares none. `tests/context-contract.test.ts`
+seed option, `{}` on a model that declares none. `test/context-contract.test.ts`
 asserts both halves by running them.
 
 **A bulk write carrying one is refused by name.** The rows a service receives are
@@ -4930,7 +4940,7 @@ names junction: 138 → 0, and absent means 0.
 
 The row said the rest was test ergonomics and reached no user. Half of it was.
 The other half was the tests being the only code in this repo that uses junction
-the way an app does — so an error in `tests/` was an error a user gets, written
+the way an app does — so an error in `test/` was an error a user gets, written
 down in the one place nobody was reading it as one.
 
 **A custom method's `ctx` was an implicit `any`.** `ServiceDefinition`'s
@@ -4991,7 +5001,7 @@ filename — the path form runs the 26 tests that had been silently skipped. And
 `makeWsApp` in `index.test.ts` called an unimported `channels`, so it could only
 ever have thrown; nothing called it.
 
-Test-side: `tests/helpers.ts` owns the two casts this suite kept rewriting —
+Test-side: `test/helpers.ts` owns the two casts this suite kept rewriting —
 `stubbable` for a fetch stub (Bun's `typeof fetch` carries `preconnect`, so no
 plain function is assignable to it) and `asRecord` for a key the type does not
 declare, which is Invariant 5 working rather than a gap. 18 duplicate imports
@@ -5082,7 +5092,7 @@ Three things came with it:
   caller's `await` succeeded, the failure arrived as a property nobody reads,
   and `stats.completed` counted it as work done. Found while writing the tests.
 
-`tests/workers.test.ts` runs real threads, because the whole question is what a
+`test/workers.test.ts` runs real threads, because the whole question is what a
 second thread receives and a stand-in answers whatever it was written to answer
 — which is how a documented, exported parameter shipped going nowhere.
 
@@ -5123,7 +5133,7 @@ refuses an undeclared column.
 destructuring `{ service }` off a resource dropped the row type the caller had
 just asked for. Now `ServiceProxy<T>`.
 
-`tests/client-types.test.ts` is the proof and it COMPILES: the real generator's
+`test/client-types.test.ts` is the proof and it COMPILES: the real generator's
 output, junction's real client behind the package specifier the augmentation
 names, `tsc --noEmit` over the fixture. The negative half rides the same run —
 `@ts-expect-error` is itself an error when the line it marks type-checks, so the
@@ -5183,7 +5193,7 @@ announce.
 
 The ALS is read inside a `setImmediate` callback and works because the scope
 propagates through scheduling. If that ever stops holding, every service write
-announces twice — `tests/data-write-announcement.test.ts` is what says so.
+announces twice — `test/data-write-announcement.test.ts` is what says so.
 
 **Two limits, both reported rather than guessed.** A **function** `channel:`
 resolver takes `(rows, ctx)` and an orphan write has no ServiceContext to hand
@@ -5284,7 +5294,7 @@ the same afternoon, that now answers a 400 naming the key instead of an empty li
 
 ## 2026-08-16 — a provider is what Junction calls (`FJS-D10`)
 
-1129/1129 tests pass (+5, `tests/session-verifier.test.ts`). Typecheck baseline
+1129/1129 tests pass (+5, `test/session-verifier.test.ts`). Typecheck baseline
 unchanged.
 
 `IAuth` declares six required methods. This package invokes two of them:
@@ -5309,7 +5319,7 @@ only `verifySession` refused `{ verifySession, login, … }`, which is exactly t
 provider it exists to accept. That was measured, not predicted — the first shape
 broke four call sites in this repo's own examples and tests.
 
-`tests/auth-cookie.test.ts` is the receipt: three of its stub providers were
+`test/auth-cookie.test.ts` is the receipt: three of its stub providers were
 written `: IAuth { … } as IAuth`, casting past five methods they do not
 implement. The casts are gone.
 
@@ -5452,7 +5462,7 @@ in every job.
 It propagates now, and it needed no new machinery: the principal joins
 `RequestMeta` in the `AsyncLocalStorage` store the transport **already** wraps a
 whole request in, so nothing is threaded and no caller object is rebuilt. Three
-rules, all executed in `tests/context-contract.test.ts`:
+rules, all executed in `test/context-contract.test.ts`:
 
 - a call naming no principal inherits the one in scope, **at any depth**
 - an explicit `{ user: null }` stays anonymous — **absent is not null**, tested
@@ -5616,7 +5626,7 @@ app, that was **61 diagnostics from inside `node_modules` and none of its own**
 clean, so this was never the framework-wide problem it was filed as.
 
 `index.ts` + `src/**` is now **0**, from 67. The baseline fell **198 → 139**, and
-what is left is `tests/` and `example/`, which no consumer compiles.
+what is left is `test/` and `example/`, which no consumer compiles.
 
 Seven things were hiding in there. In severity order:
 
@@ -5627,8 +5637,8 @@ PAIR whose second element is the encrypted socket. So Gmail, SendGrid, Postmark,
 Office 365, anything on port 587, died with `socket.startTls is not a function`.
 Nothing caught it because the only mail server the drives talk to is the dev
 sink, and a sink advertises no capabilities, so the branch never ran.
-`tests/smtp-starttls.test.ts` pins it and **runs out of process**:
-`tests/email.test.ts` mocks the smtp shim with `mock.module`, which is
+`test/smtp-starttls.test.ts` pins it and **runs out of process**:
+`test/email.test.ts` mocks the smtp shim with `mock.module`, which is
 process-wide and never undone, so an in-process version passed alone and graded
 a mock inside the suite.
 
@@ -6229,7 +6239,7 @@ each of which fails at a different moment:
 - **`publishConfig.access: "public"`** — a scoped package defaults to restricted,
   so the *first* publish of `@frontierjs/*` fails on payment rather than on
   anything about the code.
-- **`files`** — the tarball was 131 files and 464 kB, carrying `tests/`,
+- **`files`** — the tarball was 131 files and 464 kB, carrying `test/`,
   `example/`, `bun.lock`, `tsconfig.json` and the three state markdowns. Now 64
   files and 281 kB: `index.ts`, `src/`, `tools/` minus the seven repo-internal
   `check-*.mjs` audits, README and LICENSE. The bin needs `init.ts`, `setup.ts`,
@@ -6567,7 +6577,7 @@ validates it against the actions that exist.
 
 ## 2026-08-06 — the transport can resolve a session from a cookie
 
-854 tests (was 842 — 12 new in `tests/auth-cookie.test.ts`). Typecheck unchanged
+854 tests (was 842 — 12 new in `test/auth-cookie.test.ts`). Typecheck unchanged
 at 212.
 
 `extractToken()` read only `authorization: Bearer` and `x-api-key`. So
@@ -6620,7 +6630,7 @@ test — `KNOWN GAP: a cookie alone does not authenticate a request`, asserting
 
 ## 2026-08-06 — a custom action announces, like any other write
 
-836 tests (was 830 — 6 new in `tests/event-origin.test.ts`). Typecheck unchanged
+836 tests (was 830 — 6 new in `test/event-origin.test.ts`). Typecheck unchanged
 at 212.
 
 An action changed a row and told nobody. `callService`'s announcement block was
@@ -6703,7 +6713,7 @@ Also:
   what a service answers and what it advertises cannot drift. `/manifest` also
   stops omitting `update`, which its hardcoded CRUD list had dropped.
 
-21 tests in `tests/method-policy.test.ts`; **7 fail if the enforcement is
+21 tests in `test/method-policy.test.ts`; **7 fail if the enforcement is
 removed**. Ruled as `FJS-D07`, closes `FJS-004`, `DECISIONS.md` § API design.
 
 ## 2026-08-06 — a service_error frame dropped the field list
@@ -6749,7 +6759,7 @@ two indefinitely — asynchronously, so no stack overflow ever pointed at it and
 the call simply never settled. The default branch now calls `action()`, the HTTP
 form of a custom action, and `restore` gained its own case.
 
-Seven tests in `tests/client-transport.test.ts`, half of them on the no-socket
+Seven tests in `test/client-transport.test.ts`, half of them on the no-socket
 path. Verified in `example/` over CDP as well: clicking a transition button with
 the socket up sends `orders.pay` as a WS frame and makes **zero** HTTP POSTs.
 
@@ -6768,8 +6778,8 @@ label rather than the column name.
 The point is that Sierra's `field-rules.js` does exactly the same thing from
 exactly the same document. If these two disagreed the user would get one
 message before the request and a different one after it — worse than either
-alone. `tests/field-messages.test.ts` and
-`packages/sierra/tests/field-messages.test.js` are deliberately the same
+alone. `test/field-messages.test.ts` and
+`packages/sierra/test/field-messages.test.js` are deliberately the same
 fixtures and the same expectations.
 
 Presentation is read off the FIELD's own schema, never a `$ref` target:
@@ -6814,7 +6824,7 @@ It also catches: `createApp({ db })` accepts Proxy-based clients that *throw*
 on unknown property access (Litestone's own scoped proxy does exactly that),
 and a banner helper that throws would take the app down at the last startup
 phase, after the port is already open. Six tests in
-`tests/describe-data-realm.test.ts`, four of them on that failure path.
+`test/describe-data-realm.test.ts`, four of them on that failure path.
 
 Newest first. Everything below the 2026-08-02 block was applied during the
 2026-07-25/26 FrontierJS pass, against the archive dated 2026-07-26
@@ -7029,7 +7039,7 @@ when `name` or `hooks` are omitted, no key is added at all — an explicit
 `name: undefined` would override the loader's filename-derived name with
 nothing.
 
-**New:** `tests/base-service-options.test.ts` — 10 tests. Verified against both
+**New:** `test/base-service-options.test.ts` — 10 tests. Verified against both
 the old and new implementations: 3 fail before the change (`name`, `hooks`,
 custom methods), all 10 pass after.
 

@@ -95,7 +95,7 @@ framework can be pointed at.
 ## 3. The reference is generated, and the drift is a test failure
 
 **Update 2026-08-24 — the drift half shipped; the generated reference did not.**
-`packages/cli/core/doc-commands.js` and `tests/docs.test.js` resolve every
+`packages/cli/core/doc-commands.js` and `test/docs.test.js` resolve every
 `` `fli <command>` `` named in a reference doc against the registry. Scope is the
 decision this section did not have to make: **`IDEAS/` is exempt**, because an
 idea paper names commands that deliberately do not exist, and so are the

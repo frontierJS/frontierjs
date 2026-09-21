@@ -64,7 +64,7 @@ This is the answer that came back first and by the widest margin.
   *whose zone resolves it* for every `DateTime` column in every app — the viewer's —
   reached by having no other option. A design here inherits it rather than starting
   from nothing.
-- **The cron half is correct and it is not tested.** `grep timeZone packages/caravan/tests`
+- **The cron half is correct and it is not tested.** `grep timeZone packages/caravan/test`
   returns four hits, every one of them asserting that a stored `timeZone` was passed
   through; nothing anywhere runs a clock across a transition. Measured by hand on
   2026-08-25 against `America/New_York`, and the evaluator does the honest thing in

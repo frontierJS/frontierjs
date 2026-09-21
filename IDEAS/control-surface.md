@@ -282,7 +282,7 @@ Takes a root and answers for either scope, which is open question 1's shape: an 
 root gives that app's rows, a workspace root gives every app's plus the workspace's
 own (phases, suites, snapshots).
 
-**Proved by** `packages/cli/tests/runnables.test.js` — 16 tests over a temp fixture
+**Proved by** `packages/cli/test/runnables.test.js` — 16 tests over a temp fixture
 tree, two of them mutation-checked. 92 rows on this workspace. The factoring is proved
 by BYTE EQUALITY rather than by a suite: the old `repo-map.js` and the new one render
 one identical page over one tree, 62,246 characters each.
@@ -310,7 +310,7 @@ health-checks the process.
 trade than the literal — so each sink names its slot in a comment instead and the
 number traces back without the import.
 
-**Proved by** `packages/junction/tests/dev-services.test.ts`, whose manifest case
+**Proved by** `packages/junction/test/dev-services.test.ts`, whose manifest case
 carries its own negative control: neither sink mounted a route, so every other section
 of that document is blind to them. Both guards mutation-checked.
 
@@ -331,7 +331,7 @@ not that: there is no event to push, because a probe is a question somebody has 
 ask. ~3s from the page, and the tick is visible in the UI so a stale reading cannot
 be mistaken for a live one.
 
-**Proved by** six cases in `tests/server.test.js`, two mutation-checked — including
+**Proved by** six cases in `test/server.test.js`, two mutation-checked — including
 a real socket bound and released, so a row moves `down → up → down`.
 
 ### 4 — ~~the front page~~ — shipped 2026-08-27
@@ -370,8 +370,8 @@ stop button and says why — *started elsewhere*. A page that offered one would 
 process supervisor, which §6 forbids, and the failure mode is killing something
 somebody else is using.
 
-**Proved by** `tests/children.test.js` (12, hermetic through a `spawnFn` seam), four
-route cases in `tests/server.test.js`, and eleven in the browser drive — start, poll,
+**Proved by** `test/children.test.js` (12, hermetic through a `spawnFn` seam), four
+route cases in `test/server.test.js`, and eleven in the browser drive — start, poll,
 stop, and both refusals on screen. Three guards mutation-checked.
 
 **What this step actually cost, and it is the correction worth keeping.** A child is
@@ -396,7 +396,7 @@ becomes the other.
 
 **Proved by** a test that adds a slot to `GLOBAL` and asserts a tile appears with
 nothing edited in `runnables.js` — mutation-checked by hardcoding the four current
-tools, which turns it red. Plus `tests/pmap-state.test.js`, which boots the real
+tools, which turns it red. Plus `test/pmap-state.test.js`, which boots the real
 command, because the thing under test is the WIRING and that is fine in isolation
 while being absent from the command file.
 

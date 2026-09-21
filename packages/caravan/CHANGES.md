@@ -1,5 +1,13 @@
 # Changes — @frontierjs/caravan
 
+## 2026-09-21 — the suite directory is `test/`
+
+**`tests/` is a surface, not a suite.** In an FJS app it sits beside `api/` and `web/` and holds
+what belongs to no single surface, while a surface's own tests are its `test/` (Invariant 3). A
+package is not an app — it has one `src/` — so its suite is `test/`, and this one moved. Eight
+packages spelled it plural and eleven singular with nothing in the tree deciding between them,
+which made the directory name a coin flip on every file added.
+
 ## 2026-09-20 — the bun floor is `1.4.0`
 
 `engines: { bun: '>=1.0.0' }` was a number nobody had moved since it was written, and an engine range
@@ -246,7 +254,7 @@ regress.** A prepared statement stringifies with its parameters expanded to
 their last bound values, so `status = ?` comes back as `status = NULL` and plans
 the opposite way — a test cannot read the text off the statement, and a copy of
 the string would grade SQLite rather than this module and would keep passing
-after the module changed. Every assertion in `tests/scale.test.ts` is a query
+after the module changed. Every assertion in `test/scale.test.ts` is a query
 plan or a row count and none is a duration.
 
 **Residual, stated.** The aggregate is still linear in the retention window
@@ -410,7 +418,7 @@ different. That also says the old identity was not only a boundary bug: naming a
 fire by the minute it was RUN AT rather than the minute it was FOR double-
 dispatches on any day an instance falls behind.
 
-`FJS-525` · `tests/cron-dst.test.ts`
+`FJS-525` · `test/cron-dst.test.ts`
 
 ## 2026-08-23 — a job records WHICH TENANT, beside who asked
 
@@ -627,7 +635,7 @@ The lease is renewed by a timer, so a handler that BLOCKS the event loop past
 ground as `FJS-295`, and the same answer: work that does not yield is work this
 queue cannot supervise.
 
-*8 tests in `tests/ownership.test.ts`, against a real file database because in
+*8 tests in `test/ownership.test.ts`, against a real file database because in
 `:memory:` two instances are two databases and the defect is invisible. Mutation
 checked: restore the blanket recovery and the cron uuid, and 4 of them fail.*
 
@@ -712,7 +720,7 @@ round-trips.
 
 ## 2026-08-16 — a job file declares itself (`FJS-094`, `FJS-090`, `FJS-048`)
 
-112 tests (was 92 — 13 in a new `tests/declaration.test.ts`, 7 added to the
+112 tests (was 92 — 13 in a new `test/declaration.test.ts`, 7 added to the
 integration file). Typecheck clean. `example`: `verify:jobs` 8/8.
 
 Three rows, one shape: **a job's declaration was split across files.**
@@ -772,13 +780,13 @@ Junction renamed `app.provide` to `app.claim` and replaced the
 **Both stay optional, and that is not laziness.** Caravan runs standalone
 against a host that is not a Junction app, which is why `CaravanApp` lists the
 fields it touches rather than carrying an index signature. What makes the
-optionality safe is `tests/junction-integration.test.ts` driving a real app: a
+optionality safe is `test/junction-integration.test.ts` driving a real app: a
 presence check against a fake would pass forever after Junction moved the seam.
 
 
 ## 2026-08-16 — a job runs as whoever asked for it
 
-92 tests (was 81 — 11 new, `tests/job-context.test.ts`). Typecheck clean.
+92 tests (was 81 — 11 new, `test/job-context.test.ts`). Typecheck clean.
 
 The oldest hazard in this package is gone. A handler had no principal, and no
 principal is STRANGER(0), so a job writing back through `app.service('x')` was
@@ -934,7 +942,7 @@ once the plugin was booted against a real Junction app for the first time.
 `for` loop **outside** it. Fixed by hoisting `let dir: string`.
 
 It only ever "passed" because nothing exercised it with a non-empty directory —
-an empty glob result skips the loop. `tests/autoload.test.ts` now runs it against
+an empty glob result skips the loop. `test/autoload.test.ts` now runs it against
 committed fixtures (including a nested dir and an invalid default export).
 **Verified the test catches it**: reverting the hoist reproduces
 `ReferenceError: dir is not defined` in 4 tests.
@@ -1023,7 +1031,7 @@ still pass — verified.
 
 ### The integration gap is closed
 
-`tests/junction-integration.test.ts` (21 tests) boots a real app via
+`test/junction-integration.test.ts` (21 tests) boots a real app via
 `createTestApp()` and covers the seams the direct tests structurally cannot:
 
 - plugin lifecycle — `register()` attaches `app.jobs` at `configure()` time,

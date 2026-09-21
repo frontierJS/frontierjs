@@ -234,7 +234,7 @@ checking before either is committed rather than fetched.
 
 ## Relationship to the other files
 
-- `IDEAS/prior-art.md` — the same instinct one altitude up: read whole projects
+- `IDEAS/review-prior-art.md` — the same instinct one altitude up: read whole projects
   rather than mechanisms. This is its Data-realm half
 - `IDEAS/permission-sets.md` — the gap Keycloak, Moodle and Keto each answer
   differently

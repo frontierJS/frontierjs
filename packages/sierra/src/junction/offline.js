@@ -16,27 +16,30 @@
  *     offlineQuery: { query: { closedAt: null } },
  *   })
  *
- * ── It fills the device's tables too, and that is the hydration ───────────
+ * ── The device's tables are the answer; the cache is the fallback ─────────
  *
- * A warm fills the cache under `listKey(service, query, directives)`, which is
- * the key `load()` will later look under — the SAME function, because a second
- * derivation would warm slots nothing reads and be invisible until the outage.
- * Keyed by question, that is a cache with a schedule: the declared question is
- * answerable offline and a different one is not.
+ * The rows go into the device's own tables when an app has them (`offline: {
+ * db: true }`), and that erases the bound a keyed slot puts on them — a query
+ * engine does not care which question put a row there. It is also the whole of
+ * *hydration*: the tables were previously only as full as what a screen
+ * HAPPENED to read, so a person who never opened a screen before losing signal
+ * had nothing in it, and `@@sync`'s read direction was a claim with nothing
+ * behind it. What an app declares is now what the device holds, whether or not
+ * anyone looked.
  *
- * **The same rows go into the device's own tables when an app has them**
- * (`offline: { db: true }`), and that erases the bound — a query engine does not
- * care which question put a row there. It is also the whole of *hydration*: the
- * tables were previously only as full as what a screen HAPPENED to read, so a
- * person who never opened a screen before losing signal had nothing in it, and
- * `@@sync`'s read direction was a claim with nothing behind it. What an app
- * declares is now what the device holds, whether or not anyone looked.
+ * **So the declaration is the DEVICE's window, and the keyed slot is skipped
+ * for a model the device kept** (`FJS-D337`). With SQL underneath it, the slot
+ * is a second answer to a question the tables answer anyway — and a narrower
+ * one, since it replays the exact query it was given and nothing else.
  *
- * **The declaration keeps meaning the SCREEN's question** — matching it exactly
- * is what makes the cache slot the one `load()` reads — so the device is as full
- * as the declared window and no fuller. A device-sized window and a screen-sized
- * one are two grains, and one option cannot be both while the cache is still
- * underneath (`IDEAS/homestead.md` § Open questions).
+ * **What skips it is the write-through having LANDED, never the config.**
+ * `localDb()` answers null on any failure by design — no OPFS, a worker that
+ * will not start, a device out of quota — so reading `db: true` as *the device
+ * holds this* would leave such a device with an empty screen and nothing said.
+ * A warm that finds the rows did not land fills the cache under
+ * `listKey(service, query, directives)`, the key `load()` will later look
+ * under — the SAME function, because a second derivation would warm slots
+ * nothing reads and be invisible until the outage.
  *
  * ── Warming may not touch a store ──────────────────────────────────────────
  *
@@ -107,10 +110,10 @@ export function declareOffline({ service, model, find, query, directives }) {
  * the ordinary case rather than a failure — the queue is in the same position
  * and says so the same way.
  *
- * `kept` is whether the rows reached the device's own tables, and it is in the
- * report because *hydrated nothing* and *hydrated* are otherwise one answer: the
- * cache holds the declared question either way, so a screen asking exactly that
- * question renders identically with the database empty.
+ * `kept` is whether the rows reached the device's own tables, and it decides
+ * the line under it: a model the device holds gets no keyed slot (`FJS-D337`),
+ * and one it does not gets the slot it always had. So it is a fact rather than
+ * a hope, and a screen can say which of the two it is reading.
  *
  * @returns {Promise<Array<{service: string, rows?: number, kept?: boolean, error?: string}>>}
  */
@@ -119,14 +122,15 @@ export async function warmOffline() {
   for (const { service, model, find, query, directives } of _declared.values()) {
     try {
       const rows = await find(query, directives)
-      await listCache().remember(listKey(service, query, directives), rows)
 
       // Awaited, unlike the write-through a `load()` makes: nothing is
-      // rendering, so there is no screen to keep off a disk — and the report
-      // is worth having only if it is a fact rather than a hope.
+      // rendering, so there is no screen to keep off a disk — and the answer
+      // is what decides whether the cache below is written at all.
       const kept = model && localDbConfigured()
         ? await writeThrough(model, rows)
         : false
+
+      if (!kept) await listCache().remember(listKey(service, query, directives), rows)
 
       out.push({ service, rows: Array.isArray(rows) ? rows.length : 0, kept })
     } catch (err) {

@@ -27,7 +27,7 @@
 // comparison, a value. A comparison's operands sit at VALUE, because the
 // grammar gives it `operand` and an operand is a value or a group.
 //
-// `tests/engine/expression/emit.test.ts` is what holds it: text → Expression →
+// `test/engine/expression/emit.test.ts` is what holds it: text → Expression →
 // text → Expression, asserting the two trees are equal. STRUCTURE rather than
 // string, because a lost bracket changes the tree and may not change the
 // spelling of anything else.

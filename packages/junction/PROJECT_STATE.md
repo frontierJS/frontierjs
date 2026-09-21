@@ -8,7 +8,7 @@ Last verified by running: **2026-08-29**.
 | --- | --- |
 | Version | published to npm, tag `latest` — `package.json` holds the number. Bun-only by construction: Node will not strip types inside `node_modules`, and compiling would only move the failure later (`Bun.serve`, `Bun.file`, `bun:sqlite`) |
 | Tests | `bun run test` |
-| Typecheck | **clean — 0 errors**, and junction is absent from `scripts/typecheck-baselines.json`, where absent means 0 (`FJS-034`). It was 212, then 138, then gone; clearing the last of it found eleven defects in the shipped types, because `tests/` and `example/` are the only code here that uses junction the way an app does |
+| Typecheck | **clean — 0 errors**, and junction is absent from `scripts/typecheck-baselines.json`, where absent means 0 (`FJS-034`). It was 212, then 138, then gone; clearing the last of it found eleven defects in the shipped types, because `test/` and `example/` are the only code here that uses junction the way an app does |
 | Realm | API / D8 |
 
 ## What works

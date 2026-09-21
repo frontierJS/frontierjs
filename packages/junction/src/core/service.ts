@@ -1956,7 +1956,7 @@ export function createBaseService(
     // land on this object as a callable own key. `db` is reserved in
     // SERVICE_OPTION_KEYS so the custom-method scan skips it, and that is
     // exactly one check away from serving an app's database handle over HTTP.
-    // `tests/base-service-options.test.ts` pins it.
+    // `test/base-service-options.test.ts` pins it.
     ...(model      !== undefined ? { model }      : {}),
     ...(paginate   !== undefined ? { paginate }   : {}),
     ...(idField    !== undefined ? { idField }    : {}),

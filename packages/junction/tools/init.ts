@@ -219,7 +219,7 @@ write('.gitignore',            genGitignore())
 write('config/default.ts',    genDefaultConfig(answers))
 write('config/production.ts', genProductionConfig(answers))
 write('app.ts',                genAppEntryPoint(answers))
-write('tests/app.test.ts',    genTests(answers))
+write('test/app.test.ts',    genTests(answers))
 write('README.md',             genReadme(answers))
 
 // Auth module

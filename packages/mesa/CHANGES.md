@@ -3904,7 +3904,7 @@ symlinking it, so a node_modules copy taken before the move is still flat):
 `buildStart` in `packages/jetty/src/build/mesa-plugin.js`, and the two harnesses
 in `packages/ui/test/`.
 
-Verified end to end: a real `vite build` of `tests/fixtures/island-site` loads
+Verified end to end: a real `vite build` of `test/fixtures/island-site` loads
 the compiler through Sierra's resolver, and `verify.mjs` passes in headless
 Chrome. Sierra 724/724, ui 63/63 + 25/25, jetty 422 pass / 1 fail (the
 pre-existing `phase8` `import.meta` failure).
@@ -3966,7 +3966,7 @@ path first and returns if it meets another root before its own. Removing the
 inner root hands the subtree back to the outer one.
 
 Found by putting a Sierra island inside a scroll container in
-`packages/sierra/tests/fixtures/island-site/`. Pinned in `runtime.test.js`
+`packages/sierra/test/fixtures/island-site/`. Pinned in `runtime.test.js`
 ("a handler fires ONCE when delegation roots nest"). Full suite: 941 passing,
 27 skipped.
 
@@ -4193,7 +4193,7 @@ matched any adjacent `p` on the page, including outside the component.
 emitted markup, which is what nothing did before. 30 `scopeCSS` assertions were
 updated from the ancestor form to the subject form. The computed-style proof is
 in a real browser — happy-dom does not implement the cascade — in
-`packages/sierra/tests/fixtures/island-site/verify.mjs`: the styled component
+`packages/sierra/test/fixtures/island-site/verify.mjs`: the styled component
 gets its own background, and the two other buttons on the page keep the UA
 default. Mesa 911 → 921 pass; Sierra 699 pass; jetty green.
 

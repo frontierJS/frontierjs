@@ -176,7 +176,7 @@ Haversine formula in JS — no SQLite extension required, which makes this the
 smaller of the two by a wide margin.
 
 **Unargued**, and that is the blocker rather than the code.
-[`IDEAS/package-map.md`](../../../IDEAS/package-map.md) records geo as a gap
+[`IDEAS/map-packages.md`](../../../IDEAS/map-packages.md) records geo as a gap
 with no home and zero hits in the tree, and
 [`IDEAS/stressors.md`](../../../IDEAS/stressors.md) has it as *named, unargued*.
 A paper comes before a column: where the distance math lives (a toolbelt kit, on

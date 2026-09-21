@@ -354,7 +354,7 @@ Moved out of `PROJECT_STATE.md`, which carries live state only.
 - ✅ Principles page (6 principles)
 - ✅ Vocabulary page (6 tiers, 29 terms, two-level sidebar TOC)
 - ✅ Article sweep: View/Alert/Toast/Popover → `<article>`; Section no longer
-  self-nests; Components pages (Alerts/Toasts/Popovers) aligned to match Vocab
+  self-nests; Components pages (Alerts/Toasts/Popovers) aligned to match Vocabulary
 
 #### Block tier (v0.5)
 - ✅ `.btn.square`, `.pill.removable` + `.pill-close` (session extensions)

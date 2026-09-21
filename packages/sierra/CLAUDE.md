@@ -228,7 +228,7 @@ src/
   Node, in the dev server, at `/__sierra/static-data`, and the browser gets JSON.
   What the client table emits for those routes is a **fetch shim, never an
   import** — that is the whole safety argument, and it is asserted on the shape
-  in `tests/scanner-plugin.test.js` rather than trusted.
+  in `test/scanner-plugin.test.js` rather than trusted.
   **Two things about it are not obvious.** It imports the companion with a plain
   `import()` keyed on the file's mtime, NOT `server.ssrLoadModule`: Vite's SSR
   runner rewrites the module and does not provide Bun's `import.meta.dir`, so
@@ -628,7 +628,7 @@ src/
   component makes reactive with a `$:` path watch. A module-level signal would be
   reactive nowhere: a bare template read of one is only rewritten if the
   consuming build names it, by hand, in another package, and omitting an entry
-  is silent. `tests/no-module-signals.test.js` asserts the absence. `signal()`
+  is silent. `test/no-module-signals.test.js` asserts the absence. `signal()`
   survives for `presence(channelId)`, which returns one from a call.
 - **The plugin passes `externalReactivityHints: 'strict'`.** An uncovered member
   read on an imported object is reported — Mesa's default only reports it when
@@ -644,7 +644,7 @@ src/
   node_modules COPY bun leaves for a workspace dep, which is the last install's
   snapshot. **A miss is not fatal** — HMR turns off and edits full-reload, the
   same thing `canInject` does for a shape it cannot wrap — which means the wiring
-  breaks QUIETLY and no unit test would notice, so `tests/hmr-boundary.test.js`
+  breaks QUIETLY and no unit test would notice, so `test/hmr-boundary.test.js`
   boots a real dev server and asks both halves of it.
 - **So is the inspector.** This package serves Mesa's own
   `inspect-client.js` at `/@frontierjs/sierra/inspect-client` and injects it into
@@ -653,7 +653,7 @@ src/
 - **A missing auto-import does not fail a build.** Mesa compiles a reference to
   an undefined name without complaint, so the symptom is a component that renders
   as nothing, and only what reached the BUNDLE separates *injected* from *silently
-  skipped* — which is why `tests/auto-import-build.test.js` asserts on chunk
+  skipped* — which is why `test/auto-import-build.test.js` asserts on chunk
   content.
 
 ## The contexts in this package

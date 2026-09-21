@@ -33,7 +33,7 @@ db/notification.lite  the schema fragment this package ships
 drivers/inapp.ts  in-app record + WS event
 drivers/email.ts  renders MailLine[] → text/html, hands to app.mail
 examples/         WelcomeUser, PaymentReceived, wiring.ts, Notification.mesa
-tests/            harness.ts + fanout.test.ts + hook.test.ts + email-render.test.ts +
+test/            harness.ts + fanout.test.ts + hook.test.ts + email-render.test.ts +
                    define.test.ts + schema-fragment.test.ts
 ```
 
@@ -124,7 +124,7 @@ throws is logged and the rest still run.
   user cannot show it; `example`'s drive signs in twice for that reason.
 - Temp databases in the test harness are reaped at **process exit**, not in
   `afterAll` — the audit-logger async-flush hazard, same as
-  `packages/auth/tests/harness.ts`.
+  `packages/auth/test/harness.ts`.
 
 ## Conventions that apply here
 
