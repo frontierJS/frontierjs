@@ -1,6 +1,6 @@
-// api/jobs/collect-invoice.job.ts — present one invoice to the provider.
+// api/jobs/invoice-collect.job.ts — present one invoice to the provider.
 //
-// A separate job from `renew-subscription` on purpose. Issuing a document and
+// A separate job from `subscription-renew` on purpose. Issuing a document and
 // taking money are two different failures with two different answers: an
 // invoice that was issued and not paid is the ordinary state of every business,
 // and a renewal that rolled back because a card was declined would leave a
@@ -46,7 +46,7 @@ export async function collectInvoice(ctx: JobContext<CollectPayload>): Promise<s
 }
 
 export default defineJob<CollectPayload>(
-  'collect-invoice',
+  'invoice-collect',
   async (ctx) => { await collectInvoice(ctx) },
   { maxAttempts: 4 },
 )

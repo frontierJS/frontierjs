@@ -586,8 +586,8 @@ sharpest finding.**
 
 | Job | Key | Because |
 | --- | --- | --- |
-| `calculate-payslip` | `unique` | the work is RESUMABLE — a second dispatch after a crash has to REACH the handler, and under `id` it would be swallowed and the payslip never written |
-| `send-payslip` | the dispatch `id` | a payslip that has gone out cannot be un-sent, so the only safe answer to a redelivery is *nothing happens, forever* |
+| `payslip-calculate` | `unique` | the work is RESUMABLE — a second dispatch after a crash has to REACH the handler, and under `id` it would be swallowed and the payslip never written |
+| `payslip-send` | the dispatch `id` | a payslip that has gone out cannot be un-sent, so the only safe answer to a redelivery is *nothing happens, forever* |
 
 `FJS-609` was `id` used where `unique` was meant. This is the case `id` is right
 for, and having both in one domain is what makes the distinction teachable. The
@@ -989,7 +989,7 @@ application's own schema being honest about what it cannot say.
   only one was. The README now describes the directory instead of contradicting
   it, and somebody should either take that decision or move six files.
 - **16 pre-existing typecheck errors in `example`**, none of them payroll's:
-  `core/db.ts` tenancy typing, `gate.ts`'s `Gradable`, `announce-payment.job.ts`,
+  `core/db.ts` tenancy typing, `gate.ts`'s `Gradable`, `payment-announce.job.ts`,
   `carts.service.ts`. Every phase has left the number where it found it.
 
 ---

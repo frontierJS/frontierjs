@@ -1,5 +1,156 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-22 — what a number counts
+
+`timeout Int @unit(s)`, `size Int @unit(MB)`, `share Float @unit("%")`. The
+language had three words about a number's PRECISION — `@scale`, `@money`,
+`@big` — and none about its meaning, so the unit went in the identifier where
+nothing parses it. `FJS-D348` rules the shape, `FJS-1240` is the build.
+
+**Measured before designing.** 123 columns across the seven corpus schemas and
+this repo's three apps carry a unit in their name, against 1,659 models with no
+way to read it. The split is not the one the survey expected: 107 are durations
+and 10 are bytes, while `weightGrams` — the example the gap was framed around —
+exists nowhere in the tree.
+
+**`@money` is the precedent, so there is no new mechanism.** A currency is a
+unit that got its own word: a symbol from a shipped table, refused at parse when
+the table does not hold it, emitted as an `x-` keyword, read by the control
+layer. The pair is refused because a currency already answers the question, and
+`@scale` composes because it says where the point sits rather than what is
+counted — `@scale(3) @unit(kg)` is thousandths of a kilogram.
+
+**It converts nothing.** The value stored is the value sent, and the emitted DDL
+is byte-identical with the attribute and without it — both asserted against a
+real database. A unit that coerced would make the number a caller reads differ
+from the one they wrote, which is what `@money`'s minor units already decline to
+do.
+
+**The symbol table is closed**, because the attribute promises the symbol
+resolves to a DIMENSION, which is what a renderer groups by and a converter
+needs. A free-text `@unit("widgets")` would have been a spelling that looks like
+a declaration and does nothing, which is `FJS-1236`'s shape on a new word. Case
+is not folded — `MB` is a megabyte and `Mb` a megabit — and a near miss is named
+rather than accepted as something else.
+
+**`mo` and `yr` carry no conversion factor and the table records the absence.**
+A month has no fixed length, so the fact stays expressible and the arithmetic is
+what is refused, at the point somebody reaches for it. Leaving them out would
+have refused 45 measured columns to avoid a conversion nobody asked for.
+
+**Legal inside a `type` block**, unlike the three beside it: those are facts
+about a column and a `type` has none, while a number inside a Json document
+counts something exactly as a column does. That asymmetry nearly shipped broken
+— the first cut copied `@scale`/`@money`'s models-only validation walk, so
+`type Box { w String @unit(kgg) }` parsed clean and emitted `x-unit` for a
+symbol resolving to nothing.
+
+**The advice is the other half and it is why the word came first.**
+`litestone advise` reports a numeric column whose name carries its unit and
+states the spelling to move to — 117 findings across those 1,659 models. `info`
+rather than a refusal: the convention works, and renaming a column is a
+migration, so keeping the name and adding the attribute is a complete answer.
+Advice against a working convention could not be given at all until there was
+somewhere for the fact to go.
+
+## 2026-09-21 — how many children a parent must and may have
+
+`lines OrderLine[] @minItems(1) @maxItems(50)`. Minimum cardinality is the most
+widely agreed item in fifty years of data modeling and `.lite` had no word for
+it; the spelling an author reached for instead was accepted and enforced
+nothing. `FJS-D347` rules the shape, `FJS-1239` is the build.
+
+No new word. `@minItems`/`@maxItems` already meant *how many in this collection*
+and already enforced on a `Json` array — on the one collection that is a
+relation they parsed and did nothing.
+
+**Graded once, when the outermost write unit commits**, where `flushPending`
+already fires (`FJS-D170`). A minimum cannot be true at the statement that
+creates the parent and cannot be graded at the one inserting the last child, so
+SQL:92 answered `DEFERRABLE INITIALLY DEFERRED` and SQLite has no such thing.
+Outside `$transaction` a single call IS the outermost unit, so there is one rule
+rather than an immediate/deferred pair: replacing every line of an order is
+accepted inside one transaction and refused outside it.
+
+**The two single-row fast paths are left rather than instrumented.** A create
+and an update with nothing nested never open a transaction (`FJS-1106`), so a
+rule graded at commit misses exactly the writes that hide best. A model that
+declares a bound leaves both; a model that declares none keeps them. A childless
+create under a minimum is refused before the INSERT, with no COUNT.
+
+Graded under `asSystem()` — a bound is a statement about the data, which is the
+line `@@check` and `@@arc` sit on. `asSystem().sql` goes around it, because a
+COUNT over another table cannot be a SQLite CHECK.
+
+What is counted is what a read would answer: a soft-deleted child is not a
+child, a template is not an order, and a cascade leaves no parent to hold to
+anything. Nine write paths carry it, `remove` and `restore` included, because a
+soft delete moves a count in one direction and a restore moves it back.
+
+A bound with no key to count through is a parse error rather than a declaration
+that grades nothing — a to-one relation, and an implicit many-to-many, whose
+rows live in a join table the schema does not name. Two NAMED relations to one
+model resolve through the relation's own name.
+
+Beside it, `advise` gained `value-rule-on-a-relation`: `@gte` on a collection
+reads no value and never runs, and the message names the two words that count.
+
+
+## 2026-09-21 — the browser UI is called **Litestone Studio**
+
+The name was split three ways. `<title>`, the logo and `fli db:studio`'s
+description said *Litestone Studio*; the CLI banner, five `--readonly` refusals,
+the tenant switcher, the drift confirm and the docs said *Studio*; and the
+command, the port slot and every filename said `studio`. The bare word is a
+generic — every ORM ships one, and the comparison table in `README.md` is
+literally a row called *Studio browser UI* with four ticks in it — so a reader
+who met it alone could not tell whose it was.
+
+`VOCABULARY.md` carries the ruling: **Litestone Studio** is `blessed`, **Studio**
+is an `alias` and is shorthand once a page has named it in full. Every string a
+person reads now names it in full — the banner, the refusals, the two aria
+labels, the tenant messages, the seed and drift notices, the `--port`/`--no-open`
+flag descriptions — and so does the first mention in each document. The command
+is untouched: `litestone studio` is an identifier, as are `studio.html`, the
+`studio` port slot and the seven `verify:studio*` drives.
+
+`cli-smoke.test.ts` matches the full banner. The four studio drives that render
+the changed strings pass; `verify:studio:access` and `verify:studio:explore`
+fail, both at HEAD as well — explore is `FJS-1203`, access is `FJS-1238`.
+
+## 2026-09-21 — a validator on a column no caller can write is refused by `advise`
+
+`lineCount Int @from(OrderLine, count: true) @gte(1)` is what an author reaches
+for when they want *an Order has at least one line*, and it parsed clean, said
+nothing, and enforced nothing. Measured before the rule was written: `valid:
+true` with zero errors and zero warnings, an `Order` created with no lines at all
+read back `lineCount: 0`, and the read-mode JSON Schema carried `"minimum": 1`
+where a consumer takes it for a constraint that holds. `@computed`, `@derived`
+and `@generated` are the same — all four refuse a caller's write by name, so the
+rule is unreachable by construction.
+
+`advise.js` rather than the parser, because the table builds and nothing is
+refused: `FJS-721` already drew that line and this is it applied rather than
+re-argued.
+
+The two nearest neighbours are out of the set and both were measured rather than
+reasoned about. `@transient`'s validators run before the value is lifted onto
+`ctx.transients`, and a `@system` column's run when the application names it on
+the write — `code String @system @length(5, 10)` was refused against a real
+client. `@money`, `@scale`, `@big` and `@vector` are out for a different reason:
+they say what the column holds and how a reader renders it, which is why
+`priceFrom Int @from(ProductVariant, min: price) @money(USD)` in the shop is
+correct and must stay silent.
+
+The kind list is `VALIDATOR_KINDS`, hoisted out of `buildValidationMap` so the
+next validator added joins the rule by default rather than being remembered into
+it. Zero findings across the 122 models of `example`, `basecamp` and `orion`.
+
+What it does not do is make the fact enforceable. A minimum over a `@from` count
+is a cross-row invariant, which `FJS-627` answered as a derivation rather than a
+constraint; the message says so and points at `@@check` and the service.
+
+
 ## 2026-09-21 — the renamed scalar types are gone, along with the migration for them
 
 `Text`, `Integer`, `Real` and `Blob` were held in a `RENAMED_TYPES` map so the

@@ -1,8 +1,8 @@
-// api/jobs/send-payslip.job.ts — a payslip going out, at most once.
+// api/jobs/payslip-send.job.ts — a payslip going out, at most once.
 //
 // ─── `id` and not `unique`, which is the opposite of its sibling ──────────
 //
-// `calculate-payslip` uses `unique` because its work is RESUMABLE: telling it
+// `payslip-calculate` uses `unique` because its work is RESUMABLE: telling it
 // to do the thing again has to reach the handler. This is the other kind. A
 // payslip that has been sent cannot be un-sent, so the only safe answer to a
 // redelivery is *nothing happens*, forever — and that is what
@@ -48,7 +48,7 @@ export async function sendPayslipJob(ctx: JobContext<SendPayslipPayload>): Promi
 }
 
 export default defineJob<SendPayslipPayload>(
-  'send-payslip',
+  'payslip-send',
   async (ctx: JobContext<SendPayslipPayload>) => { await sendPayslipJob(ctx) },
   { maxAttempts: 5 },
 )

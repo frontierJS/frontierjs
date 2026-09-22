@@ -93,6 +93,14 @@ const _CARRIED = [
   // lets that decision be made off the declaration rather than off a column
   // name ending in `Cents`.
   'x-money', 'x-scale',
+  // `x-unit` is `@unit`: WHAT the number counts, where the two above are about
+  // how exact it is. Carried for the same reason and with the opposite
+  // consequence for the control — a scaled column needs one because the box and
+  // the column disagree, and a unit column needs none, because `300` typed into
+  // a `@unit(s)` field is the `300` that is stored. So this is here for what
+  // RENDERS the value rather than for what picks the input: a cell, a label, a
+  // summary, and `registerControl` for an app that wants the symbol in the box.
+  'x-unit',
   // `x-litestone-required-where` is `@required(where: …)`: the AST of a
   // predicate over THIS ROW's own columns, deciding whether the column needs a
   // value. Carried as the EXPRESSION where the write policy one line down is

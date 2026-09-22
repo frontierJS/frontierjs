@@ -232,4 +232,4 @@ writing files nothing will read. See `docs/multi-tenancy.md`.
 | `--schema=<path>` | Path to `.lite` schema file |
 | `--db=<path>` | Path to SQLite database file |
 | `--migrations=<dir>` | Path to migrations directory |
-| `--port=<n>` | Studio port (default: 8502) |
+| `--port=<n>` | Litestone Studio port (default: 8502) |

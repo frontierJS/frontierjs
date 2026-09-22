@@ -142,6 +142,7 @@ const MESSAGE_KEYWORDS = {
  */
 import { parseGateString } from './plugins/gate.js'
 import { LEVELS } from '@frontierjs/toolbelt/gate'
+import { unitInfo } from '@frontierjs/toolbelt/units'
 import { TIME_PATTERNS } from './core/validate.js'
 import { dependsOnClock } from './core/policy.js'
 import { capabilitiesForModel } from './core/capabilities.js'
@@ -1185,6 +1186,16 @@ function applyValidators(schema, attributes) {
         schema['x-money'] = attr.currency
           ? { currency: attr.currency }
           : attr.field ? { field: attr.field } : {}
+        break
+
+      // Beside `x-money` for its reason, and carrying the same two facts it
+      // does: what the number is, and nothing a reader would have to trust.
+      // The FACTOR is deliberately absent — it is derivable from the symbol by
+      // anything holding `@frontierjs/toolbelt/units`, and a calendar unit has
+      // none, so carrying it would put a null on the wire for every consumer to
+      // decide about.
+      case 'unit':
+        schema['x-unit'] = { symbol: attr.symbol, dimension: unitInfo(attr.symbol)?.dimension ?? null }
         break
 
       case 'regex':

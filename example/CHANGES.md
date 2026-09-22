@@ -1,5 +1,15 @@
 # Changes — example
 
+## 2026-09-21 — a job file is named for its subject
+
+**Every other kind-suffixed file in this tree is named for its noun** — `orders.service.ts`,
+`Order.mesa`, `OrderConfirmation.notification.ts`, `model Order` — and jobs were the one
+exception, named verb-first. Ten of the eleven moved: `payslip-calculate` and `payslip-send`
+now sort together, as do `subscription-renew`, `subscriptions-dun` and `subscriptions-renew`,
+which is the whole argument — a domain's deferred work is one block in the only listing
+anybody reads. `retention` keeps its bare noun, having no verb. **The filename is the job's
+name**, so every dispatch site, cron registration and drive moved with it.
+
 ## 2026-09-21 — `verify:shell` watches the warm rather than reading it back
 
 `FJS-D337` stops the warm writing a list-cache slot for a model the device keeps, and that slot

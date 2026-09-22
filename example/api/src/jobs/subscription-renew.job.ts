@@ -1,7 +1,7 @@
-// api/jobs/renew-subscription.job.ts — one subscription, one period, one invoice.
+// api/jobs/subscription-renew.job.ts — one subscription, one period, one invoice.
 //
 // The unit of work is a SUBSCRIPTION AND A PERIOD, never a subscription, and
-// the whole design of this file follows from that. `renew-subscriptions` finds
+// the whole design of this file follows from that. `subscriptions-renew` finds
 // what is due and dispatches one of these each; this issues the document and
 // advances the cycle.
 //
@@ -32,7 +32,7 @@ import { occurrenceKey }  from '@frontierjs/toolbelt/history'
 import {
   advancePeriod, issueInvoice, nextInvoiceNumber, periodLines,
 } from '../domain/billing'
-import collectInvoice     from './collect-invoice.job.ts'
+import collectInvoice     from './invoice-collect.job.ts'
 
 export type RenewPayload = { subscriptionId: number, periodEnd: string }
 
@@ -154,7 +154,7 @@ export async function renewSubscription(
 }
 
 export default defineJob<RenewPayload & { at?: string }>(
-  'renew-subscription',
+  'subscription-renew',
   // `runAs` has already put this job's shop in scope, so `configFor()` answers
   // its calendar; `$` refuses outside a service call.
   async (ctx) => { await renewSubscription(ctx, ctx.app!.configFor().timeZone) },

@@ -46,7 +46,7 @@ try {
 
 ## Why this is here
 
-The catalog is a module rather than a Studio panel so that a terminal can ask
+The catalog is a module rather than a Litestone Studio panel so that a terminal can ask
 it, and this is the door an app developer actually stands in front of: `fli` is
 what a scaffolded app installs, and `litestone` is a dependency of it. A reader
 nobody can reach is not a reader.

@@ -1,5 +1,18 @@
 # Changes — @frontierjs/css
 
+## 2026-09-21 — `vocabulary.js` has a fifth reader
+
+`fli ws:terms` reads the generated `vocabulary.json` as a vocabulary register,
+so this package's 56 terms and 8 axes stop reading as words nobody defined in
+the workspace-wide scan. Nothing here changed but the header's count of readers,
+which is the kind of number that is wrong the moment it is not updated.
+`packages/cli/CHANGES.md` has the reasoning.
+
+## 2026-09-21 — the note about a scoped token names Litestone Studio
+
+`CLAUDE.md` said *litestone's Studio*. The term is **Litestone Studio** —
+`VOCABULARY.md`, and `packages/litestone/CHANGES.md` for why.
+
 ## 2026-09-20 — three variable tiers, and the name carries which (`FJS-1192`)
 
 `--fill` was the best-named property in the package and it is the OUTPUT of

@@ -123,7 +123,7 @@ default is the tempting one.** `audience: 'system'` includes `@guarded` and
 tokens into the *description* of a tool, disclosed before any call is made, to a
 caller whose whole job is reading what it is given. *The agent acts for the
 application, so give it what the application knows* is the sentence that gets
-there, and `FJS-976` is what it cost one realm over: Studio's table dump
+there, and `FJS-976` is what it cost one realm over: Litestone Studio's table dump
 defaulted to `asSystem()` and shipped protected columns in plaintext for as long
 as nobody was made to choose. That is why the audience is not an option here.
 

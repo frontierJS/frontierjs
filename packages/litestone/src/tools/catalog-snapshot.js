@@ -91,7 +91,7 @@ export function renderCatalogSnapshot() {
   push('')
 
   push('## The visibility table', '')
-  push('Three answers, one word. Asked as an interview in Studio.', '')
+  push('Three answers, one word. Asked as an interview in Litestone Studio.', '')
   push('| column | caller writes | caller reads | word |', '| --- | --- | --- | --- |')
   for (const r of VISIBILITY)
     push(`| ${r.stored ? 'yes' : 'no'} | ${r.callerWrites ? 'yes' : 'no'} | ` +

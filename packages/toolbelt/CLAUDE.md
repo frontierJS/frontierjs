@@ -66,7 +66,15 @@ src/units/           a magnitude with a unit, as a person reads it. Bytes:
                      five copies in one app and two email bodies with no
                      currency at all (`FJS-440`). Arithmetic: `roundMinor` and
                      `allocate`, the rounding mode and the leftover unit
-                     `@money` deliberately left to the app (`FJS-D154`)
+                     `@money` deliberately left to the app (`FJS-D154`).
+                     MEASURES: the symbol table behind `.lite`'s `@unit`
+                     (`FJS-D348`) — one row per unit, carrying its dimension
+                     and its factor to that dimension's base. Length and
+                     information are READ off `LENGTH`/`BYTE_UNITS` rather
+                     than restated, so a unit added there is one a schema can
+                     declare; `mo` and `yr` carry `factor: null`, because a
+                     month has no fixed length and a factor would be a lie a
+                     caller could not see — `convertUnit` refuses them by name
 src/gate/            the access LADDER — the 0-9 scale, `levelPasses` (8 and 9
                      are SENTINELS, so it is not `>=`), and `gradeStanding`,
                      the session shape -> level. Four hand copies across three

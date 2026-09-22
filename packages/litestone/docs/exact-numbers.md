@@ -1,11 +1,12 @@
-# Exact numbers — `@scale`, `@money` and `@big`
+# Numbers — `@scale`, `@money`, `@big` and `@unit`
 
 `.lite` has `Int` and `Float` and nothing between them, and SQLite has no
 fixed-point type to put there. So an exact quantity — a price, a reorder point,
 a rate — gets modeled as a float and hoped over.
 
 `Int @scale(n)` is the fix, and `@money` is a step on top of it. Ruled in
-`FJS-D142`.
+`FJS-D142`. `@unit` is the fourth and asks a different question — not *how
+exact is this number* but *what does it count*.
 
 ## `@scale(n)` — the point sits n places in
 
@@ -254,6 +255,80 @@ once — which is the same split, said in one column fewer.
 column adds unlike things, and the schema cannot see it. Group by the currency
 column.
 
+## `@unit(symbol)` — what the number counts
+
+The other three are about a number's PRECISION. This one is about its meaning,
+and the column it exists for is the one every schema already has:
+
+```
+model Job {
+  timeoutSeconds Int        // the unit is in the name, where only a person reads it
+}
+```
+
+Nothing parses that suffix. A generated form renders a bare number, an agent
+describing the model repeats the identifier and not the fact, and the atlas
+cannot group it with the other durations. Declare it instead:
+
+```
+model Job {
+  timeout   Int  @unit(s)
+  size      Int  @unit(MB)
+  retention Int  @unit(mo)
+  share     Float @unit("%")
+}
+```
+
+**It converts nothing.** What a caller sends is stored and what they read back
+is the same number — the same promise `@money`'s minor units make. A unit says
+what the number counts; it does not change it, and there is no column, no CHECK
+and no coercion behind it. The emitted DDL is identical with the attribute and
+without it.
+
+**The symbol comes from a closed table and one it does not hold is refused at
+parse.** The attribute's whole contract is that the symbol resolves to a
+*dimension*, which is what a renderer groups by and a converter needs — so a
+symbol resolving to nothing is a declaration that cannot be expressed, the same
+place `@money(XYZ)` is refused. The table is
+`@frontierjs/toolbelt/units`, and `litestone explain @unit` prints it:
+
+| dimension | symbols |
+| --- | --- |
+| duration | `ms` `s` `min` `h` `d` `wk` `mo` `yr` |
+| information | `B` `KB` `MB` `GB` `TB` `PB` |
+| length | `mm` `cm` `m` `km` `in` `ft` `yd` `mi` `nmi` |
+| mass | `mg` `g` `kg` `t` `oz` `lb` |
+| ratio | `%` |
+
+Length and information are read from the kit's own `LENGTH` and `BYTE_UNITS`,
+so a unit added there is a unit a schema can declare.
+
+**A unit's case is part of it.** `MB` is a megabyte and `Mb` a megabit in every
+tool a reader has used, so nothing is folded — and a near miss is named:
+`@unit(MS)` is refused *did you mean 's'*… *'ms'*, rather than being quietly
+accepted as something else.
+
+**`mo` and `yr` carry no conversion factor**, and the table records the absence
+rather than leaving them out. A retention window really is stated in months, so
+the fact is expressible; what is refused is the arithmetic, at the point
+somebody reaches for it — `convertUnit(3, 'mo', 'd')` throws rather than
+inventing a length for a month.
+
+**`@scale` composes and `@money` does not.** `@scale(3) @unit(kg)` is
+thousandths of a kilogram — one attribute says where the point sits, the other
+says what is counted. `@money` already carries a currency, which *is* the unit,
+so the pair is refused. In effect `@money(USD)` is `@scale(2) @unit(USD)` with
+the scale derived from the ISO table rather than typed.
+
+**It is legal inside a `type` block**, unlike `@scale`/`@money`/`@big` — those
+are facts about a column and a `type` has none, while a number inside a Json
+document counts something just as a column does.
+
+`litestone advise` reports a numeric column whose name carries its unit and
+which declares none, with the spelling to move to. It is `info`: the convention
+works, and renaming a column is a migration — adding the attribute and keeping
+the name is a complete answer.
+
 ## On the wire
 
 `x-scale` and `x-money` travel in the JSON Schema beside `type: 'integer'`:
@@ -283,8 +358,11 @@ time is worse than an absent one.
 ## See also
 
 - `docs/schema.md` — the rest of the field attributes
-- `packages/toolbelt/src/units/units.js` — `formatMoney`, `minorUnits`
+- `packages/toolbelt/src/units/units.js` — `formatMoney`, `minorUnits`,
+  `MEASURE_UNITS`, `unitInfo`, `convertUnit`
 - `DECISIONS.md` § `FJS-D142` — why an attribute rather than a `Decimal` scalar,
   and why the aggregate argument for it was retired after measurement
 - `DECISIONS.md` § `FJS-D174` — why `@big` crosses as a string rather than a
   `BigInt`, and why global `safeIntegers` was refused
+- `DECISIONS.md` § `FJS-D348` — why `@unit` declares and never converts, and why
+  the symbol table is closed

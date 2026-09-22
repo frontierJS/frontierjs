@@ -127,7 +127,7 @@ README's *Verified* section — not a claim.
   same transaction. `verify:stock` asserts the three things that break silently:
   a hold moves available and leaves on hand alone, a shopper's own hold does not
   count against them, and the expiry is in the READ rather than in the cron —
-  so `release-holds` is housekeeping and a queue outage cannot stop the shop
+  so `holds-release` is housekeeping and a queue outage cannot stop the shop
   selling. The ledger is `@@gate("5.5.9.9")`: update and delete are 9, which
   nothing passes including `asSystem()`, and that is what append-only is spelled
   with.
@@ -287,7 +287,7 @@ example/
 │       ├── core/db.ts      ← client + GatePlugin + autoMigrate; appends auth's
 │       │                     schema fragments rather than pasting a copy
 │       ├── core/gate.ts    ← the ONE place a session becomes a number
-│       ├── jobs/           ← book-courier, announce-payment, sweep-abandoned (its own cron) — all autoloaded
+│       ├── jobs/           ← courier-book, payment-announce, abandoned-orders-sweep (its own cron) — all autoloaded
 │       ├── providers/mail/mailer.ts      ← IMail over app.conduit.send() — the provider is a TARGET
 │       ├── providers/mail/sink.ts   ← the dev mail catcher on :8111, provider-shaped
 │       │                          plus the inbox it serves at /
@@ -459,14 +459,14 @@ README's *Found by building this* table.
   Do this if a run leaves the data changed — `verify` itself is idempotent.
 
   **It deletes `db/jobs.db` too, and that is not tidiness.** The queue is a
-  separate SQLite file and it used to survive a reset, so a `book-courier` row
+  separate SQLite file and it used to survive a reset, so a `courier-book` row
   enqueued by an earlier run stayed `pending` with *no such principal* — the
   staff member it recorded went with the reseeded database. Caravan's `unique`
-  is a lock on work that is still owed, so `book-courier:5` held its key against
+  is a lock on work that is still owed, so `courier-book:5` held its key against
   every later run, and `ship` on order 5 dispatched nothing at all. What that
   reads as is `verify:jobs` failing `job.wroteTracking` **while `job.record`
   passes**, because the row the drive finds is the previous run's. The same
-  thing took `verify:notify`'s `announce-payment` down. Both are green from a
+  thing took `verify:notify`'s `payment-announce` down. Both are green from a
   reset that includes the queue.
 - **The browser drives default to `http://localhost:8010` — check who is
   answering it.** Another app on this machine wanted the same port, and a drive

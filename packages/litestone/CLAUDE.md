@@ -40,6 +40,12 @@ src/
     migrate.js     — schema diffing: introspect, buildPristine, diffSchemas
     migrations.js  — file-based migrations: create, apply, status, verify, autoMigrate
     validate.js    — ValidationError, all field validators
+    cardinality.js — how many children a parent must and may have
+                     (`@minItems`/`@maxItems` on a relation). The ledger of
+                     parents a write unit touched, graded at the OUTERMOST
+                     commit — where `flushPending` already fires, because a
+                     minimum is not true at the statement that creates the
+                     parent and SQLite has no deferred constraint (`FJS-D347`)
     query.js       — buildWhere, buildOrderBy, boolean/date coercion
     plugin.js      — Plugin base class, PluginRunner, AccessDeniedError
     policy.js      — buildPolicyMap(), buildPolicyFilter(), checkCreatePolicy()
@@ -122,7 +128,7 @@ src/
 
   tools/           — dev/ops utilities, never imported by app code
     cli.js         — litestone CLI (all commands)
-    studio.html    — browser-based Studio UI
+    studio.html    — Litestone Studio, the browser UI
     repl.js        — the console prompt: eval loop, completion, history
     ddl-snapshot.js — renderDdlSnapshot(): the emitted DDL as a committed file
     introspect.js  — generateLiteSchema(): reverse-engineer DB → .lite
@@ -154,7 +160,7 @@ src/
   tenant.js        — createTenantRegistry()
   core/tenancy.js  — resolveTenancy() + tenantFrom(): what a `tenancy { }` block
                      MEANS, resolved once. Four readers — the registry, the CLI,
-                     Studio, Junction — and none of them may answer differently
+                     Litestone Studio, Junction — and none may answer differently
   testing.js       — makeTestClient, Factory, Seeder, factoryFrom, generateFactory, etc.
   seeder.js        — Factory, Seeder, runSeeder (re-exported from testing.js)
   jsonschema.js    — generateJsonSchema()
@@ -309,6 +315,20 @@ Type?      — optional (nullable)
 @money(USD)                      @scale with the places DERIVED from the currency
 @money(field: currency)          the code is on the row; no static scale
 @money                           the app's default currency
+@unit(ms)                        what the number COUNTS — a symbol from a closed table
+                                 in @frontierjs/toolbelt/units. Declares and never
+                                 converts: the value stored is the value sent and the
+                                 DDL is identical with it and without it. The symbol
+                                 must resolve to a DIMENSION or it is refused at parse,
+                                 and the case is part of it (MB is a megabyte, Mb a
+                                 megabit). duration ms s min h d wk mo yr · information
+                                 B KB MB GB TB PB · length mm cm m km in ft yd mi nmi ·
+                                 mass mg g kg t oz lb · ratio %. mo and yr carry no
+                                 conversion factor — a month has no fixed length — so
+                                 the fact is declarable and convertUnit refuses the
+                                 arithmetic. Composes with @scale, refused beside
+                                 @money, and legal inside a `type` block, which the
+                                 three above are not
 @big                             the OPPOSITE end: an Int whose values use all 64
                                  bits, crossing as a STRING of digits in and out.
                                  Storage stays INTEGER, so ordering, a range

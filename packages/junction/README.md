@@ -1359,7 +1359,7 @@ createService({
 
   async pay(ctx) {
     const order = await ctx.locals.db.order.transition(ctx.id, 'pay')
-    await ctx.enqueue('announce-payment', { orderId: order.id })
+    await ctx.enqueue('payment-announce', { orderId: order.id })
     return order
   },
 })
@@ -2097,7 +2097,7 @@ principal in scope at `dispatch()` and re-resolves them when the job runs, so a
 service call inside a handler names no `auth` and inherits one:
 
 ```ts
-export default defineJob('book-courier', async (ctx) => {
+export default defineJob('courier-book', async (ctx) => {
   const code = await courier.book(ctx.data)
   // ctx.app is the running app; no principal stated, none needed
   await ctx.app.service('orders').call('recordTracking', ctx.data.orderId, { trackingCode: code })

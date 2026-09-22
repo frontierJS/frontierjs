@@ -29,6 +29,7 @@ import {
 } from './query.js'
 import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
 import { validate, applyTransforms, buildValidationMap, validateJsonPatch, ValidationError } from './validate.js'
+import { createCardinalityLedger, refuseChildlessCreate } from './cardinality.js'
 import { PluginRunner, AccessDeniedError } from './plugin.js'
 import { GatePlugin, FrontierGateGetLevel, levelPasses } from '../plugins/gate.js'
 import { CapabilityPlugin, requireCapability, requireGrantSubset } from '../plugins/capability.js'
@@ -59,7 +60,7 @@ import {
   buildAutoIdMap, buildGeneratedDefaultMap, buildAuthDefaultMap, buildSelfRelationMap,
   buildFieldRefDefaultMap, buildUpdatedByMap, buildVersionMap, buildCreatedByMap, buildSyncMap,
   buildSequenceMap, schemaDeclaresAccessRules, buildFieldPolicyMap, buildSecretMap,
-  buildJsonMap, buildGeneratedMap, buildFromMap, buildComputedSet, buildBoolMap, buildBigMap,
+  buildJsonMap, buildGeneratedMap, buildFromMap, buildCardinalityMap, buildComputedSet, buildBoolMap, buildBigMap,
   buildAffinityMap,
   buildFilterKindMap, buildTransitionMap, buildEnumMap, buildSoftDeleteCascadeMap,
   getCascadeTargets, buildRelationMap, buildFieldReadMap, buildGuardedMap,
@@ -1889,7 +1890,7 @@ const FLAVOR_REFUSAL = (key) =>
 // owning context and this can be asked instead of the counter.
 const ownsTx = (state) => _txOwned.getStore()?.has(state) ?? false
 
-function makeTxManager(db, state = { depth: 0 }) {
+function makeTxManager(db, state = { depth: 0 }, ledger = null) {
   let spCount = 0
 
   // Lock as a promise chain. `tail` always resolves when the current holder
@@ -1936,18 +1937,24 @@ function makeTxManager(db, state = { depth: 0 }) {
     if (state.depth === 0) { db.run('BEGIN IMMEDIATE') }
     else { spCount++; db.run(`SAVEPOINT sp_${spCount}`) }
     state.depth++
-    return { sp: state.depth === 1 ? null : spCount, mark: pending.length }
+    return { sp: state.depth === 1 ? null : spCount, mark: pending.length, cmark: ledger?.length ?? 0 }
   }
 
   function commit({ sp }) {
+    // Graded BEFORE the depth moves. A refusal here is thrown to the caller's
+    // own catch, which calls rollback() — and rollback decrements too, so a
+    // grade after the decrement would take the counter negative on every
+    // refusal.
+    if (sp == null && ledger) { ledger.grade(db); ledger.truncate(0) }
     state.depth--
     if (sp == null) { db.run('COMMIT'); flushPending() }
     else            db.run(`RELEASE sp_${sp}`)
   }
 
-  function rollback({ sp, mark }) {
+  function rollback({ sp, mark, cmark }) {
     state.depth--
     pending.length = mark
+    if (ledger) ledger.truncate(cmark)
     if (sp == null) db.run('ROLLBACK')
     else { db.run(`ROLLBACK TO sp_${sp}`); db.run(`RELEASE sp_${sp}`) }
   }
@@ -1988,7 +1995,7 @@ function makeTxManager(db, state = { depth: 0 }) {
     finally { release() }
   }
 
-  return { begin, commit, rollback, wrap, exclusive, wrapExclusive, queueEvent, owns: () => ownsTx(state), state }
+  return { begin, commit, rollback, wrap, exclusive, wrapExclusive, queueEvent, ledger, owns: () => ownsTx(state), state }
 }
 
 // ─── Read routing ─────────────────────────────────────────────────────────────
@@ -4072,6 +4079,38 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // row: it would either announce twice, or skip an update whose transition
   // event was suppressed (a SYSTEM write, where the move is deliberately not
   // announced) and announce nothing at all.
+  // ── Relation cardinality ───────────────────────────────────────────────────
+  //
+  // Both ends move a count, so both are noted: writing a PARENT can leave one
+  // with no children, and writing a CHILD moves the parent it names. The grade
+  // itself is at the outermost commit (`cardinality.js`).
+  const _cardNotes = tx.ledger
+    && ((ctx.cardinalityMap?.byParent?.[modelName]?.length ?? 0)
+      + (ctx.cardinalityMap?.byChild?.[modelName]?.length ?? 0)) > 0
+  function noteCardinality(row, before = null) {
+    if (!_cardNotes || !row) return
+    tx.ledger.noteParent(modelName, row)
+    tx.ledger.noteChild(modelName, row, before)
+  }
+  // A write that names its rows with a WHERE moves parents only the database
+  // knows, and only BEFORE the statement runs. Takes the SQL the caller has
+  // already built rather than a where object, so the rows noted are exactly the
+  // rows written — a second compile of the same filter is a second answer.
+  //
+  // The columns are aliased back to FIELD names because that is what the ledger
+  // reads; under `@map` the two differ and an unaliased row would note
+  // `undefined` for every parent, which is silently no parents at all.
+  function noteCardinalityBySql(whereSql, params) {
+    if (!_cardNotes) return
+    const rules = ctx.cardinalityMap?.byChild?.[modelName] ?? []
+    if (!rules.length) return
+    const pairs = [...new Map(rules.flatMap(r =>
+      r.fkColumns.map((c, i) => [c, r.fkFields[i]]))).entries()]
+    const sel = pairs.map(([c, f]) => `"${c}" AS "${f}"`).join(', ')
+    const sql = `SELECT DISTINCT ${sel} FROM "${tableName}"${whereSql ? ` WHERE ${whereSql}` : ''}`
+    for (const row of writeDb.query(sql).all(...params)) tx.ledger.noteChild(modelName, row)
+  }
+
   function fireRowEvent(event, operation, result, transition = null) {
     if (!hasAudience()) return
     fireEvent(event, {
@@ -7577,6 +7616,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
     // ── create ──────────────────────────────────────────────────────────────
     async create({ data, include, select, scopedBy, system } = {}) {
+      // Before the INSERT and before the transaction: a create of a model whose
+      // relation declares a minimum, naming no children, can never satisfy it,
+      // and answering that with a COUNT would cost the single-row fast path
+      // (`FJS-1106`) for a row that is refused either way.
+      const _cardRequires = ctx.cardinalityMap?.requiresChildren?.[modelName]
+      if (_cardRequires) { const r = refuseChildlessCreate(_cardRequires, data); if (r) throw r }
       await enforceValueSets(modelName, [data], ctx)
       if (ctx.hasPolicies) checkCreatePolicy(modelName, data, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, include, select }, ctx)
@@ -7697,7 +7742,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       let _crOut
       const _crSplit = ctx.sequenceMap?.[modelName]?.length ? null : extractNestedWrites(data)
       const _crEdges = _crSplit && !_crSplit.hasNested ? extractEdgeWrites(_crSplit.scalar) : null
-      if (_crEdges && !_crEdges.edgeWrites.length && tx.state.depth === 0) {
+      // A write that moves a count has to reach `commit`, which is where the
+      // count is graded — the autocommit path never opens a transaction, so a
+      // child inserted through it is never graded at all (`FJS-969`'s shape one
+      // realm over: the fast paths are the ones a rule misses). Asked of the
+      // MODEL, so a schema declaring no bound keeps the path (`FJS-1106`).
+      if (_crEdges && !_crEdges.edgeWrites.length && tx.state.depth === 0 && !_cardNotes) {
         data   = _crEdges.data
         _crOut = insertRow(false, _crEdges.edgeWrites)
       } else {
@@ -7715,6 +7765,16 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           data = { ..._scalarNoEdge, ...extraFKs }
 
           const inserted = insertRow(hasNested, edgeWrites)
+          // Inside the transaction, because the grade runs at ITS commit. Noted
+          // after it returns and the ledger is graded by the NEXT write's
+          // commit instead — which still reads the right COUNT, so it looks
+          // correct for as long as consecutive writes share a parent.
+          //
+          // `select: false` with nothing nested skips the RETURNING, so there is
+          // no row — and a child's foreign key is in the payload either way. The
+          // parent side needs no fallback: a childless create is refused before
+          // this point, and one carrying children has nested writes and a row.
+          noteCardinality(inserted.row ?? data)
           if (inserted.done) return inserted
           const created = inserted.row
           // hasMany ops after — children need parent PK + parent row (for co-FK propagation)
@@ -7850,6 +7910,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
             const refusal = sealRefusal(_cmSeal?.parents, 'create')
             if (refusal) throw asBatchRowError(refusal, count, rows.length, row)
           }
+          noteCardinality(row)
           count++
         }
         // A mixed batch has no single SQL to report. Uniform — the ordinary
@@ -7951,7 +8012,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // statement without yielding — `_upJoined` below is what says so if an
       // edit ever adds an await ahead of it (`FJS-1107`).
       const _upOwnUnit = !hasNested && !edgeWrites.length && !_postUpdatePolicy
-        && !_tableTransitions && tx.state.depth === 0
+        && !_tableTransitions && tx.state.depth === 0 && !_cardNotes
       const _upBody = async () => {
         const extraFKs = hasNested ? await processBelongsToNested(nested) : {}
         data = { ..._scalarNoEdge, ...extraFKs }
@@ -8171,8 +8232,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           const _upT0 = _nt ? performance.now() : 0
           // RETURNING * gives the updated row directly — no follow-up SELECT needed.
           // Uses writeDb so it works inside open transactions.
+          // The parent this row names BEFORE the statement: an update that moves
+          // a foreign key leaves one parent as surely as it joins another, and
+          // afterwards no row points at the old one.
+          noteCardinalityBySql(_vWhereSql, _vWhereParams)
           try { updated = read(writeDb.query(_upSql).get(..._upParams), { mode: 'single', hydrateFrom: true }) }
           catch (e) { throw asConstraintError(e, row) }
+          noteCardinality(updated)
           fireQuery({ operation: 'update', args: { where, data, include, select }, sql: _upSql, params: _upParams, duration: _nt ? performance.now() - _upT0 : 0, rowCount: updated ? 1 : 0 })
           if (!updated) {
             if (_transResult) throwTransitionRefusal()
@@ -8314,11 +8380,17 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       let _umRows = null
       let count
       await tx.wrapExclusive(() => {
+        // The parents these rows name now — an update that moves a foreign key
+        // leaves one parent as surely as it joins another, and after the
+        // statement the old one is unreachable from any row.
+        noteCardinalityBySql(finalWhere, _umWhereP)
         try {
           _umRows = _umNeedRows ? writeDb.query(_umSql).all(...params) : null
           if (!_umRows) writeDb.run(_umSql, ...params)
         } catch (e) { throw asConstraintError(e, row) }
         count = _umRows ? _umRows.length : rowsChanged(writeDb)
+        if (_umRows) for (const r of _umRows) noteCardinality(read(r))
+        else noteCardinalityBySql(finalWhere, _umWhereP)
       })
       fireQuery({ operation: 'updateMany', args: { where, data }, sql: _umSql, params, duration: _nt ? performance.now() - _umT0 : 0, rowCount: count })
       if (tableHasAnyLog && _umRows?.length) emitLogs('update', _umRows)
@@ -8782,6 +8854,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         let softResult
         await tx.wrapExclusive(() => {
         softResult = read(writeDb.query(_rmSql).get(ts, ...removeFinalParams), { mode: 'single', hydrateFrom: true })
+        // A soft delete is a write that moves a COUNT: the row is still there
+        // and is no longer one of its parent's children.
+        noteCardinality(softResult)
         fireQuery({ operation: 'remove', args: { where }, sql: _rmSql, params: [ts, ...removeFinalParams], duration: _nt ? performance.now() - _rmT0 : 0, rowCount: softResult ? 1 : 0 })
         if (!softResult) return
 
@@ -8902,6 +8977,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
                       + (_rmNeedRows ? ` RETURNING *` : '')
         let _rmsRows, softCount
         await tx.wrapExclusive(() => {
+          noteCardinalityBySql(rmFinalSql, params)
           _rmsRows = _rmNeedRows ? writeDb.query(_rmsSql).all(ts, ...params) : null
           if (!_rmsRows) writeDb.run(_rmsSql, ts, ...params)
           softCount = _rmsRows ? _rmsRows.length : rowsChanged(writeDb)
@@ -9011,6 +9087,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const _nt = needsTiming()
       const _rsT0 = _nt ? performance.now() : 0
       restored = writeDb.query(_rsSql).all(...params)
+      for (const r of restored) noteCardinality(read(r))
       fireQuery({ operation: 'restore', args: { where }, sql: _rsSql, params, duration: _nt ? performance.now() - _rsT0 : 0, rowCount: restored.length })
       })
       // Un-deleting is a write and belongs in the trail. It logs as 'update' —
@@ -9559,6 +9636,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const row = await tx.wrapExclusive(() => {
         const r = read(readDb.query(`SELECT ${_delCols} FROM "${tableName}" WHERE ${delFinalSql}`).get(...delFinalParams))
         if (!r) return null
+        noteCardinality(r)
         writeDb.run(_delSql, ...delFinalParams)
         return r
       })
@@ -9608,6 +9686,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // open transaction and lost on its rollback (`FJS-638`).
       let _dmnRows, result
       await tx.wrapExclusive(() => {
+        noteCardinalityBySql(dmFinalSql, params)
         _dmnRows = _dmNeedRows ? writeDb.query(_dmnSql).all(...params) : null
         if (!_dmnRows) writeDb.run(_dmnSql, ...params)
         result = { changes: _dmnRows ? _dmnRows.length : rowsChanged(writeDb) }
@@ -10931,6 +11010,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const capabilityMap  = capabilityDeclarations(schema)
   const ftsMap        = buildFtsMap(schema)
   const validationMap  = buildValidationMap(schema)
+  const cardinalityMap = buildCardinalityMap(schema, pluralizeTableNames)
   const fieldPolicyMap = buildFieldPolicyMap(schema)
   const secretMap      = buildSecretMap(schema)
   const claimSet       = buildClaimSet(schema, claims ?? null)
@@ -11114,7 +11194,14 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // Transaction manager operates on the write connection. It shares `txState`
   // with the read routers above, so an open transaction pulls reads onto this
   // same connection — otherwise they cannot see its uncommitted writes.
-  const tx = makeTxManager(writeDb, txState)
+  // A schema declaring no bound builds no ledger, so every write unit in every
+  // other app takes the same path it always did.
+  const cardinalityLedger = cardinalityMap.any
+    ? createCardinalityLedger(cardinalityMap, (conn, rule, key) =>
+        conn.query(`SELECT 1 FROM "${rule.parentTable}" WHERE ` +
+                   rule.refColumns.map(c => `"${c}" = ?`).join(' AND ') + ' LIMIT 1').get(...key))
+    : null
+  const tx = makeTxManager(writeDb, txState, cardinalityLedger)
 
   // Normalize global filters: { tableName: whereObject | (ctx) => whereObject }
   const globalFilters = filters ?? {}
@@ -11348,6 +11435,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     // gets auto-filled.
     allowChildFkOverride: allowChildFkOverride === true,
     transitionMap, sealMap,
+    cardinalityMap,
     capabilityMap,
     models:        modelIndex,
     schema,

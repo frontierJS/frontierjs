@@ -363,7 +363,7 @@ try {
   const announcements = async () =>
     (await json(await fetch(`${API}/api/jobs?limit=500&data=1`)) ?? [])
       .filter(j => {
-        if (j.name !== 'announce-payment') return false
+        if (j.name !== 'payment-announce') return false
         try { return JSON.parse(j.data)?.orderId === orderId } catch { return false }
       })
   const announcementsBefore = (await announcements()).length
@@ -723,7 +723,7 @@ try {
   //
   // Not an assertion — housekeeping, and it is here because this drive is the
   // one that made it necessary. Paying four orders queues four
-  // `announce-payment` jobs on a concurrency-1 queue, and `verify:notify` runs
+  // `payment-announce` jobs on a concurrency-1 queue, and `verify:notify` runs
   // in the same process against the same queue: it arms the mail sink's
   // `POST /fail-next` and expects ITS OWN email to hit the 500. A job of this
   // drive's still in flight consumes that armed failure instead, and
@@ -734,7 +734,7 @@ try {
   // guess that gets slower and still races.
   await until(async () => {
     const jobs = await json(await fetch(`${API}/api/jobs?limit=500`)) ?? []
-    const busy = jobs.filter(j => j.name === 'announce-payment' && (j.status === 'pending' || j.status === 'running'))
+    const busy = jobs.filter(j => j.name === 'payment-announce' && (j.status === 'pending' || j.status === 'running'))
     return busy.length === 0 ? true : null
   }, 20_000)
 

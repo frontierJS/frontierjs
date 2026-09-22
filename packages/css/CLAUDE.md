@@ -271,7 +271,7 @@ test/run.js        the harness
   so `.tablist`'s sideways scroll plus `.tab`'s `-1px` underline bleed drew a
   **vertical** scrollbar on a horizontal strip — for four versions, because it
   reads as a stray widget in the corner rather than as a scrollbar. Found from
-  outside, in litestone's Studio. Both axes are now stated in both directions:
+  outside, in Litestone Studio. Both axes are now stated in both directions:
   the vertical variant needs `overflow: visible` and not `overflow-x`, or the
   hidden y-axis it inherits draws a horizontal bar instead. `components: a
   scrolling strip does not grow a scrollbar on the other axis` holds all four.

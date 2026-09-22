@@ -85,7 +85,7 @@ export function createInvoicesService() {
      * grading who pressed the button — `asSystem()` here grades nobody, and a
      * custom method's gate floor is only a presence check (`FJS-1087`).
      *
-     * Dunning notices on its own — `dun-subscriptions` recovers a subscription
+     * Dunning notices on its own — `subscriptions-dun` recovers a subscription
      * whose ledger has come clean — so nothing here has to know that a
      * subscription exists.
      */

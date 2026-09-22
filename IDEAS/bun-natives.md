@@ -103,14 +103,34 @@ derivative store is still open, and this file's own answer is the dead one.
 
 ## The nine that do not
 
-**`Bun.markdown` → mesa's six remark/rehype dependencies.** Tempting, and correct in
-output: probed, it renders GFM tables and task lists and passes `<Foo x={1} />`
-through untouched, which is exactly the `allowDangerousHtml` behavior
-`compiler-md.js` builds its placeholder dance around. It also exposes
-`render(src, handlers)` for custom node rendering, which could carry `rehype-slug`'s
-heading ids. It fails on the runtime line: `.mesa` and `.md` compile under vite for
-consumers on node, and Invariant 12 forbids the fork. `Bun.markdown.html()` takes no
-options, so a per-flavor knob is not available either.
+**`Bun.markdown` → mesa's six remark/rehype dependencies.** The most tempting entry
+on this page and the most thoroughly refused. Probed, it renders GFM tables, task
+lists and strikethrough, passes `<Foo x={1} />` through untouched — exactly the
+`allowDangerousHtml` behavior `compiler-md.js` builds its placeholder dance around —
+leaves `<!--MESA:0-->` intact, and emits `<pre><code class="language-js">`, the shape
+the glow hand-off already matches. It is **102× faster**, over this repo's own
+`packages/mesa/README.md`: 34.83ms against 0.343ms, best of 50.
+
+`render(src, handlers)` is real, and its signature is `handler(children, props)` —
+`heading(children, { level })`, measured rather than read off the notes — so
+`rehype-slug` IS portable onto it, which this file previously only guessed. What is
+not portable is anything the native parser never emits: `remark-gfm`'s autolink
+literals leave `https://x.com` as text, and `[^1]` renders as a link reference,
+because a handler customizes how a node prints and cannot add a syntax. There is no
+`parse` at all, so `remarkPlugins`/`rehypePlugins` — a documented `compileMd` option
+with three tests — has nothing to bind to.
+
+**It fails on the runtime line twice, and the second one is absolute.** `.mesa` and
+`.md` compile under vite for consumers on node (`vite`'s own bin is
+`#!/usr/bin/env node`), and Invariant 12 forbids the fork. And the compiler runs in a
+BROWSER: the REPL's importmap loads the unified chain from esm.sh and `examples.js`
+ships three `.md` examples compiled client-side, where no `Bun` global can exist at
+any version. `Bun.markdown.html()` takes no options either, so a per-flavor knob is
+not available to soften any of it.
+
+The chain it would have replaced is still worth removing — 82 packages, 8.7 MB,
+measured in this tree — but the door is a kit rather than a native, because a kit
+runs in all three places. See `markdown-kit.md`.
 
 **`Bun.markdown` → the cli's literate command runtime.** `fli` is node; and the cli
 does not want HTML, it wants *structure* — steps, `<script>` blocks, fenced js. The

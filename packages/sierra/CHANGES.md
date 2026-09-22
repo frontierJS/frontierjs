@@ -1,5 +1,19 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-22 — `@unit` reaches a form
+
+`FJS-D348`. `_CARRIED` is an allowlist, so a keyword litestone emits and this
+file does not name is dropped between the schema and `$context.form` — the
+declaration would then exist, be emitted, and reach nobody, which is the whole
+failure `@unit` was added to remove. `x-unit` is carried.
+
+**It does not join `@money` and `@scale` in refusing a control**, and the
+difference is the point. Those answer `control: null` because the box and the
+column disagree: a person types 42 and the column holds 4200. A `@unit(s)`
+column has no such gap — 300 typed is 300 stored — so the ordinary number input
+is the right answer, and the keyword is carried for what RENDERS the value
+rather than for what picks the input.
+
 ## 2026-09-21 — the declared window is the DEVICE's
 
 `FJS-D337`, and the half phase 5 carried. `warmOffline()` filled two stores with one answer —

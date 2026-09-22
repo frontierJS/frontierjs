@@ -14,7 +14,7 @@
 // something was inserted between them — so each is reunited with its own pass.
 
 import { inferFromFk }                                             from './parser.js'
-import { isSoftDelete, modelToTableName, isUpdatedAtField, detectM2MPairs, sqlType } from './ddl.js'
+import { isSoftDelete, modelToTableName, isUpdatedAtField, detectM2MPairs, sqlType, columnMapFor } from './ddl.js'
 import { assertNoBareClock, expandNowTokens }                      from './query.js'
 import { compileDerived, checkDerivedType, dependsOnClock }        from './policy.js'
 import { ID_GENERATORS, GENERATED_DEFAULTS }                       from './ids.js'
@@ -570,6 +570,97 @@ export function buildFromMap(schema, pluralize = false) {
     }
   }
   return map
+}
+
+// ─── Relation cardinality ─────────────────────────────────────────────────────
+//
+// `lines OrderLine[] @minItems(1) @maxItems(50)` — how many children a parent
+// must and may have. The words already mean *count of this collection* on a
+// Json array and enforce there; this is the same question asked of the
+// collection that is a relation.
+//
+// Two indexes out of one declaration, because both ends of the relation can
+// move the count: writing a PARENT can create one that is empty, and writing a
+// CHILD can take an existing parent below its minimum or above its maximum.
+//
+// The count a bound is graded against is the one a READ would answer — a
+// soft-deleted line is not a line, and a template is not an order — or a
+// @@softDelete model could never reach its minimum again after a `delete`
+// that the app considers reversible.
+export function buildCardinalityMap(schema, pluralize = false) {
+  const byParent = {}          // parent model  -> [rule], graded at commit
+  const byChild  = {}          // child model   -> [rule], writes that dirty a parent
+
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      if (field.type?.kind !== 'relation' || field.type.array !== true) continue
+      const min = field.attributes.find(a => a.kind === 'minItems')?.value ?? null
+      const max = field.attributes.find(a => a.kind === 'maxItems')?.value ?? null
+      if (min == null && max == null) continue
+
+      const child = schema.models.find(m => m.name === field.type.name)
+      if (!child) continue                       // validate() already named it
+      // The relation's own NAME is the `via`: two list fields pointing at one
+      // model are ambiguous without it, and answering that with `continue`
+      // would drop the declaration silently — which is the failure the whole
+      // feature exists to stop. The parser refuses the genuinely uncountable
+      // shapes, so reaching one here means the schema was built rather than
+      // parsed.
+      const via = field.attributes.find(a => a.kind === 'relation')?.name ?? null
+      const fk  = inferFromFk(model, child, via)
+      if (!fk || fk.ambiguous || fk.unresolvedVia) continue
+
+      // `inferFromFk` answers FIELD names — `@relation(fields: [orderId])` is a
+      // field list — so the SQL half translates through the child's own map or
+      // a `@map` sends the COUNT at a column that is not there. A missed
+      // identifier in a WHERE is silent: SQLite reads an unknown `"ident"` as a
+      // string literal, so the count would be 0 for every parent and every
+      // minimum would refuse (`FJS-761`).
+      const childCols  = columnMapFor(child)
+      const parentCols = columnMapFor(model)
+      const col = (map, f) => map[f] ?? f
+
+      const softDelete = isSoftDelete(child)
+      const htField    = child.attributes.find(a => a.kind === 'hasTemplates')?.field ?? null
+      const filters    = []
+      if (softDelete) filters.push(`"${col(childCols, 'deletedAt')}" IS NULL`)
+      if (htField)    filters.push(`"${col(childCols, htField)}" = 0`)
+
+      const rule = {
+        parent:      model.name,
+        field:       field.name,
+        child:       child.name,
+        childTable:  modelToTableName(child, pluralize),
+        parentTable: modelToTableName(model, pluralize),
+        fkFields:    fk.fkCols,
+        refFields:   fk.refCols,
+        fkColumns:   fk.fkCols.map(f => col(childCols, f)),
+        refColumns:  fk.refCols.map(f => col(parentCols, f)),
+        min, max, filters,
+      }
+      ;(byParent[model.name] ??= []).push(rule)
+      ;(byChild[child.name]  ??= []).push(rule)
+    }
+  }
+
+  // `requiresChildren` is what keeps the single-row create fast path intact for
+  // everybody else (`FJS-1106`): a create of one of these models with no nested
+  // children can never satisfy its minimum, so it is refused before the INSERT
+  // with no COUNT and no transaction, and a create that DOES carry children has
+  // already left that path. `fkColumns` is the same trick for the update fast
+  // path — only an update naming one of these columns can move a row between
+  // two parents.
+  const requiresChildren = {}
+  for (const [name, rules] of Object.entries(byParent)) {
+    const needs = rules.filter(r => r.min > 0)
+    if (needs.length) requiresChildren[name] = needs
+  }
+  const fkColumns = {}
+  for (const [name, rules] of Object.entries(byChild))
+    fkColumns[name] = new Set(rules.flatMap(r => r.fkFields))
+
+  return { byParent, byChild, requiresChildren, fkColumns,
+           any: Object.keys(byParent).length > 0 }
 }
 
 export function buildComputedSet(schema) {

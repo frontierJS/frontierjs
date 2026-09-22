@@ -1220,7 +1220,7 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
      way to reach any of them was to know which panel owned it. One box searches
      all three. Hidden with [hidden] so an unstyled Studio does not show it. -->
 <div id="palette" class="pal-backdrop" hidden onclick="if (event.target === this) palClose()">
-  <div class="pal" role="dialog" aria-modal="true" aria-label="Search Studio">
+  <div class="pal" role="dialog" aria-modal="true" aria-label="Search Litestone Studio">
     <input id="palInput" class="field pal-input" type="text" autocomplete="off" spellcheck="false"
            placeholder="Go to a panel, a model, or a word of the language"
            aria-controls="palResults" aria-expanded="true" role="combobox"
@@ -1232,7 +1232,7 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
   </div>
 </div>
 
-<nav class="sidebar" id="studioRail" aria-label="Studio">
+<nav class="sidebar" id="studioRail" aria-label="Litestone Studio">
 
   <div class="sidebar-section">
     <div class="navlist-label" id="authLabel">Acting as</div>
@@ -1592,7 +1592,7 @@ body.readonly button[onclick^="deleteSavedQuery"] { display: none }
     <div class="data-grid-wrap" id="qlogList">
       <div class="empty">
         <div class="empty-title">No queries yet</div>
-        <p class="empty-text">Browse a table, run the REPL, or use the app. Every ORM operation through Studio's client is captured here — click a row to open it in the Query Analyzer.</p>
+        <p class="empty-text">Browse a table, run the REPL, or use the app. Every ORM operation through Litestone Studio's client is captured here — click a row to open it in the Query Analyzer.</p>
       </div>
     </div>
   </article>
@@ -2413,7 +2413,7 @@ function emptyTableState() {
     return `<div class="empty">
       <div class="empty-title">No rows — and no tenant is open</div>
       <p class="empty-text">This schema declares <code class="code-inline">tenancy { strategy database }</code>, so the
-      database Studio has open holds the registry and ${many ? `each of the ${tenants.tenants.length} tenants keeps` : 'the one tenant keeps'}
+      database Litestone Studio has open holds the registry and ${many ? `each of the ${tenants.tenants.length} tenants keeps` : 'the one tenant keeps'}
       its rows in a file of its own. Every table here reads empty until one is open.</p>
       ${tenantChooseButton()}
     </div>`
@@ -2915,7 +2915,7 @@ function ovAttention(drift, advisor, access, tenants) {
   if (m.pending)  items.push(ovItem('warning', `<b>${m.pending}</b> migration${m.pending === 1 ? '' : 's'} pending — the database is behind the schema`, 'migrations', 'Migrations'))
   if (m.modified) items.push(ovItem('danger',  `<b>${m.modified}</b> migration file${m.modified === 1 ? '' : 's'} edited after being applied`, 'migrations', 'Migrations'))
   if (m.orphaned) items.push(ovItem('danger',  `<b>${m.orphaned}</b> applied migration${m.orphaned === 1 ? '' : 's'} with no file`, 'migrations', 'Migrations'))
-  if (drift?.file?.changed) items.push(ovItem('warning', `<code>${esc(drift.file.path)}</code> was edited since Studio started`, 'lite', 'Schema'))
+  if (drift?.file?.changed) items.push(ovItem('warning', `<code>${esc(drift.file.path)}</code> was edited since Litestone Studio started`, 'lite', 'Schema'))
   if (drift?.snapshot?.exists === false)     items.push(ovItem('warning', 'no access snapshot is committed — nothing fails when access widens', 'access', 'Access'))
   else if (drift?.snapshot?.current === false) items.push(ovItem('warning', 'the committed access snapshot is stale', 'access', 'Access'))
 
@@ -2979,7 +2979,7 @@ const OV_TOOLS = [
   ['compare',    'Compare',     'What this branch did — can N-1 still serve the database, and who may now do more'],
   ['migrations', 'Migrations',  'What is applied, what is pending, and what drifted'],
   ['perf',       'Performance', 'Missing indexes, and EXPLAIN for a query you paste'],
-  ['qlog',       'Query Log',   'Every statement this Studio has run, as it runs'],
+  ['qlog',       'Query Log',   'Every statement this Litestone Studio has run, as it runs'],
   ['stats',      'Stats',       'Size, pages, WAL, disk by table — and key rotation'],
   ['transform',  'Transform',   'Copy or reshape a database into another one, a step at a time'],
   ['tenants',    'Tenants',     'The fleet — which database each tenant has, and which one is open'],
@@ -4440,7 +4440,7 @@ function driftRender() {
   if (!_drift) { badge.hidden = true; return }
 
   const parts = []
-  if (_drift.file?.changed)                     parts.push('schema file edited since Studio started')
+  if (_drift.file?.changed)                     parts.push('schema file edited since Litestone Studio started')
   if (_drift.snapshot?.exists === false)        parts.push('no access snapshot committed')
   else if (_drift.snapshot?.current === false)  parts.push('access snapshot is stale')
   const m = _drift.migrations || {}
@@ -4459,7 +4459,7 @@ function driftRender() {
 function driftOpen() {
   if (!_drift) return
   if (_drift.file?.changed) {
-    if (confirm('The schema file has changed since Studio started.\n\nReload to read it?')) location.reload()
+    if (confirm('The schema file has changed since Litestone Studio started.\n\nReload to read it?')) location.reload()
     return
   }
   if (_drift.snapshot && _drift.snapshot.current === false) {
@@ -7189,7 +7189,7 @@ async function loadTenants() {
   if (!data.enabled) { list.innerHTML = `<div class="empty">
     <div class="empty-title">No tenant registry found</div>
     <p class="empty-text">Create tenants with <code class="code-inline">createTenantRegistry()</code> or
-    <code class="code-inline">litestone tenant create</code> — Studio auto-detects tenants-registry.db next to schema.lite.</p>
+    <code class="code-inline">litestone tenant create</code> — Litestone Studio auto-detects tenants-registry.db next to schema.lite.</p>
   </div>`; return }
   if (data.error)    { list.innerHTML = `<div class="empty">${esc(data.error)}</div>`; return }
   if (!data.tenants.length) { list.innerHTML = '<div class="empty">Registry is empty — no tenants yet</div>'; return }
@@ -7201,7 +7201,7 @@ async function loadTenants() {
         <td>${fmtBytes(t.size)}</td>
         <td>${t.active
           ? '<button class="btn outlined" onclick="tenantClose()">← close</button>'
-          : `<button class="btn outlined" onclick="tenantOpen(${esc(JSON.stringify(t.id))})">Open in Studio →</button>`}</td>
+          : `<button class="btn outlined" onclick="tenantOpen(${esc(JSON.stringify(t.id))})">Open in Litestone Studio →</button>`}</td>
       </tr>`).join('') + '</tbody></table>'
   document.getElementById('btnTenantBack').hidden = !data.activeTenant
 }
@@ -7275,7 +7275,7 @@ async function reopenDatabase(what) {
 async function tenantOpen(id) {
   const res = await api('/tenants/open', { id })
   if (res.error) { toast(res.error, 'err'); return }
-  await reopenDatabase(`Studio is now viewing tenant "${id}"`)
+  await reopenDatabase(`Litestone Studio is now viewing tenant "${id}"`)
 }
 
 async function tenantClose() {
@@ -7741,7 +7741,7 @@ function perfRenderIssueList() {
     document.getElementById('perfIssueDetail').innerHTML = `<div class="empty">
       <div class="empty-title">No tenant is open, so there is nothing to grade</div>
       <p class="empty-text">This schema declares <code class="code-inline">tenancy { strategy database }</code>. Every check here
-      compares the schema to the DDL of a live database, and the one Studio has open is the declared
+      compares the schema to the DDL of a live database, and the one Litestone Studio has open is the declared
       <code class="code-inline">database main</code> path — a file no tenant runs on and nothing migrates. Open a tenant and
       these answers are about a database somebody is using.</p>
       ${tenantChooseButton()}

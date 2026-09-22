@@ -1,5 +1,11 @@
 # Changes — @frontierjs/mcp
 
+## 2026-09-21 — the `FJS-976` notes name Litestone Studio
+
+`README.md` and `PROJECT_STATE.md` cite the table dump that shipped `@secret`
+columns in plaintext; both said *Studio*. The term is **Litestone Studio** —
+`VOCABULARY.md`, and `packages/litestone/CHANGES.md` for why.
+
 ## 2026-09-21 — the suite directory is `test/`
 
 **`tests/` is a surface, not a suite.** In an FJS app it sits beside `api/` and `web/` and holds

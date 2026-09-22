@@ -1,4 +1,4 @@
-// api/jobs/book-courier.job.ts — the work that happens after the response.
+// api/jobs/courier-book.job.ts — the work that happens after the response.
 //
 // Autoloaded by @frontierjs/caravan from `jobsDir` (api/jobs). The file name
 // does not matter; `defineJob`'s first argument is the name a dispatch uses.
@@ -43,7 +43,7 @@ async function bookWithCourier(reference: string): Promise<string> {
   return `TRK-${hash.toString(36).toUpperCase().padStart(4, '0')}`
 }
 
-export default defineJob<BookCourier>('book-courier', async (ctx) => {
+export default defineJob<BookCourier>('courier-book', async (ctx) => {
   const { orderId, reference } = ctx.data
 
   const trackingCode = await bookWithCourier(reference)

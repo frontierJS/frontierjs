@@ -763,7 +763,7 @@ describe('CLI smoke — long-running servers', () => {
     const { proc, output } = await spawnUntil(
       dir,
       ['studio', '--port=0'],
-      (buf) => buf.includes('Studio at'),
+      (buf) => buf.includes('Litestone Studio at'),
       // Generous because this is a cold process start under whatever else the
       // run is doing. At 6s it failed inside `bun run ci` — five phases and
       // every package's suite in flight — and passed on its own, which is the
@@ -1287,12 +1287,12 @@ describe('studio refuses a non-loopback bind that carries no token', () => {
   async function serve(dir: string, args: string[]) {
     const { proc, output } = await spawnUntil(
       dir, ['studio', '--port=0', '--no-open', ...args],
-      buf => buf.includes('Studio at'),
+      buf => buf.includes('Litestone Studio at'),
       { timeoutMs: 20_000 },
     )
     // The bound port, not the requested one — asserting against 0 would grade
     // a server nothing can reach.
-    const port = Number(output.match(/Studio at http:\/\/[^\s:]+:(\d+)/)?.[1])
+    const port = Number(output.match(/Litestone Studio at http:\/\/[^\s:]+:(\d+)/)?.[1])
     return { proc, port }
   }
 

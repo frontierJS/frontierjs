@@ -10,12 +10,17 @@
  *   VOCAB      which element and which class each term is
  *   ANATOMY    which children it expects, and the markup — further down
  *
- * ── Four readers ─────────────────────────────────────────────────────
+ * ── Five readers ─────────────────────────────────────────────────────
  *
  *   guide/guide.js            renders Vocabulary and Anatomy from them
  *   guide/search.js           term entries for the search index
  *   test/specs/vocabulary...  VOCAB against the real CSSOM
  *   test/specs/anatomy...     ANATOMY against it, in both directions
+ *   cli core/terms.js         the workspace vocabulary scan, which reads this
+ *                             as a register: a term here is a term somebody
+ *                             NAMED, so it stops reading as undefined beside
+ *                             the ones VOCABULARY.md carries. It reads the
+ *                             generated vocabulary.json, never this file
  *
  * It lives here rather than inside the guide so those readers can exist. A
  * vocabulary only the documentation knows about is one nothing can check,

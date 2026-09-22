@@ -669,27 +669,30 @@ export function validate(data, model, computedFns, typeMap, enums = null) {
 // ─── Schema analysis ──────────────────────────────────────────────────────────
 // Pre-compute which models have any validators — skip validate() call if none.
 
-export function buildValidationMap(schema) {
-  const VALIDATOR_KINDS = new Set([
-    'email','url','phone','date','datetime','time','regex','length','startsWith','endsWith',
-    'contains','lt','lte','gt','gte','trim','lower','upper',
-    'minItems','maxItems','uniqueItems',
-    // A scaled column's rule is *a whole number of minor units*, and without it
-    // here the model skips the pass entirely and the refusal comes from SQLite
-    // naming a physical column.
-    'scale','money',
-    // Same reason as the pair above: without it here the model skips the pass
-    // and a caller sending `1.5` to a @big column is refused by the CHECK,
-    // which names a physical column and no way to fix it.
-    'big',
-    // And again, with the sharpest consequence of the three. `@vector`'s CHECK
-    // grades LENGTH alone, so without this entry a zero vector and a NaN both
-    // store cleanly — and neither is visible afterwards: the zero scores NULL,
-    // NULL sorts first, and the row is the best match for every query with a
-    // 200. The pass is the only place either can be refused.
-    'vector',
-  ])
+// Which attribute kinds are a rule a VALUE is graded against. Read here to
+// decide whether a model needs the pass at all, and by `advise` to ask
+// whether a rule declared on a column can ever be reached.
+export const VALIDATOR_KINDS = new Set([
+  'email','url','phone','date','datetime','time','regex','length','startsWith','endsWith',
+  'contains','lt','lte','gt','gte','trim','lower','upper',
+  'minItems','maxItems','uniqueItems',
+  // A scaled column's rule is *a whole number of minor units*, and without it
+  // here the model skips the pass entirely and the refusal comes from SQLite
+  // naming a physical column.
+  'scale','money',
+  // Same reason as the pair above: without it here the model skips the pass
+  // and a caller sending `1.5` to a @big column is refused by the CHECK,
+  // which names a physical column and no way to fix it.
+  'big',
+  // And again, with the sharpest consequence of the three. `@vector`'s CHECK
+  // grades LENGTH alone, so without this entry a zero vector and a NaN both
+  // store cleanly — and neither is visible afterwards: the zero scores NULL,
+  // NULL sorts first, and the row is the best match for every query with a
+  // 200. The pass is the only place either can be refused.
+  'vector',
+])
 
+export function buildValidationMap(schema) {
   const map = {}
   for (const model of schema.models) {
     // Flag if any explicit validator attribute OR any DateTime field

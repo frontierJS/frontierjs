@@ -567,7 +567,7 @@ const record = async () => {
   // `Payment` is `@@arc([orderId, invoiceId])`, so exactly one of the two is
   // set and this branch is decided by the row rather than by the event.
   //
-  // Nothing here tells dunning that the money arrived: `dun-subscriptions`
+  // Nothing here tells dunning that the money arrived: `subscriptions-dun`
   // reads the ledger, so a subscription sitting at `pastDue` with a clean
   // ledger recovers on its own. That is why an out-of-order delivery cannot
   // corrupt anything either — the state machine refuses a move from where the

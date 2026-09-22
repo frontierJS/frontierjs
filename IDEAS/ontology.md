@@ -65,7 +65,7 @@ correct** — which is the thing a reader cannot possibly know.
 
 **Shape 1 — the read is the truth.** No scheduler participates in correctness at
 all. `StockReservation.expiresAt` is filtered by every availability sum, so a hold
-is dead the instant it passes whether or not anything ran; `release-holds` deletes
+is dead the instant it passes whether or not anything ran; `holds-release` deletes
 the rows and is explicitly housekeeping. The column's own comment in
 `db/schema.lite` states the rule in a sentence the framework should own:
 *correctness must not depend on a cron having fired, because then a queue outage
@@ -73,7 +73,7 @@ quietly stops the shop selling.*
 
 **Shape 2 — idempotent re-derivation.** A sweep recomputes the verdict from
 immutable columns on every run and applies a declared transition that is a no-op
-the second time. `dun-subscriptions` derives the deadline as the days from an
+the second time. `subscriptions-dun` derives the deadline as the days from an
 `@immutable` `dueOn` to the shop's today, on the oldest unpaid invoice, and moves
 `lapse` / `cancel` / `recover`. It needs no key of any kind, and its comment says
 why the obvious `failedAttempts` counter is the bug: *a counter is a second answer
@@ -82,8 +82,8 @@ to a question the invoices already answer.*
 **Shape 3 — keyed dispatch.** The effect is external and not repeatable — an
 invoice, a charge, a message — so the sweep mints
 `occurrenceKey('renew', subscriptionId, periodEnd)` and `dispatch({ id })` makes
-it once for all time. `renew-subscriptions` finds what is due and dispatches one
-`renew-subscription` per row, and the split is stated: a sweep that billed inline
+it once for all time. `subscriptions-renew` finds what is due and dispatches one
+`subscription-renew` per row, and the split is stated: a sweep that billed inline
 would be one long transaction whose failure halfway leaves half a shop billed.
 
 **What picks among the three is one question and it is not the one people ask.**
@@ -107,10 +107,16 @@ open is the same gap seen from the row instead of the column.
 - **`basecamp` uses none of them.** No `occurrenceKey` anywhere in its API, and
   `alert-evaluate` runs every minute. Whether that is right is not knowable from
   outside the file, which is the point.
-- **A fourth shape has no instance here at all: a commitment a person can SEE.**
-  *What is going to happen to this order, and when* cannot be answered by any
-  sweep, because nothing exists until the sweep runs. That is the case where a
-  materialized row earns itself, and no screen in this repo has ever asked for it.
+- **A fourth shape — a commitment a person can SEE — has exactly one instance
+  and it is broken** ([`FJS-1241`](../ISSUES.md#fjs-1241)). *What is going to
+  happen to this order, and when* cannot be answered by any sweep, because
+  nothing exists until the sweep runs. `basecamp`'s jobs screen asks it anyway:
+  `Job.nextRunAt` is rendered as *Next run*, is set once on create to
+  `now + 60s` by a line whose own comment calls it a placeholder, and is never
+  written again by anything. So the one place in this repo that needed the
+  fourth shape invented a column and filled it with a guess — which is the
+  evidence for the branch rather than a counter-example to it, and it is what
+  the `no instance` sentence here said before the tree was grepped.
 - **A sweep cannot be graded.** Nothing checks that the thing filtered on
   `expiresAt` is filtered on it everywhere, which is shape 1's entire correctness
   condition.
@@ -133,6 +139,10 @@ does it PERSIST, or does it HAPPEN?
 │  │        → model + identity shape: a level on the ladder, a membership row,
 │  │          or a capability set. The three do not convert into one another
 │  ├─ a thing, a place, a document          → model
+│  ├─ a RELATIONSHIP that is itself a thing → a relator: a model whose
+│  │          identity is its relata, and whose repeatability is the
+│  │          declaration. Repeat bounded by nothing means it HAPPENS
+│  │          instead, and belongs on the right-hand branch
 │  ├─ a value AT AN INSTANT                 → a copied column, never a join
 │  ├─ true only for a span                  → a window: validFrom/validTo plus
 │  │                                          a partial unique on the open row
@@ -253,10 +263,20 @@ Caravan must keep the clock.
     schema derives the due time, `occurrenceKey` becomes the once-ness, and
     Caravan executes exactly as it does now. Pays for the fourth shape for free,
     since a declared commitment is a thing a screen can read.
-  - **Recommend C** — the three existing implementations all re-derive from the
-    row, which is the Data realm doing the work already; and the one shape with
-    no instance in the tree is the one only a declaration can give. But the
-    spelling waits on a second caller, the way `FJS-D143` waited.
+    - **D** — one attribute on the COLUMN that already holds the deadline
+    (`expiresAt DateTime @deadline`), which is the `@unit` move: no noun, no
+    machinery, and the fact stops being unreadable. It marks the column, so
+    `fli check` can finally grade shape 1's correctness condition; it does not
+    reach shape 2, whose deadline is stored nowhere.
+  - **Recommend C, reached through D** — the three existing implementations all
+    re-derive from the row, which is the Data realm doing the work already, and
+    the fourth shape is the one only a declaration can give. But B is now
+    measurably wrong-homed rather than arguably so: caravan already has `delay`
+    and a `run_at` column, so it adds no mechanism, and a queue entry holding a
+    copy of a time derived from a row goes stale the moment the row moves. And
+    the spelling still waits on a second caller the way `FJS-D143` did —
+    [`FJS-1241`](../ISSUES.md#fjs-1241) is that caller, so D is buildable now
+    against two real columns while C's noun waits for shape 2 to decide it.
 - **If it is coined, is the word `Commitment`?** REA's, and business people say
   it. Against: REA's is economic and half of a reciprocal pair, which is the
   `timestamptz` failure in vocabulary form. `Obligation` is the deontic word and
@@ -274,6 +294,12 @@ Caravan must keep the clock.
 
 ## See also
 
+- `IDEAS/effective-time.md` — **the deadline half of this file, settled with
+  valid time and the zone in one design.** Shape 1's column becomes
+  `@@effective(to:)`, `asOf` is the directive, and the reason the three could
+  not be shipped separately is that expiry alone needs a boolean where valid
+  time needs a value. What stays HERE is the NOUN question, which only shape 2
+  — an obligation with no column at all — can decide
 - `IDEAS/time-and-recurrence.md` — the other axis: what kind of time a COLUMN
   holds, the zone question ruled three ways (`FJS-D143`), and why the general
   `RRULE` is refused
@@ -283,7 +309,10 @@ Caravan must keep the clock.
   run under
 - `IDEAS/intent-recognizer.md` — a customer's words against a seed, and the
   *nowhere to live yet* verdict this classifies
+- `IDEAS/relators.md` — the continuant leaf added above: what a relationship
+  that persists is, and why *can this happen twice* is the half of it that
+  can be declared
 - `IDEAS/state-machines.md` — the *happening now* leaf
 - `example/api/src/jobs/` — the three shapes, each with its reasoning in its own
-  header. `release-holds`, `dun-subscriptions`, `renew-subscriptions`
+  header. `holds-release`, `subscriptions-dun`, `subscriptions-renew`
 - `packages/toolbelt/src/history/history.js` — `occurrenceKey`, shape 3's once-ness

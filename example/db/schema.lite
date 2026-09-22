@@ -1185,14 +1185,14 @@ model Order {
   
   /// Written by a JOB, not by a request. `ship` books a courier, that call is
   /// slow and can fail, so it happens after the response: the action queues
-  /// `book-courier` (@frontierjs/caravan) and the job patches this column when
+  /// `courier-book` (@frontierjs/caravan) and the job patches this column when
   /// the courier answers. Nullable because between the move and the booking
   /// there is a real window where a shipped order has no tracking yet.
   ///
   /// It is the field that proves deferred work reaches the browser — the job
   /// writes through the orders SERVICE, so the write announces on the channel
   /// and a tab nobody touched fills this cell in seconds later.
-  // Booked by the courier job (api/jobs/book-courier.job.ts), never by a
+  // Booked by the courier job (api/jobs/courier-book.job.ts), never by a
   // person. `@system` is what says so: readable by anyone, refused on write to
   // every caller but the application itself, which names the column on the
   // call. Without it the generated form offered a text box whose value a worker
@@ -2406,7 +2406,7 @@ model StockReservation {
 
   /// When the shelf takes it back. THE READ IS THE TRUTH: every availability
   /// sum filters on this instant, so a hold is dead the moment it passes even
-  /// if no sweep has run. `release-holds` deletes the rows, which keeps the
+  /// if no sweep has run. `holds-release` deletes the rows, which keeps the
   /// table small and is housekeeping — correctness must not depend on a cron
   /// having fired, because then a queue outage quietly stops the shop selling.
   expiresAt DateTime

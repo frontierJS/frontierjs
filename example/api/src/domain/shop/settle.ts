@@ -26,7 +26,7 @@
 // and the method, not a silent half-effect.
 
 import { $ }              from '@frontierjs/junction'
-import announcePayment    from '../../jobs/announce-payment.job.ts'
+import announcePayment    from '../../jobs/payment-announce.job.ts'
 import { restock }        from './inventory.ts'
 
 /** The one verb Junction's minimal client type does not declare —

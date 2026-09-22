@@ -32,7 +32,7 @@ export const PHASES = [
   {
     id:'build', n:'02', t:'Build', s:'run it',
     badge:'shipped', tone:'success',
-    say:'A port broker claims a session per project, so two apps on one machine stop fighting over 3000. Studio gives you the data; typegen keeps the editor honest.',
+    say:'A port broker claims a session per project, so two apps on one machine stop fighting over 3000. Litestone Studio gives you the data; typegen keeps the editor honest.',
     term:[
       ['c','fli ports:claim'],
       ['o','  claimed port session for my-app'],
@@ -47,7 +47,7 @@ export const PHASES = [
     ],
     facts:[
       ['Port broker','a claimed session per project — no more "address already in use" across repos'],
-      ['Studio','a local web UI over the live database'],
+      ['Litestone Studio','a local web UI over the live database'],
       ['Devtools','Sierra ships an in-page overlay; job and request telemetry feeds it'],
     ],
     pkgs:['cli','litestone','sierra','mesa'],

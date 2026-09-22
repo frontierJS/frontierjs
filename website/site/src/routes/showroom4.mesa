@@ -218,7 +218,7 @@ publishes: 0
       <h3>Where this is honest about itself</h3>
       <p class="text-sm text-muted" style="margin:0">
         The loop above is real and runs today — 186 commands across 24 groups, a deploy
-        pipeline with rollback, a port broker, a studio. Basecamp does not exist yet.
+        pipeline with rollback, a port broker, Litestone Studio. Basecamp does not exist yet.
         Desktop and mobile targets do not exist yet. Sierra does not yet derive forms
         from a schema, which is the largest single gap in the framework. All three are
         tracked in the open rather than implied by omission, and the project is alpha:

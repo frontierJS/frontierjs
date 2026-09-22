@@ -281,7 +281,7 @@ try {
 
   // 3 ─ a JOB's write, which nobody requested at all
   //
-  // `ship` moves the order and queues `book-courier` (@frontierjs/caravan). The
+  // `ship` moves the order and queues `courier-book` (@frontierjs/caravan). The
   // job runs off the request, books a courier, and patches the tracking code
   // back through the orders SERVICE — so the announcement is the ordinary one
   // and this tab, which has still done nothing, fills the cell in.
@@ -493,7 +493,7 @@ const expected = {
   'watcher.movesRegraded': { moves: ['ship', 'refund', 'cancel'] },
 
   // Deterministic from the reference — the rule is `bookWithCourier` in
-  // api/src/jobs/book-courier.job.ts and this is the same three lines, so a
+  // api/src/jobs/courier-book.job.ts and this is the same three lines, so a
   // divergence fails here rather than passing on a code nobody checked. It is
   // derived rather than written down because the reference is minted per run
   // (see REF above); it used to be the literal `TRK-1BFG`.

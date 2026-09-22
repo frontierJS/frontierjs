@@ -83,7 +83,7 @@ await context.stream({
 ## What it is
 
 The one governed way data leaves this app. Before it, the only way out was a
-person clicking the CSV button in Studio — a development tool, not something that
+person clicking the CSV button in Litestone Studio — a development tool, not something that
 runs in production, and one that answers as the file's owner rather than as a
 principal (`FJS-D230`).
 

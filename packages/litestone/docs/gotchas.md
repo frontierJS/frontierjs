@@ -175,7 +175,7 @@ number and what to do when the query itself is the slow part.
 
 Running `litestone studio` or any command via `kamal app exec` spins up a new Docker container. Each container adds ~500MB RAM overhead (Docker + runtime). On a 1GB VPS this can OOM.
 
-Run Studio directly on the host instead:
+Run Litestone Studio directly on the host instead:
 
 ```bash
 ssh myserver

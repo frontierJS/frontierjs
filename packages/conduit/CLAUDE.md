@@ -97,7 +97,7 @@ src/
   `retryable: false` to a 429 and to a refused connection, and load shed at
   admission said the same of `circuit_open` and `overloaded` — three answers
   about requests that were certainly never applied, two of which clear on their
-  own, and `collect-invoice` wrote an invoice off on each of them
+  own, and `invoice-collect` wrote an invoice off on each of them
   (`FJS-739`, `FJS-D194`). A 404 stays permanent under the rule, which is what
   says it is not *transient means retryable*.
 - **`replayable` and `idempotency_key` are two different claims.** A key asserts

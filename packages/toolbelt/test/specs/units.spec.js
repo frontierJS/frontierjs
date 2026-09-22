@@ -8,7 +8,8 @@
  * no answer.
  */
 
-import { formatBytes, formatMoney, BYTE_UNITS, minorUnits, isKnownCurrency, knownCurrencies, fromMinor, toMinor, roundMinor, allocate } from '../../src/units/units.js'
+import { formatBytes, formatMoney, BYTE_UNITS, minorUnits, isKnownCurrency, knownCurrencies, fromMinor, toMinor, roundMinor, allocate,
+         MEASURE_UNITS, LENGTH_UNITS, unitInfo, isKnownUnit, baseUnit, suggestUnit, convertUnit } from '../../src/units/units.js'
 
 /* ── The ladder ────────────────────────────────────────────────────── */
 
@@ -416,4 +417,55 @@ test('units: the formatters refuse the same set, and answer the empty string', f
   assert.equal(formatBytes(0), '0 B')          // zero is a size
   assert.equal(formatBytes('1536'), '1.5 KB')  // the wire is text
   assert.equal(formatMoney(0, 'USD'), '$0.00')
+})
+
+/* ── The measure table ─────────────────────────────────────────────── */
+
+test('measures: length and information are the tables above, not a second copy', function () {
+  // What this protects is one origin. A unit added to LENGTH is a unit a .lite
+  // schema can declare, with nothing else to remember — and a spelling that
+  // drifted between the two lists would make `@unit(nmi)` legal and
+  // `parseLength('5nmi')` not, or the reverse.
+  assert.deepEqual(MEASURE_UNITS.length, [...LENGTH_UNITS])
+  assert.deepEqual(MEASURE_UNITS.information, [...BYTE_UNITS])
+  for (const u of LENGTH_UNITS) assert.equal(unitInfo(u).dimension, 'length')
+})
+
+test('measures: a symbol resolves to a dimension, or to nothing at all', function () {
+  assert.deepEqual(unitInfo('ms'), { symbol: 'ms', dimension: 'duration', factor: 0.001 })
+  assert.equal(unitInfo('furlong'), null)
+  assert.equal(isKnownUnit('kg'), true)
+  assert.equal(isKnownUnit('KG'), false)   // case is part of a unit
+  assert.equal(isKnownUnit(undefined), false)
+  assert.equal(baseUnit('mass'), 'g')
+  assert.equal(baseUnit('luminosity'), null)
+})
+
+test('measures: MB and Mb are not the same unit, so the case is answered rather than folded', function () {
+  // Folding would make `@unit(Mb)` silently mean megabytes on a column that
+  // measures bits, which is a wrong answer nothing reports.
+  assert.equal(suggestUnit('MS'), 'ms')
+  assert.equal(suggestUnit('Kg'), 'kg')
+  assert.equal(suggestUnit('mb'), 'MB')
+  assert.equal(suggestUnit('furlong'), null)
+})
+
+test('measures: a month has no fixed length and convertUnit says so', function () {
+  // The table carries the ABSENCE rather than leaving `mo` out: the fact is
+  // expressible — a retention window really is stated in months — and only the
+  // arithmetic is refused, at the point somebody reaches for it.
+  assert.equal(unitInfo('mo').factor, null)
+  assert.equal(unitInfo('yr').factor, null)
+  assert.throws(() => convertUnit(3, 'mo', 'd'), /calendar unit/)
+  assert.throws(() => convertUnit(3, 'd', 'yr'), /calendar unit/)
+})
+
+test('measures: converting is within one dimension and nowhere else', function () {
+  assert.equal(convertUnit(1500, 'ms', 's'), 1.5)
+  assert.equal(convertUnit(1, 'kg', 'g'), 1000)
+  assert.equal(convertUnit(1024, 'B', 'KB'), 1)
+  assert.equal(convertUnit(1, 'mi', 'm'), 1609.344)
+  assert.throws(() => convertUnit(1, 'kg', 'm'), /measures mass/)
+  assert.throws(() => convertUnit(1, 'kg', 'nope'), /unknown unit/)
+  assert.throws(() => convertUnit('abc', 'kg', 'g'), /expected a number/)
 })

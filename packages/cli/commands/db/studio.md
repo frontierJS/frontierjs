@@ -9,11 +9,11 @@ flags:
   port:
     char: p
     type: number
-    description: Port to run Studio on
+    description: Port to run Litestone Studio on
     defaultValue: 8502
   open:
     type: boolean
-    description: Open Studio in the browser once it is up (--no-open to skip)
+    description: Open Litestone Studio in the browser once it is up (--no-open to skip)
     defaultValue: true
 ---
 

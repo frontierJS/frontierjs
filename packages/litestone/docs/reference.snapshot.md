@@ -14,10 +14,10 @@ a red suite rather than a paragraph someone copies. The table's completeness is
 asserted against the parser's own switch arms in both directions.
 
 Two commands ask the same rows one at a time: `litestone explain @guarded`, and
-Studio's Explore panel, which also places a word into your schema and shows you
-the diff first.
+Litestone Studio's Explore panel, which also places a word into your schema
+and shows you the diff first.
 
-**105 words** — 12 declarations · 65 field attributes · 28 model attributes.
+**106 words** — 12 declarations · 66 field attributes · 28 model attributes.
 
 ## Index
 
@@ -34,7 +34,7 @@ the diff first.
 - *Record who and when* — [`@updatedAt`](#updatedat-field) · [`@updatedBy`](#updatedby-field) · [`@createdBy`](#createdby-field) · [`@version`](#version-field) · [`@keepVersions`](#keepversions-field) · [`@log`](#log-field)
 - *Clean a value on write* — [`@trim`](#trim-field) · [`@lower`](#lower-field) · [`@upper`](#upper-field) · [`@slug`](#slug-field)
 - *Refuse a bad value* — [`@values`](#values-field) · [`@label`](#label-field) · [`@required`](#required-field) · [`@email`](#email-field) · [`@url`](#url-field) · [`@phone`](#phone-field) · [`@markdown`](#markdown-field) · [`@accept`](#accept-field) · [`@date`](#date-field) · [`@datetime`](#datetime-field) · [`@time`](#time-field) · [`@regex`](#regex-field) · [`@length`](#length-field) · [`@startsWith`](#startswith-field) · [`@endsWith`](#endswith-field) · [`@contains`](#contains-field) · [`@lt`](#lt-field) · [`@lte`](#lte-field) · [`@gt`](#gt-field) · [`@gte`](#gte-field) · [`@minItems`](#minitems-field) · [`@maxItems`](#maxitems-field) · [`@uniqueItems`](#uniqueitems-field) · [`@type`](#type-field)
-- *Shape the table* — [`@big`](#big-field) · [`@scale`](#scale-field) · [`@money`](#money-field) · [`@point`](#point-field) · [`@vector`](#vector-field)
+- *Shape the table* — [`@big`](#big-field) · [`@scale`](#scale-field) · [`@money`](#money-field) · [`@unit`](#unit-field) · [`@point`](#point-field) · [`@vector`](#vector-field)
 - *Decide who may* — [`@allow`](#allow-field)
 
 **Model attributes**
@@ -1104,7 +1104,7 @@ model Example {
 
 #### `@minItems` `(n[, message])` <a id="minitems-field"></a>
 
-Array must hold at least n.
+At least n — an array's elements, or a relation's child ROWS.
 
 ```lite
 model Example {
@@ -1117,7 +1117,7 @@ model Example {
 
 #### `@maxItems` `(n[, message])` <a id="maxitems-field"></a>
 
-Array must hold at most n.
+At most n — an array's elements, or a relation's child ROWS.
 
 ```lite
 model Example {
@@ -1208,6 +1208,20 @@ model Example {
 - **Also typed** — `price` · `cents`
 - **Deeper** — [exact-numbers.md](exact-numbers.md)
 - **See also** — [`@scale`](#scale-field)
+
+#### `@unit` `(<symbol>)` <a id="unit-field"></a>
+
+What the number COUNTS. A column holding grams is an Int and the unit lives in the identifier (weightGrams), which no tool parses — so the fact is stated and no form, no agent and no atlas can act on it. @unit(g) puts it where they can read it. The value is NOT converted or coerced: what a caller sends is what is stored, exactly as @money's minor units are, and the declaration says what those units are rather than changing them. The symbol comes from a closed table in @frontierjs/toolbelt/units and one it does not hold is refused at parse, because the attribute's whole contract is that the symbol resolves to a DIMENSION — which is what a renderer groups by and a converter needs. Case is part of a unit: MB is a megabyte and Mb a megabit, so a wrong case is refused by name with the one that was meant. Five dimensions — duration ms s min h d wk mo yr, information B KB MB GB TB PB, length mm cm m km in ft yd mi nmi, mass mg g kg t oz lb, ratio %. mo and yr carry no conversion factor and convertUnit refuses them by name rather than inventing a length for a month. Composes with @scale, which says where the point sits rather than what is counted: @scale(3) @unit(kg) is thousandths of a kilogram. Not with @money, where the currency already is the unit. Reaches the client as x-unit, and is legal inside a `type` block too.
+
+```lite
+model Example {
+  id Int @id
+  timeout Int @unit(s)
+}
+```
+
+- **Deeper** — [exact-numbers.md](exact-numbers.md)
+- **See also** — [`@scale`](#scale-field) · [`@money`](#money-field)
 
 #### `@point` `(<latKey>, <lngKey>)` <a id="point-field"></a>
 
@@ -1793,6 +1807,14 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 
 *error*. FTS5 indexes what the COLUMN HOLDS. For @encrypted that is a ciphertext and for @hashed a digest, so no query can ever match one — the index builds, the search runs and returns nothing. A @guarded column is the other half: it matches, and then read() strips it from every result, so callers can search text they may never see and highlight/snippet render it.
 
+### `validator-on-a-column-no-caller-writes` — a validator on a column no caller can write never runs
+
+*error*. A validator grades a value a request sent. @computed, @derived, @from and @generated are refused by name on every write, so a rule declared on one is unreachable — the schema states a constraint, the boundary never asks it, and the read schema carries it where it reads as one that holds.
+
+### `value-rule-on-a-relation` — a value validator on a relation grades nothing
+
+*error*. A relation field is a collection of ROWS, not a value, so a rule written to grade a value has nothing to read. @minItems and @maxItems are the two that do count there — they mean the same thing on a relation as they already mean on a Json array.
+
 ### `foreign-key-without-index` — a foreign key column with no index
 
 *warn*. SQLite indexes a PRIMARY KEY and a UNIQUE and nothing else — a foreign key column gets no index unless the schema asks for one, and litestone emits CREATE INDEX only for @@index. So every lookup by that key, every include of the children, and every @@softDelete(cascade) walk is a full table scan that is fast on the rows a test writes.
@@ -1844,3 +1866,7 @@ the ones worth naming. Studio reports them live; nothing here fails a build.
 ### `index-over-a-json-document` — an index over a Json column indexes the document, not anything inside it
 
 *warn*. The column holds one serialized document, so the index holds one entry per document — which answers *this exact document* and nothing else. A path filter cannot use it: json_extract() is opaque to the planner, so the query is a full scan with the index sitting beside it being written on every insert. What indexes a path is a @generated column over that path with an @@index on THAT.
+
+### `unit-in-the-column-name` — the unit is in the identifier, where nothing can read it
+
+*info*. timeoutSeconds Int states the unit and states it to a human only — no form renders it, no agent describing the model repeats it, and nothing checks that the value being written was measured in the same thing. @unit(s) puts the fact where those can reach it, and the name goes back to being the name. It changes no stored value: a unit declares what the number counts, it does not convert it.

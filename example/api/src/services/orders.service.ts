@@ -6,7 +6,7 @@ import { createBaseService, validateFields, $ } from '@frontierjs/junction'
 // what puts Caravan's augmentation of `app.jobs` in this file's program —
 // without it `ctx.app.jobs` is the empty slot Junction declares and every call
 // site needs a hand-written cast.
-import bookCourier from '../jobs/book-courier.job.ts'
+import bookCourier from '../jobs/courier-book.job.ts'
 
 // The one owner of "this order has been paid for" — shared with
 // `payments.record`, which reaches it from a provider's webhook. It reads `$`,
@@ -81,7 +81,7 @@ const pay = async () => settleOrder(Number($.id))
  * is not legal right now. Booking the courier does not run inline: it is a
  * third party's API, slow and flaky, and the caller should not wait on it or
  * see its outage as a failed shipment. So the move answers, and the queue picks
- * the rest up (api/jobs/book-courier.job.ts).
+ * the rest up (api/jobs/courier-book.job.ts).
  *
  * Dispatched AFTER the transition resolves, deliberately. Queue first and a
  * refused move (409, 403) still books a courier for an order that never
@@ -106,7 +106,7 @@ const ship = async () => {
   // `app.jobs` is Caravan's claim on the app, made through app.claim().
   await $.app?.jobs?.dispatch(bookCourier,
     { orderId: order.id, reference: order.reference },
-    { unique: `book-courier:${order.id}` })
+    { unique: `courier-book:${order.id}` })
 
   return order
 }

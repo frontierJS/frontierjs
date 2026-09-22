@@ -204,7 +204,7 @@ const HELP = `
     ${cyan('litestone types')} [out.d.ts]            generate TypeScript declarations from schema
     ${dim('  --only=users,posts')}                  only emit types for specified models
     ${dim('  --audience=client|system')}             field visibility (default: client)
-    ${cyan('litestone studio')} [--no-open]        open local web UI
+    ${cyan('litestone studio')} [--no-open]        open Litestone Studio
     ${dim('  --gate <path[#export]>')}              grade previews with this app's own getLevel
     ${dim('  --host <addr> --token <secret>')}      serve beyond loopback; the token is required there
     ${cyan('litestone repl')} [--as|--level|--gate]  a console that boots at a gate level
@@ -1961,7 +1961,7 @@ async function cmdStudio(cfg) {
   const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]'])
   if (hostFlag && !LOOPBACK.has(hostFlag) && !getFlag('token') && !flag('insecure')) {
     console.error(`
-  ${red('✗')}  ${bold(`--host=${hostFlag}`)} serves Studio beyond loopback, and Studio has no
+  ${red('✗')}  ${bold(`--host=${hostFlag}`)} serves Litestone Studio beyond loopback, and it has no
       authentication of its own. Off 127.0.0.1 this exposes, to anything that
       can reach the port:
 
@@ -2365,7 +2365,7 @@ async function cmdStudio(cfg) {
       client,
       clientNote: authCtx
         ? `Browsed as ${authCtx.email ?? authCtx.name ?? `#${authCtx.id}`} — \`user\` stands in for that principal.`
-        : 'Browsed with no principal selected, which Studio runs as asSystem().',
+        : 'Browsed with no principal selected, which Litestone Studio runs as asSystem().',
       args,
       argsCode,
       code:     `await ${client}.${accessor}.findMany(${argsCode})`,
@@ -2402,10 +2402,10 @@ async function cmdStudio(cfg) {
           '/api/migrations/apply', '/api/migrations/auto', '/api/migrations/create',
           '/api/maint/', '/api/transform/run', '/api/tenants/migrate', '/api/perf/advisor/fix']
         if (MUTATING.some(p => path.startsWith(p)) && path !== '/api/maint/integrity')
-          return json({ error: 'Studio is running in --readonly mode' }, 403)
+          return json({ error: 'Litestone Studio is running in --readonly mode' }, 403)
         if (path === '/api/schema-source' && req.method !== 'GET')
           // allow validation, block the save
-          if (!path.endsWith('validate')) return json({ error: 'Studio is running in --readonly mode' }, 403)
+          if (!path.endsWith('validate')) return json({ error: 'Litestone Studio is running in --readonly mode' }, 403)
         if (path === '/api/query') {
           const q = (body.sql ?? '').trim().toUpperCase()
           if (!/^(SELECT|EXPLAIN|WITH|PRAGMA TABLE_INFO|PRAGMA INDEX_LIST|PRAGMA FOREIGN_KEY_LIST)/.test(q))
@@ -2701,7 +2701,7 @@ async function cmdStudio(cfg) {
         if (path === '/api/seed') return json(findSeed(cfg))
 
         if (path === '/api/seed/run') {
-          if (READONLY) return json({ error: 'Studio is running in --readonly mode' }, 403)
+          if (READONLY) return json({ error: 'Litestone Studio is running in --readonly mode' }, 403)
           const seed = findSeed(cfg)
           if (!seed.script) return json({ error: seed.why ?? 'This project declares no seed' }, 400)
 
@@ -3039,7 +3039,7 @@ async function cmdStudio(cfg) {
           } catch (e) { return json({ queries: [], error: e.message }) }
         }
         if (path === '/api/queries') {
-          if (READONLY) return json({ error: 'Studio is running in --readonly mode' }, 403)
+          if (READONLY) return json({ error: 'Litestone Studio is running in --readonly mode' }, 403)
           const { name, sql } = body
           if (!name?.trim() || !sql?.trim()) return json({ error: 'name and sql required' }, 400)
           rawDb.run(`CREATE TABLE IF NOT EXISTS "_litestone_studio_queries" (id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, sql TEXT NOT NULL, createdAt TEXT NOT NULL)`)
@@ -3048,7 +3048,7 @@ async function cmdStudio(cfg) {
           return json({ ok: true })
         }
         if (path === '/api/queries/delete') {
-          if (READONLY) return json({ error: 'Studio is running in --readonly mode' }, 403)
+          if (READONLY) return json({ error: 'Litestone Studio is running in --readonly mode' }, 403)
           rawDb.run(`DELETE FROM "_litestone_studio_queries" WHERE id = ?`, body.id)
           return json({ ok: true })
         }
@@ -3917,7 +3917,7 @@ async function cmdStudio(cfg) {
   // right thing for a test to ask for — a fixed number, however unlikely, can
   // be taken by whatever else the run is doing.
   const url = `http://${displayHost}:${server.port}`
-  console.log(`  ${green('✓')}  Studio at ${cyan(url)}${hostname !== '127.0.0.1' ? dim(`  (listening on ${hostname})`) : ''}`)
+  console.log(`  ${green('✓')}  Litestone Studio at ${cyan(url)}${hostname !== '127.0.0.1' ? dim(`  (listening on ${hostname})`) : ''}`)
 
   // A schema that declares gates and a Studio that grades them with somebody
   // else's resolver is a preview nobody can act on. Said here as well as in the
@@ -5120,7 +5120,7 @@ function findSeed(cfg) {
         return {
           script: null,
           root:   dir,
-          why:    `${rel(pkgPath)} declares no seed script — Studio looks for ${SEED_SCRIPTS.map(n => `\`${n}\``).join(', ')}`,
+          why:    `${rel(pkgPath)} declares no seed script — Litestone Studio looks for ${SEED_SCRIPTS.map(n => `\`${n}\``).join(', ')}`,
         }
       }
       // What the script IS, shown so a person can see what they are about to

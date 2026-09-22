@@ -33,9 +33,9 @@
 
 import { db }              from '../../api/src/core/db.ts'
 import { advancePeriod, settleInvoice, DUNNING_DAYS, GRACE_DAYS, TERMS_DAYS } from '../../api/src/domain/billing'
-import { sweepRenewals }   from '../../api/src/jobs/renew-subscriptions.job.ts'
-import { renewSubscription } from '../../api/src/jobs/renew-subscription.job.ts'
-import { dunSubscriptions }  from '../../api/src/jobs/dun-subscriptions.job.ts'
+import { sweepRenewals }   from '../../api/src/jobs/subscriptions-renew.job.ts'
+import { renewSubscription } from '../../api/src/jobs/subscription-renew.job.ts'
+import { dunSubscriptions }  from '../../api/src/jobs/subscriptions-dun.job.ts'
 import { occurrenceKey }   from '@frontierjs/toolbelt/history'
 import { plainDateIn, addToDate, daysBetween, startOfDay } from '@frontierjs/toolbelt/datetime'
 import { results, report } from './lib/report.mjs'

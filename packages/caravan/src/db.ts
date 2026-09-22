@@ -109,7 +109,7 @@ const SCHEMA = `
   --     first job had finished:
   --       500 GeneralError: UNIQUE constraint failed: jobs.unique_key
   --   • making the lookup match ANY status fixed that and broke the other side:
-  --     a key derived from a row id ('book-courier:4') silently matched a job
+  --     a key derived from a row id ('courier-book:4') silently matched a job
   --     from a deleted order whose id SQLite had reused, and the new work never
   --     ran. Nothing failed; a courier was simply never booked.
   --

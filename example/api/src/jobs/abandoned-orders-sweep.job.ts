@@ -1,4 +1,4 @@
-// api/jobs/sweep-abandoned.job.ts — the recurring one.
+// api/jobs/abandoned-orders-sweep.job.ts — the recurring one.
 //
 // An order left `pending` is a checkout somebody walked away from. Left alone
 // it holds a reference forever and makes every count wrong, so once a night the
@@ -23,7 +23,7 @@ interface OrderRow { id: number; reference: string; createdAt: string }
  *
  * Parameterized so it can be RUN rather than waited for: a cron whose only
  * proof is `nextRuns()` is a schedule, not a behavior. The scheduled fire
- * passes no data and gets the default; `POST /jobs/run/sweep-abandoned` with
+ * passes no data and gets the default; `POST /jobs/run/abandoned-orders-sweep` with
  * `{"days":0}` treats every pending order as abandoned, which is how the drive
  * exercises the handler without waiting until 03:00.
  *
@@ -78,12 +78,12 @@ export async function sweepAbandoned(ctx: JobContext<{ days?: number }>): Promis
  * while people are buying.
  *
  * The scheduled fire passes no data, so the handler takes its default window;
- * `POST /jobs/run/sweep-abandoned` with `{"days":0}` is the same handler with a
+ * `POST /jobs/run/abandoned-orders-sweep` with `{"days":0}` is the same handler with a
  * different one. The wrapper drops the returned references — a job handler
  * answers nothing to the queue, and the sweep's own caller wants them.
  */
 export default defineJob<{ days?: number }>(
-  'sweep-abandoned',
+  'abandoned-orders-sweep',
   async (ctx) => { await sweepAbandoned(ctx) },
   { cron: '0 3 * * *' },
 )

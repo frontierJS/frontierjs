@@ -103,7 +103,7 @@ const nowIso = () => new Date().toISOString()
  * the sum before the comparison.
  *
  * THE READ IS THE TRUTH. `expiresAt > now` is in the filter, so a hold is dead
- * the instant it passes whether or not `release-holds` has run. The sweep keeps
+ * the instant it passes whether or not `holds-release` has run. The sweep keeps
  * the table small; it is not what makes the number right. Depending on a cron
  * for correctness means a queue outage quietly stops the shop from selling.
  */

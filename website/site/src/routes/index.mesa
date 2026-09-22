@@ -162,7 +162,7 @@ render: static
           <tr><th>Package</th><th>Realm</th><th>What it is</th><th>State</th></tr>
         </thead>
         <tbody>
-          <tr><td><strong>litestone</strong></td><td>Data</td><td><code>.lite</code> language, SQLite client, gates &amp; policies, migrations, tenants, studio</td><td><span class="badge success">v1.1 · 1241 tests</span></td></tr>
+          <tr><td><strong>litestone</strong></td><td>Data</td><td><code>.lite</code> language, SQLite client, gates &amp; policies, migrations, tenants, Litestone Studio</td><td><span class="badge success">v1.1 · 1241 tests</span></td></tr>
           <tr><td><strong>junction</strong></td><td>API</td><td>Services, hook pipeline, HTTP/WS transport, channels, browser client</td><td><span class="badge success">703 tests</span></td></tr>
           <tr><td><strong>sierra</strong></td><td>UI</td><td>File-tree routing, Vite build, <code>createResource</code>, static prerender</td><td><span class="badge success">558 tests</span></td></tr>
           <tr><td><strong>mesa</strong></td><td>UI</td><td>Reactive compiler + signal runtime. Renders to HTML, email, fragment or JS</td><td><span class="badge success">869 tests</span></td></tr>

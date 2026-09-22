@@ -413,7 +413,7 @@ async function settles(fn, ms = 20000) {
   // The sweep, with the REAL app behind it. `ctx.app.jobs.dispatch` writes a
   // row that this process's own workers pick up, so everything after this line
   // happens because the queue made it happen.
-  const { sweepRenewals } = await import(join(ROOT, 'api/src/jobs/renew-subscriptions.job.ts'))
+  const { sweepRenewals } = await import(join(ROOT, 'api/src/jobs/subscriptions-renew.job.ts'))
   const queued = await sweepRenewals({ app, data: { at: new Date().toISOString() } }, 'UTC')
   t('chain.sweepQueuedIt', queued >= 1)
 

@@ -35,7 +35,7 @@ await context.stream({
 
 ## Why this is here
 
-Studio guides you to the right word for a schema change — the Explore panel, the
+Litestone Studio guides you to the right word for a schema change — the Explore panel, the
 visibility interview, advise. This is the same guidance for somebody with a chat
 window instead: one document holding the instructions for a guided conversation,
 the whole `.lite` language with a worked example per word, the rules the parser

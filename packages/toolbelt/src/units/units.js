@@ -504,3 +504,105 @@ export function formatDistance(metres, opts = {}) {
   const km = n / 1000
   return `${fixed(km, km < 10 ? 1 : 0)} km`
 }
+
+// ─── the measure table ────────────────────────────────────────────────────
+//
+// What a number COUNTS, as a symbol a schema can declare and a tool can read.
+// A column holding grams is an `Int` and the unit lives in the identifier
+// (`weightGrams`), which nothing parses — so the fact is stated and no form,
+// no agent and no atlas can act on it. `@unit(g)` in `.lite` is the declaration
+// and this is the vocabulary behind it, here for the reason `LENGTH` is: what a
+// quantity MEANS is this kit's question.
+//
+// `factor` converts to the dimension's base and is `null` where no fixed one
+// exists. A month is not a number of seconds — its length depends on which
+// month — so a factor for it would be a lie a caller could not see. That is why
+// the table carries the absence rather than leaving `mo` out: the FACT is
+// expressible and only the arithmetic is refused, at the point somebody tries
+// it.
+//
+// Length and information read their spellings from the two tables above rather
+// than restating them, so a unit added there is a unit a schema can declare.
+
+const BASE = Object.freeze({
+  duration:    's',
+  information: 'B',
+  length:      'm',
+  mass:        'g',
+  ratio:       '1',
+})
+
+const DURATION = { ms: 0.001, s: 1, min: 60, h: 3600, d: 86400, wk: 604800, mo: null, yr: null }
+const MASS     = { mg: 0.001, g: 1, kg: 1000, t: 1e6, oz: 28.349523125, lb: 453.59237 }
+const RATIO    = { '%': 0.01 }
+
+const MEASURES = Object.freeze(Object.fromEntries([
+  ...Object.entries(DURATION).map(([symbol, factor]) => [symbol, { symbol, dimension: 'duration', factor }]),
+  ...UNITS.map((symbol, i) => [symbol, { symbol, dimension: 'information', factor: STEP ** i }]),
+  ...Object.entries(LENGTH).map(([symbol, factor]) => [symbol, { symbol, dimension: 'length', factor }]),
+  ...Object.entries(MASS).map(([symbol, factor]) => [symbol, { symbol, dimension: 'mass', factor }]),
+  ...Object.entries(RATIO).map(([symbol, factor]) => [symbol, { symbol, dimension: 'ratio', factor }]),
+].map(([symbol, info]) => [symbol, Object.freeze(info)])))
+
+/** Every unit symbol a schema may declare, grouped by what it measures. */
+export const MEASURE_UNITS = Object.freeze(Object.fromEntries(
+  Object.keys(BASE).map((dimension) => [
+    dimension,
+    Object.freeze(Object.values(MEASURES).filter((u) => u.dimension === dimension).map((u) => u.symbol)),
+  ])))
+
+/**
+ * `'ms'` → `{ symbol, dimension, factor }`, or `null`.
+ *
+ * The match is EXACT and deliberately not case-folded: `MB` is a megabyte and
+ * `Mb` a megabit in every tool a reader has used, and `m` and `min` differ by
+ * more than a spelling. A near miss is answered by `suggestUnit` so a refusal
+ * can name the unit that was meant.
+ */
+export function unitInfo(symbol) {
+  return MEASURES[symbol] ?? null
+}
+
+/** Is this a unit this framework knows? */
+export function isKnownUnit(symbol) {
+  return typeof symbol === 'string' && symbol in MEASURES
+}
+
+/** The base unit of a dimension — what `factor` converts to. */
+export function baseUnit(dimension) {
+  return BASE[dimension] ?? null
+}
+
+/**
+ * The known unit an unknown spelling most likely meant, or `null`.
+ *
+ * Case alone is the common miss (`MS` for `ms`, `Kg` for `kg`), and it is the
+ * one worth answering by name: every other kind of typo is better served by the
+ * dimension's own list, which the refusal prints anyway.
+ */
+export function suggestUnit(symbol) {
+  if (typeof symbol !== 'string') return null
+  const want = symbol.toLowerCase()
+  return Object.keys(MEASURES).find((k) => k.toLowerCase() === want) ?? null
+}
+
+/**
+ * Convert between two units of ONE dimension.
+ *
+ * Refuses by name across dimensions, and refuses a calendar unit rather than
+ * inventing a length for it — *3 months in days* has no answer that does not
+ * depend on which months.
+ */
+export function convertUnit(value, from, to) {
+  const a = unitInfo(from), b = unitInfo(to)
+  if (!a) throw new Error(`convertUnit: unknown unit '${from}'`)
+  if (!b) throw new Error(`convertUnit: unknown unit '${to}'`)
+  if (a.dimension !== b.dimension)
+    throw new Error(`convertUnit: '${from}' measures ${a.dimension} and '${to}' measures ${b.dimension}`)
+  for (const u of [a, b])
+    if (u.factor === null)
+      throw new Error(`convertUnit: '${u.symbol}' is a calendar unit and has no fixed length — convert a date, not a number`)
+  const n = asNumber(value)
+  if (!Number.isFinite(n)) throw new Error(`convertUnit: expected a number, got ${value}`)
+  return (n * a.factor) / b.factor
+}

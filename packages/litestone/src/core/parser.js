@@ -4,7 +4,8 @@
 // a dependency: it ships pure functions and depends on nothing, which is what
 // lets litestone reach it without inverting the graph (`FJS-D26`).
 
-import { isKnownCurrency, minorUnits } from '@frontierjs/toolbelt/units'
+import { isKnownCurrency, minorUnits, isKnownUnit, unitInfo, suggestUnit, MEASURE_UNITS }
+  from '@frontierjs/toolbelt/units'
 import { LEVELS }                       from '@frontierjs/toolbelt/gate'
 import { parseExpression, tokenize, TK, ParseError } from '@frontierjs/toolbelt/predicate'
 import { expandCapabilityType } from './capabilities.js'
@@ -1176,6 +1177,12 @@ class Parser {
       // wrong (`FJS-D142`).
       case 'scale':     return { kind: 'scale', places: this.parseParenNumber() }
       case 'money':     return this.parseMoney()
+
+      // `@unit(ms)` — what the number COUNTS. Not a scale and not a currency:
+      // the value stored is the value sent, exactly as `@money`'s minor units
+      // are. What it buys is that the fact stops living in the identifier,
+      // where nothing parses it.
+      case 'unit':      return this.parseUnit()
 
       // `@big` — the column holds 64 bits and the VALUE is allowed to use them.
       // The storage was always 64-bit; what was not was the crossing, which goes
@@ -2470,6 +2477,25 @@ class Parser {
     const currency = this.check(TK.STRING) ? this.eat(TK.STRING).value : this.eat(TK.IDENT).value
     this.eat(TK.RPAREN)
     return { kind: 'money', currency: String(currency).toUpperCase(), field: null }
+  }
+
+  /**
+   * `@unit(ms)` · `@unit("%")`
+   *
+   * Bare where the symbol is an identifier, quoted where it is not — `%` is a
+   * token this lexer already spends on something else, and a unit that cannot
+   * be written bare is better quoted than renamed. The symbol is NOT folded to
+   * a case: `MB` is a megabyte and `Mb` a megabit everywhere a reader has seen
+   * them, so a wrong case is a wrong unit and is refused as one.
+   */
+  parseUnit() {
+    const t = this.peek()
+    if (!this.check(TK.LPAREN))
+      throw new ParseError('@unit takes a symbol — @unit(ms), @unit(kg), @unit("%")', { line: t.line, col: t.col })
+    this.eat(TK.LPAREN)
+    const symbol = this.check(TK.STRING) ? this.eat(TK.STRING).value : this.eat(TK.IDENT).value
+    this.eat(TK.RPAREN)
+    return { kind: 'unit', symbol: String(symbol) }
   }
 
   // ── @check / @@check argument parser ────────────────────────────────────────
@@ -5706,6 +5732,45 @@ function validate(schema) {
     }
   }
 
+  // ── Relation cardinality ────────────────────────────────────────────────────
+  //
+  // `@minItems`/`@maxItems` on a relation is a count of CHILD ROWS, reached
+  // through the foreign key the child holds. Two shapes have no key to count
+  // through, and both would otherwise parse into a declaration that grades
+  // nothing — the silence the attribute was extended to close, so it is refused
+  // here rather than in `advise`.
+  //
+  // Asked of the FOREIGN KEY rather than of `field.type.kind`, because a list
+  // field is still `implicitM2M` at this point in the pass and only becomes
+  // `relation` once the back-reference is resolved — a check written against
+  // the kind reported every ordinary one-to-many as a many-to-many.
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      const bound = field.attributes?.find(a => a.kind === 'minItems' || a.kind === 'maxItems')
+      if (!bound) continue
+      const target = schema.models.find(m => m.name === field.type?.name)
+      if (!target) continue                      // a Json array, or a type named elsewhere
+      const what = `@${bound.kind}`
+      if (field.type.array !== true) {
+        errors.push(
+          `Model '${model.name}', field '${field.name}': ${what} counts the rows on the MANY side and ` +
+          `'${field.name}' holds one row. A to-one relation is made required or optional by its own '?', ` +
+          `and how many of them may exist is declared on the other model's list field`)
+        continue
+      }
+      const fk = inferFromFk(model, target, field.attributes.find(a => a.kind === 'relation')?.name ?? null)
+      if (fk && !fk.ambiguous && !fk.unresolvedVia) continue
+      errors.push(
+        `Model '${model.name}', field '${field.name}': ${what} cannot be counted — ` +
+        (fk?.ambiguous
+          ? `'${target.name}' points at '${model.name}' through ${fk.ambiguous.length} relations ` +
+            `(${fk.ambiguous.map(c => c.field).join(', ')}), so there is no one foreign key to count. ` +
+            `Name which one with @relation("…") on both ends`
+          : `'${target.name}' holds no foreign key to '${model.name}'. A many-to-many keeps its rows in ` +
+            `a join table, so declare that model explicitly and put the bound on its list field`))
+    }
+  }
+
   // A foreign key names a table, and a table lives in one FILE. A relation
   // whose two ends are assigned to different `database` blocks parses clean,
   // emits an FK into whichever file the child is in, and throws
@@ -6315,6 +6380,56 @@ function validate(schema) {
             errors.push(`${at}: @money(field: ${money.field}) — '${money.field}' must be one code, not an array`)
         }
       }
+    }
+  }
+
+  // ── @unit validation ────────────────────────────────────────────────────────
+  // The attribute's whole contract is that the symbol resolves to a dimension —
+  // that is what a form, an agent and the atlas read off it. A symbol that
+  // resolves to nothing is therefore a declaration that cannot be EXPRESSED
+  // rather than one that is merely wrong, which is the line `FJS-721` draws
+  // between this file and `advise.js`; it is the same reason `@money(XYZ)` is
+  // refused here, where the unknown code is what the scale would have come from.
+  //
+  // The walk covers `type` blocks as well as models, and that is not symmetry
+  // for its own sake: `@scale`/`@money` are refused inside a `type` outright
+  // (there is no column to scale), so their own validation never had to look
+  // there, while `@unit` is a statement about a number and is as true of one
+  // inside a Json document. The attribute loop in `jsonschema.js` already emits
+  // it for both, so a rule that read only the models would have left exactly
+  // the declaration this feature exists to remove — stated, emitted, and
+  // resolving to nothing.
+  for (const owner of [...schema.models.map(m => ['Model', m]), ...(schema.types ?? []).map(t => ['Type', t])]) {
+    const [kind, model] = owner
+    for (const field of model.fields) {
+      const unit = field.attributes.find(a => a.kind === 'unit')
+      if (!unit) continue
+
+      const at = `${kind} '${model.name}', field '${field.name}'`
+
+      if (!isKnownUnit(unit.symbol)) {
+        const near = suggestUnit(unit.symbol)
+        errors.push(near
+          ? `${at}: @unit(${unit.symbol}) — no such unit. Did you mean '${near}'? A unit's case is part of it`
+          : `${at}: @unit(${unit.symbol}) — no such unit. One of: ` +
+            Object.entries(MEASURE_UNITS).map(([d, u]) => `${d} ${u.join(' ')}`).join(' · '))
+        continue
+      }
+
+      // A unit says what a NUMBER counts, so there has to be a number. A
+      // String column carrying '5kg' is a value nothing can compare, order or
+      // sum, which is the shape the declaration exists to replace.
+      if (field.type.name !== 'Int' && field.type.name !== 'Float')
+        errors.push(`${at}: @unit requires an Int or Float field, got ${field.type.name} — a unit counts a number`)
+
+      if (field.type.array)
+        errors.push(`${at}: @unit cannot be an array — the unit describes one value`)
+
+      // Two answers to what the number means. A currency IS a unit, which is
+      // why `@money` needs no `@unit` beside it — and `@scale` composes, being
+      // about where the point sits rather than about what is counted.
+      if (field.attributes.some(a => a.kind === 'money'))
+        errors.push(`${at}: @unit and @money together — a currency is already the unit, so state one`)
     }
   }
 

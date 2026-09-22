@@ -1,4 +1,4 @@
-// api/jobs/dun-subscriptions.job.ts — what happens when nobody pays.
+// api/jobs/subscriptions-dun.job.ts — what happens when nobody pays.
 //
 // Dunning is durable retry with a DEADLINE, and the two halves belong in
 // different places. The retry is the queue's — caravan already has a ladder,
@@ -106,7 +106,7 @@ export async function dunSubscriptions(
 }
 
 export default defineJob<{ at?: string, subscriptionId?: number }>(
-  'dun-subscriptions',
+  'subscriptions-dun',
   async (ctx) => { await dunSubscriptions(ctx, ctx.app!.configFor().timeZone) },
   // Daily, and early. A deadline measured in days does not need a finer clock,
   // and a person who is about to be cancelled should find out at the start of a

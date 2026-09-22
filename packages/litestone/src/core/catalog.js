@@ -627,6 +627,15 @@ const FIELD = [
     { seeAlso: ['scale'] }
   ),
   t(
+    'unit',
+    'field',
+    'shape',
+    '(<symbol>)',
+    "What the number COUNTS. A column holding grams is an Int and the unit lives in the identifier (weightGrams), which no tool parses — so the fact is stated and no form, no agent and no atlas can act on it. @unit(g) puts it where they can read it. The value is NOT converted or coerced: what a caller sends is what is stored, exactly as @money's minor units are, and the declaration says what those units are rather than changing them. The symbol comes from a closed table in @frontierjs/toolbelt/units and one it does not hold is refused at parse, because the attribute's whole contract is that the symbol resolves to a DIMENSION — which is what a renderer groups by and a converter needs. Case is part of a unit: MB is a megabyte and Mb a megabit, so a wrong case is refused by name with the one that was meant. Five dimensions — duration ms s min h d wk mo yr, information B KB MB GB TB PB, length mm cm m km in ft yd mi nmi, mass mg g kg t oz lb, ratio %. mo and yr carry no conversion factor and convertUnit refuses them by name rather than inventing a length for a month. Composes with @scale, which says where the point sits rather than what is counted: @scale(3) @unit(kg) is thousandths of a kilogram. Not with @money, where the currency already is the unit. Reaches the client as x-unit, and is legal inside a `type` block too.",
+    'timeout Int @unit(s)',
+    { seeAlso: ['scale', 'money'] }
+  ),
+  t(
     'point',
     'field',
     'shape',
@@ -847,7 +856,7 @@ const FIELD = [
     'field',
     'validate',
     '(n[, message])',
-    'Array must hold at least n.',
+    'At least n — an array\'s elements, or a relation\'s child ROWS.',
     'tags String[] @minItems(1)'
   ),
   t(
@@ -855,7 +864,7 @@ const FIELD = [
     'field',
     'validate',
     '(n[, message])',
-    'Array must hold at most n.',
+    'At most n — an array\'s elements, or a relation\'s child ROWS.',
     'tags String[] @maxItems(10)'
   ),
   t(
@@ -1336,6 +1345,7 @@ export const DOCS = {
   'field:big': 'exact-numbers.md',
   'field:scale': 'exact-numbers.md',
   'field:money': 'exact-numbers.md',
+  'field:unit': 'exact-numbers.md',
   'field:point': 'geo.md',
   'field:vector': 'vectors.md',
   'field:keepVersions': 'file-storage.md',
@@ -1473,7 +1483,7 @@ export const TIERS = {
     'field:map', 'field:sequence', 'field:edge', 'field:scoped', 'field:hardDelete', 'field:sealed', 'field:capability', 'field:big',
     'field:keepVersions', 'field:upper', 'field:slug', 'field:phone', 'field:markdown',
     'field:accept', 'field:startsWith', 'field:check',
-    'field:version', 'field:scale', 'field:money', 'field:point', 'field:vector', 'field:log',
+    'field:version', 'field:scale', 'field:money', 'field:unit', 'field:point', 'field:vector', 'field:log',
     'field:endsWith', 'field:contains', 'field:minItems', 'field:maxItems', 'field:uniqueItems',
     'field:type','field:lt', 'field:gt',
     // model attributes

@@ -63,7 +63,7 @@ export function createSubscriptionsService() {
      * Stop it renewing — at the end of the period, not now.
      *
      * The period has been paid for, so ending it the moment somebody asks
-     * forfeits the rest of it. `renew-subscription` reads the flag when it
+     * forfeits the rest of it. `subscription-renew` reads the flag when it
      * reaches the boundary and cancels there instead of issuing.
      *
      * It does NOT touch invoices. An invoice already issued is a document

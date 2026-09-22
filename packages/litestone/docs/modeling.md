@@ -179,6 +179,7 @@ attribute by attribute:
 | `@unique` / `@@unique` / `@@index` over `@computed`, `@derived` or `@from` | the constraint vanishes, or `@@unique` emits `UNIQUE ("c")` over a column that is not emitted and SQLite refuses the whole table at boot |
 | `@default(12.99)` on `@scale(2)` or `@money` | the column is an INTEGER of minor units, so `DEFAULT 12.99` is written into the DDL and the first row that takes it is refused |
 | `@relation` between models in two `database` blocks | a foreign key names a table and a table lives in one file, so every create throws `no such table` |
+| `@minItems`/`@maxItems` on a to-one relation, or on an implicit many-to-many | the count is of child ROWS and is reached through the child's foreign key — one side holds a single row, the other holds no key at all |
 
 `@generated` is deliberately not in the first row: it is a real column and takes
 a constraint like any other.

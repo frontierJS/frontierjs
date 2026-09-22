@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**105 words** — 12 declarations · 65 field attributes · 28 model attributes.
+**106 words** — 12 declarations · 66 field attributes · 28 model attributes.
 
 ## Declarations
 
@@ -66,6 +66,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@big` | Shape the table |  | on a model's field · on a trait's field |  |  |
 | `@scale` | Shape the table | (<places>) | on a model's field · on a trait's field |  |  |
 | `@money` | Shape the table | [(<CURRENCY>)] \| [(field: <column>)] | on a model's field · on a trait's field |  |  |
+| `@unit` | Shape the table | (<symbol>) |  |  |  |
 | `@point` | Shape the table | (<latKey>, <lngKey>) |  |  |  |
 | `@vector` | Shape the table | (<dimensions>) |  |  |  |
 | `@keepVersions` | Record who and when |  |  |  |  |
@@ -146,7 +147,7 @@ A blank `legal` column above means the ordinary answer for that level.
 
 ## The visibility table
 
-Three answers, one word. Asked as an interview in Studio.
+Three answers, one word. Asked as an interview in Litestone Studio.
 
 | column | caller writes | caller reads | word |
 | --- | --- | --- | --- |
@@ -171,6 +172,8 @@ Shapes the parser accepts and something later refuses.
 | `gate-over-own-standing` | warn | the gate may let a caller rewrite the column it is graded from |
 | `guarded-and-encrypted-is-secret` | info | @guarded with @encrypted is @secret written out |
 | `fts-over-a-column-search-cannot-read` | error | a @@fts index names a column whose stored text is not the value |
+| `validator-on-a-column-no-caller-writes` | error | a validator on a column no caller can write never runs |
+| `value-rule-on-a-relation` | error | a value validator on a relation grades nothing |
 | `foreign-key-without-index` | warn | a foreign key column with no index |
 | `transition-to-a-state-nothing-reaches` | warn | an enum value no transition can reach |
 | `label-column-that-may-be-null` | warn | @@label names a column that may be null |
@@ -184,3 +187,4 @@ Shapes the parser accepts and something later refuses.
 | `json-arrow-answers-json` | error | a @generated column reads a JSON path with `->`, which keeps the quotes |
 | `json-path-outside-the-declared-type` | error | a @generated column reads a member the Json column's type does not declare |
 | `index-over-a-json-document` | warn | an index over a Json column indexes the document, not anything inside it |
+| `unit-in-the-column-name` | info | the unit is in the identifier, where nothing can read it |

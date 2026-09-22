@@ -35,7 +35,7 @@ reaches any tool schema.
 asserts the shape — a stranger sees fewer than a shopper, a shopper fewer than an
 administrator, nothing is lost by climbing, and no protected column reaches any
 tool — against a real client on a real app. The absolute figures above stay a
-dated hand measurement on purpose: a typed-in count froze a Studio panel at a
+dated hand measurement on purpose: a typed-in count froze a Litestone Studio panel at a
 four-model `example` and reported a fixture as a regression (`FJS-773`).
 
 ## Next, in order

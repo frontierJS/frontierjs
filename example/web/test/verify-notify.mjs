@@ -247,7 +247,7 @@ try {
   // job is about. Matching on `j.error` alone would also match cancelled
   // corpses from earlier runs, which keep the error that got them cancelled.
   const isForThisOrder = (j) => {
-    if (j.name !== 'announce-payment') return false
+    if (j.name !== 'payment-announce') return false
     try { return JSON.parse(j.data)?.orderId === secondId } catch { return false }
   }
 
@@ -265,7 +265,7 @@ try {
     namesTheKind: failed.error.includes('server_error'),
     // The staff still heard about it — allSettled per channel, and this job
     // sends the two notifications independently.
-    saysMailHalf: failed.error.startsWith('announce-payment: email:'),
+    saysMailHalf: failed.error.startsWith('payment-announce: email:'),
   } : { missing: true })
 
   // ── the inbox ───────────────────────────────────────────────────────────

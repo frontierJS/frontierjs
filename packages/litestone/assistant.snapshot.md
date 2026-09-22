@@ -356,6 +356,8 @@ Shapes the parser accepts and something later refuses. Check every proposal agai
 - **the gate may let a caller rewrite the column it is graded from** (warn). A @@gate is per model, so a gate low enough to let a signed-in caller update the model that grades them lets them update the column they are graded from. Severity depends on whether the column is one a caller may write.
 - **@guarded with @encrypted is @secret written out** (info). The two together are exactly what @secret expands into. Writing both by hand is legal and means the same thing; the shorter spelling says the intent.
 - **a @@fts index names a column whose stored text is not the value** (error). FTS5 indexes what the COLUMN HOLDS. For @encrypted that is a ciphertext and for @hashed a digest, so no query can ever match one — the index builds, the search runs and returns nothing. A @guarded column is the other half: it matches, and then read() strips it from every result, so callers can search text they may never see and highlight/snippet render it.
+- **a validator on a column no caller can write never runs** (error). A validator grades a value a request sent. @computed, @derived, @from and @generated are refused by name on every write, so a rule declared on one is unreachable — the schema states a constraint, the boundary never asks it, and the read schema carries it where it reads as one that holds.
+- **a value validator on a relation grades nothing** (error). A relation field is a collection of ROWS, not a value, so a rule written to grade a value has nothing to read. @minItems and @maxItems are the two that do count there — they mean the same thing on a relation as they already mean on a Json array.
 - **a foreign key column with no index** (warn). SQLite indexes a PRIMARY KEY and a UNIQUE and nothing else — a foreign key column gets no index unless the schema asks for one, and litestone emits CREATE INDEX only for @@index. So every lookup by that key, every include of the children, and every @@softDelete(cascade) walk is a full table scan that is fast on the rows a test writes.
 - **an enum value no transition can reach** (warn). A @@transitions field is a closed machine: once declared, the only way the column moves is transition(). A value that is not the default and is on no transition's right-hand side is therefore unreachable — a state the application names, can write at create and can never move a row into.
 - **@@label names a column that may be null** (warn). @@label is what a picker SHOWS for a foreign key, and the options query sorts by that column and matches it with contains. A null there is a blank row in the list, sorted together at one end and matching no search — which reads as a broken picker rather than as a row with no name.
@@ -369,6 +371,7 @@ Shapes the parser accepts and something later refuses. Check every proposal agai
 - **a @generated column reads a JSON path with `->`, which keeps the quotes** (error). SQLite has two arrow operators and they differ in one character and in what comes back. `->` answers the JSON REPRESENTATION, so a string member arrives still quoted — the column holds `"Reno"` where the row holds `Reno`, and every comparison against a plain value misses. `->>` answers the SQL value. Nothing catches this downstream: the column builds, an index over it builds, EXPLAIN reports SEARCH ... USING INDEX, and the query returns no rows. `->` also stringifies a number, so an Int member lands in a TEXT column.
 - **a @generated column reads a member the Json column's type does not declare** (error). A `Json @type(T)` column has a declared shape and the SQL that reads it is graded against that shape by nothing. A misspelled member is valid SQL over valid JSON: json_extract answers NULL for a path that is not there, so the column is null for every row, forever, and no write is ever refused. The type declaration is the only thing that knows better.
 - **an index over a Json column indexes the document, not anything inside it** (warn). The column holds one serialized document, so the index holds one entry per document — which answers *this exact document* and nothing else. A path filter cannot use it: json_extract() is opaque to the planner, so the query is a full scan with the index sitting beside it being written on every insert. What indexes a path is a @generated column over that path with an @@index on THAT.
+- **the unit is in the identifier, where nothing can read it** (info). timeoutSeconds Int states the unit and states it to a human only — no form renders it, no agent describing the model repeats it, and nothing checks that the value being written was measured in the same thing. @unit(s) puts the fact where those can reach it, and the name goes back to being the name. It changes no stored value: a unit declares what the number counts, it does not convert it.
 
 ## Opportunities
 
@@ -1118,7 +1121,7 @@ price Int @gte(0)
 
 tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field
 
-Array must hold at least n.
+At least n — an array's elements, or a relation's child ROWS.
 
 ```lite
 tags String[] @minItems(1)
@@ -1128,7 +1131,7 @@ tags String[] @minItems(1)
 
 tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field
 
-Array must hold at most n.
+At most n — an array's elements, or a relation's child ROWS.
 
 ```lite
 tags String[] @maxItems(10)
@@ -1184,6 +1187,16 @@ An amount, stored as a whole number of minor units. The scale is DERIVED from th
 
 ```lite
 total Int @money(USD)
+```
+
+#### `@unit` (<symbol>)
+
+tier: **situational** · legal in: on a model's field, on a type's field, on a trait's field · see also: `scale`, `money`
+
+What the number COUNTS. A column holding grams is an Int and the unit lives in the identifier (weightGrams), which no tool parses — so the fact is stated and no form, no agent and no atlas can act on it. @unit(g) puts it where they can read it. The value is NOT converted or coerced: what a caller sends is what is stored, exactly as @money's minor units are, and the declaration says what those units are rather than changing them. The symbol comes from a closed table in @frontierjs/toolbelt/units and one it does not hold is refused at parse, because the attribute's whole contract is that the symbol resolves to a DIMENSION — which is what a renderer groups by and a converter needs. Case is part of a unit: MB is a megabyte and Mb a megabit, so a wrong case is refused by name with the one that was meant. Five dimensions — duration ms s min h d wk mo yr, information B KB MB GB TB PB, length mm cm m km in ft yd mi nmi, mass mg g kg t oz lb, ratio %. mo and yr carry no conversion factor and convertUnit refuses them by name rather than inventing a length for a month. Composes with @scale, which says where the point sits rather than what is counted: @scale(3) @unit(kg) is thousandths of a kilogram. Not with @money, where the currency already is the unit. Reaches the client as x-unit, and is legal inside a `type` block too.
+
+```lite
+timeout Int @unit(s)
 ```
 
 #### `@point` (<latKey>, <lngKey>)

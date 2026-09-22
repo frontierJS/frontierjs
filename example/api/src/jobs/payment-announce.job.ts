@@ -1,4 +1,4 @@
-// api/jobs/announce-payment.job.ts — who hears that an order was paid.
+// api/jobs/payment-announce.job.ts — who hears that an order was paid.
 //
 // Two audiences, one event: the customer gets an email, the staff get a row in
 // the app. Both are `app.notify()`, and both happen AFTER the response — an
@@ -22,7 +22,7 @@ interface AnnouncePayment {
 }
 
 export default defineJob<AnnouncePayment>(
-  'announce-payment',
+  'payment-announce',
   async (ctx) => {
     const app = ctx.app!
 
@@ -85,7 +85,7 @@ export default defineJob<AnnouncePayment>(
 
     // Throwing is what schedules the retry. Partial delivery is recorded in the
     // message so the failed job says which half is missing.
-    if (failures.length) throw new Error(`announce-payment: ${failures.join(' | ')}`)
+    if (failures.length) throw new Error(`payment-announce: ${failures.join(' | ')}`)
   },
   {
     queue: 'fulfillment',

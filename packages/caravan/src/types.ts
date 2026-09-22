@@ -237,7 +237,7 @@ export interface DispatchOptions {
    * "Only one of these at a time" is what this expresses. It is NOT an
    * idempotency key: it will not stop the same work being done twice on two
    * separate occasions, and a key derived from a row id must not be treated as
-   * one — SQLite reuses ids, so `book-courier:4` can name two different orders
+   * one — SQLite reuses ids, so `courier-book:4` can name two different orders
    * months apart.
    */
   unique?:   string

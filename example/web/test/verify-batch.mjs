@@ -19,8 +19,8 @@
  * that a job count is what a double-payment bug agrees with. The books are the
  * only record that cannot be right while the money is wrong.
  *
- * **`keys.theTwoJobsChooseOppositely`** — `calculate-payslip` dispatches under
- * `unique` and `send-payslip` under the dispatch `id`, and neither is the
+ * **`keys.theTwoJobsChooseOppositely`** — `payslip-calculate` dispatches under
+ * `unique` and `payslip-send` under the dispatch `id`, and neither is the
  * default. Resumable work must REACH its handler on a second dispatch;
  * irreversible work must not. Getting that backwards is `FJS-609` in one
  * direction and a payslip nobody ever gets in the other.
@@ -32,8 +32,8 @@
 import { db }  from '../../api/src/core/db.ts'
 import { planPayRun, calculatePayslipFor, completeIfDone, payPayRun, revertPayRun }
   from '../../api/src/domain/payroll'
-import calculatePayslip                from '../../api/src/jobs/calculate-payslip.job.ts'
-import sendPayslip, { sendPayslipJob } from '../../api/src/jobs/send-payslip.job.ts'
+import calculatePayslip                from '../../api/src/jobs/payslip-calculate.job.ts'
+import sendPayslip, { sendPayslipJob } from '../../api/src/jobs/payslip-send.job.ts'
 import { occurrenceKey }               from '@frontierjs/toolbelt/history'
 import { plainDateIn, addToDate }       from '@frontierjs/toolbelt/datetime'
 

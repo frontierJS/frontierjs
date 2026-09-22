@@ -1,6 +1,6 @@
-# Studio
+# Litestone Studio
 
-Studio is Litestone's browser UI. Launch it with:
+Litestone Studio is the browser UI. Launch it with:
 
 ```bash
 bunx litestone studio            # http://localhost:8502

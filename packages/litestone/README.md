@@ -1231,7 +1231,7 @@ onQuery: async (e) => { await telemetry.track(e) }
 onQuery: (e) => e.actorId && audit.log(e)
 ```
 
-Use `db.$tapQuery(fn)` for temporary one-shot captures (Studio REPL, tests):
+Use `db.$tapQuery(fn)` for temporary one-shot captures (Litestone Studio's REPL, tests):
 
 ```js
 const log = []
@@ -2182,7 +2182,7 @@ that set.
 
 ---
 
-## Studio
+## Litestone Studio
 
 ```bash
 bunx litestone studio   # → http://localhost:8502

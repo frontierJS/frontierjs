@@ -2309,11 +2309,11 @@ at module load time.
 > the server, and a loader outside Mesa (Sierra's) clears the range and does a fresh
 > `mount()` into it. Async data is the loader's to fetch again.
 
-### 19.4 `renderComponent` / `renderFile` — Source-In Pipeline
+### 19.4 `renderComponent` / `renderFile` — Source-In Process
 
 `renderToHTML` accepts a compiled component factory. `renderComponent` and
 `renderFile` are higher-level entry points that take raw `.mesa` / `.md`
-**source** and run the full pipeline: compile, recursive import resolution,
+**source** and run the full process: compile, recursive import resolution,
 CSS extraction, optional CSS inlining, optional UnoCSS scanning, and render.
 They are the primary API for build-time templating, email rendering, and
 server-side fragment generation.

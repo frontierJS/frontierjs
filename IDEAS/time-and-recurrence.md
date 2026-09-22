@@ -410,6 +410,12 @@ is which subset earns a name.
 
 ## See also
 
+- `IDEAS/effective-time.md` — **where this file's zone question is consumed.**
+  A window over `effectiveFrom`/`effectiveTo` filtered at `asOf` is the thing a
+  zoned comparison binds a value FOR, so the zone arrives there as a parameter
+  rather than as a feature of its own. It is also the settlement `overview.md`
+  4.21 asked for with 4.15
+
 - `IDEAS/declared-semantics.md` §3 — bitemporality, the same observation from the
   audit side; §4's resumable process is the sibling remainder
 - `IDEAS/compliance-from-the-seed.md` — `@retain`, a duration that needs this settled

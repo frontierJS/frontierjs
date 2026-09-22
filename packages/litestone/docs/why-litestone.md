@@ -30,7 +30,7 @@ If you're on Node, use Prisma or Drizzle. They're great. Litestone is specifical
 
 ## Why schema-first?
 
-Litestone's `.lite` schema is the single source of truth. DDL, migrations, TypeScript types, JSON Schema, Studio UI, test factories — all derived from it automatically.
+Litestone's `.lite` schema is the single source of truth. DDL, migrations, TypeScript types, JSON Schema, Litestone Studio, test factories — all derived from it automatically.
 
 The alternative (schema-as-code, Drizzle's approach) is excellent when you want full TypeScript inference and close-to-SQL control. It's a better fit when you have a complex existing SQL schema you want to express precisely.
 

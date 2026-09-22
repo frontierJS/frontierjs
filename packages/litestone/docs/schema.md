@@ -282,7 +282,8 @@ All of it holds on every read path — `findMany`, `findFirst`, `findUnique`,
 @length(min, max)                string length (either bound optional)
 @gt(n)  @gte(n)  @lt(n)  @lte(n)
 @startsWith(s)  @endsWith(s)  @contains(s)
-@minItems(n)  @maxItems(n)  @uniqueItems     array columns only
+@minItems(n)  @maxItems(n)                       an array, or a relation's child rows
+@uniqueItems                                     array columns only
 ```
 
 `@time` is a wall clock and not an instant: no date, no zone. It reaches a form
@@ -475,6 +476,61 @@ closed twice and left open sixteen times in the same codebase.
 @hardDelete                      on relation field: hard-delete children in @@softDelete(cascade)
 @log(dbName)                     field-level audit log to a logger database
 ```
+
+## `@minItems` / `@maxItems` on a relation — how many children
+
+The same two words that bound a `Json` array bound a relation's child rows:
+
+```
+model Order {
+  id    Int @id @default(autoincrement())
+  lines OrderLine[] @minItems(1) @maxItems(50)
+}
+```
+
+**The count is graded once, when the outermost write unit commits.** It cannot
+be graded at the statement that creates the parent, because the children do not
+exist yet, and it cannot be graded at the one that inserts the last child,
+because nothing says it was the last. Outside `$transaction` a single call is
+that unit, so the rule reads the same everywhere — and the practical
+consequence is worth knowing before you meet it:
+
+```js
+// Refused. An Order with no lines cannot exist, so this create cannot either —
+// refused before the INSERT, naming the spelling that works.
+await db.order.create({ data: { total: 10 } })
+
+// Accepted. The children are in the same call.
+await db.order.create({ data: { total: 10, lines: { create: [{ amount: 10 }] } } })
+
+// Refused: the order is left with none.
+await db.orderLine.deleteMany({ where: { orderId } })
+
+// Accepted: the unit is the transaction, and by the end the order has one.
+await db.$transaction(async tx => {
+  await tx.orderLine.deleteMany({ where: { orderId } })
+  await tx.orderLine.createMany({ data: [{ orderId, amount: 20 }] })
+})
+```
+
+**What is counted is what a read would answer.** A soft-deleted child is not a
+child and a template is not an order, so `remove()` on the last line is refused
+and `restore()` can push a parent over its maximum. A cascade takes the parent
+with the children, so a parent that no longer exists is held to nothing.
+
+**`asSystem()` is graded**, because a bound is a statement about the data — the
+line `@@check` and `@@arc` already sit on. `asSystem().sql` is not: a COUNT over
+another table cannot be a SQLite CHECK, so this is litestone's rule rather than
+the table's.
+
+**A bound with no key to count through is a parse error.** A to-one relation
+holds a single row, and an implicit many-to-many keeps its rows in a join table
+the schema does not name — declare that model and put the bound on its list
+field. Two relations to the same model resolve through the relation's own name.
+
+**Only parents a write unit TOUCHED are counted.** Adding a bound to a relation
+whose rows already break it changes nothing until the next write reaches one of
+them, which makes it a contract for `fli release:check` rather than an expand.
 
 ## Naming conventions
 

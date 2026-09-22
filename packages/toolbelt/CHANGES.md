@@ -1,5 +1,30 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-22 — `/units` learns what a number counts
+
+`FJS-D348`. The measure table behind `.lite`'s `@unit`: one row per unit symbol,
+carrying its dimension and its factor to that dimension's base. `MEASURE_UNITS`,
+`unitInfo`, `isKnownUnit`, `baseUnit`, `suggestUnit`, `convertUnit`.
+
+**Here rather than in litestone because what a quantity MEANS is this kit's
+question** — the same sentence `LENGTH` was placed on. Litestone imports it the
+way it already imports `isKnownCurrency`.
+
+**Length and information are read from `LENGTH` and `BYTE_UNITS`, not restated
+beside them.** A unit added to either is a unit a schema can declare, and two
+lists that could drift would make `@unit(nmi)` legal while `parseLength('5nmi')`
+was not, or the reverse.
+
+**`mo` and `yr` carry `factor: null` rather than being left out.** A month is
+not a number of seconds — its length depends on which month — so a factor would
+be a lie a caller could not see. The fact stays expressible and `convertUnit`
+refuses the arithmetic by name, which is the half that can be caught.
+
+**`suggestUnit` exists because the case is not folded.** `MB` is a megabyte and
+`Mb` a megabit in every tool a reader has used, so folding would silently mean
+megabytes on a column measuring bits. Naming the near miss is what makes the
+strictness affordable.
+
 ## 2026-09-20 — `/bearer`, what a bearer secret looks like at rest
 
 `FJS-D339`. The kit the bearer-access design needs before anything else can be

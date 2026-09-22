@@ -1,4 +1,4 @@
-// api/jobs/release-holds.job.ts — the housekeeping half of a reservation.
+// api/jobs/holds-release.job.ts — the housekeeping half of a reservation.
 //
 // A hold has a clock on it, and the clock is what makes the whole design work:
 // nothing has to come back and undo an abandoned basket, because the row stops
@@ -27,7 +27,7 @@ import { releaseExpired } from '../domain/shop'
  * Drop every hold that ran out before `before` — an ISO-8601 instant,
  * defaulting to now.
  *
- * Parameterized for the same reason `sweep-abandoned` takes `days`: a cron
+ * Parameterized for the same reason `abandoned-orders-sweep` takes `days`: a cron
  * whose only proof is `nextRuns()` is a schedule and not a behavior. The drive
  * posts `{"before":"2099-01-01T00:00:00.000Z"}` to expire every live hold, and
  * that runs the SAME comparison the scheduled fire runs — where a `releaseAll`
@@ -47,7 +47,7 @@ export async function releaseHolds(ctx: JobContext<{ before?: string }>): Promis
   // fail — it matches some arbitrary prefix of the table and deletes live
   // holds, which is a shop overselling because somebody typo'd a timestamp.
   if (Number.isNaN(Date.parse(before)))
-    throw new Error(`release-holds: 'before' must be an ISO-8601 instant, got ${JSON.stringify(before)}`)
+    throw new Error(`holds-release: 'before' must be an ISO-8601 instant, got ${JSON.stringify(before)}`)
 
   const released = await releaseExpired(db.asSystem(), before)
   if (released) console.log(`[holds] released ${released} expired hold(s)`)
@@ -63,7 +63,7 @@ export async function releaseHolds(ctx: JobContext<{ before?: string }>): Promis
  * directly.
  */
 export default defineJob<{ before?: string }>(
-  'release-holds',
+  'holds-release',
   async (ctx) => { await releaseHolds(ctx) },
   { cron: '*/5 * * * *' },
 )

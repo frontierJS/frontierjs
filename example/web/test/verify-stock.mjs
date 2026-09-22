@@ -229,7 +229,7 @@ check('the shelf is available again immediately, with no sweep',
 // cutoff — a `releaseAll` flag would be a second code path proving nothing
 // about the first.
 
-const run = await api('/jobs/run/release-holds', {
+const run = await api('/jobs/run/holds-release', {
   method: 'POST', headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ before: '2099-01-01T00:00:00.000Z' }),
 })
@@ -240,10 +240,10 @@ for (let i = 0; i < 60 && !jobRow; i++) {
   if (j.status === 'done' || j.status === 'failed') jobRow = j
   else await new Promise(r => setTimeout(r, 200))
 }
-check('release-holds runs on demand', jobRow?.status, 'done')
+check('holds-release runs on demand', jobRow?.status, 'done')
 check('and an expired hold is gone', (await availabilityOf(V)).available, start0.onHand)
 
-const badCutoff = await api('/jobs/run/release-holds', {
+const badCutoff = await api('/jobs/run/holds-release', {
   method: 'POST', headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ before: 'last tuesday' }),
 })
@@ -488,7 +488,7 @@ check('and the ledger shows what happened to this shelf',
 // this file moved, which is exactly the shape of FJS-080 and reads as a
 // regression in whatever you changed last.
 
-const cleanup = await api('/jobs/run/release-holds', {
+const cleanup = await api('/jobs/run/holds-release', {
   method: 'POST', headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ before: '2099-01-01T00:00:00.000Z' }),
 })

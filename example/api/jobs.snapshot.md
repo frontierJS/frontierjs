@@ -24,19 +24,19 @@ it re-resolved when it runs. Survives a restart.
 
 | Job | Queue | Schedule | Zone | Attempts | Retry delay | Timeout |
 | --- | --- | --- | --- | --- | --- | --- |
-| `announce-payment` | `fulfillment` | on dispatch | — | 5 | 30000, 120000, 600000 | **none** |
-| `book-courier` | `fulfillment` | on dispatch | — | 5 | 60000, 300000, 1800000 | 30000ms |
-| `calculate-payslip` | `default` | on dispatch | — | 3 | default | **none** |
-| `collect-invoice` | `default` | on dispatch | — | 4 | default | **none** |
-| `dun-subscriptions` | `default` | `0 6 * * *` | — | 3 | default | **none** |
+| `abandoned-orders-sweep` | `default` | `0 3 * * *` | — | 3 | default | **none** |
+| `courier-book` | `fulfillment` | on dispatch | — | 5 | 60000, 300000, 1800000 | 30000ms |
+| `holds-release` | `default` | `*/5 * * * *` | — | 3 | default | **none** |
+| `invoice-collect` | `default` | on dispatch | — | 4 | default | **none** |
 | `orion.run` | `orion` | on dispatch | — | 3 | default | **none** |
 | `orion.sweep` | `orion` | `* * * * *` | — | 3 | default | **none** |
-| `release-holds` | `default` | `*/5 * * * *` | — | 3 | default | **none** |
-| `renew-subscription` | `default` | on dispatch | — | 3 | default | **none** |
-| `renew-subscriptions` | `default` | `0 * * * *` | — | 3 | default | **none** |
+| `payment-announce` | `fulfillment` | on dispatch | — | 5 | 30000, 120000, 600000 | **none** |
+| `payslip-calculate` | `default` | on dispatch | — | 3 | default | **none** |
+| `payslip-send` | `default` | on dispatch | — | 5 | default | **none** |
 | `retention` | `default` | `0 4 * * *` | — | 3 | default | **none** |
-| `send-payslip` | `default` | on dispatch | — | 5 | default | **none** |
-| `sweep-abandoned` | `default` | `0 3 * * *` | — | 3 | default | **none** |
+| `subscription-renew` | `default` | on dispatch | — | 3 | default | **none** |
+| `subscriptions-dun` | `default` | `0 6 * * *` | — | 3 | default | **none** |
+| `subscriptions-renew` | `default` | `0 * * * *` | — | 3 | default | **none** |
 
 13 handler(s), 6 of them on a clock.
 

@@ -63,7 +63,7 @@ const PKGS = [
       why:'The same file emits types for your editor and JSON Schema for validation and the browser — so the three can never describe different shapes.',
       code:'$ litestone types ./types.d.ts --audience=client\n\ninterface Invoice       { id: number; total: number }\ninterface InvoiceCreate { total: number }',
       r:['openapi-typescript','zod-to-ts','orval','hand-written types'] },
-    { k:'Tooling', v:'Studio · REPL · doctor · seed · backup',
+    { k:'Tooling', v:'Litestone Studio · REPL · doctor · seed · backup',
       why:'A local web UI over your data, an interactive shell against the live client, a health check for your setup, and seeding and backup as first-class commands.',
       r:['Prisma Studio','TablePlus','ad-hoc scripts'] },
   ],

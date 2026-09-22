@@ -630,7 +630,7 @@ happens *at an instant* rather than *from a state*.
 `.resume` write the one column through the model's own gate and row policies —
 so a shopper stopping their own arrangement is still
 `@@allow('update', userId == auth().id)` and nothing in either screen grades
-anybody. `renew-subscription` reads the flag AT the boundary, after both of its
+anybody. `subscription-renew` reads the flag AT the boundary, after both of its
 existing guards, and ends the arrangement there instead of issuing.
 
 **Three drives, +11 assertions.** `verify:billing` 23 → 29 for the job half: a

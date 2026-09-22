@@ -311,8 +311,8 @@ export async function payPayRun(
   // (a script, a drive) passes its own dispatcher or none.
   //
   // The key is the DISPATCH ID and not a `unique` lock, which is the opposite
-  // choice from `calculate-payslip` and for the opposite reason — see
-  // `api/src/jobs/send-payslip.job.ts`.
+  // choice from `payslip-calculate` and for the opposite reason — see
+  // `api/src/jobs/payslip-send.job.ts`.
   let queued = 0
   if (dispatchSend) {
     for (const slip of slips) {

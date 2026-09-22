@@ -128,7 +128,7 @@ running, the dispatch is a no-op and returns that job's id. Two clicks a second
 apart book one courier. Once the job finishes the key is free, so the same work
 can be queued again later — this is "only one of these at a time", not an
 idempotency key. A key built from a row id is not one either: SQLite reuses ids,
-so `book-courier:4` can name two different orders months apart.
+so `courier-book:4` can name two different orders months apart.
 
 `actor` almost never needs stating — see **Who a job runs as** below.
 
@@ -140,7 +140,7 @@ different parameter by hand. Answers 404 for a name with no handler, rather than
 queueing work no worker will pick up.
 
 ```bash
-curl -X POST localhost:3000/jobs/run/sweep-abandoned -d '{"days":0}'
+curl -X POST localhost:3000/jobs/run/abandoned-orders-sweep -d '{"days":0}'
 # → { "ok": true, "id": "…" }
 ```
 
@@ -176,8 +176,8 @@ payload, onto the queue that same registration names, as the application itself
 scope).
 
 ```ts
-// jobs/sweep-abandoned.job.ts
-export default defineJob('sweep-abandoned', sweep, { cron: '0 3 * * *' })
+// jobs/abandoned-orders-sweep.job.ts
+export default defineJob('abandoned-orders-sweep', sweep, { cron: '0 3 * * *' })
 ```
 
 `queue.schedule(name, expr, handler, opts?)` is sugar over the same
@@ -232,10 +232,10 @@ behalf:
 
 ```ts
 // In a service, handling a signed-in caller's request:
-await app.jobs.dispatch('book-courier', { orderId })
+await app.jobs.dispatch('courier-book', { orderId })
 
 // In the handler — no `auth`, no module-level app reference:
-export default defineJob('book-courier', async (ctx) => {
+export default defineJob('courier-book', async (ctx) => {
   const code = await courier.book(ctx.data)
   await ctx.app.service('orders').call('recordTracking', ctx.data.orderId, { trackingCode: code })
 })

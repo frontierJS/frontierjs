@@ -1,5 +1,12 @@
 # Changes — @frontierjs/caravan
 
+## 2026-09-21 — the job naming rule, and the example it is written against
+
+A job file's name is its SUBJECT then its verb, stated in the root `CLAUDE.md` beside the
+rule that the file names the job. The two illustrative `book-courier` comments in `db.ts` and
+`types.ts` name a job that no longer spells itself that way; they read `courier-book` now,
+because a comment citing an example that no longer exists is worse than no example.
+
 ## 2026-09-21 — the suite directory is `test/`
 
 **`tests/` is a surface, not a suite.** In an FJS app it sits beside `api/` and `web/` and holds

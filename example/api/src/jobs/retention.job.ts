@@ -21,7 +21,7 @@ import { sys }       from '../core/db.ts'
  * than assumed. Answers one row per table it touched, which is what the log
  * line below wants.
  *
- * 04:00 daily: after `sweep-abandoned` at 03:00, so a run that cancels an order
+ * 04:00 daily: after `abandoned-orders-sweep` at 03:00, so a run that cancels an order
  * has already happened and the audit rows it wrote are the ones being aged, not
  * ones written a minute later.
  */

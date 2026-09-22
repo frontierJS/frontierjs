@@ -57,7 +57,7 @@ possible  Customer
 ```
 
 `fli explain @@fts` is the same rows in more detail, and the docs page is where
-it goes deeper. Studio's **Explore** panel (`fli db:studio`) is the third
+it goes deeper. Litestone Studio's **Explore** panel (`fli db:studio`) is the third
 reader and the only one that writes back.
 
 ## Confidence, not severity

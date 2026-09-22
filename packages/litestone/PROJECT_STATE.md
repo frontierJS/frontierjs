@@ -35,7 +35,7 @@ A long sequence of work across multiple sessions, organized roughly chronologica
 
 **3. Plugin invocation sites.** 30 sites in client.js passed `tableName` to plugin lifecycle hooks where `GatePlugin._accessMap` was keyed by model name. Caused **silent auth bypass under PascalCase**. Fixed.
 
-**4. CLI bugs.** `cmdJsonSchema` import path, `openDb` mkdir, REPL banner, Studio endpoints, `diffSchemas`/`generateMigrationSQL` table name comparisons.
+**4. CLI bugs.** `cmdJsonSchema` import path, `openDb` mkdir, REPL banner, Litestone Studio endpoints, `diffSchemas`/`generateMigrationSQL` table name comparisons.
 
 **5. Migration command bugs.** Threading `{ pluralize }` through `create()`, `verify()`, `autoMigrate()`, etc.
 

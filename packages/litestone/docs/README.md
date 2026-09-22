@@ -12,7 +12,7 @@
 - [migrations.md](migrations.md) — autoMigrate, file migrations, JS migrations, CLI
 - [typescript.md](typescript.md) — litestone types, generated .d.ts, WhereBase, WindowSpec
 - [jsonschema.md](jsonschema.md) — generateJsonSchema: every key it emits, modes, audience, who reads each
-- [exact-numbers.md](exact-numbers.md) — `Int @scale(n)` and `Int @money(USD)`: an exact quantity and an amount of money, stored as whole minor units. **There is no `Decimal` and that is a ruling, not a gap** ([`FJS-D142`](../../../DECISIONS.md#fjs-d142))
+- [exact-numbers.md](exact-numbers.md) — `Int @scale(n)` and `Int @money(USD)`: an exact quantity and an amount of money, stored as whole minor units. **There is no `Decimal` and that is a ruling, not a gap** ([`FJS-D142`](../../../DECISIONS.md#fjs-d142)). `@unit(ms)` is the fourth and asks the other question — not how exact the number is but what it counts ([`FJS-D348`](../../../DECISIONS.md#fjs-d348))
 - [json-types.md](json-types.md) — `type T { }` in the seed and `Json @type(T)`: a declared shape for a Json column, validated on write
 - [extensible-columns.md](extensible-columns.md) — `@@extensible`: a field the tenant declares at runtime, stored in a pooled column and still filterable
 - [traits.md](traits.md) — `@@trait` and `extend model X { }`: what a package contributes into a seed, and what the installing app says back about a model it did not write
@@ -64,7 +64,7 @@ Point-in-time reviews. Read them for the reasoning; re-verify before citing a nu
 — see [VERIFYING.md](../../../VERIFYING.md).
 
 - [PERFORMANCE_AUDIT.md](PERFORMANCE_AUDIT.md) — query and write-path performance review
-- [STUDIO_REVIEW.md](STUDIO_REVIEW.md) — Studio UI review
+- [STUDIO_REVIEW.md](STUDIO_REVIEW.md) — Litestone Studio review
 
 ## Guides
 

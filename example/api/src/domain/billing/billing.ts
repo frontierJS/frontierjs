@@ -448,8 +448,8 @@ export async function changePlan(
 // what this app is for.
 //
 // So collection is one call out through `app.conduit` and one row written here.
-// Everything about WHEN it happens is `renew-subscriptions` and
-// `dun-subscriptions`, and everything about whether it worked comes back as a
+// Everything about WHEN it happens is `subscriptions-renew` and
+// `subscriptions-dun`, and everything about whether it worked comes back as a
 // webhook the provider signs.
 
 /** What a decline MEANS, which is not the same question as whether the request

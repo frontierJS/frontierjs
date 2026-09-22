@@ -89,7 +89,7 @@ litestone advise                    # what your schema declares and should not
 ```
 
 `catalog.snapshot.md` beside this file is the same table, committed and gated by
-CI, so it cannot drift from the parser. Studio's Explore panel is the third
+CI, so it cannot drift from the parser. Litestone Studio's Explore panel is the third
 door and will place a word into your schema and show you the diff first.
 
 **An attribute this package does not have is not a silent no-op — it is a parse

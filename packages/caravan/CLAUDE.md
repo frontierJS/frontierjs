@@ -166,7 +166,7 @@ bin/
 - **`unique` is a lock on work IN FLIGHT, not an idempotency key.** Once a job is
   terminal the key is free and the same work can be queued again later. A key
   built from a row id is not idempotent either — SQLite reuses ids, so
-  `book-courier:4` names two different orders months apart.
+  `courier-book:4` names two different orders months apart.
 - **`dispatch({ id })` IS the idempotency key, and it is the primary key.** A
   stated id makes the dispatch a no-op for all time: the work is already queued
   or already done. For a caller holding a durable id and retrying a handoff it
@@ -256,7 +256,7 @@ bin/
 
 `bun run test`, then `example`: `bun run verify:jobs` — API only, no browser.
 The principal is not visible in those assertions; read `example/db/audit/`
-afterwards, where a `book-courier` write names the staff member who shipped and
+afterwards, where a `courier-book` write names the staff member who shipped and
 a sweep cancel names `system`.
 
 A change to the claim or to a pause is `test/queue-operator.test.ts`, whose

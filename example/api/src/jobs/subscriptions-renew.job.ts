@@ -1,6 +1,6 @@
-// api/jobs/renew-subscriptions.job.ts — the sweep that owns the clock.
+// api/jobs/subscriptions-renew.job.ts — the sweep that owns the clock.
 //
-// It finds what is due and dispatches one `renew-subscription` per row. It does
+// It finds what is due and dispatches one `subscription-renew` per row. It does
 // no billing itself, and that split is the point: a sweep that issued invoices
 // inline would be one long transaction whose failure halfway leaves half a
 // shop billed, with nothing to retry but the whole thing.
@@ -17,7 +17,7 @@ import { occurrenceKey }   from '@frontierjs/toolbelt/history'
 import { plainDateIn }     from '@frontierjs/toolbelt/datetime'
 import { db }              from '../core/db.ts'
 import { dueForRenewal }   from '../domain/billing'
-import renewSubscription   from './renew-subscription.job.ts'
+import renewSubscription   from './subscription-renew.job.ts'
 
 /**
  * Dispatch a renewal for everything due at `at`, read as a day in `timeZone`.
@@ -50,7 +50,7 @@ export async function sweepRenewals(ctx: JobContext<{ at?: string }>, timeZone: 
 }
 
 export default defineJob<{ at?: string }>(
-  'renew-subscriptions',
+  'subscriptions-renew',
   async (ctx) => { await sweepRenewals(ctx, ctx.app!.configFor().timeZone) },
   { cron: '0 * * * *' },
 )

@@ -21,6 +21,7 @@
 import { parseGateString } from '../plugins/gate.js'
 import { authClaimsUsed }   from './policy.js'
 import { ID_GENERATORS }   from './ids.js'
+import { VALIDATOR_KINDS } from './validate.js'
 
 // ─── The visibility table ─────────────────────────────────────────────────────
 //
@@ -347,6 +348,89 @@ export const RULES = [
               })
             }
           }
+      }
+      return out
+    },
+  },
+
+  {
+    id:       'validator-on-a-column-no-caller-writes',
+    severity: 'error',
+    title:    'a validator on a column no caller can write never runs',
+    blurb:    'A validator grades a value a request sent. @computed, @derived, @from and @generated are ' +
+              'refused by name on every write, so a rule declared on one is unreachable — the schema ' +
+              'states a constraint, the boundary never asks it, and the read schema carries it where it ' +
+              'reads as one that holds.',
+    run(schema) {
+      const out = []
+      // @transient and @system are the other two the caller does not own outright
+      // and both ARE validated — @transient with the model's own rules before it
+      // is lifted onto ctx.transients, @system when the application names the
+      // column on the write. Measured, not assumed.
+      const UNWRITABLE = {
+        computed:  'is @computed, so its value comes from JS after the row is read',
+        derived:   'is @derived, so its value comes from its expression',
+        from:      'is @from, so its value is a subquery over another table',
+        generated: 'is @generated, so its value comes from its expression in SQLite',
+      }
+      // A rule that grades a value against a LIMIT is the set; the rest of
+      // VALIDATOR_KINDS is not a refusal. `@money`/`@scale`/`@big`/`@vector`
+      // declare what the column physically holds and how a reader renders it,
+      // which is exactly why `priceFrom Int @from(ProductVariant, min: price)
+      // @money(USD)` is correct; `@trim`/`@lower`/`@upper` canonicalize a value
+      // on the way in, which is a different statement about a different path.
+      const NOT_A_REFUSAL = new Set(['money', 'scale', 'big', 'vector', 'trim', 'lower', 'upper'])
+      for (const model of schema.models ?? []) {
+        for (const f of model.fields ?? []) {
+          const kind = Object.keys(UNWRITABLE).find(k => has(f, k))
+          if (!kind) continue
+          const rules = (f.attributes ?? [])
+            .filter(a => VALIDATOR_KINDS.has(a.kind) && !NOT_A_REFUSAL.has(a.kind))
+            .map(a => `@${a.kind}`)
+          if (!rules.length) continue
+          out.push({
+            model: model.name, field: f.name,
+            message: `${model.name}.${f.name} ${UNWRITABLE[kind]}, and every write naming it is refused by ` +
+              `name — so ${rules.join(' and ')} on it can never run. The value it grades is one litestone ` +
+              `produced, not one a caller sent. Put the rule on the columns the value is computed FROM, or ` +
+              `take it off; a minimum over a @from count is a cross-row invariant, which is a @@check or a ` +
+              `service, never a field validator.`,
+          })
+        }
+      }
+      return out
+    },
+  },
+
+  {
+    id:       'value-rule-on-a-relation',
+    severity: 'error',
+    title:    'a value validator on a relation grades nothing',
+    blurb:    'A relation field is a collection of ROWS, not a value, so a rule written to grade a value ' +
+              'has nothing to read. @minItems and @maxItems are the two that do count there — they mean ' +
+              'the same thing on a relation as they already mean on a Json array.',
+    run(schema) {
+      const out = []
+      // The counting pair is the point of the rule rather than an exception to
+      // it, so it is named here and nowhere else.
+      const COUNTS = new Set(['minItems', 'maxItems'])
+      for (const model of schema.models ?? []) {
+        for (const f of model.fields ?? []) {
+          const kind = f.type?.kind
+          if (kind !== 'relation' && kind !== 'implicitM2M') continue
+          const rules = (f.attributes ?? [])
+            .filter(a => VALIDATOR_KINDS.has(a.kind) && !COUNTS.has(a.kind))
+            .map(a => `@${a.kind}`)
+          if (!rules.length) continue
+          out.push({
+            model: model.name, field: f.name,
+            message: `${model.name}.${f.name} is a relation, so ${rules.join(' and ')} on it reads no ` +
+              `value and never runs. ${f.type.array ? `How MANY rows is @minItems/@maxItems, which count ` +
+              `the relation the same way they count a Json array.` : `A to-one relation is made required ` +
+              `or optional by its own '?'.`} A rule about the rows themselves belongs on ` +
+              `${f.type.name}'s own columns.`,
+          })
+        }
       }
       return out
     },
@@ -804,6 +888,62 @@ export const RULES = [
                 `@generated column and index that.`,
             })
           }
+        }
+      }
+      return out
+    },
+  },
+
+  {
+    id:       'unit-in-the-column-name',
+    severity: 'info',
+    title:    'the unit is in the identifier, where nothing can read it',
+    blurb:    'timeoutSeconds Int states the unit and states it to a human only — no form renders it, ' +
+              'no agent describing the model repeats it, and nothing checks that the value being written ' +
+              'was measured in the same thing. @unit(s) puts the fact where those can reach it, and the ' +
+              'name goes back to being the name. It changes no stored value: a unit declares what the ' +
+              'number counts, it does not convert it.',
+    run(schema) {
+      const out = []
+      // The suffix a developer actually writes, mapped to the symbol the
+      // language knows. Written out rather than derived from MEASURE_UNITS,
+      // because the two spellings are different things: `Seconds` is English
+      // and `s` is the unit, and the mapping between them is not a rule any
+      // table here holds. Single letters and short words that are also
+      // ordinary English are deliberately absent — `In` would fire on
+      // `signedIn` and `loggedIn`, which is how advice stops being read.
+      const SUFFIXES = {
+        Millis: 'ms', Ms: 'ms', Seconds: 's', Secs: 's', Minutes: 'min', Mins: 'min',
+        Hours: 'h', Hrs: 'h', Days: 'd', Weeks: 'wk', Months: 'mo', Years: 'yr',
+        Bytes: 'B', Kb: 'KB', Mb: 'MB', Gb: 'GB', Tb: 'TB',
+        Grams: 'g', Mg: 'mg', Kg: 'kg', Lbs: 'lb', Oz: 'oz',
+        Mm: 'mm', Cm: 'cm', Km: 'km', Metres: 'm', Meters: 'm', Miles: 'mi', Inches: 'in', Feet: 'ft',
+        Percent: '%', Pct: '%',
+      }
+      for (const model of schema.models ?? []) {
+        for (const f of model.fields ?? []) {
+          if (f.type?.name !== 'Int' && f.type?.name !== 'Float') continue
+          if (f.type?.array) continue
+          // A currency IS the unit, so a @money column has already answered
+          // this; so has one that declares @unit.
+          if (has(f, 'unit') || has(f, 'money')) continue
+
+          const suffix = Object.keys(SUFFIXES).find(x => f.name.endsWith(x) && f.name.length > x.length)
+          if (!suffix) continue
+          // The suffix has to be a camelCase boundary — `alarms` is not a
+          // duration and `holidays` is not a count of days.
+          if (!/[a-z0-9]$/.test(f.name.slice(0, -suffix.length))) continue
+
+          const symbol = SUFFIXES[suffix]
+          const bare   = f.name.slice(0, -suffix.length)
+          out.push({
+            model: model.name, field: f.name,
+            message: `${model.name}.${f.name} carries its unit in its name, so the only reader of it is a ` +
+              `person. Declare it: ${bare} ${f.type.name} @unit(${symbol}) — the value is unchanged, and ` +
+              `the unit then reaches the generated form, the JSON Schema and anything describing this ` +
+              `model. Renaming the column is a migration, so keep the name and add the attribute if the ` +
+              `rename is not worth it.`,
+          })
         }
       }
       return out

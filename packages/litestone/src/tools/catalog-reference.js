@@ -145,8 +145,8 @@ export function renderCatalogReference() {
        'a red suite rather than a paragraph someone copies. The table\'s completeness is',
        'asserted against the parser\'s own switch arms in both directions.', '')
   push('Two commands ask the same rows one at a time: `litestone explain @guarded`, and',
-       'Studio\'s Explore panel, which also places a word into your schema and shows you',
-       'the diff first.', '')
+       'Litestone Studio\'s Explore panel, which also places a word into your schema',
+       'and shows you the diff first.', '')
   push(`**${CATALOG.length} words** — ${TOP_LEVEL.length} declarations · ` +
        `${FIELD_ATTRS.length} field attributes · ${MODEL_ATTRS.length} model attributes.`, '')
 

@@ -24,6 +24,18 @@ over there already says, and nothing would read it.
 `blessed` here with the same meaning. Where the two disagree, § 2 is right and
 this file is stale.
 
+**This is the root register and not the only one.** A package that defines its
+own terms well enough to CHECK them has named them, and `fli ws:terms` reads
+those registers rather than asking anyone to copy them here —
+`@frontierjs/css/vocabulary.json` is 56 terms and 8 axes, each graded against
+the real CSSOM by that package's own spec. A row here outranks one there, with
+one exception that is the point: **`open` is not an answer**, so a word this
+file has merely seen does not shadow a package that defined it. Those land in
+`ws:terms`'s audit instead of being decided by whichever register spoke last,
+because most of them are one spelling over two realms — a Table is a `<table>`
+in css and a database table in litestone — and what is owed is which sense this
+file is naming, not a copy of the other one.
+
 ## Terms
 
 Seeded from `fli ws:terms` at spread ≥ 4 — a term used in four or more
@@ -59,7 +71,8 @@ before you meet it.
 | Card | open |  |  |
 | Bearer | open |  |  |
 | Web | open |  |  |
-| Studio | open |  |  |
+| Litestone Studio | blessed | The browser UI `litestone studio` serves — the Data realm read and edited by hand | |
+| Studio | alias | `Litestone Studio`. The bare word is shorthand once a page has named it in full |  |
 | Popover | open |  |  |
 | Tab | open |  |  |
 | Homestead | open |  |  |

@@ -2,7 +2,7 @@
 
 **One declaration, in the seed.** A `tenancy { }` block at the top of
 `schema.lite` says what a tenant IS, and everything that needs to know — the
-registry, the CLI, Studio, Junction's per-request resolution — reads that one
+registry, the CLI, Litestone Studio, Junction's per-request resolution — reads that one
 block rather than being told again.
 
 Two strategies, and the choice is about isolation, not about size:

@@ -243,6 +243,107 @@ describe('fts-over-a-column-search-cannot-read', () => {
   })
 })
 
+describe('validator-on-a-column-no-caller-writes', () => {
+  const ID    = 'validator-on-a-column-no-caller-writes'
+  const LINES = `model OrderLine { id Int @id  orderId Int  order Order @relation(fields: [orderId], references: [id])  amount Int }`
+
+  // The shape the gap analysis reached for: *an Order has at least one line*.
+  // It parses, it reads back `lineCount: 0` on an Order with no lines, and
+  // nothing between the two says the rule was never asked.
+  test('a minimum on a @from count is an error', () => {
+    const f = findings(`
+      model Order {
+        id        Int @id
+        total     Int
+        lineCount Int @from(OrderLine, count: true) @gte(1)
+        lines     OrderLine[]
+      }
+      ${LINES}`, ID)
+    expect(f.map(x => [x.field, x.severity])).toEqual([['lineCount', 'error']])
+    expect(f[0].message).toContain('@gte')
+  })
+
+  test('the other three kinds no caller writes, for the same reason', () => {
+    const f = findings(`
+      model Order {
+        id      Int     @id
+        total   Int
+        label   String  @computed @length(3, 10)
+        urgency Boolean @derived(total > 5) @gte(1)
+        stamp   Int     @generated("total + 1") @gte(1)
+      }`, ID)
+    expect(f.map(x => x.field)).toEqual(['label', 'urgency', 'stamp'])
+  })
+
+  test('names every rule it found, not just the first', () => {
+    const f = findings(`
+      model Order { id Int @id  code String @computed @length(2, 4) @startsWith("x") }`, ID)
+    expect(f[0].message).toContain('@length and @startsWith')
+  })
+
+  // @transient is validated with the model's own rules before it is lifted onto
+  // ctx.transients, and @system when the application names the column on the
+  // write — both measured against a real client, so neither is in the set.
+  test('silent on @transient and @system, whose validators do run', () => {
+    expect(findings(`
+      model Order {
+        id   Int     @id
+        note String? @transient @length(2, 5)
+        code String  @system @length(5, 10)
+      }`, ID)).toEqual([])
+  })
+
+  // `priceFrom Int @from(ProductVariant, min: price) @money(USD)` is in the
+  // shop and is correct: @money says what the column holds and how a reader
+  // renders it, which is a statement about the READ.
+  test('silent on @money over a @from, which is what the shop writes', () => {
+    expect(findings(`
+      model Product {
+        id        Int @id
+        priceFrom Int @from(Variant, min: price) @money(USD)
+        variants  Variant[]
+      }
+      model Variant { id Int @id  productId Int  product Product @relation(fields: [productId], references: [id])  price Int @money(USD) }`, ID))
+      .toEqual([])
+  })
+
+  test('silent on an ordinary column carrying the same rule', () => {
+    expect(findings(`model Order { id Int @id  total Int @gte(1) }`, ID)).toEqual([])
+  })
+})
+
+describe('value-rule-on-a-relation', () => {
+  const ID   = 'value-rule-on-a-relation'
+  const LINE = `model OrderLine { id Int @id  orderId Int  order Order @relation(fields: [orderId], references: [id])  amount Int }`
+
+  test('a value rule on a collection is an error, and the message names the two that count', () => {
+    const f = findings(`
+      model Order { id Int @id  lines OrderLine[] @gte(1) }
+      ${LINE}`, ID)
+    expect(f.map(x => [x.field, x.severity])).toEqual([['lines', 'error']])
+    expect(f[0].message).toContain('@minItems/@maxItems')
+  })
+
+  test('on a to-one relation it points at the question mark instead', () => {
+    const f = findings(`
+      model Order { id Int @id  custId Int  cust Cust @relation(fields: [custId], references: [id]) @length(1, 4) }
+      model Cust { id Int @id  orders Order[] }`, ID)
+    expect(f.map(x => x.field)).toEqual(['cust'])
+    expect(f[0].message).toContain("its own '?'")
+  })
+
+  // The pair this rule exists to point AT must not be what it fires on.
+  test('silent on @minItems/@maxItems, which count the relation', () => {
+    expect(findings(`
+      model Order { id Int @id  lines OrderLine[] @minItems(1) @maxItems(50) }
+      ${LINE}`, ID)).toEqual([])
+  })
+
+  test('silent on a Json array carrying the same rules', () => {
+    expect(findings(`model Doc { id Int @id  tags Json @minItems(1) @gte(2) }`, ID)).toEqual([])
+  })
+})
+
 describe('foreign-key-without-index', () => {
   const ID  = 'foreign-key-without-index'
   const REL = `model User { id Int @id }\n`

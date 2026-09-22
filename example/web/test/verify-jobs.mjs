@@ -98,8 +98,8 @@ try {
   const cronOf = (name) => schedules.find(s => s.name === name)?.cron ?? null
   t('cron.registered', {
     names: schedules.map(s => s.name).sort(),
-    cron:  cronOf('sweep-abandoned'),
-    holds: cronOf('release-holds'),
+    cron:  cronOf('abandoned-orders-sweep'),
+    holds: cronOf('holds-release'),
     // The schema's own retention policy, which litestone sweeps once inside
     // `createClient` and never again — so `database audit { retention 90d }` is
     // true for one moment unless something puts it on a clock (`FJS-521`). The
@@ -129,7 +129,7 @@ try {
   const announcementsFor = async () =>
     (await (await fetch(`${API}/api/jobs?limit=500&data=1`)).json())
       .filter(j => {
-        if (j.name !== 'announce-payment') return false
+        if (j.name !== 'payment-announce') return false
         try { return JSON.parse(j.data)?.orderId === orderId } catch { return false }
       })
   const announcementsBefore = (await announcementsFor()).length
@@ -162,7 +162,7 @@ try {
   // ── 4. the job record itself ───────────────────────────────────────────
   const job = await until(async () => {
     const jobs = await (await fetch(`${API}/api/jobs?limit=500`)).json()
-    return jobs.find(j => j.unique_key === `book-courier:${orderId}` && j.status === 'done') ?? null
+    return jobs.find(j => j.unique_key === `courier-book:${orderId}` && j.status === 'done') ?? null
   })
   t('job.record', job ? {
     name:     job.name,
@@ -184,12 +184,12 @@ try {
   // queue. A duplicate booking is a real parcel, so it is still worth counting
   // — what changed is WHICH mechanism is being asked.
   // Counted as a DELTA, not as a total. jobs.db outlives db/shop.db across runs
-  // and SQLite reuses row ids, so `book-courier:5` names this run's order and
+  // and SQLite reuses row ids, so `courier-book:5` names this run's order and
   // also whichever order held id 5 last time — an absolute count reports the
   // previous run's booking as a duplicate of this one's.
   const bookingsFor = async () =>
     (await (await fetch(`${API}/api/jobs?limit=500`)).json())
-      .filter(j => j.unique_key === `book-courier:${orderId}`).length
+      .filter(j => j.unique_key === `courier-book:${orderId}`).length
   const bookingsBefore = await bookingsFor()
 
   const second = await fetch(`${API}/api/orders/${orderId}`, {
@@ -255,7 +255,7 @@ try {
   const before = await (await fetch(`${API}/api/orders`, { headers: auth })).json()
   const pendingBefore = before.data.filter(o => o.status === 'pending').map(o => o.reference)
 
-  const run = await fetch(`${API}/api/jobs/run/sweep-abandoned`, {
+  const run = await fetch(`${API}/api/jobs/run/abandoned-orders-sweep`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ days: 0 }),
   })
@@ -406,8 +406,8 @@ const expected = {
     // are here for the same reason as the other three: a schedule that
     // stops being registered is nothing happening. `orion.sweep` is orion's,
     // installed with it: the pass that re-dispatches a run whose job was lost.
-    names: ['dun-subscriptions', 'orion.sweep', 'release-holds', 'renew-subscriptions',
-            'retention', 'sweep-abandoned'],
+    names: ['abandoned-orders-sweep', 'holds-release', 'orion.sweep', 'retention',
+            'subscriptions-dun', 'subscriptions-renew'],
     cron:  '0 3 * * *',
     holds: '*/5 * * * *',
     // 04:00, after the 03:00 sweep: a run that cancels an order has already
@@ -422,7 +422,7 @@ const expected = {
   // a job that wrote the wrong code would still pass a null check.
   'job.wroteTracking': { arrived: true, trackingCode: 'TRK-1A12', stillShipped: 'shipped' },
   'job.record': {
-    name: 'book-courier', queue: 'fulfillment', status: 'done', attempts: 1,
+    name: 'courier-book', queue: 'fulfillment', status: 'done', attempts: 1,
     maxAttempts: 5, retryDelay: '[60000,300000,1800000]',
   },
   'retention.planted':      { old: true, fresh: 2 },

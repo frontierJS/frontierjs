@@ -14,6 +14,105 @@ finished.
 
 ---
 
+# Handoff — 2026-09-22 (a word for what a number counts, and three time gaps that turned out to be one)
+
+> **The session was gap 04 of the `.lite` language survey and ended by settling
+> gaps 03, 07 and 08 together in one paper.** The through-line is the same move
+> twice: a fact the tree already states in a place nothing can read, given a
+> declaration — and both times the measurement, not the reasoning, decided the
+> shape.
+
+**Gap 04 shipped: `@unit`.** [`FJS-D348`](DECISIONS.md#fjs-d348) rules it,
+[`FJS-1240`](ISSUES.md#fjs-1240) is the build. `@money` was the precedent and
+carried the whole shape — a symbol from a shipped table, refused at parse,
+emitted as an `x-` keyword, read by the control layer — so the word cost no new
+mechanism. **It converts nothing**: the value stored is the value sent and the
+emitted DDL is byte-identical with the attribute and without it, asserted both
+ways against a real database. The symbol table is closed because the attribute
+promises the symbol resolves to a DIMENSION, and a free-text `@unit("widgets")`
+would have been [`FJS-1236`](ISSUES.md#fjs-1236)'s shape on a new word.
+
+**The artifact that framed the gap was wrong about its case, and measuring first
+is what caught it.** It reasoned about `weightGrams`, which exists nowhere in
+the tree; the real corpus is 123 columns carrying a unit in the identifier, of
+which **107 are durations and 10 are bytes and 0 are mass**. That changed the
+table that shipped. One defect the tests found rather than the reasoning: the
+first cut copied `@scale`/`@money`'s validation walk, which reads models only —
+correctly, since those are refused inside a `type` — so
+`type Box { w String @unit(kgg) }` parsed clean and emitted `x-unit` for a
+symbol resolving to nothing. The walk covers types.
+
+**Then sierra, because a declaration nothing can read is the thing being
+removed.** `_CARRIED` is an allowlist, so `x-unit` would have been dropped
+between the schema and `$context.form`. Carried — and deliberately NOT joined to
+`@money`/`@scale` in answering `control: null`: those refuse a control because
+the box and the column disagree, and `300` typed into a `@unit(s)` field is the
+`300` that is stored.
+
+**Gap 07 was next and the register was righter than the paper.**
+`IDEAS/ontology.md` said the fourth shape — a commitment a person can SEE — had
+no instance in the repo. It has one and it is broken:
+[`FJS-1241`](ISSUES.md#fjs-1241), `basecamp`'s `Job.nextRunAt`, set once on
+create to `now + 60s` by a line whose own comment calls it a placeholder, never
+written again, and rendered on a screen as *Next run*. Caravan already answers
+the true value through `nextRuns()` and basecamp's own tests already call it.
+The paper is corrected in place.
+
+**The turn worth remembering is that a lint was the wrong answer and only
+running it showed that.** The obvious shape for gap 07 was an attribute marking
+the deadline column plus a `fli check` rule saying *every read filters on it*.
+Graded against all five reads of `StockReservation`: three filter, one
+deliberately inverts, one omits correctly — so the rule finds **zero** defects
+and fires **twice wrongly**. The answer is an automatic filter on
+`@@softDelete`'s pattern, under which both omissions become a stated
+`withExpired` and stop being indistinguishable from a bug.
+
+**Which is how three gaps became one paper.** `IDEAS/effective-time.md`.
+`expiresAt > now` is the one-sided case of a validity window, so gaps 03 and 07
+are one mechanism at two arities — and the load-bearing argument is the
+DIRECTIVE rather than the filter: the four opt-back-in directives in
+`@frontierjs/toolbelt/directives` are all `asBool`, expiry alone needs a fifth
+boolean, and valid time needs a VALUE. Ship 07 first and the language carries
+two directive families for one idea for ever, with `withDeleted` as the
+precedent for how immovable a flag becomes. So `asOf: <instant>` lands first and
+every flag is sugar over it. Gap 08 composes rather than merges, and
+[`FJS-D143`](DECISIONS.md#fjs-d143)'s own word says why — *a zoned comparison is
+a window the framework BINDS* — the window's edge IS `asOf`.
+`overview.md` row 4.21 had asked for exactly this settlement and is now pointed
+at it.
+
+**The second prize in that paper is the clock.** `inventory.ts`'s filter reads
+raw `Date.now()` rather than `createClient({ now })`, so `advance()` moves
+nothing and shape 1's entire correctness condition — *a hold is dead the instant
+it passes, whether or not the job ran* — is untested and untestable.
+`verify-stock.mjs` stages expiry by moving the CUTOFF to `2099-01-01`, which
+proves the sweep and never touches the read.
+
+**And the thing that must not be swept up, which is why the three had to be
+taken together.** Eight `periodStart`/`periodEnd` columns on `Invoice`,
+`InvoiceLine`, `PayRun` and `Payslip` are `@immutable` facts copied onto a
+document, spelled almost identically to a validity window and emphatically not
+one. Auto-filtering them would make a payslip vanish from a read. A one-gap
+write-up would never have had to think about it and would have been free to get
+it wrong later.
+
+**Picked up cold.** The survey's agreed order was 01 · 04 · 05 · 02 · 03 · 08 ·
+06 · 07, cheapest first; 01 and 04 are shipped, 05 has a paper
+(`IDEAS/relators.md`, written the same day in a parallel session) and 07 now has
+one that also covers 03 and 08. Phase 1 of `effective-time.md` is
+`@@effective(to:)` with the full `asOf` directive, and `FJS-1241` is the second
+caller `FJS-D143` said to wait for.
+
+**Two things a fresh session will trip on and neither is a defect of this
+work.** `packages/litestone` has two pre-existing failures in
+`test/device-schema.test.ts` from `example/db/schema.lite` at HEAD, and
+`test/jsonl-multiprocess.test.ts` is load-flaky in the full suite and passes
+alone. And the tree is dirty from a parallel session — conduit, junction, mesa
+and several litestone docs are not this work's, which is why `fli done` reports
+three `changes-entry` misses that should be left alone.
+
+---
+
 # Handoff — 2026-09-12 (a list is one call, and a flake that was never the drawer)
 
 > **The session started as a review of somebody's list-controller proposal and
@@ -97,74 +196,3 @@ finished.
 > four full runs, untouched by this session ([`FJS-1132`](ISSUES.md#fjs-1132)).
 
 ---
-
-# Handoff — 2026-09-08 (reading a real legacy app onto FJS, and what it graded here)
-
-> **The session was an audit of an application this framework did not build** —
-> `/home/j/code/KOBAMI/my.maid.tech`, seven years old, Feathers on Express +
-> Prisma + Svelte 5 in legacy mode, whose `.lite` conversion was already done.
-> The question was what ELSE would make it hard to move. It produced two records
-> — `IDEAS/conversion-maid-tech.md` (assessment) and
-> `IDEAS/tenant-authored-queries.md` (proposal, ranked 4.32) — and the headline
-> is the one nobody expected: **nothing needs to be added to FJS for any of the
-> hard parts.** Every Tier-1 blocker had an owner in the tree, and five are
-> answered better here than the app answers them itself.
-
-> **Reading the code got five things wrong and the database got them right.**
-> The tenant-configurable permission matrix looked like the deepest blocker and
-> is two accounts of 148, one of them empty. Delegations have their own model,
-> service and a branch in `getLevel` — and **zero rows**, because `getLevel`
-> reads `delegation?.level` off a model whose column is `role`, so every
-> delegate ever resolved to `undefined` standing. Meanwhile per-account
-> dropdowns, which read as an incidental JSON key, are used by **92 of 148**.
-> The order those were found in is the transferable part: the source says what
-> was BUILT and the rows say what was ADOPTED, and an audit that reads only the
-> first sizes the work by how much code exists.
-
-> **The transformer probe is what turned an audit into a proposal.** The app
-> runs stored JavaScript through `vm.createContext` over 13 of its 72 reports.
-> Probed on Bun 1.3.11 rather than argued about:
-> `this.constructor.constructor("return typeof Bun")()` inside that context
-> answers `"object"`, and `process.env` is 89 keys away — one expression, no
-> import — while `timeout` covers synchronous work and not a returned Promise.
-> That settles the DIRECTION rather than the design: Bun has no isolate API and
-> no permission model on `Worker`, so the question stops being *which sandbox*.
-> What the transformer column actually wants is a declared expression evaluated
-> and never executed, and litestone already has that language with two compilers
-> and an oracle — which makes this the **second** proposal wanting `evalJs` as a
-> third reader, after `declared-field-state.md`. Neither justifies the third
-> reader alone.
-
-> **The same probe then graded this tree, which is why it is worth carrying.**
-> Five `new Function` / `node:vm` sites here; four are a dynamic-import shim and
-> an operator console, correctly bound to loopback with `--token` and
-> `--readonly` both real. The gap is that **nothing connects them**:
-> `--host` does not require `--token`, and the pairing lives in a source
-> comment. Confirmed by running studio with `--host=127.0.0.1` — loopback on
-> purpose, since probing it on `0.0.0.0` would be the defect — and getting an
-> unauthenticated `/api/repl` to evaluate `process.env`. Filed
-> [`FJS-1029`](ISSUES.md#fjs-1029).
-
-> **Three existing records gained a second consumer and one lost a false
-> status.** `tables-from-the-seed.md` and `tenant-declared-fields.md` are being
-> worked in separate sessions and now carry dated notes pointing at the app —
-> 292 route files of list/detail/filter for the first, tenant-declared columns
-> in production for the second, built the way that record argues against, which
-> makes it a negative control rather than a restatement.
-> `content-collections.md` got the larger addition, because the app answers two
-> of its open questions with evidence: it IS the *files synced into a table*
-> third answer, running, with the conflict question dissolved by writing a
-> commit first and a row second — and its editing surface, which that record
-> called `foundry` territory and a much larger project, is **14 files and 2,460
-> lines** serving 100 sites and 9,355 documents. Counting those documents also
-> found that the named collection is the RAREST noun in a real CMS: blocks,
-> settings, menus and templates outnumber it 50 to one.
-
-> **`support-mode.md` said *PROPOSED, nothing here is built* in its body while
-> its own frontmatter said `shipped` and the code agreed with the frontmatter.**
-> Struck in place per `PHILOSOPHY.md` §VII rather than left as two answers. It
-> is the cheapest possible instance of the thing that file warns about, and it
-> survived four days in the register nobody re-reads.
-
----
-

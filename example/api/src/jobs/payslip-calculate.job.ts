@@ -1,4 +1,4 @@
-// api/jobs/calculate-payslip.job.ts — one person's payslip, as a unit of work.
+// api/jobs/payslip-calculate.job.ts — one person's payslip, as a unit of work.
 //
 // A pay run is five thousand of these. The reason the unit is one PERSON rather
 // than one run or one chunk is the idempotency key: `occurrenceKey('payslip',
@@ -9,7 +9,7 @@
 //
 // `dispatch({ id })` is the jobs table's PRIMARY KEY, so it is a no-op for all
 // time. That is exactly right for something irreversible (see
-// `send-payslip.job.ts`) and exactly wrong here: a worker that crashed half way
+// `payslip-send.job.ts`) and exactly wrong here: a worker that crashed half way
 // through the month has to be able to be told to do it again, and under `id`
 // that dispatch would be swallowed and the payslip never written.
 //
@@ -29,7 +29,7 @@ export type CalculatePayslipPayload = { runId: number, employeeId: number }
  * The work, exported so a drive can run it and read the answer.
  *
  * `JobHandler` returns void by contract, so the handler below awaits this and
- * discards — the same split `dun-subscriptions` makes, and for the same reason:
+ * discards — the same split `subscriptions-dun` makes, and for the same reason:
  * what the job DID is a fact worth asserting and the queue has no use for it.
  */
 export async function calculatePayslipJob(
@@ -50,7 +50,7 @@ export async function calculatePayslipJob(
 }
 
 export default defineJob<CalculatePayslipPayload>(
-  'calculate-payslip',
+  'payslip-calculate',
   async (ctx: JobContext<CalculatePayslipPayload>) => { await calculatePayslipJob(ctx) },
   // Three attempts: a payslip calculation reads four tables and writes two, so
   // the failures worth retrying are contention rather than arithmetic. An

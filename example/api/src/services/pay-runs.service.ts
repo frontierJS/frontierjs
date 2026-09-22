@@ -13,8 +13,8 @@
 import { createBaseService, NotFound, $ } from '@frontierjs/junction'
 import { calculatePayRun, planPayRun, payPayRun, revertPayRun } from '../domain/payroll'
 import { occurrenceKey }                  from '@frontierjs/toolbelt/history'
-import calculatePayslip                   from '../jobs/calculate-payslip.job.ts'
-import sendPayslip                        from '../jobs/send-payslip.job.ts'
+import calculatePayslip                   from '../jobs/payslip-calculate.job.ts'
+import sendPayslip                        from '../jobs/payslip-send.job.ts'
 
 export function createPayRunsService() {
   return createBaseService({
@@ -33,7 +33,7 @@ export function createPayRunsService() {
      * `unique` and not `id` on the dispatch: the work is resumable, so a second
      * `calculate` after a crash has to REACH the handler rather than being
      * swallowed by a taken primary key. The handler is idempotent instead
-     * (`api/src/jobs/calculate-payslip.job.ts` says why at length).
+     * (`api/src/jobs/payslip-calculate.job.ts` says why at length).
      */
     calculate: async () => {
       const db  = $.db as any
