@@ -22,7 +22,7 @@ import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
 import { join, relative }                                      from 'node:path'
 
 import { readDecisions, rulingSections } from './decisions.js'
-import { runRegisterCheck }              from './register-check.js'
+import { errorKeys, newErrors }          from './register-check.js'
 import { registerLayout }                from './registers.js'
 
 const WHY_MAX = 2000
@@ -73,11 +73,11 @@ export function decide({ root, id, pick, why = '', section, today = new Date() }
   const entry = rulingEntry({ q, link, option, ruling, date, reason: reason || q.recommend.why, followed: !reason })
   const dec   = insertRuling(before.dec, section, entry)
 
-  const baseline = findingKeys(root)
+  const baseline = errorKeys(root)
   writeFileSync(decPath, dec)
   writeFileSync(paperAbs, struck)
 
-  const added = newFindings(baseline, root)
+  const added = newErrors(baseline, root)
   if (added.length) {
     writeFileSync(decPath, before.dec)
     writeFileSync(paperAbs, before.paper)
@@ -146,32 +146,6 @@ export function nextDecisionNumber(root) {
     for (const m of readFileSync(f, 'utf8').matchAll(id)) max = Math.max(max, Number(m[1]))
   }
   return max + 1
-}
-
-// ─── the check ────────────────────────────────────────────────────────────────
-//
-// Compared as a multiset of rule and message with line numbers left out, since
-// every line after the insert moves and a moved finding is not a new one.
-
-function findingKeys(root) {
-  const counts = new Map()
-  for (const f of runRegisterCheck({ root }).errors) {
-    const k = `${f.rule}|${f.id ?? ''}|${f.file ?? ''}|${f.message}`
-    counts.set(k, (counts.get(k) ?? 0) + 1)
-  }
-  return counts
-}
-
-function newFindings(baseline, root) {
-  const seen = new Map(baseline)
-  const out  = []
-  for (const f of runRegisterCheck({ root }).errors) {
-    const k = `${f.rule}|${f.id ?? ''}|${f.file ?? ''}|${f.message}`
-    const n = seen.get(k) ?? 0
-    if (n > 0) seen.set(k, n - 1)
-    else out.push(f)
-  }
-  return out
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────

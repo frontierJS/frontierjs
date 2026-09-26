@@ -30,7 +30,6 @@ export const chalk = {
   cyan:    wrap(36, 39),
   white:   wrap(37, 39),
   gray:    wrap(90, 39),
-  gray:    wrap(90, 39),
   bold:    wrap(1, 22),
   dim:     wrap(2, 22),
   italic:  wrap(3, 23),
@@ -45,5 +44,8 @@ export const chalk = {
     return (s) => (enabled ? `\x1b[38;2;${r};${g};${b}m${s}\x1b[39m` : String(s))
   },
 }
+
+// fli's own color — its name in the banner, and `code` in help prose.
+export const amber = chalk.hex('#f5a623')
 
 export const colorEnabled = enabled

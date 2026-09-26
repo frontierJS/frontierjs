@@ -65,6 +65,34 @@ export const RULES = [
 
 const LEVEL_OF = Object.fromEntries(RULES.map(r => [r.id, r.level]))
 
+// ─── the check around a write ────────────────────────────────────────────────
+//
+// The writers (`decide.js`, `close.js`) grade their own result: keys taken
+// before the write, compared after, and a new error puts the write back.
+// Compared as a multiset of rule and message with line numbers left out, since
+// every line after an edit moves and a moved finding is not a new one.
+
+export function errorKeys(root) {
+  const counts = new Map()
+  for (const f of runRegisterCheck({ root }).errors) {
+    const k = `${f.rule}|${f.id ?? ''}|${f.file ?? ''}|${f.message}`
+    counts.set(k, (counts.get(k) ?? 0) + 1)
+  }
+  return counts
+}
+
+export function newErrors(baseline, root) {
+  const seen = new Map(baseline)
+  const out  = []
+  for (const f of runRegisterCheck({ root }).errors) {
+    const k = `${f.rule}|${f.id ?? ''}|${f.file ?? ''}|${f.message}`
+    const n = seen.get(k) ?? 0
+    if (n > 0) seen.set(k, n - 1)
+    else out.push(f)
+  }
+  return out
+}
+
 /**
  * Every finding, in register order. `staleDays: 0` disables the one rule that
  * reads the clock; `today` is injectable so a test asserts a fixed answer.

@@ -305,6 +305,32 @@ describe('management service over real routes', () => {
     expect(res.text).not.toContain('provider:hetzner')
   })
 
+  it('a gate grades every route on the app\'s own ladder — refused below it, answered at it', async () => {
+    // isAdmin is ADMINISTRATOR(5) and isSystemAdmin SYSADMIN(7) to junction's
+    // fallback grader; this app has no Data client to ask instead.
+    const app = await createTestApp({ users: [
+      { id: 'admin', isAdmin: true },
+      { id: 'root',  isSystemAdmin: true },
+    ] } as never)
+    app.configure(conduitPlugin({
+      credentials: secrets(),
+      targets:     [providerTarget()],
+      management:  { path: 'conduit-targets', gate: 7 },
+    }))
+
+    const stranger = await request(app).get('/conduit-targets')
+    const admin    = await request(app).get('/conduit-targets').auth('test-token-admin')
+    const removed  = await request(app).delete('/conduit-targets/provider:hetzner').auth('test-token-admin')
+    const root     = await request(app).get('/conduit-targets').auth('test-token-root')
+
+    expect(stranger.status).toBe(401)
+    expect(admin.status).toBe(403)
+    expect(removed.status).toBe(403)
+    expect((await conduitOf(app).list()).map(t => t.id)).toContain('provider:hetzner')
+    expect(root.status).toBe(200)
+    expect(root.text).toContain('provider:hetzner')
+  })
+
   it('is not registered when management is omitted', async () => {
     const app = await createTestApp()
     app.configure(conduitPlugin({ credentials: secrets() }))

@@ -68,13 +68,21 @@ export class CallRefused extends Error {
 
 const EXT = new Set(['.js', '.mjs', '.ts'])
 
+/** One route file, named by where it sits: `<service>/<method>.{js,mjs,ts}`. */
+export interface RouteFile {
+  service: string
+  method:  string
+  file:    string
+}
+
 /**
- * Every route under a directory: `<service>/<method>.{js,mjs,ts}`, and nothing
- * at the top level — a command is always two words.
+ * Every route file under a directory, and nothing at the top level — a command
+ * is always two words. The one walk: `loadRoutes` imports what it names, and
+ * `buildCli` hands the same list to the bundler.
  */
-export async function loadRoutes(dir: string | URL): Promise<Route[]> {
+export function routeFiles(dir: string | URL): RouteFile[] {
   const root = typeof dir === 'string' ? dir : fileURLToPath(dir)
-  const out: Route[] = []
+  const out: RouteFile[] = []
   let services: string[]
   try { services = readdirSync(root) } catch { return [] }
 
@@ -87,13 +95,42 @@ export async function loadRoutes(dir: string | URL): Promise<Route[]> {
     }
     for (const f of readdirSync(sdir).sort()) {
       if (!EXT.has(extname(f)) || f.includes('.test.') || f.includes('.spec.')) continue
-      const file = join(sdir, f)
-      const mod  = await import(pathToFileURL(file).href)
-      const def  = mod.default as RouteDefinition | undefined
-      if (!def || typeof def.run !== 'function' || !Array.isArray(def.uses))
-        throw new Error(`${file}: the default export is not a command — export default defineCommand({ description, uses, run })`)
-      out.push({ ...def, service, method: basename(f, extname(f)), file })
+      out.push({ service, method: basename(f, extname(f)), file: join(sdir, f) })
     }
+  }
+  return out
+}
+
+// Where a compiled binary's embedded files live: /$bunfs/root/ on a unix, B:\~BUN\root\ on Windows.
+const EMBEDDED = /[\\/]\$bunfs[\\/]|^[A-Za-z]:[\\/]~BUN[\\/]/
+
+/**
+ * Every route under a directory, imported.
+ *
+ * Inside a compiled binary it also checks the count `buildCli` stated as the
+ * compile-time constant `process.env.FJS_CLI_ROUTES`. `bun build --compile` run
+ * by hand embeds only what is imported, and a route is read off the directory
+ * at run time, so that binary finds no routes/ and would offer every derived
+ * command and none of the app's own.
+ */
+export async function loadRoutes(dir: string | URL): Promise<Route[]> {
+  const files = routeFiles(dir)
+  const root  = typeof dir === 'string' ? dir : fileURLToPath(dir)
+  if (EMBEDDED.test(root)) {
+    const stated = process.env.FJS_CLI_ROUTES
+    if (stated === undefined)
+      throw new Error('this binary was compiled without its routes: bun build --compile embeds only what is imported, and cli/src/routes/ is read at run time. Build it with `fli cli:build`.')
+    if (Number(stated) !== files.length)
+      throw new Error(`this binary was built with ${stated} route(s) and holds ${files.length}. Build it again with \`fli cli:build\`.`)
+  }
+
+  const out: Route[] = []
+  for (const { service, method, file } of files) {
+    const mod = await import(pathToFileURL(file).href)
+    const def = mod.default as RouteDefinition | undefined
+    if (!def || typeof def.run !== 'function' || !Array.isArray(def.uses))
+      throw new Error(`${file}: the default export is not a command — export default defineCommand({ description, uses, run })`)
+    out.push({ ...def, service, method, file })
   }
   return out
 }

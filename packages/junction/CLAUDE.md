@@ -805,6 +805,11 @@ src/
   missing model definition is a config that used to work, and an `input:` is a
   statement the author made this morning, so failing open on it hands back the
   assurance it was written to provide.
+- **A `gate:` on a CRUD verb is graded only over no model** (`FJS-D408`). There
+  it is the only grade the verb can have, and `gateAuthAround` enforces it as a
+  custom method's; over a model it is refused, since `@@gate` owns that verb —
+  at construction where `model:` is stated, at the first call where the model is
+  reached through the service's NAME, which only a client in hand can tell.
 - **Declaring an input is also declaring the SURFACE, and that is the sharp
   edge.** `{ method: 'pay', input: … }` narrows exactly as `'pay'` does, so a
   service that declared no `methods:` and gains one to turn validation on answers

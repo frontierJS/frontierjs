@@ -1,5 +1,33 @@
 # Changes — Basecamp
 
+
+## 2026-09-25 — basecamp ships as a binary, `bcamp`
+
+`bun run build:cli` (`fli cli:build`) writes `cli/dist/bcamp`. `verify:cli` builds
+it and asks it three things the source is asked, comparing the answers: `--help`,
+`servers status --json` and the refused `--role teapot`. It also compiles the
+entry by hand and requires that binary to refuse to start. 36/36; building without the
+route entrypoints reds three rows. The binary's first `login` still defaults to the
+dev API, which the build prints.
+
+## 2026-09-25 — the model-less services declare their levels; a key's tools are its scopes'
+
+`FJS-1342`. `hub` and `metrics-store` declare SYSADMIN on every method and no longer
+carry `requireSystemAdmin` — a member is answered 403 naming level 7 where the hook said
+404. `conduit-targets` is `management: { gate: SYSADMIN }`. Portal's `create` is `ping`
+at ADMINISTRATOR (the adapters page calls `invoke('ping', id)`), and the hand-written
+viewer…owner ladder it carried is gone — its admin was 3 where `core/gate.ts`'s is 5.
+Portal's reads and infra's methods declare READER. `/mcp` now boots naming no model-less
+tool as ungraded, and a workspace viewer is not offered `hub_setSystemAdmin`.
+
+`FJS-1349`. `mcpPlugin({ narrow: narrowToKey })`: an API key is offered what its scopes
+reach. `keyAllows` in `scopes.ts` is the one reading, shared with `apiKeyGuard`.
+
+Proved: `services.test.ts` three new rows (hub, portal ping, portal and infra reads, each
+paired); `verify:mcp` 15/15 with the hub and conduit pairs and a boot-warning row that
+reds with infra's gates removed; `verify:cli` 32/32 with a key-scope pair that reds with
+`narrow` removed.
+
 ## 2026-09-25 — `verify:cli`: breadcrumbs, paired and followed
 
 Six rows for `FJS-D398`. `servers get` names the moves the row's state allows among the

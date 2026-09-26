@@ -21,6 +21,7 @@ src/client/                  `@frontierjs/mcp/client` — the terminal client's 
   profiles.ts                  the signed-in credential: one 0600 file per app under XDG_CONFIG_HOME
   cache.ts                     the command tree per build (x-fjs-build) under XDG_CACHE_HOME — none without a build
   routes.ts                    cli/src/routes/<service>/<method> — declared `uses`, checkRoutes
+  build.ts                     `@frontierjs/mcp/client/build` — cli/ compiled to one binary, routes inside (`fli cli:build`)
   main.ts                      an app's whole entry: main({ name, tenantHeader, url, routes })
   bin.ts                       main() for an app with no cli/ surface — FJS_* stands in for its config
   index.ts                     held here until the CLI package is named (IDEAS/app-cli.md)
@@ -41,10 +42,18 @@ says how).
 
 ## What it owns
 
-*Which tools does this standing see, and what decided each.* Three inputs and no
-others: the service's method policy (`describe().methods`, already applied), the
-model's `@@gate`, and a declared move's `gate` from `x-transitions`. `@system` is not an input: it
-says whose decision a move is, and the method lifting it keeps the gate (`FJS-D150`).
+*Which tools does this standing see, and what decided each.* The inputs are what
+the boundary reads: the service's method policy (`describe().methods`, already
+applied), the model's `@@gate`, a declared move's `gate` from `x-transitions`,
+and a method's declared `gate:` (`describe().methodGates`) — which over no model
+grades a CRUD verb too, as junction enforces it (`FJS-D408`). `@system` is not an
+input: it says whose decision a move is, and the method lifting it keeps the gate
+(`FJS-D150`).
+
+**`narrow` is the one input an APP supplies, and it only removes** (`FJS-D407`).
+It is for an axis a standing is not — an API key's scopes. A rule that IS a level
+belongs in `@@gate` or a declared `gate:`, where the boundary enforces it as well;
+put in `narrow`, it is a second origin nothing at the boundary agrees with.
 
 It reads a NARROWED view of the generated schema on purpose — `ModelDef` declares
 two keywords. Taking the whole `$def` would leave the projection free to start
@@ -137,3 +146,7 @@ be.** What the drive gates is the relations and the credential absence; a
 typed-in count is `FJS-773`'s own failure. Run `packages/junction` too —
 `customMethodGrade` and `CALL_OPTIONS_AT` are imported from it, so a change
 there moves this package's answers with nothing here failing.
+
+A change under `src/client/` is proved by `basecamp`: `verify:cli`, the only
+place the client runs as a person's process against a real `/mcp`, and the only
+place a built binary is asked the same questions as the source.

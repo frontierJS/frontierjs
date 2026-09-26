@@ -29,7 +29,7 @@ import { createSchema } from './schema.ts'
 import { AUTO_EVENT_MAP, isPublishHook } from './events.ts'
 import {
   createLitestoneBase, autoValidate, validateInput, gateAuthAround, autoFilter, autoSort, liftReservedQuery,
-  markDerived, isDerivedHook,
+  markDerived, isDerivedHook, isCrudGatedMethod,
   jsonSchemaToJunctionSchema, resolveDefsKey, announcementPayload,
 } from './litestone.ts'
 
@@ -1514,6 +1514,22 @@ export function collectMethodGates(
 }
 
 /**
+ * A stated `model:` owns its CRUD verbs through `@@gate`, so a `gate:` on one
+ * is refused where it is written (`FJS-D408`). Over no model the declaration is
+ * the only grade the verb has and `gateAuthAround` enforces it. A service
+ * naming its model only through its own name is known at the first call, and
+ * refused there.
+ */
+function refuseModelCrudGates(gates: Record<string, number>, model: unknown, serviceName: string): void {
+  if (!model) return
+  const crud = Object.keys(gates).filter(isCrudGatedMethod)
+  if (crud.length)
+    throw new TypeError(
+      `[Junction] service '${serviceName}': ${crud.join(', ')} declares a gate, but the service is over ` +
+      `model '${model}', whose @@gate grades every CRUD verb. Move the level into @@gate, or drop it from methods:.`)
+}
+
+/**
  * The `input:` declarations in a `methods:` list, keyed by method name.
  *
  * A CRUD name may carry one, and it REPLACES the model-derived validator —
@@ -1807,10 +1823,9 @@ export function createBaseService(
 
   // The per-method levels a `methods:` list declares. The floor `gateAuthAround`
   // derives needs no declaration; this is only what sits above it.
-  const gateHook = markDerived(gateAuthAround(
-    model,
-    methodGates ?? collectMethodGates(methods, name ?? model ?? 'service'),
-  ))
+  const levels = methodGates ?? collectMethodGates(methods, name ?? model ?? 'service')
+  refuseModelCrudGates(levels, model, name ?? model ?? 'service')
+  const gateHook = markDerived(gateAuthAround(model, levels))
 
   const derivedHooks: HookMap = {
     around: { all: [gateHook] },

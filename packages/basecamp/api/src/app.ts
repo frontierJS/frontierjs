@@ -13,7 +13,6 @@ import {
   healthPlugin,
   metricsPlugin,
   devtools,
-  authenticate,
   mailerPlugin,
   membershipClaim,
   registerErrorMapper,
@@ -29,7 +28,7 @@ import { mcpPlugin }         from '@frontierjs/mcp'
 
 import { env }                       from './core/env.ts'
 import { buildProviders }            from './providers/index.ts'
-import { apply }                                 from '@frontierjs/litestone'
+import { apply, LEVELS }                         from '@frontierjs/litestone'
 import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
 import { createBasecampDb }              from './core/db.ts'
 import { createSecretResolver }          from './core/credentials.ts'
@@ -37,10 +36,10 @@ import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts
 import { registerAllAccounts } from './providers/compute/accounts.ts'
 import { enrollTokenMatches, mintOutpostSecret, installScript } from './providers/compute/enrollment.ts'
 import { notificationsPlugin }  from '@frontierjs/notifications'
-import { basecampAuditLog, basecampAuditPreImage, requireOutpostSignature, requireSystemAdmin, resolveWorkspaceId } from './core/hooks.ts'
+import { basecampAuditLog, basecampAuditPreImage, requireOutpostSignature, resolveWorkspaceId } from './core/hooks.ts'
 import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
-import { apiKeyGuard, apiKeyUsage }       from './services/api-keys/scopes.ts'
+import { apiKeyGuard, apiKeyUsage, narrowToKey } from './services/api-keys/scopes.ts'
 import { slugify }                        from './core/resource.ts'
 import { basecampGateLevel, roleForLevel } from './core/gate.ts'
 import { basecampNodes }                  from './core/automations.ts'
@@ -306,13 +305,13 @@ export async function buildBasecampApp(
     credentials: createSecretResolver(db),
     // Conduit refuses to register management routes without an explicit access
     // decision — GET|DELETE /conduit-targets is an operational endpoint.
-    // NB: `authenticate`, not `authenticate()` — it IS the hook, not a factory.
-    // Conduit's own error message suggests the calling form, which throws.
     //
     // The registry spans every workspace — each outpost and channel target —
     // so it is the hub tier. Signed in alone let any account list them all and
-    // DELETE another workspace's machine out of it (`FJS-1087`).
-    management: { hooks: { before: { all: [authenticate, requireSystemAdmin()] } } },
+    // DELETE another workspace's machine out of it (`FJS-1087`). A level and
+    // not a hook, so junction enforces it and an agent's tool list reads it
+    // (`FJS-D408`).
+    management: { gate: LEVELS.SYSADMIN },
     // Observers: they receive and cannot act. `management.hooks` above is the
     // other word and means the other thing — a pipeline that can refuse.
     observers: {
@@ -417,7 +416,10 @@ export async function buildBasecampApp(
   //
   // `keepAliveMs` under junction's 10s `http.idleTimeout`, or the stream is cut
   // five seconds before the frame that would have held it open.
-  app.configure(mcpPlugin({ name: 'basecamp', version: '1.0.0', keepAliveMs: 5_000 }))
+  //
+  // `narrow`: a key is offered what its scopes reach, not everything its bot's
+  // role does — the same reading apiKeyGuard refuses a call by (`FJS-1349`).
+  app.configure(mcpPlugin({ name: 'basecamp', version: '1.0.0', keepAliveMs: 5_000, narrow: narrowToKey }))
 
   // ── Devtools console ──────────────────────────────────────────────────
   // AFTER health and the queue: the console reads what plugins contributed, so
@@ -686,7 +688,7 @@ export async function buildBasecampApp(
         const session = await auth.createUser({ email: email.trim(), name: name.trim(), password })
         // The first user is the system administrator, and this is the only
         // place one is created rather than granted. It has to be: the hub is
-        // the screen that grants the flag, requireSystemAdmin refuses anyone
+        // the screen that grants the flag, its SYSADMIN gate refuses anyone
         // without it, and an app whose only route in is /setup would otherwise
         // ship with a tier nobody could ever reach. Every subsequent one is
         // granted from /hub/users/ by someone who already holds it.

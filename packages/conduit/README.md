@@ -511,7 +511,7 @@ conduit({
   // Expose a management service for listing and deregistering targets.
   // Disabled by default. Enabling it requires an access decision — `hooks`
   // (Junction's HookMap) or an explicit `public: true` — or configure() throws.
-  management?: { path?: string; hooks?: HookMap; public?: true }
+  management?: { path?: string; gate?: number; hooks?: HookMap; public?: true }
 })
 ```
 
@@ -662,7 +662,13 @@ Responses carry credential **refs**, never secret material — see [Credentials]
 
 **Enabling it requires an access decision.** These routes enumerate every target in the system and can deregister them, so "forgot to add the hook" is not a reachable state — `conduit({ management: {} })` throws at `configure()`.
 
-Attach auth to the service:
+Grade it on your app's own access ladder — the service is over no model, so a declared level is the one grade Junction enforces and anything listing the service (an MCP tool list) can read:
+
+```ts
+conduit({ management: { gate: 7 } })   // every route needs level 7
+```
+
+…or attach auth to the service:
 
 ```ts
 conduit({

@@ -135,6 +135,78 @@ reads as *nothing is declared*. Resolution goes through
 back in `unresolved`, because an open tool list and an ungoverned one look
 identical.
 
+## The app CLI
+
+**The same tool list, on a command line, for people** (`FJS-D397`). An app with
+a `cli/` surface ships a program named for itself, `shop orders find`. Its
+commands are `/mcp`'s tools at the signed-in key's standing, read when the
+program starts and cached per build, plus the ones you write by hand.
+
+```
+cli/
+  config/cli.config.js     name · tenantHeader · url (where a first login goes)
+  src/main.js              the entry, three lines
+  src/routes/<service>/<method>.js   a hand-written command
+  dist/                    what fli cli:build writes
+```
+
+```js
+// cli/config/cli.config.js
+export default { name: 'shop', tenantHeader: 'x-workspace-id', url: 'https://shop.example/mcp' }
+
+// cli/src/main.js
+import config   from '../config/cli.config.js'
+import { main } from '@frontierjs/mcp/client'
+await main({ ...config, routes: new URL('./routes/', import.meta.url) })
+```
+
+**A route adds a command or replaces a derived one of the same name.** It
+declares every tool it calls in `uses`. It is offered only to a caller who holds
+all of them, and `checkRoutes` names a route whose tool is gone.
+
+```js
+// cli/src/routes/orders/summary.js  →  shop orders summary
+import { defineCommand } from '@frontierjs/mcp/client'
+export default defineCommand({
+  description: 'Orders per state.',
+  uses:        ['orders_find'],
+  async run({ call, out }) {
+    const { data } = await call('orders_find', { directives: { limit: 500 } })
+    out(`${data.length} orders`)
+  },
+})
+```
+
+**Build it with `fli cli:build`.** The result needs no bun, no node_modules and
+no source tree:
+
+```sh
+fli cli:build                                            # this machine → cli/dist/shop
+fli cli:build --target bun-darwin-arm64,bun-linux-x64,bun-windows-x64
+```
+
+Only this build embeds `src/routes/`, because routes are read off the directory
+at run time. A binary made with a plain `bun build --compile` refuses to start
+and says so. A target other than this machine's downloads its runtime once.
+`buildCli({ root, targets })` from `@frontierjs/mcp/client/build` is the same
+thing as a function.
+
+**Using it.** Get a key from the app's API keys screen, then:
+
+```sh
+shop login --api-key -                 # asks for the key (or reads a pipe); --url when config names none
+shop --help                            # what this key may do
+shop orders find --status paid --json
+shop use <tenant>                      # switch tenant; --workspace <id> for one call
+shop logout
+```
+
+The profile is stored in `~/.config/<name>/` (mode 0600) and the command cache in
+`~/.cache/<name>/`. A script passes everything through the environment
+instead: `FJS_MCP_URL`, `FJS_TOKEN`, `FJS_TENANT`, `FJS_PROFILE`, and
+`FJS_CLI_TRACE=1` to see what it does. The exit codes are 0 ok, 1 refused by
+the app, 2 a usage error or not offered, and 3 unreachable.
+
 ## Tests
 
 ```

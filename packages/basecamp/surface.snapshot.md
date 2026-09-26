@@ -43,7 +43,7 @@ and what it does.
 | `notification-preferences.reset` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `sessions.revokeOthers` | **any signed-in caller** — floor, read gate 8; standing not graded |
 
-### A service hook runs in front of the body (100)
+### A service hook runs in front of the body (86)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -73,7 +73,6 @@ name, and is as unread as the body.
 | `cleanup.run` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `cleanup.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `cleanup.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
-| `conduit-targets.restore` | **nothing at the API boundary** — the model declares no `@@gate` | `authenticate` → `requireSystemAdmin` |
 | `dashboards.kinds` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `dashboards.addWidget` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `dashboards.updateWidget` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
@@ -94,31 +93,18 @@ name, and is as unread as the body.
 | `flags.setOverride` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `flags.clearOverride` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `flags.resolve` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
-| `hub.overview` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
-| `hub.workspaces` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
-| `hub.users` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
-| `hub.flags` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
-| `hub.setWorkspaceStatus` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
-| `hub.setUserStatus` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
-| `hub.setSystemAdmin` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
-| `hub.createBot` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
-| `hub.setFlag` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
 | `hub-config.current` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
 | `hub-config.save` | **any signed-in caller** — floor, read gate 7; standing not graded | `requireSystemAdmin` |
-| `infra.graph` | **nothing at the API boundary** — the model declares no `@@gate` | `sessionScope` |
-| `infra.onboarding` | **nothing at the API boundary** — the model declares no `@@gate` | `sessionScope` |
 | `invitations.resend` | **any signed-in caller** — floor, read gate 5; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `jobs.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `jobs.trigger` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `jobs.cancel` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `jobs.startRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
 | `jobs.finishRun` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `internalOnly` |
-| `metrics-store.read` | **nothing at the API boundary** — the model declares no `@@gate` | `requireSystemAdmin` |
 | `networks.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `networks.members` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `networks.attach` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `networks.detach` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` → `requireWorkspaceRole` |
-| `portal.restore` | **nothing at the API boundary** — the model declares no `@@gate` | `sessionScope` → `anonymous` |
 | `projects.restore` | **any signed-in caller** — floor, read gate 2; standing not graded | `sessionScope` |
 | `recipes.run` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` → `requireWorkspaceRole` |
 | `recipes.runs` | **any signed-in caller** — floor, read gate 4; standing not graded | `sessionScope` |
@@ -390,14 +376,15 @@ name when it declares none.
 
 ### `conduit-targets` · model `conduit-targets`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `remove`
 - **who may call** —
-  - `restore` — **nothing at the API boundary** — the model declares no `@@gate`; then `authenticate` → `requireSystemAdmin`
+  - `find` — standing 7 or above — declared `gate: 7`
+  - `get` — standing 7 or above — declared `gate: 7`
+  - `remove` — standing 7 or above — declared `gate: 7`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `authenticate` → `requireSystemAdmin` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -615,20 +602,19 @@ name when it declares none.
 - **methods** — `overview`, `workspaces`, `users`, `flags`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
 - **custom methods** — `overview`, `workspaces`, `users`, `flags`, `setWorkspaceStatus`, `setUserStatus`, `setSystemAdmin`, `createBot`, `setFlag`
 - **who may call** —
-  - `overview` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
-  - `workspaces` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
-  - `users` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
-  - `flags` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
-  - `setWorkspaceStatus` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
-  - `setUserStatus` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
-  - `setSystemAdmin` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
-  - `createBot` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
-  - `setFlag` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
+  - `overview` — standing 7 or above — declared `gate: 7`
+  - `workspaces` — standing 7 or above — declared `gate: 7`
+  - `users` — standing 7 or above — declared `gate: 7`
+  - `flags` — standing 7 or above — declared `gate: 7`
+  - `setWorkspaceStatus` — standing 7 or above — declared `gate: 7`
+  - `setUserStatus` — standing 7 or above — declared `gate: 7`
+  - `setSystemAdmin` — standing 7 or above — declared `gate: 7`
+  - `createBot` — standing 7 or above — declared `gate: 7`
+  - `setFlag` — standing 7 or above — declared `gate: 7`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `requireSystemAdmin` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -660,8 +646,8 @@ name when it declares none.
 - **methods** — `graph`, `onboarding`
 - **custom methods** — `graph`, `onboarding`
 - **who may call** —
-  - `graph` — **nothing at the API boundary** — the model declares no `@@gate`; then `sessionScope`
-  - `onboarding` — **nothing at the API boundary** — the model declares no `@@gate`; then `sessionScope`
+  - `graph` — standing 2 or above — declared `gate: 2`
+  - `onboarding` — standing 2 or above — declared `gate: 2`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
@@ -731,12 +717,12 @@ name when it declares none.
 - **custom methods** — `read`
 - **also answers to** — `metrics`
 - **who may call** —
-  - `read` — **nothing at the API boundary** — the model declares no `@@gate`; then `requireSystemAdmin`
+  - `find` — standing 7 or above — declared `gate: 7`
+  - `read` — standing 7 or above — declared `gate: 7`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `requireSystemAdmin` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -789,14 +775,17 @@ name when it declares none.
 
 ### `portal` · model `portal`
 
-- **methods** — `find`, `get`, `aggregate`, `create`, `update`, `patch`, `remove`, `restore`
+- **methods** — `find`, `get`, `ping`
+- **custom methods** — `ping`
 - **who may call** —
-  - `restore` — **nothing at the API boundary** — the model declares no `@@gate`; then `sessionScope` → `anonymous`
+  - `find` — standing 2 or above — declared `gate: 2`
+  - `get` — standing 2 or above — declared `gate: 2`
+  - `ping` — standing 5 or above — declared `gate: 5`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
 | around | `all` | `gateAuth` |
-| before | `all` | `sessionScope` → `anonymous` |
+| before | `all` | `sessionScope` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |

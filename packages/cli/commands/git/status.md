@@ -4,6 +4,7 @@ description: Working tree grouped by package and by what each file is
 alias: gs
 examples:
   - fli gs
+  - fli gs --with-new
   - fli gs --short
   - fli gs --json
 flags:
@@ -11,6 +12,10 @@ flags:
     char: s
     type: boolean
     description: Hand over to plain `git status -s`
+    defaultValue: false
+  with-new:
+    type: boolean
+    description: List untracked files in the groups too (their count is always in the summary)
     defaultValue: false
   json:
     type: boolean
@@ -41,6 +46,9 @@ reference reading narrowed to that one question, and the bands are codegraph's,
 so a file the codegraph page draws as a hub is marked here. It is the scan that
 costs (~0.4s on this workspace): knowing who names `parser.js` means reading
 everyone, and it cannot be narrowed by target.
+
+Untracked files are counted in the summary but not listed — a scaffold or a
+generated tree drowns the edits the scan is for. `--with-new` lists them.
 
 `--short` hands over to plain `git status -s` unchanged.
 
@@ -84,12 +92,15 @@ console.log('')
 // The bar is proportional to the heaviest place, not to an absolute scale: the
 // question it answers is *which of these is the big one*, which is the only one
 // a ten-cell bar can answer honestly.
-const peak = Math.max(...model.zones.map(z => z.churn), 1)
+const shown = flag['with-new'] ? model.zones : model.zones
+  .map(z => ({ ...z, files: z.files.filter(f => !f.untracked) }))
+  .filter(z => z.files.length)
+const peak = Math.max(...shown.map(z => z.churn), 1)
 const BAR  = 12
 
 // Widest place name, so the bars line up into a column the eye can compare.
-const nameCol = Math.min(24, Math.max(...model.zones.map(z => z.zone.length)))
-const roleCol = Math.max(...model.zones.flatMap(z => z.files.map(f => f.role.length)))
+const nameCol = Math.min(24, Math.max(...shown.map(z => z.zone.length), 0))
+const roleCol = Math.max(...shown.flatMap(z => z.files.map(f => f.role.length)), 0)
 
 // State first, reach second. What you DID to a file outranks how far it
 // reaches — deleting something 77 files import is red before it is amber, and
@@ -105,7 +116,7 @@ const paint = (f) => {
   return (s) => s
 }
 
-for (const z of model.zones) {
+for (const z of shown) {
   const filled = Math.max(1, Math.round((z.churn / peak) * BAR))
   const bar    = chalk.dim('█'.repeat(filled) + '·'.repeat(BAR - filled))
   const marks  = [

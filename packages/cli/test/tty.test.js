@@ -93,6 +93,7 @@ describe('keys', () => {
     const menu   = tty.keys(null, { y: 'why', q: 'quit' })
     t.press('y')
     expect(await asking).toBe('y')
+    t.press('\r')
     t.press('q')
     expect(await menu).toBe('q')
     await tty.close()
@@ -276,7 +277,7 @@ describe('Command() closes the tty', () => {
   // byte, and in cooked mode the terminal signals every process on it, fli and
   // its child both. Either way onExit has to be reached through the runtime.
   const hasScript = spawnSync('script', ['--version']).status === 0
-  const inPty = (name, body) => {
+  const inPty = (name, body, env = {}) => {
     const file   = command(name, body.join('\n'))
     const runner = join(dir, `${name}.mjs`)
     writeFileSync(runner, [
@@ -287,9 +288,28 @@ describe('Command() closes the tty', () => {
     ].join('\n'))
     // The byte waits a second for the command to get going; `-e` returns its status.
     return spawnSync('sh', ['-c', `(sleep 1; printf '\\003'; sleep 2) | script -qec "${process.execPath} ${runner}" /dev/null`],
-      { encoding: 'utf8', timeout: 15000 })
+      { encoding: 'utf8', timeout: 15000, env: { ...process.env, TERM: 'xterm-256color', COLORTERM: 'truecolor', ...env } })
   }
   const away = (mark) => `tty.onExit(async () => { await sleep(50); fs.writeFileSync(${JSON.stringify(mark)}, 'away') })`
+
+  // zx's chalk reads a level of 0 back as undefined, so `hex` and the chained
+  // `bg` forms colored every pipe, and named colors ignored NO_COLOR.
+  const PAINT = `echo(JSON.stringify([chalk.hex('#9fc612')('l'), chalk.bgGreen.black.bold(' N '), chalk.red('r'), chalk.level]))`
+
+  test('a piped body gets a chalk that styles nothing', async () => {
+    const file = command('paint', PAINT)
+    const r = spawnSync(process.execPath, ['-e', [
+      `global.fliRoot = ${JSON.stringify(global.fliRoot)}; global.projectRoot = global.fliRoot`,
+      `const { Command } = await import(${JSON.stringify(join(global.fliRoot, 'core/runtime.js'))})`,
+      `await (await Command({ file: ${JSON.stringify(file)}, arg: [], flag: {} }))()`,
+    ].join('\n')], { encoding: 'utf8', env: { ...process.env, FORCE_COLOR: '', NO_COLOR: '' } })
+    expect(r.stdout.trim()).toBe('["l"," N ","r",0]')
+  })
+
+  test.skipIf(!hasScript)('NO_COLOR at a terminal turns chalk off; without it chalk colors', () => {
+    expect(inPty('paint-off', [PAINT], { NO_COLOR: '1' }).stdout).toContain('["l"," N ","r",0]')
+    expect(inPty('paint-on', [PAINT]).stdout).toContain('\\u001b[38;2;159;198;18ml')
+  })
 
   test.skipIf(!hasScript)('Ctrl-C at a keys prompt runs onExit and exits 130', () => {
     const mark = join(dir, 'away-keys')

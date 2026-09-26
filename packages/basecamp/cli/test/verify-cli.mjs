@@ -30,6 +30,8 @@ import { fileURLToPath }             from 'node:url'
 import { Database }                  from 'bun:sqlite'
 import { Client, StreamableHTTPClientTransport } from '@modelcontextprotocol/client'
 import { loadRoutes, checkRoutes }   from '@frontierjs/mcp/client'
+import { buildCli }                  from '@frontierjs/mcp/client/build'
+import cliConfig                     from '../config/cli.config.js'
 
 const ROOT        = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const MAIN        = join(ROOT, 'cli', 'src', 'main.js')
@@ -103,11 +105,12 @@ const called = async (client, name, args = {}) => {
 /**
  * One CLI invocation, as its own process: exit code, stdout, stderr.
  * `signedIn` runs with no endpoint and no key in the environment — the saved
- * profile is then the only place either can come from.
+ * profile is then the only place either can come from. `bin` runs a compiled
+ * binary in place of the source.
  */
-function cli(args, { token, tenant, stdin, signedIn = false } = {}) {
+function cli(args, { token, tenant, stdin, signedIn = false, bin } = {}) {
   return new Promise(resolve => {
-    const child = spawn(process.execPath, [MAIN, ...args], {
+    const child = spawn(bin ?? process.execPath, bin ? args : [MAIN, ...args], {
       cwd: ROOT, stdio: ['pipe', 'pipe', 'pipe'],
       env: {
         ...process.env,
@@ -211,8 +214,9 @@ try {
   // ── signing in with an API key (FJS-D402) ───────────────────────────────
   // The owner mints a key for the seed's bot through the CLI itself; the key is
   // then the whole credential. Scoped to `servers:read`, so the bot's own role
-  // offers `servers reboot` and the key's scope refuses it — the app, not the
-  // CLI, is what says no.
+  // reaches `servers reboot` and the key's scope does not — and the app's
+  // `narrow` leaves it out of the key's commands, so the key is never offered
+  // a verb apiKeyGuard would refuse (FJS-1349).
   const BOT = new Database(DB_PATH, { readonly: true })
     .query(`select id from user where email = 'ci-deploy@bots.invalid'`).get()?.id
   const minted = await cli(['api-keys', 'create', '--userId', String(BOT), '--name', 'verify-mcp',
@@ -224,11 +228,11 @@ try {
   // `login` reads the key off stdin, so it is in no argv and no shell history.
   const badKey = await cli(['--workspace', WS, 'login', '--api-key', '-', '--url', `${API}/mcp`], { stdin: 'fjs_not_a_real_key_000000000000', signedIn: true })
   check('a key the app reads as nobody is refused at login, and nothing is saved',
-    badKey.code === 1 && /read this key as nobody/.test(badKey.err) && !existsSync(join(CONFIG_HOME, 'basecamp', 'profiles.json')),
+    badKey.code === 1 && /read this key as nobody/.test(badKey.err) && !existsSync(join(CONFIG_HOME, cliConfig.name, 'profiles.json')),
     `exit ${badKey.code} ${badKey.err}`)
 
   const signIn = await cli(['--workspace', WS, 'login', '--api-key', '-', '--url', `${API}/mcp`], { stdin: `${key}\n`, signedIn: true })
-  const PROFILES = join(CONFIG_HOME, 'basecamp', 'profiles.json')
+  const PROFILES = join(CONFIG_HOME, cliConfig.name, 'profiles.json')
   check('`login --api-key -` signs in and writes the profile 0600 under the app\'s own config directory',
     signIn.code === 0 && existsSync(PROFILES) && (statSync(PROFILES).mode & 0o777) === 0o600, `exit ${signIn.code} ${signIn.err}`)
 
@@ -239,9 +243,18 @@ try {
   const listing = await cli(['profiles'], { signedIn: true })
   check('`profiles` names the profile and never prints the key', listing.code === 0 && /default/.test(listing.out) && !listing.out.includes(key))
 
+  // The pair: a session at a role that reaches reboot is offered it, so an
+  // absence below is the key's scope and not the role. The admin rather than
+  // the developer, whose first listing the cache rows below must see live.
+  const botRole = await cli(['servers', '--help'], { token: tokens[ADMIN], tenant: WS })
+  const keyTree = await cli(['servers', '--help'], { signedIn: true })
+  check('an admin session is offered `servers reboot`; a servers:read key is offered `servers find` and not reboot',
+    /\breboot\b/.test(botRole.out) && /\bfind\b/.test(keyTree.out) && !/\breboot\b/.test(keyTree.out),
+    `${botRole.out}\n---\n${keyTree.out}`.slice(0, 400))
+
   const outOfScope = await cli(['servers', 'reboot', byKey.json?.[0]?.id ?? 'x'], { signedIn: true })
-  check('a write outside the key\'s scope is refused by the app, and exits 1',
-    outOfScope.code === 1 && /needs the 'servers:write' scope/.test(outOfScope.err), `exit ${outOfScope.code} ${outOfScope.out}${outOfScope.err}`.slice(0, 300))
+  check('a write outside the key\'s scope is not a command it has, and exits 2 as usage',
+    outOfScope.code === 2 && /not offered at your standing/.test(outOfScope.err), `exit ${outOfScope.code} ${outOfScope.out}${outOfScope.err}`.slice(0, 300))
 
   console.log('\n  the command cache')
   // The tree is a quarter of a megabyte and changes per deploy, so a second run
@@ -377,6 +390,30 @@ try {
   const badRole = await cli(['servers', 'status', '--role', 'teapot'], asViewer)
   check('and is typed by the route\'s input schema like any derived flag — an unknown role exits 2',
     badRole.code === 2 && /--role is one of/.test(badRole.err), badRole.err)
+
+  // ── the release — `fli cli:build` → cli/dist/bcamp (FJS-D397) ──────
+  // Each row is the same command through the binary and through the source,
+  // compared, so a binary that dropped a route or bundled a second copy of the
+  // client answers differently from the program it was built from.
+  console.log('\n  the binary')
+  const [built] = await buildCli({ root: join(ROOT, 'cli') })
+  const asBin   = { ...asViewer, bin: built.outfile }
+  const binHelp = await cli(['--help'], asBin)
+  check('the binary\'s --help is the source\'s, route included',
+    binHelp.code === 0 && binHelp.out === help.out && /^\s+servers\s.*\bstatus\b/m.test(binHelp.out), `exit ${binHelp.code} ${binHelp.err}`.slice(0, 300))
+  const binSummary = await cli(['servers', 'status', '--json'], asBin)
+  check('and its route answers what the source\'s does',
+    binSummary.code === 0 && JSON.stringify(binSummary.json) === JSON.stringify(summary.json), `exit ${binSummary.code} ${binSummary.err}`.slice(0, 300))
+  const binBad = await cli(['servers', 'status', '--role', 'teapot'], asBin)
+  check('and refuses the flag the source refuses, with the same exit',
+    binBad.code === badRole.code && binBad.err === badRole.err, binBad.err)
+
+  // The build is the one way in: compiled by hand, routes/ is not embedded.
+  const byHand = join(SCRATCH, 'by-hand')
+  execFileSync(process.execPath, ['build', '--compile', MAIN, '--outfile', byHand], { cwd: ROOT, stdio: 'ignore' })
+  const handRun = await cli(['servers', 'status'], { ...asViewer, bin: byHand })
+  check('a binary compiled by hand refuses to start rather than offer half its commands',
+    handRun.code === 1 && /compiled without its routes.*fli cli:build/.test(handRun.err), `exit ${handRun.code} ${handRun.err}`.slice(0, 300))
 
   for (const c of [owner, viewer]) await c.close().catch(() => {})
 } catch (err) {

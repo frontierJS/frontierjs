@@ -202,9 +202,11 @@ export function createTty({
       : k === '\x1b' ? 'esc'
         : [...k].length === 1 ? k.toLowerCase() : null
 
-  const pick = (choices, name) => {
-    if (name === 'enter') return Object.hasOwn(choices, 'enter') ? 'enter' : Object.keys(choices)[0]
-    return Object.hasOwn(choices, name) ? name : null
+  // Enter is a question's default. A bare listener shows no choices, so it has
+  // none, and Enter there is a key like any other.
+  const pick = ({ choices, prompt }, name) => {
+    if (Object.hasOwn(choices, name)) return name
+    return name === 'enter' && prompt ? Object.keys(choices)[0] : null
   }
 
   const onData = (buf) => {
@@ -212,7 +214,7 @@ export function createTty({
     if (k === '\x03') return interrupt()
     const w = active()
     const name = keyName(k)
-    const key = w && name && pick(w.choices, name)
+    const key = w && name && pick(w, name)
     if (!key) return
     waiting.splice(waiting.indexOf(w), 1)
     if (w.prompt) {
@@ -264,9 +266,10 @@ export function createTty({
 
     /**
      * One keypress from `choices` ({ key: label }), resolved with the key.
-     * Enter picks the first choice, or the one named `enter`; Esc picks the one
-     * named `esc` and is ignored otherwise. A null question listens without
-     * taking the footer — a menu under a live line.
+     * Enter picks the one named `enter`, else a question's first choice; Esc
+     * picks the one named `esc` and is ignored otherwise. A null question
+     * listens without taking the footer — a menu under a live line — and has no
+     * default.
      */
     keys(question, choices) {
       const entries = Object.entries(choices ?? {})

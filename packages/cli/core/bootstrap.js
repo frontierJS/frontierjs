@@ -5,7 +5,7 @@
 // it also means `Command` is imported where a command is actually run, since a
 // static import of runtime.js pulls zx back in for every `fli list`.
 import minimist from 'minimist'
-import { chalk } from './color.js'
+import { chalk, amber } from './color.js'
 import { resolve } from 'path'
 import { homedir } from 'os'
 import { logger, loadEnv, fliVersion } from './utils.js'
@@ -46,7 +46,6 @@ function printSearch(q, all) {
   const green  = (s) => chalk.green(s)
   const yellow = (s) => chalk.yellow(s)
   const cyan   = (s) => chalk.cyan(s)
-  const amber  = (s) => chalk.hex('#f5a623')(s)
 
   const scored = all.map(m => {
     const title = m.title.toLowerCase()
@@ -101,7 +100,6 @@ async function printNamespace(ns, commands, verbose = false) {
   const red    = (s) => chalk.red(s)
   const yellow = (s) => chalk.yellow(s)
   const cyan   = (s) => chalk.cyan(s)
-  const amber  = (s) => chalk.hex('#f5a623')(s)
 
   process.stdout.write('\n')
   const mod = getModule(ns)
@@ -276,7 +274,6 @@ export async function run(process) {
     const dim = (s) => chalk.dim(s)
     const green = (s) => chalk.green(s)
     const cyan = (s) => chalk.cyan(s)
-    const amber = (s) => chalk.hex('#f5a623')(s)
     line('')
     line(`  ${amber('fli')}  ${dim('v' + (fliVersion() ?? '?'))}  ${dim('·  frontier cli')}`)
     line('')
@@ -469,7 +466,7 @@ export async function run(process) {
     // bare `fli help` or `fli ?` — show usage
     process.stdout.write('\n')
     process.stdout.write(
-      chalk.hex('#f5a623')('  fli') + chalk.dim('  ·  frontier cli') + '\n\n'
+      amber('  fli') + chalk.dim('  ·  frontier cli') + '\n\n'
     )
     process.stdout.write(
       chalk.dim('  Run ') + chalk.cyan('fli list') + chalk.dim(' to see all commands') + '\n'

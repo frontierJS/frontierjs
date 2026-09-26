@@ -1594,11 +1594,11 @@ describe('the metric store is readable, and picks its own resolution', () => {
     })
   })
 
-  test('a workspace member cannot see it at all — 404, not 403', async () => {
-    // The hub's answer, and for the hub's reason: these series are
-    // `@@tenant(none)` and belong to no workspace, so this is not a screen a
-    // member is being refused, it is one they have no business knowing exists.
-    await expect(env.as(owner).service('metrics-store').find()).rejects.toThrow(/not found/i)
+  test('a workspace member is refused at the hub tier, by the level the service declares', async () => {
+    // These series are `@@tenant(none)` and belong to no workspace, so even a
+    // workspace owner stands below them. A declared SYSADMIN and not a hook,
+    // so junction refuses by the number an agent's tool list reads (FJS-D408).
+    await expect(env.as(owner).service('metrics-store').find()).rejects.toThrow(/requires level 7, caller has level 6/)
   })
 
   test('a sysadmin lists the series, and each one says whether anything is still writing it', async () => {
@@ -2205,6 +2205,33 @@ describe('the cleanup screen is told how full each disk is', () => {
 // the `error:` hook logged EVERY thrown service error at ERROR, so an ordinary
 // 404 — and every 401 a stranger causes, and every 403 the gate is there to
 // give — read as a fault and buried the 500s that are.
+
+// ─── a service over no model is graded by the level it declares ──────────────
+// FJS-1342. The hub, the portal and infra carry no @@gate, so a hook was the
+// only thing refusing — invisible to an agent's tool list, which offered
+// `hub_setSystemAdmin` to a viewer. Each method now declares its level; every
+// refusal is paired with the caller one rung up who is let through.
+
+describe('a service over no model is graded by the level it declares (FJS-D408)', () => {
+
+  test('the hub is SYSADMIN: a workspace owner is refused, a sysadmin reads', async () => {
+    await expect(env.as(owner).service('hub').call('flags')).rejects.toThrow(/requires level 7, caller has level 6/)
+    await expect(env.as(sysadmin).service('hub').call('flags')).resolves.toBeDefined()
+  })
+
+  test('portal ping is ADMINISTRATOR: a developer is refused, the owner pings', async () => {
+    const id = (await env.as(viewer).service('portal').find()).data[0].id
+    await expect(env.as(developer).service('portal').call('ping', id)).rejects.toThrow(/requires level 5, caller has level 4/)
+    expect((await env.as(owner).service('portal').call('ping', id)).id).toBe(id)
+  })
+
+  test('the portal and infra read at READER: a viewer reads, a signed-in stranger to the workspace does not', async () => {
+    expect((await env.as(viewer).service('portal').find()).data.length).toBeGreaterThan(0)
+    await expect(env.as(viewer).service('infra').call('graph')).resolves.toBeDefined()
+    await expect(env.as(outsider).service('portal').find()).rejects.toThrow()
+    await expect(env.as(outsider).service('infra').call('graph')).rejects.toThrow()
+  })
+})
 
 describe('a bad appliance id names itself, and a refusal is not logged as a fault', () => {
   const portalAs = (who: any) => env.as(who).service('portal')

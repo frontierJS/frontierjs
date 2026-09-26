@@ -26,6 +26,7 @@
 // memberships the onboarding read needs. One read here is one round trip.
 
 import { createService, $ } from '@frontierjs/junction'
+import { LEVELS }            from '@frontierjs/litestone'
 import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, ws } from '../../core/resource.ts'
 import type { BasecampApp } from '../../basecamp.types.ts'
@@ -58,8 +59,10 @@ export function createInfraService(app: BasecampApp) {
 
     // `methods:` and not the scan: without it the base service answers every
     // CRUD verb it was never given, and on a service with no model that is a
-    // 500 rather than a refusal (hub.service.ts says the same thing).
-    methods: ['graph', 'onboarding'],
+    // 500 rather than a refusal (hub.service.ts says the same thing). READER is
+    // every workspace role; with no model to carry a @@gate, the declared level
+    // is the only grade junction and an agent's tool list can read (FJS-D408).
+    methods: ['graph', 'onboarding'].map(method => ({ method, gate: LEVELS.READER })),
 
     // ── graph — the fleet as nodes and edges ──────────────────────────
     //

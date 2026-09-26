@@ -123,7 +123,9 @@ function gradeCustomMethods(
 
   const out: Record<string, CustomMethodGrade> = {}
   for (const method of d.methods) {
-    if (isCrudGatedMethod(method)) continue
+    // A CRUD verb is `@@gate`'s unless it declares a level, which it may only
+    // over no model (`FJS-D408`).
+    if (isCrudGatedMethod(method) && declared[method] === undefined) continue
     // A declaration with no hook to enforce it is not a grade.
     out[method] = gated ? customMethodGrade(method, declared, levels)
                         : { source: 'unchecked', level: null, graded: false }

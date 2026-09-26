@@ -14,8 +14,8 @@
 // is the tenancy boundary doing its job. The alternative to this file was to
 // widen those nineteen with a `scope=hub` parameter — which puts the decision
 // "may this caller see every tenant" in a query string, on nineteen services,
-// each of which would have to get it right. One service behind one
-// requireSystemAdmin hook is one place to be wrong.
+// each of which would have to get it right. One service with every method at
+// SYSADMIN is one place to be wrong.
 //
 // ─── Why asSystem() ───────────────────────────────────────────────────────
 //
@@ -26,8 +26,11 @@
 // then. They are written the way they will have to be.
 //
 // The cost, stated: nothing below is graded at the Data boundary. The gate is
-// requireSystemAdmin on the way in, and every write here is in the application
-// audit trail because the app-level after hook covers custom methods.
+// the level each method declares, which junction enforces on the way in and an
+// agent's tool list reads (FJS-D408) — a member is answered 403 naming it, not
+// the 404 a hook gave, since /hub ships in every member's bundle and hiding it
+// hid nothing. Every write here is in the application audit trail because the
+// app-level after hook covers custom methods.
 //
 // ─── What this deliberately does not do ───────────────────────────────────
 //
@@ -44,7 +47,8 @@
 // sign in, so nothing is being handed to anyone.
 
 import { createService, BadRequest, Conflict, Forbidden, NotFound, $ } from '@frontierjs/junction'
-import { requireSystemAdmin, getPagination } from '../../core/hooks.ts'
+import { LEVELS }                  from '@frontierjs/litestone'
+import { getPagination }           from '../../core/hooks.ts'
 import { grantsFor } from '../../core/capabilities.ts'
 import { db, slugify } from '../../core/resource.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
@@ -128,7 +132,7 @@ export function createHubService(app: BasecampApp) {
     methods: [
       'overview', 'workspaces', 'users', 'flags',
       'setWorkspaceStatus', 'setUserStatus', 'setSystemAdmin', 'createBot', 'setFlag',
-    ],
+    ].map(method => ({ method, gate: LEVELS.SYSADMIN })),
 
     // ── overview — the runtime, as one object ─────────────────────────
     // An ACTION and not `find`, which was the obvious first shape and is not
@@ -406,10 +410,5 @@ export function createHubService(app: BasecampApp) {
       return sys().featureFlag.update({ where: { id: flag.id }, data: { isEnabled } })
     },
 
-    hooks: {
-      before: {
-        all: [requireSystemAdmin()],
-      },
-    },
   })
 }

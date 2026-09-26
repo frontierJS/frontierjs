@@ -45,7 +45,7 @@ import { readProofs, resolveRun } from './proofs.js'
 // SMALLER register rather than an error — which is what happened: every ruling
 // migrated to the `###` heading form and the hand reader here, keyed to the
 // legacy bold lead, went to zero and took the section with it.
-import { readRegisters } from './registers.js'
+import { readRegisters, registerLayout } from './registers.js'
 import { RULES }                from './checks.js'
 import { styleBundle }          from './assets.js'    
 import { PROJECTS, GLOBAL, ENV, CAT } from './ports.js'
@@ -634,7 +634,8 @@ function ports(root) {
 // name as a live question.
 
 function issues(root) {
-  const file = join(root, 'ISSUES.md')
+  const { dir, ids } = registerLayout(root)
+  const file = join(dir, 'ISSUES.md')
   if (!existsSync(file)) return null
 
   const src = read(file)
@@ -651,7 +652,7 @@ function issues(root) {
     // — which half the register does so a ruling can cite a row by id. Matching
     // on a bare `| FJS-` skipped every one of them, and the miss is invisible:
     // the page renders a smaller register rather than an error.
-    if (!/^\|\s*(<a\s[^>]*>\s*<\/a>\s*)?`?FJS-/.test(line)) continue
+    if (!ids.issueRow.test(line)) continue
 
     const cells = splitRow(line)
     if (cells.length < 4) continue
@@ -770,7 +771,7 @@ function commands(root) {
 // nothing else about the ruling is read; this is an index into the file.
 
 function decisions(root) {
-  const file = join(root, 'DECISIONS.md')
+  const file = join(registerLayout(root).dir, 'DECISIONS.md')
   if (!existsSync(file)) return null
 
   // File order is the register's order and it is meaningful: a section runs
@@ -815,7 +816,8 @@ function decisions(root) {
 // beside it so nothing is lost to the normalization.
 
 function ideas(root) {
-  const dir = join(root, 'IDEAS')
+  const dir = join(registerLayout(root).dir, 'IDEAS')
+  const rel = relative(root, dir)
   if (!existsSync(dir)) return null
 
   // A paper's own claim is its H1, not its opening paragraph — every one of them
@@ -831,7 +833,7 @@ function ideas(root) {
 
     const h1 = src.match(/^#\s+(.+?)\s*$/m)?.[1] ?? name.replace(/\.md$/, '')
     papers.push({
-      file:   `IDEAS/${name}`,
+      file:   join(rel, name),
       title:  plain(h1).replace(/^Idea\s*[—:-]\s*/i, ''),
       // Up to the first full stop: the rest of the header is `Nothing here is
       // built` on all 39 of them, but `SHIPPED, with a remainder` is the claim.
@@ -873,7 +875,7 @@ function ideas(root) {
   for (const w of waves) for (const r of w.rows) byStatus[r.status] = (byStatus[r.status] ?? 0) + 1
 
   return {
-    file:  'IDEAS/overview.md',
+    file:  join(rel, 'overview.md'),
     count: waves.reduce((n, w) => n + w.rows.length, 0),
     waves,
     papers: papers.sort(byFile),

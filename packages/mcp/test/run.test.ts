@@ -10,7 +10,8 @@
  */
 
 import { describe, test, expect } from 'bun:test'
-import { mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { spawnSync }               from 'node:child_process'
 import { tmpdir }                  from 'node:os'
 import { join }                    from 'node:path'
 import { run, EXIT, type Session } from '../src/client/run.ts'
@@ -18,6 +19,7 @@ import type { ToolListing }        from '../src/client/argv.ts'
 import { fileStore, configPath, type ProfileFile, type ProfileStore } from '../src/client/profiles.ts'
 import { cacheKey, fileCache, type CachedTools, type ToolCache } from '../src/client/cache.ts'
 import { loadRoutes, checkRoutes, type Route } from '../src/client/routes.ts'
+import { buildCli }              from '../src/client/build.ts'
 
 const TOOLS: ToolListing[] = JSON.parse(readFileSync(new URL('./fixtures/tools/basecamp-owner.json', import.meta.url), 'utf8')).tools
 
@@ -49,6 +51,17 @@ function harness(extra: Partial<Parameters<typeof run>[1]> = {}) {
 }
 
 describe('the tenant and the credential travel on the connection', () => {
+
+  test('--help --agent says how an agent connects, from what this run connected with, and never prints the key', async () => {
+    const h = harness({ name: 'shop', routes: [route({})] })
+    expect(await h.go(['--workspace', 'w1', '--help', '--agent'])).toBe(EXIT.ok)
+    const text = h.out.join('\n')
+    expect(text).toContain('claude mcp add --transport http shop http://app.test/mcp')
+    expect(text).toContain('--header "x-workspace-id: w1"')
+    expect(text).toMatch(/not MCP tools[\s\S]*shop servers status/)
+    expect(text).toContain('Commands at your standing')
+    expect(text).not.toContain('fjs_key')
+  })
 
   test('the key is the Bearer, and --workspace before the command names the tenant', async () => {
     const h = harness()
@@ -139,6 +152,12 @@ describe('profiles', () => {
     expect(h.err.join()).toMatch(/not signed in — run: login --api-key - --url/)
   })
 
+  test('and names no --url when the program has one of its own to default to', async () => {
+    const h = base(memory(), app('k').connect, { defaultUrl: 'https://shop.example/mcp' })
+    expect(await h.go(['servers', 'find'])).toBe(EXIT.usage)
+    expect(h.err).toEqual(['not signed in — run: login --api-key -'])
+  })
+
   test('login saves the key from stdin, and the next run uses it with no environment at all', async () => {
     const store = memory(), a = app('fjs_goodkey_0123')
     const h = base(store, a.connect, { readStdin: () => 'fjs_goodkey_0123\n' })
@@ -148,6 +167,17 @@ describe('profiles', () => {
     a.seen.length = 0
     expect(await base(store, a.connect).go(['servers', 'find'])).toBe(EXIT.ok)
     expect(a.seen[0]).toEqual({ authorization: 'Bearer fjs_goodkey_0123', 'x-workspace-id': 'w1' })
+  })
+
+  test('at a terminal, login asks for the key rather than waiting on stdin', async () => {
+    const store = memory(), asked: string[] = []
+    const h = base(store, app('fjs_goodkey_0123').connect, {
+      readSecret: async (prompt: string) => { asked.push(prompt); return 'fjs_goodkey_0123' },
+      readStdin:  () => { throw new Error('stdin read at a terminal') },
+    })
+    expect(await h.go(['login', '--api-key', '-', '--url', 'http://app.test/mcp'])).toBe(EXIT.ok)
+    expect(asked).toEqual(['API key: '])
+    expect(store.file.profiles.default.token).toBe('fjs_goodkey_0123')
   })
 
   test('a key the app reads as nobody is refused, and nothing is saved', async () => {
@@ -356,6 +386,71 @@ describe('routes', () => {
     writeFileSync(join(dir, 'stray.js'), 'export default {}\n')
     await expect(loadRoutes(dir)).rejects.toThrow(/a route is <service>\/<method>/)
   })
+  // Inside a binary the count `buildCli` stated is checked, since a hand-run
+  // `bun build --compile` embeds no routes/ and would offer none of them.
+  test('in a compiled binary, loadRoutes refuses a count it was not given, or one that does not match', async () => {
+    const was = process.env.FJS_CLI_ROUTES
+    try {
+      delete process.env.FJS_CLI_ROUTES
+      await expect(loadRoutes('/$bunfs/root/routes')).rejects.toThrow(/compiled without its routes.*fli cli:build/)
+      await expect(loadRoutes('B:\\~BUN\\root\\routes')).rejects.toThrow(/compiled without its routes/)
+      process.env.FJS_CLI_ROUTES = '1'
+      await expect(loadRoutes('/$bunfs/root/routes')).rejects.toThrow(/built with 1 route\(s\) and holds 0/)
+      process.env.FJS_CLI_ROUTES = '0'
+      expect(await loadRoutes('/$bunfs/root/routes')).toEqual([])
+      delete process.env.FJS_CLI_ROUTES
+      expect(await loadRoutes('/no/such/routes')).toEqual([])
+    } finally {
+      if (was === undefined) delete process.env.FJS_CLI_ROUTES
+      else process.env.FJS_CLI_ROUTES = was
+    }
+  })
+})
+
+// ─── the build ───────────────────────────────────────────────────────────────
+
+describe('buildCli compiles a cli/ surface with its routes inside', () => {
+
+  const surface = (config: string | null) => {
+    const root = mkdtempSync(join(tmpdir(), 'fjs-cli-build-'))
+    mkdirSync(join(root, 'src', 'routes', 'servers'), { recursive: true })
+    mkdirSync(join(root, 'config'))
+    if (config !== null) writeFileSync(join(root, 'config', 'cli.config.js'), config)
+    return root
+  }
+
+  test('refuses a surface with no entry, and one whose config names no program', async () => {
+    const root = surface("export default { name: 'shop' }\n")
+    await expect(buildCli({ root })).rejects.toThrow(/no src\/main\.js or src\/main\.ts/)
+    writeFileSync(join(root, 'src', 'main.js'), '\n')
+    writeFileSync(join(root, 'config', 'cli.config.js'), 'export default {}\n')
+    await expect(buildCli({ root })).rejects.toThrow(/names no program/)
+    rmSync(root, { recursive: true, force: true })
+  })
+
+  // The entry here asks what main() would: the routes it can load, and whether
+  // a route's CallRefused is the entry's — two bundles would give it a copy.
+  test('the binary loads every route, and a route shares the entry\'s copy of the client', async () => {
+    const root   = surface("export default { name: 'shop', url: 'https://shop.example/mcp' }\n")
+    const client = JSON.stringify(new URL('../src/client/index.ts', import.meta.url).pathname)
+    writeFileSync(join(root, 'src', 'main.js'), `
+      import { loadRoutes, CallRefused } from ${client}
+      const routes = await loadRoutes(new URL('./routes/', import.meta.url))
+      console.log(JSON.stringify({ routes: routes.map(r => r.service + ' ' + r.method), same: routes.every(r => r.C === CallRefused) }))
+    `)
+    for (const method of ['status', 'summary'])
+      writeFileSync(join(root, 'src', 'routes', 'servers', `${method}.js`),
+        `import { CallRefused } from ${client}\nexport default { C: CallRefused, description: 'd', uses: [], run() {} }\n`)
+
+    const [built] = await buildCli({ root })
+    expect(built.outfile).toBe(join(root, 'dist', process.platform === 'win32' ? 'shop.exe' : 'shop'))
+    expect([built.routes, built.url]).toEqual([2, 'https://shop.example/mcp'])
+
+    const ran = spawnSync(built.outfile, { encoding: 'utf8', cwd: tmpdir() })
+    expect(ran.stderr).toBe('')
+    expect(JSON.parse(ran.stdout)).toEqual({ routes: ['servers status', 'servers summary'], same: true })
+    rmSync(root, { recursive: true, force: true })
+  }, 60_000)
 })
 
 // ─── breadcrumbs ─────────────────────────────────────────────────────────────

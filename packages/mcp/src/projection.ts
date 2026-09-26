@@ -109,7 +109,7 @@ export interface ServiceShape {
 export type Verdict =
   | 'model-gate'    // the model's @@gate position for this operation
   | 'move-floor'    // max(model update, the move's own @gate), @system or not
-  | 'method-gate'   // the level the service declared for this custom method
+  | 'method-gate'   // the level the service declared — a custom method, or a CRUD verb over no model
   | 'method-floor'  // a SESSION is required and the level is not compared
   | 'ungraded'      // nothing says; permissive by Invariant 6
 
@@ -647,6 +647,20 @@ export function projectTools(
       // category — `revenue`, `shopfront` — and not an error.
       const ident = {
         name: toolName(svc.name, method), service: svc.name, method, model,
+      }
+
+      if (CRUD.has(method) && !model) {
+        // Over no model the verb has no `@@gate`, and the one thing that can
+        // grade it is the level the service declared, which junction enforces
+        // exactly as it does a custom method's (`FJS-D408`). Absent, it is
+        // ungraded — never `model-gate`, which would name a rule that is not
+        // there.
+        const declared = svc.methodGates?.[method]
+        const input    = inputFor(method, model, views, svc.inputs?.[method], 'crud')
+        if (declared === undefined) { tools.push({ ...ident, kind: 'crud', verdict: 'ungraded', needs: null, input }); continue }
+        const row = { ...ident, kind: 'crud' as const, verdict: 'method-gate' as const, needs: declared, input }
+        ;(levelPasses(declared, level) ? tools : withheld).push(row)
+        continue
       }
 
       if (CRUD.has(method)) {

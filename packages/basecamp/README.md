@@ -82,6 +82,26 @@ Seeding is idempotent — a second run does nothing; `--force` starts over.
 | `bun run db:tables` | dump the live schema out of SQLite |
 | `bun run db:seed` | example fleet — 4 users, 2 workspaces, servers, deployments, jobs, audit trail. `--force` re-seeds |
 | `bun run db:reset` | stop the servers and delete the database, jobs queue and audit trail |
+| `bun run cli <args>` | the app CLI from source — `bun run cli servers status` |
+| `bun run build:cli` | the app CLI compiled into `cli/dist/bcamp` (`fli cli:build`; `--target` for other platforms) |
+| `bun run verify:cli` | that CLI and its binary as processes against a real `/mcp` |
+
+
+### On a command line
+
+With the API up and a key from the API keys screen:
+
+```sh
+bun run build:cli
+./cli/dist/bcamp login --api-key -       # asks for the key; the dev API by default
+./cli/dist/bcamp --help                  # what the key's scopes and role allow
+./cli/dist/bcamp servers status          # a hand-written route (cli/src/routes/)
+./cli/dist/bcamp use <workspace-id>
+```
+
+`cli/config/cli.config.js` points a first login at the dev API. A binary for
+anyone else needs the production URL there first. How it works is
+`packages/mcp/README.md` § The app CLI.
 
 ### Configuration
 

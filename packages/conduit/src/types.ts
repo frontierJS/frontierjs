@@ -501,13 +501,19 @@ export interface ConduitOptions {
   // Descriptors returned by these routes carry credential *refs* only —
   // no secret material. But the routes still enumerate your infrastructure
   // and can deregister targets, so access has to be a decision, not an
-  // oversight: enabling management requires either `hooks` or an explicit
-  // `public: true`. Enabling it with neither throws at configure().
+  // oversight: enabling management requires `gate`, `hooks` or an explicit
+  // `public: true`. Enabling it with none throws at configure().
+  //
+  // `gate` is the level on the app's own ladder every route needs. The service
+  // is over no model, so a number here is the only thing that can grade it —
+  // Junction enforces it, and a surface listing the service (an MCP tool list)
+  // reads it, where a hook is invisible to both (`FJS-D408`).
   //
   // `hooks` is Junction's HookMap; it is typed loosely here so the core
   // stays free of a Junction import.
   management?:  {
     path?:   string
+    gate?:   number
     hooks?:  unknown
     public?: true
   }

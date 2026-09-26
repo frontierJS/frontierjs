@@ -34,12 +34,19 @@ export interface CliConfig {
 export async function main(config: CliConfig = {}, argv = process.argv.slice(2)): Promise<never> {
   const env  = process.env
   const name = config.name || env.FJS_APP || 'frontierjs'
-  const routes = Array.isArray(config.routes) ? config.routes
-    : config.routes ? await loadRoutes(config.routes) : []
+  let routes: Route[]
+  try {
+    routes = Array.isArray(config.routes) ? config.routes
+      : config.routes ? await loadRoutes(config.routes) : []
+  } catch (e) {
+    process.stderr.write(`${(e as Error).message}\n`)
+    process.exit(1)
+  }
 
   const code = await run(argv, {
     url:          env.FJS_MCP_URL || undefined,
     token:        env.FJS_TOKEN || undefined,
+    name,
     tenantHeader: config.tenantHeader || env.FJS_TENANT_HEADER || undefined,
     tenant:       env.FJS_TENANT || undefined,
     profile:      env.FJS_PROFILE || undefined,
@@ -52,6 +59,35 @@ export async function main(config: CliConfig = {}, argv = process.argv.slice(2))
     err:          text => process.stderr.write(text + '\n'),
     readFile:     path => readFileSync(path, 'utf8'),
     readStdin:    () => readFileSync(0, 'utf8'),
+    // With nothing piped, `login --api-key -` would wait on a silent terminal for an EOF.
+    readSecret:   process.stdin.isTTY ? askHidden : undefined,
   })
   process.exit(code)
+}
+
+/** One line from the terminal, not echoed. Ctrl-C leaves the way it would anywhere else. */
+function askHidden(prompt: string): Promise<string> {
+  const stdin = process.stdin
+  process.stderr.write(prompt)
+  stdin.setRawMode(true)
+  stdin.resume()
+  return new Promise(resolve => {
+    let text = ''
+    const done = (answer: string) => {
+      stdin.off('data', onData)
+      stdin.setRawMode(false)
+      stdin.pause()
+      process.stderr.write('\n')
+      resolve(answer)
+    }
+    const onData = (chunk: Buffer) => {
+      for (const ch of chunk.toString('utf8')) {
+        if (ch === '\r' || ch === '\n' || ch === '\u0004') return done(text)
+        if (ch === '\u0003') { stdin.setRawMode(false); process.stderr.write('\n'); process.exit(130) }
+        if (ch === '\u007f' || ch === '\b') text = text.slice(0, -1)
+        else if (ch >= ' ') text += ch
+      }
+    }
+    stdin.on('data', onData)
+  })
 }

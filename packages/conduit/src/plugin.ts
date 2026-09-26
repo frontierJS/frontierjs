@@ -165,6 +165,7 @@ export function conduit(opts: ConduitOptions = {}): Plugin {
 //
 // Disabled by default. Enabling it requires saying who may reach it:
 //
+//   conduit({ management: { gate: 7 } })               // a level on the app's ladder
 //   conduit({ management: { hooks: { before: { all: [authenticate()] } } } })
 //   conduit({ management: { public: true } })          // deliberate, documented
 //
@@ -197,17 +198,23 @@ function registerManagementService(
   }
 
   // Fail closed, loudly, at configure() — rather than serving an open endpoint.
-  if (!management.hooks && !management.public) {
+  if (management.gate === undefined && !management.hooks && !management.public) {
     throw new Error(
-      `[conduit] management routes need an access decision. Either attach auth:\n` +
+      `[conduit] management routes need an access decision. Grade them on the app's ladder:\n` +
+      `  conduit({ management: { gate: 7 } })\n` +
+      `or attach auth:\n` +
       `  conduit({ management: { hooks: { before: { all: [authenticate()] } } } })\n` +
       `or opt out explicitly if your app already authenticates every service:\n` +
       `  conduit({ management: { public: true } })`
     )
   }
 
+  // Named, so the service answers these three and 405s the rest rather than
+  // reaching a base CRUD verb that has no model under it.
+  const gate = management.gate
   app.services.register(createService({
     name,
+    methods: (['find', 'get', 'remove'] as const).map(method => gate === undefined ? method : { method, gate }),
     ...(management.hooks ? { hooks: management.hooks as never } : {}),
 
     async find(_ctx) {

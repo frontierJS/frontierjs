@@ -51,6 +51,9 @@ import { singularize }                           from '@frontierjs/toolbelt/infl
 const SKIP_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', 'out', 'coverage', '.bun', '.cache',
   '.next', '.svelte-kit', 'tmp', '.vscode-test', 'vendor',
+  // A running fli's compiled commands: a copy of every .md it ran, deleted
+  // when that process exits, so a walk racing it dies on ENOENT.
+  '.fli-tmp',
 ])
 
 // ─── what the corpus is made of ───────────────────────────────────────────────
@@ -84,7 +87,7 @@ const SOURCE_EXT = new Set(['.js', '.ts', '.mjs', '.mts'])
 // by design — it is ungated, so it has no generator line to be rechecked by.
 // At ~2 MB that page is the largest file in the tree matching a corpus
 // extension, and every term on it would be counted a second time.
-const GENERATED_FILES = new Set(['repo-terms.html'])
+const GENERATED_FILES = new Set(['repo-terms.html', 'registers.html'])
 
 function isGenerated(rel, raw) {
   return /\.snapshot\./.test(rel)
@@ -1632,10 +1635,10 @@ function auditPane(model, root = '') {
 // `field` and `press` are only offered when the stylesheet was vendored from the
 // workspace; the published bundle lags a release and may not carry them, so the
 // fallback pair is the plain inverted neutral and the plain default.
-const THEMES      = ['default', 'dark', 'midnight', 'forest', 'sunset', 'elite', 'basecamp', 'notebook', 'press']
-const THEME_LIGHT = 'press'
-const THEME_DARK  = 'field'
-const FALLBACK    = { light: 'default', dark: 'dark' }
+export const THEMES      = ['default', 'dark', 'midnight', 'forest', 'sunset', 'elite', 'basecamp', 'notebook', 'press']
+export const THEME_LIGHT = 'press'
+export const THEME_DARK  = 'field'
+export const FALLBACK    = { light: 'default', dark: 'dark' }
 
 // Runs in <head>, before the body is parsed, because a theme applied after the
 // first paint is a white flash on a page somebody opened to read in the dark.

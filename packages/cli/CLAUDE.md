@@ -82,10 +82,21 @@ core/
                 ruling, the struck question, and a put-back when
                 `register:check` finds a new error. A pick against the
                 recommendation needs a reason
+  close.js      the writer behind `register:close` — an issue row MOVED into
+                § Closed in that table's shape, the Detail's links carried into
+                How, and put back when `register:check` finds a new error. It
+                and `decide.js` share `errorKeys`/`newErrors` in register-check.js
   next.js       the open register ranked — severity, then citations, `blocked by`
                 edges and code touched recently, every term printed with its
                 row. `WEIGHTS` is one frozen table and no flag moves it.
                 Proposals are not ranked; nothing measurable separates them
+  register-atlas.js  the registers as one page to work from — `register:atlas`,
+                for any project declaring `registers`, not only this workspace.
+                Reads through `registers.js`, `decisions.js` and `next.js` and
+                parses nothing itself, so a record missing here is missing from
+                `fli next` too. A register link is relative to ITS file, so each
+                is resolved there and re-expressed from where the page is
+                written. Not a snapshot: the ranking reads git history
   terms.js      the vocabulary this workspace asks a newcomer to learn, counted in
                 three lenses that are learned differently — concepts, language
                 words, api identifiers. Ranked by SPREAD, because a term in

@@ -226,6 +226,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./projection` | `src/projection.ts` | yes |
 | exports | `./plugin` | `src/plugin.ts` | yes |
 | exports | `./client` | `src/client/index.ts` | yes |
+| exports | `./client/build` | `src/client/build.ts` | yes |
 | main | `main` | `index.ts` | yes |
 
 - peers — `@frontierjs/junction`: `^0.1.0`

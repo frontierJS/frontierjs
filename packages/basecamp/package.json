@@ -35,7 +35,8 @@
     "verify:outpost": "bun api/test/verify-outpost.mjs",
     "verify:mcp": "bun api/test/verify-mcp.mjs",
     "verify:cli": "bun cli/test/verify-cli.mjs",
-    "cli": "bun cli/src/main.js"
+    "cli": "bun cli/src/main.js",
+    "build:cli": "fli cli:build"
   },
   "dependencies": {
     "@frontierjs/auth": "workspace:*",

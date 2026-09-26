@@ -1,5 +1,17 @@
 # Changes — @frontierjs/junction
 
+
+## 2026-09-25 — a CRUD verb over no model is graded by its declared gate (`FJS-D408`)
+
+`methods: [{ method: 'find', gate: 5 }]` parsed and enforced nothing: `gateAuthAround`
+sent every CRUD verb down the `@@gate` path, which grades nobody where there is no
+model — measured, level 4 answered 200. Over no model it is now graded exactly as a
+custom method's declared gate (401 for a stranger, 403 naming the level, the body never
+run). Over a model it is refused — at construction where `model:` is stated, at the
+first call where the name alone reaches one — since `@@gate` owns that verb. The app
+model reports it beside the custom methods. `test/custom-method-gate.test.ts`, four rows;
+a mutant that skips the call-time refusal reds one.
+
 ## 2026-09-25 — `ctx.client` is `ctx.caller`, and the `announce` startup phase is `log-listening` (`FJS-D392`, `FJS-D393`)
 
 **The machine end of a call — ip, user-agent, headers — is `ctx.caller`.**

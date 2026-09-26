@@ -179,17 +179,22 @@ try {
   const reboot = await called(viewer, 'servers_reboot', { id: rows[0]?.id ?? 'x' })
   check('a tool the viewer was not offered fails closed when called anyway', reboot.refused, reboot.text.slice(0, 200))
 
-  // ── what the projection cannot grade, the boundary still refuses ────────
-  // `FJS-1342`: the hub has no model and its standing is a hook, so every member
-  // is OFFERED `hub_setSystemAdmin`. Asked as *not offered, or refused*, so the
-  // row stays true on the day the fix stops offering it.
-  console.log('\n  the boundary')
-  const promote = list.viewer.has('hub_setSystemAdmin')
-    ? await called(viewer, 'hub_setSystemAdmin', { id: 'x', data: { isSystemAdmin: true } })
-    : { refused: true, text: 'not offered' }
-  check('hub_setSystemAdmin is not offered to a viewer, or is refused when called', promote.refused, promote.text.slice(0, 200))
+  // ── a service over no model, graded by the level it declares ────────────
+  // `FJS-1342`: the hub has no model, and while its standing was a hook every
+  // member was OFFERED `hub_setSystemAdmin`. Each method declares SYSADMIN now
+  // (`FJS-D408`), so the list and the boundary read one number. The seed's
+  // owner is the system administrator — the pair.
+  console.log('\n  the hub tier')
+  pair('hub_setSystemAdmin', list.admin, list.owner, 'workspace admin', 'system administrator')
+  pair('conduit-targets_remove', list.admin, list.owner, 'workspace admin', 'system administrator')
+  const promote = await called(viewer, 'hub_setSystemAdmin', { id: 'x', data: { isSystemAdmin: true } })
+  check('hub_setSystemAdmin called by a viewer anyway fails closed', promote.refused, promote.text.slice(0, 200))
   const hub = await called(owner, 'hub_users')
   check('and the same hub read answers a system administrator — the refusal is about the caller', !hub.refused, hub.text.slice(0, 200))
+  // The plugin names at boot every tool on a model-less service that declares
+  // no level. The phrase is packages/mcp/src/plugin.ts `disclose`'s.
+  const ungraded = api.out.split('\n').find(l => l.includes('graded by nothing'))
+  check('and the boot names no model-less tool as graded by nothing', !ungraded, ungraded)
 
   for (const c of [owner, admin, developer, viewer, nowhere]) await c.close().catch(() => {})
 } catch (err) {

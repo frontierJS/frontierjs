@@ -1,5 +1,92 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-25 — `fli gs` lists no untracked files unless `--with-new`
+
+Untracked files stay in the summary count (`N new`) and the per-place `?n` mark,
+but are no longer listed in the groups; `--with-new` restores the full listing.
+`--json` is unchanged.
+
+## 2026-09-25 — `fli cli:build`: the `cli/` surface's release
+
+**`fli cli:build [--target a,b]`** compiles the app's `cli/` into `cli/dist/<name>`,
+with `name` from `cli/config/cli.config.js`. The build is `@frontierjs/mcp/client/build`, read
+out of the app's own node_modules through `shippedFile`, so it adds no bin. A new
+`cli` namespace (`commands/cli/`) holds it, a peer of `widgets:` and `extension:`.
+The shared `cli/src/routes/` directory is filed as `FJS-1352`.
+
+## 2026-09-25 — `fli register:close`: closing an issue is a command
+
+**`fli close ELA-001 --how "…"` moves the row out of its open table and makes it
+the top row of § Closed**, in that table's four columns: the id cell whole with
+its anchor, the area folded in front of the title, today's date (UTC, as
+`decide` writes), and a How that is `--how` followed by every link the Detail
+cell held — the Detail was where the row said the defect lived. `core/close.js`
+is the writer; like `decide` it runs `register:check` over the result and puts
+the file back on a new error, and the before/after comparison both use moved
+from `decide.js` into `register-check.js` as `errorKeys`/`newErrors`. It refuses
+an unknown id, an already-closed one, an empty `--how`, a register with no
+§ Closed table, and a project with no declared prefix. Trimming old closures
+into `ISSUES_ARCHIVE.md` is not part of it. `test/close.test.js` runs over an
+`ELA` project in `.project/`.
+
+## 2026-09-25 — fli's amber is one export, and five terminal helpers are not built
+
+**`amber` is exported from `core/color.js`**, where `chalk.hex('#f5a623')` was
+written out five times across `bootstrap.js` and `prose.js`. The duplicate
+`gray` key in the same object is gone. Output is byte-identical: the banner,
+`fli help` and the help prose render the same escape code.
+
+**`badge`, `rail`, `spark`, `bar` and an app `brand` stay out of `context.tty`.**
+Each was asked for by ELA's `support:*` commands and has no second user: `badge`
+is `chalk.bgGreen.black.bold(' NEW ')` (4 uses, one app), `rail` is `tty.wrap`
+plus a prefix (8, one app), `spark` is one call site, `bar` has two call sites in
+different shapes (a stacked bar in ELA, a single fill in `git:status`), and an
+app's brand color has no origin fli can read. A `.fli.json` key would restate a
+color the app keeps in its CSS. **The trigger for any of them is a second
+caller hand-writing the same shape**, a fli command or another app.
+
+**`ws:terms` no longer walks `.fli-tmp/`.** It holds a running fli's compiled
+copy of every command it ran, deleted when that process exits, so a `terms.test.js`
+run beside any other fli in the checkout died on `ENOENT`, and a run that
+survived the race counted the words of every command that fli had run twice.
+
+## 2026-09-25 — `fli register:atlas`: the registers as one page, for any project
+
+**A project that keeps registers outside this workspace can now read them as one
+interactive page.** `fli ws:atlas` needs a workspace, and a client app with
+`"registers": { "prefix": "ELA", "dir": ".project" }` had no page at all — only
+`fli next` and `fli decisions` in the terminal, and `fli gui`'s top eight.
+`fli register:atlas` walks up to that `package.json` from anywhere in the app and
+writes `registers.html` into the registers directory: *Next* (the ranking, blocked
+rows marked), *Decide* (every question, with a button copying the exact
+`fli decide … --section "…"` line, adding `--why` when the pick is not the
+recommendation), *Issues*, *Rulings*, *Ideas* and *Closed*, each faceted and
+filterable, every record expanding to its text, every citation jumping to the
+record it names, every file opening in the editor at its line. `core/register-atlas.js`
+reads through `readRegisters`, `readDecisions` and `rankNext` and parses nothing.
+A register link is relative to the file it is written in, so each one is resolved
+there and then re-expressed from the page's directory — asserted in
+`test/register-atlas.test.js` by checking every link names a file that exists,
+from three output directories. The stylesheet is the tree's own, else the one this
+`fli` carries, since a client app installs no `@frontierjs/css`. **Not a
+snapshot**: the ranking reads git history, so the page carries no generator line,
+is git-ignored here, and the command warns when it lands somewhere that is not
+ignored. `test:browser:registers` drives it in Chrome over a fixture and over this
+workspace (13 assertions). `terms.js` exports its page-theme names for it, and
+counts `registers.html` among the generated files it keeps out of its corpus.
+
+## 2026-09-25 — `fli ws:atlas` reads a project's declared registers
+
+**The atlas draws a project that is not a monorepo.** `repo-map.js` kept its own
+issue reader with `FJS-` in it, and its decisions and ideas readers looked at the
+root; all three now go through `registerLayout`, and the model over this repo is
+identical key for key. The command takes the root from `findWorkspaceRoot`, then
+`findRegisterRoot`, then `wsRoot()`'s prompt — so a project with no `packages/`
+(`elitelawncare/ela`, registers in `.project/`) renders its registers instead of
+asking for a workspace. The idea ranking still reads only `## Wave N — …`
+tables, so a project whose `overview.md` ranks under another heading shows its
+papers and no ranking.
+
 ## 2026-09-25 — `cli/` is a surface to the two lists that name them
 
 Basecamp grew the first `cli/` (`FJS-D397`, Invariant 3). `core/git-status.js`'s
@@ -15,8 +102,9 @@ is held whole before either list is read.
 to an editor — no longer writes raw mode, escape codes and signal handling by
 hand.** `core/tty.js` is `context.tty`, destructured in the compiled body the way
 `log` is: `keys(question, { y: 'yes', … })` takes one keypress (Enter picks the
-first choice, shown `[Y]es`; Esc only when a choice is named `esc`; a `null`
-question listens without taking the footer), `live(render)` pins a footer
+first choice of a question, shown `[Y]es`; Esc only when a choice is named
+`esc`; a `null` question listens without taking the footer, and has no default,
+so Enter at a menu does nothing), `live(render)` pins a footer
 whose array parts drop from the right to fit, `aside(fn)` lends the screen to
 `$EDITOR` and holds this process's output until it returns, `onExit(fn)` runs on
 a return, a throw, Ctrl-C and SIGTERM under a 3s cap, and `title`, `wrap` and
@@ -36,15 +124,24 @@ synchronous, so the handler never runs first (`FJS-1350`). With no terminal, or
 under `fli gui`, `tty.interactive` is false, `live`, `title` and `aside` add
 nothing, and `keys` refuses by name or, given `--yes`, answers its first choice.
 
-**zx's `chalk`, the one a command body gets, now follows `NO_COLOR`.** It
-colored a terminal with `NO_COLOR=1` set, where fli's own `core/color.js` did
-not; `runtime.js` sets `chalk.level = 0` wherever `colorEnabled` is false.
+**zx's `chalk`, the one a command body gets, now follows fli's color rule.** It
+colored a terminal with `NO_COLOR=1` set, and it colored every PIPE through
+`chalk.hex`, `rgb` and the `bg` forms: zx wraps chalk in a Proxy whose `get`
+answers `store[key] || default[key]`, so a level of 0 reads back `undefined`, and
+`undefined <= 0` is false where chalk decides to style: a piped body's
+`chalk.hex('#9fc612')('l')` printed `\x1b[33ml\x1b[39m`, and `project:map` is one
+command that calls it. Setting `chalk.level = 0` cannot fix it,
+since the 0 is what gets lost, so `runtime.js` imports `zx/globals` first and,
+wherever `colorEnabled` is false or chalk found no color, replaces the global
+with a chalk that styles nothing, chains and `hex('…')` included.
 `workspace:publish` kept its own `context.config.tty` boolean for *is there a
 terminal*, which now collides with the destructured name and is
 `tty.interactive`, which is also false under `fli gui`, where the old boolean
-was not. `test/tty.test.js` is the fakes-level half and three runs under
-`script`: Ctrl-C at a keys prompt, during `context.stream`, and inside `aside`,
-each mutation-checked red.
+was not. `test/tty.test.js` is the fakes-level half and runs under `script`:
+Ctrl-C at a keys prompt, during `context.stream`, and inside `aside`, and chalk
+in a pipe and under `NO_COLOR` at a terminal, each mutation-checked red. ELA's
+`support:online` was moved onto it and driven in a pseudo-terminal against a
+stand-in API: list, open, Esc, help, Enter, `q`, with *away* posted by onExit.
 
 *Decision rules* (answered late: the proposal priced every piece and was
 approved before these were written). Origin: one — the terminal state lives in

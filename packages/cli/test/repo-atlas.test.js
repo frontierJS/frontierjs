@@ -30,7 +30,7 @@ function localStyle(html) {
 function workspace(name, extra = {}) {
   const dir = join(ROOT, name)
   const files = {
-    'package.json': JSON.stringify({ name: 'ws', scripts: { ci: 'node scripts/ci.mjs' } }),
+    'package.json': JSON.stringify({ name: 'ws', registers: { prefix: 'FJS' }, scripts: { ci: 'node scripts/ci.mjs' } }),
     'CLAUDE.md': [
       '# Map',
       '',
@@ -179,7 +179,7 @@ describe('what a dossier claims', () => {
 describe('search by action', () => {
 
   const withRunnables = (name) => workspace(name, {
-    'package.json': JSON.stringify({ name: 'ws', scripts: { build: 'bun run --filter * build' } }),
+    'package.json': JSON.stringify({ name: 'ws', registers: { prefix: 'FJS' }, scripts: { build: 'bun run --filter * build' } }),
     'packages/cli/commands/deploy/local.md': '---\ntitle: deploy:local\ndescription: Build the image and boot it\n---\n',
     'example/package.json': JSON.stringify({ name: 'example', scripts: { verify: 'node test/verify.mjs' } }),
     'example/db/schema.lite': 'model Post {\n  id String @id\n}\n',

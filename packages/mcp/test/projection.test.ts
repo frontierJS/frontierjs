@@ -339,11 +339,27 @@ describe('the model name a service STATES may not be a model', () => {
     ]
     const p = projectTools(overNoModel, VIEWS, 0)
     expect(p.unresolved).toEqual(['revenue'])
-    expect(p.tools[0]?.verdict).toBe('model-gate')
+    // Not `model-gate`: there is no model and so no gate, and naming one would
+    // be the rule this list says decided.
+    expect(p.tools[0]?.verdict).toBe('ungraded')
     expect(p.tools[0]?.model).toBe(null)
 
     // The control: a service whose model DOES resolve reports nothing here.
     expect(projectTools(AS_JUNCTION_REPORTS_IT, VIEWS, 0).unresolved).toEqual([])
+  })
+
+  test('over no model a CRUD verb is graded by its declared level, as junction enforces it (FJS-D408)', () => {
+    const targets: ServiceShape[] = [
+      { name: 'targets', model: 'targets', methods: ['find', 'get', 'remove'], methodGates: { find: 7, remove: 7 } },
+    ]
+    const at5 = projectTools(targets, VIEWS, 5)
+    expect(at5.withheld.map(t => [t.name, t.verdict, t.needs])).toEqual([
+      ['targets_find', 'method-gate', 7], ['targets_remove', 'method-gate', 7],
+    ])
+    expect(at5.tools.map(t => [t.name, t.verdict])).toEqual([['targets_get', 'ungraded']])
+    // The pair: at the level, offered.
+    expect(projectTools(targets, VIEWS, 7).tools.map(t => t.name).sort())
+      .toEqual(['targets_find', 'targets_get', 'targets_remove'])
   })
 
   test('a stated name that IS a definition is preferred over the derived one', () => {

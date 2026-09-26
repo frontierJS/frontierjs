@@ -28,7 +28,7 @@ title: Adapters
   async function ping(entry) {
     error = null; busy = entry.id
     try {
-      const fresh = await portal.service.create({ id: entry.id })
+      const fresh = await portal.service.invoke('ping', entry.id)
       const i = rows.findIndex(r => r.id === entry.id)
       if (i >= 0) rows = [...rows.slice(0, i), { ...rows[i], ...fresh }, ...rows.slice(i + 1)]
     } catch (e) {

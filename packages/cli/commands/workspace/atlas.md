@@ -97,7 +97,12 @@ if (flag.json && flag.as !== 'atlas') {
 const as      = flag.json ? 'json' : flag.as
 const spelled = as === 'json' ? '--json' : `--as=${as}`
 
-const wsRoot = await context.wsRoot()
+const { findWorkspaceRoot } = await import(resolve(global.fliRoot, 'core/utils.js'))
+const { findRegisterRoot }  = await import(resolve(global.fliRoot, 'core/registers.js'))
+
+// A project with no `packages/` is not a workspace, and `wsRoot()` would prompt
+// for one; the `package.json` declaring its registers is the root it means.
+const wsRoot = findWorkspaceRoot(process.cwd()) ?? findRegisterRoot(process.cwd()) ?? await context.wsRoot()
 if (!wsRoot) { log.error('No workspace found from here'); process.exitCode = 1; return }
 
 // Both refusals come before anything is read: `--live` shells out to git and to

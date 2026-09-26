@@ -47,8 +47,12 @@ export interface RunOptions extends ParseOptions {
   tenantHeader?: string
   /** The tenant, unless `--workspace` or the profile names one. */
   tenant?:       string
+  /** The program's name, as a person types it — the agent guide's command lines. */
+  name?:         string
   /** The endpoint `login` uses when none is given — the app's `cli/config/`. */
   defaultUrl?:   string
+  /** Ask a person for a secret, unechoed. Given only when stdin is a terminal — a pipe goes through `readStdin`. */
+  readSecret?:   (prompt: string) => Promise<string>
   /** The profile to use, unless `--profile` names one. */
   profile?:      string
   /** Where profiles live. Without one, `login` and its siblings are refused. */
@@ -133,9 +137,11 @@ export async function run(argv: string[], opts: RunOptions): Promise<number> {
 
   const url = opts.url ?? profile?.url
   if (!url) {
+    // A released binary names its endpoint, and its user could not supply one.
+    const where = opts.defaultUrl ? '' : " --url <the app's /mcp>"
     opts.err(g.profile || opts.profile
-      ? `no profile named '${profileName}' — run: login --api-key - --url <the app's /mcp> --profile ${profileName}`
-      : 'not signed in — run: login --api-key - --url <the app\'s /mcp>')
+      ? `no profile named '${profileName}' — run: login --api-key -${where} --profile ${profileName}`
+      : `not signed in — run: login --api-key -${where}`)
     return EXIT.usage
   }
 
@@ -178,6 +184,10 @@ export async function run(argv: string[], opts: RunOptions): Promise<number> {
       ;({ commands, ofService, cmd, route } = find())
     }
 
+    if (!service && g.help && g.agent) {
+      opts.out(agentGuide(opts, url, tenant, routes.filter(r => routeOffered(r, tools)), commands))
+      return EXIT.ok
+    }
     if (!service) { opts.out(helpAll(commands)); return g.help ? EXIT.ok : EXIT.usage }
 
     if (!method || method.startsWith('--')) {
@@ -381,7 +391,8 @@ async function local(words: string[], g: Globals, name: string, file: ProfileFil
       const url = f.url ?? opts.url ?? file.profiles[name]?.url ?? opts.defaultUrl
       if (!url) { opts.err('login needs --url <the app\'s /mcp>'); return EXIT.usage }
       if (!f['api-key']) { opts.err('login needs --api-key <key>, or --api-key - to read it from stdin'); return EXIT.usage }
-      const key = f['api-key'] === '-' ? (opts.readStdin?.() ?? '').trim() : f['api-key']
+      const key = f['api-key'] !== '-' ? f['api-key']
+        : (opts.readSecret ? await opts.readSecret('API key: ') : opts.readStdin?.() ?? '').trim()
       if (!key) { opts.err('login: the key is empty'); return EXIT.usage }
       const tenant = g.workspace ?? file.profiles[name]?.tenant
 
@@ -548,6 +559,41 @@ function helpAll(commands: Command[]): string {
     ...services.map(s => `  ${s.padEnd(28)} ${commands.filter(c => c.service === s).map(c => c.method).join(' ')}`),
     '', 'This program\'s own: login --api-key <key|-> --url <mcp> · logout · profiles · use <tenant>',
     ...(shadowed.length ? [`(${shadowed.join(', ')} ${shadowed.length === 1 ? 'is a service' : 'are services'} this program's own command hides)`] : []),
+  ].join('\n')
+}
+
+/**
+ * `--help --agent`: how an agent should reach this app, written from what this
+ * run already knows — the endpoint and tenant it connected with, and the routes
+ * this key is offered. The key itself is never printed.
+ */
+function agentGuide(opts: RunOptions, url: string, tenant: string | undefined, routes: Route[], commands: Command[]): string {
+  const bin    = opts.name ?? '<this program>'
+  const header = opts.tenantHeader && tenant ? ` \\\n    --header "${opts.tenantHeader}: ${tenant}"` : ''
+  return [
+    `${bin} for an agent`,
+    '',
+    'An agent can use this app two ways. Both run as the key, under the same checks.',
+    '',
+    '1. Connect it to the MCP endpoint (recommended). The tools it is offered are the',
+    '   ones this key may call, each with its description and input schema.',
+    '',
+    `   claude mcp add --transport http ${bin} ${url} \\`,
+    `    --header "Authorization: Bearer <api-key>"${header}`,
+    '',
+    '   Give the agent a key of its own, scoped to what it should do.',
+    '',
+    `2. Run ${bin} from a shell:`,
+    `   ${bin} --help                              the commands this key is offered`,
+    `   ${bin} <service> <method> --help           one command's flags`,
+    `   ${bin} <service> <method> --help --agent   its input schema, as JSON`,
+    '   Add --json to every call: stdout is then one JSON document, and next steps go to stderr.',
+    '   Exit codes: 0 ok · 1 the app refused · 2 usage or not offered · 3 unreachable.',
+    ...(routes.length ? ['',
+      `   These are written for ${bin} and are not MCP tools, so only the shell reaches them:`,
+      ...routes.map(r => `     ${bin} ${r.service} ${r.method}`.padEnd(40) + ` ${r.description}`)] : []),
+    '',
+    helpAll(commands),
   ].join('\n')
 }
 

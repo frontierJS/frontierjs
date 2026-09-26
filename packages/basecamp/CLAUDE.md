@@ -21,6 +21,7 @@ bun run verify:outpost # the launcher + API + Outpost as processes, no browser
 bun run verify:mcp     # /mcp at four roles over a real MCP client, no browser
 bun run cli servers status   # the app on a command line — login --api-key - first
 bun run verify:cli     # that program as a process against a real /mcp, no browser
+bun run build:cli      # …compiled: cli/dist/bcamp (fli cli:build; --target for others)
 DEVTOOLS=1 bun run api   # …and junction's console on 8503 beside it
 bun run image        # build the container image from the WORKING TREE
 bun run image:up     # …and bring the stack up on 8020  · image:down stops it
@@ -133,7 +134,8 @@ web/src/  App.mesa · main.js · session.js · notices.js (one leaf definition t
 web/test/ verify.mjs · verify-build.mjs + preview.mjs (the built output)
 cli/      config/cli.config.js (name, tenant header, dev endpoint) · src/main.js ·
           src/routes/<service>/<method>.js — the hand-written commands; every other
-          command is /mcp's tool list at the key's standing · test/verify-cli.mjs
+          command is /mcp's tool list at the key's standing · test/verify-cli.mjs ·
+          dist/bcamp — the binary, which carries the routes only when built by fli cli:build
 docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
           2026-08-30). Four of them are a screen with a skeleton where a third
           party's numbers go — what is owed there is adapters, not UI

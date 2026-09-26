@@ -1,5 +1,40 @@
 # Changes — @frontierjs/mcp
 
+
+## 2026-09-25 — `buildCli`: an app's `cli/` as one binary
+
+**`@frontierjs/mcp/client/build`** compiles a `cli/` surface into the release
+`FJS-D397` names — `cli/dist/<name>`, one per `--target`, needing no bun, no
+node_modules and no source tree. Run as `fli cli:build`. A hand-run
+`bun build --compile cli/src/main.js` was measured compiling, running, and holding
+none of `cli/src/routes/`, because `loadRoutes` read the missing directory as an
+empty one. So every route file goes in as an entrypoint, `splitting` keeps a route
+on the entry's copy of the client (without it `instanceof CallRefused` failed across
+the seam, measured), and the count goes in as `process.env.FJS_CLI_ROUTES`:
+`loadRoutes` inside a binary refuses a missing or mismatched count, so the hand-built
+binary refuses to start with one line naming `fli cli:build`. **`routeFiles`** is the one
+walk both use. `main()` prints a route-load error as one line rather than a stack.
+**The sign-in hint names no `--url` when the program has a default** — the user of a
+released binary has no way to fill one in. `run.test.ts` compiles a fixture surface and
+runs it; removing `splitting` or the count reds a row.
+
+**`login --api-key -` at a terminal asks** — `API key: `, unechoed, one line — where it
+waited silently for an EOF. A pipe still reads stdin. `readSecret` is the option, and
+`main()` gives it only when stdin is a TTY.
+
+## 2026-09-25 — `narrow`, and a model-less CRUD verb graded by its declared gate
+
+**`mcpPlugin({ narrow(tool, principal) })`** (`FJS-D407`, `FJS-1349`): a Guard an app
+answers for an axis a standing is not — an API key's scopes. Only removes; a withheld
+tool is not registered and cannot be called, breadcrumbs inherit it, and a throw fails
+the list. Three rows in `plugin.test.ts`; a `narrowTo` that ignored the guard reds them.
+
+**Over no model, a CRUD verb's declared gate grades it** (`FJS-D408`, `FJS-1342`), as
+junction now enforces it: `method-gate` at the declared level, and `ungraded` where it
+declares none — never `model-gate`, which named a rule that was not there. **The boot
+warning names those ungraded tools** rather than every service with no model, so a fully
+declared service such as basecamp's hub is not reported as graded by nothing.
+
 ## 2026-09-25 — breadcrumbs: what a one-row answer offers next
 
 `FJS-D398`. A call answering one row — `get`, `create`, `patch`, `update`, `restore`, or

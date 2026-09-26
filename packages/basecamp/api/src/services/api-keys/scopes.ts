@@ -60,14 +60,40 @@ export function scopeFor(service: string, method: string): string {
   return `${service}:${READ_METHODS.has(method) ? 'read' : 'write'}`
 }
 
+/** The principal fields a key's standing is read off. */
+interface KeyPrincipal { authMethod?: string; scopes?: string[]; credentialId?: string }
+
+/**
+ * Whether a caller's scopes reach `service.method`. A session is not a key and
+ * is held to nothing here.
+ *
+ * The one reading of *what a key may do*: the guard refuses a call by it and
+ * the agent surface withholds a tool by it, so a key is never offered a verb it
+ * would be refused — nor refused one it was offered.
+ */
+export function keyAllows(user: KeyPrincipal | null | undefined, service: string, method: string): boolean {
+  if (user?.authMethod !== 'apiKey') return true
+  if (OFF_LIMITS.has(service)) return false
+  const held = user.scopes ?? []
+  return held.includes('admin') || held.includes(scopeFor(service, method))
+}
+
+/**
+ * `mcpPlugin({ narrow })`: a key's tool list is its scopes', not its bot's
+ * role's (`FJS-1349`, `FJS-D407`). The record checks — revoked, another
+ * workspace — stay the guard's, at the call.
+ */
+export function narrowToKey(tool: { service: string; method: string }, principal: unknown): boolean {
+  return keyAllows(principal as KeyPrincipal | null, tool.service, tool.method)
+}
+
 // ─── apiKeyGuard ─────────────────────────────────────────────────────────
 // App-level before hook. A session passes straight through; a key is held to
 // what it was issued with.
 
 export function apiKeyGuard(app: BasecampApp): Hook {
   return async function apiKeyGuard(ctx: ServiceContext): Promise<void> {
-    const user = $.auth?.user as
-      { authMethod?: string; scopes?: string[]; credentialId?: string } | undefined
+    const user = $.auth?.user as KeyPrincipal | undefined
 
     if (user?.authMethod !== 'apiKey') return
 
@@ -97,10 +123,8 @@ export function apiKeyGuard(app: BasecampApp): Hook {
     if (workspaceId && workspaceId !== key.workspaceId)
       throw new Forbidden('This API key belongs to a different workspace')
 
-    const needed = scopeFor($.service, $.method)
-    const held   = user.scopes ?? []
-    if (!held.includes('admin') && !held.includes(needed))
-      throw new Forbidden(`This API key needs the '${needed}' scope`)
+    if (!keyAllows(user, $.service, $.method))
+      throw new Forbidden(`This API key needs the '${scopeFor($.service, $.method)}' scope`)
 
     // For the usage hook, so it does not repeat the lookup.
     $.locals.apiKeyId = key.id

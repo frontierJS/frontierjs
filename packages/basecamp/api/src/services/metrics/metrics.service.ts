@@ -16,13 +16,14 @@
 // store whose fold cannot be caught lying in production: the drive grades the
 // arithmetic, and only a reader grades the data.
 //
-// ─── Why requireSystemAdmin ───────────────────────────────────────────────
+// ─── Why SYSADMIN ─────────────────────────────────────────────────────────
 //
 // The series here are the CONTROL PLANE's own — `process.memoryMb`,
 // `http.requests.total`, `up` — declared `@@tenant(none)` because a reading is
 // about this process and belongs to nobody's workspace. So there is no
-// workspace to scope to, and the honest gate is the hub's: not a screen a
-// member is refused, a surface they have no business knowing exists.
+// workspace to scope to, and the honest gate is the hub's: every method at
+// SYSADMIN, declared, so junction enforces it and a tool list reads it
+// (FJS-D408).
 //
 // THIS DECISION REOPENS the day a heartbeat writes per-server series
 // (`server.cpuPercent{serverId}`), because those ARE a workspace's through the
@@ -32,7 +33,7 @@
 
 import { createService, $, BadRequest } from '@frontierjs/junction'
 import { isStale }                      from '@frontierjs/junction'
-import { requireSystemAdmin }           from '../../core/hooks.ts'
+import { LEVELS }                     from '@frontierjs/litestone'
 import type { BasecampApp }             from '../../basecamp.types.ts'
 
 const HOUR = 3_600_000
@@ -50,21 +51,13 @@ export function createMetricsService(app: BasecampApp) {
 
   return createService({
     name: 'metrics-store',
-    // Every method, including find. There is no public half.
-    //
-    // UNDER `hooks:`, and this is worth the line: a top-level `before:` is not
-    // an error, it is silently ignored, and the service then answers every
-    // caller. Written that way first, it took a test asserting the REFUSAL to
-    // notice — a gate that is missing looks exactly like a gate that passed.
-    hooks: {
-      before: { all: [requireSystemAdmin()] },
-    },
-
     // `methods:` is a LIST of names and not the implementations — without it a
     // base service answers every CRUD verb it was never given, which on a
     // service with no model is a 500 rather than a refusal (infra.service.ts
-    // and hub.service.ts both say so).
-    methods: ['find', 'read'],
+    // and hub.service.ts both say so). Every method carries the gate, find
+    // included: there is no public half, and a method listed bare would answer
+    // every caller with nothing saying so.
+    methods: ['find', 'read'].map(method => ({ method, gate: LEVELS.SYSADMIN })),
 
     /**
      * The series this app is keeping, and whether anything is still writing

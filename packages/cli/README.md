@@ -393,9 +393,9 @@ if (k === 'e') await tty.aside(() => context.stream({ command: `$EDITOR ${file}`
 `console` all clear it, print, and redraw it, so nothing has to be routed
 through `tty`. `live` takes a string or an array of parts, and parts drop from
 the right until the line fits. `keys` takes one keypress with no Enter: Enter
-picks the first choice, which is shown upper-case (`[Y]es`), Esc is a choice
-only when one is named `esc`, and a `null` question listens without taking the
-footer — a menu under the status line. **The terminal is put back however the
+picks a question's first choice, which is shown upper-case (`[Y]es`), Esc is a
+choice only when one is named `esc`, and a `null` question listens without
+taking the footer and with no default — a menu under the status line. **The terminal is put back however the
 command ends**: raw mode, the footer and the title on a return, a throw, Ctrl-C
 or SIGTERM. `onExit` runs on all four, and a second Ctrl-C does not wait for
 it. While `aside` runs, Ctrl-C belongs to the child, and this command's own

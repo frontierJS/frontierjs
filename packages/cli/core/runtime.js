@@ -1,3 +1,4 @@
+import 'zx/globals'
 import { chalk } from 'zx'
 import { execSync, spawn } from 'child_process'
 import { pathToFileURL } from 'url'
@@ -16,9 +17,21 @@ import { colorEnabled } from './color.js'
 
 const env = process.env
 
-// zx's chalk is the one a command body gets as a global, and it colors a
-// terminal with NO_COLOR set. color.js holds fli's rule; this makes zx's agree.
-if (!colorEnabled) chalk.level = 0
+// ─── A command body's chalk follows fli's color rule ─────────────────────────
+// zx's chalk is a Proxy whose `get` answers `store[key] || default[key]`, so a
+// level of 0 reads back undefined, and `hex`, `rgb` and the `bg` forms style
+// anyway: every pipe got escape codes from `chalk.hex`. It also colors a terminal
+// with NO_COLOR set. With color off by color.js's rule, the global is a chalk
+// that styles nothing. zx/globals assigns the global once, when first imported,
+// which is why it is imported above rather than left to the first shim.
+const FACTORIES = new Set(['hex', 'rgb', 'ansi256', 'bgHex', 'bgRgb', 'bgAnsi256'])
+const plainChalk = new Proxy(function () {}, {
+  get: (_, key) => key === 'level' ? 0
+    : typeof key !== 'string' || key === 'then' ? undefined
+      : FACTORIES.has(key) ? () => plainChalk : plainChalk,
+  apply: (_, __, args) => args.join(' '),
+})
+if (!(colorEnabled && chalk.level)) globalThis.chalk = plainChalk
 
 // ─── Temp file registry — guaranteed cleanup on exit ─────────────────────────
 // Compiled command bodies are written as .mjs shims so we can `import()` them

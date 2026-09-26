@@ -12,9 +12,15 @@
 // GET  /portal/:id  → get  (one adapter, with live ping)
 // POST /portal/:id  → ping (force health check, admin only) — dispatched
 //                    by X-Service-Method: ping, not a /ping sub-path
+//
+// Graded by declared levels, since there is no model to carry a @@gate: the
+// reads at READER (every workspace role) and ping at ADMINISTRATOR, on the
+// ladder core/gate.ts maps roles onto. Junction enforces both and an agent's
+// tool list reads both (FJS-D408).
 
 import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
-import { sessionScope, requireWorkspaceRole, roleOf, WORKSPACE_QUERY } from '../../core/hooks.ts'
+import { LEVELS }                  from '@frontierjs/litestone'
+import { sessionScope, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import type { BasecampApp }        from '../../basecamp.types.ts'
 import type { ServiceContext } from '@frontierjs/junction'
 
@@ -122,6 +128,11 @@ export function createPortalService(app: BasecampApp) {
   return createService({
     name: 'portal',
     reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+    methods: [
+      { method: 'find', gate: LEVELS.READER },
+      { method: 'get',  gate: LEVELS.READER },
+      { method: 'ping', gate: LEVELS.ADMINISTRATOR },
+    ],
 
     async find(_ctx: ServiceContext) {
       const entries = SERVICES.map(svc => {
@@ -156,8 +167,8 @@ export function createPortalService(app: BasecampApp) {
       return buildEntry(svc, adapter, await pingAdapter(adapter), app.config)
     },
 
-    async create() {
-      const id  = ($.data as Record<string, unknown>)?.id as string ?? $.id as string
+    async ping() {
+      const id  = $.id as string
       // Same separation as get(): a ping is addressed to an appliance, so a
       // value that cannot be one is the caller's mistake rather than a miss.
       if (!isUsableId(id))
@@ -174,15 +185,7 @@ export function createPortalService(app: BasecampApp) {
 
     hooks: {
       before: {
-        all: [
-          sessionScope(app),
-          (ctx: ServiceContext) => {
-            if ($.method !== 'create') return
-            const level = ({ viewer: 1, billing: 1, developer: 2, admin: 3, owner: 4 } as Record<string, number>)
-              [roleOf(ctx) ?? ''] ?? 0
-            if (level < 3) throw new NotFound('Not found')
-          },
-        ],
+        all: [sessionScope(app)],
       },
     },
   })

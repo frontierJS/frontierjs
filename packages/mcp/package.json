@@ -12,7 +12,8 @@
     ".": "./index.ts",
     "./projection": "./src/projection.ts",
     "./plugin": "./src/plugin.ts",
-    "./client": "./src/client/index.ts"
+    "./client": "./src/client/index.ts",
+    "./client/build": "./src/client/build.ts"
   },
   "keywords": [
     "frontierjs",

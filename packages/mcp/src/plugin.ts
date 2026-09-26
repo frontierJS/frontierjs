@@ -68,6 +68,22 @@ export interface McpOptions {
    * jobs (`FJS-D406`). Past it the call answers with where each job had got to.
    */
   awaitMs?: number
+  /**
+   * Guard: whether this caller is offered `tool` — `true` offers it and
+   * anything else withholds it (`FJS-D407`).
+   *
+   * For an axis a standing is not: an API key's scopes, a plan's features.
+   * The projection grades a LEVEL, and a rule an app holds in its own hook is
+   * invisible to it, so a key issued `servers:read` is offered every write its
+   * role allows. It can only REMOVE — a tool it withholds is not registered and
+   * cannot be called here, a tool it allows was already graded — so a wrong
+   * answer costs an affordance and never a grant. A throw fails the list,
+   * since a list after a broken guard is wrong in an unknown direction.
+   *
+   * A rule that IS a level belongs in `@@gate` or `methods: [{ method, gate }]`,
+   * where the boundary enforces it too; restating one here is a second origin.
+   */
+  narrow?: (tool: Tool, principal: unknown) => boolean | Promise<boolean>
 }
 
 const DEFAULT_KEEP_ALIVE_MS = 5_000
@@ -186,7 +202,8 @@ async function answer(
   const correlationId = (app as { correlationId?: () => string | null }).correlationId?.() ?? null
   const awaiting      = asksToAwait(ctx)
 
-  const tools = dispatchable(projectTools(shapes, views, level)).tools
+  const graded = dispatchable(projectTools(shapes, views, level)).tools
+  const tools  = opts.narrow ? await narrowTo(graded, user, opts.narrow) : graded
 
   const server = new McpServer({
     name:    opts.name ?? 'frontierjs',
@@ -211,6 +228,12 @@ async function answer(
   await server.connect(transport)
 
   return transport.handleRequest(replayBody(ctx))
+}
+
+/** The tools `narrow` allows, in their order. Only removes. */
+async function narrowTo(tools: Tool[], user: unknown, narrow: NonNullable<McpOptions['narrow']>): Promise<Tool[]> {
+  const keep = await Promise.all(tools.map(t => narrow(t, user)))
+  return tools.filter((_, i) => keep[i] === true)
 }
 
 /**
@@ -471,9 +494,14 @@ function disclose(app: App, p: Projection): void {
   const log  = (app as { log?: { warn?: (m: string) => void } }).log
   const warn = (m: string) => (log?.warn ? log.warn(m) : console.warn(`[mcp] ${m}`))
 
-  if (p.unresolved.length) {
-    warn(`mcp: ${p.unresolved.length} service(s) name no model in the schema, so nothing grades them: ${p.unresolved.join(', ')}. ` +
-         'A service with no `model:` reports its own name, which is camelCase and plural.')
+  // Over no model a verb is graded only by a declared level, so what is worth
+  // saying is which verbs declare none — not which services have no model,
+  // which a fully declared service like a hub is and should be.
+  const open = p.tools.filter(t => t.model === null && t.verdict === 'ungraded').map(t => t.name)
+  if (open.length) {
+    warn(`mcp: ${open.length} tool(s) on services over no model are graded by nothing: ${open.join(', ')}. ` +
+         'Declare a level with methods: [{ method, gate }], or a model: if one exists — a service with no ' +
+         '`model:` reports its own name, which is camelCase and plural.')
   }
   for (const clash of p.collisions) {
     warn(`mcp: '${clash.name}' is derived by ${clash.methods.join(' and ')}. Both are withheld — rename one.`)

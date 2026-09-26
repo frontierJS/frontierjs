@@ -108,6 +108,15 @@ async function shop(getLevel?: (u: unknown) => number) {
     async payroll() { ran.push('payroll'); return { ok: true } },
     async ping()    { ran.push('ping');    return { ok: true } },
   }))
+  // CRUD verbs over no model — conduit's management service, basecamp's
+  // portal. Nothing but a declaration can grade them (`FJS-D408`).
+  app.services.register(createService({
+    name: 'targets',
+    methods: [{ method: 'find', gate: 5 }, { method: 'remove', gate: 5 }, 'get'],
+    async find()   { ran.push('find');   return [] },
+    async get()    { ran.push('get');    return { id: 1 } },
+    async remove() { ran.push('remove'); return { id: 1 } },
+  }))
 
   app.setAuth({ verifySession: async (t: string) => AS[t] ?? null })
   await app.start()
@@ -123,7 +132,15 @@ async function shop(getLevel?: (u: unknown) => number) {
     return { status: res.status, ran: [...ran] }
   }
 
-  return { app: app as App, db, call, close: async () => { await app.stop(); db.$close() } }
+  const rest = async (who: string, method: string, path: string) => {
+    ran.length = 0
+    const headers: Record<string, string> = {}
+    if (AS[who]) headers.authorization = `Bearer ${who}`
+    const res = await app.http.fetch(new Request(`http://localhost${path}`, { method, headers }))
+    return { status: res.status, ran: [...ran] }
+  }
+
+  return { app: app as App, db, ran, call, rest, close: async () => { await app.stop(); db.$close() } }
 }
 
 // ─── the derived floor ────────────────────────────────────────────────────────
@@ -326,6 +343,45 @@ describe('the level is the app’s own, not a second reading of the session', ()
 })
 
 // ─── what a declaration may say ───────────────────────────────────────────────
+
+// ─── a CRUD verb over no model ────────────────────────────────────────────────
+
+describe('a CRUD verb over no model is graded by its declared gate (FJS-D408)', () => {
+
+  test('below the level is refused before the body runs; at it the body runs — the pair', async () => {
+    const s = await shop()
+    expect(await s.rest('nobody',  'GET',    '/targets')).toEqual({ status: 401, ran: [] })
+    expect(await s.rest('shopper', 'GET',    '/targets')).toEqual({ status: 403, ran: [] })
+    expect(await s.rest('shopper', 'DELETE', '/targets/1')).toEqual({ status: 403, ran: [] })
+    expect(await s.rest('staff',   'GET',    '/targets')).toEqual({ status: 200, ran: ['find'] })
+    expect(await s.rest('staff',   'DELETE', '/targets/1')).toEqual({ status: 200, ran: ['remove'] })
+    await s.close()
+  })
+
+  test('a verb declaring nothing is unchanged beside it', async () => {
+    const s = await shop()
+    expect(await s.rest('shopper', 'GET', '/targets/1')).toEqual({ status: 200, ran: ['get'] })
+    await s.close()
+  })
+
+  test('over a stated model the declaration is refused where it is written', () => {
+    expect(() => createService({ name: 'orders', model: 'Order', methods: [{ method: 'find', gate: 5 }] }))
+      .toThrow(/model 'Order', whose @@gate grades every CRUD verb/)
+  })
+
+  test('over a model reached by name alone it is refused at the call, and nothing runs', async () => {
+    // No `model:`, so construction cannot see it — the name resolves Order.
+    const s = await shop()
+    s.app.services.register(createService({
+      name: 'order', methods: [{ method: 'find', gate: 5 }],
+      async find() { s.ran.push('order'); return [] },
+    }))
+    const out = await s.rest('staff', 'GET', '/order')
+    expect(out.status).toBe(500)
+    expect(out.ran).toEqual([])
+    await s.close()
+  })
+})
 
 describe('a declared gate is a level, and is refused otherwise', () => {
 

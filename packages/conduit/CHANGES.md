@@ -1,5 +1,16 @@
 # Changes — @frontierjs/conduit
 
+
+## 2026-09-25 — `management: { gate }` (`FJS-D408`)
+
+The management service is over no model, so a hook was the only way to grade it, and a
+hook is invisible to anything listing the service — an MCP tool list offered
+`conduit-targets_remove` to every member of basecamp. `gate` is a level on the app's own
+ladder, written into the service's three verbs, which junction enforces now that a CRUD
+verb over no model takes a declared gate. It counts as the access decision beside
+`hooks` and `public`. The service names `find`, `get` and `remove` whether or not a gate
+is given, so it 405s the base's other verbs rather than reaching them with no model.
+
 ## 2026-09-20 — the bun floor is `1.4.0`
 
 `engines: { bun: '>=1.0.0' }` was a number nobody had moved since it was written, and an engine range

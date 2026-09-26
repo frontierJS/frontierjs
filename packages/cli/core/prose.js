@@ -4,7 +4,7 @@
 // and {{var}} interpolation from context.vars + arg + flag.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { chalk } from './color.js'
+import { chalk, amber } from './color.js'
 import { stripFrontmatter } from './compiler.js'
 import { readFileSync } from 'fs'
 
@@ -29,7 +29,7 @@ function interpolate(text, vars) {
 function inlineFormat(text, vars) {
   text = interpolate(text, vars)
   text = text.replace(/\*\*(.+?)\*\*/g, (_, t) => chalk.bold(t))
-  text = text.replace(/`([^`]+)`/g, (_, t) => chalk.hex('#f5a623')(t))
+  text = text.replace(/`([^`]+)`/g, (_, t) => amber(t))
   return text
 }
 

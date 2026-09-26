@@ -19,7 +19,9 @@ IDEAS/         — what is not started     (one paper per proposal)
 ```
 
 ```
+fli register:atlas      — all of them as one page: what to work on, decide, and read
 fli register:check      — grade the registers against their own rules
+fli register:close      — close an issue: move its row into § Closed, dated, with how
 fli register:decisions  — what is waiting on the owner, read out of all of them
 fli register:decide     — rule on one: file the ruling, strike the question
 fli register:next       — the open register ranked, with the terms that scored each row

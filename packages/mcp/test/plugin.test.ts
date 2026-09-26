@@ -20,11 +20,15 @@ import { createClient }  from '@frontierjs/litestone'
 import { createApp, createService, $ } from '@frontierjs/junction'
 import { createStubAuth } from '@frontierjs/junction/testing'
 import { mcpPlugin } from '../src/plugin.ts'
+import type { McpOptions } from '../src/plugin.ts'
 
 const SCHEMA = readFileSync(new URL('./fixtures/shop.lite', import.meta.url), 'utf8')
 
 let app:  { stop?: () => Promise<void>; http: { port?: number } } & Record<string, never>
 let base: string
+// What the app's `narrow` answers, swapped per test. Absent is every tool, so
+// every other describe here grades the list with the guard allowing all.
+let narrowBy: McpOptions['narrow'] | null = null
 
 beforeAll(async () => {
   // `Credential.value` is `@encrypted`, so the client refuses to open without a
@@ -69,7 +73,7 @@ beforeAll(async () => {
     methods: ['find', 'get'],
   }))
 
-  app.configure(mcpPlugin({ name: 'shop' }))
+  app.configure(mcpPlugin({ name: 'shop', narrow: (t, u) => narrowBy ? narrowBy(t, u) : true }))
   await app.start()
   // `apiPrefix` defaults to empty, and `app.post` applies whatever it is — so
   // the path here is the plugin's own, with no prefix of this test's invention.
@@ -173,6 +177,50 @@ describe('the tool list is the caller\'s, not the app\'s', () => {
   test('every name a client is offered is one a client will accept', async () => {
     const legal = /^[a-zA-Z0-9_-]{1,128}$/
     for (const t of await list('staff')) expect(legal.test(t.name), t.name).toBe(true)
+  })
+})
+
+// ─── an app's own narrowing ──────────────────────────────────────────────────
+
+describe('narrow withholds what a standing cannot say (FJS-D407)', () => {
+
+  // A read-only credential for staff alone — the shape of an API key's scopes.
+  const readOnlyStaff: McpOptions['narrow'] = (t, u) =>
+    (u as { userId?: string } | null)?.userId !== 'staff' || t.method === 'find' || t.method === 'get'
+
+  test('it only removes: the narrowed list is the graded list less the writes, and another caller is untouched', async () => {
+    const graded   = (await list('staff')).map(t => t.name)
+    const shopper  = (await list('shopper')).map(t => t.name)
+    narrowBy = readOnlyStaff
+    try {
+      const narrowed = (await list('staff')).map(t => t.name)
+      expect(narrowed.length).toBeGreaterThan(0)
+      expect(narrowed.every(n => graded.includes(n))).toBe(true)
+      expect(narrowed).not.toContain('orders_refund')
+      expect(graded).toContain('orders_refund')
+      expect((await list('shopper')).map(t => t.name)).toEqual(shopper)
+    } finally { narrowBy = null }
+  })
+
+  test('a withheld tool cannot be called here, and a breadcrumb never names one', async () => {
+    narrowBy = readOnlyStaff
+    try {
+      const refused = await callTool('orders_refund', { id: 51 }, 'staff')
+      expect(refused.text).toMatch(/not found/i)
+      const got = (await callTool('orders_get', { id: 51 }, 'staff')).body as { result?: { _meta?: Record<string, any> } }
+      expect(got.result?._meta?.['frontierjs/breadcrumbs'].map((b: { tool: string }) => b.tool)).toEqual(['customers_get'])
+    } finally { narrowBy = null }
+    // The order did not move.
+    const after = (await callTool('orders_get', { id: 51 }, 'staff')).body as { result?: { content?: Array<{ text: string }> } }
+    expect(JSON.parse(after.result!.content![0].text).status).toBe('paid')
+  })
+
+  test('a guard that throws fails the list rather than answering one', async () => {
+    narrowBy = () => { throw new Error('scope lookup failed') }
+    try {
+      const r = await rpc('tools/list', {}, 'staff')
+      expect((r.body as { result?: unknown }).result).toBeUndefined()
+    } finally { narrowBy = null }
   })
 })
 

@@ -4,9 +4,9 @@
 // key's standing, and the hand-written ones are files under `cli/src/routes/`.
 
 export default {
-  // The program's name, and so where its profiles (`~/.config/basecamp/`) and
-  // its command cache (`~/.cache/basecamp/`) live.
-  name:         'basecamp',
+  // The program's name, and so where its profiles (`~/.config/bcamp/`) and
+  // its command cache (`~/.cache/bcamp/`) live.
+  name:         'bcamp',
   // `resolveWorkspaceId` (api/src/core/hooks.ts) reads the workspace off this
   // header. Without it every member is a bare sign-in and the list is almost
   // empty, which reads exactly like a broken key (`FJS-D399`).
