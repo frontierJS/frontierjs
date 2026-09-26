@@ -240,6 +240,15 @@ try {
   check('signed in, with no endpoint and no key in the environment, `servers find` answers the workspace\'s rows',
     byKey.code === 0 && byKey.json?.length > 0 && byKey.json.every(r => r.workspaceId === WS), `exit ${byKey.code} ${byKey.err}`)
 
+  // A key belongs to one workspace, so naming none means its own. `--profile`
+  // names one that does not exist, so the saved profile's tenant is not read.
+  const unnamed = await cli(['--profile', 'no-tenant', 'servers', 'find', '--quiet'], { token: key })
+  check('the key naming no workspace acts in its own — the rows are that workspace\'s',
+    unnamed.code === 0 && unnamed.json?.length > 0 && unnamed.json.every(r => r.workspaceId === WS), `exit ${unnamed.code} ${unnamed.err}`.slice(0, 300))
+  const person = await cli(['--profile', 'no-tenant', 'servers', 'find', '--quiet'], { token: tokens[OWNER] })
+  check('and a person naming none is still asked to, since a person belongs to several',
+    person.code !== 0 && /names no 'workspaceId'/.test(person.err), `exit ${person.code} ${person.err}`.slice(0, 300))
+
   const listing = await cli(['profiles'], { signedIn: true })
   check('`profiles` names the profile and never prints the key', listing.code === 0 && /default/.test(listing.out) && !listing.out.includes(key))
 

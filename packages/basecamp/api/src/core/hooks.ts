@@ -18,6 +18,8 @@ import { grantsFor, grantsWithin }         from './capabilities.ts'
 
 interface Session {
   userId?: string; authMethod?: string; workspaceId?: string
+  // Put here by @frontierjs/auth for a caller holding an API key.
+  credentialId?: string
   // Put here by basecampSessionFields (core/session-auth.ts) off this app's own
   // User columns, not by @frontierjs/auth.
   isSystemAdmin?: boolean; status?: string; kind?: string
@@ -57,6 +59,25 @@ export function resolveWorkspaceId(ctx: ServiceContext): string | undefined {
   return (ctx.caller?.headers?.['x-workspace-id'] as string | undefined) ||
          (ctx.reserved?.workspace_id as string | undefined)              ||
          (userOf(ctx)?.workspaceId as string | undefined)
+}
+
+/**
+ * `tenantFrom` for the principal resolver: the workspace the request names,
+ * else the one an API key belongs to.
+ *
+ * A key is bound to one workspace — `apiKeyGuard` refuses it anywhere else — so
+ * a key naming none can only mean its own. Without this, every key caller had
+ * to send `X-Workspace-Id` with an id it could not be told, and a CLI signed in
+ * with one was refused on its first command for naming nothing (`FJS-D399`).
+ * A session still names its workspace: a person belongs to several.
+ */
+export async function workspaceOrKeys(ctx: ServiceContext): Promise<string | undefined> {
+  const named = resolveWorkspaceId(ctx)
+  const user  = userOf(ctx)
+  if (named || user?.authMethod !== 'apiKey' || !user.credentialId) return named
+  const db  = ctx.locals.db as { asSystem(): any } | undefined
+  const key = await db?.asSystem().apiKey.findFirst({ where: { credentialId: user.credentialId }, select: { workspaceId: true } })
+  return key?.workspaceId ?? undefined
 }
 
 /**

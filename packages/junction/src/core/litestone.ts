@@ -3100,8 +3100,10 @@ export function withLitestoneDb(db: unknown, principal?: PrincipalResolver): imp
 
 export interface MembershipClaimOptions {
   /** Where the tenant comes from — a header, a param, a subdomain. Transport
-   *  convention, so it is a function and never a declaration (Invariant 10). */
-  tenantFrom: (ctx: ServiceContext) => string | null | undefined
+   *  convention, so it is a function and never a declaration (Invariant 10).
+   *  May answer a promise: a credential bound to one tenant names it only
+   *  through a row the app has to read. */
+  tenantFrom: (ctx: ServiceContext) => string | null | undefined | Promise<string | null | undefined>
   /** The membership accessor — `workspaceMember` for `model WorkspaceMember`. */
   model:      string
   /** The column holding the caller: matched against the principal's `userId`. */
@@ -3177,7 +3179,7 @@ export function membershipClaim(opts: MembershipClaimOptions): DescribedResolver
     // (`FJS-384`). The membership row is still READ HERE, for this actor and
     // this tenant, so a caller who lost the membership between asking and
     // running is refused rather than replayed.
-    const tenant = opts.tenantFrom(ctx) ?? requestMeta()?.tenant ?? null
+    const tenant = (await opts.tenantFrom(ctx)) ?? requestMeta()?.tenant ?? null
 
     // Not the same answer as the one below, and collapsing them produces a
     // refusal that names nothing: *you do not belong to the tenant this

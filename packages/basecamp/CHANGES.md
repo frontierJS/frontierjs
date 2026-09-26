@@ -1,6 +1,16 @@
 # Changes — Basecamp
 
 
+## 2026-09-25 — an API key naming no workspace acts in its own
+
+`workspaceOrKeys` is the principal resolver's `tenantFrom`: the header or
+`?workspace_id=`, else the workspace the key belongs to. This is `FJS-D399`'s B, which
+the ruling said arrives for free where keys are tenant-scoped. `bcamp` signed in with
+a key was refused on its first command for naming no workspace. A person's session
+naming none is still refused, since a person belongs to several. `verify:cli` 39/39
+with the pair; wiring the plain resolver back reds the key row. The `/mcp` comment
+claiming the header was not forwarded is corrected.
+
 ## 2026-09-25 — `bcamp --help --agent`
 
 `verify:cli` asks the guide as the viewer: it must carry the `claude mcp add` line for

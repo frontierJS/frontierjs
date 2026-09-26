@@ -276,6 +276,20 @@ describe('membershipClaim()', () => {
     expect(seen.user).toMatchObject({ workspaceId: '1', memberRole: 'admin' })
   })
 
+  test('tenantFrom may answer a promise, and the membership check still runs on what it answers', async () => {
+    const db = await seeded()
+    const async = (tenant: string) => membershipClaim({
+      tenantFrom: async () => tenant, model: 'member', subject: 'userId',
+      tenant: 'workspaceId', standing: 'role', standingAs: 'memberRole',
+    })
+    const { app, seen } = await appWith(db, async('1'))
+    expect((await rowsOf(await app.service('docs').find({}, AS_U1))).map(r => r.title)).toEqual(['ws one'])
+    expect(seen.user).toMatchObject({ workspaceId: '1', memberRole: 'admin' })
+
+    const other = await appWith(await seeded(), async('2'))
+    await expect(other.app.service('docs').find({}, AS_U1)).rejects.toThrow(/do not belong to the 'workspaceId'/)
+  })
+
   test('a NON-member naming a tenant gets no claim, so no rows', async () => {
     // The whole safety of the battery. Hand-written, the version that forgets
     // the membership check emits the claim anyway and every read answers 200

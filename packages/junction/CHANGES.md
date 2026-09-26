@@ -1,6 +1,13 @@
 # Changes — @frontierjs/junction
 
 
+
+## 2026-09-25 — `membershipClaim`'s `tenantFrom` may answer a promise
+
+A credential bound to one tenant names it only through a row the app has to read
+(basecamp's API key → its workspace), and the resolver was already async. The
+membership check runs unchanged on whatever the promise answers. One row in
+`principal-claims.test.ts`, a member and a non-member.
 ## 2026-09-25 — a CRUD verb over no model is graded by its declared gate (`FJS-D408`)
 
 `methods: [{ method: 'find', gate: 5 }]` parsed and enforced nothing: `gateAuthAround`

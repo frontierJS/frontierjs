@@ -36,7 +36,7 @@ import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts
 import { registerAllAccounts } from './providers/compute/accounts.ts'
 import { enrollTokenMatches, mintOutpostSecret, installScript } from './providers/compute/enrollment.ts'
 import { notificationsPlugin }  from '@frontierjs/notifications'
-import { basecampAuditLog, basecampAuditPreImage, requireOutpostSignature, resolveWorkspaceId } from './core/hooks.ts'
+import { basecampAuditLog, basecampAuditPreImage, requireOutpostSignature, workspaceOrKeys } from './core/hooks.ts'
 import { grantsFor } from './core/capabilities.ts'
 import { basecampSessionFields, refuseSuspendedLogin, refuseSuspended } from './core/session-auth.ts'
 import { apiKeyGuard, apiKeyUsage, narrowToKey } from './services/api-keys/scopes.ts'
@@ -214,7 +214,7 @@ export async function buildBasecampApp(
   const app = createApp({
     config, auth, db, logger, autoload: servicesDir, configPath: configDir,
     principal: membershipClaim({
-      tenantFrom:  resolveWorkspaceId,
+      tenantFrom:  workspaceOrKeys,
       model:       'workspaceMember',
       subject:     'userId',
       tenant:      'workspaceId',
@@ -410,9 +410,8 @@ export async function buildBasecampApp(
   //
   // A tool call goes through `app.service(name)`, so the hooks, the membership
   // claim and the boundary are the ones an HTTP call gets (`FJS-D258`). The
-  // workspace is the member's default: `resolveWorkspaceId` reads a header the
-  // MCP route does not forward, so an agent acting in a second workspace has no
-  // way to say so yet (`FJS-D399` is the CLI's answer and not built).
+  // workspace is the X-Workspace-Id header, as over HTTP; a key that sends none
+  // acts in its own (`workspaceOrKeys`).
   //
   // `keepAliveMs` under junction's 10s `http.idleTimeout`, or the stream is cut
   // five seconds before the frame that would have held it open.
