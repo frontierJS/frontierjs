@@ -33,6 +33,7 @@ let _proxy
 vi.mock('@frontierjs/sierra/junction', () => ({
   getClient: () => ({
     service: () => _proxy,
+    on: () => () => {},
     resource: () => ({
       service: _proxy,
       store: {
@@ -40,6 +41,7 @@ vi.mock('@frontierjs/sierra/junction', () => ({
         subscribe: (fn) => { fn(_store); return () => {} },
         set: (rows) => { _store = rows },
       },
+      hasMore: () => false,
       stale: { get: () => 0, subscribe: (fn) => { fn(0); return () => {} }, reset: () => {} },
       load: async (q, d) => {
         if (finding) return finding(q, d)
@@ -154,5 +156,37 @@ describe('a model that declared nothing', () => {
 
     finding = offline
     await expect(plains.load({}, null)).rejects.toThrow(/Failed to fetch/)
+  })
+})
+
+describe('a composed list', () => {
+  // `composed` says the service's find answers more than the rows. It is not a
+  // word about the basement, and it used to be one: its read skipped `load()`,
+  // the only path that falls back, so the list read nothing offline (FJS-1281).
+  test('offline, it answers what the device holds', async () => {
+    const sheets = createResource('sheets', { model: 'Sheet' })
+    // Warmed the way a device is: an ordinary list over the same question.
+    sheets.list({ state: 'local' })
+    for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0))
+
+    _proxy.find = offline
+    finding = offline
+    const list = sheets.list({ state: 'local', composed: true })
+    for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0))
+    expect(list.error).toBe(null)
+    expect(list.rows).toHaveLength(2)
+    expect(typeof sheets.cachedAt()).toBe('number')
+  })
+
+  test('a refusal still refuses', async () => {
+    const sheets = createResource('sheets', { model: 'Sheet' })
+    await sheets.load({}, null)
+
+    _proxy.find = forbidden
+    finding = forbidden
+    const list = sheets.list({ state: 'local', composed: true })
+    for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0))
+    expect(list.error?.code).toBe(403)
+    expect(list.rows).toEqual([])
   })
 })

@@ -702,7 +702,10 @@ function createFts(model, tableName) {
   // reads them back and they are never the source table's. What the triggers
   // reference through `new.`/`old.` is the source row, which is columns.
   const contentCols   = fts.fields.join(', ')
-  const rowidCol      = mapCol(cmap, 'id')
+  // Keyed on the source row's real rowid, never on `id`: an FTS5 rowid is an
+  // integer, so a String id (uuid/ulid, which @@sync needs) failed every INSERT
+  // with `datatype mismatch`. Holds because litestone emits no WITHOUT ROWID table.
+  const rowidCol      = 'rowid'
   const hasSoftDelete = model.attributes.some(a => a.kind === 'softDelete')
   // unicode61 is FTS5's implicit default — only emit a tokenize clause when
   // the user picked something else. Keeps the DDL clean for the common case
@@ -729,7 +732,7 @@ function createFts(model, tableName) {
     `CREATE VIRTUAL TABLE IF NOT EXISTS "${tableName}_fts" USING fts5(`,
     `  ${contentCols},`,
     `  content="${tableName}",`,
-    `  content_rowid="${rowidCol}"${tokenize}`,
+    `  content_rowid=${rowidCol}${tokenize}`,
     `);`,
     ``,
     `-- Triggers to keep FTS index in sync.`,

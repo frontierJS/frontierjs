@@ -1,5 +1,9 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-26 — a composed list reads offline (`FJS-1281`)
+
+`composed: true` read through `resource.find()`, and only `load()` falls back to the device and the list cache, so the word about a response envelope also opted a screen out of offline: an outage rendered a roster as empty. `list.js` `run()` now sends an unreachable composed find to `load()`, the owner of that fallback; the rows are the device's, bare of what the find composed onto them, and `cachedAt()` says so. A refusal still refuses. `test/list-cache.test.js` § a composed list.
+
 ## 2026-09-26 — a write refused at replay is told, and can be retried (`FJS-1302`)
 
 `FJS-D300` ruled that a mutation refused at replay is *surfaced as a rejected
@@ -4573,3 +4577,7 @@ are that package's concern rather than Sierra's:
 - **`src/client/index.ts` has zero imports** and no Bun or Node built-ins — it is
   cleanly browser-safe. Worth keeping that way; it is what makes the client
   bundle small.
+
+## A row created offline can be edited offline on a `@version` model (FJS-1299)
+
+A held create now records the row it wrote in the resource's read cache, with `@version` at 1 — the value litestone stamps on every create. A later held patch of that id therefore carries the version, and on `@@sync(field)` the created data as its base, instead of going up with neither and being refused `400` on replay whether or not the create landed. Proved in `test/sync-policies.test.js` for `refuse` and `field`.

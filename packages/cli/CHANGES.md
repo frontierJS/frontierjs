@@ -1,5 +1,17 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-26 — `fli prove <paths>`, the verdict printed last, and known failures named
+
+The first loop run with `fli prove` closed a row in 19 turns, 7 of its 9.7 minutes
+proving, and three things about `prove` cost most of that. It proved the whole
+shared tree — eleven drives for a one-file fix — so `prove` and `proves` take
+the paths to prove (`changedTree({ paths })`). It printed each failure's tail
+under its ✗ line, so `| tail -15` showed a stack trace and the session reran the
+set twice to find the verdict; the tails now print first and the ✓/✗ lines
+last. And telling a known failure from a new one took a register search, two
+reruns and a HEAD worktree; a failed drive now names the open rows that name it
+(`open: FJS-1272`), `knownFailures()` in `prove.js`.
+
 ## 2026-09-26 — `fli prove` runs the drives `fli proves` names; `fli file` files a row
 
 A headless fix spent seven of thirty turns proving: reading the *Start first*

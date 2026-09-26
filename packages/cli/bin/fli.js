@@ -26,6 +26,19 @@ for (const stream of [process.stdout, process.stderr]) {
   })
 }
 
+// ─── A reader that reads everything ──────────────────────────────────────────
+// Under Bun, once anything has touched `process.stdout`, `console.log` to a pipe
+// makes one write to the non-blocking fd and silently drops what did not fit —
+// `fli decisions --json | jq` got 8192 bytes of a 275 KB document. `echo` is
+// console.log, and every test, CI phase and fli-from-fli call reads fli through
+// a pipe. The stream queues and drains, so the stdout methods go through it.
+if (process.versions.bun) {
+  const { format } = await import('node:util')
+  for (const m of ['log', 'info', 'debug']) {
+    console[m] = (...args) => { process.stdout.write(format(...args) + '\n') }
+  }
+}
+
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { existsSync } from 'node:fs'

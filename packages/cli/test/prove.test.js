@@ -7,7 +7,7 @@
 
 import { describe, test, expect } from 'bun:test'
 
-import { prove } from '../core/prove.js'
+import { prove, knownFailures } from '../core/prove.js'
 
 const API  = { id: 'surface:example/api', name: 'api', dir: 'example', kind: 'surface', port: 8110, argv: ['bun', 'run', 'api'] }
 const SEED = { id: 'task:example/db:seed', name: 'db:seed', dir: 'example', kind: 'task', port: null, argv: ['bun', 'run', 'db:seed'] }
@@ -123,5 +123,23 @@ describe('prove', () => {
 
     expect(w.log).toEqual(['start test:widgets', 'stop test:widgets'])
     expect(out.ran[0]).toMatchObject({ ok: true, command: 'bun run test:widgets' })
+  })
+})
+
+describe('knownFailures', () => {
+  const issues = [
+    { id: 'FJS-1', closed: false, body: 'the offline shell grew — verify:shell fails on size' },
+    { id: 'FJS-2', closed: true,  body: 'verify:shell was red once' },
+    { id: 'FJS-3', closed: false, body: 'verify:shell:strict is a different drive' },
+    { id: 'FJS-4', closed: false, body: 'run verify and bun run test first' },
+  ]
+
+  test('an open row naming the drive, and not a closed one or a longer name', () => {
+    expect(knownFailures(issues, 'verify:shell')).toEqual(['FJS-1'])
+  })
+
+  test('a name with no colon is prose and looks nothing up', () => {
+    expect(knownFailures(issues, 'verify')).toEqual([])
+    expect(knownFailures(issues, 'bun run test')).toEqual([])
   })
 })

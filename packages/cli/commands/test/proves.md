@@ -6,6 +6,12 @@ examples:
   - fli proves
   - fli proves --from main
   - fli proves --json
+  - fli proves packages/sierra/src/junction/resource.js
+args:
+  -
+    name: paths
+    description: Only these files' changes — the rest of a shared tree is another change's
+    variadic: true
 flags:
   from:
     char: f
@@ -41,9 +47,11 @@ const { runnables }              = await import(resolve(global.fliRoot, 'core/ru
 
 // The working tree by default, a ref when one is named. `--from main` is what a
 // branch asks; the bare form is what somebody about to commit asks.
-const { files, diff } = changedTree(root, { from: flag.from || null })
+// Relative to where the caller stands; git takes an absolute pathspec.
+const paths = (arg.paths?.trim() || '').split(/\s+/).filter(Boolean).map(p => resolve(process.cwd(), p))
+const { files, diff } = changedTree(root, { from: flag.from || null, paths })
 if (!files.length) {
-  log.info(flag.from ? `nothing changed against ${flag.from}` : 'nothing changed in the working tree')
+  log.info(paths.length ? 'none of those files has changed' : flag.from ? `nothing changed against ${flag.from}` : 'nothing changed in the working tree')
   if (flag.json) console.log(JSON.stringify({ files: [], rows: [] }, null, 2))
   return
 }

@@ -72,6 +72,22 @@ export async function prove({ proofs, rows, procs, answering, say = () => {}, bo
   return out
 }
 
+/**
+ * The open register rows that name a failed drive — `verify:shell` → `FJS-1272`.
+ *
+ * A drive that was already failing reads exactly like one this change broke,
+ * and telling them apart was a register search, two reruns and a HEAD worktree
+ * (four turns, measured). A named row is a lead, not a verdict: it says the
+ * failure is known, never that this change did not also cause it. Only a name
+ * with a colon is looked up: a bare `verify` or `bun run test` is ordinary prose
+ * in half the register.
+ */
+export function knownFailures(issues, name) {
+  if (!/:/.test(name ?? '')) return []
+  const word = new RegExp(`(^|[^\\w:-])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\w:-]|$)`)
+  return issues.filter(r => !r.closed && word.test(r.body ?? '')).map(r => r.id)
+}
+
 async function one(row, needs, ctx) {
   const t0      = Date.now()
   const started = []

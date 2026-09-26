@@ -285,3 +285,33 @@ describe('server drops the revision, refuse keeps it', () => {
     expect('v' in held()[0].data).toBe(false)
   })
 })
+
+// ─── a row this device created, then edited, both offline (FJS-1299) ──────
+//
+// The device minted the row and has never read it back, so `_read` has no
+// version for it — and litestone refuses a `@version` patch that carries none,
+// whether or not the create landed. A created row's version is the column's
+// initial value, which the device knows without asking.
+describe('a held create is a row this device has read', () => {
+  test('under `refuse`, the held edit carries the created version', async () => {
+    _proxy.create = offline
+    _proxy.patch  = offline
+    const guard = createResource('guards', { model: 'Guard' })
+    const err = await guard.save({ name: 'draft' }).catch(e => e)
+    const id = err.data.id
+    await guard.service.patch(id, { name: 'moved' }).catch(() => {})
+    expect(held().length).toBe(2)
+    expect(held()[1].data.v).toBe(1)
+  })
+
+  test('under `field`, it carries the created data as its base', async () => {
+    _proxy.create = offline
+    _proxy.patch  = offline
+    const merge = createResource('merges', { model: 'Merge' })
+    const err = await merge.save({ name: 'draft' }).catch(e => e)
+    const id = err.data.id
+    await merge.service.patch(id, { name: 'moved' }).catch(() => {})
+    expect(held()[1].data.v).toBe(1)
+    expect(held()[1].base).toEqual({ id, name: 'draft', v: 1 })
+  })
+})

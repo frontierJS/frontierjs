@@ -33,7 +33,7 @@
 // is indistinguishable from a hang.
 //
 // One line per attempt goes to ~/.fli/fix-loop.jsonl: id, model, effort,
-// cost, turns and where they went (orient · fix · prove · close), outcome. Cost per SOLVED row is the number to tune --budget and
+// cost, minutes, turns and where they went (orient · fix · prove · close), outcome. Cost per SOLVED row is the number to tune --budget and
 // LADDER against; the defaults here are guesses until that log says otherwise.
 //
 // A failed or interrupted attempt leaves its edits in the tree, and the next
@@ -50,13 +50,14 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { homedir }                                              from 'node:os'
 import { join, dirname }                                        from 'node:path'
 import { createInterface }                                      from 'node:readline'
-import { fileURLToPath }                                        from 'node:url'
+import { fileURLToPath, pathToFileURL }                         from 'node:url'
 
 const ROOT      = dirname(dirname(fileURLToPath(import.meta.url)))
 const LOG_DIR   = join(homedir(), '.fli')
 const LOG       = join(LOG_DIR, 'fix-loop.jsonl')
 const LADDER    = [{ model: 'opus', effort: 'low' }, { model: 'opus', effort: 'high' }]
 const STOP_HOOK = join(ROOT, '.claude', 'hooks', 'fli-done-stop.mjs')
+const OUTLINE   = import(pathToFileURL(join(ROOT, 'packages', 'cli', 'core', 'outline.js')).href).catch(() => null)
 
 const args       = parseArgs(process.argv.slice(2))
 const rows       = Number(args.rows ?? 5)
@@ -81,9 +82,9 @@ for (let n = 0; n < rows; n++) {
   if (!row) { console.log('[fix-loop] nothing ready'); break }
 
   console.log(`\n[fix-loop] ${n + 1}/${rows} ${row.id} (${row.severity}, ${row.pkg.join(' · ')}) — ${row.title.slice(0, 100)}`)
-  if (dryRun) { console.log(preBrief(row)); skipped.add(row.id); continue }
+  if (dryRun) { console.log(await preBrief(row)); skipped.add(row.id); continue }
 
-  const brief = preBrief(row)
+  const brief = await preBrief(row)
   let outcome
   for (const [rung, { model, effort }] of LADDER.entries()) {
     const prompt = attemptedBefore(row.id)
@@ -95,9 +96,9 @@ for (let n = 0; n < rows; n++) {
     outcome   = isClosed(row.id) ? 'closed' : run.status ?? 'failed'
     spent    += run.cost
 
-    log({ id: row.id, severity: row.severity, model, effort, cost: run.cost, turns: run.turns, phases: run.phases, outcome, stop: run.stop, denied: run.denied })
+    log({ id: row.id, severity: row.severity, model, effort, cost: run.cost, turns: run.turns, minutes: run.minutes, phases: run.phases, outcome, stop: run.stop, denied: run.denied })
     const split = Object.entries(run.phases).map(([k, n]) => `${k} ${n}`).join(' · ')
-    console.log(`[fix-loop]   ${model}/${effort}: ${outcome} · $${run.cost.toFixed(2)} · ${run.turns ?? '?'} turns (${split})${run.denied ? ` · ${run.denied} tool calls denied` : ''}`)
+    console.log(`[fix-loop]   ${model}/${effort}: ${outcome} · $${run.cost.toFixed(2)} · ${run.minutes ?? '?'} min · ${run.turns ?? '?'} turns (${split})${run.denied ? ` · ${run.denied} tool calls denied` : ''}`)
     if (run.report) console.log(run.report.trim().split('\n').map(l => `[fix-loop]   │ ${l}`).join('\n'))
 
     if (outcome !== 'failed') break
@@ -127,7 +128,7 @@ function nextRow() {
 
 // Located, not read: a location is cheap to find by script and costs a turn
 // each to find by model, while deciding what a location means is the session's.
-function preBrief(row) {
+async function preBrief(row) {
   const register = readFileSync(join(ROOT, row.file), 'utf8').split('\n')
   const line     = register[row.line - 1] ?? ''
   const text     = line.replace(/<a id="[^"]*"><\/a>/, '')
@@ -145,8 +146,13 @@ function preBrief(row) {
     // A plain word (`version`, `base`) matches everywhere and says nothing.
     .filter(f => f.hits && (f.term.startsWith('@') || f.hits.defined))
     .slice(0, 8)
-  const code  = found.flatMap(f => [`- \`${f.term}\``, ...f.hits.lines.map(h => `    ${h}`)])
-  if (code.length) out.push('', 'Where the row\'s identifiers are (src, definitions first):', ...code)
+  const spans = new Map()
+  const code  = []
+  for (const f of found) {
+    code.push(`- \`${f.term}\``)
+    for (const h of f.hits.lines) code.push(`    ${h}`, ...await span(h, spans))
+  }
+  if (code.length) out.push('', 'Where the row\'s identifiers are (src, definitions first; → the function holding each, read whole with its comment; paths from the repo root):', ...code)
 
   const tally = new Map()
   for (const { term } of found) for (const file of rg(['-l', '-F', term, ...dirs.map(d => join(d, 'test'))])) tally.set(file, (tally.get(file) ?? 0) + 1)
@@ -179,6 +185,22 @@ function where(term, dirs) {
   return { defined: own.length > 0, lines: lines.map(h => h.replace(/\s+/g, ' ').trim()) }
 }
 
+// The function a hit sits in, as the `fli outline` call that prints it. A bare
+// line number invites a guessed `sed -n` window, and a session walked one
+// 220-line function in three of them (FJS-1289).
+async function span(hit, spans) {
+  const [, path, line] = /^([^:]+):(\d+):/.exec(hit) ?? []
+  if (!path) return []
+  const outline = await OUTLINE
+  if (!outline?.outlinable(path)) return []
+  if (!spans.has(path)) spans.set(path, await outline.outlineFile(join(ROOT, path)).catch(() => ({ refused: true })))
+  const got = spans.get(path)
+  const row = got.refused ? null : outline.findRows(got.rows, line)[0]
+  const key = `${path}:${row?.start}`
+  if (!row || spans.has(key)) return []
+  spans.set(key, true)
+  return [`      → ${outline.pathOf(row)} ${row.start}-${row.end}: fli outline ${path} ${line}`]
+}
 // A user's ~/.ripgreprc (--smart-case, --max-columns) would change what matches and truncate a citation.
 function rg(argv) {
   const out = spawnSync('rg', ['--no-config', ...argv], { cwd: ROOT, encoding: 'utf8' })
@@ -225,7 +247,7 @@ function attempt(prompt, { model, effort, cap }) {
     await baselined
     if (!result.type) console.log(`[fix-loop]   claude ended with no result (exit ${code})`)
     const status = /fix-next: \S+ (closed|ruling|corrected|busy|failed)\s*$/.exec(result.result ?? '')?.[1]
-    done({ cost: result.total_cost_usd ?? 0, turns: result.num_turns, stop: result.subtype, denied: result.permission_denials?.length ?? 0, status, report: result.result, phases })
+    done({ cost: result.total_cost_usd ?? 0, turns: result.num_turns, stop: result.subtype, denied: result.permission_denials?.length ?? 0, status, report: result.result, phases, minutes: result.duration_ms ? +(result.duration_ms / 60000).toFixed(1) : null })
   }))
 }
 

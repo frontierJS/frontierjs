@@ -9803,7 +9803,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         filterParams.push(...searchPolicy.params)
       }
       if (filterSql && filterSql !== '1=1') {
-        ftsSql += ` AND rowid IN (SELECT "${idField}" FROM "${tableName}" WHERE ${filterSql})`
+        ftsSql += ` AND rowid IN (SELECT rowid FROM "${tableName}" WHERE ${filterSql})`
         ftsParams.push(...filterParams)
       }
 
@@ -9836,14 +9836,18 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
       // Build base query — apply soft delete filter + any extra where
       const baseParams   = []
-      const idFilter     = { id: { in: rowids } }
-      const merged       = withFilters(where ? { AND: [idFilter, where] } : idFilter)
+      const merged       = withFilters(where) ?? {}
       const exclWhere = applyEff(
         applyHtFilter(softDelete ? injectSoftDeleteFilter(merged, mode) : merged, htm),
         em, asOfAt
       )
 
       let whereSql = buildWhereWithEncryption(exclWhere, baseParams)
+      // The index is keyed on the source rowid, not `id` (a String id cannot be
+      // an FTS5 rowid), so the hits are rejoined on rowid.
+      const rowidSql = `rowid IN (${rowids.map(() => '?').join(', ')})`
+      whereSql = whereSql && whereSql !== '1=1' ? `${rowidSql} AND (${whereSql})` : rowidSql
+      baseParams.unshift(...rowids)
       // The pre-filter above already narrowed the rowids, so this is belt and
       // braces — and it is the half that must not be dropped: step 2 is what
       // returns the rows, and a future edit that skips the pre-filter for a
@@ -9855,15 +9859,6 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
       const ps         = parseArgs(select, include)
       let   sqlCols    = ps?.sqlCols ?? '*'
-      // Step 3 rejoins these rows to the FTS hits by "id" — the column the FTS5
-      // table declares as its content_rowid. A narrowed select that did not
-      // happen to name it matched nothing, so search answered an empty list: no
-      // error, no explanation, just "no results" for a query that has them.
-      // The trim below drops it again, since it is not in requestedFields.
-      if (ps && sqlCols !== '*' && !ps.requestedFields.has('id')) {
-        sqlCols = `"id", ${sqlCols}`
-      }
-
       // Step 2 builds its own SELECT, so it appends the @from subqueries itself
       // — the same reason findManyCursor and resolveIncludes do.
       if (_hasFrom) {
@@ -9874,7 +9869,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
             .map(n => `${fromFields[n].subquerySql} AS "${n}"`).join(', ')
         }
       }
-      let   baseSql    = `SELECT ${sqlCols} FROM "${tableName}" WHERE ${whereSql}`
+      let   baseSql    = `SELECT rowid AS __fts_rowid, ${sqlCols} FROM "${tableName}" WHERE ${whereSql}`
 
       // The caller's order, over the base table alone — the same builder and
       // the same columnMap findMany uses, so a `@map`ped column and a `@from`
@@ -9903,16 +9898,15 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
       if (ordered) {
         for (const row of baseRows) {
-          // `row.id` and not `idField`, because the FTS table's content_rowid is
-          // the column literally named `id` — which is also what the branch
-          // below keys its map on, and the two must not answer differently.
-          if (withRank)    row._rank      = rankByRowid.get(row.id)
-          if (hlByRowid)   row._highlight = hlByRowid.get(row.id)
-          if (snipByRowid) row._snippet   = snipByRowid.get(row.id)
+          const rid = row.__fts_rowid
+          delete row.__fts_rowid
+          if (withRank)    row._rank      = rankByRowid.get(rid)
+          if (hlByRowid)   row._highlight = hlByRowid.get(rid)
+          if (snipByRowid) row._snippet   = snipByRowid.get(rid)
           result.push(row)
         }
       } else {
-        const rowById = new Map(baseRows.map(r => [r.id, r]))
+        const rowById = new Map(baseRows.map(r => { const rid = r.__fts_rowid; delete r.__fts_rowid; return [rid, r] }))
         for (const ftsRow of ftsRows) {
           const row = rowById.get(ftsRow.rowid)
           if (!row) continue  // filtered out by where clause or soft delete

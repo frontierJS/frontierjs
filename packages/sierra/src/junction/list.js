@@ -62,6 +62,7 @@
 
 import { createSignal, createEffect, watchPath, untrack, onCleanup } from '@frontierjs/mesa/runtime'
 import { page, goto } from '../router/index.js'
+import { unreachable } from './pending.js'
 
 const SEARCH_DEBOUNCE_MS = 300
 
@@ -179,7 +180,21 @@ export function createList(resource, listQuery, opts = {}) {
       const query = { ...currentQuery(), ...where }
       if (composed) {
         const directives = extent == null ? currentDirectives() : { ...currentDirectives(), limit: extent }
-        const res = await resource.find(query, directives)
+        // Silence falls to `load()`, the one owner of the device and the list
+        // cache: `composed` is a word about the response envelope, and without
+        // this it also opted the screen out of offline (FJS-1281). Offline the
+        // rows are the device's, bare of what the find composed onto them.
+        let res
+        try {
+          res = await resource.find(query, directives)
+        } catch (err) {
+          if (!unreachable(err)) throw err
+          const rows = await resource.load(query, directives)
+          if (stamp !== issued) return
+          setRows(rows)
+          setMore(false)
+          return
+        }
         if (stamp !== issued) return
         const data = res?.data ?? []
         if (extent == null && typeof res?.limit === 'number') pageSize = res.limit

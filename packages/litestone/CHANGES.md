@@ -1,5 +1,10 @@
 # Changes — @frontierjs/litestone
 
+
+## `@@fts` over a String id (FJS-1289)
+
+The FTS5 index was keyed on `id` (`content_rowid="id"`, triggers writing `new.id`), and an FTS5 rowid is an integer, so every INSERT into a uuid/ulid-keyed model failed with `datatype mismatch` — exactly the ids `@@sync` steers devices onto. `createFts` keys the index on the source table's real `rowid` now, and `search()` pre-filters and rejoins on `rowid` (step 2 selects it as `__fts_rowid` and strips it), which holds because litestone emits no `WITHOUT ROWID` table. An Int id is unchanged in behavior, its rowid being the id. `test/search-string-id.test.ts` runs insert/update/delete/search, ranked and ordered, over both id kinds. A database whose FTS table was created under the old DDL keeps `content_rowid="id"` until it is recreated.
+
 ## 2026-09-26 — a value a plugin writes into a create is graded by the create policy
 
 `create` and `createMany` ran `checkCreatePolicy` and then

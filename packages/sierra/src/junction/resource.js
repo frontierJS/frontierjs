@@ -1242,6 +1242,14 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
         if (held) {
           await pendingQueue().defer(held.key, err)
           for (const a of parked) await attachmentQueue().defer(a.key, err)
+          // A held create is a row this device has read: it wrote every
+          // column, and litestone stamps a created row's `@version` at 1. With
+          // nothing remembered, the next held edit of it carried no version
+          // and no base, and replayed as a 400 whether the create landed or
+          // not (`FJS-1299`).
+          if (method === 'create' && versionOf && rowId != null && !_read.has(rowId)) {
+            _remember(rowId, { ..._withoutFiles(ctx.data, files), [versionOf]: 1 })
+          }
           throw Object.assign(
             new Error(
               `[${serviceName}] ${method} could not reach the server and is held on this device` +

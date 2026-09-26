@@ -287,18 +287,23 @@ export function provesFor(root, { files, diff = null, rows = [] } = {}) {
  * against HEAD, or a branch against `from`. One reader for `test:proves` and
  * `test:prove`, so the two cannot name different drives for one tree.
  *
+ * `paths` narrows it to what one change touched. A tree shared with another
+ * session holds that session's edits too, and proving them costs every drive
+ * they name — eleven for a one-file fix, measured.
+ *
  * The diff CONTENT is the symbol tier: without it a row naming
  * `announceDataWrites` matches only by the package it lives in. `--no-color`,
  * because a user's `color.diff = always` colors a piped diff too.
  */
-export function changedTree(root, { from = null } = {}) {
+export function changedTree(root, { from = null, paths = [] } = {}) {
   const against = from ? `${from}...` : 'HEAD'
+  const only    = paths.length ? ['--', ...paths] : []
   const git = (argv) => {
     try { return execFileSync('git', argv, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) }
     catch { return '' }
   }
-  const files = git(['diff', '--name-only', against]).trim().split('\n').filter(Boolean)
-  return { files, diff: files.length ? git(['diff', '--no-color', '-U0', against]) : '' }
+  const files = git(['diff', '--name-only', against, ...only]).trim().split('\n').filter(Boolean)
+  return { files, diff: files.length ? git(['diff', '--no-color', '-U0', against, ...only]) : '' }
 }
 
 /** Every directory a proof row could name — `packages/*` plus the root's apps. */
