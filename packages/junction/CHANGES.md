@@ -1,5 +1,19 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-26 — a bulk write inside its own service call is announced (`FJS-1308`)
+
+`announceDataWrites` skipped every Litestone event for the service whose call
+was running, on the assumption that the call's publish covered it. The publish
+carries the rows the call returns and never a count, so a method's
+`updateMany` over its siblings reached no socket and no bus subscriber —
+measured in linear as 2,800 renumbered rows announced by nothing and 49 of 50
+later writes refused 409 on stale versions. The suppression now applies only
+to an event that carries a row; a rowless one (`{count}`, `select: false`)
+announces `changed` as it does outside a call. The service's own bulk paths
+write row by row, so this reaches only app code. `data-write-announcement`
+replaces the test that pinned the old suppression and adds a transactional
+renumber; single-row sibling writes stay open as `FJS-1357`.
+
 
 
 ## 2026-09-26 — `CLAUDE.md` is the map; the reasons are `docs/internals.md`

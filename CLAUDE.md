@@ -54,9 +54,11 @@ Don't violate without an explicit decision; record it in `DECISIONS.md` if you d
 
 **`bun run ci` is the whole of CI** — `ci:fast` skips the suites, `--only <pkg>` narrows, `--phase <name>` runs one. `fli ci` is the same call from anywhere in the workspace. What fails each phase, and every allowance, is `docs/CI.md`.
 
-**Which drive proves a change is `fli proves`** (`--from main` on a branch): it reads the diff against `DRIVES.md` and names each drive the change needs and what to start first. A change is not proved until those drives have run. **`fli done` says whether it is finished** — run it before calling a change complete and clear what it lists, or say in a sentence why an item stays.
+**Which drive proves a change is `fli proves`** (`--from main` on a branch): it reads the diff against `DRIVES.md` and names each drive the change needs and what to start first. A change is not proved until those drives have run; **`fli prove` runs them**, each after its *Start first* steps. **`fli done` says whether it is finished** — run it before calling a change complete and clear what it lists, or say in a sentence why an item stays.
 
 **A dev server serves the code it started with**, and a port that answers is not evidence the right process holds it (`FJS-740`). Start the server the run will test and refuse a port that already answers. Backgrounding a server from a tool call is unreliable here; a script that spawns it, polls, asserts and kills it works — `example/web/test/verify-build.mjs` is the shape. Detail: `docs/TESTING.md` § Dev servers.
+
+**Search a tree with `rg`** — it skips `node_modules` and gitignored build output. A `PreToolUse` hook in `.claude/settings.json` refuses a recursive `grep`; `grep` on a named file or a pipe is fine.
 
 **Ports: `port = env*1000 + category*100 + project*10 + service`** (env 7 test · 8 dev · 9 prod). `packages/cli/core/ports.js` is the schema; `fli dev` hands each app root a slot as `FLI_PORT_*`; 8500–8509 is reserved for fli tooling. **Every vite config sets `strictPort`** — vite otherwise hops ports in silence and one app's drive tests another app. The table and its exceptions: `docs/PORTS.md`.
 

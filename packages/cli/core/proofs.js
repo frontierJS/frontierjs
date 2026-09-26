@@ -27,6 +27,7 @@
 //
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
+import { execFileSync }                          from 'node:child_process'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join }                                  from 'node:path'
 
@@ -279,6 +280,25 @@ export function provesFor(root, { files, diff = null, rows = [] } = {}) {
     .filter(p => p.match)
     .map(p => ({ ...p, targets: resolveRun(p.run, { root, rows }) }))
     .sort((a, b) => TIER_ORDER[a.match.tier] - TIER_ORDER[b.match.tier] || a.line - b.line)
+}
+
+/**
+ * The change `provesFor` grades — `{ files, diff }` for the working tree
+ * against HEAD, or a branch against `from`. One reader for `test:proves` and
+ * `test:prove`, so the two cannot name different drives for one tree.
+ *
+ * The diff CONTENT is the symbol tier: without it a row naming
+ * `announceDataWrites` matches only by the package it lives in. `--no-color`,
+ * because a user's `color.diff = always` colors a piped diff too.
+ */
+export function changedTree(root, { from = null } = {}) {
+  const against = from ? `${from}...` : 'HEAD'
+  const git = (argv) => {
+    try { return execFileSync('git', argv, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) }
+    catch { return '' }
+  }
+  const files = git(['diff', '--name-only', against]).trim().split('\n').filter(Boolean)
+  return { files, diff: files.length ? git(['diff', '--no-color', '-U0', against]) : '' }
 }
 
 /** Every directory a proof row could name — `packages/*` plus the root's apps. */

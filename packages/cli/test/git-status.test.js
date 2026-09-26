@@ -4,7 +4,7 @@
 // a clean file look identical. Every test here is ultimately that one question.
 
 import { test, expect } from 'bun:test'
-import { buildStatus, collapse, zoneOf, roleOf, ROLE_ORDER } from '../core/git-status.js'
+import { buildStatus, splitRel, zoneOf, roleOf, ROLE_ORDER } from '../core/git-status.js'
 
 const z = (lines) => lines.map(l => l + '\0').join('')
 
@@ -89,16 +89,9 @@ test('a conflict outranks any amount of churn', () => {
   expect(model.zones[0].zone).toBe('auth')
 })
 
-test('collapse pays for a directory once and loses no entry', () => {
-  const files = [
-    { rel: 'src/domain/a.ts', role: 'src' },
-    { rel: 'src/domain/b.ts', role: 'src' },
-    { rel: 'src/app.ts',      role: 'src' },
-  ]
-  const rows = collapse(files)
-  expect(rows.map(r => r.dir)).toEqual(['src/', 'src/domain/'])
-  expect(rows.flatMap(r => r.entries).length).toBe(3)
-  expect(rows[1].entries.map(e => e.base)).toEqual(['a.ts', 'b.ts'])
+test('a row splits into its directory and its basename', () => {
+  expect(splitRel('src/domain/a.ts')).toEqual({ dir: 'src/domain/', base: 'a.ts', folder: false })
+  expect(splitRel('README.md')).toEqual({ dir: '', base: 'README.md', folder: false })
 })
 
 test('an untracked DIRECTORY keeps a name', () => {
@@ -106,10 +99,10 @@ test('an untracked DIRECTORY keeps a name', () => {
   // at the last separator gave it an empty basename, so the row printed its
   // glyph and nothing else.
   const model = buildStatus({ porcelain: z(['?? packages/toolbelt/src/mime/']) })
-  const [row] = collapse(model.zones[0].files)
+  const row = splitRel(model.zones[0].files[0].rel)
   expect(row.dir).toBe('src/')
-  expect(row.entries[0].base).toBe('mime/')
-  expect(row.entries[0].folder).toBe(true)
+  expect(row.base).toBe('mime/')
+  expect(row.folder).toBe(true)
 })
 
 test('blast reaches a file through the reader, and 0 is not null', () => {

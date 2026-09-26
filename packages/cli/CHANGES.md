@@ -1,5 +1,34 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-26 — `fli prove` runs the drives `fli proves` names; `fli file` files a row
+
+A headless fix spent seven of thirty turns proving: reading the *Start first*
+cell, starting the API, polling its port, running the drive, stopping what it
+started — spawn-and-poll written by hand, in a shell where backgrounding a
+server is unreliable. `fli prove` does those steps from `DRIVES.md` in order and
+prints one line per drive with the tail of a failure. `core/prove.js` owns the
+order only; spawning and the process-group kill stay `children.js`'s. A server
+port that already answers fails the drive by name instead of being reused
+(`FJS-740`). Proved on `example`'s `verify:jobs`: seed, API up on 8110, 19
+assertions, port free after, 14s. `changedTree()` in `proofs.js` is now the one
+reader of the diff for both `proves` and `prove`.
+
+The same session spent three more turns finding how to file what it had found,
+then wrote the row with a script. `fli register:file` (`fli file`) takes
+`--sev --area --title --detail`, mints one past the highest id the registers
+hold anywhere, tops that severity's table, and is put back when
+`register:check` finds a new error. `oneCell` and `isoDate` are exported from
+`close.js` rather than copied.
+
+## 2026-09-26 — `fli gs` prints one row per file, with the file's own churn
+
+A role packed its files onto one wrapped line per directory, so
+`snapshot  repo-atlas.snapshot.html repo-report.snapshot.html` had to be split
+back into files by eye. Each file is now its own row — role, dim directory,
+bright basename, `↑n` — with its `+added -deleted` in a column aligned down the
+whole listing. `collapse()` became `splitRel()`, one path's directory and
+basename; the status glyph leads the row rather than sitting inside the path.
+
 ## 2026-09-26 — `fli outline`: a file's shape as line ranges, and one row printed by name
 
 A 4700-line module was read in guessed `sed -n` windows, three tries to land on

@@ -32,6 +32,8 @@ fli test:ddl        — write db/ddl.snapshot.sql, the tables SQLite is given
 fli test:snapshots  — recheck every committed snapshot in this app
 fli test:mutate     — mutate the schema, report what the checks cannot see
 fli test:done       — is the change in the working tree finished
+fli test:proves     — which drive proves the change in the working tree
+fli test:prove      — run those drives, starting what each needs first
 ```
 
 Every snapshot names the command that regenerates it in its own header, so

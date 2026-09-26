@@ -186,27 +186,18 @@ export const buildStatus = ({ porcelain, unstaged = '', staged = '', branch = nu
   }
 }
 
-// ─── directory collapse ───────────────────────────────────────────────────────
+// ─── path split ───────────────────────────────────────────────────────────────
 //
-// Five siblings under one directory is one fact, not five. Returns the rows a
-// role prints: each is a directory and the basenames under it, so the path
-// prefix is paid for once and the eye lands on what actually differs.
+// A row prints its directory dim and its basename bright, so the eye lands on
+// what differs between neighbouring rows.
 
-export const collapse = (files) => {
-  const byDir = new Map()
-  for (const f of files) {
-    // An untracked DIRECTORY is reported as one entry ending in `/` — git
-    // collapses it rather than listing what is inside. Cutting at the last
-    // separator gives that entry an empty basename, so the row prints its
-    // status glyph and no name at all.
-    const folder = f.rel.endsWith('/')
-    const body   = folder ? f.rel.slice(0, -1) : f.rel
-    const cut    = body.lastIndexOf('/')
-    const dir    = cut === -1 ? '' : body.slice(0, cut + 1)
-    if (!byDir.has(dir)) byDir.set(dir, [])
-    byDir.get(dir).push({ ...f, folder, base: body.slice(cut + 1) + (folder ? '/' : '') })
-  }
-  return [...byDir.entries()]
-    .sort((a, b) => a[0].localeCompare(b[0]))
-    .map(([dir, entries]) => ({ dir, entries }))
+export const splitRel = (rel) => {
+  // An untracked DIRECTORY is reported as one entry ending in `/` — git
+  // collapses it rather than listing what is inside. Cutting at the last
+  // separator gives that entry an empty basename, so the row prints its
+  // status glyph and no name at all.
+  const folder = rel.endsWith('/')
+  const body   = folder ? rel.slice(0, -1) : rel
+  const cut    = body.lastIndexOf('/')
+  return { dir: cut === -1 ? '' : body.slice(0, cut + 1), base: body.slice(cut + 1) + (folder ? '/' : ''), folder }
 }

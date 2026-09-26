@@ -40,11 +40,12 @@ const SCHEMA = `
 // visible in the same tick. Yield once — there is no timed buffer to wait for.
 const tick = () => new Promise((r) => setImmediate(r))
 
-async function mkApp(opts: { channel?: string | ((...a: unknown[]) => unknown) } = {}) {
+async function mkApp(opts: { channel?: string | ((...a: unknown[]) => unknown); transactional?: boolean } = {}) {
   const db = await createClient({ db: ':memory:', schema: SCHEMA })
   const app = createApp({ db: db as never })
   app.services.register(createService({
     name: 'orders', model: 'Order', db: db as never,
+    ...(opts.transactional ? { transactional: true } : {}),
     ...(opts.channel !== undefined ? { channel: opts.channel as never } : {}),
   }))
   app.services.register(createService({ name: 'audits', model: 'Audit', db: db as never }))
@@ -192,16 +193,37 @@ describe('a write with no row to hand over (FJS-307)', () => {
     expect(seen).toEqual([])
   })
 
-  // Same rule as a row event: `callService` already announced for the service
-  // whose call this is.
-  test('a bulk write through the service is not announced twice', async () => {
-    const { db, app, changed } = await mkApp()
+  // The call's publish carries the row it returns and never a count, so a bulk
+  // write made inside it is announced here or nowhere (`FJS-1308`): the sweep
+  // below changed a row the `orders created` payload shows before the sweep.
+  test('a bulk write inside its own service call still announces changed', async () => {
+    const { db, app, changed, seen } = await mkApp()
     app.services.get('orders')!.hooks({
       after: { create: [async () => { await sys(db).order.updateMany({ where: {}, data: { status: 'swept' } }) }] },
     })
     await app.service('orders').create({ status: 'a' })
     await tick()
-    expect(changed).toEqual([])
+    expect(seen).toEqual(['orders:created#1'])
+    expect(changed.map(c => `${c.operation}#${c.count}`)).toEqual(['updateMany#1'])
+  })
+
+  // The shape measured in linear: a transactional renumber, `updateMany` over
+  // the siblings and `update()` of the row the method returns. Under a
+  // transaction the suppression is the commit scope's, so it is its own case.
+  test('a transactional renumber announces its siblings once, and the moved row once', async () => {
+    const { db, app, changed } = await mkApp({ transactional: true })
+    const patched: number[] = []
+    app.events.on('orders:patched', (row: { id: number }) => { patched.push(row.id) })
+    await sys(db).order.createMany({ data: [{ status: 'a' }, { status: 'b' }, { status: 'c' }] })
+    await tick()
+    changed.length = 0
+    app.services.get('orders')!.hooks({
+      after: { patch: [async () => { await sys(db).order.updateMany({ where: { id: { gt: 1 } }, data: { status: 'shifted' } }) }] },
+    })
+    await app.service('orders').patch(1, { status: 'moved' })
+    await tick()
+    expect(patched).toEqual([1])
+    expect(changed.map(c => `${c.operation}#${c.count}`)).toEqual(['updateMany#2'])
   })
 })
 

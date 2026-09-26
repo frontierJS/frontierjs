@@ -17,10 +17,6 @@ flags:
     defaultValue: false
 ---
 
-<script>
-import { execSync } from 'child_process'
-</script>
-
 Reads `DRIVES.md` § *Which drive proves a change* and matches it against what
 you have actually changed.
 
@@ -40,28 +36,18 @@ this answers *and then which drive*.
 const root = (await context.wsRoot?.()) ?? context.paths.root
 
 // `resolve` is already in scope — the compiled shim imports `zx/globals`.
-const { provesFor } = await import(resolve(global.fliRoot, 'core/proofs.js'))
-const { runnables } = await import(resolve(global.fliRoot, 'core/runnables.js'))
+const { provesFor, changedTree } = await import(resolve(global.fliRoot, 'core/proofs.js'))
+const { runnables }              = await import(resolve(global.fliRoot, 'core/runnables.js'))
 
 // The working tree by default, a ref when one is named. `--from main` is what a
 // branch asks; the bare form is what somebody about to commit asks.
-const against = flag.from ? `${flag.from}...` : 'HEAD'
-const git = (argv) => {
-  try { return execSync(`git ${argv}`, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }) }
-  catch { return '' }
-}
-
-const files = git(`diff --name-only ${against}`).trim().split('\n').filter(Boolean)
+const { files, diff } = changedTree(root, { from: flag.from || null })
 if (!files.length) {
   log.info(flag.from ? `nothing changed against ${flag.from}` : 'nothing changed in the working tree')
   if (flag.json) console.log(JSON.stringify({ files: [], rows: [] }, null, 2))
   return
 }
 
-// The diff CONTENT, for the symbol tier. Without it a row that names
-// `announceDataWrites` can only match by the package it lives in.
-// `--no-color`: a user's `color.diff = always` colors a piped diff too.
-const diff = git(`diff --no-color -U0 ${against}`)
 const rows = provesFor(root, { files, diff, rows: runnables(root) })
 
 if (flag.json) {

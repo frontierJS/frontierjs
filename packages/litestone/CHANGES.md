@@ -1,5 +1,13 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-26 — a value a plugin writes into a create is graded by the create policy
+
+`create` and `createMany` ran `checkCreatePolicy` and then
+`plugins.beforeCreate`, so a column a plugin filled landed ungraded, and a
+create policy reading a column a plugin defaults refused the create before the
+plugin ran (`FJS-1307`). The plugins now run first; `upsertMany` already had
+that order. Pinned in `test/litestone.test.ts` § *FJS-1307*.
+
 ## 2026-09-26 — `CLAUDE.md` is the map; the reasons are `docs/internals.md`
 
 `CLAUDE.md` was 160 KB, about 40k tokens on every turn spent in this package,

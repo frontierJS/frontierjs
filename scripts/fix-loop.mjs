@@ -6,12 +6,21 @@
 //   bun run fix:loop -- --rows 10 --pkg sierra
 //   bun run fix:loop -- --budget 3 --dry-run
 //
-// Each row runs `/fix-next <id>` in a FRESH `claude -p` session at low
-// effort, and a row that does not close is retried once at high effort — the
-// outcome is checkable (the row moves to § Closed or it does not), so paying
-// for high effort only on the rows that need it is cheaper per solved row than
-// running everything high. Effort is set per session, never changed inside
-// one, since a mid-session change drops the prompt cache.
+// Each row runs `/fix-next <id>` in a FRESH `claude -p` session on the first
+// rung of LADDER, and a row that does not close is retried once on the next —
+// the outcome is checkable (the row moves to § Closed or it does not), so
+// paying for high effort only on the rows that need it is cheaper per solved
+// row than running everything high. Model and effort are set per
+// session, never changed inside one, since a mid-session change drops the
+// prompt cache.
+//
+// Every turn re-reads the whole context, so a session costs roughly turns ×
+// context. Both are cut before the session starts: the prompt carries a
+// pre-brief (the row, what it cites, where its identifiers live), which is
+// the work the first third of an unbriefed run spends turns finding; and the
+// session loads project settings only, with no MCP servers — a user plugin's
+// skills and a connector's tools are context every turn pays for and no fix
+// uses.
 //
 // Whether a row closed is read off ISSUES.md, not off what the session says:
 // a session can report success over a row it never moved. The session's last
@@ -23,10 +32,9 @@
 // happens, since a fix runs for minutes and a single JSON answer at the end
 // is indistinguishable from a hang.
 //
-// One line per attempt goes to ~/.fli/fix-loop.jsonl: id, effort, cost,
-// turns, outcome. Cost per SOLVED row is the number to tune --budget and the
-// effort ladder against; the defaults here are guesses until that log says
-// otherwise.
+// One line per attempt goes to ~/.fli/fix-loop.jsonl: id, model, effort,
+// cost, turns and where they went (orient · fix · prove · close), outcome. Cost per SOLVED row is the number to tune --budget and
+// LADDER against; the defaults here are guesses until that log says otherwise.
 //
 // A failed or interrupted attempt leaves its edits in the tree, and the next
 // attempt at that row is told so rather than handed a clean tree — the partial
@@ -37,17 +45,18 @@
 // same top row.
 // ============================================================
 
-import { spawn, spawnSync }                         from 'node:child_process'
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs'
-import { homedir }                                  from 'node:os'
-import { join, dirname }                            from 'node:path'
-import { createInterface }                          from 'node:readline'
-import { fileURLToPath }                            from 'node:url'
+import { spawn, spawnSync }                                     from 'node:child_process'
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
+import { homedir }                                              from 'node:os'
+import { join, dirname }                                        from 'node:path'
+import { createInterface }                                      from 'node:readline'
+import { fileURLToPath }                                        from 'node:url'
 
-const ROOT    = dirname(dirname(fileURLToPath(import.meta.url)))
-const LOG_DIR = join(homedir(), '.fli')
-const LOG     = join(LOG_DIR, 'fix-loop.jsonl')
-const EFFORTS = ['low', 'high']
+const ROOT      = dirname(dirname(fileURLToPath(import.meta.url)))
+const LOG_DIR   = join(homedir(), '.fli')
+const LOG       = join(LOG_DIR, 'fix-loop.jsonl')
+const LADDER    = [{ model: 'opus', effort: 'low' }, { model: 'opus', effort: 'high' }]
+const STOP_HOOK = join(ROOT, '.claude', 'hooks', 'fli-done-stop.mjs')
 
 const args       = parseArgs(process.argv.slice(2))
 const rows       = Number(args.rows ?? 5)
@@ -56,7 +65,8 @@ const permission = args['permission-mode'] ?? 'auto'
 const dryRun     = Boolean(args['dry-run'])
 
 if (args.help) {
-  console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(2, 30).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
+  const lines = readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n')
+  console.log(lines.slice(3, lines.indexOf(lines[2], 3)).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
   process.exit(0)
 }
 
@@ -71,21 +81,23 @@ for (let n = 0; n < rows; n++) {
   if (!row) { console.log('[fix-loop] nothing ready'); break }
 
   console.log(`\n[fix-loop] ${n + 1}/${rows} ${row.id} (${row.severity}, ${row.pkg.join(' · ')}) — ${row.title.slice(0, 100)}`)
-  if (dryRun) { skipped.add(row.id); continue }
+  if (dryRun) { console.log(preBrief(row)); skipped.add(row.id); continue }
 
+  const brief = preBrief(row)
   let outcome
-  for (const effort of EFFORTS) {
+  for (const [rung, { model, effort }] of LADDER.entries()) {
     const prompt = attemptedBefore(row.id)
       ? `/fix-next ${row.id} — an earlier fix-loop attempt at this row did not close it; the edits under its packages in the working tree are that attempt's, so read git diff and build on them`
       : `/fix-next ${row.id}`
 
-    log({ id: row.id, severity: row.severity, effort, outcome: 'started' })
-    const run = await attempt(prompt, effort)
+    log({ id: row.id, severity: row.severity, model, effort, outcome: 'started' })
+    const run = await attempt(`${prompt}\n\n${brief}`, { model, effort, cap: rung === 0 ? budget : budget * 2 })
     outcome   = isClosed(row.id) ? 'closed' : run.status ?? 'failed'
     spent    += run.cost
 
-    log({ id: row.id, severity: row.severity, effort, cost: run.cost, turns: run.turns, outcome, stop: run.stop, denied: run.denied })
-    console.log(`[fix-loop]   ${effort}: ${outcome} · $${run.cost.toFixed(2)} · ${run.turns ?? '?'} turns${run.denied ? ` · ${run.denied} tool calls denied` : ''}`)
+    log({ id: row.id, severity: row.severity, model, effort, cost: run.cost, turns: run.turns, phases: run.phases, outcome, stop: run.stop, denied: run.denied })
+    const split = Object.entries(run.phases).map(([k, n]) => `${k} ${n}`).join(' · ')
+    console.log(`[fix-loop]   ${model}/${effort}: ${outcome} · $${run.cost.toFixed(2)} · ${run.turns ?? '?'} turns (${split})${run.denied ? ` · ${run.denied} tool calls denied` : ''}`)
     if (run.report) console.log(run.report.trim().split('\n').map(l => `[fix-loop]   │ ${l}`).join('\n'))
 
     if (outcome !== 'failed') break
@@ -113,32 +125,124 @@ function nextRow() {
   return JSON.parse(out.stdout).ready.find(r => !skipped.has(r.id))
 }
 
-function attempt(prompt, effort) {
+// Located, not read: a location is cheap to find by script and costs a turn
+// each to find by model, while deciding what a location means is the session's.
+function preBrief(row) {
+  const register = readFileSync(join(ROOT, row.file), 'utf8').split('\n')
+  const line     = register[row.line - 1] ?? ''
+  const text     = line.replace(/<a id="[^"]*"><\/a>/, '')
+  const out      = ['## Pre-brief (fix-loop, by script)', '', `Row, verbatim: ${text}`]
+
+  const cited = [...new Set(text.match(/FJS-D?\d+/g) ?? [])].filter(id => id !== row.id)
+  const said  = cited.map(id => `- ${id}: ${citation(id) ?? 'not found in DECISIONS.md, ISSUES.md or ISSUES_ARCHIVE.md'}`)
+  if (said.length) out.push('', 'Cited:', ...said)
+
+  const dirs  = row.pkg.map(p => join('packages', p)).filter(d => existsSync(join(ROOT, d)))
+  const src   = dirs.map(d => join(d, 'src'))
+  const found = [...new Set([...text.matchAll(/`([^`\s]{4,60})`/g)].map(m => m[1]))]
+    .filter(t => /^[@$]?[A-Za-z_][\w.$]*$/.test(t) && /[A-Z_.$@]/.test(t) && !/^FJS-/.test(t))
+    .map(term => ({ term, hits: where(term, src) ?? (term.includes('.') ? where(term.split('.').at(-1), src) : null) }))
+    // A plain word (`version`, `base`) matches everywhere and says nothing.
+    .filter(f => f.hits && (f.term.startsWith('@') || f.hits.defined))
+    .slice(0, 8)
+  const code  = found.flatMap(f => [`- \`${f.term}\``, ...f.hits.lines.map(h => `    ${h}`)])
+  if (code.length) out.push('', 'Where the row\'s identifiers are (src, definitions first):', ...code)
+
+  const tally = new Map()
+  for (const { term } of found) for (const file of rg(['-l', '-F', term, ...dirs.map(d => join(d, 'test'))])) tally.set(file, (tally.get(file) ?? 0) + 1)
+  const tests = [...tally].sort((a, b) => b[1] - a[1]).slice(0, 6)
+  if (tests.length) out.push('', 'Tests naming the most of them:', ...tests.map(([file, n]) => `- ${file} (${n})`))
+
+  out.push('', 'Start from this rather than re-finding it; the hazards, whether it still reproduces and the red test are still yours.')
+  return out.join('\n')
+}
+
+function citation(id) {
+  const anchor = `id="${id.toLowerCase()}"`
+  for (const file of ['DECISIONS.md', 'ISSUES.md', 'ISSUES_ARCHIVE.md']) {
+    const hit = rg(['-F', '--no-filename', '--max-count', '1', anchor, file])[0]
+    if (!hit) continue
+    const said = /\*\*(.+?)\*\*/.exec(hit)?.[1] ?? hit.replace(/^#+\s*<a[^>]*><\/a>/, '').replace(/^.*?—\s*/, '')
+    return `${said.slice(0, 220)}${said.length > 220 ? '…' : ''} (${file})`
+  }
+  return null
+}
+
+// Definition-shaped lines first — the declaration is the line the session opens.
+function where(term, dirs) {
+  const hits = rg(['-n', '-F', '--max-columns', '160', '--max-columns-preview', term, ...dirs])
+  if (!hits.length) return null
+  const name    = term.replace(/[$.]/g, '\\$&')
+  const defines = new RegExp(`(function|const|let|class|interface|type|export)\\s+\\*?\\s*${name}\\b|(^|[^\\w$.])${name}\\s*[(:=]`)
+  const own     = hits.filter(h => defines.test(h.replace(/^[^:]+:\d+:/, '')))
+  const lines   = [...own, ...hits.filter(h => !own.includes(h))].slice(0, 4)
+  return { defined: own.length > 0, lines: lines.map(h => h.replace(/\s+/g, ' ').trim()) }
+}
+
+// A user's ~/.ripgreprc (--smart-case, --max-columns) would change what matches and truncate a citation.
+function rg(argv) {
+  const out = spawnSync('rg', ['--no-config', ...argv], { cwd: ROOT, encoding: 'utf8' })
+  return out.stdout ? out.stdout.trim().split('\n').filter(Boolean) : []
+}
+
+function attempt(prompt, { model, effort, cap }) {
+  // Not awaited: it takes ~25s, and a session spends longer than that reading
+  // before its first edit. Lost the race, the session's own item goes unshown —
+  // which is the backstop only, since fix-next runs `fli done` itself.
+  const baseline = spawn('node', [STOP_HOOK, '--baseline'], { cwd: ROOT, stdio: ['pipe', 'ignore', 'ignore'] })
+  baseline.stdin.end('{}')
+  const baselined = new Promise(r => baseline.on('close', r))
+
   const child = spawn('claude', [
     '-p', prompt,
+    '--model',           model,
     '--effort',          effort,
     '--output-format',   'stream-json',
     '--verbose',
-    '--max-budget-usd',  String(effort === 'low' ? budget : budget * 2),
+    '--max-budget-usd',  String(cap),
     '--permission-mode', permission,
+    '--setting-sources', 'project,local',
+    '--strict-mcp-config',
   ], { cwd: ROOT, stdio: ['ignore', 'pipe', 'inherit'] })
 
-  let result = {}
+  let result   = {}
+  const phases = { orient: 0, fix: 0, prove: 0, close: 0 }
+  let edited   = false
   createInterface({ input: child.stdout }).on('line', line => {
     let event
     try { event = JSON.parse(line) } catch { return }
     if (event.type === 'result') result = event
     if (event.type !== 'assistant') return
     for (const part of event.message?.content ?? []) {
-      if (part.type === 'tool_use') console.log(`[fix-loop]     ${part.name}: ${describe(part.input)}`)
+      if (part.type !== 'tool_use') continue
+      edited ||= writes(part)
+      phases[phaseOf(part, edited)]++
+      console.log(`[fix-loop]     ${part.name}: ${describe(part.input)}`)
     }
   })
 
-  return new Promise(done => child.on('close', code => {
+  return new Promise(done => child.on('close', async code => {
+    await baselined
     if (!result.type) console.log(`[fix-loop]   claude ended with no result (exit ${code})`)
     const status = /fix-next: \S+ (closed|ruling|corrected|busy|failed)\s*$/.exec(result.result ?? '')?.[1]
-    done({ cost: result.total_cost_usd ?? 0, turns: result.num_turns, stop: result.subtype, denied: result.permission_denials?.length ?? 0, status, report: result.result })
+    done({ cost: result.total_cost_usd ?? 0, turns: result.num_turns, stop: result.subtype, denied: result.permission_denials?.length ?? 0, status, report: result.result, phases })
   }))
+}
+
+// Where a session's turns went, so the next *what is slow* is read off the log
+// rather than a transcript replay. A heuristic over the command text: a call is
+// PROVE or CLOSE by what it runs, otherwise ORIENT until the first write and FIX
+// after it.
+function phaseOf(part, edited) {
+  const text = `${part.input?.command ?? ''} ${part.input?.file_path ?? ''}`
+  if (/\bfli proves?\b|\bverify[:\w-]*|\bbun run (api|web)\b|test:browser/.test(text)) return 'prove'
+  if (/\bfli (close|file|done)\b|register:(close|file)|CHANGES\.md/.test(text)) return 'close'
+  return edited ? 'fix' : 'orient'
+}
+
+function writes(part) {
+  if (['Edit', 'Write', 'NotebookEdit'].includes(part.name)) return true
+  return part.name === 'Bash' && /\bsed -i\b|python3? - <<|\btee\b|(^|[^0-9&>])>\s*[^&\s/][^\s]*\.(m?[jt]s|md|lite|mesa|json)\b/.test(part.input?.command ?? '')
 }
 
 function describe(input = {}) {

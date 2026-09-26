@@ -9106,6 +9106,29 @@ describe('plugin system', () => {
     db.$close()
   })
 
+  test('FJS-1307: a value onBeforeCreate writes is graded by the create policy', async () => {
+    const { Plugin } = await import('../src/core/plugin.js')
+    class FillVal extends Plugin {
+      async onBeforeCreate(_model: string, args: any) {
+        for (const row of [args.data].flat()) if (row.val === 'fill') row.val = 'bad'
+      }
+    }
+    const db = await makeDb(`
+      model T {
+        id  Int    @id
+        val String?
+        @@allow('all', true)
+        @@deny('create', val == 'bad', 'val is bad')
+      }
+    `, 'plugin-create-policy-order', { plugins: [new FillVal()] })
+    await expect(db.t.create({ data: { id: 1, val: 'bad' } })).rejects.toThrow('val is bad')
+    await expect(db.t.create({ data: { id: 2, val: 'fill' } })).rejects.toThrow('val is bad')
+    await expect(db.t.createMany({ data: [{ id: 3, val: 'fill' }] })).rejects.toThrow('val is bad')
+    await db.t.create({ data: { id: 4, val: 'ok' } })
+    expect(await db.t.count()).toBe(1)
+    db.$close()
+  })
+
   test('plugin onBeforeUpdate can block an update', async () => {
     const { Plugin, AccessDeniedError } = await import('../src/core/plugin.js')
     class BlockUpdate extends Plugin {

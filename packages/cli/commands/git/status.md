@@ -60,7 +60,7 @@ if (flag.short) {
   return
 }
 
-const { buildStatus, collapse, ROLE_ORDER } = await import(joinPath(global.fliRoot, 'core/git-status.js'))
+const { buildStatus, splitRel } = await import(joinPath(global.fliRoot, 'core/git-status.js'))
 const { usedByIndex, blastReader } = await import(joinPath(global.fliRoot, 'core/blast.js'))
 
 const git = (argv) => {
@@ -102,6 +102,17 @@ const BAR  = 12
 const nameCol = Math.min(24, Math.max(...shown.map(z => z.zone.length), 0))
 const roleCol = Math.max(...shown.flatMap(z => z.files.map(f => f.role.length)), 0)
 
+// A file's own churn sits in a column after the widest path, so the numbers
+// line up down the whole listing — capped, or one deep path pushes every
+// number off a narrow terminal.
+const plainWidth = (f) => {
+  const glyph = f.untracked || f.index === 'A' || f.index === 'D' || f.work === 'D' || f.conflict ? 1 : 0
+  const from  = f.from ? f.from.split('/').pop().length + 2 : 0
+  const reach = f.blast && f.blast.band >= 2 ? String(f.blast.usedBy).length + 1 : 0
+  return glyph + f.rel.length + from + reach
+}
+const pathCol = Math.min(width - (6 + roleCol + 2) - 15, Math.max(...shown.flatMap(z => z.files.map(plainWidth)), 0))
+
 // State first, reach second. What you DID to a file outranks how far it
 // reaches — deleting something 77 files import is red before it is amber, and
 // the `↑77` beside it is still amber, so both facts survive on the one row.
@@ -134,43 +145,29 @@ for (const z of shown) {
     marks,
   ].join(' ').trimEnd())
 
-  for (const role of ROLE_ORDER) {
-    const ofRole = z.files.filter(f => f.role === role)
-    if (!ofRole.length) continue
-
-    // A role's files, one line per directory: the prefix is paid for once and
-    // the eye lands on the basenames, which is what actually differs.
-    for (const { dir, entries } of collapse(ofRole)) {
-      const head = `      ${chalk.dim(role.padEnd(roleCol))}  ${dir ? chalk.dim(dir) : ''}`
-      const plain = 6 + roleCol + 2 + dir.length
-      let line = head
-      let used = plain
-      for (const e of entries) {
-        const glyph = e.untracked || e.index === 'A' ? '+' : e.index === 'D' || e.work === 'D' ? '-' : e.conflict ? '!' : ''
-        // The count rather than a severity word, and only above band 2. Every
-        // file carries a reading and most of them are 0 — printing all of them
-        // trains the eye to skip the column that matters. `↑` and not `!`,
-        // which already means a conflict here.
-        const reach = e.blast && e.blast.band >= 2
-          ? (e.blast.band >= 3 ? chalk.yellow : chalk.dim)(`↑${e.blast.usedBy}`)
-          : ''
-        // Painted BEFORE the reach is appended, never around it: an inner
-        // color's reset ends the outer one, so a red deleted hub went plain
-        // from its own `↑` onward.
-        const name  = glyph + e.base + (e.from ? chalk.dim(` ←${e.from.split('/').pop()}`) : '')
-        const word  = paint(e)(e.index ? chalk.bold(name) : name) + reach
-        const cost  = glyph.length + e.base.length + 1 +
-                      (e.blast && e.blast.band >= 2 ? String(e.blast.usedBy).length + 1 : 0)
-        if (used + cost > width && used > plain) {
-          console.log(line)
-          line = ' '.repeat(plain)
-          used = plain
-        }
-        line += (used === plain ? '' : ' ') + word
-        used += cost
-      }
-      console.log(line)
-    }
+  // One row per file. Rows sharing a directory repeat it, dimmed: a row the eye
+  // has to reassemble from a wrapped line of siblings is the flat list again.
+  for (const f of z.files) {
+    const { dir, base } = splitRel(f.rel)
+    const glyph = f.untracked || f.index === 'A' ? '+' : f.index === 'D' || f.work === 'D' ? '-' : f.conflict ? '!' : ''
+    // The count rather than a severity word, and only above band 2. Every
+    // file carries a reading and most of them are 0 — printing all of them
+    // trains the eye to skip the column that matters. `↑` and not `!`,
+    // which already means a conflict here.
+    const reach = f.blast && f.blast.band >= 2
+      ? (f.blast.band >= 3 ? chalk.yellow : chalk.dim)(`↑${f.blast.usedBy}`)
+      : ''
+    // Painted BEFORE the reach is appended, never around it: an inner
+    // color's reset ends the outer one, so a red deleted hub went plain
+    // from its own `↑` onward.
+    // The glyph leads the row, not the basename: `hooks/+x.mjs` reads as a
+    // file named `+x.mjs`.
+    const name = base + (f.from ? chalk.dim(` ←${f.from.split('/').pop()}`) : '')
+    const cell = paint(f)(glyph) + chalk.dim(dir) + paint(f)(f.index ? chalk.bold(name) : name) + reach
+    const pad  = ' '.repeat(Math.max(0, pathCol - plainWidth(f)))
+    const nums = f.untracked || f.binary ? '' :
+      chalk.dim(`+${n(f.added)}`.padStart(6) + ' ' + `-${n(f.deleted)}`.padStart(6))
+    console.log(`      ${chalk.dim(f.role.padEnd(roleCol))}  ${cell}${nums && pad + '  ' + nums}`)
   }
   console.log('')
 }

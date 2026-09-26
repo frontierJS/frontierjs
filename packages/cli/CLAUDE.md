@@ -86,6 +86,11 @@ core/
                 § Closed in that table's shape, the Detail's links carried into
                 How, and put back when `register:check` finds a new error. It
                 and `decide.js` share `errorKeys`/`newErrors` in register-check.js
+  file.js       the writer behind `register:file` — the next id (the max the
+                registers hold anywhere, archive included, at the project's
+                width) atop its severity's table, put back on a new
+                `register:check` error, which is also what catches two sessions
+                minting one id
   next.js       the open register ranked — severity, then citations, `blocked by`
                 edges and code touched recently, every term printed with its
                 row. `WEIGHTS` is one frozen table and no flag moves it.
@@ -144,6 +149,11 @@ core/
   proofs.js     which drive proves a change — owns `DRIVES_FILE`, parses its
                 table and resolves both its columns. A PARSE and never
                 a second table; not a build graph, and it must not become one
+  prove.js      runs what `proofs.js` names — each drive's *Start first* steps
+                in order, the drive, then the stop — behind `fli prove`. It owns
+                the ORDER only: spawning is `children.js`'s and every process is
+                injected. A server port that already answers fails the drive
+                rather than being reused (`FJS-740`)
   intent.js     what a person asked, resolved against the app's seed — a
                 CANDIDATE (a claim, facts in plain words) in, a verdict with a
                 citation out; `fli intent` is its first caller. Pure over the

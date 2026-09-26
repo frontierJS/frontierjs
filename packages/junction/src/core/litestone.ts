@@ -3937,6 +3937,16 @@ export function announceDataWrites(
     catch { /* a dead socket is not a background job's problem */ }
   }
 
+  // Covered only for a ROW: the call's publish carries the rows it returns, and
+  // a write with no row -- a bulk `{count}` or a `select: false` -- is never one
+  // of them. Suppressing it by service name hid every sibling a method wrote:
+  // a renumber's `updateMany` over 2,800 rows reached no socket and no bus
+  // subscriber, and every other screen's next write to one was a 409
+  // (`FJS-1308`). The service's own bulk paths write row by row, so a rowless
+  // event inside its call is always app code.
+  const coveredByCall = (name: string): boolean =>
+    announcedInCommitScope(name) || announcingService() === name
+
   return tap((e) => {
     if (!e.model) return
 
@@ -3957,10 +3967,11 @@ export function announceDataWrites(
       if (!e.transition) return
       const record = e.record
       for (const name of servicesFor(e.model)) {
-        if (announcedInCommitScope(name) || announcingService() === name) continue
+        const rowless = record === null || record === undefined
+        if (!rowless && coveredByCall(name)) continue
         // No row to hand over — the same position a `select: false` write is in
         // below, and it takes the same answer rather than a guess.
-        if (record === null || record === undefined) {
+        if (rowless) {
           const detail = { model: e.model, operation: e.transition, count: e.count ?? 1 }
           app.events?.emit(`${name}:changed`, detail)
           sendToChannel(name, 'changed', detail, 'gate')
@@ -3997,7 +4008,7 @@ export function announceDataWrites(
     // (`FJS-682`). `announcedInCommitScope` is the same question asked of the
     // transaction rather than of the call.
     for (const name of servicesFor(e.model)) {
-      if (announcedInCommitScope(name) || announcingService() === name) continue
+      if (row !== null && row !== undefined && coveredByCall(name)) continue
 
     // ── A write with no row to hand over ──────────────────────────────────
     // Two arrive here and they are the same problem: a bulk statement answers

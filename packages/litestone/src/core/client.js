@@ -7903,8 +7903,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const _cardRequires = ctx.cardinalityMap?.requiresChildren?.[modelName]
       if (_cardRequires) { const r = refuseChildlessCreate(_cardRequires, data); if (r) throw r }
       await enforceValueSets(modelName, [data], ctx)
-      if (ctx.hasPolicies) checkCreatePolicy(modelName, data, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
+      // The plugins first: a value one writes into the payload is a value the
+      // row lands with, and grading before it would pass it ungraded (FJS-1307).
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, include, select }, ctx)
+      if (ctx.hasPolicies) checkCreatePolicy(modelName, data, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
       // Auto-generate @id if field uses @default(uuid/ulid/cuid) and not provided
       // What the ENGINE puts in this payload, so the @guarded/@system refusals
       // in writeData can grade the caller's keys alone (FJS-565).
@@ -8100,8 +8102,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // was stored as the document — `{"$merge":{"a":1}}`.
       for (const row of data) extractWriteOps(row, { where: 'createMany' })
       await enforceValueSets(modelName, data, ctx)
-      if (ctx.hasPolicies) for (const row of data) checkCreatePolicy(modelName, row, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data }, ctx)
+      if (ctx.hasPolicies) for (const row of data) checkCreatePolicy(modelName, row, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
 
       // Auto-generate @id and run writeData (transforms + validation) on every row
       // before touching the DB — so @email, @lower, @trim, @encrypted, enum checks

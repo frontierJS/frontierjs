@@ -9,12 +9,19 @@
 // It must never break a session: every failure exits 0 with nothing printed.
 // `stop_hook_active` is set when the agent is already continuing because a Stop
 // hook blocked, so this answers nothing then and cannot hold a session in a loop.
+//
+// `--baseline` records every item in the tree as shown and blocks nothing.
+// `scripts/fix-loop.mjs` runs it before each session, because the shown state is
+// the TREE's, not the session's: without it a headless fix is blocked, and pays
+// a full-context turn, on an item another session made while it ran.
 
 import { execFileSync }                                   from 'node:child_process'
 import { createHash }                                     from 'node:crypto'
 import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { isAbsolute, join }                               from 'node:path'
 import { pathToFileURL }                                  from 'node:url'
+
+const baseline = process.argv.includes('--baseline')
 
 try {
   const input = JSON.parse(readFileSync(0, 'utf8') || '{}')
@@ -41,11 +48,11 @@ try {
   try { state = JSON.parse(readFileSync(stateFile, 'utf8')) } catch {}
 
   const { runDone, stopVerdict } = await import(pathToFileURL(done).href)
-  if (!stopVerdict({ state, head, fingerprint }).run) process.exit(0)
+  if (!baseline && !stopVerdict({ state, head, fingerprint }).run) process.exit(0)
 
   const verdict = stopVerdict({ state, head, fingerprint, report: runDone(root) })
   writeFileSync(stateFile, JSON.stringify(verdict.state))
-  if (verdict.block) process.stdout.write(JSON.stringify({ decision: 'block', reason: verdict.reason }))
+  if (verdict.block && !baseline) process.stdout.write(JSON.stringify({ decision: 'block', reason: verdict.reason }))
 } catch {}
 
 process.exit(0)

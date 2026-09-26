@@ -107,7 +107,7 @@ function splitRow(line) {
 }
 
 // A cell is one line, and a bare `|` would end it.
-function oneCell(text) {
+export function oneCell(text) {
   return String(text ?? '').replace(/\s+/g, ' ').trim().replace(/(?<!\\)\|/g, '\\|')
 }
 
@@ -117,7 +117,7 @@ function* linksIn(cell = '') {
 
 // UTC, for the reason `decide.js` gives: the date is written into a register
 // and read by everybody afterwards.
-function isoDate(d) {
+export function isoDate(d) {
   const p = n => String(n).padStart(2, '0')
   return `${d.getUTCFullYear()}-${p(d.getUTCMonth() + 1)}-${p(d.getUTCDate())}`
 }

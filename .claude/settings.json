@@ -42,6 +42,16 @@
         ]
       },
       {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.command // \"\"' | grep -qE '(^|[^A-Za-z0-9_-])grep\\s+([^|;&]*\\s)?(-[A-Za-z]*[rR][A-Za-z]*|--recursive|--dereference-recursive)(\\s|$)' && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Search a tree with rg (rg -n PATTERN DIR) -- it skips node_modules and gitignored output. grep stays fine on a named file or a pipe.\"}}' || true",
+            "timeout": 5
+          }
+        ]
+      },
+      {
         "matcher": "Read|Bash",
         "hooks": [
           {
