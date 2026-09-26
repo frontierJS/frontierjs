@@ -54,6 +54,27 @@ const KINDS = ts => ({
 })
 
 /**
+ * What a reader calls a function: its own name, else the binding it is
+ * assigned to, else the call it is handed to. `core/outline.js` names rows with
+ * this too, so the codegraph's worst function and the outline's row agree.
+ */
+export function functionName(ts, node) {
+  const own = node.name?.getText?.()
+  if (own) return own
+  if (ts.isConstructorDeclaration(node)) return 'constructor'
+  const up = node.parent
+  if (up && (ts.isVariableDeclaration(up) || ts.isPropertyAssignment(up) || ts.isPropertyDeclaration(up))) return up.name.getText()
+  if (up && ts.isCallExpression(up) && ts.isIdentifier(up.expression)) {
+    // `test('clears on null', () => …)` — the title is the only name a suite gives it
+    const first = up.arguments[0]
+    const title = first && first !== node && ts.isStringLiteralLike(first) ? first.text : null
+    return up.expression.getText() + (title ? `('${title}')` : '(…)')
+  }
+  if (up && ts.isExportAssignment(up)) return 'default'
+  return null
+}
+
+/**
  * Every function in one file, each with:
  *
  * - **cyclo** — independent paths through it, the count of decisions plus one.
@@ -74,16 +95,6 @@ export function measureFunctions(ts, path, text) {
   const K = KINDS(ts)
   const lineOf = pos => { try { return src.getLineAndCharacterOfPosition(pos).line + 1 } catch { return 0 } }
 
-  const nameOf = node => {
-    const own = node.name?.getText?.()
-    if (own) return own
-    const up = node.parent
-    if (up && (ts.isVariableDeclaration(up) || ts.isPropertyAssignment(up) || ts.isPropertyDeclaration(up))) return up.name.getText()
-    if (up && ts.isCallExpression(up) && ts.isIdentifier(up.expression)) return up.expression.getText() + '(…)'
-    if (up && ts.isExportAssignment(up)) return 'default'
-    return null
-  }
-
   const measure = fn => {
     let cyclo = 1, cognitive = 0, nest = 0
     const walk = (node, depth) => {
@@ -103,7 +114,7 @@ export function measureFunctions(ts, path, text) {
   const visit = node => {
     if (K.fn.has(node.kind) && node.body) {
       const from = lineOf(node.body.pos), to = lineOf(node.body.end)
-      if (to - from >= 1) functions.push({ name: nameOf(node) ?? '(anonymous)', line: lineOf(node.pos), lines: to - from + 1, ...measure(node) })
+      if (to - from >= 1) functions.push({ name: functionName(ts, node) ?? '(anonymous)', line: lineOf(node.pos), lines: to - from + 1, ...measure(node) })
     }
     ts.forEachChild(node, visit)
   }

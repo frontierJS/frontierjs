@@ -1,5 +1,40 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-26 — `fli outline`: a file's shape as line ranges, and one row printed by name
+
+A 4700-line module was read in guessed `sed -n` windows, three tries to land on
+one function. `fli outline <file>` lists every function, method, class, type
+and object literal three lines or longer (headings, for `.md`) with the lines
+it spans — 135 rows for junction's `litestone.ts`, 72 for the 13,808-line
+`DECISIONS.md`. `fli outline <file> <symbol>` prints that row's body numbered:
+a name, a dotted path through ancestors in order (`makeTable.update`), a
+substring, or a line number, which names the innermost row holding it. A body
+over 500 lines prints its outline instead unless `--full`; two matches print
+both paths and exit 1. A range starts at the comment attached to the row.
+
+A row opens onto its children at 150 lines unless they average under 8 each —
+a heading over forty five-line rulings is a list, reached by name. Code is read
+with the project's TypeScript found by walking up from the file.
+
+A `.lite` is its top-level blocks, found by brace depth over toolbelt's
+`tokenize` — the lexer litestone parses with — so the kind is whatever words
+stand before the `{` (`extend model User`) and no keyword list can fall behind
+the grammar; 923 rows for the 17,716-line `erpnext.lite` in 0.4s. A `.mesa` is
+its `<script module>`, `<script>`, `<style>`, markup and front matter, with each
+script's functions at the file's own lines (every line outside the script is
+blanked before it is parsed). A block is one opened at column 0, which all 460
+tracked components do; the suite sweeps every tracked `.lite` and `.mesa`.
+
+`functionName` moved out of `measureFunctions` so both readers name a row the
+same way, and gained two answers the codegraph also gets: a constructor is
+`constructor` rather than `(anonymous)`, and a suite callback is named by its
+title, `test('clears on null')` rather than `test(…)`.
+
+`.claude/hooks/outline-hint.mjs` is a PreToolUse hint — never a block — in
+front of a Read with no `limit` or a `sed -n 'a,bp'` window on an outlinable
+file of 1000 lines or more. Its policy is `wideRead`/`outlineHint` in
+`core/outline.js`, tested in `test/outline.test.js`.
+
 ## 2026-09-26 — the `bridge-index` skill is an index; `seams.js` reads it unchanged
 
 The skill was one 72 KB file, every word loaded on each invocation to answer

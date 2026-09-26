@@ -365,6 +365,14 @@ core/
                 failure: `cognitive` is null, every other reading holds, and the
                 page says which of the three reasons it was — because *quiet*
                 and *nobody read this* must not draw the same tile
+  outline.js    one file's shape as line ranges — `fli outline`, and the policy
+                of `.claude/hooks/outline-hint.mjs` (`wideRead`/`outlineHint`),
+                which hints it in front of a Read with no limit or a `sed -n`
+                window on a file of `HINT_AT` lines. Parser and names are
+                `functions.js`'s, so a row and the codegraph's worst function
+                agree; a range starts at its attached comment. A `.lite` is
+                read by brace depth over toolbelt's `tokenize`, a `.mesa` by
+                its column-0 blocks with each script parsed at its own lines
   codegraph-page.js the codegraph model as one page; reads no files. `gilbert`,
                 `gridFor` and `coreLayout` are serialized into its script with
                 `toString()` and every band and score is graded in node, so the
