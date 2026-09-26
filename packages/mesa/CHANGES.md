@@ -1,5 +1,19 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-26 — the refused-export message names all four forms
+
+[`FJS-D211`](../../DECISIONS.md#fjs-d211). Refusing `export default`, `export *`
+or any other export form said an instance `<script>` exports only `export let`
+and `export function`, while the compiler also accepts `export const` and
+`export var`. The message now names props (`let`, `const`, `var`) and methods
+(`function`); `test/compile-errors.test.js` matches the new wording.
+
+## 2026-09-26 — pointers to the root `CLAUDE.md`'s moved tables
+
+`test/vite-server.test.js`, `test/browser/vite/run.mjs` and `CLAUDE.md` cite
+`docs/PORTS.md` and `docs/TESTING.md`, where the ports and test-runner tables now
+live. No behavior change.
+
 ## 2026-09-25 — a call to an imported function follows the component's watches
 
 [`FJS-D404`](../../DECISIONS.md#fjs-d404), VISION RULE 64, closing [`FJS-1343`](../../ISSUES.md#fjs-1343).

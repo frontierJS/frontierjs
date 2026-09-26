@@ -407,6 +407,34 @@ is which subset earns a name.
   is a subpath rather than a package — `@frontierjs/toolbelt/datetime`. See
   `IDEAS/datetime-kit.md` for the scope and `DECISIONS.md` § Repo conventions for why
   it is not its own folder.
+- **Should `app.scheduler` take a cron expression at all? (`FJS-D312`)** Caravan's
+  `cron` reads a stated `timeZone` through `@frontierjs/toolbelt/datetime`;
+  junction's `app.scheduler.cron()` states no zone and reads UTC (`FJS-1150`), so
+  `0 9 * * *` has two meanings in one app and the call site does not say which.
+  **Measured 2026-09-26: no app in the tree calls `app.scheduler.cron()`** — the
+  callers are junction's README, two junction tests and a `fli check` fixture. The one
+  production caller of `app.scheduler` at all is the webhooks plugin, and it calls
+  `every()`. `FJS-D36`'s reason for keeping the scheduler — an app with no queue still
+  gets a heartbeat — is an argument for `every()` and `once()`, neither of which reads
+  a wall clock.
+  - **A** — keep both as they are. `app.scheduler.cron()` stays UTC and its doc says
+    so; Caravan's stays zoned.
+  - **B** — remove `cron()` from `app.scheduler`. The scheduler keeps `every()` and
+    `once()`, which measure ELAPSED time, and a schedule on the CALENDAR is Caravan's
+    (`handle({ cron, timeZone })`). `FJS-D36`'s boundary becomes something the API
+    shows rather than a paragraph: a timer on elapsed time, or a job on a calendar.
+  - **C** — give `app.scheduler.cron()` a `timeZone` option read through the same
+    `partsIn`, so the two owners agree on what an expression means.
+  - **Recommend B** — one concept, one owner, and the owner `FJS-D36` already named.
+    C makes two implementations agree today and leaves two places for the next clock
+    rule to land in, and A keeps the ambiguity the row was filed for. B's cost is
+    real and small: an app with no Caravan that wants *every night at 02:00* has to
+    add Caravan or write `every('24 hours')`, which drifts from the wall clock. That
+    is the *batteries vs. smallness* adjudication — calendar scheduling stays in the
+    battery that owns durability, and the core keeps a timer. Nothing in the tree
+    calls what B removes, and the enforcer is a junction test asserting
+    `app.scheduler` offers no `cron`, with the `scheduler-dispatch` fixture moved to
+    `every()`.
 
 ## See also
 

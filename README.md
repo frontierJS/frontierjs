@@ -415,6 +415,12 @@ all of them:
 | `dist/` | build output, ready for distribution |
 | `deploy/` | everything related to shipping the app |
 
+**`test/` belongs to a surface and `tests/` belongs to the app, and the `s` is the whole
+of the distinction.** `api/test/` grades the API, `web/test/` drives the browser, and a
+test that belongs to no single surface goes in one `tests/` beside them. An app has at
+most one, so a directory named `tests` inside a surface is a second answer to a question
+the surface already answered.
+
 **All Sierra code lives under `web/`** — `config/` and `src/` belong to the UI realm, not
 to the app root. `web/` is the Vite root: `index.html` and the dev server's working
 directory are there, and the dev server runs as `cd web && vite -c config/vite.config.js`.

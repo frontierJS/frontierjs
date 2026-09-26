@@ -17,6 +17,14 @@ Material behind a pointer escapes context load and pays the pointer's own line i
 
 **Measured: the root `CLAUDE.md` was 254 KB**, about 63k tokens on every turn of every session. § Live hazards and § Bridge index were 57% of it and neither is read by anything but a person; both are skills now. The file has grown again since (new drives, new packages) — check its current size rather than trust a number here.
 
+**What Claude Code loads, and when** ([memory docs](https://code.claude.com/docs/en/memory)):
+
+- **A package `CLAUDE.md` is context load for its package.** It loads the first time a file in that directory is READ, then stays. So the root owes nothing a package file already carries.
+- **The target is under 200 lines per file**, because a longer one lowers adherence as well as costing tokens.
+- **Instructions earlier in a file are followed better** (IFScale, arXiv 2507.11538). Put the rules and commands first and the routing table last.
+- **A block-level HTML comment is stripped before injection**, and a comment inside a code fence is kept. That is where a section only a PARSER reads goes: it stays at its path for the reader and costs the agent nothing. `packages/litestone/CLAUDE.md`'s layout is the example — `fli done`'s `layout-named` reads it raw. Keep `--` and code fences out of the comment.
+- **An overview does not help an agent find files, and an instruction is obeyed whether or not it is still true** (Gloaguen et al., arXiv 2602.11988). A layout map earns visible space only where it names an owner. A rule earns its line by naming the test that pins it, because a stale rule gets followed too.
+
 ## The ladder
 
 Three rungs, ranked by how immediately the agent needs the material.
@@ -24,6 +32,10 @@ Three rungs, ranked by how immediately the agent needs the material.
 1. **In-file step** — what to do, in order.
 2. **In-file reference** — consulted on demand. A flat peer set of rules is a fine arrangement, not a smell.
 3. **Disclosed reference** — its own file behind a pointer, loaded only when the pointer fires.
+
+**A path-scoped rule is the third rung with a mechanical trigger.** `.claude/rules/*.md` with `paths:` globs loads when a matching file is READ, so it fires without a pointer being worded well — and does not fire while a new file is being written, which is why `code-style.md` keeps its first-write half in the root `CLAUDE.md`. An import line in a `CLAUDE.md` is not a rung at all: it loads at launch.
+
+**A skill loads WHOLE when it fires, so a catalog skill is an index with `references/` beside it.** `SKILL.md` carries one line per entry — the rule, or the seam with its owner — and the section's reference file carries the mechanism, the measurement and the ruling, so a turn needing one hazard reads the index and one file. Measured: the three hazard skills and `bridge-index` loaded 185 KB per firing as prose and 29 KB as indexes. A new entry is a line in the index AND a paragraph in its reference file.
 
 **What decides the rung is branching, not size.** Inline what every branch needs; disclose what only some branches reach. A `@@softDelete` trap costs nothing on a turn spent in sierra and everything on the turn it is needed, which is why the hazards split by realm rather than by weight.
 

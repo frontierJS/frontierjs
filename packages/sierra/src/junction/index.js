@@ -60,6 +60,9 @@ export {
 // The device's own database, when the app configured one. Exported because
 // `virtual:sierra` calls it — the app never does.
 export { configureLocalDb } from './local-db.js'
+// The writes this device holds, for a screen that shows what is waiting and
+// what was refused, and retries or discards it (`FJS-D300`).
+export { pendingQueue } from './pending.js'
 import { clearLocalDb } from './local-db.js'
 
 // The live stores' half of a token change — see _tokenChanged below.

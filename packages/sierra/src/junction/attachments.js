@@ -83,10 +83,9 @@ async function openDb() {
 
 /**
  * @param {object}   [opts]
- * @param {Function} [opts.onChange]  called after every mutation, with the list
- * @param {Function} [opts.now]       injected clock, for a test that needs one
+ * @param {Function} [opts.now]  injected clock, for a test that needs one
  */
-export function createAttachmentQueue({ onChange = null, now = () => Date.now() } = {}) {
+export function createAttachmentQueue({ now = () => Date.now() } = {}) {
   const mem = new Map()
 
   let db      = null
@@ -102,8 +101,10 @@ export function createAttachmentQueue({ onChange = null, now = () => Date.now() 
     announce()
   })
 
+  const listeners = new Set()
   function announce() {
-    if (onChange) onChange(list())
+    const l = list()
+    for (const fn of listeners) fn(l)
   }
 
   async function write(entry) {
@@ -195,7 +196,13 @@ export function createAttachmentQueue({ onChange = null, now = () => Date.now() 
     },
 
     /** Somebody chose to discard a rejected upload. */
-    forget: (key) => drop(key),
+    discard: (key) => drop(key),
+
+    /** Called with the list after every change; answers the unsubscribe. */
+    subscribe(fn) {
+      listeners.add(fn)
+      return () => listeners.delete(fn)
+    },
 
     list,
     pending:  () => list().filter(e => e.state === 'pending'),

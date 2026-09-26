@@ -88,10 +88,9 @@ async function openDb() {
 
 /**
  * @param {object}   [opts]
- * @param {Function} [opts.onChange]  called after every mutation, with the list
- * @param {Function} [opts.now]       injected clock, for a test that needs one
+ * @param {Function} [opts.now]  injected clock, for a test that needs one
  */
-export function createPendingQueue({ onChange = null, now = () => Date.now() } = {}) {
+export function createPendingQueue({ now = () => Date.now() } = {}) {
   /** Mirror of what is stored, so a screen can read the list synchronously. */
   const mem = new Map()
 
@@ -110,8 +109,10 @@ export function createPendingQueue({ onChange = null, now = () => Date.now() } =
     announce()
   })
 
+  const listeners = new Set()
   function announce() {
-    if (onChange) onChange(list())
+    const l = list()
+    for (const fn of listeners) fn(l)
   }
 
   async function write(entry) {
@@ -198,7 +199,24 @@ export function createPendingQueue({ onChange = null, now = () => Date.now() } =
     },
 
     /** Somebody chose to discard a rejected write. */
-    forget: (key) => drop(key),
+    discard: (key) => drop(key),
+
+    /**
+     * Somebody chose to send a rejected write again (`FJS-D300`). Same key:
+     * junction releases a key on a failed call, so this is a fresh attempt
+     * rather than a replay of the refusal.
+     */
+    async retry(key) {
+      const entry = mem.get(key)
+      if (!entry || entry.state !== 'rejected') return
+      await write({ ...entry, state: 'pending', attempts: 0, lastError: null })
+    },
+
+    /** Called with the list after every change; answers the unsubscribe. */
+    subscribe(fn) {
+      listeners.add(fn)
+      return () => listeners.delete(fn)
+    },
 
     list,
     pending:  () => list().filter(e => e.state === 'pending'),
@@ -262,6 +280,9 @@ let _queue = null
 export function pendingQueue() {
   if (!_queue) {
     _queue = createPendingQueue()
+    const retry = _queue.retry
+    // A retry the person asked for goes now if it can, not at the next reconnect.
+    _queue.retry = async (key) => { await retry(key); _drainNow?.() }
     _armDrain()
   }
   return _queue
@@ -305,6 +326,9 @@ export async function drainPending(client) {
     } catch (err) {
       if (unreachable(err)) { await q.defer(entry.key, err); return 'unreachable' }
       await q.reject(entry.key, err)
+      // Nothing else on the device says a held write was refused; a screen
+      // that wants to show it subscribes to the queue.
+      console.warn(`[sierra] held write refused at replay: ${entry.service}.${entry.method} — ${err?.message ?? err}`)
       rejected++
       return 'rejected'
     }
@@ -313,6 +337,7 @@ export async function drainPending(client) {
 }
 
 let _armed = false
+let _drainNow = null
 
 /**
  * Drain when the socket comes back, and once at boot.
@@ -338,6 +363,7 @@ function _armDrain() {
       const { drainAttachments } = await import('./attachments.js')
       await drainAttachments(client)
     }
+    _drainNow = () => { if (client.connected) both().catch(() => {}) }
     client.on('connect', () => { both().catch(() => {}) })
     if (client.connected) both().catch(() => {})
   } catch {
@@ -348,4 +374,4 @@ function _armDrain() {
 }
 
 /** Test seam: forget the app-wide queue so a suite can build its own. */
-export function _resetPendingQueue() { _queue = null; _armed = false }
+export function _resetPendingQueue() { _queue = null; _armed = false; _drainNow = null }

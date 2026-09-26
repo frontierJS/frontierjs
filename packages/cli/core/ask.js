@@ -409,9 +409,15 @@ function packages(root) {
   } catch { return [] }
 }
 
-/** Committed maps that name a path beside a sentence about it. */
+/**
+ * Committed maps that name a path beside a sentence about it. `docs/` holds the
+ * reference the root `CLAUDE.md` points at — CI, testing, ports — so an engine
+ * named only there is still found.
+ */
 function mapFiles(root) {
   const out = ['CLAUDE.md', 'DRIVES.md']
+  for (const name of ['CI.md', 'TESTING.md', 'PORTS.md'])
+    if (existsSync(join(root, 'docs', name))) out.push(`docs/${name}`)
   for (const name of packages(root)) {
     const f = `packages/${name}/CLAUDE.md`
     if (existsSync(join(root, f))) out.push(f)

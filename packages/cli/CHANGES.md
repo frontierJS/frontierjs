@@ -1,5 +1,34 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-26 — the `bridge-index` skill is an index; `seams.js` reads it unchanged
+
+The skill was one 72 KB file, every word loaded on each invocation to answer
+which seam owns a translation. `SKILL.md` is now one line per seam (names, what
+it answers, owner) at 14 KB, and each entry's full text moved verbatim into
+`references/<section>.md` beside it. `readSeams` returns the same 90 seams with
+the same names, owners and sections — compared before and after — so
+`seam-owner`, `seam-listed` and `seams.snapshot.md` are untouched. Only the
+module's header comment changed, since it described the bullets as carrying
+the prose.
+
+## 2026-09-26 — `fli ask` reads `docs/CI.md`, `docs/TESTING.md` and `docs/PORTS.md`
+
+The root `CLAUDE.md` moved its CI phase table, test-runner table and ports table
+into those three files, and two engines — `core/checks.js` and
+`core/register-check.js` — were named only in the moved text. `mapFiles` indexes
+them beside the root map, so the graded set is back to every question routed.
+Comments in `core/ports.js` and `core/extension-surface.js` point at
+`docs/PORTS.md`.
+
+## 2026-09-26 — `fli decisions` queues a question once, not once per register
+
+**A § Needs a decision row whose id a live paper bullet names in its lead is
+that bullet**, and is no longer queued beside it. Every row's Detail sends its
+options to a paper, so each question argued there was listed twice — once as
+pickable, once as *without options* — and seven rows read as undone while all
+of their options were written. A ruled bullet does not hide its row, so a row
+the ruling never closed stays in sight. Paired test in `test/decisions.test.js`.
+
 ## 2026-09-25 — `fli gs` lists no untracked files unless `--with-new`
 
 Untracked files stay in the summary count (`N new`) and the per-place `?n` mark,

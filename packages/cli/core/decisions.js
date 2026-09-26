@@ -43,9 +43,10 @@ export const QUESTIONS_HEADING = /^##\s+(?:\d+\.\s+)?(?:the\s+)?open questions?\
 // A paper whose argument was replaced or declined has no live questions.
 const MOOT_STATUS = new Set(['superseded-by', 'withdrawn'])
 
-const TOP_BULLET = /^(?:[-*]|\d+\.)\s+(.*)$/
-const OPTION     = /^\s+[-*]\s+\*\*([A-Z])\*\*\s*[—–:-]\s*(.+)$/
-const RECOMMEND  = /^\s+[-*]\s+\*\*Recommend(?:ed)?:?\s*([A-Z])\*\*\s*(?:[—–:-]\s*)?(.*)$/
+const TOP_BULLET  = /^(?:[-*]|\d+\.)\s+(.*)$/
+const OPTION      = /^\s+[-*]\s+\*\*([A-Z])\*\*\s*[—–:-]\s*(.+)$/
+const RECOMMEND   = /^\s+[-*]\s+\*\*Recommend(?:ed)?:?\s*([A-Z])\*\*\s*(?:[—–:-]\s*)?(.*)$/
+const QUESTION_ID = /\b[A-Z][A-Z0-9]*-D\d+\b/g
 
 // ─── the read ─────────────────────────────────────────────────────────────────
 
@@ -57,7 +58,9 @@ const RECOMMEND  = /^\s+[-*]\s+\*\*Recommend(?:ed)?:?\s*([A-Z])\*\*\s*(?:[—–
  * `[{ letter, text }]` and `recommend` is `{ letter, why }` or null.
  */
 export function readDecisions(root) {
-  return [...ideaQuestions(root), ...issueQuestions(root)]
+  const ideas  = ideaQuestions(root)
+  const argued = new Set(ideas.filter(q => q.state !== 'ruled').flatMap(q => q.question.match(QUESTION_ID) ?? []))
+  return [...ideas, ...issueQuestions(root).filter(q => !argued.has(q.id))]
 }
 
 /** The ones a person can answer now, and the ones waiting on work first. */
@@ -179,7 +182,11 @@ function questionLead(text) {
 //
 // A row's question cell is a paragraph and has nowhere to hold options, so a
 // row is always OPEN here. Its options belong in the paper its Detail links,
-// where they become a bullet this reader can offer.
+// where they become a bullet this reader can offer — and once a live bullet's
+// lead names the row's id, the row is that bullet and is not queued again
+// (`readDecisions`). Queued twice, it read as *no options yet* beside the
+// bullet that had them. A ruled bullet does not hide its row, so a row the
+// ruling never closed stays in sight.
 
 function issueQuestions(root) {
   return readRegisters(root).issues

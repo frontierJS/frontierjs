@@ -2,7 +2,9 @@
   "name": "frontierjs",
   "version": "0.0.0",
   "private": true,
-  "registers": { "prefix": "FJS" },
+  "registers": {
+    "prefix": "FJS"
+  },
   "workspaces": [
     "packages/*",
     "packages/sierra/example",
@@ -10,12 +12,13 @@
     "website"
   ],
   "scripts": {
-    "build":         "bun run --filter '*' build",
-    "test":          "bun run --filter '*' test",
-    "typecheck":     "bun run --filter '*' typecheck",
-    "ci":            "node scripts/ci.mjs",
-    "ci:fast":       "node scripts/ci.mjs --fast",
-    "hooks:install": "node scripts/install-hooks.mjs"
+    "build": "bun run --filter '*' build",
+    "test": "bun run --filter '*' test",
+    "typecheck": "bun run --filter '*' typecheck",
+    "ci": "node scripts/ci.mjs",
+    "ci:fast": "node scripts/ci.mjs --fast",
+    "hooks:install": "node scripts/install-hooks.mjs",
+    "fix:loop": "bun scripts/fix-loop.mjs"
   },
   "devDependencies": {
     "typescript": "^5.0.0",

@@ -2,6 +2,24 @@
 
 
 
+## 2026-09-26 — `CLAUDE.md` is the map; the reasons are `docs/internals.md`
+
+`CLAUDE.md` was 1540 lines and 110 KB, about 27k tokens on every turn spent in
+this package, and about half of it was traps the `api-hazards` and
+`bridge-index` skills already carried. What an agent now loads is 173 lines and
+10 KB, in the order instructions are best followed: the rules a change must
+keep, each naming the test that pins it; the proving commands and which test a
+change joins; the defaults an agent gets wrong; the two contexts and the two
+stores; the seams this package owns; and the routing table last. The layout
+names every file under `src/` and `tools/` (25 were missing, among them
+`client/nodes.ts`, `webhooks/payload.ts`, the seven email modules and every
+`tools/check-*.mjs`) and sits in a block-level HTML comment, which `fli done`'s
+`layout-named` reads raw and Claude Code strips before injecting the file. The
+trap write-ups not already in a skill moved verbatim to a new
+`docs/internals.md`, grouped by the path they guard. Its six-fields table named
+the machine-end field `client`; the code and `test/context-contract.test.ts`
+call it `caller`, and the row now says so.
+
 ## 2026-09-25 — `SortParam` and `ParsedQuery.orderBy` carry a structured ordering
 
 `OrderBy` was widened so that a relation hop, a nulls placement and a distance keep

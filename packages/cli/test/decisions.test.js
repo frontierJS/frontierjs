@@ -142,6 +142,27 @@ describe('the read', () => {
     } finally { cleanup() }
   })
 
+  test('a row a live bullet names is that bullet, and a ruled bullet hands the row back', () => {
+    // The pair: dropping every issue row would also satisfy the first half.
+    const paper = (lead) => [
+      '---', 'id: thing', 'status: proposed', '---', '', '## Open questions', '',
+      `- ${lead} Argued here.`,
+      '  - **A** — yes', '  - **B** — no', '  - **Recommend A** — because', '',
+    ].join('\n')
+
+    const live = fixture({ paper: paper('**Should the thing be a thing? (`FJS-D07`)**') })
+    try {
+      const qs = readDecisions(live.root)
+      expect(qs.some(q => q.id === 'FJS-D07')).toBe(false)
+      expect(qs.find(q => q.question.includes('FJS-D07')).state).toBe('decidable')
+    } finally { live.cleanup() }
+
+    const ruled = fixture({ paper: paper('~~**Should the thing be a thing? (`FJS-D07`)**~~ **Answered 2026-09-14 (`FJS-D03`): A.**') })
+    try {
+      expect(readDecisions(ruled.root).find(q => q.id === 'FJS-D07')?.state).toBe('open')
+    } finally { ruled.cleanup() }
+  })
+
   test('the sections a ruling may go under leave out the one pointing at the queue', () => {
     const { root, cleanup } = fixture()
     try { expect(rulingSections(root)).toEqual(['Naming & vocabulary']) } finally { cleanup() }

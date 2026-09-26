@@ -33,6 +33,8 @@
 - [soft-delete.md](soft-delete.md) — @@softDelete, cascade, @hardDelete, restore
 - [export.md](export.md) — `@@export`: a governed bulk extract, a paginated scoped read that cannot contain what the principal could not read a row at a time
 - [full-text-search.md](full-text-search.md) — @@fts, search(), highlight/snippet, optimizeFts
+- [geo.md](geo.md) — `@point`: a coordinate indexed as two columns and read as one, with bounding-box pruning (`FJS-D316`, `FJS-D317`)
+- [vectors.md](vectors.md) — `@vector`: a float32 embedding column, compared by angle — where the comparison runs differs on a server and in a browser
 - [file-storage.md](file-storage.md) — FileStorage plugin, S3/R2/local, autoResolve, fileUrl, ExternalRefPlugin
 - [audit-logging.md](audit-logging.md) — @log, @@log, logger driver, onLog callback
 - [multi-database.md](multi-database.md) — database blocks, drivers (sqlite/jsonl/logger), @@db, @@external
@@ -55,6 +57,7 @@
 - [publishing.md](publishing.md) — npm scope, pre-publish checklist, version strategy
 
 ## Meta
+- [internals.md](internals.md) — **for a change to litestone itself**: the rule each path must keep, the failure that established it, and its `FJS-###`. Reads, writes, events, policies, parse, migrations, SQLite, tenancy, client utilities, tooling
 - [roadmap.md](roadmap.md) — **proposals only, never a statement of behavior**: Embedding, LatLng, ExternalSync, and the unbuilt half of `@slug`. What the language accepts is `reference.snapshot.md` above
 - [gotchas.md](gotchas.md) — production surprises and edge cases
 

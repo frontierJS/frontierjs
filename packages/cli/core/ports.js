@@ -701,7 +701,7 @@ export function getSessionStatus({ lockFile = LOCK_FILE } = {}) {
 // cookie's origin, so `localhost:8010` and `localhost:8110` share one jar and
 // cookie auth in dev behaves unlike cookie auth anywhere else, where
 // `example.localhost` and `api.example.localhost` reproduce production. And a
-// drive's assertions stop hard-coding the port `CLAUDE.md` also states.
+// drive's assertions stop hard-coding the port `docs/PORTS.md` also states.
 //
 // ── Strictly additive ───────────────────────────────────────────────────────
 //

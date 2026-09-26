@@ -2,6 +2,79 @@
 
 Litestone ships a `/testing` subpath with everything needed for fast, deterministic test suites: in-memory clients, factories, seeders, and schema-derived test case generators.
 
+## At a glance
+
+```js
+import { createTestEnv, makeTestClient, Factory, defineFactory, truncate, reset,
+         snapshot, restore, generateFactory, generateGateMatrix,
+         generateValidationCases, deriveAccess, renderAccessSnapshot, gateLadder,
+         expectedVerdict, factoryFrom, loadFixture, parseCsv,
+         readOnly, schemaMutants, mutationScore } from '@frontierjs/litestone/testing'
+
+// The environment: migrated database, client, factories, principal. Tables
+// arrive as a file copy from a template migrated once per schema per process —
+// 476ms → 13ms per database on a 37-model schema.
+// `migrations:` replays the committed files instead of generating DDL, so the
+// tests run against the database a deploy produces. basecamp uses it.
+const env = await createTestEnv({
+  schema:     'db/schema.lite',
+  migrations: 'db/migrations',
+  plugins:    [myGatePlugin],
+})
+
+env.actingAs(user)                  // the app's own getLevel — anything about behavior
+await env.atLevel(4)                // a SYNTHETIC standing — the gate grid only
+await env.verifyGateLadder()        // every gated model × every level × all four ops
+await env.verifyReadLadder()        // the read column alone — no fixtures needed
+await env.verifyConstraints()       // every declared rule, against a real write
+await env.verifyFieldProtection()   // @guarded/@encrypted/@secret, actually read
+await env.verifyRowPolicies()       // @@allow/@@deny, rows on BOTH sides
+await env.verifyTenantIsolation()   // tenancy { }, actually crossed — one tenant reaching into another
+
+// Mutate the schema, run the ORIGINAL's checks against the mutant's database.
+// A mutant nothing notices is a hole in the SUITE, and it names itself.
+const { score, survived } = await mutationScore({
+  schema, build: (text) => createTestEnv({ schema: text }),
+})
+env.seal(); env.reset(); env.close()
+
+// Arrange / Act / Assert as three clients rather than three comments. `setup` is
+// the arrange every scenario shares — run once, restored by each phases() call.
+const fx = await env.setup(({ factories }) => factories.account.createOne())
+const t  = env.phases({ as: developer })
+const lead = await t.arrange(({ factories }) => factories.lead.createOne())
+await t.act(as => as.lead.remove({ where: { id: lead.id } }))
+await t.assert(read => expect(read.lead.count()).resolves.toBe(0))
+
+const { db, factories } = await makeTestClient(schemaText, {
+  seed:          42,           // deterministic RNG seed
+  autoFactories: true,         // auto-generate factories for all SQLite models
+  factories:     { user: MyUserFactory },
+  data:          async (db) => { /* seed data */ },
+})
+// Always a throwaway tmpdir — a `database` block in the schema is overridden, so a
+// test pointed at a real app schema can never open the app's real database.
+
+// Helpers
+await truncate(db, 'User')     // DELETE FROM "user"
+await reset(db)                // truncate all tables in dependency order
+
+// Seed once, reset between tests — raw rows, so @encrypted keeps its ciphertext
+const clean = snapshot(db)
+restore(db, clean)
+
+// Test generation — the second argument is the MODEL name, never the accessor
+const matrix  = generateGateMatrix(schema, 'Post')        // every op × every level 0–8
+const edges   = generateGateMatrix(schema, 'Post', { levels: 'edges' })  // 2 per op
+const cases   = generateValidationCases(schema, 'User')   // valid + invalid + boundary
+const factory = factoryFrom(schema, 'User', db)
+
+// The declared access surface — gates, policies, protected fields, and per move
+// its gate AND its @system, which are two facts that compose rather than one
+// grade. `litestone access` renders it to the committed access.snapshot.md.
+const access  = deriveAccess(schema)
+```
+
 ## createTestEnv
 
 A migrated database, a client, factories and a principal, in one call.

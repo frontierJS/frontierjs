@@ -1,5 +1,25 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-26 — `CLAUDE.md` is the map; the reasons are `docs/internals.md`
+
+`CLAUDE.md` was 160 KB, about 40k tokens on every turn spent in this package,
+and most of it was reference that `docs/` already had or traps the
+`data-hazards` skill already had. What an agent now loads is 168 lines and
+10 KB, in the order instructions are best followed: the rules a change must
+keep, each naming the test that pins it; the proving commands and which grid a
+change joins; the defaults an agent gets wrong; the context; the seams; and
+the routing table last. The layout names every file under `src/` (about 35
+were missing, so `fli done`'s `layout-named` could not tell a new sibling had
+been left out) and sits in a block-level HTML comment: that check reads the
+file raw, and Claude Code strips such a comment before injecting the file.
+The trap write-ups moved verbatim to `docs/internals.md`, grouped by the path
+they guard, with the two grids' reasoning and the plugin hook skeleton. Those
+duplicating the skill were dropped. The attribute list points at
+`catalog.snapshot.md`, which groups every word and is generated. The CLI
+synopsis moved to `docs/cli.md` and the `./testing` overview to
+`docs/testing.md`, which had not listed `verifyRowPolicies` or
+`verifyTenantIsolation`.
+
 ## 2026-09-25 — a column the server fills is required by nobody (`FJS-1296`)
 
 The create-mode JSON Schema's `required` list and the client's required

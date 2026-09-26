@@ -394,4 +394,4 @@ drives over one harness, shared with `@frontierjs/ui` (`drive.mjs`,
 
 `bun run test` — which now includes the two gating browser drives — then,
 because SSR and hydration fail apart, both of `example`: `bun run verify` and
-`bun run verify:site`. See the root `CLAUDE.md` §Running things.
+`bun run verify:site`. See `docs/TESTING.md`.

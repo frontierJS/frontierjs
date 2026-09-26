@@ -1,5 +1,26 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-26 — a write refused at replay is told, and can be retried (`FJS-1302`)
+
+`FJS-D300` ruled that a mutation refused at replay is *surfaced as a rejected
+item somebody can see and retry*, and none of the three was true: the drain
+parked it in `fjs-pending` and said nothing, the queue was not exported, and
+the only verb on a rejected entry was `forget`. Now:
+
+- `pendingQueue` is exported from `@frontierjs/sierra/junction`.
+- The queue has `subscribe(fn)`, called with the list after every change and
+  answering the unsubscribe; the `onChange` constructor option is gone.
+- `retry(key)` puts a rejected entry back to `pending` under the same key and,
+  on the app queue, drains at once when the socket is up.
+- `forget(key)` is `discard(key)`, the name `FJS-D335` gives it, and the blob
+  queue has the same `subscribe` and `discard`, so the two queues read alike.
+- A refusal at replay logs `[sierra] held write refused at replay: <service>.<method> — <message>`.
+
+## 2026-09-26 — the test-runner map is `docs/TESTING.md`
+
+`CLAUDE.md` pointed at the root `CLAUDE.md` § Running things for the full map of
+runners, and that table moved to `docs/TESTING.md`. No behavior change.
+
 ## 2026-09-25 — `bytes` is an interaction task
 
 `controlFor` answers `task: 'bytes'` for a `File` column, where it answered

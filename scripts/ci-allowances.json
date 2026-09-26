@@ -3,7 +3,7 @@
   "//exemptPackages": "Directories under packages/ (plus the two example apps) with no `test` script. Without this list a package with no tests is indistinguishable from a passing one, which is the failure mode CI is aimed at. Key is the repo-relative directory.",
   "exemptPackages": {
     "packages/oracle": "A README and a runnable mockup/, nothing else. V2 — deferred until FrontierJS core leaves alpha (FJS-D14, ruled 2026-08-15). The exemption is the answer, not a placeholder: nothing is owed here until then.",
-    "example": "A runnable app, not a package. Its six browser drives need `bun run api` + `bun run web` started by hand and sign in against a login rate limit (10 per 15 min), so they cannot run unattended. Covered by hand per CLAUDE.md § Running things.",
+    "example": "A runnable app, not a package. Its six browser drives need `bun run api` + `bun run web` started by hand and sign in against a login rate limit (10 per 15 min), so they cannot run unattended. Covered by hand per docs/TESTING.md.",
     "packages/sierra/example": "Same — a runnable app whose drives need servers started by hand."
   },
   "//structure": "Architecture-rule exceptions for the `structure` phase, which runs packages/cli/core/checks.js — the same engine `fli check` gives a client app. Keyed by app directory (or `.` for the repo-wide package rules), then by `<rule>:<path-relative-to-that-root>`. A rule is what every app gets on the next release, so an exception is never a loosened rule: it is one named path with a reason, and a stale one is reported.",

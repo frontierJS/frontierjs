@@ -723,4 +723,4 @@ drives a plain host page in Chrome, which is the only place shadow isolation,
 custom element upgrade and a delegated click inside a shadow root are decidable.
 **`bun run test:installable` for `postbuild/manifest.js`** — the grader restates
 Chrome's install rules, and only Chrome can say whether it still restates them.
-Root `CLAUDE.md` §Running things has the full map.
+`docs/TESTING.md` has the full map.

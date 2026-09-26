@@ -111,8 +111,8 @@ for (let i = 0; i < args.length; i++) {
 
 
 // The phase list is read off the table rather than written out, so a phase
-// added to the run is a phase this prints. What each one FAILS ON is the root
-// `CLAUDE.md` § Running things, and is not restated here.
+// added to the run is a phase this prints. What each one FAILS ON is
+// `docs/CI.md`, and is not restated here.
 function usage() {
   const tier = n => FULL_ONLY.has(n) ? 'full' : 'fast'
   const width = Math.max(...Object.keys(PHASES).map(n => n.length))
@@ -142,7 +142,7 @@ Flags
 Phases, in the order a full run does them
 ${Object.keys(PHASES).map(n => `  ${n.padEnd(width)}  ${tier(n)}`).join('\n')}
 
-What fails each one: CLAUDE.md § Running things.
+What fails each one: docs/CI.md.
 Every allowance is a named entry with a reason in scripts/ci-allowances.json.
 `.trim())
 }
@@ -1831,7 +1831,7 @@ function runScript(dir, script) {
 // Everything here runs under bun except the extension, whose own scripts shell
 // out to `npm run build` and whose toolchain (tsc, vsce) is npm's. Running it
 // under bun works by accident today; naming it keeps the accident from being
-// load-bearing. CLAUDE.md § Running things states the same split.
+// load-bearing. docs/TESTING.md states the same split.
 function packageManagerFor(dir) {
   return dir === 'packages/frontierjs-vscode' ? 'npm' : 'bun'
 }

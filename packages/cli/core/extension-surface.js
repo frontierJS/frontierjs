@@ -80,7 +80,7 @@ export default {
   hostPermissions: [],
 
   // 8400 = dev / ext / project 0 / service 0. The dev server pushes reloads to
-  // the loaded-unpacked extension over this port; see CLAUDE.md § Ports.
+  // the loaded-unpacked extension over this port; see docs/PORTS.md.
   dev: { port: ${port} },
 
   // One entry per file in src/islands/. The file is discovered; this is where

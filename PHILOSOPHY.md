@@ -31,23 +31,26 @@ what's true. The other two are that same discipline, applied to the person
 trying to hold it in their head — nothing here is independent of them.
 
 ### 1. One origin
-Every fact has exactly one authoritative declaration. Everything else is
-derived.
+Every fact the app states has exactly one authoritative declaration.
+Everything else is derived. A fact the world states — the time, a payment's
+status at the processor, what a user typed — has an authority outside the app,
+and the app holds one reference to it rather than a declaration of it.
 
 ### 2. One name
 Every concept has exactly one name. Vocabulary exists to reduce cognitive
 load, not to describe the system after the fact.
 
 ### 3. One owner
-Every capability has exactly one owner. Boundaries are enforced, not
+Every capability has exactly one owner. Owning is authority over a
+capability's definition and lifecycle, not being the only one to take part in
+it: many may participate, one decides. Boundaries are enforced, not
 documented.
 
 ---
 
 ## III. Implications
 
-*(Each of the following is a consequence of the axioms above, not a fourth
-philosophy.)*
+*(Each of the following is a consequence of the axioms above.)*
 
 ### Declaration is a contract
 *— from Axiom 1*
@@ -98,6 +101,16 @@ test suite is a fact. Unclear ownership is the same diagnosis from the other
 side: where two places each half-own a capability, what is missing is the
 checkpoint between them rather than a rule about who defers.
 
+### Outputs are inputs
+*— from Axiom 3*
+
+The abstractions that last have one shape and keep it: a relation in, a
+relation out; a stream in, a stream out. That is what lets any part work with
+every other, so each new part adds to all the rest rather than sitting beside
+them. A second shape for one kind of thing undoes it — the result envelope was
+taken apart in twelve places, each with its own rules, until one module owned
+it. A new construct answers in a shape something already accepts.
+
 ### Concept economy
 *— from Axiom 2*
 
@@ -105,6 +118,18 @@ A new concept costs more than a new feature; reuse the vocabulary you have
 before minting a word for a fourth noun. A dependency counts against the
 same budget as a concept — each is a page of someone else's mental model
 taxed against your own.
+
+### Discovered, not invented
+*— from Axiom 2*
+
+A concept that already has a name somewhere else — in mathematics, in another
+field, in a practice people followed before software — is a joint in the world,
+and building on one is building on something that will not move. The relational
+model is predicate logic; a spreadsheet is the ledger; a Commitment is REA's and
+a Relator is UFO's. A concept with no prior art is an invention, and an
+invention carries the burden of proof: it has to say where the existing names
+fail to describe what it needs. Finding the old name is also how a proposal learns what it forgot,
+because the prior art has usually met the edge case already.
 
 ### Errors teach
 *— from Predictability*
@@ -168,11 +193,14 @@ doctrine — in writing.
 
 Every proposal reduces to one test: does this shorten the path from a
 stated intent to a running truth, without making the world harder to
-predict? In review, that breaks down into:
+predict? In review, that breaks down into nine questions — **the nine**:
 
 - Does it introduce another origin of truth?
 - Does it enlarge the concept budget?
-- Is the complexity the problem's, or did we add it?
+- Is the complexity the problem's, or did we add it? The evidence is an
+  older name: complexity the problem has, some field has usually already
+  named — and a concept nobody has named has to say where the existing
+  names fail (*Discovered, not invented*).
 - Does it reduce predictability?
 - Can it be derived instead of restated?
 - Does it have exactly one owner — and is that owner one that already exists?

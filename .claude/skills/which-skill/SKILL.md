@@ -33,7 +33,7 @@ The shape is adapted from Matt Pocock's `ask-matt` ([mattpocock/skills](https://
 
 ## Proving
 
-1. **`cd` into the package and run its own `test` script.** The runner differs per package, and the root table in `CLAUDE.md` § Running things is the one list.
+1. **`cd` into the package and run its own `test` script.** The runner differs per package, and `docs/TESTING.md` is the one list.
 2. **Pair every refusal with the acceptance one character away**, and stub the fix once to watch the new test go red. A test that stays green with the fix removed is grading nothing.
 3. **`fli proves`** names the drive the diff needs; the drive's *Start first* column says what to start. A diff that no row matches is a warning rather than a pass: it means the proof table has not met this kind of change yet.
 4. **`fli check` at the repo root** after touching a rule, a skill or a register — the same repo-scope rules CI's `structure` phase runs, found before the push rather than after it.
@@ -52,6 +52,7 @@ The shape is adapted from Matt Pocock's `ask-matt` ([mattpocock/skills](https://
 ## On-ramps
 
 - **A new app for a client, with no `db/schema.lite` yet.** The `discovery` skill turns the conversation, brief or existing database into the seed. It is installed per user under `~/.claude/skills` rather than in this repo, so it is absent on a machine that has not added it.
+- **Working down the open register.** `fix-next` picks the top `fli next` row and carries it through this path to `fli close`; one row per session, so a batch is `bun run fix:loop`.
 - **Something is broken.** `VERIFYING.md` first: reproduce with one command that goes red on this defect, before theorizing. Then the realm's hazard skill, since half of what reads as a bug is correct-but-surprising behavior already written down there.
 - **A screen needs styling.** `ui-hazards`, then `packages/css/README.md` for the vocabulary — a tone and a treatment, never a color (Invariant 13).
 - **A document an agent reads is growing.** `doc-hygiene` before adding, since the cut is usually a pointer rather than a paragraph.

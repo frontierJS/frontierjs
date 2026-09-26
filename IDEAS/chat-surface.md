@@ -57,7 +57,7 @@ and a column type.
 right to (`FJS-D13`): a `Response` and a `ReadableStream` both have no enumerable
 own properties, so wrapping one answered `{"kind":"single","data":{}}` with the
 stream destroyed. The escape that exists is `ctx.sse()` on a raw route, which
-`packages/junction/CLAUDE.md` describes accurately as *right for a heartbeat,
+`packages/junction/docs/internals.md` describes accurately as *right for a heartbeat,
 wrong for records* — **no hooks, no `gateAuth`, no field protection, no directive
 parse**.
 
@@ -110,7 +110,7 @@ apply for free, it pays for itself — but the column is `Bytes @vector(n)` and 
 retrieval is an `orderBy` on `findMany`, not a verb. Read that record for the
 shape; this section is kept for what a chatbot needs on top of it.
 
-Listed in `packages/litestone/CLAUDE.md` § Backlog as
+Listed in `packages/litestone/docs/roadmap.md` as
 `Embedding(1536)` + `findSimilar()` + cosine, and as one row in
 `IDEAS/ecosystem-gaps.md`'s four-item table with the verdict already applied —
 *in-house column type; the model that produces the embedding is a Conduit target

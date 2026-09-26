@@ -103,6 +103,7 @@ Add a new one to `../../ISSUES.md`, not to this file.
 
 ## Layout
 
-`README.md` (users) · `CLAUDE.md` (the map, and the depth) · `PROJECT_STATE.md`
+`README.md` (users) · `AGENTS.md` (an app's author) · `CLAUDE.md` (the map) ·
+`docs/internals.md` (the depth) · `PROJECT_STATE.md`
 (this) · `CHANGES.md` (history, newest first). Per the root convention, nothing
 else belongs at this package root.

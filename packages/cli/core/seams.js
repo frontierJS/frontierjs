@@ -1,7 +1,8 @@
 // ─── seams.js — who owns each named cross-package handoff ────────────────────
 //
 // `CLAUDE.md` § Bridge index and the `bridge-index` skill are one list written
-// twice: a key list at the root, eighty-five explained bullets in the skill.
+// twice: a key list at the root, one owner-bearing bullet per seam in the
+// skill, whose prose lives in `references/` beside it and is not read here.
 // Both are hand-kept and nothing compares them, so a seam can exist in one and
 // not the other — `signIn` is ruled in `FJS-D261`, carries its own bullet, and
 // the key list has never named it.
@@ -14,8 +15,8 @@
 // ── Two halves, and only one of them derives ────────────────────────────────
 //
 // The LIST derives. The bullets are the seams and the skill is where they are
-// already written with their prose, so a second copy here would be the
-// restatement this framework is a bet against. The OWNER is a statement
+// already written, so a second copy here would be the restatement this
+// framework is a bet against. The OWNER is a statement
 // somebody makes: that `$setAuth` belongs to `client.js` and not to one of the
 // four type declarations that also carry the name cannot be read off the tree,
 // because every one of the five sites declares it. So it is DECLARED in the

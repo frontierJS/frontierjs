@@ -160,7 +160,7 @@ describe('an instance <script> may not export a default', () => {
   it('refuses export default by name', async () => {
     const { errors } = await cx('<script>\nexport default 1\nlet n = 0\n</script><b>{n}</b>')
     expect(errors.join('\n')).toContain("'export default'")
-    expect(errors.join('\n')).toMatch(/exports only `export let`/)
+    expect(errors.join('\n')).toMatch(/exports only props \(`export let`, `const`, `var`\)/)
   })
 
   it('refuses export * by name', async () => {

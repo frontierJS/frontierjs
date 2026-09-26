@@ -3228,8 +3228,8 @@ export function analyzeScript(raw, ast) {
     if (node.type === 'ExportDefaultDeclaration' || node.type === 'ExportAllDeclaration') {
       const form = node.type === 'ExportDefaultDeclaration' ? 'export default' : 'export *'
       errors.push(
-        `'${form}' — an instance <script> exports only \`export let\` (a prop) and ` +
-        `\`export function\` (a method); the component is already the module's ` +
+        `'${form}' — an instance <script> exports only props (\`export let\`, ` +
+        `\`const\`, \`var\`) and methods (\`export function\`); the component is already the module's ` +
         `default export. Module-scope exports go in <script module>.`
       )
       continue
@@ -3244,8 +3244,8 @@ export function analyzeScript(raw, ast) {
     ) {
       errors.push(
         `'${raw.slice(node.start, Math.min(node.end, node.start + 40)).split('\n')[0].trim()}' — ` +
-        `an instance <script> exports only \`export let\` (a prop) and ` +
-        `\`export function\` (a method). Module-scope exports go in <script module>.`
+        `an instance <script> exports only props (\`export let\`, \`const\`, \`var\`) ` +
+        `and methods (\`export function\`). Module-scope exports go in <script module>.`
       )
       continue
     }

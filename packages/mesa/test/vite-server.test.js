@@ -18,7 +18,7 @@
  * So this starts the server for real, over real HTTP, and asks for the same
  * things a browser asks for. It runs in middleware mode against a fixture app
  * under `test/fixtures/vite-app/`, on port 0 — the OS picks, so this cannot
- * collide with a dev server someone is running (root CLAUDE.md § Ports).
+ * collide with a dev server someone is running (`docs/PORTS.md`).
  *
  * The runtime import in compiled output is aliased to this package's own source
  * rather than resolved by name: `bun install` copies a workspace dep, so a

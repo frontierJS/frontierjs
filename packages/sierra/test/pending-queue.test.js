@@ -23,7 +23,7 @@
  * is promising something a reload breaks.
  */
 
-import { test, expect } from 'vitest'
+import { test, expect, vi } from 'vitest'
 
 import { createPendingQueue, unreachable } from '../src/junction/pending.js'
 
@@ -82,7 +82,7 @@ test('a rejected entry leaves the pending set but is not thrown away', async () 
   expect(q.rejected().length).toBe(1)
   expect(q.rejected()[0].lastError.code).toBe(422)
 
-  await q.forget(e.key)
+  await q.discard(e.key)
   expect(q.list().length).toBe(0)
 })
 
@@ -147,12 +147,59 @@ test('with no IndexedDB it still runs, and says it is not durable', async () => 
   await q.settle(e.key)
 })
 
-test('onChange fires on every mutation, with the list', async () => {
+test('subscribe fires on every mutation, with the list, until unsubscribed', async () => {
   const seen = []
-  const q = createPendingQueue({ onChange: (l) => seen.push(l.length) })
+  const q = createPendingQueue()
   await q.ready
+  const off = q.subscribe((l) => seen.push(l.length))
   const e = await q.add(entry())
   await q.defer(e.key, new Error('offline'))
   await q.settle(e.key)
+  off()
+  await q.add(entry())
   expect(seen).toEqual([1, 1, 0])
+})
+
+// FJS-D300 ruled a refused write is somebody's to SEE and RETRY. Same key on
+// purpose: junction releases a key on failure, so a retry is a fresh attempt.
+test('a rejected entry can be retried: back to pending, same key, error cleared', async () => {
+  const q = createPendingQueue()
+  await q.ready
+  const e = await q.add(entry())
+  await q.reject(e.key, Object.assign(new Error('nope'), { code: 403 }))
+  await q.retry(e.key)
+
+  expect(q.rejected().length).toBe(0)
+  expect(q.pending().map(x => x.key)).toEqual([e.key])
+  expect(q.pending()[0].lastError).toBe(null)
+})
+
+test('the app queue is reachable from @frontierjs/sierra/junction', async () => {
+  const mod = await import('../src/junction/index.js')
+  expect(typeof mod.pendingQueue).toBe('function')
+})
+
+// The refusal at replay is the case FJS-1302 measured: parked, and nothing on
+// the device said so. It must be told and be retryable on the app's own queue.
+test('a write refused at replay is announced, and the app queue can retry it', async () => {
+  const { pendingQueue, drainPending, _resetPendingQueue } = await import('../src/junction/pending.js')
+  _resetPendingQueue()
+  const q = pendingQueue()
+  await q.ready
+  const seen = []
+  q.subscribe(l => seen.push(l.map(e => e.state)))
+  const e = await q.add(entry())
+
+  const refuse = () => Promise.reject(Object.assign(new Error('Create denied by @@allow policy'), { code: 403 }))
+  const client = { service: () => ({ patch: refuse }) }
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+  const out = await drainPending(client)
+  expect(out.rejected).toBe(1)
+  expect(warn.mock.calls.map(c => c[0]).join('\n')).toMatch(/orders\.patch.*Create denied/)
+  warn.mockRestore()
+  expect(seen.at(-1)).toEqual(['rejected'])
+
+  await q.retry(e.key)
+  expect(q.pending().map(x => x.key)).toEqual([e.key])
+  _resetPendingQueue()
 })

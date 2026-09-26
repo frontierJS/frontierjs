@@ -6,6 +6,43 @@ bunx litestone <command> [flags]
 
 All commands read `litestone.config.js` by default. Override with `--config`.
 
+## Every command
+
+```bash
+litestone init
+litestone migrate create [label]
+litestone migrate dry-run [label]
+litestone migrate apply
+litestone migrate status
+litestone migrate verify
+litestone studio [--port=8502]
+litestone repl [--as <who|Model:who>] [--level <0-9>] [--gate <path[#export]>]
+litestone doctor
+litestone types [out.d.ts] [--only=User,Post] [--audience=client|system] [--augment=junction]
+litestone seed [SeederClass]
+litestone seed run [name] [--db=main] [--force]
+litestone introspect <db> [--out=schema.lite] [--report=<path>] [--strict] [--no-camel]
+litestone import <path> [--from=prisma|rails|sql|frappe] [--out=<path>] [--report=<path>] [--strict]
+litestone transform config.js [--preview] [--dry-run]
+litestone explain [@word] [--visibility] [--json]        # the language, no schema needed
+litestone catalog --snapshot [--check]                   # the language surface, committed
+litestone catalog --reference [--check]                  # docs/reference.snapshot.md, the A-Z page
+litestone advise [--json]                                # legal-and-wrong, plus legal-and-MISSING
+litestone validate [--only=A,B] [--json]                 # which STORED rows the schema would now refuse; exits 1
+litestone assistant [--bare] [--out=<path>] [--purpose=<path>]  # a chat-model schema assistant + this schema + PURPOSE.md, to paste
+litestone assistant --snapshot [--check]                 # assistant.snapshot.md — the URL form, no schema
+litestone jsonschema [--out=./schemas/] [--format=flat]
+litestone jsonschema --snapshot [--check] [--stdout] [--out=<path>]
+litestone access [--check] [--json] [--stdout] [--out=<path>]
+litestone access --from=<ref|path> [--strict] [--json]   # the permission diff
+litestone ddl [--check] [--stdout] [--pluralize] [--out=<path>]
+litestone release [--from=<ref|path>] [--strict] [--check] [--json] [--out=<path>]
+litestone replicate config.js
+litestone backup [dest] [--vacuum]
+litestone optimize [table]
+litestone tenant list|create|delete|migrate
+```
+
 ## Migration commands
 
 ```bash

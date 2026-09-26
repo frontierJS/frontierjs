@@ -60,10 +60,10 @@ is § *The proposal* piece 1 below.
 
 The silence is deliberate and stays: a field write predicate must drop rather
 than refuse, because the same payload is legitimate for another caller
-(`packages/litestone/CLAUDE.md` § the `@system`/`@guarded`/`@computed` grid says
-so in as many words). **What is not deliberate is that the client was never
-told.** `@system` gets `readOnly` for exactly this reason and the paragraph
-explaining why is three lines further down the same file.
+(`packages/litestone/docs/internals.md` § Writes, the `@system`/`@guarded`/`@computed`
+grid, says so in as many words). **What is not deliberate is that the client was
+never told.** `@system` gets `readOnly` for exactly this reason, and the same
+entry explains why.
 
 **`@@check`'s refusal names no field.** `path: []`, so `<Form>` has nowhere to
 put the sentence and it renders as a form-level error over a five-field form.

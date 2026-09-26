@@ -30,7 +30,7 @@
  *
  * Middleware mode over a Node http server on port 0, with Vite's HMR socket
  * handed that same server — the OS picks the port, so this cannot collide with
- * a dev server someone is running (root CLAUDE.md § Ports). The compiled
+ * a dev server someone is running (`docs/PORTS.md`). The compiled
  * output's runtime import is aliased to this package's own source rather than
  * resolved by name, for the reason every in-repo consumer does it: `bun
  * install` copies a workspace dependency, so a by-name resolution serves a
