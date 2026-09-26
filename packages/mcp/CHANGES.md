@@ -1,6 +1,15 @@
 # Changes — @frontierjs/mcp
 
 
+## 2026-09-25 — `--help --agent`: how an agent reaches the app
+
+**`--help --agent` at the top level is a guide for an agent**: the `claude mcp add` line
+for the endpoint and tenant this run connected with (never the key), the routes the key
+is offered as shell-only, then the command list. One row in `run.test.ts`, one in
+basecamp's `verify:cli`.
+`README.md` § Teaching an agent says why nothing is generated: the tool list already
+describes itself at the caller's standing.
+
 ## 2026-09-25 — `buildCli`: an app's `cli/` as one binary
 
 **`@frontierjs/mcp/client/build`** compiles a `cli/` surface into the release

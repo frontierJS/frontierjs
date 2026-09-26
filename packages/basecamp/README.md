@@ -99,6 +99,10 @@ bun run build:cli
 ./cli/dist/bcamp use <workspace-id>
 ```
 
+For Claude or another agent, `./cli/dist/bcamp --help --agent` prints how to
+connect it to `/mcp` with this workspace filled in, and which commands only the
+CLI has.
+
 `cli/config/cli.config.js` points a first login at the dev API. A binary for
 anyone else needs the production URL there first. How it works is
 `packages/mcp/README.md` § The app CLI.

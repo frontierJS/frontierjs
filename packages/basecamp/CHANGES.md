@@ -1,6 +1,13 @@
 # Changes — Basecamp
 
 
+## 2026-09-25 — `bcamp --help --agent`
+
+`verify:cli` asks the guide as the viewer: it must carry the `claude mcp add` line for
+this API and workspace, name `servers status` as shell-only, and never print the key.
+The drive reads the program's name from `cli.config.js`, where it had `basecamp` typed
+in twice. The README points an agent at the guide. 37/37.
+
 ## 2026-09-25 — basecamp ships as a binary, `bcamp`
 
 `bun run build:cli` (`fli cli:build`) writes `cli/dist/bcamp`. `verify:cli` builds

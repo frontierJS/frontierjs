@@ -375,6 +375,12 @@ try {
   check('`--help` lists the route beside the derived commands',
     help.code === 0 && /^\s+servers\s.*\bstatus\b/m.test(help.out) && /^\s+servers\s.*\bfind\b/m.test(help.out), help.out.slice(0, 300))
 
+  const guide = await cli(['--help', '--agent'], asViewer)
+  check('`--help --agent` gives the MCP connect line for this app and workspace, names the route as shell-only, and prints no key',
+    guide.code === 0 && guide.out.includes(`claude mcp add --transport http ${cliConfig.name} ${API}/mcp`)
+      && guide.out.includes(`x-workspace-id: ${WS}`) && /not MCP tools[\s\S]*servers status/.test(guide.out)
+      && !guide.out.includes(tokens[VIEWER]), guide.out.slice(0, 400))
+
   const summary = await cli(['servers', 'status', '--json'], asViewer)
   const counts  = {}
   for (const r of rows) counts[r.status] = (counts[r.status] ?? 0) + 1

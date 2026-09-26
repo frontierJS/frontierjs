@@ -207,6 +207,31 @@ instead: `FJS_MCP_URL`, `FJS_TOKEN`, `FJS_TENANT`, `FJS_PROFILE`, and
 `FJS_CLI_TRACE=1` to see what it does. The exit codes are 0 ok, 1 refused by
 the app, 2 a usage error or not offered, and 3 unreachable.
 
+### Teaching an agent
+
+**Nothing needs generating.** The tool list already describes itself at the
+caller's standing, and a skill written from it would go stale, since it can't
+know which key will read it. An agent reaches the app one of two ways:
+
+1. **The MCP endpoint (recommended).** The agent is offered the tools its key may
+   call, each with a description and an input schema, and calls them under the
+   same checks as any other caller. Give it a key of its own, scoped to its job,
+   and send the tenant header, or the key holds no role and sees almost nothing:
+
+   ```sh
+   claude mcp add --transport http shop https://shop.example/mcp \
+     --header "Authorization: Bearer <api-key>" --header "x-workspace-id: <id>"
+   ```
+
+2. **The program, from a shell.** `--help` lists what the key is offered, and
+   `<service> <method> --help --agent` prints one command's input schema as
+   JSON. Pass `--json` on every call, and branch on the exit code. Hand-written
+   routes are only reachable this way, because they aren't MCP tools.
+
+**`shop --help --agent` prints this guide for the running app**: the
+`claude mcp add` line filled in with the endpoint and tenant it is connected
+with (never the key), the routes this key is offered, and the command list.
+
 ## Tests
 
 ```
