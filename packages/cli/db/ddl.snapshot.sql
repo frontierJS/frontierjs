@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS "journal" (
   "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 
--- One immutable artefact-plus-bindings, addressed by its own content.
+-- One immutable artefact-plus-configuration, addressed by its own content.
 -- 
 -- Two builds of an unchanged tree mint the same id, which is what makes
 -- *promote a digest* and *revert to a known thing* one operation rather than
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS "release" (
   "environment" TEXT NOT NULL,
   "digest" TEXT,
   "imageRef" TEXT,
-  "bindingsHash" TEXT NOT NULL,
+  "configurationHash" TEXT NOT NULL,
   "generation" INTEGER NOT NULL,
   "schemaHash" TEXT NOT NULL,
   "pivot" TEXT NOT NULL DEFAULT 'unknown',
@@ -62,12 +62,12 @@ CREATE TABLE IF NOT EXISTS "release" (
 CREATE INDEX IF NOT EXISTS "idx_release_app_environment_createdAt" ON "release" ("app", "environment", "createdAt");
 CREATE INDEX IF NOT EXISTS "idx_release_retentionUntil" ON "release" ("retentionUntil");
 
--- The bindings an Environment provides, as they stood at one generation.
+-- The configuration an Environment provides, as it stood at one generation.
 -- 
 -- Mutable but generational: serving state is the pair (Release, Generation),
--- and reverting a Release onto today's bindings is the documented failure this
+-- and reverting a Release onto today's configuration is the documented failure this
 -- separation exists to refuse.
-CREATE TABLE IF NOT EXISTS "binding_set" (
+CREATE TABLE IF NOT EXISTS "configuration_set" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT (lower(hex(randomblob(4))) || '-' || lower(hex(randomblob(2))) || '-4' || substr(lower(hex(randomblob(2))),2) || '-' || substr('89ab',abs(random()) % 4 + 1, 1) || substr(lower(hex(randomblob(2))),2) || '-' || lower(hex(randomblob(6)))),
   "app" TEXT NOT NULL,
   "environment" TEXT NOT NULL,
@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS "binding_set" (
   "createdBy" TEXT,
   UNIQUE ("app", "environment", "generation")
 ) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_binding_set_app_environment_hash" ON "binding_set" ("app", "environment", "hash");
+CREATE INDEX IF NOT EXISTS "idx_configuration_set_app_environment_hash" ON "configuration_set" ("app", "environment", "hash");
 
 -- One attempt to move serving state.
 -- 

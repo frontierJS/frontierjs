@@ -216,7 +216,7 @@ model Lead {
     app = createApp({
       db, auth: createStubAuth({ users: USERS }),
       principal: async (ctx: any) => {
-        const tenant = ctx.client?.headers?.["x-workspace"] ?? ctx.app.tenant()
+        const tenant = ctx.caller?.headers?.["x-workspace"] ?? ctx.app.tenant()
         return tenant ? { workspaceId: String(tenant) } : {}
       },
     })

@@ -17,11 +17,15 @@ import { readDecisions, openDecisions, rulingSections, QUESTIONS_HEADING } from 
 import { decide, nextDecisionNumber } from '../core/decide.js'
 import { runRegisterCheck }           from '../core/register-check.js'
 
+// Every fixture declares the prefix its rows are written under.
+const DECLARED = JSON.stringify({ registers: { prefix: 'FJS' } })
+
 const REPO  = fileURLToPath(new URL('../../..', import.meta.url))
 const TODAY = new Date('2026-09-14T12:00:00')
 
 function fixture({ paper } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'fli-decisions-'))
+  writeFileSync(join(root, 'package.json'), DECLARED)
   mkdirSync(join(root, 'IDEAS'))
 
   writeFileSync(join(root, 'ISSUES.md'), [

@@ -40,7 +40,7 @@
  */
 
 import { db } from '../../api/src/core/db.ts'
-import { payAsAt, payAsAtMany, employedAt, weeklyGross, annualGross, coveringAt }
+import { payAsAt, payAsAtMany, employedAt, weeklyGross, annualGross }
   from '../../api/src/domain/payroll'
 import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
 import { ratesAsAt, allRatesAsAt, applyBands, contributionsOn, PERCENT_SCALE }
@@ -266,10 +266,15 @@ t('gross.theSameRateMeansTwoDifferentThings',
   weeklyGross({ basis: 'salary', rate: 52_000, hoursPerWeek: 40 })
   !== weeklyGross({ basis: 'hourly', rate: 52_000, hoursPerWeek: 40 }))
 
-// The interval is spelled once and exported, so a caller building its own query
-// cannot disagree with the module about which window covers a day.
-t('interval.isSpelledOnceAndExported',
-  JSON.stringify(coveringAt('X')) === JSON.stringify({ effectiveFrom: { lte: 'X' }, OR: [{ effectiveTo: null }, { effectiveTo: { gt: 'X' } }] }))
+// The interval is the SCHEMA's — `@@effective` on PayWindow, asked rather than
+// imposed (`FJS-D352`) — so no caller can spell it a second way. Asked is the
+// half worth pinning: a read stating no day is the history, which is what the
+// people screen and `setPay`'s overlap check both need, and imposed it would
+// have answered one row and hidden the rest with nothing said.
+const history  = await sys.payWindow.findMany({ where: { employeeId: dana.id } })
+const covering = await sys.payWindow.findMany({ where: { employeeId: dana.id }, asOf: TODAY })
+t('interval.aReadStatingNoDayIsTheHistory',      history.length >= 2)
+t('interval.andOneStatingADayIsTheWindowOnIt',   covering.length === 1 && covering[0].id === current.id)
 
 // ─── The rates, and the walk ──────────────────────────────────────────────
 
@@ -305,7 +310,7 @@ const naive          = Math.round(ANNUAL * topBandReached.percent / PERCENT_SCAL
 t('walk.theTopBandIsNotAppliedToTheWholeSalary', tax.total < naive)
 t('walk.andTheNaiveAnswerIsWrongByARealAmount',  naive - tax.total > 100_000)
 
-// Half-open at the threshold, for `coveringAt`'s reason one table along: a
+// Half-open at the threshold, for the pay window's reason one table along: a
 // salary landing exactly on a boundary falls in the band ABOVE and in nothing
 // else, or the slice is counted twice.
 const onTheLine = bands[1].fromAmount
@@ -459,7 +464,8 @@ const expected = {
   'gross.aSalaryDividesByFiftyTwo': true,
   'gross.anHourlyRateMultipliesTheHours': true,
   'gross.theSameRateMeansTwoDifferentThings': true,
-  'interval.isSpelledOnceAndExported': true,
+  'interval.aReadStatingNoDayIsTheHistory': true,
+  'interval.andOneStatingADayIsTheWindowOnIt': true,
 
   'rates.theBandsAreInForce': true,
   'rates.theyComeBackInThresholdOrder': true,

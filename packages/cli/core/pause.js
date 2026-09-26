@@ -11,7 +11,7 @@
 // The container stays UP. `_steps-docker/06-swap` runs the migrations in the
 // entrypoint, so a stopped container cannot deploy — and deploying while paused
 // is the single case a pause exists to allow. An app that refused from inside
-// would have to be told, which is a binding, which is a restart, which is a
+// would have to be told, which is configuration, which is a restart, which is a
 // deploy.
 //
 // So it is the edge. nginx serves the SPA from `current/` and proxies `/api/`,

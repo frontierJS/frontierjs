@@ -294,6 +294,7 @@ service source for the shapes above, by id:
 | `scheduler-dispatch` | `app.scheduler` dispatching into the queue |
 | `queue-operator-verb` | a service pausing, resuming or draining a queue |
 | `transition-methods` | a `@@transitions` move and the method that makes it drifting apart |
+| `commitment-swept` | a job still making a move a `@@commitment` already makes |
 
 Run it after writing, not instead. Three more ways to ask:
 

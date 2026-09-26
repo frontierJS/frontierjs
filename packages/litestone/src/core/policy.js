@@ -175,6 +175,15 @@ export function buildClaimSet(schema, declared = null) {
       `@@auth ${authModel.name} declares a field named 'level', and a policy reads auth().level — ` +
       `which is the level the gate grades the caller at, not that column. Rename the field.`)
 
+  // A claim read off a row replaces whatever the principal already carried
+  // under that name, so one of the framework's would let a row decide who the
+  // caller is or how they are graded.
+  for (const n of Object.keys(schema?.claimSources ?? {}))
+    if (FRAMEWORK_CLAIMS.includes(n) || n === 'userId')
+      throw new Error(
+        `claim ${n} from ${schema.claimSources[n].model}(…): '${n}' is the framework's — ` +
+        `it says who the caller is or how they are graded, and a row may not decide that. Choose another name.`)
+
   for (const n of FRAMEWORK_CLAIMS) names.set(n, 'the framework')
   if (authModel) for (const f of authModel.fields ?? []) names.set(f.name, `@@auth ${authModel.name}`)
   if (tenantClaim) names.set(tenantClaim, 'tenancy')

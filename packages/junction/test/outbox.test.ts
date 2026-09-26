@@ -47,7 +47,7 @@ const appWithRelay = () => ({ outbox: { deliver: async () => ({ delivered: 0, fa
 function ctx(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
   return withCallEffects({
     service: 'posts', method: 'create', id: null, data: { title: 't' },
-    query: {}, directives: {}, auth: { user: null }, client: { headers: {} }, route: {},
+    query: {}, directives: {}, auth: { user: null }, caller: { headers: {} }, route: {},
     locals: { db }, app: appWithRelay(), result: null, error: null, type: 'before',
     transport: 'internal', model: 'posts', $raw: null, ...over,
   } as unknown as Parameters<typeof withCallEffects>[0])

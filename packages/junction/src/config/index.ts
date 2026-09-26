@@ -211,7 +211,7 @@ export interface AppConfig {
    * server, a search cluster.
    *
    * Declared here and BOUND per environment as ordinary environment variables,
-   * which is what `fli deploy`'s binding set already supplies per target. A
+   * which is what `fli deploy`'s configuration set already supplies per target. A
    * missing or half-bound service refuses at startup rather than at 3am on the
    * first request that reaches it. `core/attachments.ts` is the owner.
    */

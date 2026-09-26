@@ -48,6 +48,8 @@ const atFormat1 = (db) => {
           VALUES ('journal', 1, 'shop', 'deploy@prod', '2026-01-01T00:00:00.000Z')`)
   d.exec(`INSERT INTO "${TABLE.release}" ("id","app","environment","bindingsHash","generation","schemaHash","pivot","pivotDeclared","pivotFindings","audienceKey","createdAt")
           VALUES ('r1','shop','production','bh',1,'sh','expand',0,'[]','everyone','2026-01-01T00:00:00.000Z')`)
+  d.exec(`INSERT INTO "binding_set" ("id","app","environment","generation","hash","values","secretRefs","createdAt")
+          VALUES ('c1','shop','production',1,'bh','{"LOG":"info"}','{}','2026-01-01T00:00:00.000Z')`)
   d.exec(`INSERT INTO "${TABLE.transition}" ("id","kind","app","environment","releaseId","generation","status","crossesPivot","plan","actor","startedAt","finishedAt")
           VALUES ('t1','deploy','shop','production','r1',1,'succeeded',0,'[]','jordan','2026-01-01T00:00:00.000Z','2026-01-01T00:01:00.000Z')`)
   d.exec(`INSERT INTO "${TABLE.step}" ("id","transitionId","name","ordinal","status","precondition")
@@ -85,10 +87,12 @@ describe('migrationPlan', () => {
 
   test('every step ends by moving the format, guarded on the one it came from', () => {
     const plan = migrationPlan(1)
-    const last = plan.statements.at(-1)
-    expect(last.name).toBe('1→2:format')
-    expect(last.sql).toMatch(/UPDATE .* SET "formatVersion" = \? WHERE "id" = 'journal' AND "formatVersion" = \?/)
-    expect(last.params).toEqual([2, 1])
+    const ends = plan.statements.filter(st => st.name.endsWith(':format'))
+    expect(ends.map(st => st.name)).toEqual(['1→2:format', '2→3:format'])
+    expect(plan.statements.at(-1)).toBe(ends.at(-1))
+    for (const st of ends)
+      expect(st.sql).toMatch(/UPDATE .* SET "formatVersion" = \? WHERE "id" = 'journal' AND "formatVersion" = \?/)
+    expect(ends.map(st => st.params)).toEqual([[2, 1], [3, 2]])
   })
 
   test('a format with no way forward refuses rather than skipping it', () => {
@@ -143,6 +147,16 @@ describe('opening a journal that is behind', () => {
     await j.send(migrationPlan(1).statements, { foreignKeys: true })
     expect(rows(db, `SELECT * FROM "${TABLE.transition}"`)).toHaveLength(1)
     expect(rows(db, `SELECT * FROM "${TABLE.step}"`)).toHaveLength(0)
+  })
+
+  // Format 3 renamed a table and a column and rebuilt neither. A rename that
+  // lost the rows would still pass the oracle, which compares shapes.
+  test('the configuration set and the Release column carry their rows across the rename', async () => {
+    const db = atFormat1(`${dir}/h.db`)
+    await clientFor(db).open({ app: 'shop', host: 'deploy@prod' })
+    expect(rows(db, `SELECT "hash", "values" FROM "${TABLE.configuration}"`)).toEqual([{ hash: 'bh', values: '{"LOG":"info"}' }])
+    expect(rows(db, `SELECT "configurationHash" AS h FROM "${TABLE.release}"`)[0].h).toBe('bh')
+    expect(rows(db, `SELECT name FROM sqlite_master WHERE name = 'binding_set'`)).toEqual([])
   })
 
   test('the indexes come back with the table', async () => {
@@ -203,6 +217,21 @@ describe('a migrated database and a fresh one are the same database', () => {
         .map(r => [r.name, normalize(r.sql)]))
 
     expect(shape(migrated)).toEqual(shape(fresh))
+  })
+
+  // A table rename leaves its indexes under the old name, and the table
+  // comparison above cannot see an index.
+  test('and every index, by name and definition', async () => {
+    const migrated = atFormat1(`${dir}/m3.db`)
+    await clientFor(migrated).open({ app: 'shop', host: 'deploy@prod' })
+    const fresh = `${dir}/n3.db`
+    await clientFor(fresh).open({ app: 'shop', host: 'deploy@prod' })
+
+    const indexes = (db) => Object.fromEntries(
+      rows(db, `SELECT name, sql FROM sqlite_master WHERE type = 'index' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
+        .map(r => [r.name, normalize(r.sql)]))
+
+    expect(indexes(migrated)).toEqual(indexes(fresh))
   })
 })
 

@@ -20,6 +20,11 @@ hand when `example/` is touched. No network is a named skip that exits 0, and
 `FJS_REQUIRE_NETWORK=1` makes that skip a failure. `FJS-326` is the offline
 work.
 
+**`bun run bench` is in neither `test` nor CI.** Run it when a change touches
+`{#each}`, the flush or anything that writes the DOM: a rise in bytes or in DOM
+mutations for an operation fails it, and a time never does — a time is printed as
+a ratio to the hand-written floor measured in the same browser.
+
 ---
 
 ## Layout
@@ -55,6 +60,12 @@ test/browser/
   runtime/             — the language in a real browser (server · page · fixtures · specs)
   vite/                — the plugin in a real dev server (app · specs)
   repl/                — example/index.html itself. Manual: needs the network
+
+bench/
+  run.mjs              — bun run bench: bytes, DOM mutations, time, heap
+  baseline.json        — the gated numbers. Ratchets down: --update, --adopt
+  fixtures/            — rows (Mesa) · vanilla (the floor) · floor (the smallest
+                         component) · shared/data.js (the workload both tables run)
 ```
 
 **The Vite plugin is a subpath, not a package.** A `package.json` of its own
@@ -188,6 +199,12 @@ defaults to whatever `dev` is, and the path in it is relative to `locRoot`.
   DOM-building node disposes anything, so only its depth counts, and only its
   pendingness holds a derivation back. Do not reach for "is anything pending" —
   that costs a redundant effect run and a glitch-freedom test says so.
+- **Devtools read the live graph, so a new signal shape must carry `_src`.**
+  `__dev.graph()` walks `_deps`/`_subs` off `read._src` (set in `createSignal`
+  and `createMemo`, the only two places an edge is made); a reader without it
+  is invisible to the panel and nothing says so. The one fact not on an edge —
+  what DID wake a node — is `_cause`, stamped by `_notify` only while `_devOn`.
+  `runtime/specs/devtools-cause` reads a chain back (`FJS-1324`).
 - **`<slot>` takes no attribute but `name`.** A slot carries content IN and
   never a value out; there is no `let:` to read one with. Refused at compile
   time (VISION RULE 35b, `FJS-304`). A hole the child must PARAMETERIZE is a

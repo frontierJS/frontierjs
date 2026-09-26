@@ -252,6 +252,8 @@ target builds that seam or proves it unnecessary.
   none
 - `DECISIONS.md` `FJS-D37` — what of the above is ruled
 - `DECISIONS.md` `FJS-D38` — §9, ruled: `.mesa` is the authoring model for every interface
+- `IDEAS/mesa-ir.md` — the renderer seam §9 leaves owed: where it sits in the compiler, and
+  the vocabulary a non-markup backend can lower
 - `IDEAS/command-surface.md` — the other half of the CLI: authoring, distribution
   and what oclif solves that `fli` does not
 - `IDEAS/one-mental-model.md` 5, 6 — naming Mesa's target set, and one target axis in

@@ -175,7 +175,7 @@ describe('the workspace survives the switch to WebSocket', () => {
   // It is no longer spelled separately: the workspace is one PER-CALL HEADER
   // among however many an app declares (`setCallHeader`), and it rides the
   // frame under `meta.headers` like the rest. Server-side only names the app
-  // declared in `http.callHeaders` are lifted onto ctx.client.headers, plus
+  // declared in `http.callHeaders` are lifted onto ctx.caller.headers, plus
   // junction's own — identity stays with the connection, established at
   // upgrade. test/call-headers.test.ts is the mechanism; this is the
   // regression that the workspace still works over both.

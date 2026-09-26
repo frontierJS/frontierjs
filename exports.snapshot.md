@@ -171,6 +171,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `./manifest` | `src/plugins/manifest/index.ts` | yes |
 | exports | `./outbox` | `src/plugins/outbox/index.ts` | yes |
 | exports | `./backfill` | `src/plugins/backfill/index.ts` | yes |
+| exports | `./commitments` | `src/plugins/commitments/index.ts` | yes |
 | exports | `./devtools` | `src/plugins/devtools/index.ts` | yes |
 | exports | `./client` | `src/client/index.ts` | yes |
 | exports | `./email` | `src/plugins/email/index.ts` | yes |
@@ -224,6 +225,7 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 | exports | `.` | `index.ts` | yes |
 | exports | `./projection` | `src/projection.ts` | yes |
 | exports | `./plugin` | `src/plugin.ts` | yes |
+| exports | `./client` | `src/client/index.ts` | yes |
 | main | `main` | `index.ts` | yes |
 
 - peers — `@frontierjs/junction`: `^0.1.0`
@@ -369,18 +371,20 @@ None — every `exports`, `bin`, `main` and `types` target is inside its tarball
 
 ## `@frontierjs/ui`
 
-`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.js` `package.json` `stores/` `tokens.css` `utils.js`
+`packages/ui` · ships `AGENTS.md` `LICENSE` `README.md` `components/` `controls.js` `dnd.js` `package.json` `stores/` `tokens.css` `utils.js`
 
 | Kind | Name | Target | Published |
 | --- | --- | --- | --- |
 | exports | `./utils.js` | `utils.js` | yes |
 | exports | `./utils` | `utils.js` | yes |
 | exports | `./controls.js` | `controls.js` | yes |
+| exports | `./dnd.js` | `dnd.js` | yes |
+| exports | `./dnd` | `dnd.js` | yes |
 | exports | `./controls` | `controls.js` | yes |
 | exports | `./stores/*.js` | `stores/*.js` | 3 files |
 | exports | `./stores/*` | `stores/*.js` | 3 files |
-| exports | `./components/*.mesa` | `components/*.mesa` | 75 files |
-| exports | `./components/*` | `components/*.mesa` | 75 files |
+| exports | `./components/*.mesa` | `components/*.mesa` | 76 files |
+| exports | `./components/*` | `components/*.mesa` | 76 files |
 
 - peers — `@frontierjs/css`: `^0.16.0` · `@frontierjs/mesa`: `^0.1.0`
 

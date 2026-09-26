@@ -945,6 +945,35 @@ describe('a machine signs with its OWN key, and only its own', () => {
     expect(after.status).toBe('online')
   })
 
+  test('a machine that enrolls AGAIN is handed a new key, and the old one stops working', async () => {
+    // A reinstalled box, or one that lost its key. `issueEnrollment` may be run
+    // again by design, so the exchange has to accept a second enrollment of the
+    // same row — and minting a second `outpost:<slug>` Secret beside the first
+    // collides on the [workspaceId, name] unique, which refused every one.
+    const { mintEnrollToken, hashEnrollToken } =
+      await import('../src/providers/compute/enrollment.ts')
+    const sys = env.system as any
+    const m   = await enrolled('re-enrolled')
+    const was = (await sys.server.findFirst({ where: { id: m.id } })).outpostSecretId
+
+    const token = mintEnrollToken().token
+    await sys.server.update({ where: { id: m.id }, data: {
+      enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000),
+    }})
+    const res = await env.http.post(`/servers/${m.id}/enroll`).send({ token })
+    expect(res.status).toBe(200)
+    const fresh = (res.body as any).secret as string
+    expect(fresh).not.toBe(m.secret)
+
+    // ROTATED in place, not a second row: one machine, one key.
+    expect((await sys.server.findFirst({ where: { id: m.id } })).outpostSecretId).toBe(was)
+
+    // Paired, because either alone passes against the wrong fix — a route that
+    // kept the old key would satisfy the first, one that broke both the second.
+    expect((await heartbeat(m.id, fresh)).status).toBe(200)
+    expect((await heartbeat(m.id, m.secret)).status).toBe(401)
+  })
+
   test('…and REFUSED on the fleet key, which is the whole security property', async () => {
     // The fleet secret is one string every machine holds. Accepting it here
     // would leave any compromised box able to forge this machine's check-in —

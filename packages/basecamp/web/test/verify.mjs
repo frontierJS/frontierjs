@@ -1468,6 +1468,27 @@ check('running it again adds to the history',
   await waitFor(`document.querySelectorAll('#job-runs li').length`, n => n > runsBefore),
   n => n > runsBefore)
 
+// A scheduled job's *Next run* is the clock's answer, not a column. It was a
+// stored `now + 60s` written once on create, so a weekly job showed a time a
+// minute after it was made for ever (`FJS-1241`). The API and the browser run on
+// this host, so both read the expression in the same zone.
+const weekly = await apiCall('/jobs', {
+  method: 'POST', workspace: secondWs.id,
+  body: { name: 'Weekly report', kind: 'scheduled', cronExpression: '0 9 * * 1', command: '/usr/local/bin/report.sh' },
+})
+const nextRun = (await apiCall(`/jobs/${weekly.id}`, { workspace: secondWs.id })).nextRunAt
+check('a scheduled job\'s next run is the next Monday at 09:00',
+  nextRun, v => {
+    const d = v && new Date(v)
+    return !!d && d.getTime() > Date.now() && d.getDay() === 1 && d.getHours() === 9 && d.getMinutes() === 0
+  })
+
+await goto(`/jobs/${weekly.id}/`)
+check('and the job screen shows it',
+  await waitFor(`[...document.querySelectorAll('.facts dt')].find(d => d.textContent === 'Next run')?.nextElementSibling?.textContent ?? ''`,
+    t => t.includes('9:00:00 AM')),
+  t => t.includes('9:00:00 AM'))
+
 // ── 13. The sysadmin zone ─────────────────────────────────────────────
 await goto('/admin/')
 check('admin opens on members', await heading(), 'Administration')

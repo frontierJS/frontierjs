@@ -146,3 +146,21 @@ export function validateBusyTimeout(config, knownDbNames = []) {
 export function applyBusyTimeout(db, timeout) {
   db.run(`PRAGMA busy_timeout = ${resolveBusyTimeout(timeout)}`)
 }
+
+/**
+ * The wait, THEN WAL — the order is the point, so it is owned here once.
+ *
+ * Switching a file into WAL needs the lock, and a file another process is
+ * writing refuses the switch. Set the timeout second and there is nothing to
+ * wait on: measured against a held write lock, WAL-first throws `SQLITE_BUSY`
+ * in 0ms where timeout-first waits the holder out and succeeds. `FJS-655` was
+ * this shape in `createClient` (1 boot in 10); `FJS-1331` was the same shape
+ * surviving in the tenant registry after it was fixed there.
+ *
+ * The jsonl index does NOT use this: it wants a short wait for the switch and
+ * the long one after, because a rolling deploy holds the file (`drivers/jsonl-index.js`).
+ */
+export function applyWal(db, timeout) {
+  applyBusyTimeout(db, timeout)
+  db.run('PRAGMA journal_mode = WAL')
+}

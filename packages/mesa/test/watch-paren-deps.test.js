@@ -62,10 +62,10 @@ describe('a parenthesized dep list means what the unparenthesized one means', ()
 
   test('the paths are watched, not the object they hang off', async () => {
     const { result } = await compile(`${IMPORT}\n$: (a.x, a.y), () => f()`)
-    expect(result).toMatch(/watchPath\(a, 'x'\)/)
-    expect(result).toMatch(/watchPath\(a, 'y'\)/)
+    expect(result).toMatch(/watchPath\(a, 'x', 'a'\)/)
+    expect(result).toMatch(/watchPath\(a, 'y', 'a'\)/)
     // The whole-object watch is what the bug emitted instead.
-    expect(result).not.toMatch(/watchPath\(a, ''\)/)
+    expect(result).not.toMatch(/watchPath\(a, '',/)
     expect(result).not.toMatch(/const \$\$v = a;/)
   })
 

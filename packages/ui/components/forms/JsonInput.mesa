@@ -34,7 +34,7 @@
   // Usage:
   //   <JsonInput name="payload" value={row.payload} onvalue={v => row.payload = v} />
 
-  import Field from './Field.mesa'
+  import CodeInput from './CodeInput.mesa'
   import { format, tryParse } from '@frontierjs/toolbelt/json'
   import { humanize, uid, resolveError, resolveRule, stated, lockedBy } from '../../utils.js'
 
@@ -70,10 +70,8 @@
 
   const form = $context.form
 
-  // Whether this control draws its own <Field>. The message goes there when it
-  // does, so that a parse error is rendered exactly where a server error is
-  // and by the same component; the local <p> below is only for the bare case,
-  // where there is structurally nowhere else to put it.
+  // Whether CodeInput draws a <Field> — the rule is its own, restated here only
+  // to know when the local <p> below is the one place a parse error can go.
   const wrapped = !!(label || (name && autoLabel))
 
   const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
@@ -137,64 +135,46 @@
   }
 </script>
 
-{#snippet control()}
-  <textarea
-    bind:this={el}
-    class="field"
-    id={areaId}
-    name={name || undefined}
-    rows={rows}
-    placeholder={placeholder}
-    disabled={resolvedDisabled}
-    readonly={readonly}
-    spellcheck="false"
-    autocomplete="off"
-    autocapitalize="off"
-    autocorrect="off"
-    style:font-family="var(--font-mono)"
-    style:white-space="pre"
-    aria-invalid={parseError || serverError ? true : null}
-    aria-describedby={parseError && !wrapped ? `${areaId}-parse` : null}
-    on:input={handleInput}
-    on:blur={handleBlur}
-    on:focus={onfocus}
-    {...$attributes}
-  >{text}</textarea>
+<!--
+  CodeInput draws the <Field> when this one would, so a parse failure goes down
+  as its `error` and is rendered in the same place and by the same component a
+  server error is. The stated `error` wins over the form's map inside <Field>,
+  which is what is wanted: a parse failure is the most current fact about this
+  field, and the form holds the same message anyway, because this control
+  reported it there.
+-->
+<CodeInput
+  bind:this={el}
+  id={areaId}
+  language="json"
+  value={text}
+  name={name}
+  label={label}
+  required={resolvedRequired}
+  badge={badge}
+  help={help}
+  hint={hint}
+  error={parseError || error}
+  errors={errors}
+  rows={rows}
+  placeholder={placeholder}
+  disabled={resolvedDisabled}
+  readonly={readonly}
+  aria-invalid={parseError || serverError ? true : null}
+  aria-describedby={parseError && !wrapped ? `${areaId}-parse` : null}
+  oninput={handleInput}
+  onblur={handleBlur}
+  onfocus={onfocus}
+  {class}
+  {...$attributes}
+/>
 
-  {#if parseError && !wrapped}
-    <!--
-      Only when this control draws no <Field> of its own — with one, the message
-      goes through `error` below and is rendered there, in the same place and by
-      the same component a server error is. `.field-hint danger` is what <Field>
-      renders one as, and aria-live rather than its role="alert": this message
-      changes on every keystroke of a half-typed document, and an assertive one
-      would interrupt continuously.
-    -->
-    <p class="field-hint danger" id={`${areaId}-parse`} aria-live="polite">{parseError}</p>
-  {/if}
-{/snippet}
-
-{#if wrapped}
+{#if parseError && !wrapped}
   <!--
-    The stated `error` wins over the form's map inside <Field>, which is what is
-    wanted here: a parse failure is the most current fact about this field. The
-    form is holding the same message anyway — this control reported it there —
-    so the two cannot disagree.
+    Only when no <Field> is drawn — with one, the message is its `error` above.
+    `.field-hint danger` is what <Field> renders one as, and aria-live rather
+    than its role="alert": this message changes on every keystroke of a
+    half-typed document, and an assertive one would interrupt continuously.
   -->
-  <Field
-    id={areaId}
-    name={name}
-    label={label}
-    required={resolvedRequired}
-    badge={badge}
-    help={help}
-    hint={hint}
-    error={parseError || error}
-    errors={errors}
-    {class}
-  >
-    {@render control()}
-  </Field>
-{:else}
-  {@render control()}
+  <p class="field-hint danger" id={`${areaId}-parse`} aria-live="polite">{parseError}</p>
 {/if}

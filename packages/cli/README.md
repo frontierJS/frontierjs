@@ -57,7 +57,7 @@ Commands are markdown files under `commands/`, one namespace per directory —
 | `fli auth:*` | Install the schema fragments, create a user, revoke sessions, rotate the key |
 | `fli deploy` · `deploy:*` | Setup a server, build, swap, health-check, roll back. `deploy:local` is the same pipeline against Docker on this machine |
 | `fli ws:*` | The workspace — version, status, add, install, link, npm, exec, run, changed, clean, graph, exports, invariants, atlas, init; `fli list` names the rest |
-| `fli ports:claim` | Take a session's ports out of the scheme rather than guessing |
+| `fli ps` | What holds each port the scheme can name, and which dev slot each app has |
 | `fli project:map` | What this application IS — one reading, three presentations (`--as=report\|serve\|json`) |
 
 `fli list` prints all of them, `fli <command> --help` prints one, and
@@ -90,6 +90,7 @@ A rule earns its place by being **silent when broken**:
 | `app-layout` | 3 | A surface hiding inside another one, or a schema that is not at the root |
 | `widget-entry-name` | 19 | A widget whose name cannot be a custom element |
 | `package-root-md` | 17 | A fifth markdown file at a package root — a warning naming it, because the rule cannot tell a stray design note from the next thing everyone needs |
+| `command-parses` | 15 | A project command under `cli/src/routes/` whose compiled JavaScript does not parse — compiled with its `_module.md`, since the two share a scope, and reported at the `.md` line. A command compiles when it runs, so one nobody has run is broken in silence. Run it after editing a command: `fli check --only command-parses` |
 
 **`core/checks.js` is the engine and this repo is its other caller.** The
 `structure` phase of `bun run ci` imports it directly and runs it over
@@ -113,6 +114,11 @@ commands/hello/greet.md
 ├── <script> block     → helpers, shared by the CLI and the GUI
 └── ```js block        → the body — runs on execute
 ```
+
+**Only a fence runs.** ` ```js `/` ```ts ` is the body as written and ` ```bash `
+runs through zx; every other fence, and all prose, is a comment. An indented
+block is prose too — markdown's indented code block is not code here, so an
+example indented in a paragraph cannot break the command.
 
 Running one:
 
@@ -214,15 +220,69 @@ sorted so that is at least reproducible, but nothing about `utils` sorting after
 | `args` | | Ordered positional definitions |
 | `flags` | | Named flag definitions |
 | `mode` | | `strict` refuses an undeclared flag · `passthrough` accepts it in silence |
+| `effects` | | What the command does beyond this machine, one line — shown by `--help`, `fli list --json` and the GUI |
+| `confirm` | | `human`: a person approves each run. Needs `effects` |
+
+**`confirm: human` is enforced before the body runs.** At a terminal, the person
+typing the command is the approval. Anywhere else — an agent's shell, a pipe,
+`fli gui` — the run is refused unless it carries `--approved`, a flag fli adds to
+the command rather than one it declares. `--dry` does not skip it, because
+whether a dry run touches nothing is the command's promise, not fli's. `fli
+gui` asks the person at the page and sends `--approved` on a yes.
+
+```yaml
+effects: sends a message to a customer
+confirm: human
+```
+
+**`--approved` is only as good as whoever grants it.** fli cannot tell a person
+from an agent typing the flag itself; the enforcement is that the agent has to
+ask. An agent host's permission rule that holds any command line carrying
+`--approved` for a person makes that real, and the person sees the whole line —
+so a reply passed as `--body` is approved word for word, and one passed as
+`--file` is approved by its path.
 
 **Arg fields** — `name` (read as `arg.name`), `description`, `required`,
 `defaultValue`, `variadic` (joins the remaining positionals into one string;
 must be last).
 
 **Flag fields** — `type` (`string` · `boolean` · `number`), `char` (single-letter
-shorthand), `description`, `defaultValue`, `options` (an enum), `required`. A
-flag with both `required` and `defaultValue` is always satisfied — the default
-fills it in.
+shorthand), `description`, `defaultValue`, `required`, `multiple` (the flag may
+be given more than once and arrives as an array). A flag with both `required`
+and `defaultValue` is always satisfied — the default fills it in.
+
+**Constraints** — `choices`, a list of the values allowed, and `min`/`max` on a
+`number` flag, both inclusive. A value outside them is refused with a message
+written from the declaration, `--help` prints them beside the type, and the GUI
+draws `choices` as a select. A broken declaration — a range on a string, a
+`choices` that is not a list — is refused on every run, not only on the run
+that passes the flag.
+
+```yaml
+flags:
+  every:
+    type: number
+    min: 5
+    max: 90
+  sort:
+    type: string
+    choices:
+      - name
+      - size
+```
+
+**A flag is named for what it does.** A boolean that is on unless asked is
+declared `push` with `defaultValue: true`, typed `--no-push` (the argv parser's
+own reading), and read as `flag.push`. Its `description` says what `--no-push`
+does, because that is the spelling `--help` and completion print. A flag
+declared `no-push` is refused by name.
+
+**JSON is `--json`, on every command** (`FJS-D401`). A command a program might
+read declares a `json` boolean and prints its model when it is set. `--as`
+picks among the layouts a PERSON reads — `--as=report`, `--as=page` — which may
+change on any commit, because nothing reads them but people. An `as` whose
+`choices` include `json` is refused, and `--as=json` names `--json` in the
+refusal.
 
 ---
 
@@ -273,6 +333,7 @@ acts on behalf of a remote caller, so there is no principal, no `auth`, no
 arg             // positional args        → arg.name, arg.path
 flag            // flags                  → flag.dry, flag.force
 log             // the styled logger      → log.info/success/warn/error/dry/debug
+tty             // the terminal, held     → tty.keys/live/aside/onExit/title/wrap
 context         // everything below
 context.config  // shared mutable state across _steps/
 
@@ -286,7 +347,7 @@ context.execute  // several, in sequence
 context.wsRoot() // the workspace root, found from cwd
 
 // zx globals, everywhere:
-echo()  question()  $``
+echo()  question()  $``  chalk   // chalk follows NO_COLOR, as fli's own output does
 ```
 
 **`context.git` asks with a pathspec, and that is not a nicety.** Every member of
@@ -313,6 +374,37 @@ line by line as SSE rather than landing all at once:
 ```js
 await context.stream({ command: `ssh ${host} "docker logs --follow ${container}"` })
 ```
+
+### `tty` — a command that holds the terminal
+
+For a command that stays open: a single-key prompt, a status line pinned to the
+bottom, the screen handed to an editor and taken back.
+
+```js
+tty.onExit(() => api('POST', '/status', { online: false }))  // Ctrl-C included, capped at 3s
+tty.title('● online')
+const bar = tty.live(() => [chalk.green('● online'), `${waiting} waiting`, chalk.dim('? keys')])
+
+const k = await tty.keys(`Send #${id}?`, { y: 'yes', e: 'edit', s: 'skip' })
+if (k === 'e') await tty.aside(() => context.stream({ command: `$EDITOR ${file}` }))
+```
+
+**Whatever the command prints lands above the footer**: `echo`, `log` and
+`console` all clear it, print, and redraw it, so nothing has to be routed
+through `tty`. `live` takes a string or an array of parts, and parts drop from
+the right until the line fits. `keys` takes one keypress with no Enter: Enter
+picks the first choice, which is shown upper-case (`[Y]es`), Esc is a choice
+only when one is named `esc`, and a `null` question listens without taking the
+footer — a menu under the status line. **The terminal is put back however the
+command ends**: raw mode, the footer and the title on a return, a throw, Ctrl-C
+or SIGTERM. `onExit` runs on all four, and a second Ctrl-C does not wait for
+it. While `aside` runs, Ctrl-C belongs to the child, and this command's own
+output waits until it returns.
+
+**With no terminal — a pipe, or `fli gui` — `tty.interactive` is false**: `live`,
+`title` and `aside` add nothing, and `keys` refuses by name, or answers with
+its first choice when the command declares `--yes` and it was passed. Check
+`tty.interactive` before offering keys.
 
 ---
 
@@ -377,11 +469,15 @@ outside it: `fli project:map --project packages/basecamp`.
 9 prod. category: 0 fe · 1 be · 2 widgets-dev · 3 widgets-served · 4 extension ·
 5 tooling · 6 site-dev · 7 site-served · 8 desktop-dev.
 
-A scaffolded app is project 0 — web on `8000`, API on `8100`. Global fli tooling
-is reserved — the whole of **8500–8509**, of which **8500 is the GUI, 8501 `project:map --as=serve`, 8502 db studio and 8503 junction's devtools console** — and the
-broker refuses to hand those out to anything else. `fli ports:claim` takes a
-session's ports out of the scheme and exports them, rather than every app
-hard-coding a guess.
+A scaffolded app is project 0 — web on `8000`, API on `8100`. **`fli dev` gives
+each such app a slot of its own**, the service digit: the second app you start
+runs on `8001`/`8101`, and the slot is remembered per app directory in
+`~/.fli/sessions.lock`, so it comes back on the same ports next time. The ports
+reach the servers as `FLI_PORT_FE`, `FLI_PORT_BE`, `FLI_PORT_SITE`,
+`FLI_PORT_WIDGET` and `FLI_PORT_DESKTOP`, which the scaffolded configs read; an
+app whose configs ignore them stays on slot 0. `fli ps` lists the slots. Global
+fli tooling is reserved — the whole of **8500–8509**, of which **8500 is the GUI, 8501 `project:map --as=serve`, 8502 db studio and 8503 junction's devtools console** — and the
+formula refuses those to any app.
 
 ---
 

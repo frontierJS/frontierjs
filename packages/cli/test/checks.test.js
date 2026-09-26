@@ -62,10 +62,15 @@ model Lead {
   accountId   Int
   workspaceId Int
   status      LeadStatus @default(new)
+  // A lead nobody followed up is closed on its date, so \`commitment-swept\`
+  // RUNS over the clean tree against the digest job below, which reads leads
+  // and moves none.
+  followUpOn  DateTime
   @@gate("2.4.4.5")
   @@transitions(status,
     qualify: new              -> qualified,
     close:   [new, qualified] -> closed)
+  @@commitment(close, on: followUpOn + 30d)
 }
 
 // A polymorphic pair, declared the way the rule asks for, so
@@ -163,6 +168,10 @@ const CLEAN = {
                                         "  const LABELS = { ssh_key: 'SSH key' }\n" +
                                         '</script>\n<Table {columns} rows={[]} />\n',
   'web/src/routes/leads/_leads.Row.mesa': '<tr></tr>\n',
+  // A browser drive, so `drive-cdp-port` RUNS over the clean tree rather than
+  // skipping — a rule that only ever skips is what this file exists to catch —
+  // and finds nothing, because Chrome is left to pick the port.
+  'web/test/verify-leads.mjs':          "spawn(CHROME, ['--headless=new', '--remote-debugging-port=0'])\n",
   'web/src/resources/Lead.mesa':        resource('leads'),
   'web/src/resources/Account.mesa':     resource('accounts'),
   // The third surface. It is in the clean app because every rule must RUN
@@ -184,6 +193,13 @@ const CLEAN = {
   // It also drives both of `Lead`'s declared moves, one by NAME and one by the
   // state it moves to — the two spellings `transition-methods` accepts, so the
   // clean tree exercises both branches of its reachability test.
+  // A job that READS a model declaring \`@@commitment\` and makes none of its
+  // moves, so \`commitment-swept\` runs here and is answered.
+  'api/src/jobs/leads-digest.job.ts':
+    "export default defineJob('leads-digest', async (ctx) => {\n" +
+    "  const open = await ctx.app.db.lead.count({ where: { status: 'qualified' } })\n" +
+    "  console.log(open)\n" +
+    "}, { cron: '0 8 * * 1' })\n",
   'api/src/services/leads.service.ts':
     "import { createBaseService } from '@frontierjs/junction'\n" +
     "export default () => createBaseService({})\n" +
@@ -204,6 +220,12 @@ const CLEAN = {
     "export default {\n  target: 'static',\n  routesDir: 'src/routes',\n  db: '../api/src/core/db.ts',\n}\n",
   'site/src/routes/index.mesa':   '---\nrender: static\n---\n<h1>catalog</h1>\n',
   'site/src/routes/index.meta.js': 'export async function load() { return { products: [] } }\n',
+  // A command beside a namespace module, so `command-parses` RUNS over the
+  // clean tree rather than skipping, and parses the pair as the runtime loads it.
+  'cli/src/routes/leads/_module.md':
+    '---\n---\n\n<script>\nconst leadsApi = () => 1\n</script>\n',
+  'cli/src/routes/leads/count.md':
+    '---\ntitle: leads:count\ndescription: d\n---\n\n```js\necho(leadsApi())\n```\n',
 }
 
 const only = (root, id, extra = {}) => runChecks({ root, only: [id], ...extra })
@@ -327,6 +349,63 @@ describe('the clean app', () => {
     // rules could not see is the result this file is written to make impossible.
     expect(skipped).toEqual([])
     expect(ran.length).toBe(RULES.filter(r => r.scope === 'app').length)
+  })
+})
+
+describe('command-parses', () => {
+  const cmd = (title, body, script = '') =>
+    `---\ntitle: ${title}\ndescription: d\n---\n\n${script && `<script>\n${script}\n</script>\n\n`}${body}`
+  const MODULE = '---\n---\n\nHelpers.\n\n<script>\nconst api = () => 1\nconst paint = (s) => s\n</script>\n'
+
+  test('a helper declared in the module AND the command names the command line and the module', () => {
+    const root = tree('cp-clash', without('cli/', {
+      'cli/src/routes/sup/_module.md': MODULE,
+      'cli/src/routes/sup/show.md':    cmd('sup:show', '```js\necho(api())\n```\n', 'const ok = 1\nconst paint = (s) => s'),
+    }))
+    const { findings } = only(root, 'command-parses')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].file).toMatch(/sup\/show\.md$/)
+    expect(findings[0].line).toBe(8)
+    expect(findings[0].message).toMatch(/'paint' has already been declared.*sup\/_module\.md/)
+  })
+
+  test('a broken module is reported once, at its own line, however many commands share it', () => {
+    const root = tree('cp-module', without('cli/', {
+      'cli/src/routes/sup/_module.md': '---\n---\n\n<script>\nconst a = 1\nconst b = (\n</script>\n',
+      'cli/src/routes/sup/one.md':     cmd('sup:one', '```js\necho(1)\n```\n'),
+      'cli/src/routes/sup/two.md':     cmd('sup:two', '```js\necho(2)\n```\n'),
+    }))
+    const { findings } = only(root, 'command-parses')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].file).toMatch(/sup\/_module\.md$/)
+    expect(findings[0].line).toBe(6)
+  })
+
+  test('a broken body names its .md line, and a step is compiled with its command\'s module', () => {
+    const root = tree('cp-body', without('cli/', {
+      'cli/src/routes/dep/_module.md':        MODULE,
+      'cli/src/routes/dep/index.md':          cmd('dep:go', '```js\necho(api())\n```\n'),
+      // A script block is MODULE scope, so this collides only if the step is
+      // compiled with the module — which is how the runtime loads it.
+      'cli/src/routes/dep/_steps/01-a.md':    '---\ntitle: step\n---\n\n<script>\nconst paint = 1\n</script>\n',
+      'cli/src/routes/dep/_steps/02-b.md':    '---\ntitle: step\n---\n\nProse.\n\n```js\necho(2))\n```\n',
+    }))
+    const found = only(root, 'command-parses').findings.map(f => [f.file.split('/routes/')[1], f.line])
+    expect(found).toEqual([['dep/_steps/01-a.md', 6], ['dep/_steps/02-b.md', 8]])
+  })
+
+  test('an indented example in prose is prose', () => {
+    const root = tree('cp-indent', without('cli/', {
+      'cli/src/routes/sup/show.md': cmd('sup:show', 'The status line:\n\n    ● online  3 waiting\n\n```js\necho(1)\n```\n'),
+    }))
+    expect(only(root, 'command-parses').findings).toEqual([])
+  })
+
+  test('no routes directory is skipped, not passed', () => {
+    const root = tree('cp-none', without('cli/'))
+    const { findings, skipped } = only(root, 'command-parses')
+    expect(findings).toEqual([])
+    expect(skipped).toHaveLength(1)
   })
 })
 
@@ -926,6 +1005,17 @@ describe('the silent config hazards', () => {
     const { findings } = only(root, 'vite-strict-port')
     expect(findings).toHaveLength(1)
     expect(findings[0].message).toMatch(/hops to the next free port/)
+  })
+
+  test('a drive that pins Chrome to a fixed debugging port is an error', () => {
+    const root = tree('cdp-pin', {
+      ...CLEAN,
+      'web/test/verify-leads.mjs': "spawn(CHROME, ['--headless=new', '--remote-debugging-port=9222'])\n",
+    })
+    const { findings } = only(root, 'drive-cdp-port')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].line).toBe(1)
+    expect(findings[0].message).toMatch(/attaches to the FIRST one's session/)
   })
 
   test('a commented body tag ABOVE the real one is an error, at the mention', () => {
@@ -1529,9 +1619,16 @@ describe('ctx-params', () => {
     expect(findings[0].message).toMatch(/does not exist/)
   })
 
+  test('reading ctx.client is an error, since the field is ctx.caller', () => {
+    const root = tree('cp-client', api('export const key = ctx => ctx.client.ip\n'))
+    const { findings } = only(root, 'ctx-params')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/ctx\.client does not exist/)
+  })
+
   test('the four that do exist are not reported', () => {
     const root = tree('cp-real', api(
-      'export const guard = ctx => ctx.auth.user && ctx.route.id && ctx.client.ip && ctx.locals.db\n'))
+      'export const guard = ctx => ctx.auth.user && ctx.route.id && ctx.caller.ip && ctx.locals.db\n'))
     expect(only(root, 'ctx-params').findings).toEqual([])
   })
 
@@ -2126,12 +2223,15 @@ describe('queue-operator-verb', () => {
 
 describe('transition-methods', () => {
   // A machine plus the code that drives it. `moves` replaces the schema's
-  // clause list; `drives` replaces the service body.
-  const app = (moves, drives) => ({
+  // clause list; `drives` replaces the service body. The clean tree's
+  // `@@commitment(close)` makes `close` the commitment's to drive, so it is
+  // dropped unless a case is about exactly that.
+  const app = (moves, drives, { owed = false } = {}) => ({
     ...CLEAN,
     'db/schema.lite': CLEAN['db/schema.lite'].replace(
       /@@transitions\(status,[\s\S]*?\)\n/,
-      `@@transitions(status,\n    ${moves})\n`),
+      `@@transitions(status,\n    ${moves})\n`)
+      .replace(owed ? /$^/ : /\n\s*@@commitment\(close[^\n]*/, ''),
     'api/src/services/leads.service.ts':
       "import { createBaseService } from '@frontierjs/junction'\n" +
       'export default () => createBaseService({})\n' + drives,
@@ -2165,6 +2265,14 @@ describe('transition-methods', () => {
       "export const q = () => $.db.lead.transition($.id, 'qualify')\n" +
       "export const c = () => $.db.lead.update({ where: {}, data: { status: 'closed' } })\n"))
     expect(only(root, 'transition-methods').findings).toHaveLength(0)
+  })
+
+  test('a move a @@commitment owes is driven by the commitment', () => {
+    // Paired: the same machine with no commitment still reports the move.
+    const moves = 'qualify: new -> qualified,\n    close: qualified -> closed'
+    const drives = "export const q = () => $.db.lead.transition($.id, 'qualify')\n"
+    expect(only(tree('tm-owed', app(moves, drives, { owed: true })), 'transition-methods').findings).toHaveLength(0)
+    expect(only(tree('tm-not-owed', app(moves, drives)), 'transition-methods').findings).toHaveLength(1)
   })
 
   test('a comment naming the move does not count as driving it', () => {
@@ -2305,6 +2413,97 @@ describe('transition-methods', () => {
   test('an app with no api/ source skips — the machine is driven elsewhere', () => {
     const root = tree('tm-noapi', without('api/'))
     expect(only(root, 'transition-methods').skipped[0].why).toMatch(/no api\/ source/)
+  })
+})
+
+describe('commitment-swept', () => {
+  // `Order` as `example` declared it the day step 3 of `IDEAS/ontology.md`
+  // landed, and the sweep that step deleted — which made `cancel`, not the
+  // committed `abandon`, because `abandon` was declared after it existed.
+  const ORDER = `
+enum OrderStatus { pending paid shipped cancelled }
+model Order {
+  id        Int         @id
+  status    OrderStatus @default(pending)
+  createdAt DateTime    @default(now())
+  @@transitions(status,
+    pay:     pending         -> paid,
+    ship:    paid            -> shipped,
+    cancel:  [pending, paid] -> cancelled,
+    abandon: pending         -> cancelled @system
+  )
+  @@commitment(abandon, on: createdAt + 14d)
+}
+`
+  const SWEEP =
+    "export default defineJob('abandoned-orders-sweep', async (ctx) => {\n" +
+    "  const { data } = await ctx.app.service('orders').find({ status: 'pending' })\n" +
+    "  for (const o of data) await ctx.app.service('orders').call('cancel', o.id, null)\n" +
+    "}, { cron: '0 3 * * *' })\n"
+
+  test('the sweep a commitment replaced is a finding, though it names another move', () => {
+    const root = tree('cs-sweep', { 'db/schema.lite': ORDER, 'api/src/jobs/abandoned-orders-sweep.job.ts': SWEEP })
+    const { findings } = only(root, 'commitment-swept')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].severity).toBe('warn')
+    expect(findings[0].message).toMatch(/Order\.abandon \(it names 'cancel'\)/)
+    expect(findings[0].line).toBe(3)
+  })
+
+  test('the move on a RELATED model is graded on that model', () => {
+    const root = tree('cs-relation', {
+      'db/schema.lite': `
+enum SubStatus { active pastDue cancelled }
+enum InvoiceStatus { issued paid }
+model Subscription {
+  id     Int       @id
+  status SubStatus @default(active)
+  @@transitions(status, lapse: active -> pastDue, cancel: [active, pastDue] -> cancelled)
+}
+model Invoice {
+  id             Int           @id
+  status         InvoiceStatus @default(issued)
+  dueOn          DateTime
+  subscription   Subscription  @relation(fields: [subscriptionId], references: [id])
+  subscriptionId Int
+  @@commitment(subscription.lapse, on: dueOn + 7d, while: status == 'issued')
+}
+`,
+      'api/src/jobs/subscriptions-dun.job.ts':
+        "export default defineJob('subscriptions-dun', async () => {\n" +
+        "  for (const s of await sys.subscription.findMany({})) await sys.subscription.transition(s.id, 'lapse')\n" +
+        "})\n",
+    })
+    const { findings } = only(root, 'commitment-swept')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].message).toMatch(/Subscription\.lapse .* Invoice declares @@commitment\(subscription\.lapse\)/)
+  })
+
+  // Each silence is paired with the sweep above still firing over the same
+  // schema, because a rule that stopped reading the schema would pass all four.
+  test('a job moving the model somewhere else is silent', () => {
+    const root = tree('cs-other', { 'db/schema.lite': ORDER, 'api/src/jobs/orders-ship.job.ts':
+      "export default defineJob('orders-ship', async (ctx) => { await ctx.app.db.order.transition(ctx.data.id, 'ship') })\n" })
+    expect(only(root, 'commitment-swept').findings).toEqual([])
+  })
+
+  test("a job naming the state but not the model is silent", () => {
+    const root = tree('cs-no-model', { 'db/schema.lite': ORDER, 'api/src/jobs/bookings-tidy.job.ts':
+      "export default defineJob('bookings-tidy', async (ctx) => { await ctx.app.db.booking.updateMany({ data: { status: 'cancelled' } }) })\n" })
+    expect(only(root, 'commitment-swept').findings).toEqual([])
+  })
+
+  test('a service making the move is somebody asking for it early, and silent', () => {
+    const root = tree('cs-service', { 'db/schema.lite': ORDER, 'api/src/services/orders.service.ts': SWEEP,
+      'api/src/jobs/orders-ship.job.ts': "export default defineJob('orders-ship', async () => {})\n" })
+    expect(only(root, 'commitment-swept').findings).toEqual([])
+  })
+
+  test('the move named only in a comment is silent', () => {
+    const root = tree('cs-comment', { 'db/schema.lite': ORDER, 'api/src/jobs/orders-report.job.ts':
+      "// the old sweep called service('orders').call('cancel') here\n" +
+      "export default defineJob('orders-report', async (ctx) => ctx.app.db.order.count({}))\n" })
+    expect(only(root, 'commitment-swept').findings).toEqual([])
   })
 })
 

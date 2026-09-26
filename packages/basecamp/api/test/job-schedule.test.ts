@@ -16,7 +16,7 @@ import { describe, it, expect, afterEach } from 'bun:test'
 import { createCaravan } from '@frontierjs/caravan'
 import type { CaravanInstance } from '@frontierjs/caravan'
 
-import { syncSchedule, unscheduleJob, scheduleName } from '../src/services/jobs/job-schedule.ts'
+import { syncSchedule, unscheduleJob, scheduleName, nextRunAt } from '../src/services/jobs/job-schedule.ts'
 import type { BasecampApp } from '../src/basecamp.types.ts'
 
 const queues: CaravanInstance[] = []
@@ -104,5 +104,39 @@ describe('syncSchedule — the clock agrees with the row', () => {
 
     const id = await jobs.dispatch(scheduleName('job-1'), {})
     expect(jobs.find(id)!.queue).toBe('jobs')
+  })
+})
+
+describe('nextRunAt — asked of the clock, never stored', () => {
+
+  it('is the fire time of the job\'s own expression', () => {
+    // The filed defect (FJS-1241): a stored `nextRunAt` was written once, on
+    // create, as a minute from now — so a Monday-09:00 job showed that minute
+    // for ever. Read in the zone the clock reads in, whichever one that is.
+    const { app } = makeApp()
+    syncSchedule(app, row({ cronExpression: '0 9 * * 1' }))
+
+    const next = new Date(nextRunAt(app, 'job-1')!)
+    expect(next.getTime()).toBeGreaterThan(Date.now())
+    expect([next.getDay(), next.getHours(), next.getMinutes()]).toEqual([1, 9, 0])
+  })
+
+  it('follows an edit to the expression', () => {
+    const { app } = makeApp()
+    syncSchedule(app, row({ cronExpression: '0 9 * * 1' }))
+    syncSchedule(app, row({ cronExpression: '30 4 * * 3' }))
+
+    const next = new Date(nextRunAt(app, 'job-1')!)
+    expect([next.getDay(), next.getHours(), next.getMinutes()]).toEqual([3, 4, 30])
+  })
+
+  it('is null for a job the clock does not hold', () => {
+    const { app } = makeApp()
+    syncSchedule(app, row())
+    syncSchedule(app, row({ status: 'cancelled' }))
+    syncSchedule(app, row({ id: 'job-2', kind: 'one_shot' }))
+
+    expect(nextRunAt(app, 'job-1')).toBeNull()
+    expect(nextRunAt(app, 'job-2')).toBeNull()
   })
 })

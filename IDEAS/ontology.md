@@ -6,7 +6,7 @@ dated: 2026-09-21
 
 # Idea — the modeling tree: what kind of thing is this, and the one cell with no word in it
 
-**Status: IDEA. Nothing here is built.** Dated 2026-09-21. The tree is authored
+**Status: IDEA. All eight steps of § 6 are built (`@@commitment` in litestone, `commitments()` in junction, four adopters in `example`, the date on screen, and `fli check`'s `commitment-swept`).** Dated 2026-09-21. The tree is authored
 and the evidence under § *Three safe shapes* is read off the tree on that date.
 Do not cite this file as describing behavior — see `VERIFYING.md`.
 
@@ -107,8 +107,9 @@ open is the same gap seen from the row instead of the column.
 - **`basecamp` uses none of them.** No `occurrenceKey` anywhere in its API, and
   `alert-evaluate` runs every minute. Whether that is right is not knowable from
   outside the file, which is the point.
-- **A fourth shape — a commitment a person can SEE — has exactly one instance
-  and it is broken** ([`FJS-1241`](../ISSUES.md#fjs-1241)). *What is going to
+- **A fourth shape — a commitment a person can SEE — had exactly one instance
+  and it was broken** ([`FJS-1241`](../ISSUES.md#fjs-1241), closed by reading
+  caravan's `nextRuns()` rather than storing a column). *What is going to
   happen to this order, and when* cannot be answered by any sweep, because
   nothing exists until the sweep runs. `basecamp`'s jobs screen asks it anyway:
   `Job.nextRunAt` is rendered as *Next run*, is set once on create to
@@ -248,47 +249,488 @@ Caravan must keep the clock.
 
 ---
 
+## 6. Build order
+
+**Ruled 2026-09-22; all eight steps built.** `FJS-D353` (a commitment is a transition the
+system owes at a time), `FJS-D354` (`@@commitment`), `FJS-D355` (offsets are a
+literal or an `@immutable @unit` column of the same row) and `FJS-D356`
+(model-level). Each step below lands on its own, proves the one before it, and
+names the open question it waits on. **Steps 1 → 2 → 3 are the critical path**;
+after 3 the pipe is proved end to end and each later step deletes one
+hand-written job.
+
+**Side fix, independent of all of it:** [`FJS-1241`](../ISSUES.md#fjs-1241)
+closes by basecamp reading `app.jobs.nextRuns()`
+(`packages/caravan/src/cron.ts`) instead of the `nextRunAt` column it guesses
+once. A cron's next run is Caravan's answer and not a commitment.
+
+**Step 1 — Litestone: the declaration, no clock.** Template: `@@expires`,
+shipped the same day (`FJS-D351`/`FJS-D352`) across `src/core/parser.js`
+(`case 'expires'`), `client.js`, `schema-maps.js`, `catalog.js`,
+`jsonschema.js`, `index.d.ts`, `tools/typegen.js`, `tools/eject.js`,
+`mutate.js`, `testing.js`, with `test/effective.test.ts` as the test shape.
+- Parse `@@commitment(<transition>, on: <expr>, while: <pred>)`, own-model
+  transitions only (a related target is step 4's, `FJS-D362`). `on:` is a
+  time column, optionally `+`/`-` a duration literal or a same-row column;
+  `while:` reuses `@frontierjs/toolbelt/predicate`
+- Refuse: a transition `@@transitions` does not declare; an `on:` that is not
+  a time kind; an offset column with no duration `@unit` or not `@immutable`;
+  `mo`/`yr` added to an instant (legal on a day kind)
+- The read — *which rows are due by T* — one query per declaration with the
+  transition's from-state in the WHERE, at the injected clock exactly as
+  `@@expires` reads it; a day kind takes its zone as a parameter (`FJS-D143`)
+- `x-commitments` beside `x-transitions` in the JSON Schema; typegen,
+  catalog, reference and assistant snapshots; eject; mutate
+- Proof: the litestone suite with deadlines staged by `env.clock.advance()`,
+  the DDL byte-identical with and without the attribute, and every snapshot
+  regenerated from its own header's command
+
+  **Built 2026-09-22** (`packages/litestone/CHANGES.md`). The read is
+  `db.<model>.due({ by, timeZone, transition, where })` →
+  `[{ transition, id, dueAt }]`, through `findMany`; step 2's fire re-asks it
+  with `where: { id }`. Three departures from the list above: the toolbelt
+  lexer had no `+` and learned `PLUS`/`MINUS`; `eject` promotes edges and
+  prints no model attributes, so it was not touched; and `mutate` gains no
+  operator until a derived check could notice a commitment dropped. A
+  `$commitments` listing for the generic sweep is step 2's to add.
+
+**Step 2 — Junction: the `commitments()` plugin.** Ruled B, `FJS-D358`. Template: the `outbox()`
+plugin, `packages/junction/src/plugins/outbox/index.ts`.
+- `requires: ['caravan']`; a schema declaring `@@commitment` with the plugin
+  absent is refused at boot
+- ONE `app.jobs.schedule(…)` (`packages/caravan/src/index.ts`) and never a
+  `setInterval` — `FJS-D36`. A tick dispatches `commitment:fire` per row due
+  within a lookahead, with a `delay` to its time, keyed on (declaration, id,
+  dueAt); under `strategy database` it walks every tenant, as `outboxPass` does
+- The fire re-derives `on:` and `while:`, then makes the transition as system;
+  a from-state that no longer holds is a quiet no-op
+- `$tapEvents` on a declaring model kicks that row after a write;
+  `app.registerMetricsSource('commitments', …)`
+- **Probe first — which path makes the transition.** Through the owning
+  service's method when the app wrote one (`orders.pay`), service hooks run,
+  so a hook's `ctx.enqueue` rides the transition's transaction and an effect
+  outside the database happens once. Through `db.x.transition()` only the
+  announcement fires — junction already announces it as `orders:pay`
+  (`src/core/litestone.ts`, the `e.event === 'transition'` branch) — and an
+  observer cannot enqueue inside the transaction. Lean: the service method
+  when one exists, `db` otherwise, which is `FJS-D258`'s one-execution-path
+  clause
+- Proof: junction tests against a REAL Caravan and a REAL Litestone client
+
+  **Built 2026-09-22** (`packages/junction/CHANGES.md`). `commitments()` at
+  `@frontierjs/junction/commitments`; `db.$commitments` in litestone is the
+  listing it walks. Four departures from the list above, each measured:
+  - **The probe refused the service path.** `example`'s `subscriptions.cancel`
+    sets `cancelAtPeriodEnd` while its `cancel` transition cancels now, so
+    routing a fire by name would have done the other thing. The fire always
+    moves through `db.<model>.transition(id, name, { system: true })` — which
+    leaves an effect that must ride the move's transaction (step 4's
+    `recover`, step 6's invoice on `close`) without a home yet; that is the
+    reactions question, not this plugin's
+  - **"As system" is read as `FJS-D150`, not `asSystem()`.** `asSystem()`
+    bypasses `@@transitions` whole — no from-state in the WHERE, no
+    `transition` event — so it would remove the lock `FJS-D353` gets once-ness
+    from. The fire READS as system and MOVES on the job's client, scoped to
+    `createApp({ system })`; a gate that principal does not clear fails the fire
+  - **The key is caravan's `unique`, not a stated `id`.** A row held by
+    `while:` and released comes due at the SAME time, and an id is idempotent
+    for all time
+  - **No kick on write.** A minute cron with a five-minute lookahead and a
+    delay to each row's time bounds lateness to a due time inside the first
+    minute after a write; the kick waits for a caller that needs better. The
+    plugin-absent refusal is `check-authoring`, which asks `app.db` or the
+    tenant registry's parsed schema
+  Proof: `packages/caravan/test/commitments.test.ts`, 13 tests, beside
+  `outbox-relay.test.ts` for its reason; swapping the move back to `asSystem()`
+  and the key back to `id` each turn one red.
+
+**Step 3 — first adopter, `Order` in `example`.** Own model, literal offset,
+no external effect: the smallest case that runs every piece.
+- Add `abandon: pending -> cancelled @system` and
+  `@@commitment(abandon, on: createdAt + 14d)`; delete
+  `api/src/jobs/abandoned-orders-sweep.job.ts` and `ABANDON_AFTER_DAYS`
+- Regenerate example's snapshots; run what `fli proves` names
+
+  **Built 2026-09-22** (`example/CHANGES.md`). Three things the list did not
+  name:
+  - **The screens.** `x-transitions` carries `abandon` to the browser, where it
+    rendered as a disabled button on every pending order. The orders screens
+    now leave out `@system` moves. Step 5 is where one comes back, as a date
+    rather than a button
+  - **The refusal missed the adopter.** `example` is `strategy database`, so
+    it has no `app.db`, and it booted with the plugin removed. The refusal now
+    also reads the registry's parsed schema
+  - **The audit trail did not name the move** (`FJS-1294`, closed). The
+    reason `FJS-D353` gives for `abandon` being its own transition held for
+    the announcement and not for the audit row. The trail now carries a
+    `transition` column
+  Proof: `verify:jobs` ages one of two fresh orders in the shop's file and
+  runs the sweep, 12 assertions; `verify` 66 and `verify:ui` 35 for the
+  screens. Each goes red when its piece is removed.
+
+**Step 4 — dunning.** *May a commitment make a transition on a RELATED
+model?* is answered (`FJS-D362`, A), and so is *Where does `recover` live?*
+(`FJS-D363`, A). Unblocked.
+- Add `graceDays` and `dunningDays` (`Int @unit(d) @immutable`) to `Invoice`,
+  stamped in `domain/billing/billing.ts` beside `dueOn`; `GRACE_DAYS` and
+  `DUNNING_DAYS` become the values stamped. Pre-alpha: no upgrade steps
+- `@@commitment(subscription.lapse, on: dueOn + graceDays, while: status == issued)`
+  and the same for `subscription.cancel`; delete
+  `api/src/jobs/subscriptions-dun.job.ts`
+- **Trap:** that job also runs `recover` (`pastDue -> active` once paid). That
+  is a reaction and not a commitment. It moves first, to `recoverIfClear` in
+  `domain/billing/billing.ts`, called from `settleInvoice` and a new
+  `voidInvoice` (`FJS-D363`), and the job goes after
+
+  **Built 2026-09-23** (`packages/litestone/CHANGES.md`,
+  `packages/junction/CHANGES.md`, `example/CHANGES.md`). Two things the list
+  did not name:
+  - **`due()` asks the TARGET's from-state**, as a relation filter. Leaving it
+    to the fire would have been enough for the case the ruling names, but not
+    for the one after it: an unpaid invoice under a subscription already
+    cancelled would be due on every sweep, forever, as a fire into a refused
+    move. `due()` answers a `target` on every row, so the fire has one path
+  - **The zone.** `dueOn` is a day, and the sweep read every day in UTC and
+    delayed each fire to UTC midnight, where the job it replaced read the
+    shop's calendar. `commitments({ timeZone })` takes a zone or an async
+    `(tenant) => zone`, and `example` loads the shop's
+  The staff settle recovered through the subscription's existing update policy,
+  so `FJS-D363`'s condition held with nothing widened. Proof: litestone
+  `test/commitment.test.ts`; caravan `test/commitments.test.ts`, 18, where
+  removing the target filter and delaying to UTC midnight each turn one red;
+  `verify:billing` 38 with no job run; `verify:jobs` 15, whose dunning section
+  goes red when the filter is removed.
+
+**Step 5 — shape 4 on screen.** Sierra and `@frontierjs/ui` read
+`x-commitments`: *Will be abandoned on 5 Oct* on the order screen, *Lapses on …*
+on the subscription screen. The first thing a person sees; proof is the drive
+`fli proves` names.
+
+  **Built 2026-09-23** (`packages/toolbelt/CHANGES.md`,
+  `packages/litestone/CHANGES.md`, `packages/sierra/CHANGES.md`,
+  `example/CHANGES.md`). Sierra alone: `@frontierjs/ui` needed nothing, since a
+  date is a `StatCard` or an `Alert`. Three things the line did not name:
+  - **The date has one owner at both ends.** Litestone's JS `dueAt` moved to
+    `@frontierjs/toolbelt/datetime`; `due()` and the screen call the same
+    function, and the SQL half is still graded against it
+  - **`x-commitments` carries the move** — `target`, `field`, `from` — because
+    *is it still owed* is a question about the row the move is made on, which
+    for `subscription.lapse` is in another model's document. The screen passes
+    that row as `{ target }`; one it did not read is not graded
+  - **The invoice screen is the third.** The commitment is declared there, and
+    it is where a subscription already lapsed by an older invoice has to stop
+    claiming a lapse
+  Proof: sierra `test/resource-commitments.test.js`, 13; `verify` 70, four of
+  them new, computing the dates in node without the function under test.
+  `verify:build` is held by the offline shell budget, of which this is 1 kB.
+
+**Step 6 — renewal as a row per period.** Waits on *Renewal is not a
+transition* (recommend A). `SubscriptionPeriod` with
+`close: open -> closed @system` and `@@commitment(close, on: endsOn)`; a hook
+on `close` issues the invoice and opens the next period; the renewal sweep
+job goes and `occurrenceKey` leaves renewal. The largest reshape of
+`example`, so it goes last among the steps with a caller.
+
+  **Built 2026-09-23** (`packages/junction/CHANGES.md`, `example/CHANGES.md`),
+  after `FJS-D367` answered *Renewal is not a transition* A and `FJS-D368`
+  answered where the close's effect runs. Three things the line did not name:
+  - **The hook is the plugin's, not a service's.** The fire was a bare
+    `transition()` and an announcement is held until the commit, so
+    `commitments({ hooks })` runs `renewPeriod` after the move inside one
+    `$transaction` on the fire's client, with `afterCommit` for the collection.
+    The plugin still makes the move, so the from-state lock stays its own
+  - **The window is derived.** `Subscription.currentPeriodStart`/`End` are
+    `@from` the latest period, and `@@unique([subscriptionId], where: status ==
+    'open')` refuses a second open period at the database
+  - **A drive with no app fires the real path.** `fireCommitment` is the fire,
+    exported; `verify:billing` hands it the app's own hooks, so there is no
+    renewal function a drive calls that the queue does not
+  Proof: caravan `test/commitments.test.ts`, 22, where running the hook outside
+  the transaction turns one red; `verify:billing` 39, seven red when the next
+  period is not opened; `verify:jobs` 17, whose renewal section goes red with
+  the hook removed from the app; `verify:collect` 49 across the whole chain.
+
+**Step 7 — reminders.** Waits on *Is a reminder a transition?* (recommend A, a
+transition on a Boolean column) **and on a caller** — nothing in the tree
+sends one, so it waits the way `FJS-D143` waited for a second caller.
+
+  **Built 2026-09-23** (`packages/litestone/CHANGES.md`,
+  `packages/junction/CHANGES.md`, `example/CHANGES.md`), after `FJS-D370`
+  answered A. The caller is `example`'s own: an invoice reminds its customer
+  three days before `dueOn`, while it is `issued`. Two things the line did not
+  name:
+  - **A second machine did not parse** (`FJS-1315`). The runtime keeps one per
+    field, and `FJS-1174`'s refusal of an attribute declared twice caught a
+    second `@@transitions` anyway. Repeatable again, per field, with one move
+    name on two machines refused
+  - **The hook enqueues.** `afterCommit` loses the email to a crash after the
+    commit, with `reminded` already true and the row never due again, so the
+    hook context gained `enqueue`: an outbox row on the move's transaction
+  Proof: `verify:jobs` 19, its reminder section read off the real mail sink and
+  red with the hook removed; `verify` 70, whose invoice dates include the
+  reminder; litestone `test/commitment.test.ts` and caravan
+  `test/commitments.test.ts`, each red when its half is removed.
+
+**Step 8 — closing the silence.** A `fli check` rule: a hand-written job
+sweeping a model that declares `@@commitment` is a finding. A `data-hazards`
+section on *the window is the truth for reads, the transition is the record*.
+An `invariants` row if an enforcer lands.
+
+  **Built 2026-09-23** (`packages/cli/CHANGES.md`). `commitment-swept`, an app
+  warning: a `*.job.*` file naming a declaring model and making its committed
+  move. Two things the line did not name:
+  - **The move has three spellings.** The sweep `abandon` replaced made
+    `cancel`, another move from `pending` into `cancelled`, so a rule on the
+    move's name would not have seen the one job it exists for. It accepts the
+    name, a move of the same model sharing a from-state and the to-state, or
+    the to-state
+  - **No `invariants` row.** The rule serves none of the nineteen, so it is
+    one of the rules guarding a live hazard, which is what `data-hazards`
+    § `@@transitions` now states beside the window-against-record argument
+  Proof: `test/checks.test.js`, six cases, each of four mutations turning one
+  red. Put back into `example`, the jobs steps 3, 4 and 6 deleted are reported
+  three of four times; `subscriptions-renew` swept `Subscription`, which the
+  period's commitment does not move.
+
+**Every step:** a `CHANGES.md` entry per package touched, the snapshots
+regenerated, and `fli done` clean before it is called finished.
+
+---
+
 ## Open questions
 
-- **Does a deferred obligation get a noun in FJS, and is it a Data-realm one?**
-  The three shapes exist and are unnamed; the question is whether naming them is
-  a document or a declaration.
-  - **A** — No noun. The three shapes become a section of `data-hazards` and a
-    `fli check` rule that grades a new job file against them. Cheapest, and it
-    leaves the fourth shape — a commitment a person can see — unexpressible.
-  - **B** — An API-realm option: caravan grows `dispatch({ at, timeZone })` and a
-    row-watch. Small, and wrong-homed — a due time derived from a row is Data,
-    and a job option is invisible to the gate, the audit trail and `fli check`.
-  - **C** — A Data-realm declaration: the model states its own obligation, the
-    schema derives the due time, `occurrenceKey` becomes the once-ness, and
-    Caravan executes exactly as it does now. Pays for the fourth shape for free,
-    since a declared commitment is a thing a screen can read.
-    - **D** — one attribute on the COLUMN that already holds the deadline
-    (`expiresAt DateTime @deadline`), which is the `@unit` move: no noun, no
-    machinery, and the fact stops being unreadable. It marks the column, so
-    `fli check` can finally grade shape 1's correctness condition; it does not
-    reach shape 2, whose deadline is stored nowhere.
-  - **Recommend C, reached through D** — the three existing implementations all
-    re-derive from the row, which is the Data realm doing the work already, and
-    the fourth shape is the one only a declaration can give. But B is now
-    measurably wrong-homed rather than arguably so: caravan already has `delay`
-    and a `run_at` column, so it adds no mechanism, and a queue entry holding a
-    copy of a time derived from a row goes stale the moment the row moves. And
-    the spelling still waits on a second caller the way `FJS-D143` did —
-    [`FJS-1241`](../ISSUES.md#fjs-1241) is that caller, so D is buildable now
-    against two real columns while C's noun waits for shape 2 to decide it.
-- **If it is coined, is the word `Commitment`?** REA's, and business people say
-  it. Against: REA's is economic and half of a reciprocal pair, which is the
-  `timestamptz` failure in vocabulary form. `Obligation` is the deontic word and
-  reads legal. `Due` is small and collides with a column name. `Tickler` is the
-  oldest and unsearchable.
+**Where the argument stands, 2026-09-22.** Four words now sit on this tree and
+they answer four different questions about a row. `@@relator` (`FJS-D350`) —
+*is this row a link, and can it happen twice*; structure, no clock.
+`@@expires` (`FJS-D351`, `FJS-D352`) — *is this row dead yet*; imposed, and the
+clock passing writes nothing. `@@effective` (`FJS-D352`) — *was this row in
+force at T*; asked, history, and the clock passing writes nothing. And the
+proposal below — *what transition does the system owe this row, and when*; the clock
+passing makes a WRITE. The line between the last and the two before it is the
+whole design: **the clock changing what counts is a window; the clock causing a
+transition is a commitment.** A row may carry both on one date — a membership that
+stops counting at `endsOn` and is also moved `active -> ended` — and then the
+window is the truth for reads and the transition is the record that catches up, which
+is shape 1 against shape 2 inside one row. Legal, not refused.
+
+- ~~**What kind of noun is a deferred obligation?**~~ **Answered 2026-09-22 (`FJS-D353`): A — **a commitment is a TRANSITION at a TIME** — the word the code already types (`@@transitions`, `db.x.transition(id, name)`, `x-transitions`), rather than *move*, which is prose's second name for it. The first argument names a transition on `@@transitions`; the model declares when the system owes it: `@@commitment(abandon, on: createdAt + 14d)` beside `abandon: pending -> cancelled @system`. The from-state is the guard, so most `while:` clauses vanish. The optimistic lock is the once-ness, so `occurrenceKey` is not needed wherever the state changes. A transition is a write, so firing ANNOUNCES — the silent-expiry gap (`FJS-1274`) does not exist for it — and the audit trail records the transition by name, which is why `abandon` is its own transition and not `cancel` with a `while:`. `x-transitions` already reaches the browser, so *will be abandoned on 5 Oct* beside the Cancel button is shape 4 read off the schema. An effect OUTSIDE the database stays a hook on the transition, as `IDEAS/state-machines.md` settled (*side effects stayed hooks; the machine runs no jobs*), and a hook's `ctx.enqueue` rides the transition's own transaction through the outbox, so it happens once per transition. The schema names no job. A transition fired by a commitment whose from-state no longer holds is a quiet no-op, since that is the once-ness working; a caller's transition from the wrong state stays an error.** The three shapes and the
+  fourth, measured against `@@transitions` rather than against a job file.
+  **Shape 2** keeps its deadline nowhere — `subscriptions-dun` reads `dueOn`
+  against the shop's today and compares it with two JS constants, `GRACE_DAYS`
+  (3) and `DUNNING_DAYS` (21), so one anchor carries two commitments, and both
+  consequences (`lapse`, `cancel`) are already declared `@system` transitions on
+  `Subscription`. **Shape 4** has no clean instance:
+  `FJS-1241`'s `Job.nextRunAt` was a guess, and a cron's
+  next run is already Caravan's answer (`app.jobs.nextRuns()`), so that defect
+  closed by reading it. What is unowned is *what will happen to THIS row, and
+  when*, where the time derives from the row.
+  - **A** — **a commitment is a TRANSITION at a TIME** — the word the code already types (`@@transitions`, `db.x.transition(id, name)`, `x-transitions`), rather than *move*, which is prose's second name for it. The first argument names a
+    transition on `@@transitions`; the model declares when the system owes it:
+    `@@commitment(abandon, on: createdAt + 14d)` beside
+    `abandon: pending -> cancelled @system`. The from-state is the guard, so
+    most `while:` clauses vanish. The optimistic lock is the once-ness, so
+    `occurrenceKey` is not needed wherever the state changes. A transition is a
+    write, so firing ANNOUNCES — the silent-expiry gap
+    (`FJS-1274`) does not exist for it — and the audit
+    trail records the transition by name, which is why `abandon` is its own transition and
+    not `cancel` with a `while:`. `x-transitions` already reaches the browser,
+    so *will be abandoned on 5 Oct* beside the Cancel button is shape 4 read off
+    the schema. An effect OUTSIDE the database stays a hook on the transition, as
+    `IDEAS/state-machines.md` settled (*side effects stayed hooks; the machine
+    runs no jobs*), and a hook's `ctx.enqueue` rides the transition's own transaction
+    through the outbox, so it happens once per transition. The schema names no job. A
+    transition fired by a commitment whose from-state no longer holds is a quiet
+    no-op, since that is the once-ness working; a caller's transition from the wrong
+    state stays an error
+  - **B** — a framework-shipped `Commitment { subject, kind, dueAt, state, key }`
+    table. Closest to REA; the gate, the audit trail and the visible row come
+    free. It fails *derived, not restated* — `dueAt` is a copy of a row's time,
+    which is `FJS-1241` made framework-wide — and it is a second owner beside
+    Caravan's `jobs.run_at`
+  - **C** — a declaration naming a JOB (`run: 'subscription-renew'`). The Data
+    realm then names an API-realm file, which Litestone cannot resolve, and a
+    rename breaks it silently; it is also a second place a job's trigger is
+    written, beside the `cron:` option the job file already owns
+  - **D** — no noun. The shapes become a section of `data-hazards` and a
+    `fli check` rule over job files. Cheapest, and shape 4 stays inexpressible
+  - **Recommend A** — every consequence in the measured shapes is already a
+    declared transition, so the noun costs one attribute and no new machinery at the
+    Data boundary, and everything a transition already gets — gate, audit, announce,
+    `x-transitions` — the commitment inherits. § V: one origin (the model owning
+    the time), one noun for an empty cell, derived by construction, Data owns
+    *when* and Caravan owns *run*, and the ninth becomes gradeable. Tension is
+    *batteries vs. smallness*, bounded by the executor being an ordinary Caravan
+    job. Renewal is where it strains, and that is its own question below
+- ~~**What is the word?**~~ **Answered 2026-09-22 (`FJS-D354`): B — `@@commitment`. REA's, and business people say it. The objection was REA's reciprocal duality; under A above the word fits better than it did, because REA's commitment is FULFILLED BY AN EVENT and here it is fulfilled by a transition — an invoice's commitment to pay is discharged by `settle`, and breached into `subscription.lapse`. The reminder email is the case the word still strains.**
+  - **A** — `@@due`. Small and neutral, imports nothing
+  - **B** — `@@commitment`. REA's, and business people say it. The objection
+    was REA's reciprocal duality; under A above the word fits better than it
+    did, because REA's commitment is FULFILLED BY AN EVENT and here it is
+    fulfilled by a transition — an invoice's commitment to pay is discharged by
+    `settle`, and breached into `subscription.lapse`. The reminder email is the
+    case the word still strains
+  - **C** — `@@obligation`. The deontic word; reads legal on a five-minute hold
+  - **Recommend B** — the owner's preference, and with the transition as its first
+    argument the REA meaning arrives mostly true rather than mostly borrowed
+- ~~**Where do the offsets live?**~~ **Answered 2026-09-22 (`FJS-D355`): B — a literal OR a column of the SAME row: `@@commitment(subscription.lapse, on: dueOn + graceDays, while: status == issued)`, where `graceDays Int @unit(d) @immutable` is stamped when the invoice is issued, from wherever the terms come from — the plan, the tenant's config, a negotiated contract. The issuing code already stamps `dueOn` from `TERMS_DAYS` in the same place (`billing.ts`), so this is one more column on a path that exists. It is the tree's own leaf — *a value at an instant is a copied column, never a join* — and the order total's rule: the terms are a receipt. The expression never reads outside its row, so the sweep is one table and the offset is visible to a client as a field. It refuses an offset column without a duration `@unit` (`FJS-D348` gets its first consumer) and one that is not `@immutable`. `mo` and `yr` are legal on a day kind, where a month is calendar arithmetic, and refused on an instant, where it would need a zone the expression does not have.** Five offset constants in the two apps
+  (2026-09-22), and they split in two before any option applies. **Stamped**:
+  `TERMS_DAYS` (7) computes `Invoice.dueOn` at issue and `HOLD_MINUTES` (20)
+  computes `StockReservation.expiresAt` at hold — the offset is part of the
+  AGREEMENT, it is written into a column, and changing it must not transition a
+  deadline already promised. Those stay where they are, and the column is the
+  `on:`. **Policy**: `GRACE_DAYS` (3), `DUNNING_DAYS` (21) and
+  `ABANDON_AFTER_DAYS` (14) are read at sweep time, so changing one moves every
+  open deadline today. `HOLD_MINUTES` is also served to the browser so the
+  basket can say the number the sweep enforces, which is the case for an offset
+  a client can read off the schema rather than off a service.
+  - **A** — a literal only: `@@commitment(abandon, on: createdAt + 14d)`. The
+    constant moves into the schema beside the transition it drives, and
+    `generateJsonSchema` can carry it to a client
+  - **B** — a literal OR a column of the SAME row:
+    `@@commitment(subscription.lapse, on: dueOn + graceDays, while: status == issued)`,
+    where `graceDays Int @unit(d) @immutable` is stamped when the invoice is
+    issued, from wherever the terms come from — the plan, the tenant's config,
+    a negotiated contract. The issuing code already stamps `dueOn` from
+    `TERMS_DAYS` in the same place (`billing.ts`), so this is one more column
+    on a path that exists. It is the tree's own leaf — *a value at an instant
+    is a copied column, never a join* — and the order total's rule: the terms
+    are a receipt. The expression never reads outside its row, so the sweep is
+    one table and the offset is visible to a client as a field. It refuses an
+    offset column without a duration `@unit` (`FJS-D348` gets its first
+    consumer) and one that is not `@immutable`. `mo` and `yr` are legal on a
+    day kind, where a month is calendar arithmetic, and refused on an instant,
+    where it would need a zone the expression does not have
+  - **C** — a relation hop: `on: dueOn + subscription.planVersion.graceDays`.
+    Terms read LIVE, so editing a plan moves every open invoice's deadline, and
+    the sweep compiles a join per declaration
+  - **D** — the tenant's config: `on: dueOn + config.graceDays`. Per-shop, no
+    join, read live, and the schema names a key the config file must supply
+  - **Recommend B** — every source C and D reach is reached by the stamp
+    instead, at the one moment the terms were agreed. A is B with the column
+    never used. Live terms are the wrong default for anything issued
+- ~~**One sweep per declaration, or one generic sweep over all of them?**~~ **Answered 2026-09-23 (`FJS-D358`): B — one generic sweep that reads every declaration and dispatches a keyed wake-up per due row; the executor re-derives `on:` and `while:` and then makes the transition as system, so a wake-up minted before its row moved finds nothing due and does nothing — shape 1's rule applied to shape 3.**
+  - **A** — a Caravan cron generated per declaration, at a cadence the
+    declaration states. N declarations are N crons
+  - **B** — one generic sweep that reads every declaration and dispatches a
+    keyed wake-up per due row; the executor re-derives `on:` and `while:` and
+    then makes the transition as system, so a wake-up minted before its row moved
+    finds nothing due and does nothing — shape 1's rule applied to shape 3
+  - **Recommend B** — one cadence, and the re-derivation is what lets a queue
+    hold a time without being its owner. **Where it runs**: a Junction plugin,
+    `commitments()`, with `requires: ['caravan']` — the `outbox()` shape.
+    Litestone declares and answers *which rows are due by T* but has no clock
+    and may not dispatch (Invariant 1); Caravan reads no schema. The plugin
+    registers ONE `app.jobs.schedule(…)` rather than a `setInterval`, because a
+    timer that dispatches into the queue is the queue's schedule (`FJS-D36`). A
+    tick dispatches per row due within a lookahead, with a `delay` to its time,
+    so the cadence is not the precision; a write to a declaring model kicks
+    that row, as a commit kicks the outbox; under `strategy database` a tick
+    walks every tenant, as `outboxPass` does. A schema declaring
+    `@@commitment` with no `commitments()` installed is refused at boot
+- ~~**Renewal is not a transition — what is it?**~~ **Answered 2026-09-23 (`FJS-D367`): A — a row per period: `SubscriptionPeriod` with `close: open -> closed @system` and `@@commitment(close, on: endsOn)`; a hook on `close` issues the invoice and opens the next period. The state machine is the once-ness with no key, and *next renewal* is a row a person can see. The cost is reshaping `example`'s billing.** `Subscription` stays `active` across
+  a renewal; only the period rolls. `@@transitions` refuses a self-transition
+  (measured: *'renew': self-transition (from and to are both 'active')*), and
+  `transition(id, name, { system })` carries no data, so no transition can advance
+  `currentPeriodEnd`.
+  - **A** — a row per period: `SubscriptionPeriod` with
+    `close: open -> closed @system` and `@@commitment(close, on: endsOn)`; a
+    hook on `close` issues the invoice and opens the next period. The state
+    machine is the once-ness with no key, and *next renewal* is a row a person
+    can see. The cost is reshaping `example`'s billing
+  - **B** — lift the self-transition refusal. A self-loop has no from-state to
+    lock on, so it also needs a key, and transitions would need to carry data — two
+    language changes for one case
+  - **C** — renewal stays a job that CLAIMS the commitment
+    (`defineJob(…, { commitment: 'Subscription.renew' })`), beside `cron:`. The
+    direction is right (API names Data), and it reintroduces a second kind of
+    effect the transition frame had removed
+  - **Recommend A** — the only exit where every commitment is a transition with
+    nothing left over, and it is the relator reading of a subscription taken
+    one step further: a period is a thing with a start, an end and a state
+- ~~**Where does what a commitment's move OWES run?**~~ **Answered 2026-09-23 (`FJS-D368`): A — the app names it on the plugin, keyed by commitment: `commitments({ hooks: { 'SubscriptionPeriod.close': renewPeriod } })`. The fire still re-derives and still makes the move; the hook runs after it inside one `$transaction` on the fire's client, a throw rolls both back, and `afterCommit` carries a dispatch to a queue in another file. A key naming no declared commitment is refused at boot.** A period closing owes an
+  invoice and the next period, in the same transaction as the move. The fire is a
+  bare `db.<model>.transition()` (step 2), and a litestone announcement is held
+  until the commit, so neither has a place for it.
+  - **A** — the app names it on the plugin, keyed by commitment:
+    `commitments({ hooks: { 'SubscriptionPeriod.close': renewPeriod } })`. The
+    fire still re-derives and still makes the move; the hook runs after it inside
+    one `$transaction` on the fire's client, a throw rolls both back, and
+    `afterCommit` carries a dispatch to a queue in another file. A key naming no
+    declared commitment is refused at boot
+  - **B** — a litestone plugin's `onAfterWrite`, reacting to `close` on every path
+    that makes it. Billing code in the Data layer's client config, and whether it
+    runs inside the transaction is unmeasured
+  - **C** — an observer on the `subscriptionPeriod:close` announcement dispatches
+    a keyed renewal job. After the commit, so a crash between the two loses the
+    renewal and nothing re-derives it
+  - **D** — keep the renewal sweep beside the period rows. The polling this paper
+    exists to remove
+  - **Recommend A** — the one path the move is made on is the one path the effect
+    rides, and the move stays the plugin's, so the from-state lock `FJS-D353`
+    gets once-ness from cannot be forgotten by a hook. Hook tier by `FJS-D06`: it
+    may halt the move
+- ~~**Is a reminder a transition?**~~ **Answered 2026-09-23 (`FJS-D370`): A — a transition on a Boolean column: `remind: false -> true` on `reminded`, a second `@@transitions` beside the status one (one machine per field), with `@@commitment(remind, on: startsAt - 24h)` and a hook that ENQUEUES the mail on the move's transaction — never `afterCommit`, since a crash between the commit and the send would leave the column saying the mail went, and a moved row is never due again. Once-ness from the column.** *Email 24h before the booking* changes no state.
+  - **A** — a transition on a Boolean column: `remind: false -> true` on `reminded`,
+    a second `@@transitions` beside the status one (one machine per field),
+    with `@@commitment(remind, on: startsAt - 24h)` and a hook that ENQUEUES the
+    mail on the move's transaction — never `afterCommit`, since a crash between
+    the commit and the send would leave the column saying the mail went, and a
+    moved row is never due again. Once-ness from the column
+  - **B** — a status state (`booked -> reminded`). Wrong: a reminder is not a
+    stage the booking passes through, and it multiplies the enum
+  - **C** — not a commitment; notifications grow their own schedule. A second
+    clock, which `FJS-D36` refuses
+  - **Recommend A** — it keeps *every commitment is a transition* true for the case
+    the word fits least, and the Boolean is the record that the mail went
+- ~~**Where does `recover` live?**~~ **Answered 2026-09-23 (`FJS-D363`): A — the domain owns it: `recoverIfClear(client, subscriptionId)` beside `unpaidInvoices`, called from `settleInvoice` and from a `voidInvoice` that `void` grows, on the same client inside the same call. Recovery the moment the ledger clears, and one function a reader finds next to the two moves.** `subscriptions-dun.job.ts` makes three moves
+  and only two are commitments. `recover` (`pastDue -> active`) is owed when
+  the LAST unpaid invoice leaves `issued`, not at a time, and the job finds it
+  by reading a clean ledger once a day. Deleting the job in step 4 deletes it,
+  and a customer who paid stays `pastDue` for good. Two exits reach it, not one:
+  `settle` (one owner, `settleInvoice` in `domain/billing/billing.ts`) and
+  `void` (the `invoices` service, a bare transition). The rule is *nothing
+  issued remains*, not *this invoice moved*: settling the newer of two unpaid
+  invoices recovers nothing
+  - **A** — the domain owns it: `recoverIfClear(client, subscriptionId)` beside
+    `unpaidInvoices`, called from `settleInvoice` and from a `voidInvoice` that
+    `void` grows, on the same client inside the same call. Recovery the moment
+    the ledger clears, and one function a reader finds next to the two moves
+  - **B** — a junction `after` hook on the `invoices` service's `settle` and
+    `void`. Misses every settle that does not go through the service — the
+    payment webhook calls `settleInvoice` on the system client
+  - **C** — an `orion` flow on `Invoice` reaching `paid` or `void`. The
+    reaction's proper territory by *B* of `FJS-D362`'s question, and a
+    dependency on a port still in progress for one line of logic
+  - **D** — keep a small `subscriptions-recover` sweep. The polling shape this
+    paper exists to remove, with a day of latency on the customer who paid
+  - **Recommend A** — both exits already have or can have one owner, the check
+    is one query, and it needs no word the schema lacks. If a second app wants
+    the same reaction, that is the evidence for C
+- ~~**May a commitment make a transition on a RELATED model?**~~ **Answered 2026-09-23 (`FJS-D362`): A — yes, through a to-one relation; a null relation (`subscriptionId` is optional) is a quiet skip. The target's own from-state still guards it.**
+  `@@commitment(subscription.lapse, …)` on `Invoice` fires a transition on its
+  parent.
+  - **A** — yes, through a to-one relation; a null relation (`subscriptionId`
+    is optional) is a quiet skip. The target's own from-state still guards it
+  - **B** — own-model transitions only; `Invoice` grows its own state (`overdue`) and
+    the subscription reacts to it. A transition triggered by a transition is a reaction,
+    which is `orion`'s territory, and the recovery transition (`pastDue -> active` on
+    `settle`) is already that shape
+  - **Recommend A** — without it shape 2 needs an aggregate on `Subscription`
+    (*the oldest unpaid invoice*); with it, the oldest invoice fires first and
+    the later ones meet a transition already made
+- ~~**Model-level `@@commitment`, or a modifier inside `@@transitions`?**~~ **Answered 2026-09-22 (`FJS-D356`): A — model-level: `@@commitment(transition, on:, while:)`. Can target a related model's transition, and `@@transitions` stays a plain graph.**
+  - **A** — model-level: `@@commitment(transition, on:, while:)`. Can target a
+    related model's transition, and `@@transitions` stays a plain graph
+  - **B** — a modifier on the edge: `abandon: pending -> cancelled @system
+    @after(createdAt + 14d)`. Reads beside the transition it times, and cannot reach
+    another model
+  - **Recommend A** — B cannot express the dunning case at all
 - **Does the tree ship as a skill, as `oracle`'s knowledge base, or as neither?**
   Its left half is `discovery` already, so a skill would be a second copy of four
   forks; its right half has no home at all.
-- **What grades shape 1?** *Every read filters on this instant* is the entire
-  correctness condition of the pattern most used here, and nothing checks it. A
-  `fli check` rule over a column carrying the obligation attribute is plausible
-  and has never been tried.
+- ~~**What grades shape 1?**~~ **Answered 2026-09-22 (`FJS-D351`, `FJS-D352`):
+  nothing has to — `@@expires` makes the filter automatic, so an omitted filter
+  becomes a stated `withExpired` rather than a read to be graded.**
 
 ---
 
@@ -296,7 +738,8 @@ Caravan must keep the clock.
 
 - `IDEAS/effective-time.md` — **the deadline half of this file, settled with
   valid time and the zone in one design.** Shape 1's column becomes
-  `@@effective(to:)`, `asOf` is the directive, and the reason the three could
+  `@@expires` and a history becomes `@@effective(from:, to:)` (`FJS-D352`
+  split the two by their default), `asOf` is the directive, and the reason the three could
   not be shipped separately is that expiry alone needs a boolean where valid
   time needs a value. What stays HERE is the NOUN question, which only shape 2
   — an obligation with no column at all — can decide

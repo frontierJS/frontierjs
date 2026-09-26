@@ -51,9 +51,10 @@ if (serveOnly) {
     verbose,
     ready: 'window.__mesaReady',
     extend: ({ evaluate }) => ({
-      /** Mount a fixture by name — `fixtures/<name>.mesa`. */
-      mount: (name, props = {}) => evaluate(
-        `return await window.mesaMount(${JSON.stringify(fixture(name))}, ${JSON.stringify(props)});`
+      /** Mount a fixture by name — `fixtures/<name>.mesa`. `{ dev: true }`
+       *  compiles it as a dev build, which is what registers with `__dev`. */
+      mount: (name, props = {}, { dev = false } = {}) => evaluate(
+        `return await window.mesaMount(${JSON.stringify(fixture(name) + (dev ? '?dev' : ''))}, ${JSON.stringify(props)});`
       ),
       /** Render one by CALLING it, with no delegation root — see smoke.spec. */
       mountBare: (name, props = {}) => evaluate(

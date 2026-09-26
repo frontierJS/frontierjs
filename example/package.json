@@ -6,7 +6,7 @@
   "description": "The kitchen sink \u2014 one shop-ops app exercising as much of FrontierJS as a single app can.",
   "scripts": {
     "dev": "bun run api & bun run web & wait",
-    "stop": "pkill -f 'bun.*api/inde[x].ts'; pkill -f 'vite.*web/config/vite.confi[g].js'; true",
+    "stop": "for p in $(pgrep -f 'bun.*api/inde[x].ts|vite.*web/config/vite.confi[g].js'); do [ \"$(lsof -a -p $p -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')\" = \"$(pwd -P)\" ] && kill $p; done; true",
     "api": "DEVTOOLS=1 bun run api/index.ts",
     "db:seed": "bun run db/seed.ts",
     "verify:tenants": "bun web/test/verify-tenants.mjs",

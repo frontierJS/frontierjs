@@ -32,7 +32,7 @@
 import { existsSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
-import { readRegisters, REGISTER_FILES, ISSUE_STATUS, IDEA_STATUS, RULING_STATUS, SEVERITY } from './registers.js'
+import { readRegisters, idPatterns, REGISTER_FILES, ISSUE_STATUS, IDEA_STATUS, RULING_STATUS, SEVERITY } from './registers.js'
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
 
@@ -53,7 +53,7 @@ export const RULES = [
   { id: 'closed-in-open',   level: 'error', what: 'a closed row still sitting in an open section — every count above it is wrong' },
   { id: 'row-shape',        level: 'error', what: 'a row whose columns do not line up with its table — read into the wrong fields, and any cell past the header\'s width is dropped when rendered' },
   { id: 'unknown-severity', level: 'error', what: 'an open row in a section with no severity' },
-  { id: 'id-section',       level: 'error', what: 'an id filed under a section its prefix does not belong to — a `FJS-D##` is a ruling and a `FJS-###` is a defect, so neither needs judgment to place' },
+  { id: 'id-section',       level: 'error', what: 'an id filed under a section its prefix does not belong to — a `<PREFIX>-D##` is a ruling and a `<PREFIX>-###` is a defect, so neither needs judgment to place' },
   { id: 'cross-register-id', level: 'error', what: 'an open decision QUESTION whose id already names a ruling — either the ruling landed and nothing closed the row, or the two are different subjects wearing one id' },
   { id: 'ruling-status',    level: 'error', what: 'a ruling declaring a status outside the vocabulary, or retiring itself without naming what replaced it' },
   { id: 'malformed-date',   level: 'error', what: 'a date that is not ISO-8601' },
@@ -83,12 +83,23 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
   // remember to ask is the same hole one layer up.
   if (!doc.sources.length) {
     throw new Error(
-      `no register at ${root}\n` +
+      `no register at ${doc.dir}\n` +
       `  looked for: ${REGISTER_FILES.join(' · ')}\n` +
       `  a register that is absent cannot be graded, and a pass here would say it agrees with itself.\n` +
       `  run this from the root of a project that keeps registers.`
     )
   }
+
+  // Without a prefix every row and heading is unparsed, and the list of them
+  // is the whole file — the missing declaration is the finding.
+  if (!doc.prefix && doc.sources.some(s => s !== 'IDEAS')) {
+    throw new Error(
+      `no usable register prefix for ${root}\n` +
+      (doc.declaredPrefix ? `  ${JSON.stringify(doc.declaredPrefix)} is not [A-Z][A-Z0-9]*\n` : '') +
+      `  declare it in package.json:  "registers": { "prefix": "ACME" }  (add "dir" if they are not at the root)`
+    )
+  }
+  const ids = idPatterns(doc.prefix)
 
   const findings = []
 
@@ -219,11 +230,11 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
     // lifecycle rather than a loophole: a question that gets its ruling closes
     // as a row under the id it was asked under, so twenty-seven `FJS-D##` rows
     // legitimately sit there. What is exact is the two OPEN cases.
-    const isRulingId = /^FJS-D\d+$/i.test(String(row.id ?? ''))
+    const isRulingId = ids.rulingRe.test(String(row.id ?? ''))
     if (row.severity === 'decision' && !isRulingId) {
       add('id-section', row,
         `${row.id} is a defect id sitting under ${row.severity}`,
-        'a `FJS-###` belongs under a severity heading; move it, or reissue it as a `FJS-D##` if it ' +
+        `a \`${doc.prefix}-###\` belongs under a severity heading; move it, or reissue it as a \`${doc.prefix}-D##\` if it ` +
         'really is a question waiting for a ruling')
     } else if (SEVERITY.includes(row.severity) && isRulingId) {
       add('id-section', row,

@@ -128,7 +128,12 @@ src/
                     (`init`, `setup`, `repl`). Re-spawns the named tool as its own
                     process rather than importing it in-process
   auth/             IAuth types (implemented by @frontierjs/auth) + providers
-  plugins/          manifest, openapi, webhooks, email, devtools, outbox, backfill, export, metrics
+  plugins/          manifest, openapi, webhooks, email, devtools, outbox, backfill, export, metrics,
+                    commitments — the sweep under `@@commitment`: one Caravan cron, a fire
+                    per due row that re-asks `due()` and moves on the JOB's client, never
+                    `asSystem()`, which skips the state machine's from-state lock; an
+                    app's `hooks:` run in the move's own transaction (`FJS-D368`), and
+                    `fireCommitment` is that fire, exported for a drive with no app
                     webhooks is OUTBOUND ONLY — register(url, events) registers a
                     SUBSCRIBER and the engine delivers to them. Nothing here receives;
                     the mirror half is IDEAS/inbound-integrations.md § A.
@@ -483,7 +488,7 @@ src/
   signature claimed `ServiceContext` and auth's `any`-typed handlers were the
   only reason its routes compiled (`FJS-063`).
 - **`clientIp(ctx)` reads either context shape.** A TransportContext carries `ip`
-  at the top level; a ServiceContext splits client facts into `ctx.client`. That
+  at the top level; a ServiceContext splits caller facts into `ctx.caller`. That
   one-line gap is what grew a third limiter inside `@frontierjs/auth`, whose
   comment blamed `ctx.params.ip` — a field a ServiceContext does not have. The
   hook reaches `auth` optionally for the same reason: a sign-in route has no
@@ -1257,7 +1262,7 @@ mounted**, not by what you asked for.
 | Created per | **request** | **call** — one request may make several |
 | Ends when | the response is returned | the pipeline finishes |
 | The principal | `ctx.user` — flat, may be `null` | `ctx.auth.user` — frozen, propagates |
-| Caller environment | `ctx.ip`, `ctx.headers` — flat | `ctx.client.{ip,userAgent,headers}` |
+| Caller environment | `ctx.ip`, `ctx.headers` — flat | `ctx.caller.{ip,userAgent,headers}` |
 | Path captures | `ctx.route` | `ctx.route` — `{}` on an internal call |
 | The URL's search | `ctx.query` — **raw, `$` keys present** | `ctx.query` (filters) + `ctx.directives` (shape) |
 | Scratch | — | `ctx.locals`, fresh every call |

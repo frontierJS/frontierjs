@@ -279,7 +279,7 @@ argument it was filed with.
 - **Laravel equivalent:** the `throttle` middleware and `RateLimiter` facade
 - **Proposed home:** a Junction plugin, so it composes like the others and can be
   declared per service rather than only globally
-- **Substrate already present:** `ctx.client.ip`, the session on `ctx.auth`, and
+- **Substrate already present:** `ctx.caller.ip`, the session on `ctx.auth`, and
   `app.cache` for counters. `ctx.directives.limit` is the natural thing to *clamp*
   rather than only to count — a caller asking for 10,000 rows is the cheaper half of
   the problem to solve, and nothing bounds it today.
@@ -416,7 +416,11 @@ rewriting every row after the one that moved, which is a write storm and a race,
 insert between two neighbors, touch one row — plus a rebalance for the pathological
 case. It is a field type with a comparison rule, which puts it in the same family as
 `IDEAS/declared-semantics.md`. Wants `$checkOrderBy` to know the column is a rank
-rather than a number, so the client sorts by it without being told.
+rather than a number, so the client sorts by it without being told. **Measured 2026-09-22
+in the linear stressor (Phase 4)**: fifty concurrent drags per spelling, online
+and offline. The fractional key wins, the app still had to mint, default,
+tie-break and bound it, and the proposal is `@rank(scope:)`. See
+`manual-order.md` and `FJS-D366`.
 
 **Conditional fields in a form.** **The rule half shipped as `@required(where: …)`
 (`FJS-D259`)**, answered in the browser through `@frontierjs/toolbelt/predicate`;

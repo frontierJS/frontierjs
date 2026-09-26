@@ -181,6 +181,8 @@ export interface LogEntry {
   operation:  'create' | 'update' | 'delete' | 'read'
   model:      string
   field:      string | null
+  /** The named `@@transitions` move an update made, or null. */
+  transition: string | null
   records:    string         // JSON array of affected IDs
   before:     string | null  // JSON snapshot
   after:      string | null  // JSON snapshot
@@ -420,6 +422,16 @@ export interface ScopeDef {
   withTemplates?: boolean
   /** @@hasTemplates: return templates only. Default false. */
   onlyTemplates?: boolean
+  /**
+   * @@expires / @@effective: the instant (or plain date) the window is read at.
+   * Unstated, an `@@expires` model reads at the client's own clock and an
+   * `@@effective` one is not filtered at all.
+   */
+  asOf?:          string | Date
+  /** @@expires / @@effective: no window filter at all. Default false. */
+  withExpired?:   boolean
+  /** @@expires / @@effective: only the rows NOT in force at `asOf`. Default false. */
+  onlyExpired?:   boolean
   [key: string]: unknown
 }
 
@@ -489,6 +501,17 @@ export interface TableClient<
   transition(id: number | string, name: string, opts?: { system?: boolean }): Promise<TRow>
   /** `refusedBy` says which half said no: a screen renders *not senior enough*, *not this record* and *not you, ever* differently, and neither the status nor a non-null `gate` separates them. */
   transitions(idOrRow: number | string | TRow): Promise<Array<{ name: string; field: string; from: string; to: string; gate: number | null; system: boolean; allowed: boolean; refusedBy: 'system' | 'gate' | 'policy' | null }>>
+  /**
+   * `@@commitment` — the rows owing a declared transition by `by` (the client's
+   * clock unless stated), and when each fell due. A read through `findMany`, so
+   * the caller's gate and policies apply. A day-kind anchor reads `by` in
+   * `timeZone`, UTC unless stated. Makes no transition. `target` is the row
+   * the move is made on — this one, or the one a to-one relation reaches.
+   */
+  due(args?: { by?: Date | string; timeZone?: string; transition?: string; where?: TWhere }): Promise<Array<{
+    transition: string; id: number | string; dueAt: string
+    target: { model: string; accessor: string; transition: string; id: number | string }
+  }>>
   optimizeFts(): void
   findManyAndCount(args?: { where?: TWhere; orderBy?: TOrderBy | TOrderBy[]; limit?: number; offset?: number; select?: Record<string, boolean> }): Promise<{ rows: TRow[]; total: number }>
   aggregate(args: { _count?: boolean; _sum?: Record<string, boolean>; _avg?: Record<string, boolean>; _min?: Record<string, boolean>; _max?: Record<string, boolean>; where?: TWhere }): Promise<Record<string, unknown>>
@@ -526,6 +549,21 @@ export interface AnyLitestoneClient {
   $close(): void
 }
 
+/**
+ * A key not named here is refused at the call — a dropped `wait` is `wait: 0`,
+ * which refuses the second contender instead of queueing it (`FJS-1217`).
+ */
+export interface LockOptions {
+  /** Milliseconds the lock lives once held; `heartbeat()` extends it. Default 30 000. */
+  ttl?: number
+  /** Milliseconds to keep retrying a held key before `LockNotAcquiredError`. Default 0 — try once. */
+  wait?: number
+  /** Milliseconds between attempts while waiting. Default 100. */
+  retryEvery?: number
+  /** Who holds it; `release(key, owner)` and `list()` read it back. Default a per-process id. */
+  owner?: string
+}
+
 export interface LitestoneClient {
   // The parsed schema, typed — `generateJsonSchema(db.$schema)` is the
   // documented line, and `unknown` here made it the documented cast.
@@ -543,6 +581,12 @@ export interface LitestoneClient {
   $db:         unknown
   $config:     LitestoneConfig
   $softDelete: Record<string, boolean>
+  /**
+   * Every declared `@@commitment`, one row each — the model, its accessor and
+   * the transition it owes. What junction's `commitments()` sweep walks,
+   * asking `due()` of each accessor. A fresh array per read, on every flavor.
+   */
+  $commitments: Array<{ model: string; accessor: string; transition: string }>
   $cacheSize:  { read: number; write: number } | Record<string, { read: number; write: number }>
   $enums:      Record<string, string[]>
   $close():    void
@@ -585,6 +629,13 @@ export interface LitestoneClient {
    * and a throw refuses.
    */
   $readAs(accessor: string, row: unknown, principal: unknown): Promise<Record<string, unknown> | null>
+  /**
+   * The claims the schema reads off a row pointing at the caller —
+   * `claim siteId from Employee(userId).siteId` (`FJS-D359`). Read as the
+   * system, with the model's own exclusions intact. No id is `{}`; no row is
+   * `null` per claim.
+   */
+  $claimsFor(principal: unknown): Promise<Record<string, unknown>>
   /**
    * Whether `$readAs` can ever answer anything but the row it was given.
    *
@@ -703,9 +754,9 @@ export interface LitestoneClient {
    * inherit an acknowledgement made for a different one.
    */
   $rotateKey(newKey: string, opts?: { orphan?: string[] }): Promise<Record<string, { rows: number; fields: number }>>
-  $lock(key: string, fn: () => Promise<unknown>, opts?: { ttl?: number; timeout?: number }): Promise<unknown>
+  $lock<T>(key: string, fn: () => Promise<T>, opts?: LockOptions): Promise<T>
   $locks: {
-    acquire(key: string, opts?: { ttl?: number; owner?: string }): Promise<{ release(): Promise<void>; heartbeat(ms?: number): Promise<void> }>
+    acquire(key: string, opts?: LockOptions): Promise<{ release(): Promise<void>; heartbeat(): Promise<void> }>
     release(key: string, owner?: string): Promise<void>
     isHeld(key: string): Promise<boolean>
     list(): Promise<Array<{ key: string; owner: string | null; expiresAt: string | null }>>
@@ -1141,7 +1192,7 @@ export declare class UniqueConflictError extends Error {
 /**
  * The caller asked this model for something its `.lite` never declared —
  * `search()` below `@@fts`, `restore()` below `@@softDelete`, `transition()`
- * below `@@transitions`, or an `onlyDeleted`/`onlyTemplates` flag on a model
+ * below `@@transitions`, `due()` below `@@commitment`, or an `onlyDeleted`/`onlyTemplates` flag on a model
  * with no such category. A 400: nothing broke, and the identical request will
  * fail the identical way until the schema changes.
  */
@@ -1333,7 +1384,6 @@ export interface RowTenancy {
   strategy: 'row'
   column:   string
   claim:    string
-  resolve:  TenantResolution | null
 }
 
 export type ResolvedTenancy = DatabaseTenancy | RowTenancy

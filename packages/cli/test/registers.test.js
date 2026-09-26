@@ -20,6 +20,9 @@ import { fileURLToPath } from 'url'
 import { readRegisters, IDEA_STATUS } from '../core/registers.js'
 import { collect }                    from '../core/repo-map.js'
 
+// Every fixture declares the prefix its rows are written under.
+const DECLARED = JSON.stringify({ registers: { prefix: 'FJS' } })
+
 const REPO = fileURLToPath(new URL('../../..', import.meta.url))
 
 // ─── a fixture whose contents are known ───────────────────────────────────────
@@ -29,6 +32,7 @@ let LEGACY
 
 beforeAll(() => {
   ROOT = mkdtempSync(join(tmpdir(), 'fli-registers-'))
+  writeFileSync(join(ROOT, 'package.json'), DECLARED)
 
   writeFileSync(join(ROOT, 'ISSUES.md'), [
     '# Issues',
@@ -71,6 +75,7 @@ beforeAll(() => {
   // The legacy shape a project that has not migrated still has: a bold lead
   // with no boundary, and an id one time in three.
   LEGACY = mkdtempSync(join(tmpdir(), 'fli-legacy-'))
+  writeFileSync(join(LEGACY, 'package.json'), DECLARED)
   writeFileSync(join(LEGACY, 'DECISIONS.md'), [
     '# Decisions',
     '',
@@ -163,6 +168,7 @@ describe('decisions', () => {
 
   test('a ruling in a fenced block is content, not a record', () => {
     const root = mkdtempSync(join(tmpdir(), 'fli-fence-'))
+    writeFileSync(join(root, 'package.json'), DECLARED)
     writeFileSync(join(root, 'DECISIONS.md'), [
       '# Decisions', '',
       'The format a ruling is written in:', '',
@@ -251,6 +257,7 @@ describe('ideas', () => {
 describe('ids', () => {
   test('one id in two places is reported, not silently overwritten', () => {
     const root = mkdtempSync(join(tmpdir(), 'fli-dup-'))
+    writeFileSync(join(root, 'package.json'), DECLARED)
     writeFileSync(join(root, 'ISSUES.md'), [
       '## S1 — blockers',
       '| FJS-009 | cli | **One.** | open | 2026-08-01 | — |',
@@ -264,6 +271,7 @@ describe('ids', () => {
 
   test('a missing register is absent, never invented', () => {
     const root = mkdtempSync(join(tmpdir(), 'fli-empty-'))
+    writeFileSync(join(root, 'package.json'), DECLARED)
     const d = readRegisters(root)
     expect(d.issues).toEqual([])
     expect(d.decisions).toEqual([])

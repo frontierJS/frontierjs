@@ -201,7 +201,7 @@ export const bridge = {
       auth: {
         user: raw.user,
       },
-      client: {
+      caller: {
         ip:        raw.ip,
         userAgent: raw.headers?.['user-agent'],
         headers:   raw.headers,
@@ -301,7 +301,7 @@ export const bridge = {
         // internal call (see freezeUser).
         user: auth?.user ? freezeUser(auth.user) : null,
       },
-      client: {
+      caller: {
         headers: {},
       },
       route:  {},

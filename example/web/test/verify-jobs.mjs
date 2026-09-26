@@ -18,6 +18,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { DatabaseSync } from 'node:sqlite'
 import { requireServers } from './lib/preflight.mjs'
 import { results, report } from './lib/report.mjs'
 
@@ -48,6 +49,10 @@ async function until(fn, ms = 10_000) {
 
 let orderId = null
 let auth    = null
+const abandonIds = []
+// Planted straight into the shop's file, so removed from it the same way: an
+// invoice is deleted by the system alone, and its subscription is `Restrict`.
+const dunning = { subs: [], invoices: [] }
 
 try {
   const login = await fetch(`${API}/api/auth/login`, {
@@ -98,8 +103,11 @@ try {
   const cronOf = (name) => schedules.find(s => s.name === name)?.cron ?? null
   t('cron.registered', {
     names: schedules.map(s => s.name).sort(),
-    cron:  cronOf('abandoned-orders-sweep'),
-    holds: cronOf('holds-release'),
+    // The clock under every `@@commitment`, installed by `commitments()` and
+    // written in no job file — an order's abandon, an invoice's dunning and
+    // reminder, and a subscription period's close.
+    commit: cronOf('commitment-sweep'),
+    holds:  cronOf('holds-release'),
     // The schema's own retention policy, which litestone sweeps once inside
     // `createClient` and never again — so `database audit { retention 90d }` is
     // true for one moment unless something puts it on a clock (`FJS-521`). The
@@ -241,65 +249,295 @@ try {
     newAnnouncements: (await announcementsFor()).length - beforeRefused,
   })
 
-  // ── 6. the cron's BEHAVIOR, not just its schedule ─────────────────────
+  // ── 6. a commitment, run rather than waited for ────────────────────────
   //
-  // `nextRuns()` proves a schedule was registered, which is not the same as the
-  // handler being right — and waiting until 03:00 is not a test. `POST
-  // /jobs/run/{name}` runs a registered job now, and the body becomes its data,
-  // so the sweep gets a zero-day horizon: every pending order is abandoned by
-  // that definition, and it should cancel exactly those and touch nothing else.
+  // `@@commitment(abandon, on: createdAt + 14d)` on Order is the schedule, and
+  // junction's `commitments()` is the clock under it. Two orders are placed and
+  // ONE is aged fifteen days by hand, then a sweep is run: the aged order is
+  // abandoned and its twin, placed the same minute, is not. Planting both is
+  // what isolates the rule, for the reason section 7 plants two audit lines.
   //
-  // The run route did not exist before 2026-08-06 — Caravan could retry and
-  // cancel a job but not start one, which made every cron handler in every app
-  // unreachable from a test. Added while writing this drive.
-  const before = await (await fetch(`${API}/api/orders`, { headers: auth })).json()
-  const pendingBefore = before.data.filter(o => o.status === 'pending').map(o => o.reference)
+  // Aged in the shop's own file rather than through the API: `createdAt` is in
+  // no mode junction writes, so no request can backdate a row, and fourteen
+  // days is not a test. The API holds the file in WAL, so this is a second
+  // writer and not a stale copy.
+  //
+  // References are minted per run. Order soft-deletes and a deleted row keeps
+  // its `@unique` values, so a fixed pair would be single-use (`FJS-530`).
+  // The cron sweeps every minute on its own, so the aged row can be abandoned
+  // before the run below — the assertion is on where the rows END, not on
+  // which sweep moved them.
+  const mint  = Date.now().toString(36).toUpperCase()
+  const place = async (reference) => {
+    const res = await fetch(`${API}/api/orders`, {
+      method: 'POST', headers: auth,
+      body: JSON.stringify({ reference, total: 500, status: 'pending', customerId: 1 }),
+    })
+    const row = await res.json()
+    return row.id ?? row.data?.id
+  }
+  const agedId  = await place(`ABN-OLD-${mint}`)
+  const freshId = await place(`ABN-NEW-${mint}`)
+  abandonIds.push(agedId, freshId)
 
-  const run = await fetch(`${API}/api/jobs/run/abandoned-orders-sweep`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ days: 0 }),
+  const shop = new DatabaseSync(`db/shops/${process.env.SHOP ?? 'flagship'}.db`)
+  shop.prepare('UPDATE "order" SET createdAt = ? WHERE id = ?')
+    .run(new Date(Date.now() - 15 * 86_400_000).toISOString(), agedId)
+  shop.close()
+
+  const run = await fetch(`${API}/api/jobs/run/commitment-sweep`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
   })
   const { id: sweepId } = await run.json()
   const sweepJob = await until(async () => {
     const j = await (await fetch(`${API}/api/jobs/${sweepId}`)).json()
     return j.status === 'done' || j.status === 'failed' ? j : null
   })
+  t('commitment.sweepRan', { accepted: run.status, finished: sweepJob ? sweepJob.status : null })
 
-  const after = await (await fetch(`${API}/api/orders`, { headers: auth })).json()
-  t('sweep.ranOnDemand', { accepted: run.status, finished: sweepJob ? sweepJob.status : null })
-
-  // Put the shop back. A 0-day sweep cancels every pending order, including the
-  // seeded ones the other three drives assert on — and `cancelled` is terminal,
-  // so there is no move back. Re-create them from the snapshot taken above:
-  // same reference, same total, same customer, pending again. Without this the
-  // next `bun run verify` fails on rows this file moved, which is exactly the
-  // shape of FJS-080 and reads as a regression in whatever you changed last.
-  for (const was of before.data) {
-    if (was.status !== 'pending' || was.reference === REF) continue
-    const now = after.data.find(o => o.reference === was.reference)
-    if (!now || now.status !== 'cancelled') continue
-    await fetch(`${API}/api/orders/${now.id}`, { method: 'DELETE', headers: auth })
-    await fetch(`${API}/api/orders`, {
-      method: 'POST', headers: auth,
-      body: JSON.stringify({
-        reference: was.reference, total: was.total, note: was.note,
-        status: 'pending', customerId: was.customerId,
-      }),
-    })
-  }
-  t('sweep.cancelsAbandoned', {
-    wasPending:  [...pendingBefore].sort(),
-    // Every one of them is now cancelled…
-    nowCancelled: after.data
-      .filter(o => pendingBefore.includes(o.reference) && o.status === 'cancelled')
-      .map(o => o.reference).sort(),
-    leftPending: after.data.filter(o => o.status === 'pending').length,
-    // …and nothing else moved. A sweep that cancels a paid order is a refund
-    // nobody asked for.
-    othersUntouched: after.data
-      .filter(o => !pendingBefore.includes(o.reference))
-      .every(o => o.status === before.data.find(b => b.reference === o.reference).status),
+  const statusOf = async (id) => (await (await fetch(`${API}/api/orders/${id}`, { headers: auth })).json()).status
+  await until(async () => (await statusOf(agedId)) === 'cancelled')
+  t('commitment.abandonsOnlyTheDue', {
+    aged:  await statusOf(agedId),
+    // Placed the same minute, so a sweep reading the wrong column or the
+    // wrong clock moves both.
+    fresh: await statusOf(freshId),
   })
+
+  // The trail's row for the abandon. Its before and after are the row a
+  // person's cancel writes, so the move's name is the only thing in the trail
+  // that says a commitment did it (`FJS-1294`). The write is fire-and-forget,
+  // so it is polled for rather than read once.
+  const abandonRow = await until(() => {
+    if (!existsSync(AUDIT)) return null
+    return readFileSync(AUDIT, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l))
+      .find(r => r.operation === 'update' && r.field == null
+        && [].concat(typeof r.records === 'string' ? JSON.parse(r.records) : r.records).includes(agedId)
+        && (typeof r.after === 'string' ? JSON.parse(r.after) : r.after)?.status === 'cancelled') ?? null
+  })
+  t('commitment.trailNamesTheMove', {
+    transition: abandonRow ? abandonRow.transition ?? null : 'no audit row',
+  })
+
+  // ── 6b. dunning — a commitment on a RELATED model ──────────────────────
+  //
+  // `@@commitment(subscription.lapse, on: dueOn + graceDays, …)` on Invoice:
+  // the invoice owns the deadline and the subscription owns the move
+  // (`FJS-D362`). Three subscriptions, planted in the shop's file because an
+  // invoice is created by the system alone and a due date cannot be backdated
+  // through any request:
+  //
+  //   lapsing    two unpaid invoices, both past their grace — the older fires
+  //              the lapse and the newer must answer NOTHING DUE, not a failed
+  //              fire, which is the half of the ruling that is easy to lose
+  //   cancelled  one invoice past its dunning deadline
+  //   control    one invoice still inside its grace, planted the same minute
+  //
+  // Then the way back (`FJS-D363`), over HTTP as staff: settling one of the
+  // two leaves the subscription `pastDue`, and voiding the other brings it
+  // back — with no job run, on the CALLER's client, which is the condition
+  // the ruling carries: a staff member's payment must not fail on the
+  // subscription it clears.
+  //
+  // Due dates are days either side of every boundary, so the shop's zone
+  // cannot move a row across one.
+  // Stamped BEFORE the rows exist: the minute cron may sweep them before the
+  // run below does, and its fires are this run's too.
+  const sweptAt = Date.now()
+  const shop2 = new DatabaseSync(`db/shops/${process.env.SHOP ?? 'flagship'}.db`)
+  const base  = shop2.prepare('SELECT customerId, planVersionId, userId FROM subscription ORDER BY id LIMIT 1').get()
+  const day   = (n) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10)
+  const plantSub = (suffix) => Number(shop2.prepare(
+    `INSERT INTO subscription (reference, customerId, planVersionId, status, userId)
+     VALUES (?, ?, ?, 'active', ?)`)
+    .run(`DUN-${suffix}-${mint}`, base.customerId, base.planVersionId, base.userId).lastInsertRowid)
+  const plantInvoice = (suffix, subscriptionId, dueOn) => Number(shop2.prepare(
+    `INSERT INTO invoice (number, status, customerId, subscriptionId, subtotal, tax, total,
+                          periodStart, periodEnd, dueOn, graceDays, dunningDays, userId)
+     VALUES (?, 'issued', ?, ?, 1000, 0, 1000, ?, ?, ?, 3, 21, ?)`)
+    .run(`DUN-${suffix}-${mint}`, base.customerId, subscriptionId, day(-40), day(-10), dueOn, base.userId).lastInsertRowid)
+
+  const lapsingId  = plantSub('L')
+  const cancelId   = plantSub('C')
+  const controlId  = plantSub('K')
+  dunning.subs.push(lapsingId, cancelId, controlId)
+  const olderId    = plantInvoice('L1', lapsingId, day(-6))
+  const newerId    = plantInvoice('L2', lapsingId, day(-5))
+  dunning.invoices.push(olderId, newerId,
+    plantInvoice('C1', cancelId,  day(-25)),
+    plantInvoice('K1', controlId, day(-1)))
+  shop2.close()
+
+  const dunRun  = await fetch(`${API}/api/jobs/run/commitment-sweep`, {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+  })
+  const { id: dunSweepId } = await dunRun.json()
+  await until(async () => {
+    const j = await (await fetch(`${API}/api/jobs/${dunSweepId}`)).json()
+    return j.status === 'done' || j.status === 'failed'
+  })
+
+  const subStatus = async (id) =>
+    (await (await fetch(`${API}/api/subscriptions/${id}`, { headers: auth })).json()).status
+  // Every fire this run dispatched for one of its own invoices. Row ids are
+  // reused across runs (a reset reseeds from 1), so the window is the sweep.
+  const firesFor = async () =>
+    (await (await fetch(`${API}/api/jobs?limit=500&data=1`)).json())
+      .filter(j => {
+        if (j.name !== 'commitment-fire' || j.created_at < sweptAt - 1_000) return false
+        try {
+          const d = JSON.parse(j.data)
+          // Every planted invoice is past its reminder too; 6d grades those.
+          return d.accessor === 'invoice' && d.transition !== 'remind' && dunning.invoices.includes(d.id)
+        } catch { return false }
+      })
+  await until(async () => {
+    const f = await firesFor()
+    return f.length >= 4 && f.every(j => j.status === 'done' || j.status === 'failed')
+  })
+  const fired = await firesFor()
+  const newerFires = fired.filter(j => JSON.parse(j.data).id === newerId)
+  t('dunning.commitmentMovesTheSubscription', {
+    lapsing:   await subStatus(lapsingId),
+    cancelled: await subStatus(cancelId),
+    control:   await subStatus(controlId),
+    // Two lapse fires for one subscription, and a cancel and a lapse for
+    // another: every one done, none failed. A later invoice meeting a move
+    // already made is nothing due, never a refused transition.
+    firesDone:   fired.length > 0 && fired.every(j => j.status === 'done'),
+    newerFired:  newerFires.length === 1,
+  })
+
+  const move = (id, method) => fetch(`${API}/api/invoices/${id}`, {
+    method: 'POST', headers: { ...auth, 'x-service-method': method }, body: '{}',
+  })
+  const settled     = await move(olderId, 'settle')
+  const afterSettle = await subStatus(lapsingId)
+  const voided      = await move(newerId, 'void')
+  t('dunning.staffClearsTheLedger', {
+    settle: settled.status, afterSettle,
+    void:   voided.status,  afterVoid: await subStatus(lapsingId),
+  })
+
+  // ── 6c. renewal — a PERIOD closing ─────────────────────────────────────
+  //
+  // `@@commitment(close, on: endsOn)` on SubscriptionPeriod (`FJS-D367`), and
+  // the hook `commitments()` runs in the close's own transaction (`FJS-D368`):
+  // the next period and its invoice. A subscription is planted with one period
+  // that ended yesterday, a sweep is run, and the renewal is read back over
+  // HTTP — `currentPeriodEnd` is `@from` the periods, so the API answering the
+  // new end is the derived window reaching a caller. A second sweep issues
+  // nothing: the closed period owes nothing and the new one is not yet due.
+  {
+    const shop3 = new DatabaseSync(`db/shops/${process.env.SHOP ?? 'flagship'}.db`)
+    const renewId = Number(shop3.prepare(
+      `INSERT INTO subscription (reference, customerId, planVersionId, status, userId) VALUES (?, ?, ?, 'active', ?)`)
+      .run(`REN-${mint}`, base.customerId, base.planVersionId, base.userId).lastInsertRowid)
+    dunning.subs.push(renewId)
+    const periodId = Number(shop3.prepare(
+      `INSERT INTO subscription_period (subscriptionId, startsOn, endsOn, status, userId) VALUES (?, ?, ?, 'open', ?)`)
+      .run(renewId, day(-31), day(-1), base.userId).lastInsertRowid)
+    shop3.close()
+
+    const renewedAt = Date.now()
+    const sweep = async () => {
+      const r = await fetch(`${API}/api/jobs/run/commitment-sweep`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+      })
+      const { id } = await r.json()
+      await until(async () => ['done', 'failed'].includes((await (await fetch(`${API}/api/jobs/${id}`)).json()).status))
+    }
+    const periodFires = async () =>
+      (await (await fetch(`${API}/api/jobs?limit=500&data=1`)).json())
+        .filter(j => {
+          if (j.name !== 'commitment-fire' || j.created_at < renewedAt - 1_000) return false
+          try { const d = JSON.parse(j.data); return d.accessor === 'subscriptionPeriod' && d.id === periodId }
+          catch { return false }
+        })
+    await sweep()
+    await until(async () => (await periodFires()).some(j => j.status === 'done' || j.status === 'failed'))
+
+    const read = () => {
+      const db3 = new DatabaseSync(`db/shops/${process.env.SHOP ?? 'flagship'}.db`)
+      const periods  = db3.prepare('SELECT status, startsOn FROM subscription_period WHERE subscriptionId = ? ORDER BY startsOn').all(renewId)
+      const invoices = db3.prepare('SELECT id, status, periodStart FROM invoice WHERE subscriptionId = ?').all(renewId)
+      db3.close()
+      return { periods, invoices }
+    }
+    const once = read()
+    dunning.invoices.push(...once.invoices.map(i => i.id))
+    const sub = await (await fetch(`${API}/api/subscriptions/${renewId}`, { headers: auth })).json()
+    t('renewal.periodCloses', {
+      fire:     (await periodFires()).map(j => j.status).join(','),
+      periods:  once.periods.map(p => p.status).join(','),
+      next:     once.periods[1]?.startsOn === day(-1),
+      invoices: once.invoices.length,
+      billsTheNextPeriod: once.invoices[0]?.periodStart === day(-1),
+      windowOverHttp:     sub.currentPeriodStart === day(-1) && sub.currentPeriodEnd > day(-1),
+    })
+
+    await sweep()
+    await sleep(500)
+    const twice = read()
+    dunning.invoices.push(...twice.invoices.map(i => i.id).filter(id => !dunning.invoices.includes(id)))
+    t('renewal.secondSweepBillsNothing', { periods: twice.periods.length, invoices: twice.invoices.length })
+  }
+
+  // ── 6d. a reminder — a Boolean move that sends an email ────────────────
+  //
+  // `@@commitment(remind, on: dueOn - 3d, while: status == 'issued')` on
+  // Invoice, beside its status machine. The hook enqueues the email on the
+  // move's own transaction and the outbox relay dispatches `invoice-remind`,
+  // so what is asserted is the whole path: the column moved, the sink got the
+  // mail, and a second sweep sends nothing. A paid invoice past the same date
+  // and an issued one not yet inside the three days are the two controls.
+  {
+    const SINK  = process.env.MAIL_SINK_URL ?? 'http://localhost:8111'
+    const shop4 = new DatabaseSync(`db/shops/${process.env.SHOP ?? 'flagship'}.db`)
+    const plant = (suffix, status, dueOn) => Number(shop4.prepare(
+      `INSERT INTO invoice (number, status, customerId, subtotal, tax, total,
+                            periodStart, periodEnd, dueOn, graceDays, dunningDays, userId)
+       VALUES (?, ?, ?, 1000, 0, 1000, ?, ?, ?, 3, 21, ?)`)
+      .run(`REM-${suffix}-${mint}`, status, base.customerId, day(-30), day(0), dueOn, base.userId).lastInsertRowid)
+    const dueId   = plant('D', 'issued', day(2))
+    const paidId  = plant('P', 'paid',   day(2))
+    const aheadId = plant('A', 'issued', day(10))
+    dunning.invoices.push(dueId, paidId, aheadId)
+    shop4.close()
+
+    const sweep = async () => {
+      const r = await fetch(`${API}/api/jobs/run/commitment-sweep`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+      })
+      const { id } = await r.json()
+      await until(async () => ['done', 'failed'].includes((await (await fetch(`${API}/api/jobs/${id}`)).json()).status))
+    }
+    const mails = async () => ((await (await fetch(`${SINK}/outbox`)).json().catch(() => [])) ?? [])
+      .filter(m => String(m.subject ?? '').includes(`-${mint}`) && String(m.subject).startsWith('Invoice REM-'))
+    const reminded = () => {
+      const db4 = new DatabaseSync(`db/shops/${process.env.SHOP ?? 'flagship'}.db`)
+      const rows = db4.prepare(`SELECT id, reminded FROM invoice WHERE id IN (?, ?, ?)`).all(dueId, paidId, aheadId)
+      db4.close()
+      return Object.fromEntries(rows.map(r => [r.id, r.reminded === 1]))
+    }
+
+    await sweep()
+    await until(async () => (await mails()).length >= 1)
+    const once = reminded()
+    const sent = await mails()
+    t('reminder.sentWithTheMove', {
+      due:    once[dueId],
+      paid:   once[paidId],
+      ahead:  once[aheadId],
+      mails:  sent.length,
+      toThem: sent[0]?.subject === `Invoice REM-D-${mint} is due on ${day(2)}`,
+    })
+
+    await sweep()
+    await sleep(1_500)
+    t('reminder.secondSweepSendsNothing', { mails: (await mails()).length })
+  }
+
   // ── 7. the OTHER cron, and the one the schema declares ─────────────────
   //
   // `database audit { … retention 90d }` is a policy in the seed, and until a
@@ -388,31 +626,36 @@ try {
 } finally {
   if (orderId && auth)
     await fetch(`${API}/api/orders/${orderId}`, { method: 'DELETE', headers: auth }).catch(() => {})
+  for (const id of abandonIds.filter(Boolean))
+    await fetch(`${API}/api/orders/${id}`, { method: 'DELETE', headers: auth }).catch(() => {})
+  if (dunning.subs.length) {
+    const shop = new DatabaseSync(`db/shops/${process.env.SHOP ?? 'flagship'}.db`)
+    const list = (ids) => ids.map(Number).join(',')
+    if (dunning.invoices.length) {
+      shop.exec(`DELETE FROM invoice_line WHERE invoiceId IN (${list(dunning.invoices)})`)
+      shop.exec(`DELETE FROM payment WHERE invoiceId IN (${list(dunning.invoices)})`)
+      shop.exec(`DELETE FROM invoice WHERE id IN (${list(dunning.invoices)})`)
+    }
+    shop.exec(`DELETE FROM subscription_period WHERE subscriptionId IN (${list(dunning.subs)})`)
+    shop.exec(`DELETE FROM subscription WHERE id IN (${list(dunning.subs)})`)
+    shop.close()
+  }
 }
 
 if (process.exitCode) process.exit(1)
 
 // ─── the report ───────────────────────────────────────────────────────────
 
-// The sweep runs against whatever is pending when the drive starts, and
-// `bun run verify` leaves a different set behind than a fresh seed does — so
-// the assertion is that the sweep cancelled EXACTLY what was pending, not a
-// fixed list. Everything else is a fixed value.
 const expected = {
   'admin.list': { status: 200, isArray: true },
   'cron.registered': {
-    // Every schedule, by name. Two of these are billing's — a subscription
-    // renews on a clock and an unpaid one is chased on another — and they
-    // are here for the same reason as the other three: a schedule that
-    // stops being registered is nothing happening. `orion.sweep` is orion's,
-    // installed with it: the pass that re-dispatches a run whose job was lost.
-    names: ['abandoned-orders-sweep', 'holds-release', 'orion.sweep', 'retention',
-            'subscriptions-dun', 'subscriptions-renew'],
-    cron:  '0 3 * * *',
-    holds: '*/5 * * * *',
-    // 04:00, after the 03:00 sweep: a run that cancels an order has already
-    // happened, so the audit rows being aged are that run's and not ones
-    // written a minute later.
+    // Every schedule, by name. A subscription renews and an unpaid one is
+    // chased by `commitment-sweep`, which is junction's, as `orion.sweep` is
+    // orion's — each installed with its plugin. Here for one reason: a
+    // schedule that stops being registered is nothing happening.
+    names: ['commitment-sweep', 'holds-release', 'orion.sweep', 'retention'],
+    commit: '* * * * *',
+    holds:  '*/5 * * * *',
     retain: '0 4 * * *',
     hasNextRun: true,
   },
@@ -452,20 +695,21 @@ const expected = {
   // A move the state machine refuses leaves no intent behind — the outbox row
   // is written inside the transaction, so it rolls back with everything else.
   'outbox.refusedMoveRecordsNothing': { status: 409, newAnnouncements: 0 },
-  'sweep.ranOnDemand': { accepted: 200, finished: 'done' },
-
-  // Compared against what the sweep FOUND rather than against a constant: which
-  // orders were pending is a fact about the database this run opened on. A
-  // predicate is how `expected` says that (`lib/report.mjs`), so the row is
-  // graded and counted with the rest instead of beside them.
-  'sweep.cancelsAbandoned': (have) =>
-    JSON.stringify(have.nowCancelled) === JSON.stringify(have.wasPending)
-    && have.leftPending === 0
-    && have.othersUntouched === true,
+  'commitment.sweepRan':        { accepted: 200, finished: 'done' },
+  'commitment.abandonsOnlyTheDue': { aged: 'cancelled', fresh: 'pending' },
+  'commitment.trailNamesTheMove':  { transition: 'abandon' },
+  'dunning.commitmentMovesTheSubscription': {
+    lapsing: 'pastDue', cancelled: 'cancelled', control: 'active', firesDone: true, newerFired: true,
+  },
+  // One of two paid is still behind; the void clears it (`FJS-D363`).
+  'dunning.staffClearsTheLedger': { settle: 200, afterSettle: 'pastDue', void: 200, afterVoid: 'active' },
+  'renewal.periodCloses': {
+    fire: 'done', periods: 'closed,open', next: true, invoices: 1, billsTheNextPeriod: true, windowOverHttp: true,
+  },
+  'renewal.secondSweepBillsNothing': { periods: 2, invoices: 1 },
+  'reminder.sentWithTheMove':        { due: true, paid: false, ahead: false, mails: 1, toThem: true },
+  'reminder.secondSweepSendsNothing': { mails: 1 },
 }
 
 const failed = report(got, expected)
-if (!failed) console.log(
-  `\nNote: this drive cancels every pending order (that is what a 0-day sweep\n` +
-  `means). \`bun run reset\` re-seeds them — a restart no longer does.`)
 process.exit(failed)

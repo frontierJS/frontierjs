@@ -3,14 +3,13 @@ title: app:atlas
 description: Everything this app answers, in one reading — what it can do, how each of those is reached, and what graded it
 examples:
   - fli app:atlas
-  - fli app:atlas --as=json
+  - fli app:atlas --json
   - fli app:atlas --ungraded
 flags:
-  as:
-    char: a
-    type: string
-    description: Which presentation — report (one page read top to bottom) or json (the model itself)
-    defaultValue: report
+  json:
+    type: boolean
+    description: Print the model instead of the report
+    defaultValue: false
   ungraded:
     char: u
     type: boolean
@@ -53,7 +52,7 @@ if (error) {
   return
 }
 
-if (flag.as === 'json') {
+if (flag.json) {
   echo(JSON.stringify(model, null, 2))
   return
 }

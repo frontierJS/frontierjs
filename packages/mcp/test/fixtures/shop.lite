@@ -16,17 +16,21 @@
 //             so the regression is answerable without booting a shop.
 //   Credential a @secret and a @guarded column, so `audience: 'client'` is
 //             provable rather than asserted about an empty model.
+//   Customer  a relation both ways — an order points at one, and one is pointed
+//             at by many — which is what breadcrumbs read.
 
 enum OrderStatus { pending paid shipped refunded cancelled }
 enum InvoiceStatus { draft issued void }
 
 /// Read by a visitor, written by a user, removed by staff.
 model Order {
-  id        Int         @id
-  reference String      @length(3, 20) @unique
-  status    OrderStatus @default(pending)
-  total     Int         @money
-  note      String?
+  id         Int         @id
+  reference  String      @length(3, 20) @unique
+  status     OrderStatus @default(pending)
+  total      Int         @money
+  note       String?
+  customerId Int?
+  customer   Customer?   @relation(fields: [customerId], references: [id])
 
   @@gate("1.4.4.5")
   @@transitions(status,
@@ -68,6 +72,15 @@ model Ledger {
 model Cart {
   id    Int     @id
   token String  @unique
+}
+
+/// A buyer, read by a user and written by staff.
+model Customer {
+  id     Int     @id
+  name   String
+  orders Order[]
+
+  @@gate("4.5.5.5")
 }
 
 /// The audience case. Neither column may reach a tool description.

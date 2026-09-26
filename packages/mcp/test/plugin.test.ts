@@ -64,6 +64,10 @@ beforeAll(async () => {
     name: 'credentials', model: 'Credential',
     methods: ['find', 'get', 'create'],
   }))
+  app.services.register(createService({
+    name: 'customers', model: 'Customer',
+    methods: ['find', 'get'],
+  }))
 
   app.configure(mcpPlugin({ name: 'shop' }))
   await app.start()
@@ -71,8 +75,10 @@ beforeAll(async () => {
   // the path here is the plugin's own, with no prefix of this test's invention.
   base = `http://localhost:${app.http.port}/mcp`
 
-  await (db as unknown as { asSystem(): Record<string, { create(a: unknown): Promise<unknown> }> })
-    .asSystem().order!.create({ data: { id: 1, reference: 'ORD-1', total: 2500, status: 'pending' } })
+  const system = (db as unknown as { asSystem(): Record<string, { create(a: unknown): Promise<unknown> }> }).asSystem()
+  await system.order!.create({ data: { id: 1, reference: 'ORD-1', total: 2500, status: 'pending' } })
+  await system.customer!.create({ data: { id: 50, name: 'Ada' } })
+  await system.order!.create({ data: { id: 51, reference: 'ORD-51', total: 900, status: 'paid', customerId: 50 } })
 })
 
 afterAll(async () => { await app?.stop?.() })
@@ -167,6 +173,43 @@ describe('the tool list is the caller\'s, not the app\'s', () => {
   test('every name a client is offered is one a client will accept', async () => {
     const legal = /^[a-zA-Z0-9_-]{1,128}$/
     for (const t of await list('staff')) expect(legal.test(t.name), t.name).toBe(true)
+  })
+})
+
+// ─── what a one-row answer offers next ───────────────────────────────────────
+
+describe('a one-row answer carries its breadcrumbs', () => {
+
+  const result = (r: { body: Record<string, never> }) =>
+    (r.body as { result?: { content?: Array<{ text: string }>; _meta?: Record<string, any> } }).result ?? {}
+
+  test('in _meta, and as a second text block — the moves the row allows at THIS caller, and the row it points at', async () => {
+    // A pair a rung apart: order 51 is paid, and refund needs 5.
+    const staff   = result(await callTool('orders_get', { id: 51 }, 'staff'))
+    const shopper = result(await callTool('orders_get', { id: 51 }, 'shopper'))
+    const tools   = (r: typeof staff) => (r._meta?.['frontierjs/breadcrumbs'] ?? []).map((b: { tool: string }) => b.tool).sort()
+
+    expect(tools(staff)).toEqual(['customers_get', 'orders_refund'])
+    expect(tools(shopper)).toEqual(['customers_get'])
+    expect(staff._meta?.['frontierjs/breadcrumbs']).toContainEqual({ kind: 'belongsTo', tool: 'customers_get', args: { id: 50 }, relation: 'customer' })
+    // The row is still the first block, so a reader of content[0] is unchanged.
+    expect(JSON.parse(staff.content![0].text).reference).toBe('ORD-51')
+    expect(staff.content![1].text).toContain('orders_refund {"id":51}')
+  })
+
+  test('the other side of the relation is the find that lists it', async () => {
+    const r = result(await callTool('customers_get', { id: 50 }, 'staff'))
+    expect(r._meta?.['frontierjs/breadcrumbs']).toEqual([
+      { kind: 'hasMany', tool: 'orders_find', args: { query: { customerId: 50 } }, relation: 'orders' },
+    ])
+    const listed = result(await callTool('orders_find', { query: { customerId: 50 } }, 'staff'))
+    expect(JSON.parse(listed.content![0].text).data.map((o: { id: number }) => o.id)).toEqual([51])
+  })
+
+  test('a find answers many rows and carries none', async () => {
+    const r = result(await callTool('orders_find', {}, 'staff'))
+    expect(r._meta?.['frontierjs/breadcrumbs']).toBeUndefined()
+    expect(r.content).toHaveLength(1)
   })
 })
 

@@ -128,6 +128,72 @@ describe('a write the target refuses', () => {
 })
 
 /**
+ * A read through a frozen parent (`FJS-1337`).
+ *
+ * A Proxy's get trap must return a non-writable, non-configurable property's
+ * own value, so wrapping the object it held threw a TypeError on the READ —
+ * `$: config` over `Object.freeze(config)` failed at `config.tax.rate`.
+ */
+import { vi } from 'vitest'
+
+describe('a read through a frozen parent', () => {
+  it('reads a nested value without throwing', () => {
+    createRoot(() => {
+      const p = watchProxy(Object.freeze({ tax: Object.freeze({ rate: 0.2 }) }))
+      expect(p.tax.rate).toBe(0.2)
+    })
+  })
+
+  it('reads through a watched path', () => {
+    createRoot(() => {
+      const cfg = Object.freeze({ tax: Object.freeze({ rate: 0.2 }) })
+      const [read] = watchPath(cfg, 'tax.rate')
+      const p = watchProxy(cfg)
+      let seen
+      createEffect(() => { read(); seen = p.tax.rate })
+      flushSync()
+      expect(seen).toBe(0.2)
+    })
+  })
+
+  it('a locked property defined on an unfrozen object reads too', () => {
+    createRoot(() => {
+      const raw = {}
+      Object.defineProperty(raw, 'k', { value: Object.freeze({ v: 1 }), writable: false, configurable: false })
+      expect(watchProxy(raw).k.v).toBe(1)
+    })
+  })
+
+  it('warns once when the value under a frozen parent is itself mutable', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      createRoot(() => {
+        const p = watchProxy(Object.freeze({ inner: { b: 1 } }))
+        p.inner; p.inner
+      })
+      const hits = warn.mock.calls.filter(c => String(c[0]).includes('inner'))
+      expect(hits).toHaveLength(1)
+    } finally { warn.mockRestore() }
+  })
+
+  it('a writable property holding a frozen value is still wrapped — the control', () => {
+    createRoot(() => {
+      const inner = Object.freeze({ b: 1 })
+      const p = watchProxy({ inner })
+      expect(p.inner).not.toBe(inner)
+      expect(p.inner.b).toBe(1)
+    })
+  })
+
+  it('the locked value is handed back as itself', () => {
+    createRoot(() => {
+      const tax = Object.freeze({ rate: 0.2 })
+      expect(watchProxy(Object.freeze({ tax })).tax).toBe(tax)
+    })
+  })
+})
+
+/**
  * A write from inside a derivation (`FJS-884`).
  *
  * A memo is lazy: it stops recomputing the moment nothing reads it, and a
@@ -186,5 +252,65 @@ describe('a write from inside a derivation', () => {
       const p = watchProxy({ n: 1 })
       expect(warnings(() => { p.n = 5 })).toEqual([])
     })
+  })
+})
+
+/**
+ * A watch over a primitive (`FJS-1338`).
+ *
+ * The compiler cannot tell `import { count }` from `import { store }`, so
+ * `$: count` over an imported number reached `watchPath` with a number, whose
+ * registry is a WeakMap: it threw `WeakMap keys must be objects` at mount,
+ * naming neither the watch nor its line. RULE 44 says an imported primitive is
+ * a constant, so the watch can never fire; it warns by name and does nothing.
+ */
+import { compileSource } from '../src/compiler.js'
+
+describe('a watch over a primitive', () => {
+  const warned = (fn) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try { fn(); return warn.mock.calls.map(c => String(c[0])) } finally { warn.mockRestore() }
+  }
+
+  it('does not throw, and names the watch', () => {
+    const msgs = warned(() => createRoot(() => {
+      const [read] = watchPath(40, '', 'statePrimitive')
+      expect(read()).toBeUndefined()
+    }))
+    const hit = msgs.filter(m => m.includes('$: statePrimitive'))
+    expect(hit).toHaveLength(1)
+    expect(hit[0]).toContain('number')
+  })
+
+  it('names null, which a store left unset at mount is', () => {
+    const msgs = warned(() => createRoot(() => { watchPath(null, 'name', 'user') }))
+    expect(msgs.some(m => m.includes('$: user.name') && m.includes('null'))).toBe(true)
+  })
+
+  it('warns once per watch, not once per mount', () => {
+    const msgs = warned(() => createRoot(() => {
+      watchPath(7, '', 'mountedTwice')
+      watchPath(7, '', 'mountedTwice')
+    }))
+    expect(msgs.filter(m => m.includes('mountedTwice'))).toHaveLength(1)
+  })
+
+  it('the compiler passes the watched name', async () => {
+    const { result: js } = await compileSource(`<script>
+  import { statePrimitive, store } from './x.js'
+  $: statePrimitive
+  $: store.count
+</script>
+<p>{statePrimitive} {store.count}</p>`, { filename: 'P.mesa' })
+    expect(js).toContain(`watchPath(statePrimitive, '', 'statePrimitive')`)
+    expect(js).toContain(`watchPath(store, 'count', 'store')`)
+  })
+
+  it('an object is watched as before — the control', () => {
+    const msgs = warned(() => createRoot(() => {
+      const [read] = watchPath({ n: 1 }, 'n', 'obj')
+      expect(typeof read).toBe('function')
+    }))
+    expect(msgs.filter(m => m.includes('obj'))).toEqual([])
   })
 })

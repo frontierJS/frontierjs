@@ -395,6 +395,54 @@ describe('?workspace_id= — the documented fallback, which had never worked', (
   })
 })
 
+describe('?search= — a search box over a name, which answered 400 on every use', () => {
+  // Three services read `$.query.search` and build `name contains` from it, and
+  // no model has a `search` column, so autoFilter refused the key before the
+  // service ran (`FJS-1284`). It is not the `$search` directive: that one is
+  // full-text and needs `@@fts`, and a substring of a name is a different
+  // question. Each service reserves the key instead.
+  const uniq = () => Math.random().toString(36).slice(2, 8)
+  const names = (r: any) => (r.data ?? r).map((row: any) => row.name)
+
+  test('the servers box narrows to the names that hold it', async () => {
+    const sys = env.system as any
+    const tag = uniq()
+    await sys.server.create({ data: { workspaceId: ws.id, name: `box-${tag}-a`, slug: `box-${tag}-a` } })
+    await sys.server.create({ data: { workspaceId: ws.id, name: `box-${tag}-b`, slug: `box-${tag}-b` } })
+
+    const found = names(await env.as(owner).service('servers').find({ search: tag }))
+    expect(found.sort()).toEqual([`box-${tag}-a`, `box-${tag}-b`])
+  })
+
+  test('the recipes box, the same way', async () => {
+    const sys = env.system as any
+    const tag = uniq()
+    await sys.recipe.create({ data: { workspaceId: ws.id, name: `Box ${tag}`, slug: `box-${tag}`, script: 'true' } })
+
+    expect(names(await env.as(owner).service('recipes').find({ search: tag }))).toEqual([`Box ${tag}`])
+  })
+
+  test('the volumes box, the same way', async () => {
+    const sys = env.system as any
+    const tag = uniq()
+    await sys.volume.create({ data: { serverId: machine.id, name: `vol-${tag}` } })
+
+    expect(names(await env.as(owner).service('volumes').find({ search: tag }))).toEqual([`vol-${tag}`])
+  })
+
+  test('a column filter beside it still filters, and a stray key is still refused', async () => {
+    const sys = env.system as any
+    const tag = uniq()
+    await sys.server.create({ data: { workspaceId: ws.id, name: `mix-${tag}-on`,  slug: `mix-${tag}-on`,  status: 'online' } })
+    await sys.server.create({ data: { workspaceId: ws.id, name: `mix-${tag}-off`, slug: `mix-${tag}-off`, status: 'stopped' } })
+
+    expect(names(await env.as(owner).service('servers').find({ search: tag, status: 'online' })))
+      .toEqual([`mix-${tag}-on`])
+    await expect(env.as(owner).service('servers').find({ search: tag, bogusColumn: 7 }))
+      .rejects.toThrow(/bogusColumn/)
+  })
+})
+
 // ─── The application trail ───────────────────────────────────────────────────
 // `AuditEvent.diff` is `Json?` and nothing wrote it, so the trail could say a
 // server was drained and not what state it was in (FJS-154). The row-level
@@ -1361,6 +1409,29 @@ describe('an audited action files under the workspace that owns its subject', ()
     })
     expect(row).toBeTruthy()
     expect(row.workspaceId).toBe(ws.id)
+  })
+})
+
+describe('a job\'s next run is the clock\'s answer', () => {
+  test('a scheduled job answers when its own expression next fires', async () => {
+    // `FJS-1241`. It was a column written once on create as a minute from now,
+    // so a weekly job showed that minute for ever — and a member could set it.
+    const job = await env.as(owner).service('jobs').create({
+      name: 'weekly', kind: 'scheduled', cronExpression: '0 9 * * 1', command: 'true',
+    }) as any
+    const got = await env.as(owner).service('jobs').get(job.id) as any
+
+    const next = new Date(got.nextRunAt)
+    expect(next.getTime()).toBeGreaterThan(Date.now())
+    expect([next.getDay(), next.getHours(), next.getMinutes()]).toEqual([1, 9, 0])
+  })
+
+  test('a job off the clock answers null', async () => {
+    const job = await env.as(owner).service('jobs').create({
+      name: 'once', kind: 'one_shot', command: 'true',
+    }) as any
+    const got = await env.as(owner).service('jobs').get(job.id) as any
+    expect(got.nextRunAt).toBeNull()
   })
 })
 

@@ -103,7 +103,10 @@ export function createRecipesService(app: BasecampApp) {
     // where an `after: { all: [...] }` hook broadcast every read to every browser
     // in the workspace (FJS-031). Declaring both is refused at construction.
     channel: workspaceChannel(app),
-    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+    // ?workspace_id= is not a filter — see core/hooks.ts. Nor is ?search=,
+    // the list's name box: no column is called that, and it is not the
+    // full-text `$search` directive either, which needs @@fts (FJS-1284).
+    reservedQuery: [...WORKSPACE_QUERY, 'search'],
 
     // The whole surface, declared. `model:` brings Junction's Litestone base,
     // which answers every CRUD verb this service leaves out — PUT included,
@@ -114,7 +117,7 @@ export function createRecipesService(app: BasecampApp) {
     // ── find ──────────────────────────────────────────────────────────
     async find() {
       const { limit, offset } = getPagination()
-      const search = $.query.search as string | undefined
+      const search = $.reserved.search as string | undefined
 
       return findScoped('recipe', {
         where: search ? { name: { contains: search } } : {},

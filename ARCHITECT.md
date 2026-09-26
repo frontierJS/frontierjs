@@ -57,7 +57,15 @@ Use the left column. Never the right.
 | **Context**                 | request context, state, payload             |
 |   ↳ *plural by realm*       | each package documents its own by LIFETIME (`FJS-D03`); see its `CLAUDE.md` |
 | **Chain of Responsibility** | pipeline, middleware stack, flow            |
+| **Call**                    | request, invocation (for one run of a service method) |
+| **Envelope**                | wrapper, response (for the result shape)    |
+| **Directive**               | query param, modifier (for `$limit` and its kin) |
+| **Route**                   | endpoint, service (for a handler outside the pipeline) |
 | **Signal**                  | observable, atom, ref, store (for the cell) |
+| **Component**               | view, element (for a `.mesa` file)          |
+| **Binding**                 | watcher, reactive seam (for a re-render site) |
+| **Gesture**                 | event, action (for what a person does on screen) |
+| **Effect**                  | watcher, reaction, subscriber (for `$: deps, handler`) |
 | **Guard**                   | hook (for a thing that only answers allow/deny) |
 | **Observer**                | hook, listener (for a thing that cannot act) |
 | **Provider**                | adapter, driver, integration                |
@@ -72,7 +80,21 @@ Clarifications settled by the code:
 - **Signal is not Event, and both are legal words.** A **Signal** is Mesa's
   reactive cell; an **Event** is Junction's announcement. Never call an Event a
   signal. A Signal never crosses a Boundary; an Event exists only to
-  (`FJS-D44`).
+  (`FJS-D44`). An Event is *announced*, and it has no second noun —
+  *announcement* and *mutation* are not terms, and *a write* is the plain
+  phrase (`FJS-D393`). What a person does on the screen — a click, a key, a drop — is
+  a **Gesture** (`FJS-D385`): *event* is Junction's, and *action* is orion's.
+  An **Effect** is `$: deps, handler`, work that runs when a Signal it names
+  changes and returns nothing anyone reads (`FJS-D386`); a flush runs effects
+  last, after derivations and DOM building.
+- **A Component is a `.mesa` file, and a Binding is where it re-renders**
+  (`FJS-D382`, `FJS-D383`). A page, a layout and a Button are all Components.
+  What kind one is comes from its parent in the vocabulary: an Interaction task
+  for something that edits a value, a Container tier for something that holds
+  others. A **Binding** is a place in the compiled output that re-runs when a
+  Signal it reads changes. `bind:` is the two-way case, and § 3.7's last hop is
+  one. The Deployment realm calls a Release's per-environment values its
+  *configuration*.
 - **A second shape of the same truth is a `view`**, which is what the seed
   language calls it — `@@materialized` for the kind that is stored, `@@refreshOn`
   for what refreshes it. What a compiler or a component computes and throws away
@@ -83,6 +105,16 @@ Clarifications settled by the code:
   them. Dispatch is settled and unchanged: the `X-Service-Method` header,
   case-preserved. On the browser client, `svc.invoke(name, id, data, query)`
   (`FJS-D02`, `FJS-D07`).
+- **A Call is one run of a service method through the pipeline, and a Route is
+  a handler outside it** (`FJS-D391`). One request can make several Calls and a
+  Job makes one with no request at all, so `$` is the Call and not the request,
+  and a `ServiceContext` is the Call's Context. The machine end of a Call —
+  ip, user-agent, headers — is `ctx.caller`, because *client* already names
+  Junction's browser client and Litestone's database client (`FJS-D392`). A Call answers in an
+  **Envelope** and reads its **Directives** — `limit`, `offset`, `orderBy`,
+  `select` — off `ctx.directives`. A Route (`app.get`, `app.post`) has no
+  hooks, no gate and no Envelope; it establishes a session, and everything
+  after is a Service (`FJS-D20`).
 - **Policy has two meanings and will not get a third.** Gate = the ordinal
   per-operation check; policies = `@@allow`/`@@deny` row/field predicates. A
   proposed third sense ("declarative business rule vs imperative mechanism") is
@@ -113,6 +145,9 @@ Clarifications settled by the code:
   `drain`, `purge`, `cancel`, the rate limit — are in no source file, are gated
   at ADMINISTRATOR or above, and are audited. The word is Caravan's: a buffer
   that holds work in order is not thereby a Queue.
+- **A Phase is qualified at every use too** — a *startup phase* or a *CI
+  phase*, never bare (`FJS-D395`). *Battery* is ordinary English: a Plugin
+  Junction ships is a Plugin (`FJS-D394`).
 - **`Edge` is refused; `Boundary` is qualified at every use** — the Data
   boundary, the app↔world boundary (`FJS-D06`).
 - **The Deployment noun is Release, and `Manifest` is ceded to MV3**
@@ -127,9 +162,6 @@ vocabulary is mandatory for describing and fully open for challenging.
 
 ### Not yet named
 
-- **Component** (what the UI *is* — Mesa) beside Resource (what the UI *gets*),
-  and **Binding** (the reactive seam). `FJS-D06` §3 left these unruled.
-- **Envelope** for Junction's result shape. Unruled with the above.
 - **Slice** — a package that crosses all realms deliberately (auth,
   notifications). Deferred until `fli add <slice>` is on the table or someone
   outside this repo ships one (`FJS-D06` §7).
@@ -138,7 +170,7 @@ vocabulary is mandatory for describing and fully open for challenging.
   unbounded (`FJS-D198`). The word is currently spent on the cli's runnables.
 - **Environment** and **Audience** in the Deployment realm — proposed in
   `IDEAS/release-transitions.md`; *Audience* may belong to the Data realm beside
-  the gate ladder, and *binding* is already Mesa's word.
+  the gate ladder.
 
 ---
 
@@ -235,8 +267,6 @@ what is here is a question the mental model has not answered.
 - **The Deployment realm's remaining nouns.** Release and Pivot are ruled and in
   code; Environment and Audience are proposed (`IDEAS/release-transitions.md`)
   and collide with words the Data realm and Mesa already hold (§2).
-- **Component and Binding.** The UI realm has one noun, Resource, for what the
-  UI *gets*; what it *is* has no ruled name (§2).
 - **Slice.** Two exist and both are this repo's; the word waits for a third
   party (`FJS-D06` §7).
 - **Auth's routes.** `/auth/*` establishes a session and deliberately bypasses

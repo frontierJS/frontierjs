@@ -25,7 +25,8 @@ import { mkdtempSync, rmSync, readdirSync } from 'node:fs'
 import { tmpdir }      from 'node:os'
 import { join }        from 'node:path'
 import { createClient } from '../src/index.js'
-import { DEFAULT_BUSY_TIMEOUT_MS, BUSY_TIMEOUT_ENV, applyBusyTimeout,
+import { createTenantRegistry } from '../src/tenant.js'
+import { DEFAULT_BUSY_TIMEOUT_MS, BUSY_TIMEOUT_ENV, applyBusyTimeout, applyWal,
          resolveBusyTimeout, busyTimeoutFor, validateBusyTimeout } from '../src/core/pragmas.js'
 
 const dirs: string[] = []
@@ -278,5 +279,83 @@ describe('the option reaches the connection', () => {
 
     expect((await db.asSystem().note.findMany({})).length).toBe(2)
     db.$close()
+  })
+})
+
+// ─── The wait comes BEFORE the WAL switch ───────────────────────────────────
+//
+// Switching a file into WAL needs the lock. A file not yet in WAL — a fresh
+// volume, a first boot — being written by another process refuses the switch,
+// and a connection with no timeout set yet refuses at once. `FJS-655` was this
+// in `createClient`; `FJS-1331` was the same order surviving in the tenant
+// registry. The held lock is a real second process, for the reason
+// `holdWriteLock` states.
+
+/** Create `path` under a rollback journal and hold an EXCLUSIVE lock on it from another process. */
+async function holdRollbackFile(path: string, ms: number): Promise<void> {
+  const init = new Database(path)
+  init.run('CREATE TABLE IF NOT EXISTS held (x)')
+  init.close()
+  const child = Bun.spawn(['bun', '-e', `
+    const { Database } = require('bun:sqlite')
+    const db = new Database(${JSON.stringify(path)})
+    db.run('BEGIN EXCLUSIVE')
+    db.run('INSERT INTO held VALUES (1)')
+    console.log('HELD')
+    setTimeout(() => { db.run('ROLLBACK'); db.close() }, ${ms})
+  `], { stdout: 'pipe' })
+  const reader = child.stdout.getReader()
+  const decoder = new TextDecoder()
+  let seen = ''
+  while (!seen.includes('HELD')) {
+    const { value, done } = await reader.read()
+    if (done) break
+    seen += decoder.decode(value)
+  }
+}
+
+describe('the wait is set before the WAL switch', () => {
+  test('applyWal waits the holder out; the reverse order fails at once', async () => {
+    // The negative control: the same held file, the two orders.
+    const reversed = join(tmp(), 'reversed.db')
+    await holdRollbackFile(reversed, 300)
+    const raw = new Database(reversed)
+    const started = Date.now()
+    expect(() => { raw.run('PRAGMA journal_mode = WAL'); applyBusyTimeout(raw) }).toThrow()
+    expect(Date.now() - started).toBeLessThan(100)
+    raw.close()
+
+    const ordered = join(tmp(), 'ordered.db')
+    await holdRollbackFile(ordered, 300)
+    const db = new Database(ordered)
+    applyWal(db)
+    expect((db.query('PRAGMA journal_mode').get() as { journal_mode: string }).journal_mode).toBe('wal')
+    db.close()
+  })
+
+  const TENANCY = 'tenancy {\n  strategy database\n  dir "./tenants"\n  resolve subdomain\n}'
+  const SCHEMA  = `${TENANCY}\nmodel Note { id Int @id  body String }`
+
+  test('the tenant REGISTRY opens while another process holds it', async () => {
+    const d = tmp()
+    const registry = join(d, 'tenants-registry.db')
+    await holdRollbackFile(registry, 300)
+
+    const reg: any = await createTenantRegistry({ schema: SCHEMA, resolveFrom: d, dir: join(d, 'tenants'), registry })
+    await reg.create('acme', {})
+    expect(reg.exists('acme')).toBe(true)
+    await reg.close()
+  })
+
+  test('a tenant FILE another process holds is created, not refused', async () => {
+    const d = tmp()
+    const reg: any = await createTenantRegistry({ schema: SCHEMA, resolveFrom: d, dir: join(d, 'tenants'), registry: join(d, 'r.db') })
+    await holdRollbackFile(join(d, 'tenants', 'acme.db'), 300)
+
+    await reg.create('acme', {})
+    const db: any = await reg.get('acme')
+    await db.note.create({ data: { id: 1, body: 'after the lock' } })
+    expect(await db.note.count()).toBe(1)
+    await reg.close()
   })
 })

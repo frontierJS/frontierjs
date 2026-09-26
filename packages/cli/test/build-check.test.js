@@ -274,7 +274,7 @@ describe('configuration written into the image', () => {
   })
 
   // These describe the ARTEFACT rather than a deployment of it.
-  test.each(['NODE_ENV', 'PATH', 'TZ'])('%s is a role, not a binding', (key) => {
+  test.each(['NODE_ENV', 'PATH', 'TZ'])('%s is a role, not configuration', (key) => {
     expect(findingsFor({ dockerfile: `FROM alpine:1\nENV ${key}=x\n`, declaredKeys: [key] }))
       .toEqual(['warn:unpinned-base'])
   })

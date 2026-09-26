@@ -359,10 +359,8 @@
   const todayMonth = _todayParts[1] - 1   // 0-indexed
   const todayDay   = _todayParts[2]
 
-  // Calendar grids — auto-recompute when month/year navigation changes
-  const prev             = calendarize(new Date(startDateYear, startDateMonth - 1), startOfWeek)
+  // Calendar grid — recomputes when month/year navigation changes
   const startDateCalendar = calendarize(new Date(startDateYear, startDateMonth), startOfWeek)
-  const next             = calendarize(new Date(startDateYear, startDateMonth + 1), startOfWeek)
 
   const endDateMonth    = startDateMonth === 11 ? 0 : startDateMonth + 1
   const endDateYear     = endDateMonth   === 0  ? startDateYear + 1 : startDateYear

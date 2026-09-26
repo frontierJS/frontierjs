@@ -105,7 +105,7 @@ async function postWebhook(body) {
 // would need a session at level 5 and would put this drive on the limiter for
 // facts that are not about the transport.
 const { db } = await import(join(ROOT, 'api/src/core/db.ts'))
-const { chargeInvoice, issueInvoice, periodLines } = await import(join(ROOT, 'api/src/domain/billing'))
+const { chargeInvoice, issueInvoice, periodLines, startSubscription } = await import(join(ROOT, 'api/src/domain/billing'))
 const sys = db.asSystem()
 
 const RUN = String(Date.now()).slice(-6)
@@ -124,11 +124,10 @@ const version  = await sys.planVersion.findFirst({ where: { planId: plan.id, eff
 async function freshSubscription(suffix, who = customer) {
   const start = addToDate(TODAY, { days: -5 })
   const end   = addToDate(TODAY, { days: 25 })
-  const sub = await sys.subscription.create({ data: {
+  const sub = await startSubscription(sys, {
     reference: `SUB-C${RUN}${suffix}`, customerId: who.id, planVersionId: version.id,
-    status: 'active', quantity: 1,
-    currentPeriodStart: start, currentPeriodEnd: end, userId: who.userId,
-  } })
+    status: 'active', quantity: 1, userId: who.userId,
+  }, { startsOn: start, endsOn: end })
   const invoice = await issueInvoice(sys, {
     number: `INV-C${RUN}${suffix}`, customerId: who.id, subscriptionId: sub.id,
     userId: who.userId, periodStart: start, periodEnd: end, timeZone: 'UTC',
@@ -371,17 +370,17 @@ let refB = null
 // ─── 6. The whole cycle, through the real queue ───────────────────────────
 //
 // **The seam nothing else here crosses.** Every assertion above calls
-// `chargeInvoice` directly, and `verify:billing` runs the sweep against a
-// RECORDER — it captures the dispatch and never executes it, which is what
-// makes its assertions about the id honest and also means the queue is never
-// crossed. So the chain the app is actually built out of —
+// `chargeInvoice` directly, and `verify:billing` fires a period through
+// `fireCommitment` with a recorder for the queue — it captures the collection
+// and never executes it. So the chain the app is actually built out of —
 //
-//   sweep → dispatch(renew) → issue the document → dispatch(collect) →
-//   present it to the provider → the provider's signed event → paid
+//   commitment sweep → fire → close the period, issue the document, open the
+//   next (one transaction) → dispatch(collect) → present it to the provider →
+//   the provider's signed event → paid
 //
 // — had run zero times end to end. Four handoffs, each proven on one side.
 // A drive on either side of any of them passes with the crossing broken: the
-// renewal issues its invoice and dispatches into a queue nobody drained, and
+// close issues its invoice and dispatches into a queue nobody drained, and
 // the collection charges an invoice a drive made by hand.
 //
 // It is here rather than in `verify:billing` because it needs BOTH halves of a
@@ -404,22 +403,21 @@ async function settles(fn, ms = 20000) {
 {
   const start = addToDate(TODAY, { days: -40 })
   const end   = addToDate(TODAY, { days: -10 })
-  const sub = await sys.subscription.create({ data: {
+  const sub = await startSubscription(sys, {
     reference: `SUB-C${RUN}X`, customerId: customer.id, planVersionId: version.id,
-    status: 'active', quantity: 1,
-    currentPeriodStart: start, currentPeriodEnd: end, userId: customer.userId,
-  } })
+    status: 'active', quantity: 1, userId: customer.userId,
+  }, { startsOn: start, endsOn: end })
 
-  // The sweep, with the REAL app behind it. `ctx.app.jobs.dispatch` writes a
-  // row that this process's own workers pick up, so everything after this line
-  // happens because the queue made it happen.
-  const { sweepRenewals } = await import(join(ROOT, 'api/src/jobs/subscriptions-renew.job.ts'))
-  const queued = await sweepRenewals({ app, data: { at: new Date().toISOString() } }, 'UTC')
-  t('chain.sweepQueuedIt', queued >= 1)
+  // The sweep, with the REAL app behind it: junction's `commitments()` asks
+  // every shop's file what is due and dispatches a fire this process's own
+  // workers pick up, so everything after this line happens because the queue
+  // made it happen. The period ended ten days ago, so its fire runs at once.
+  const { due } = await app.commitments.sweep()
+  t('chain.sweepQueuedIt', due >= 1)
 
-  // Two waits and two different questions. The first is the renewal handler
-  // having run at all; the second is the renewal's own dispatch having been
-  // drained in turn, which is the handoff no unit test can reach.
+  // Two waits and two different questions. The first is the fire having run
+  // its hook at all; the second is the hook's own dispatch having been drained
+  // in turn, which is the handoff no unit test can reach.
   const invoice = await settles(() =>
     sys.invoice.findFirst({ where: { subscriptionId: sub.id } }))
   t('chain.renewalIssuedTheDocument', Boolean(invoice))
@@ -447,12 +445,15 @@ async function settles(fn, ms = 20000) {
   t('chain.stillActive', after.status === 'active')
 
   // And it does not bill twice. A second sweep at the same instant finds the
-  // subscription no longer due — the window moved — so this is the WINDOW
-  // doing the work rather than the dispatch id, which is the half
-  // `verify:billing` cannot separate because its sweep never advanced anything.
-  const againQueued = await sweepRenewals({ app, data: { at: new Date().toISOString() } }, 'UTC')
-  const bills = await sys.invoice.count({ where: { subscriptionId: sub.id } })
-  t('chain.secondSweepBillsNothing', againQueued === 0 && bills === 1)
+  // closed period owing nothing and the new one not yet due — the period's
+  // own state is the once-ness, with no key anywhere.
+  await app.commitments.sweep()
+  await new Promise(r => setTimeout(r, 500))
+  const bills   = await sys.invoice.count({ where: { subscriptionId: sub.id } })
+  const periods = await sys.subscriptionPeriod.findMany({ where: { subscriptionId: sub.id }, orderBy: { startsOn: 'asc' } })
+  t('chain.secondSweepBillsNothing', {
+    bills, periods: periods.map(p => p.status).join(','), next: periods[1]?.startsOn === end,
+  })
 }
 
 // ─── 7. The bank wants the cardholder ─────────────────────────────────────
@@ -560,6 +561,7 @@ try {
       await sys.creditNote.deleteMany({ where: { invoiceId: b.id } })
       await sys.invoice.delete({ where: { id: b.id } })
     }
+    await sys.subscriptionPeriod.deleteMany({ where: { subscriptionId: s.id } })
     await sys.subscription.delete({ where: { id: s.id } })
   }
   // The cards, after the payments that name them are gone —
@@ -607,7 +609,7 @@ const expected = {
   'chain.providerSettledIt': true,
   'chain.windowMoved': true,
   'chain.stillActive': true,
-  'chain.secondSweepBillsNothing': true,
+  'chain.secondSweepBillsNothing': { bills: 1, periods: 'closed,open', next: true },
   'sca.theCardFilesLikeAnyOther': true,
   'sca.presentingIsNotAnError': true,
   'sca.thePaymentSaysSoAndCarriesTheLink': true,

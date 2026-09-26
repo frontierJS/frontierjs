@@ -5,7 +5,7 @@ alias: pmap
 examples:
   - fli project:map
   - fli project:map --as=serve
-  - fli project:map --as=json
+  - fli project:map --json
   - fli project:map --out project-map.json
   - fli project:map --layer schema
   - fli project:map --no-atlas
@@ -14,8 +14,15 @@ flags:
   as:
     char: a
     type: string
-    description: "Which presentation — report (the terminal, default), serve (FJSChain in a browser; it does not exit, Ctrl+C to stop), or json (the model)"
+    description: "Which layout — report (the terminal, default) or serve (FJSChain in a browser; it does not exit, Ctrl+C to stop)"
+    choices:
+      - report
+      - serve
     defaultValue: report
+  json:
+    type: boolean
+    description: Print the model instead
+    defaultValue: false
   layer:
     type: string
     description: "Collect one layer only: schema | api | ui | migrations"
@@ -39,16 +46,16 @@ flags:
     defaultValue: true
 ---
 
-One reader of the project, presented three ways. `--as` picks the presentation
-and nothing else: the terminal report, FJSChain in a browser, or the model
-itself.
+One reader of the project, presented three ways: the terminal report and
+FJSChain in a browser, which `--as` picks between, and the model itself, which
+is `--json` (`FJS-D401`).
 
 `project:view` was the second command over this same reading, and the two
 disagreed — 54 models against 42 over one tree, because one counted definitions
 by shape and the fix landed in the other (`FJS-1016`). They collected different
 fields too, so *what does this project contain* had two answers depending on
 which you asked. That is `FJS-D223` one scope down, and it is applied here
-rather than re-argued: **one axis, so one flag**, and `--as` absorbs `--json`.
+rather than re-argued.
 
 `--layer` narrows what is COLLECTED, so a narrowed run is cheaper and its JSON
 says only what it looked at. `--out` is a destination rather than a presentation
@@ -62,13 +69,13 @@ the three registers no file can answer; it degrades rather than fails, so a
 missing bun costs three sections and nothing else.
 
 ```js
-const as    = (flag.as || 'report').toLowerCase()
-const layer = (flag.layer || '').toLowerCase()
-
-if (!['report', 'serve', 'json'].includes(as)) {
-  log.error(`--as=${as} is not a presentation — report, serve or json`)
+if (flag.json && flag.as !== 'report') {
+  log.error(`--json prints the model; --as=${flag.as} serves a page. Drop one of the two flags.`)
+  process.exitCode = 1
   return
 }
+const as    = flag.json ? 'json' : flag.as
+const layer = (flag.layer || '').toLowerCase()
 
 if (!existsSync(resolve(context.paths.db, 'schema.lite'))) {
   log.error(`no db/schema.lite under ${context.paths.root} — cd into a FJS app, or point at one with --project <dir>`)

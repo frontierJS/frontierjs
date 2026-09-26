@@ -290,6 +290,32 @@ try {
   check('an aliased tag is marked as the same image', /same image as/.test(tagText),
     tagText.slice(0, 160))
 
+  // ─── Servers ───────────────────────────────────────────────────────────
+  // Nothing else types into this box — `verify` filters by status and role
+  // only — and a refused key renders as an error over an empty list, which
+  // is how it answered 400 unseen (FJS-1284). The name is read off the first
+  // row rather than written here, because the seed names machines by counter.
+  console.log('\n  /servers/ — the search box')
+  await goto('/servers/')
+  await until(`document.querySelectorAll('#server-rows tbody tr').length`, n => n > 1,
+    'the server list never rendered two rows to narrow')
+  const everyRow = `[...document.querySelectorAll('#server-rows tbody tr td:first-child')].map(td => td.textContent.trim())`
+  const unfiltered = await evaluate(everyRow)
+  const wanted     = unfiltered[0]
+
+  await fill({ 'filter-search': wanted })
+  await evaluate(`document.getElementById('filter-search').form.requestSubmit()`)
+  await until(`location.search`, s => s.includes('search='), 'submitting never wrote ?search= into the URL')
+  const narrowed = await until(everyRow, rows => rows.length > 0 && rows.length < unfiltered.length,
+    'the list never narrowed').catch(e => e)
+  // The page's own banner sits under its header. The shell draws notices of
+  // its own in the same tone — a seeded machine that is unreachable — so a
+  // bare `.alert.danger` reads one of those as this page failing.
+  const banner = await text('.section-header + .alert.danger')
+  check('searching by name answers rather than refusing', !banner, banner)
+  check('and narrows to the rows holding it',
+    Array.isArray(narrowed) && narrowed.every(n => n.includes(wanted)), String(narrowed?.message ?? narrowed))
+
   // ─── Hub settings ──────────────────────────────────────────────────────
   console.log('\n  /hub/settings/ — the installation')
   await goto('/hub/settings/')
@@ -745,6 +771,18 @@ try {
     'the app detail never rendered for a real id')
   check('and its heading is the record, not a state',
     (await text('h1')).trim() !== 'App not found', await text('h1'))
+
+  // A hostname written from OUTSIDE the screen — not its own add button, which
+  // reloads by itself — arrives with no reload. The listener that does it is one
+  // declaration whose `const` spelling the compiler makes lazy, and read only
+  // in teardown it registered at destroy (`FJS-1062`).
+  const liveHost = 'live.example.test'
+  const madeLive = await apiPost('/domains', { appId: realId, hostname: liveHost, isPrimary: false })
+  check('a hostname written behind the open screen was accepted', madeLive.status < 300,
+    JSON.stringify(madeLive).slice(0, 200))
+  const liveSeen = await until(`document.body.textContent.includes(${JSON.stringify(liveHost)})`, v => v,
+    'the hostname never appeared', 8_000).catch(() => false)
+  check('and the open app screen shows it without a reload', !!liveSeen)
 
   // FAILED. The API is stopped under a page that is already signed in, and the
   // next screen is reached by CLICKING — a client-side navigation, so the

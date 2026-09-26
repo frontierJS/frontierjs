@@ -14,6 +14,8 @@ import { buildRegistry, uniqueCommands, getModule } from './registry.js'
 import { loadConfig } from './config.js'
 import { BOOL_ARGV, dropUntypedBooleans } from './runtime.js'
 import { setVerbose } from './verbosity.js'
+import { flagSpelling, flagConstraint } from './flags.js'
+import { APPROVED } from './effects.js'
 
 // ─── .fli.json + .env — load both from project root ──────────────────────────
 loadConfig()
@@ -29,6 +31,14 @@ loadEnv(resolve(global.projectRoot, '.env'), { override: true })
 // These are added by the runtime (defaultFlags) for cross-cutting behavior;
 // users don't pass them by name in command help so we hide them from listings.
 const INTERNAL_FLAGS = new Set(['dry', 'test', 'step', 'debug', 'verbose', 'project', '_spec'])
+
+// `--approved` is fli's, added to a `confirm: human` command rather than
+// declared by it, so a listing adds it the way the runtime does.
+const listedFlags = (m) => [
+  ...Object.entries(m.flags || {}).filter(([k]) => !INTERNAL_FLAGS.has(k)),
+  ...(m.confirm === 'human' ? [['approved', APPROVED]] : []),
+]
+const effectsText = (m) => m.effects ? `${m.effects}${m.confirm === 'human' ? ' · a person confirms each run' : ''}` : ''
 
 // ─── printSearch() — keyword search across all commands ──────────────────────
 function printSearch(q, all) {
@@ -140,17 +150,23 @@ async function printNamespace(ns, commands, verbose = false) {
       process.stdout.write(`  ${dim('args   ')} ${cyan(argStr)}\n`)
     }
 
+    if (m.effects) {
+      process.stdout.write(`  ${dim('effects')} ${amber(effectsText(m))}\n`)
+    }
+
     // Flags (skip internal ones)
-    const flags = Object.entries(m.flags || {})
-      .filter(([k]) => !INTERNAL_FLAGS.has(k))
+    const flags = listedFlags(m)
     if (flags.length) {
       for (const [name, def] of flags) {
         const short   = def.char ? dim(`-${def.char}, `) : dim('    ')
-        const type    = def.type && def.type !== 'boolean' ? dim(` (${def.type})`) : ''
-        const defVal  = def.defaultValue !== undefined && def.defaultValue !== '' && def.defaultValue !== false
+        const bound   = flagConstraint(def)
+        const type    = def.type && def.type !== 'boolean' ? dim(` (${[def.type, bound].filter(Boolean).join(' ')})`) : ''
+        // A boolean that defaults on is shown as the spelling that turns it off,
+        // so its default says nothing a reader needs.
+        const defVal  = def.defaultValue !== undefined && def.defaultValue !== '' && typeof def.defaultValue !== 'boolean'
           ? dim(` [${def.defaultValue}]`) : ''
         const desc    = def.description ? dim(`  ${def.description}`) : ''
-        process.stdout.write(`  ${dim('       ')} ${short}${amber('--' + name)}${type}${defVal}${desc}\n`)
+        process.stdout.write(`  ${dim('       ')} ${short}${amber(flagSpelling(name, def))}${type}${defVal}${desc}\n`)
       }
     }
 
@@ -169,6 +185,9 @@ function printHelp(meta, filePath) {
   logger(`${meta.title}`, 'info')
   if (meta.description) {
     logger(`  ${meta.description}`, 'info')
+  }
+  if (meta.effects) {
+    logger(`  ${chalk.yellow(`Effects: ${effectsText(meta)}`)}`, 'info')
   }
 
   // Usage line — built from metadata only, never from parsed argv
@@ -193,14 +212,16 @@ function printHelp(meta, filePath) {
   }
 
   // Flags — skip internal ones
-  const flags = Object.entries(meta.flags || {}).filter(([k]) => !INTERNAL_FLAGS.has(k))
+  const flags = listedFlags(meta)
   if (flags.length) {
     logger('\n  Flags:', 'info')
     for (const [name, def] of flags) {
       const short = def.char ? `-${def.char}, ` : '    '
-      const type  = def.type ? chalk.dim(` (${def.type})`) : ''
-      const def_  = def.defaultValue !== undefined ? chalk.dim(` [default: ${def.defaultValue}]`) : ''
-      logger(`    ${short}--${name.padEnd(18)} ${def.description ?? ''}${type}${def_}`, 'info')
+      const bound = flagConstraint(def)
+      const type  = def.type ? chalk.dim(` (${[def.type, bound].filter(Boolean).join(' ')})`) : ''
+      const def_  = def.defaultValue !== undefined && typeof def.defaultValue !== 'boolean'
+        ? chalk.dim(` [default: ${def.defaultValue}]`) : ''
+      logger(`    ${short}${flagSpelling(name, def).padEnd(20)} ${def.description ?? ''}${type}${def_}`, 'info')
     }
   }
 
@@ -351,11 +372,12 @@ export async function run(process) {
     const gray = (s) => chalk.dim(s)
     const line = () => process.stdout.write('\n')
 
-    const printRow = (title, alias, desc) => {
-      const t = green(title.padEnd(titleW))
-      const a = alias ? dim(alias.padEnd(aliasW)) : ' '.repeat(aliasW)
-      const d = dim(desc || '')
-      process.stdout.write(`  ${t}  ${a}  ${d}\n`)
+    const printRow = (m) => {
+      const t = green(m.title.padEnd(titleW))
+      const a = m.alias ? dim(m.alias.padEnd(aliasW)) : ' '.repeat(aliasW)
+      const d = dim(m.description || '')
+      const c = m.confirm === 'human' ? `  ${yellow('· a person confirms')}` : ''
+      process.stdout.write(`  ${t}  ${a}  ${d}${c}\n`)
     }
 
     const printNsHeader = (ns) => {
@@ -398,7 +420,7 @@ export async function run(process) {
       nsEntries.forEach(([ns, cmds], i) => {
         if (i > 0) line()
         printNsHeader(ns)
-        for (const m of cmds) printRow(m.title, m.alias || '', m.description || '')
+        for (const m of cmds) printRow(m)
       })
     }
 
@@ -412,7 +434,7 @@ export async function run(process) {
       Object.entries(groups).forEach(([ns, cmds], i) => {
         if (i > 0) line()
         printNsHeader(ns)
-        for (const m of cmds) printRow(m.title, m.alias || '', m.description || '')
+        for (const m of cmds) printRow(m)
       })
     }
 

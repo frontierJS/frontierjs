@@ -33,7 +33,7 @@
 //   //   { type: 'event', event: 'deployments created', data: { id: '...', ... } }
 
 import { createPresenceTracker } from './presence.ts'
-import { AUTO_EVENT_MAP, markPublishHook } from '../core/events.ts'
+import { AUTO_EVENT_MAP, REMOVAL_EVENTS, markPublishHook } from '../core/events.ts'
 import { unwrapResult }         from '../core/envelope.ts'
 import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel } from '../core/litestone.ts'
 import { wsSend }               from './send-queue.ts'
@@ -422,7 +422,7 @@ export async function gradeRecipients(
 ): Promise<Cohort[] | null> {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null
 
-  const db = src.db as { $readAs?: Function; $readGrading?: Function } | undefined
+  const db = src.db as { $readAs?: Function; $readGrading?: Function; $inWindow?: Function } | undefined
   // No Data boundary here — an app broadcasting from a raw route, or a test
   // harness. Nothing to grade against, so nothing is claimed.
   //
@@ -434,6 +434,28 @@ export async function gradeRecipients(
   if (typeof db.$readAs !== 'function' || typeof db.$readGrading !== 'function') return null
 
   const accessor = resolveAccessor(db, src.accessor)
+
+  // ── the window ────────────────────────────────────────────────────────────
+  //
+  // Asked BEFORE `$readGrading`, and that placement is the whole of it. A model
+  // with a window and no gate grades `open` and takes the early return below,
+  // which is exactly the shape a catalog is — so a window asked after it is a
+  // window asked for nobody.
+  //
+  // It is a separate question from `$readAs` because it is a separate KIND of
+  // question: `$readAs` answers *may this principal see this row*, per cohort;
+  // the window answers *does this row still count*, once, for everybody. What
+  // it closes is the frame emitted after an `@@expires` row fell out — a
+  // write to an already-dead row, or a `withExpired` read that then wrote. It
+  // does not close silent expiry, where no write happens at all and so no frame
+  // is ever built; that needs a store that re-grades on a tick.
+  //
+  // **A removal is sent anyway.** Suppressing it strands the row in every store
+  // that already holds it, with nothing that could ever correct it — worse than
+  // never having graded. `gate` mode names no row, so there is nothing to ask.
+  if (mode === 'row' && !REMOVAL_EVENTS.has(event) && '$inWindow' in db &&
+      typeof db.$inWindow === 'function' && !db.$inWindow(accessor, payload)) return []
+
   if (mode === 'row' && db.$readGrading(accessor) === 'open') return null
 
   const readLevel = mode === 'gate' ? readGateLevel(db, accessor) : null
@@ -1232,7 +1254,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
 
               const extra   = (extraParams as Record<string, unknown> ?? {})
               const wsQuery = (extra.query ?? {}) as Record<string, unknown>
-              // workspaceId is lifted onto ctx.client.headers below, so it does
+              // workspaceId is lifted onto ctx.caller.headers below, so it does
               // not also belong in locals — one owner per translation.
               // correlationId/idempotencyKey become request metadata, which is
               // an ALS store rather than a context field.
@@ -1265,7 +1287,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
                 },
                 app
               )
-              // WS-origin client facts (headers/ip) belong on ctx.client.
+              // WS-origin caller facts (headers/ip) belong on ctx.caller.
               //
               // `ctx.headers` are the UPGRADE request's headers — one set for
               // the life of the connection. Anything a caller varies per call
@@ -1273,7 +1295,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
               // person switches workspace, a guest basket's token comes into
               // existence after the socket is already up. The browser client
               // sends those on the frame (`meta.headers`) and they are merged
-              // in here, so a hook reading ctx.client.headers sees the same
+              // in here, so a hook reading ctx.caller.headers sees the same
               // value it would have seen over HTTP.
               //
               // An ALLOW-LIST, not a merge. A frame that could name its own
@@ -1281,13 +1303,13 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
               // established at upgrade, so a name reaches the context only if
               // the app declared it in `http.callHeaders` — or if it is one of
               // junction's own, which the client sends unasked.
-              svcCtx.client.headers = _mergeCallHeaders(
+              svcCtx.caller.headers = _mergeCallHeaders(
                 ctx.headers,
                 extra.headers as Record<string, unknown> | undefined,
                 extra.workspaceId,
                 app,
               )
-              svcCtx.client.ip      = ctx.ip
+              svcCtx.caller.ip      = ctx.ip
               svcCtx.method    = method as string
               svcCtx.transport = 'websocket'
 
@@ -1317,7 +1339,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
                   // Same as the HTTP path — the principal is request-wide, and
                   // it is what an internal call inherits when it names none.
                   user:           svcCtx.auth.user,
-                  client:         svcCtx.client,
+                  caller:         svcCtx.caller,
                 }, () =>
                   _call(svc, svcCtx, app._appHooks, app.events, app.telemetry))
                 // The second hand-copy of the bridge's rule. Both now call it.

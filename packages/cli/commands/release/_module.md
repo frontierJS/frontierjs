@@ -40,7 +40,7 @@ fli release:mint    — compute the Release this tree would deploy
 ```
 
 A **Release** is what that verdict is attached to: an immutable
-artefact-plus-bindings, addressed by its own content. `release:mint` computes one
+artefact-plus-configuration, addressed by its own content. `release:mint` computes one
 and writes nothing — the id is a hash of its four terms, so the same tree mints
 the same id on a laptop, in CI and on the target, which is what makes a digest
 promotable between environments instead of rebuilt.

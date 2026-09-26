@@ -86,9 +86,10 @@ export interface ServiceContext {
     user: import('../auth/types.ts').SessionContext | null
   }
 
-  // ── client: caller environment. Read-only. Propagates. {} on
-  // internal calls (no real client). ip / user-agent / raw headers.
-  client: {
+  // ── caller: the machine end of the call, never the person (that is
+  // auth.user). Read-only. Propagates. {} on internal calls with no request
+  // behind them. ip / user-agent / raw headers.
+  caller: {
     ip?:        string
     userAgent?: string
     headers:    Record<string, string>
@@ -435,7 +436,7 @@ export interface RequestMeta {
    * caused the write, and there is no other route to it. It is information,
    * never authority — nothing in the framework grades a caller by it.
    */
-  client?:         { ip?: string; userAgent?: string; headers: Record<string, string>; [k: string]: unknown }
+  caller?:         { ip?: string; userAgent?: string; headers: Record<string, string>; [k: string]: unknown }
 
   /**
    * WHICH TENANT the work is for, where the app declares tenancy.
@@ -501,7 +502,7 @@ export interface RequestSource {
 
   /** WHO and WHERE. Both propagate; see the doc on RequestMeta. */
   user?:   RequestMeta['user']
-  client?: RequestMeta['client']
+  caller?: RequestMeta['caller']
 
   /** WHICH TENANT, for work that has no request to resolve one from. */
   tenant?: RequestMeta['tenant']
@@ -517,7 +518,7 @@ export function enterRequest<T>(src: RequestSource, fn: () => T): T {
     tracestate:     src.tracestate     ?? h?.['tracestate'],
     origin:         src.origin,
     user:           src.user,
-    client:         src.client,
+    caller:         src.caller,
     tenant:         src.tenant,
   }, fn)
 }
@@ -555,7 +556,7 @@ export function requestMeta(): RequestMeta | undefined {
 // ─── `$` — the service call you are inside ────────────────────────────────
 //
 // A request is one thing; a CALL inside it is another. `ctx.auth` and
-// `ctx.client` belong to the request and ride RequestMeta above. `ctx.data`,
+// `ctx.caller` belong to the request and ride RequestMeta above. `ctx.data`,
 // `ctx.id`, `ctx.locals` and `ctx.locals.db` belong to one invocation: fresh
 // per call, and `transactional:` swaps the db under the method mid-call. So
 // this is a second store with a second span, and NOT the announcing-service
@@ -932,11 +933,11 @@ export function announcingService(): string | undefined {
  * `in`, not `??`: absent and null are different answers, and conflating them
  * removes the only way to say *read this as a stranger would*.
  */
-export function inheritedClient(): { ip?: string; userAgent?: string; headers: Record<string, string> } {
+export function inheritedCaller(): { ip?: string; userAgent?: string; headers: Record<string, string> } {
   // `{}` with an empty header bag when there is nothing to inherit — a job or a
   // script has no client, and the shape stays the same either way so a reader
   // never has to test for it.
-  return _requestStore.getStore()?.client ?? { headers: {} }
+  return _requestStore.getStore()?.caller ?? { headers: {} }
 }
 
 export function resolvePrincipal(opts: CallOptions): SessionContext | null {
@@ -970,12 +971,12 @@ export function freezeUser<T extends object>(user: T): T {
 //
 // A TransportContext carries `ip` at the top level, because at that point there
 // is nothing else — no service, no principal. A ServiceContext splits the client
-// facts into `ctx.client`, so the same value lives at `ctx.client.ip`.
+// facts into `ctx.caller`, so the same value lives at `ctx.caller.ip`.
 //
 // One accessor for both, because that one-line gap is what grew a third rate
 // limiter inside @frontierjs/auth (FJS-017). Anything that runs on both sides of
 // the bridge should ask this rather than pick a side.
 export function clientIp(ctx: unknown): string {
-  const c = ctx as { client?: { ip?: string }; ip?: string } | null | undefined
-  return c?.client?.ip ?? c?.ip ?? 'unknown'
+  const c = ctx as { caller?: { ip?: string }; ip?: string } | null | undefined
+  return c?.caller?.ip ?? c?.ip ?? 'unknown'
 }

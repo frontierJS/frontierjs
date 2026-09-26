@@ -69,6 +69,17 @@ export function addToDate(date: PlainDate, duration: DateDuration): PlainDate
 export function daysBetween(from: PlainDate, to: PlainDate): number
 export function startOfDay(date: PlainDate, timeZone: string): number
 
+/** A `.lite` `@@commitment` as `x-commitments` carries it. */
+export interface CommitmentTime {
+  on:     string
+  kind:   'instant' | 'day'
+  offset: null
+        | { sign: 1 | -1; value: number; unit: string }
+        | { sign: 1 | -1; field: string; unit: string }
+}
+/** When the commitment falls due on `row` — ISO text for an instant, 'YYYY-MM-DD' for a day, null when not owed yet. */
+export function dueAt(commitment: CommitmentTime, row: Record<string, unknown> | null | undefined): string | null
+
 export interface Datetime {
   readonly locale:   string
   readonly timeZone: string

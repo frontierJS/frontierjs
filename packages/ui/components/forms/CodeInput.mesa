@@ -1,0 +1,237 @@
+<script>
+  // CodeInput.mesa
+  // A text box that edits source and shows it highlighted — a template, a
+  // query, a snippet, a document in its own syntax.
+  //
+  // ── Two layers, one grid cell ────────────────────────────────────────
+  //
+  // A real <textarea> on top with its text transparent, and glow's output
+  // underneath in a `<pre class="code">`. The textarea is the control — caret,
+  // selection, undo, IME, spellcheck, form submission and every assistive
+  // technology are the browser's, and nothing here reimplements an editor.
+  // The layer beneath is paint and is `aria-hidden`.
+  //
+  // The overlay holds only while both layers lay text out identically, and
+  // every way it breaks is a caret that drifts from the character it sits on:
+  //
+  //   - One rule sets the metrics for both — `.fjs-code-input-layer` — font,
+  //     size, line-height, padding, border width, tab size, white-space. A
+  //     second copy of any of them on one layer is where they drift apart.
+  //   - glow must emit exactly the characters typed: `prefix: false` keeps a
+  //     leading `+`, `-`, `>` or `\`, and `mark: false` keeps `•`. Either one
+  //     on removes characters from the paint and not from the box.
+  //   - A `<pre>` draws no line for a trailing newline, so the box would hold
+  //     one line more than the paint and scroll by it; `paintable` gives that
+  //     empty last line a space.
+  //   - Both layers share one grid cell, so the cell is as tall as the longer
+  //     of the two and the textarea never scrolls vertically — and both carry
+  //     `overflow: auto`, so a horizontal scrollbar appears on both at the same
+  //     width and takes the same height from each. The textarea scrolls
+  //     sideways and the paint is moved to match.
+  //
+  // Usage:
+  //   <CodeInput name="body" language="md" value={row.body} oninput={e => row.body = e.target.value} />
+  //   <CodeInput name="query" language="sql" numbered />
+  //
+  // bind:this exposes: focus()
+
+  import Field    from './Field.mesa'
+  import { glow } from '@frontierjs/toolbelt/glow'
+  import { humanize, uid, resolveError, resolveRule, stated, nativeValidationGuard, lockedBy } from '../../utils.js'
+
+  export let value       = ''
+  export let language    = ''       // glow language — 'js', 'sql', 'md', 'json', …; '' guesses
+  export let numbered    = false    // line numbers in a gutter
+  export let rows        = 6        // the height at rest; the box grows past it
+  export let placeholder = ''
+  export let disabled    = undefined  // undefined = ask the form; false overrides it
+  export let required    = undefined
+  export let readonly    = false
+
+  // Field integration
+  export let name   = ''
+  export let label  = undefined
+  export let hint   = ''
+  export let error  = ''
+  export let errors = undefined
+  export let badge  = undefined
+  export let help   = undefined
+
+  export let oninput  = undefined
+  export let onchange = undefined
+  export let onblur   = undefined
+  export let onfocus  = undefined
+
+  export var id = ''
+  const areaId    = id || uid('code')
+  const autoLabel = humanize(name)
+
+  const form = $context.form
+
+  const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
+  const rule             = resolveRule(form, name)
+  const resolvedRequired = stated(required, rule?.required)
+  const hasError         = !!resolveError(form, name, error, errors)
+
+  let el
+  let paint
+  export function focus() { el?.focus() }
+
+  $: source    = value ?? ''
+  $: paintable = source.endsWith('\n') ? source + ' ' : source
+  // glow encodes every slice of the source it emits, so this is safe to hand
+  // {@html}. A highlighter that did not is a stored XSS in any field somebody
+  // else can write.
+  $: painted   = glow(paintable, { language: language || undefined, prefix: false, mark: false, numbered })
+
+  function handleInput(e) {
+    value = e.target.value
+    oninput?.(e)
+  }
+
+  function syncScroll() {
+    if (!paint || !el) return
+    paint.scrollTop  = el.scrollTop
+    paint.scrollLeft = el.scrollLeft
+  }
+</script>
+
+{#snippet control()}
+  <div class="fjs-code-input" class:numbered>
+    <pre bind:this={paint} class="code fjs-code-input-layer fjs-code-input-paint" aria-hidden="true">{@html painted}</pre>
+    <textarea
+      bind:this={el}
+      class="fjs-code-input-layer fjs-code-input-text"
+      id={areaId}
+      name={name || undefined}
+      rows={rows}
+      placeholder={placeholder}
+      disabled={resolvedDisabled}
+      required={resolvedRequired}
+      {@attach nativeValidationGuard}
+      readonly={readonly}
+      spellcheck="false"
+      autocomplete="off"
+      autocapitalize="off"
+      autocorrect="off"
+      aria-invalid={hasError || null}
+      on:input={handleInput}
+      on:scroll={syncScroll}
+      on:change={onchange}
+      on:blur={onblur}
+      on:focus={onfocus}
+      {...$attributes}
+      value={source}
+    >{source}</textarea>
+    <!--
+      The value is written as child text and as the property for the reason
+      Textarea.mesa gives: the text is what a server render emits, the property
+      is what a later change has to go through.
+    -->
+  </div>
+{/snippet}
+
+{#if label || (name && autoLabel)}
+  <Field
+    id={areaId}
+    name={name}
+    label={label}
+    required={resolvedRequired}
+    badge={badge}
+    help={help}
+    hint={hint}
+    error={error}
+    errors={errors}
+    {class}
+  >
+    {@render control()}
+  </Field>
+{:else}
+  {@render control()}
+{/if}
+
+<style>
+  .fjs-code-input {
+    display:               grid;
+    /* minmax(0, …) or one long line widens the track past the page. */
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The metrics, for both layers at once. Nothing below may restate one. */
+  .fjs-code-input-layer {
+    grid-area:  1 / 1;
+    box-sizing: border-box;
+    margin:     0;
+    padding:    var(--space-xl) var(--space-2xl);
+    border:     var(--border-width) solid transparent;
+
+    font-family:    var(--font-mono);
+    font-size:      var(--text-sm);
+    font-weight:    normal;
+    font-style:     normal;
+    line-height:    var(--leading-relaxed);
+    letter-spacing: normal;
+    word-spacing:   normal;
+    tab-size:       2;
+    white-space:    pre;
+    overflow-wrap:  normal;
+    text-align:     start;
+
+    overflow:   auto;
+  }
+
+  /* The gutter glow's numbered <span>::before draws: 2.5em wide + 1em gap. */
+  .numbered > .fjs-code-input-text {
+    padding-inline-start: calc(var(--space-2xl) + 3.5em);
+  }
+
+  .fjs-code-input-paint {
+    pointer-events: none;
+    user-select:    none;
+    border-color:   var(--rule);
+  }
+
+  /* code.css makes a highlighted <code> its own scroller; here the <pre> is,
+     or its padding would clip the paint where the textarea's does not. */
+  .fjs-code-input-paint :global(code) {
+    overflow: visible;
+  }
+
+  .fjs-code-input-text {
+    background:  transparent;
+    color:       transparent;
+    caret-color: var(--code-text, var(--ink));
+    resize:      none;
+    outline:     none;
+  }
+
+  .fjs-code-input-text::placeholder {
+    color:   var(--ink-mute);
+    opacity: 1;
+  }
+
+  /* The selected text is the paint showing through, so the highlight must be
+     translucent and the textarea's own glyphs must stay invisible. */
+  .fjs-code-input-text::selection {
+    background: color-mix(in srgb, var(--ring, var(--color-primary)) 25%, transparent);
+    color:      transparent;
+  }
+
+  /* The focus ring is drawn on the paint because the paint is the visible box;
+     the chain is focus.css's. */
+  .fjs-code-input:has(> .fjs-code-input-text:focus) > .fjs-code-input-paint {
+    border-color:   var(--ring, var(--color-primary));
+    outline:        var(--ring-width) var(--ring-style) var(--ring, var(--color-primary));
+    outline-offset: var(--ring-offset);
+  }
+
+  .fjs-code-input:has(> .fjs-code-input-text[aria-invalid="true"]) > .fjs-code-input-paint {
+    border-color: var(--color-danger);
+  }
+
+  .fjs-code-input:has(> .fjs-code-input-text:disabled) > .fjs-code-input-paint {
+    background: color-mix(in srgb, var(--ink) 4%, var(--surface));
+  }
+
+  .fjs-code-input-text:disabled { cursor: not-allowed; }
+</style>

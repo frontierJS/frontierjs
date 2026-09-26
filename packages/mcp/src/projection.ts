@@ -37,7 +37,7 @@
 
 import { levelPasses, canAtLevel } from '@frontierjs/toolbelt/gate'
 import { modelName }               from '@frontierjs/toolbelt/inflect'
-import { DIRECTIVE_PARAMS }        from '@frontierjs/toolbelt/directives'
+import { DIRECTIVE_SCHEMAS }       from '@frontierjs/toolbelt/directives'
 // The one rule this module may not own a copy of. `gateAuthAround` asks
 // `customMethodGrade` what stands between a caller and a custom method, and a
 // projection that answered that question a second way would be the fifth copy
@@ -452,32 +452,61 @@ const ID_INPUT: JsonSchemaObject = {
 /**
  * `find`'s argument: filters, plus the directives.
  *
- * The directive names come from `@frontierjs/toolbelt/directives` — Invariant
- * 10's one table — rather than being spelled here, so a directive the Data
- * realm grows arrives in the tool schema without this file being opened. They
- * are named WITHOUT the `$`, because the prefix is wire syntax and an in-process
- * caller passes `{ directives: { limit } }` (Invariant 10 again: no
- * `$`-prefixed key survives the bridge).
+ * The directives and their value schemas come from
+ * `@frontierjs/toolbelt/directives` — Invariant 10's one table — rather than
+ * being spelled here, so a directive the Data realm grows arrives typed in the
+ * tool schema without this file being opened. They are named WITHOUT the `$`,
+ * because the prefix is wire syntax and an in-process caller passes
+ * `{ directives: { limit } }`.
  *
- * `query` is left as a free-form object on purpose. Nothing in the generated
- * schema states which columns are filterable as a positive — `x-filterable`
- * is emitted per field as a NEGATIVE where it applies — so a projection listing
- * filterable keys here would be inventing a whitelist, and the Data boundary
- * refuses an unknown key by name anyway.
+ * `query` lists the model's scalar columns and stays OPEN. `x-filterable` is a
+ * refusal — absent means permitted — so every scalar without it is a column
+ * the boundary filters on, and naming them invents no whitelist; what is not
+ * listed (a relation path, `AND`/`OR`) is still passable, and the Data boundary
+ * refuses an unknown key by name. Each column takes its value OR an operator
+ * object, because the SDK validates before dispatch and a column typed as its
+ * value alone would refuse `{ status: { in: [...] } }`, which the boundary
+ * takes. Which operators exist is Litestone's and is not restated here.
  */
-function findInput(): JsonSchemaObject {
-  const directives: JsonSchemaObject = {}
-  for (const name of DIRECTIVE_PARAMS) {
-    directives[String(name).replace(/^\$/, '')] = {}
-  }
+function findInput(def: JsonSchemaObject | undefined): JsonSchemaObject {
   return {
     type: 'object',
     properties: {
-      query:      { type: 'object', title: 'Filters', description: 'Column filters. An unknown key is refused by name at the Data boundary.' },
-      directives: { type: 'object', title: 'Directives', properties: directives, additionalProperties: false },
+      query:      { type: 'object', title: 'Filters', description: 'Column filters: each column takes its own type or an operator object. An unknown key is refused by name at the Data boundary.', ...filterColumns(def) },
+      directives: { type: 'object', title: 'Directives', properties: { ...DIRECTIVE_SCHEMAS }, additionalProperties: false },
     },
     additionalProperties: false,
   }
+}
+
+const SCALAR   = new Set(['string', 'number', 'integer', 'boolean'])
+const OPERATOR = { type: 'object', description: 'An operator, such as { in: [...] } or { gte: 5 }.' }
+
+// Validation keywords are dropped: `@length(3, 20)` says what may be WRITTEN,
+// and a filter on `contains: "ab"` is not a write.
+function filterColumns(def: JsonSchemaObject | undefined): { properties?: JsonSchemaObject } {
+  const fields = (def?.properties ?? {}) as Record<string, JsonSchemaObject>
+  const out: JsonSchemaObject = {}
+  for (const [name, field] of Object.entries(fields)) {
+    if (field['x-filterable'] !== undefined) continue
+    const value = scalarOf(field)
+    if (!value) continue
+    out[name] = { ...(field.title ? { title: field.title } : {}), anyOf: [value, OPERATOR] }
+  }
+  return Object.keys(out).length ? { properties: out } : {}
+}
+
+// A nullable column is `anyOf [T, null]`; its filter value is T or null.
+function scalarOf(field: JsonSchemaObject): JsonSchemaObject | null {
+  const alt = (field.anyOf ?? field.oneOf) as JsonSchemaObject[] | undefined
+  if (alt) {
+    const kept = alt.filter(a => a.type !== 'null')
+    const one  = kept.length === 1 ? scalarOf(kept[0]!) : null
+    return one ? { anyOf: [one, { type: 'null' }] } : null
+  }
+  const types = ([] as unknown[]).concat(field.type ?? [])
+  if (!types.length || !types.every(t => SCALAR.has(t as string) || t === 'null')) return null
+  return { type: field.type, ...(field.enum ? { enum: field.enum } : {}), ...(field.format ? { format: field.format } : {}) }
 }
 
 /**
@@ -547,7 +576,7 @@ function inputFor(
   // payload and no way to say WHICH ROW.
   if (kind !== 'crud') return callInput(views, declared, kind === 'move')
 
-  if (method === 'find')                            return { schema: findInput(), source: 'query' }
+  if (method === 'find')                            return { schema: findInput(model ? views.full[model] as JsonSchemaObject | undefined : undefined), source: 'query' }
   if (method === 'get' || method === 'remove' || method === 'restore')
                                                      return { schema: ID_INPUT, source: 'id' }
 

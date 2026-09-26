@@ -443,7 +443,7 @@ export { enterCall } from '../core/context.ts'
 // Run fn inside a request scope, for tests asserting on requestMeta().
 // Goes through the same enterRequest() every transport does, which is the
 // point: this used to build the meta itself and forward four of its six
-// fields, so `user` and `client` were silently dropped and propagation
+// fields, so `user` and `caller` were silently dropped and propagation
 // behaved one way under test and another in production.
 export function withTestMeta<T>(
   meta: Partial<import('../transport/bridge.ts').RequestMeta>,
@@ -455,6 +455,6 @@ export function withTestMeta<T>(
     idempotencyKey: meta.idempotencyKey,
     locale:         meta.locale,
     user:           meta.user,
-    client:         meta.client,
+    caller:         meta.caller,
   }, fn)
 }

@@ -1081,6 +1081,43 @@ export function buildHasTemplatesMap(schema) {
   return map
 }
 
+// ─── @@expires / @@effective map ──────────────────────────────────────────────
+// { modelName: { from, to, kind, imposed } | null } — the window's columns, what
+// they are read against, and whether a read that states nothing is filtered.
+// Pre-computed for `buildHasTemplatesMap`'s reason: this is consulted on every
+// read of every model.
+//
+// `imposed` is the whole difference between the two words (`FJS-D352`). An
+// `@@expires` row is dead after its edge, so every read filters; an
+// `@@effective` row out of its window is history that other rows point at, so
+// only a read stating `asOf` does. One predicate, two defaults.
+//
+// `kind` is not a convenience. The live instances in one schema disagree —
+// `PlanVersion.effectiveFrom` is a `DateTime` and `PayWindow.effectiveFrom` is
+// a `String @date` (`FJS-D143`: a price changes at a moment, a salary changes
+// on a day) — so a window is over instants or over days, per model, and the
+// value `asOf` carries takes the column's kind rather than a global one.
+
+export function buildEffectiveMap(schema) {
+  const map = {}
+  for (const model of schema.models) {
+    const exp = model.attributes.find(a => a.kind === 'expires')
+    const eff = model.attributes.find(a => a.kind === 'effective')
+    if (!exp && !eff) { map[model.name] = null; continue }
+    const from  = eff?.from ?? null
+    const to    = exp ? exp.column : (eff.to ?? null)
+    // The parser has already refused a pair that disagrees, so either column
+    // answers for both.
+    const named = model.fields.find(f => f.name === (from ?? to))
+    map[model.name] = {
+      from, to,
+      kind:    named?.attributes?.some(a => a.kind === 'date') ? 'day' : 'instant',
+      imposed: Boolean(exp),
+    }
+  }
+  return map
+}
+
 // ─── Co-FK map ────────────────────────────────────────────────────────────────
 // For nested writes, identify FK columns that exist on BOTH the parent and the
 // child and reference the same target table. These are propagated from parent

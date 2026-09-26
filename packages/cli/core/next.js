@@ -39,7 +39,9 @@ const CITED_CAP     = 5
 const BLOCKS_CAP    = 3
 const RECENT_COMMITS = 10
 
-const BLOCKED_BY = /\bblocked by\s+`?(FJS-D?\d+)`?/gi
+// Any prefix: a blocker is only counted when it names an open row, so the
+// register's own prefix is what survives the filter in `rankNext`.
+const BLOCKED_BY = /\bblocked by\s+`?([A-Z][A-Z0-9]*-D?\d+)`?/gi
 
 /**
  * The open rows, ranked, plus the ones that cannot start and what the owner

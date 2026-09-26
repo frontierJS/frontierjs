@@ -126,8 +126,8 @@
    *
    *  Not a move: every one of this model's four transitions is `@system`, so no
    *  request can ask for any of them. `cancel` sets `cancelAtPeriodEnd` and the
-   *  arrangement ends when the renewal job reaches the period that has already
-   *  been paid for — which is what the word means to somebody pressing it, and
+   *  arrangement ends when the period that has already been paid for
+   *  closes — which is what the word means to somebody pressing it, and
    *  is why the button says so rather than saying *cancel*.
    *
    *  What lets a shopper do it to their OWN is

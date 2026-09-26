@@ -1,15 +1,23 @@
 ---
 id: registers
-status: proposed
+status: partial
 dated: 2026-09-05
+revised: 2026-09-25
 ---
 
 # Idea — the registers as a surface
 
-**Status: IDEA. Nothing here is built.** Dated 2026-09-05. Two defects found while
-asking the question are fixed and closed ([`FJS-916`](../ISSUES.md#fjs-916),
-[`FJS-917`](../ISSUES.md#fjs-917)); everything this paper proposes is unbuilt. Do
-not cite it as describing behavior — see [`VERIFYING.md`](../VERIFYING.md).
+**Status: PARTIAL.** Dated 2026-09-05, revised 2026-09-25: **the declared prefix
+is built** — `"registers": { "prefix", "dir" }` in the project's `package.json`,
+read by `registerLayout()` (`packages/cli/CHANGES.md`, 2026-09-25) — and
+`elitelawncare/ela` is the first project outside this repo on it. The write
+verbs other than `decide`, the scaffold, `--root` for the pages and the
+file-per-record migration are not built. Two defects found while asking the
+question are fixed and closed ([`FJS-916`](../ISSUES.md#fjs-916),
+[`FJS-917`](../ISSUES.md#fjs-917)). § *What is already here* and § *What is
+missing* are the 2026-09-05 reading and are not re-derived; the prefix row of
+each is now answered. Do not cite this paper as describing behavior — see
+[`VERIFYING.md`](../VERIFYING.md).
 
 ---
 

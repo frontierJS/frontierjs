@@ -54,10 +54,10 @@ flags:
     type: boolean
     description: Only publish packages with uncommitted changes of their own
     defaultValue: false
-  no-push:
+  push:
     type: boolean
     description: Version, tag and publish, but leave the commit and tags local
-    defaultValue: false
+    defaultValue: true
   tolerate-republish:
     type: boolean
     description: Do not fail on a version the registry already holds — the recovery flag, for finishing a run that published some of its packages and not others
@@ -236,10 +236,4 @@ context.config.releaseSubject = releaseSubject
 // the one shape that must never ask a question.
 context.config.interactive = flag.interactive
 context.config.prompts     = prompts
-// Whether a question can be answered at all. `prompt.js` buffers a piped stdin
-// to `end`, so asking one where nobody is typing is a hang with no output —
-// the always-on pause before the first publish is gated on this and the
-// explicit `--interactive` is not, because that flag IS someone saying they
-// are here.
-context.config.tty = Boolean(process.stdin.isTTY && process.stdout.isTTY)
 ```

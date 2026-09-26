@@ -44,7 +44,7 @@ export function perShopAuth<O extends object>(
   const cache = new Map<string, ReturnType<typeof createLitestoneAuth>>([[defaultShop, base]])
 
   const shopOf = (from?: Origin) => {
-    const headers = (from?.headers ?? requestMeta()?.client?.headers ?? null) as Record<string, unknown> | null
+    const headers = (from?.headers ?? requestMeta()?.caller?.headers ?? null) as Record<string, unknown> | null
     const host    = (from?.host ?? (headers?.host as string | undefined) ?? null) as string | null
     return shops.tenantFor({ host, headers })
   }

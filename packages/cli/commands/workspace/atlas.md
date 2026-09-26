@@ -5,14 +5,21 @@ alias: ws:atlas
 examples:
   - fli ws:atlas
   - fli ws:atlas --as=report
-  - fli ws:atlas --as=json
+  - fli ws:atlas --json
   - fli ws:atlas --check
 flags:
   as:
     char: a
     type: string
-    description: Which presentation — atlas (the deck), report (one page read top to bottom), or json (the model)
+    description: Which page — atlas (the deck) or report (one page read top to bottom)
+    choices:
+      - atlas
+      - report
     defaultValue: atlas
+  json:
+    type: boolean
+    description: Print the model instead of a page
+    defaultValue: false
   check:
     char: c
     type: boolean
@@ -80,17 +87,15 @@ const openInBrowser = (path) => {
 const { collect, renderHtml, renderJson } = await import(resolve(global.fliRoot, 'core/repo-map.js'))
 const { renderAtlas, cards }              = await import(resolve(global.fliRoot, 'core/repo-atlas.js'))
 
-// One axis, so one flag (`FJS-D223`). An unknown value is refused by name and
-// the ones that exist are listed, rather than falling back to the default —
-// a typo that silently writes the deck is a person diffing the wrong file.
-const VIEWS = ['atlas', 'report', 'json']
-const as    = String(flag.as ?? 'atlas')
-
-if (!VIEWS.includes(as)) {
-  log.error(`--as=${as} is not a presentation. One of: ${VIEWS.join(' · ')}`)
+// `--as` picks the page a person reads and `--json` is the model a program
+// reads (`FJS-D401`), so the two together are two answers to one run.
+if (flag.json && flag.as !== 'atlas') {
+  log.error(`--json prints the model; --as=${flag.as} writes a page. Drop one of the two flags.`)
   process.exitCode = 1
   return
 }
+const as      = flag.json ? 'json' : flag.as
+const spelled = as === 'json' ? '--json' : `--as=${as}`
 
 const wsRoot = await context.wsRoot()
 if (!wsRoot) { log.error('No workspace found from here'); process.exitCode = 1; return }
@@ -99,7 +104,7 @@ if (!wsRoot) { log.error('No workspace found from here'); process.exitCode = 1; 
 // the registry, and spending that on a run whose answer is *these flags do not
 // go together* is a slow way to say no.
 if (flag.live && as !== 'atlas') {
-  log.error(`--live adds git and registry state to the deck; --as=${as} does not carry it. Drop one of the two flags.`)
+  log.error(`--live adds git and registry state to the deck; ${spelled} does not carry it. Drop one of the two flags.`)
   process.exitCode = 1
   return
 }
@@ -138,7 +143,7 @@ const DEFAULT_OUT = {
 
 const outPath = flag.out ? resolve(flag.out) : resolve(wsRoot, DEFAULT_OUT[as])
 const shown   = outPath.replace(wsRoot + '/', '')
-const rerun   = `fli ws:atlas${as === 'atlas' ? '' : ` --as=${as}`}`
+const rerun   = `fli ws:atlas${as === 'atlas' ? '' : ` ${spelled}`}`
 
 if (flag.check) {
   if (!existsSync(outPath)) {
@@ -237,15 +242,17 @@ is invisible from inside it. On this workspace the first run said ten.
 
 ## The three presentations
 
-One model, and `--as` picks how it is read (`FJS-D223`). They are not three
-pages that happen to share a reader: `collect()` is the reader and
-`core/repo-atlas.js` opens no files at all.
+One model, read three ways (`FJS-D223`). They are not three pages that happen
+to share a reader: `collect()` is the reader and `core/repo-atlas.js` opens no
+files at all. `--as` picks the page a person reads, and `--json` is the model a
+program reads, so a page can change its layout without breaking a program
+(`FJS-D401`).
 
-| `--as` | Reading mode | Written to |
+| Flag | Reading mode | Written to |
 | --- | --- | --- |
-| `atlas` (default) | one plate per part, navigated — *what is in here and what does it touch* | `repo-atlas.snapshot.html` |
-| `report` | one page top to bottom — *what do I run and where* | `repo-report.snapshot.html` |
-| `json` | the model itself | stdout, or `--out` |
+| `--as=atlas` (default) | one plate per part, navigated — *what is in here and what does it touch* | `repo-atlas.snapshot.html` |
+| `--as=report` | one page top to bottom — *what do I run and where* | `repo-report.snapshot.html` |
+| `--json` | the model itself | stdout, or `--out` |
 
 **What decides where a new section goes is the reading mode, not the size.** A
 report is read across; an atlas is navigated. Defining the report as *the small

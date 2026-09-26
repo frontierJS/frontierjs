@@ -596,9 +596,9 @@ context.exec({ command: `git commit -m &quot;${msg}&quot;`, dry: flag.dry })
 if (flag.push) context.exec({ command: &#x27;git push&#x27;, dry: flag.dry })
 ```</code></pre>
         <h3>frontmatter fields</h3>
-        <div class="table-wrap"><table class="table"><thead><tr><th>field</th><th>required</th><th>description</th></tr></thead><tbody><tr><td>title</td><td>✓</td><td>Unique name in <code>namespace:command</code> format</td></tr><tr><td>description</td><td></td><td>Shown in sidebar, list, and help output</td></tr><tr><td>alias</td><td></td><td>Short name — <code>fli gc</code> instead of <code>fli git:commit</code></td></tr><tr><td>examples</td><td></td><td>Array of example invocations shown in help</td></tr><tr><td>args</td><td></td><td>Ordered positional argument definitions</td></tr><tr><td>flags</td><td></td><td>Named flag definitions</td></tr></tbody></table></div>
+        <div class="table-wrap"><table class="table"><thead><tr><th>field</th><th>required</th><th>description</th></tr></thead><tbody><tr><td>title</td><td>✓</td><td>Unique name in <code>namespace:command</code> format</td></tr><tr><td>description</td><td></td><td>Shown in sidebar, list, and help output</td></tr><tr><td>alias</td><td></td><td>Short name — <code>fli gc</code> instead of <code>fli git:commit</code></td></tr><tr><td>examples</td><td></td><td>Array of example invocations shown in help</td></tr><tr><td>args</td><td></td><td>Ordered positional argument definitions</td></tr><tr><td>flags</td><td></td><td>Named flag definitions</td></tr><tr><td>effects</td><td></td><td>What the command does beyond this machine — shown on the form, in help and in <code>fli list --json</code></td></tr><tr><td>confirm</td><td></td><td><code>human</code>: a person approves each run. Without a terminal it needs <code>--approved</code>; here, Run asks first</td></tr></tbody></table></div>
         <h3>flag definition fields</h3>
-        <div class="table-wrap"><table class="table"><thead><tr><th>field</th><th>description</th></tr></thead><tbody><tr><td>type</td><td><code>string</code> · <code>boolean</code> · <code>number</code></td></tr><tr><td>char</td><td>Single-letter shorthand: <code>-p</code> instead of <code>--push</code></td></tr><tr><td>description</td><td>Shown in Web GUI and <code>--help</code> output</td></tr><tr><td>defaultValue</td><td>Applied when flag is not passed</td></tr><tr><td>options</td><td>Enum — restricts value to a fixed set</td></tr></tbody></table></div>
+        <div class="table-wrap"><table class="table"><thead><tr><th>field</th><th>description</th></tr></thead><tbody><tr><td>type</td><td><code>string</code> · <code>boolean</code> · <code>number</code></td></tr><tr><td>char</td><td>Single-letter shorthand: <code>-p</code> instead of <code>--push</code></td></tr><tr><td>description</td><td>Shown in Web GUI and <code>--help</code> output</td></tr><tr><td>defaultValue</td><td>Applied when flag is not passed</td></tr><tr><td>choices</td><td>The values allowed, as a list — anything else is refused</td></tr><tr><td>min · max</td><td>Bounds on a <code>number</code> flag, both inclusive</td></tr></tbody></table></div>
         <article class="alert info"><div class="alert-icon" aria-hidden="true">ℹ</div><div class="alert-content"><strong>Built-in flags.</strong><p>Every command automatically gets <code>--dry</code> (<code>-d</code>), <code>--test</code> (<code>-t</code>), and <code>--step</code> — you never need to declare them.</p></div></article>
         </div>
       </article>
@@ -1088,12 +1088,22 @@ function buildForm(meta) {
   const boolFlags = allFlags.filter(([, f]) => f.type === 'boolean')
   const valFlags  = allFlags.filter(([, f]) => f.type !== 'boolean')
 
+  // A declared `choices` is a select, so a value the command would refuse
+  // cannot be typed; a declared range is the number input's own min and max.
+  const valInput = (name, flag) => Array.isArray(flag.choices)
+    ? `<select class="field text-sm" id="flag-${name}">
+        ${flag.defaultValue === undefined || flag.defaultValue === '' ? '<option value=""></option>' : ''}
+        ${flag.choices.map(c => `<option value="${c}" ${String(c) === String(flag.defaultValue) ? 'selected' : ''}>${c}</option>`).join('')}
+      </select>`
+    : `<input class="field text-sm" type="${flag.type === 'number' ? 'number' : 'text'}"
+        id="flag-${name}" value="${flag.defaultValue ?? ''}"
+        ${flag.min !== undefined ? `min="${flag.min}"` : ''} ${flag.max !== undefined ? `max="${flag.max}"` : ''}
+        placeholder="${flag.defaultValue ?? flag.description ?? ''}">`
+
   const valFields = valFlags.map(([name, flag]) => `
     <div class="field-group">
       <label for="flag-${name}" class="text-xs">--${name}${flag.char ? ` -${flag.char}` : ''}</label>
-      <input class="field text-sm" type="${flag.type === 'number' ? 'number' : 'text'}"
-        id="flag-${name}" value="${flag.defaultValue ?? ''}"
-        placeholder="${flag.defaultValue ?? flag.description ?? ''}">
+      ${valInput(name, flag)}
     </div>
   `).join('')
 
@@ -1113,6 +1123,7 @@ function buildForm(meta) {
       <div class="stack gap-3xs">
         <h1 class="text-lg">${meta.title}</h1>
         ${meta.description ? `<p class="text-sm">${meta.description}</p>` : ''}
+        ${meta.effects ? `<p class="text-sm warning" id="cmd-effects">⚠ ${esc(meta.effects)}${meta.confirm === 'human' ? ' · a person confirms each run' : ''}</p>` : ''}
         ${example ? `<p class="text-xs text-muted gui-example">${example.replace(/^fli\s+/, '')}</p>` : ''}
       </div>
       <div class="cluster gap-lg gui-fm-fields">${argsFields}${valFields}${toggleItems}</div>
@@ -1369,7 +1380,10 @@ function collectCurrentArgs() {
     const el = document.getElementById(`flag-${name}`)
     if (!el) continue
     if (flagDef.type === 'boolean' || el.type === 'checkbox') {
-      if (el.checked) flags[name] = true
+      // Sent only when it differs from the default: a switch that defaults on
+      // and is turned off is `--no-<name>`, and sending nothing would put the
+      // default back.
+      if (el.checked !== (flagDef.defaultValue === true)) flags[name] = el.checked
     } else if (el.value.trim() !== '') {
       flags[name] = flagDef.type === 'number' ? Number(el.value) : el.value.trim()
     }
@@ -1381,7 +1395,7 @@ function collectCurrentArgs() {
   for (const a of args) parts.push(a.includes(' ') ? `"${a}"` : a)
   for (const [k, v] of Object.entries(flags)) {
     if (v === true)       parts.push(`--${k}`)
-    else if (v === false) continue
+    else if (v === false) parts.push(`--no-${k}`)
     else                  parts.push(`--${k} ${String(v).includes(' ') ? `"${v}"` : v}`)
   }
 
@@ -1398,6 +1412,13 @@ function copyCommand() {
 async function runCommand() {
   if (!activeCommand || running) return
   const { args, flags } = collectCurrentArgs()
+  // The runtime refuses a `confirm: human` run from here without `approved`,
+  // since nobody is at the terminal `fli gui` was started from. The person is
+  // at this page, so this is where they say yes.
+  if (activeCommand.confirm === 'human') {
+    if (!window.confirm(`${activeCommand.title} ${activeCommand.effects}.\n\nRun it?`)) return
+    flags.approved = true
+  }
   appendOutput(`running ${activeCommand.title}…`, 'info')
   await stream(activeCommand.title, { args, flags })
 }
@@ -2867,12 +2888,12 @@ function renderPortsBody(sessions, globalPorts, ENV, CAT) {
 
   const sessionsHtml = !sessions.length
     ? `<div class="empty">
-         <div class="empty-title">No active sessions</div>
-         <div class="empty-text">Run <code>fli dev</code> in a project to claim ports</div>
+         <div class="empty-title">No app has a slot</div>
+         <div class="empty-text">Run <code>fli dev</code> in a project to take one</div>
        </div>`
     : sessions.map(s => {
         const started = s.startedAt ? new Date(s.startedAt).toLocaleTimeString() : ''
-        const meta = [`pid ${s.pid}`, s.env, `slot ${s.projectId}`, started ? `↑ ${started}` : '']
+        const meta = [s.alive ? `pid ${s.pid}` : '', s.env, `project ${s.projectId} slot ${s.slot ?? 0}`, started ? `↑ ${started}` : '']
           .filter(Boolean).join('  ·  ')
 
         const ports = Object.entries(s.ports || {}).flatMap(([cat, ps]) =>
@@ -2881,15 +2902,15 @@ function renderPortsBody(sessions, globalPorts, ENV, CAT) {
         ).join('')
 
         return `
-          <article class="card ${s.alive ? '' : 'muted'}" id="session-${s.name}">
+          <article class="card ${s.alive ? '' : 'muted'}">
             <div class="surface-header">
-              <span class="badge ${s.alive ? 'success' : 'muted'}">${s.alive ? 'alive' : 'stale'}</span>
+              <span class="badge ${s.alive ? 'success' : 'muted'}">${s.alive ? 'running' : 'idle'}</span>
               <strong>${s.name}</strong>
               <span class="text-xs text-muted">${meta}</span>
             </div>
             <div class="surface-body cluster gap-2xs">${ports}</div>
             ${s.alive ? '' : `<div class="surface-footer">
-              <button class="btn ghost danger text-xs" onclick="cleanSession('${s.name}')">remove stale entry</button>
+              <button class="btn ghost danger text-xs" data-root="${encodeURIComponent(s.root)}" onclick="cleanSession(decodeURIComponent(this.dataset.root))">forget slot</button>
             </div>`}
           </article>`
       }).join('')
@@ -2905,7 +2926,7 @@ function renderPortsBody(sessions, globalPorts, ENV, CAT) {
     </section>
 
     <section class="stack gap-md">
-      <h2 class="text-sm text-muted">active sessions</h2>
+      <h2 class="text-sm text-muted">dev slots</h2>
       <div class="stack gap-sm">${sessionsHtml}</div>
     </section>
 
@@ -2928,12 +2949,12 @@ function renderPortsBody(sessions, globalPorts, ENV, CAT) {
   `
 }
 
-async function cleanSession(name) {
+async function cleanSession(root) {
   try {
     await fetch(`${API}/api/ports/clean`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ name }),
+      body:    JSON.stringify({ root }),
     })
   } catch {}
   loadPorts()

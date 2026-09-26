@@ -59,14 +59,15 @@ export async function load(url, context, defaultLoad) {
  */
 export function compileCliWithMap(template, moduleScript = '', sourcePath = '') {
   const { meta: frontmatter, bodyLine } = splitFrontmatter(template)
-  const ownScript   = extractScriptBlock(template)
+  const own         = scriptBlockOf(template)
+  const ownScript   = own?.script ?? ''
   // Module script is prepended so namespace helpers are available everywhere
   const scriptBlock = moduleScript
     ? moduleScript + '\n\n' + ownScript
     : ownScript
 
-  // Strip the <script> block before transformMarkdown so its indented lines
-  // don't get picked up by the tab-indent detection and leak into run()
+  // The block's contents move to the head, so what is left in place must not
+  // reach transformMarkdown as prose.
   const scriptStripped = stripScriptBlocks(template)
   const mainBody       = transformMarkdown(scriptStripped)
 
@@ -80,7 +81,7 @@ ${scriptBlock}
 export const metadata = ${JSON.stringify(frontmatter)}
 
 export async function run(context) {
-  const { flags, args, flag, arg, log, answers = {} } = context
+  const { flags, args, flag, arg, log, tty, answers = {} } = context
   // Override the ZX global echo with context.echo when provided (web/SSE runs).
   // This works because 'zx/globals' sets globalThis.echo, and we re-assign it
   // locally here. For CLI runs context.echo is undefined and ZX's echo is used.
@@ -91,13 +92,33 @@ export async function run(context) {
   return context
 }`
 
-  return {
-    code: head + mainBody + tail,
-    sourcePath,
-    // head's newline count is the generated line the body's first line sits on,
-    // minus one; bodyLine is the .md line it came from.
-    sourceLineOffset: countLines(head) + 1 - bodyLine,
+  // head's newline count is the generated line the body's first line sits on,
+  // minus one; bodyLine is the .md line it came from.
+  const sourceLineOffset = countLines(head) + 1 - bodyLine
+
+  // The head is the one part the offset does not cover: a <script> block is
+  // lifted out of its place and the namespace module's is pasted above it.
+  const moduleFrom = 2
+  const moduleTo   = moduleScript ? moduleFrom + countLines(moduleScript) : moduleFrom - 1
+  const ownFrom    = moduleScript ? moduleTo + 2 : moduleFrom
+  const ownTo      = ownFrom + countLines(ownScript)
+  const bodyFrom   = countLines(head) + 1
+  const lastMdLine = countLines(template) + 1
+
+  /**
+   * Where generated line `n` was written. `module` lines count from the first
+   * line of the namespace module's script, which this function never saw the
+   * file of; `script` and `body` are lines of this `.md`. `null` is a line
+   * the compiler wrote.
+   */
+  const locate = (n) => {
+    if (moduleScript && n >= moduleFrom && n <= moduleTo) return { in: 'module', line: n - moduleFrom + 1 }
+    if (own && ownScript && n >= ownFrom && n <= ownTo)   return { in: 'script', line: own.line + n - ownFrom }
+    if (n >= bodyFrom) return { in: 'body', line: Math.min(n - sourceLineOffset, lastMdLine) }
+    return null
   }
+
+  return { code: head + mainBody + tail, sourcePath, sourceLineOffset, locate }
 }
 
 /** The module alone. Every caller that does not need the map. */
@@ -259,7 +280,7 @@ function coerceYamlValue(val) {
 // the rest of the file: the served project map built its model and exited without ever
 // starting the server, silently.
 //
-// Returns { start, end, inner }, or null when there is no script block.
+// Returns { start, contentStart, end, inner }, or null when there is no script block.
 function matchScriptBlock(body, from = 0) {
   const openRe = /^[ \t]*<script[^>]*>/gm
   openRe.lastIndex = from
@@ -275,21 +296,32 @@ function matchScriptBlock(body, from = 0) {
   while ((m = closeRe.exec(body))) last = m
 
   // No close tag at all — take everything after the open rather than losing it.
-  if (!last) return { start: open.index, end: body.length, inner: body.slice(contentStart) }
+  if (!last) return { start: open.index, contentStart, end: body.length, inner: body.slice(contentStart) }
 
-  return { start: open.index, end: last.index + last[0].length, inner: body.slice(contentStart, last.index) }
+  return { start: open.index, contentStart, end: last.index + last[0].length, inner: body.slice(contentStart, last.index) }
 }
 
-function extractScriptBlock(template) {
-  const body  = stripFrontmatter(template)
-  const block = matchScriptBlock(body)
-  return block ? block.inner.trim() : ''
+/**
+ * The `<script>` block's contents, trimmed, and the 1-based line of `text` its
+ * first line is on — or null. The one reader of a script block for a command
+ * AND a `_module.md`: the module's used to be a non-greedy match of its own,
+ * so a helper that wrote a closing script tag lost everything after it.
+ */
+export function scriptBlockOf(text) {
+  text = bufToString(text)
+  const block = matchScriptBlock(text)
+  if (!block) return null
+  const lead = block.inner.length - block.inner.trimStart().length
+  return {
+    script: block.inner.trim(),
+    line:   countLines(text.slice(0, block.contentStart + lead)) + 1,
+  }
 }
 
 // Remove the <script>...</script> block from template so transformMarkdown
-// never sees its contents (avoids indented lines leaking into run() body).
+// never sees its contents.
 //
-// Exactly ONE block, the same one extractScriptBlock takes — first open to last
+// Exactly ONE block, the same one scriptBlockOf takes — first open to last
 // close. A command has one script block by construction (see matchScriptBlock),
 // so any later open tag is a command EMITTING a script tag: a scaffold writing a
 // .mesa Resource inside a ```js body. Looping here stripped that emitted tag and
@@ -299,7 +331,7 @@ function extractScriptBlock(template) {
 // would shift everything below it and the one offset that maps a frame back to
 // the `.md` would stop being one — a command with a script block in the middle
 // needed two. Blank lines between statements cost nothing.
-function stripScriptBlocks(template) {
+export function stripScriptBlocks(template) {
   const block = matchScriptBlock(template)
   if (!block) return template
   const cut = template.slice(block.start, block.end)
@@ -307,31 +339,25 @@ function stripScriptBlocks(template) {
 }
 
 // ─── transformMarkdown ────────────────────────────────────────────────────────
-// Ported verbatim from original mdsvex-loader.js.
-// Prose → commented out, ```js → raw JS, ```bash → ZX $`...`
+// Prose → commented out, ```js → raw JS, ```bash → ZX $`...`, any other fence →
+// commented out. A fence is the only thing that runs: markdown's indented code
+// block is prose here, because an example indented in a paragraph — what a
+// status line looks like — is how a reader writes, and it compiled as code.
 
 export function transformMarkdown(buf) {
   const output = []
-  const tabRe = /^(  +|\t)/
   const codeBlockRe =
     /^(?<fence>(`{3,20}|~{3,20}))(?:(?<js>(js|javascript|ts|typescript))|(?<bash>(sh|shell|bash))|.*)$/
   let state = 'root'
   let codeBlockEnd = ''
-  let prevLineIsEmpty = true
 
   const body = stripFrontmatter(buf)
 
   for (const line of body.split(/\r?\n/)) {
     switch (state) {
       case 'root': {
-        if (tabRe.test(line) && prevLineIsEmpty) {
-          output.push(line)
-          state = 'tab'
-          continue
-        }
         const { fence, js, bash } = line.match(codeBlockRe)?.groups || {}
         if (!fence) {
-          prevLineIsEmpty = line === ''
           output.push('// ' + line)
           continue
         }
@@ -341,11 +367,6 @@ export function transformMarkdown(buf) {
         else           { state = 'other'; output.push('') }
         break
       }
-      case 'tab':
-        if (line === '')           { output.push('') }
-        else if (tabRe.test(line)) { output.push(line) }
-        else { output.push('// ' + line); state = 'root' }
-        break
       case 'js':
         if (line === codeBlockEnd) { output.push(''); state = 'root' }
         else output.push(line)
@@ -384,13 +405,11 @@ export function transformMarkdown(buf) {
 export function extractSegments(template) {
   const raw = stripFrontmatter(template)
 
-  // Pull script block out first so the segment walker doesn't see it.
-  const scriptMatch = raw.match(/<script[^>]*>([\s\S]*?)<\/script>/)
-  const script = scriptMatch ? scriptMatch[1].trim() : null
-  const body = raw.replace(/<script[^>]*>[\s\S]*?<\/script>/g, '')
+  // The same block the compiler lifts, so the GUI shows what runs.
+  const script = scriptBlockOf(raw)?.script ?? null
+  const body   = stripScriptBlocks(raw)
 
   const segments = []
-  const tabRe = /^(  +|\t)/
   const codeBlockRe =
     /^(?<fence>(`{3,20}|~{3,20}))(?:(?<js>(js|javascript|ts|typescript))|(?<bash>(sh|shell|bash))|(?<other>.*))$/
 
@@ -398,7 +417,6 @@ export function extractSegments(template) {
   let codeFence   = ''
   let codeLang    = 'other'
   let buffer      = []
-  let prevWasEmpty = true
 
   const flushProse = () => {
     const content = buffer.join('\n').trim()
@@ -415,15 +433,8 @@ export function extractSegments(template) {
   for (const line of body.split(/\r?\n/)) {
     switch (state) {
       case 'root': {
-        if (tabRe.test(line) && prevWasEmpty) {
-          flushProse()
-          buffer.push(line)
-          state = 'tabcode'
-          continue
-        }
         const groups = line.match(codeBlockRe)?.groups
         if (!groups?.fence) {
-          prevWasEmpty = line === ''
           buffer.push(line)
           continue
         }
@@ -438,23 +449,7 @@ export function extractSegments(template) {
         if (line === codeFence) {
           flushCode(codeLang)
           state = 'root'
-          prevWasEmpty = true
         } else {
-          buffer.push(line)
-        }
-        break
-      case 'tabcode':
-        if (line === '') {
-          buffer.push(line)
-        } else if (tabRe.test(line)) {
-          buffer.push(line)
-        } else {
-          // Unindented line — close the tab block, restart in root with this line
-          // Strip the tab prefix from each accumulated line
-          buffer = buffer.map(l => l.replace(tabRe, ''))
-          flushCode('other')
-          state = 'root'
-          prevWasEmpty = false
           buffer.push(line)
         }
         break
@@ -466,9 +461,6 @@ export function extractSegments(template) {
     flushProse()
   } else if (state === 'code') {
     flushCode(codeLang)
-  } else if (state === 'tabcode') {
-    buffer = buffer.map(l => l.replace(tabRe, ''))
-    flushCode('other')
   }
 
   return { script, segments }

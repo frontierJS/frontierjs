@@ -1,5 +1,82 @@
 # Changes — @frontierjs/caravan
 
+## 2026-09-25 — `findByCorrelation(id)`: the jobs one request dispatched
+
+Every job already carries the `correlation_id` of the request that dispatched it;
+nothing could ask for them by it. `app.jobs.findByCorrelation(id)` answers them,
+oldest first, at most 100, off a new partial index `jobs_correlation (correlation_id,
+created_at) WHERE correlation_id IS NOT NULL` — so work dispatched outside any request
+costs it nothing. It is how `@frontierjs/mcp` holds an awaited tool call until the jobs
+the call started are finished, with nothing on the method declaring them (`FJS-D406`).
+Proof: `test/scale.test.ts` — the lookup is a seek on the new index with no scan and no
+temp b-tree.
+
+## 2026-09-23 — a commitment hook's `enqueue`, against a real outbox
+
+Three cases in `test/commitments.test.ts`: the row commits with the move and the
+relay runs the job once; a hook that throws after enqueueing leaves no row and
+no move; with no relay installed the enqueue is refused by name and the move
+rolls back. `bootApp` takes `relay: true` to install `outbox()`.
+
+## 2026-09-23 — a commitment's hook, graded against a real queue
+
+Four cases in `test/commitments.test.ts` for junction's `commitments({ hooks })`
+([`FJS-D368`](../../DECISIONS.md#fjs-d368)):
+- the move and the hook's write commit together, and `afterCommit` runs once,
+  after
+- a hook that throws takes the move back with it, and the fire fails
+- a key naming no declared commitment is refused at start
+- `fireCommitment` runs the same path on a bare client, with no app
+
+## 2026-09-23 — a commitment across a relation, and a day read in a zone
+
+Three cases in `test/commitments.test.ts`:
+- **Two unpaid invoices under one subscription.** Both are dispatched, the
+  subscription lapses once, and the second fire counts as `lapsed`, not `failed`
+  ([`FJS-D362`](../../DECISIONS.md#fjs-d362)).
+- **An invoice with no subscription** owes nothing.
+- **A day-kind deadline under `timeZone: 'Pacific/Auckland'`** is due while UTC
+  still says it is not, with the fire's delay measured to the day's start there.
+
+Removing the target filter turns the first case red, and so does delaying to UTC
+midnight in the zone case.
+
+## 2026-09-22 — a commitment fire's audit row names `abandon`
+
+One more case in `test/commitments.test.ts`: an `@@log`ged order is swept, fired,
+and read back from the trail with `transition: abandon`
+([`FJS-1294`](../../ISSUES.md#fjs-1294)). The column is Litestone's. It is proved
+here because this is the suite where a real fire runs.
+
+## 2026-09-22 — `test/commitments.test.ts`: junction's `commitments()` against this queue
+
+Beside `outbox-relay.test.ts` for its reason: the only suite where a real
+Litestone client, a real Junction app and a real queue are all importable. It
+pauses the queue across a sweep and a write to put the write inside the window
+the fire's re-derivation exists for, and walks two tenants of a real registry.
+A registry app with no plugin is refused at start as an `app.db` one is.
+No change to Caravan itself — the fire's key is `dispatch({ unique })`, whose
+in-flight-only semantics are what a re-derived commitment needs.
+
+## 2026-09-22 — when a schedule next fires, without walking every minute
+
+`nextRuns()` found a schedule's next fire by stepping one minute at a time with
+a zone lookup on each step: 3.5s for a weekly schedule, 13.9s for a yearly one,
+and nothing past a week at all, so a monthly schedule answered `null`
+([`FJS-1283`](../../ISSUES.md#fjs-1283)). Basecamp found it by reading
+`nextRuns()` on every job read ([`FJS-1241`](../../ISSUES.md#fjs-1241)).
+
+The search now skips what the expression cannot match. A day it cannot match is
+left for its last hour, an hour for the next one, and only a matching hour is
+walked minute by minute. Which days and hours match is asked of `cronMatches`
+itself, so the day-of-month / day-of-week rule still has one owner.
+`nextFireTime`'s default horizon is a year; February 29th in a non-leap year is
+the one `null` left.
+
+`test/next-fire.test.ts` grades it against a plain minute walk across both
+daylight transitions in five zones, including a 30-minute one, a midnight one
+and a :45 offset.
+
 ## 2026-09-21 — the job naming rule, and the example it is written against
 
 A job file's name is its SUBJECT then its verb, stated in the root `CLAUDE.md` beside the

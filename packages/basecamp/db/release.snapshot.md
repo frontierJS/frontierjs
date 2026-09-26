@@ -970,7 +970,6 @@ table `job` · db `main` · gate `2.4.4.5` · @@softDelete
 | `lastRunAt` | `DateTime` | yes | — | — |
 | `lastRunStatus` | `String` | yes | — | — |
 | `name` | `String` | no | — | **required on write** |
-| `nextRunAt` | `DateTime` | yes | — | — |
 | `retryCount` | `Int` | no | `0` | — |
 | `retryLimit` | `Int` | no | `3` | — |
 | `runs` | `JobRun[]` | — | — | relation |
@@ -985,7 +984,6 @@ table `job` · db `main` · gate `2.4.4.5` · @@softDelete
 ```
 @@index(appId)
 @@index(environmentId)
-@@index(nextRunAt)
 @@index(workspaceId)
 @@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
 @@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
@@ -1791,7 +1789,6 @@ table `workspace_member` · db `main` · gate `1.5`
 ```
 @@unique(userId, workspaceId)
 @@index(userId)
-@@index(workspaceId, userId)
 @@allow('create', workspaceId == auth().workspaceId)
 @@allow('delete', workspaceId == auth().workspaceId)
 @@allow('read', userId == auth().id)

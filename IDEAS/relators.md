@@ -1,15 +1,58 @@
 ---
 id: relators
-status: proposed
+status: shipped
 dated: 2026-09-22
 ---
 
-# Idea — the relationship that is a thing, and the question it has been answering in silence
+# The relationship that is a thing, and the question it has been answering in silence
 
-**Status: IDEA. Nothing here is built.** Dated 2026-09-22. Every count and
-every model named below is read off `example/db/schema.lite` and
-`packages/basecamp/db/schema.lite` on that date. Do not cite this file as
-describing behavior — see `VERIFYING.md`.
+**Status: BUILT 2026-09-22, ruled [`FJS-D350`](../DECISIONS.md#fjs-d350).** The
+word is `@@relator`, the behavior is `packages/litestone/src/core/parser.js`
+§ `expandRelator`, and `packages/litestone/test/relator.test.ts` is what holds
+it. **This file is the ARGUMENT, not the reference** — the ruling is the record
+and `litestone explain @@relator` is the behavior. Every count and every model
+named below is read off `example/db/schema.lite` and
+`packages/basecamp/db/schema.lite` on that date, and all ten are now declared.
+
+**Three things the build corrected in this paper**, kept rather than edited away
+because each was a claim made confidently before anything ran:
+
+1. **§ 3 and § 5 put `foreign-key-without-index` in `opportunities.js`. It is in
+   `advise.js`.** `opportunities.js` has twelve rules and none of them is that
+   one.
+2. **§ 4's emission table under-indexed `many`.** It said the reverse indexes
+   for every form. But `once` and `many: col` emit a unique LEADING with the
+   first relatum, which prefix-matches it; a bare `many` emits no unique, so the
+   leading relatum is as unindexed as the trailing one. `many` indexes EVERY
+   relatum — without which `Subscription` would have lost an index it has today,
+   which is `FJS-413` re-arriving through the feature that exists to end it.
+3. **The paper named the DDL emitter as the owner. It is parser normalization.**
+   `@@relator` expands into ordinary `uniqueIndex` and `index` nodes at parse,
+   so the emitter, the migrator and `advise` are untouched — the same move
+   `@@extensible` already makes. That is § 6's *derived, not restated* answered
+   structurally rather than by hand.
+
+**And two refusals the paper did not have**, both found by declaring the word on
+real schemas rather than by design:
+
+- **An `@@index` that LEADS with a relatum is already the reverse index and is
+  doing more besides**, so nothing is emitted beside it. `StockReservation`'s
+  `@@index([variantId, expiresAt])` is that case. Without this rule the word
+  adds a dead b-tree, which is the cost it exists to stop paying, arriving from
+  the other direction.
+- **A composite primary key over exactly the relata already IS the key**, so no
+  unique is emitted — which is what `litestone edge eject` writes, since a side
+  table keys both dimensions. The reverse index still lands, and an ejected
+  model has never had one on its trailing dimension.
+
+**Two of § 3's seven consumers are built and four were not where this paper put
+them** — § 3 · *Which of these were real* has the audit, written so nobody
+repeats the probing. `upsert` refuses a repeatable pair and `litestone mutate`
+now kills a relator mutant (0% → 100% on basecamp); the 409 was **already
+built** when this paper claimed it was missing; addressing needs a REST layer
+junction does not have; the control needs a child-collection surface the kit
+does not have; and the idempotency row turned out to be a decision, which is in
+§ Open questions with its options written out.
 
 It came out of the `.lite` surface audit's gap 05, which framed it as a missing
 label:
@@ -164,6 +207,30 @@ Each of these plugs into a seam that already exists.
   at most eight replicas of this app *on this server* — which is the same ledger
   with a composite key and is a question for that owner, not a reason for a
   second spelling here.
+
+### Which of these were real, checked 2026-09-22 against the tree
+
+The list above was written from the design. Probing each one before building it
+moved four of the eight, so the audit is recorded here rather than left for
+somebody to repeat.
+
+| § 3 claim | Where it actually is |
+| --- | --- |
+| Upsert | **BUILT.** The fast path needs ONE unique column, so a pair never reaches it and every relator upsert fell to find-then-update — which on `many` matches every occurrence there has ever been and overwrites the oldest. Refused now, with `many: <col>` naming the column a `where` left out. `once` and upsert-by-id untouched |
+| A mutant worth killing | **BUILT, and it needed two halves.** `relator-tighten` / `relator-loosen` produced 8 mutants on basecamp and **all 8 survived**, `AppServer many: replicaIndex → once` among them. Mutants nothing can kill are 8 permanent survivors reading as uncovered ground, so `verifyConstraints` got the probe that grades them: 0% → **100% killed**. Its second case is the load-bearing one — for `many: <col>` the same pair under a DIFFERENT discriminator must be ACCEPTED, or tightening to `once` looks correct from outside |
+| `@edge` eligibility | **HALF BUILT, and the other half is unbuildable.** `litestone edge eject` writes `once`. The refusal — *a `many` relationship may not be an `@edge`* — has nowhere to fire: an edge's side table is generated, not authored, so there is no file in which somebody could write the contradiction |
+| The error a duplicate gets | **ALREADY BUILT, and this row was stale when it was written.** `UniqueConflictError` (`core/errors.js`) is already a 409, already names the fields so `toFieldErrors` can mark the box, and already words a composite — *this combination is already taken (workspaceId + userId)*. The claim that *today both arrive as one generic constraint error* was false at the time. What is left is a warmer relator-specific sentence, which is worth less than the paragraph arguing for it |
+| Addressing | **NOT A SEAM — a feature in another package.** Junction routes `/service/method` through `transport/router.ts`; there is no REST resource layer to hang `DELETE /workspaces/:w/members/:u` on. Building one is a junction design question that `@@relator` would INFORM and does not belong to |
+| The control derives | **BLOCKED ON A SURFACE THAT DOES NOT EXIST.** `controlFor` resolves a control per COLUMN, and an FK column already gets a `picker`. Picker-against-ledger is about a parent's CHILD COLLECTION, and `<Form>` renders columns only — the kit has no child-collection surface at all. Naming a `ledger` control first is *a registry with no consumer is a name nobody can call*, this repo's own phrase. The prerequisite is `IDEAS/overview.md` 1.1's remainder, not a relator task |
+| Retry safety | **NOT BUILT — it is a decision, and it is in § Open questions below.** `claimIdempotency` is opt-in on an `Idempotency-Key` header and returns `null` without one, so *mandatory* cannot mean what the row assumed |
+| A bound on the pair | **UNCHANGED, and still that owner's.** `core/cardinality.js` was still untracked on 2026-09-22 |
+
+**The pattern across the four that moved is worth more than any of them.** Every
+one was a claim about a seam written from the seam's NAME rather than from its
+code, and in each case the name was right and the location was not — an error
+already built, a surface with no consumer, a router with no resource layer, a
+refusal with no file to fire in. A paper that names seams is making checkable
+claims about other packages, and this one was wrong about half of them.
 
 ---
 
@@ -325,7 +392,11 @@ itself, once ruled, is a Register entry and a row in `catalog.snapshot.md`.
 
 ## Open questions
 
-- **Is the word `@@relator`?**
+**The first is answered and the rest stand.** `@@relator` was picked
+([`FJS-D350`](../DECISIONS.md#fjs-d350)) on the adjudication below — kept here
+because the argument is what the record cites.
+
+- ~~**Is the word `@@relator`?**~~ **Ruled: A.**
   - **A** — `@@relator`. Exact, traceable to the literature, and a developer who
     meets it can look it up and find fifty years of argument.
   - **B** — `@@mediates`. UFO's own word for the link, plain English, and
@@ -342,14 +413,41 @@ itself, once ruled, is a Register entry and a row in `catalog.snapshot.md`.
   server. The ledger in `core/cardinality.js` already keys and would take a
   composite one; the question is whether the spelling belongs on the relation
   field, and it is that owner's rather than this word's.
-- **Does the absence of the word come to mean something, and does anything
-  grade it?** Once `@@relator` exists, a model with two cascading required
+- **Still open, and now live — does the absence of the word come to mean
+  something, and does anything grade it?** `@@relator` exists as of
+  [`FJS-D350`](../DECISIONS.md#fjs-d350) and nothing was built for this, so a model with two cascading required
   relations and no declaration is either deliberate or forgotten. An
   `opportunities.js` rule could ask — confidence, never severity — but the
   literature's own `FreeRole` is the warning: a recognizer that fires on every
   unmarked pair trains people to ignore it.
-- **Is `Payslip` a relator with a key over two of three relata, or a document
-  that records one?** It copies `periodStart`/`periodEnd` off the run, which by
+- **Does a create on a repeatable relator have to carry an idempotency key, and
+  what says so?** § 3 assumed *mandatory*, and `claimIdempotency(ctx, key,
+  config)` cannot mean that: it is opt-in on an `Idempotency-Key` header and
+  returns `null` when none arrives, so there is no position from which to
+  require one without breaking every existing caller. The question is real
+  — a `once` create is naturally idempotent and a `many` create is not, so a
+  retried booking mints a second one — but only the instrument is in doubt.
+  - **A** — an advisory rule. `opportunities.js` or `fli check` asks it: *this
+    service creates a model declaring `@@relator(…, many)` and no idempotency
+    config, so a retry writes a second occurrence*. Confidence, never severity.
+    Costs nothing to anyone who ignores it.
+  - **B** — enforcement at the boundary. A create on a `many` relator with no
+    key is refused. Correct and unshippable as stated: every existing caller
+    breaks, and the framework would be demanding a header for a write the app
+    may legitimately want to repeat.
+  - **C** — nothing, until an app is bitten. The word makes the hazard
+    nameable; a reader who knows what `many` means can reach for a key.
+  - **Recommend A** — cheap, and it satisfies `opportunities.js`'s own contract
+    that *every finding names the WORD it is about*, which `@@relator` now
+    does. It is the good kind of recognizer rather than the `FreeRole` kind
+    warned about below, because it fires on a narrow declared shape instead of
+    on every unmarked pair. **Held rather than built**: nothing in this
+    workspace creates a `many` relator from a retryable path, so the rule would
+    ship with no true positive to point at, and a rule whose first firing is
+    hypothetical is one nobody trusts when it finally fires.
+
+- **Still open — is `Payslip` a relator with a key over two of three relata, or a
+  document that records one?** It copies `periodStart`/`periodEnd` off the run, which by
   § 2's tell argues document; its key argues class 2 with the run as the
   discriminator. Both emit identical DDL. Whichever way it resolves is the
   worked example for the distinction, and `OrderLine` and `StocktakeCount` are

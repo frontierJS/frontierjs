@@ -47,7 +47,7 @@ function readValue(def, what) {
  * @returns {object|null} null when the schema declares no tenancy
  *
  * database → { strategy, dir, registry, maxOpen, key, resolve }
- * row      → { strategy, column, claim, resolve }
+ * row      → { strategy, column, claim }
  */
 export function resolveTenancy(schema, { schemaPath = null, overrides = {} } = {}) {
   const t = schema?.tenancy
@@ -56,23 +56,20 @@ export function resolveTenancy(schema, { schemaPath = null, overrides = {} } = {
   const base = schemaPath ? dirname(resolve(schemaPath)) : process.cwd()
   const at   = (p) => (p == null ? null : resolve(base, p))
 
-  const resolution = overrides.resolve ?? t.resolve ?? (
-    // A row app already has the answer on the principal — the claim IS the
-    // tenant — so leaving `resolve` off means the obvious thing rather than
-    // nothing. A database app has no such default: which of a subdomain, a
-    // header and a claim names the tenant is a deployment fact nothing can
-    // infer, and guessing would route every request at one tenant in silence.
-    t.strategy === 'row' ? { kind: 'claim', name: t.claim } : null
-  )
-
+  // Row tenancy has no `resolve`: the tenant is a claim on the principal, and
+  // where a request names it is the app resolver's `tenantFrom` (`FJS-D360`).
   if (t.strategy === 'row') {
     return {
       strategy: 'row',
       column:   overrides.column ?? t.column,
       claim:    overrides.claim  ?? t.claim,
-      resolve:  resolution,
     }
   }
+
+  // No default: which of a subdomain, a header and a claim names the tenant is
+  // a deployment fact nothing can infer, and guessing would route every
+  // request at one tenant in silence.
+  const resolution = overrides.resolve ?? t.resolve ?? null
 
   return {
     strategy: 'database',

@@ -26,7 +26,7 @@
 //   await tenants.migrate()
 
 import { openDatabase }   from './core/engine.js'
-import { applyBusyTimeout, busyTimeoutFor } from './core/pragmas.js'
+import { applyBusyTimeout, applyWal, busyTimeoutFor } from './core/pragmas.js'
 import { existsSync, unlinkSync, mkdirSync } from 'fs'
 import { resolve, join, dirname } from 'path'
 import { createClient }    from './core/client.js'
@@ -242,21 +242,11 @@ class LRUPool {
 // Simple SQLite file Litestone manages — tracks tenant IDs + metadata.
 // Schema is fixed: id TEXT PK, createdAt TEXT, meta TEXT (JSON blob).
 
-const REGISTRY_DDL = `
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-CREATE TABLE IF NOT EXISTS tenants (
-  id        TEXT PRIMARY KEY,
-  createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-  meta      TEXT NOT NULL DEFAULT '{}'
-) STRICT;
-`
-
 function openRegistry(path, busyTimeout) {
   const db = openDatabase(path)
-  db.run('PRAGMA journal_mode = WAL')
+  // Every process booting under `strategy database` opens this one file.
+  applyWal(db, busyTimeout)
   db.run('PRAGMA foreign_keys = ON')
-  applyBusyTimeout(db, busyTimeout)
   db.run(`CREATE TABLE IF NOT EXISTS tenants (
     id        TEXT PRIMARY KEY,
     createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
@@ -486,9 +476,8 @@ class TenantRegistry {
     }
 
     const raw = openDatabase(path)
-    raw.run('PRAGMA journal_mode = WAL')
+    applyWal(raw, this.#busyTimeout)
     raw.run('PRAGMA foreign_keys = ON')
-    applyBusyTimeout(raw, this.#busyTimeout)
 
     if (this.#migrationsDir && existsSync(this.#migrationsDir)) {
       // Apply migration files — same as running `litestone migrate apply`.

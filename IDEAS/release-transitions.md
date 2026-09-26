@@ -19,7 +19,7 @@ is a vendor blog rather than an incident it says so.
 of the first two: not *how do these systems fail* but **what do they record**.** Nine
 systems were read for their recorded-state format alone — Cloud Run, Cloudflare
 Workers, Helm, Nomad, NixOS, Kamal, Argo CD, Erlang/OTP and Vercel — and the answer
-was the same two nouns everywhere: a frozen artefact-plus-bindings, and a mutable
+was the same two nouns everywhere: a frozen artefact-plus-configuration, and a mutable
 pointer at it. That is the Release ⨯ Environment pair below, arrived at
 independently by nine systems, which is as close to a settled shape as this field
 offers. **What the round changed is five details inside it**, folded into the
@@ -114,7 +114,7 @@ Stated as invariants because each one, dropped, reproduces a specific documented
 failure.
 
 **1. A Release is immutable and environment-independent.** One artefact promotes
-from staging to production unchanged; only bindings differ. Content-addressed, the
+from staging to production unchanged; only configuration differs. Content-addressed, the
 way Mesa scope ids already are.
 
 *Needs an enforcer, or it is a wish.* A build that bakes configuration into the
@@ -123,12 +123,12 @@ artefact must be refused. This is live for us specifically: SvelteKit's
 use in combination with published Docker containers"*, and Vite gives us the same
 gun.
 
-**2. An Environment is mutable but generational.** It provides bindings only —
+**2. An Environment is mutable but generational.** It provides configuration only —
 values, and *references* to secrets, never secret values.
 
 The generation counter is the repair to the obvious version of this design. If an
 Environment is mutable and uncounted, then reverting a Release restores the code and
-whatever bindings happen to exist at that moment, which is precisely the Fly and
+whatever configuration happens to exist at that moment, which is precisely the Fly and
 Heroku failure quoted above. **Serving state is the pair (Release, Generation)**, and
 both halves are recorded.
 
@@ -139,8 +139,8 @@ ConfigMap, and the working answer practitioners converged on is not a counter bu
 generated name, so a changed value renames the object, the workload's reference
 changes with it, and the rollout — and therefore the rollback — is exact. A counter
 answers *which one came first*; a hash answers *are these two the same*, which is the
-question a revert actually asks. So the binding set records **both**: `generation`
-for order and for a person reading a list, `bindingsHash` for identity. Recording
+question a revert actually asks. So the configuration set records **both**: `generation`
+for order and for a person reading a list, `configurationHash` for identity. Recording
 only the counter means a revert can say *generation 7 exists* and cannot say *nothing
 has moved since*.
 
@@ -151,7 +151,7 @@ a failed rotation blocks later rotations, and partial propagation leaves some
 instances holding a cached credential that stops working when the old one is
 revoked. It also means a revert can resurrect a credential, which is why Helm
 practitioners reach for SOPS or External Secrets. **The guarantee is therefore
-"revert restores the same bindings", never "the same secret values."** A rotation
+"revert restores the same configuration", never "the same secret values."** A rotation
 underneath is invisible and correct.
 
 **A reference must be pinned, and `latest` is refused.** Cloud Run resolves a secret
@@ -161,7 +161,7 @@ revision hold two different values, which makes the revision immutable in name o
 The reference recorded in a Release is therefore `name@version`; a Release naming
 `latest` is refused at build, the same way a baked-in configuration value is. This
 does not weaken the rotation argument above: a rotation moves the Environment's
-binding to a new pinned version, which is a new generation and a new `bindingsHash`,
+configuration to a new pinned version, which is a new generation and a new `configurationHash`,
 and that is exactly the event a generation is for.
 
 **3. Transitions are journaled and idempotent.** Restart resumes; drift refuses.
@@ -175,7 +175,7 @@ control plane.
 
 *Drift needs a named surface* or the rule is decorative. Three things, all cheap and
 all ours: schema against expected-at-last-applied (Atlas made exactly this a
-pre-apply gate), the Release id currently serving, and the binding generation.
+pre-apply gate), the Release id currently serving, and the configuration generation.
 
 *Idempotent is not free* for steps that touch the world — a registry push, DDL, an
 outbound send. The journal step id is the idempotency key. The repo has learned this
@@ -251,22 +251,22 @@ state, in five formats, none aware of the others.
 | `releases/<commit>` + `current` | which build is live | a **directory name** is the release id |
 | the `_replaced` container | the rollback target | **one** renamed container |
 | `Deployment` / `DeploymentStep` | basecamp's pipeline | rows: `configSnapshot`, `builtImage`, `previousDeploymentId` |
-| `Environment.variables` + `version` | per-environment bindings | a `Json` column and an `@version` |
+| `Environment.variables` + `version` | per-environment configuration | a `Json` column and an `@version` |
 
 Three things follow, and each is cheaper to act on now than after an install exists.
 
 **The schema term is done and the other terms are the gap.** `release.snapshot.md`
 is committed for both apps and the `snapshots` CI phase already fails a stale one and
 catches a *removed* one against the base ref. So the Release's schema half is built,
-gated and reviewed; what is missing is the image digest, the binding set and the
+gated and reviewed; what is missing is the image digest, the configuration set and the
 recorded verdict. That is a smaller build than this record's phase 1 implies.
 
 **`Environment.version` is the right column with the wrong semantics.** It is a
-`@version` — an optimistic-concurrency guard, so two people editing the bindings
+`@version` — an optimistic-concurrency guard, so two people editing the configuration
 cannot silently overwrite one another. It moves on every edit and nothing pins a
 Release to a value of it, which is precisely the uncounted Environment invariant 2
 refuses. It is one field away from being the generation, and adding the second field
-(`bindingsHash`) beside it is free today.
+(`configurationHash`) beside it is free today.
 
 **Depth one is not history.** The symlink, the `_replaced` container and
 `previousDeploymentId` each hold exactly one step back, so a revert can be taken once
@@ -426,7 +426,7 @@ Two smaller things fall out and are worth stating so they are not rediscovered:
 Sequenced by one rule, which is the reason the phases fall where they do:
 
 > **State shape early, behavior late.** Anything that changes what gets *recorded* —
-> Release fields, journal rows, binding generations, audience keys — belongs in the
+> Release fields, journal rows, configuration generations, audience keys — belongs in the
 > first phase even when unused, because a recorded-state migration is the expensive
 > kind of change. Anything that only *does* something can wait.
 
@@ -470,9 +470,9 @@ it has value even for an app deployed entirely by hand.
 ### Phase 1 — Ship
 
 The minimum that deploys a beta app and takes it back: the Release object,
-content-addressed over an image **digest**, a `bindingsHash`, the schema surface and
+content-addressed over an image **digest**, a `configurationHash`, the schema surface and
 the recorded pivot; the build check that refuses baked-in configuration and a secret
-reference naming `latest`; the Environment binding set with its generation counter
+reference naming `latest`; the Environment configuration set with its generation counter
 beside that hash; the journal, in a Litestone database, carrying a format version and
 step ids from `occurrenceKey`, so the deploy realm is inspected with the tools the
 framework already has; build → push → expand-migrate → start → health → switch → keep
@@ -495,8 +495,8 @@ behavior late**, so the first two steps write nothing and deploy nothing, and th
 thing that is expensive to change is settled while it is free. Each step is
 independently shippable and each names what proves it.
 
-**1a · The models, and nothing that writes them.** `Release`, the Environment binding
-set with `generation` + `bindingsHash`, and the journal with its steps — declared as a
+**1a · The models, and nothing that writes them.** `Release`, the Environment configuration
+set with `generation` + `configurationHash`, and the journal with its steps — declared as a
 `.lite` fragment a package ships and the app imports, which is the idiom junction's
 outbox and auth's machinery already use, so an upgrade reaches an installed app.
 Every field is present including the ones nothing writes yet: the audience key
@@ -516,13 +516,13 @@ against basecamp, and the environment is asserted OUT of the id so promotion
 cannot quietly become a rebuild. Two things it settled that this record left
 open: the schema term is the committed `release.snapshot.md` HASHED rather than
 re-derived, so there is one answer to *what is the data boundary of this
-release*; and bindings are declared in the deploy block as `bindings` (values)
+release*; and configuration is declared in the deploy block as `configuration` (values)
 beside `secrets` (pinned references), which is where invariant 2's *never secret
 values* becomes a shape rather than a rule to remember. The digest term is still
 absent by construction — `2.3f` is its prerequisite and it says *not built*
 rather than showing a tag. A command that computes the
-four terms and writes one row: the image digest, the `bindingsHash` over the resolved
-binding set, the schema-surface hash off the snapshot that already exists, and the
+four terms and writes one row: the image digest, the `configurationHash` over the resolved
+configuration set, the schema-surface hash off the snapshot that already exists, and the
 pivot verdict from `classifyPivot` against the Release currently serving. **`2.3f` is
 a prerequisite rather than a neighbor** — a Release cannot be content-addressed while
 its artefact is named by a tag that means different bytes on different hosts — so
@@ -721,7 +721,7 @@ other tool ships, and it is wrong in exactly the situations somebody reaches for
 | --- | --- | --- |
 | `pivot` | a deploy since then crossed it — that release cannot serve this database | `--past-pivot` |
 | `retention` | the release stopped being a revert target, and it names the date | `--past-retention` |
-| `bindings` | the generation moved: this restores the code and NOT the configuration | `--onto-current-bindings` |
+| `configuration` | the generation moved: this restores the code and NOT the configuration | `--onto-current-configuration` |
 | `no-image` | nothing recorded which bytes that release ran | **none** |
 | `in-flight` | a transition is still open — a deploy is running, or died unsettled | **none** |
 | `nothing-prior` | this is the first release | **none** |
@@ -732,12 +732,12 @@ rest one flag at a time, mid-incident. Three carry no override at all, and that 
 stated on the line rather than left to be discovered — *no override — this one is not
 a judgement call*.
 
-**The bindings refusal is the one this record under-specified.** Serving state is the
+**The configuration refusal is the one this record under-specified.** Serving state is the
 PAIR, and `fli` writes no `.env` on a target — the operator owns that file. So once
 the generation has moved, a revert genuinely *cannot* restore the pair; it can only
 put old code onto today's configuration, which is the documented Fly failure the
 generation counter exists to refuse. It is therefore a refusal rather than something
-this fixes, and `--onto-current-bindings` is the operator saying a different sentence
+this fixes, and `--onto-current-configuration` is the operator saying a different sentence
 on purpose. The journal records which sentence happened.
 
 **`revert` and `rollback` are both kept, and the split is stated.**
@@ -861,7 +861,7 @@ column has exactly one value in it.
 
 Ruled as [`FJS-D158`](../DECISIONS.md#fjs-d158). `attachments` is declared in the
 app (`junction.config.js`, or `createApp({ config })`) and bound per environment
-by the variables the process actually carries — **not** phase 1's binding set,
+by the variables the process actually carries — **not** phase 1's configuration set,
 which is recorded into the Release and applied by nobody (`FJS-585`);
 `check-attachments` is a
 junction start phase that refuses to boot on a service that is unbound or bound
@@ -896,7 +896,7 @@ The original text of this phase follows.
 
 
 The **attached service** — a third-party dependency the app needs and does not own.
-Declared in the app, bound per Environment, and a missing or mismatched binding is a
+Declared in the app, bound per Environment, and a missing or mismatched configuration is a
 startup refusal rather than a runtime mystery. Dev-side convenience is a generated
 compose file with ports from the existing `fli` broker, so collisions are impossible
 by construction.
@@ -910,8 +910,8 @@ around provisioning, held at the Release boundary.
 **The answer to "keep dev and prod in sync" is to sync the declaration, not the
 instance.** Syncing instances is the trap.
 
-Placed second because it is a daily pain and it is small — Environment bindings from
-phase 1 already do most of the work.
+Placed second because it is a daily pain and it is small — Environment configuration from
+phase 1 already does most of the work.
 
 ### Phase 3 — Survive — **shipped 2026-08-30**
 
@@ -1090,7 +1090,7 @@ migrations in the entrypoint, so a stopped container cannot deploy, and deployin
 while paused is the single case a pause exists to allow. Refused by the pipeline
 itself.
 
-**The app refuses** — the app would have to be told, which is a binding, which is
+**The app refuses** — the app would have to be told, which is configuration, which is
 a restart, which is a deploy. That is the flag this design is not.
 
 **The edge.** nginx serves the SPA from `current/` and proxies `/api/`, so it is
@@ -1463,14 +1463,14 @@ Compose has no traffic layer at all and stops the old container before starting 
   block that `fli make:deploy` writes and `fli deploy` reads, so the question is no
   longer where to put a new thing but whether the Release's declaration joins the one
   that exists.
-- **How the Environment binding set composes with per-tenant configuration**, which
+- **How the Environment configuration set composes with per-tenant configuration**, which
   arrived after this record was written. `FJS-D126` gives an app a resolver answering
   configuration per tenant, an explicit `tenantConfigKeys` allow-list, and a reserved
   set refused at boot — and it commits that list into `principal.snapshot.md`, which is
   the same *the safe half is the half worth committing* argument this record makes
   about the Release. Two layers now exist over one set of values, and three things
   need settling before either is built on: which wins, whether a revert restores a
-  tenant override or only the Environment's binding, and whether the binding set
+  tenant override or only the Environment's configuration, and whether the configuration set
   should simply adopt the committed-allow-list idiom rather than invent a second one.
 - **Is the compose file for an attached service ours to generate or yours to write?**
   The line between helpful and Caprover is exactly there. **Still open after the

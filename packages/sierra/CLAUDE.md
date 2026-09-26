@@ -453,7 +453,12 @@ src/
   that can cross to `@frontierjs/ui/controls`, which binds it. `readOnly`
   columns are not offered to the registry (the Data boundary refuses the write,
   so the form could not submit) and `defaultControlFor(rule)` is the built-in
-  table alone, for a resolver extending rather than restating it.
+  table alone, for a resolver extending rather than restating it. **Every
+  answer carries a `task`** (`select` · `quantify` · `text` · `position`), read
+  off the COLUMN rather than the control. A resolver that states none inherits
+  the table's. A new control name fails `test/control-task.test.js` until it is
+  listed there with the column that reaches it, which is where its task gets
+  decided.
 - **The theme is a CLASS on `<html>`, from a list the app declares.**
   `theme: { themes, default, system, persist, key, apply }`; `setTheme` refuses a
   name the app did not declare and prints the list. A `data-theme` attribute is

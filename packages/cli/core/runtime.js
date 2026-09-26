@@ -9,8 +9,16 @@ import { fileURLToPath } from 'url'
 import { logger, findWorkspaceRoot, fliTmpRoot, sweepStaleTmp } from './utils.js'
 import { getModule } from './registry.js'
 import { printPlanFromFile } from './prose.js'
+import { declarationProblem, valueProblem } from './flags.js'
+import { effectsProblem, approvalRefusal, APPROVED } from './effects.js'
+import { createTty, settleTtys, ttyAside } from './tty.js'
+import { colorEnabled } from './color.js'
 
 const env = process.env
+
+// zx's chalk is the one a command body gets as a global, and it colors a
+// terminal with NO_COLOR set. color.js holds fli's rule; this makes zx's agree.
+if (!colorEnabled) chalk.level = 0
 
 // ─── Temp file registry — guaranteed cleanup on exit ─────────────────────────
 // Compiled command bodies are written as .mjs shims so we can `import()` them
@@ -40,11 +48,26 @@ const _ensureSession = () => {
 
   if (!_cleanupRegistered) {
     process.on('exit', _cleanupTmp)
-    process.on('SIGINT',  () => { _cleanupTmp(); process.exit(130) })
-    process.on('SIGTERM', () => { _cleanupTmp(); process.exit(143) })
+    process.on('SIGINT',  () => { if (!ttyAside()) _signal(130) })
+    process.on('SIGTERM', () => _signal(143))
     _cleanupRegistered = true
   }
   return _sessionDir
+}
+
+// A command's `tty.onExit` gets its capped turn before the exit. Only a second
+// SIGNAL skips it — that is the person saying the first one meant it. A child
+// that died of the same Ctrl-C reaches `_stop` too, and is not a second one.
+let _stopping = null
+let _signals  = 0
+const _stop = (code) => (_stopping ??= (async () => {
+  await settleTtys()
+  _cleanupTmp()
+  process.exit(code)
+})())
+const _signal = (code) => {
+  if (++_signals > 1) { _cleanupTmp(); process.exit(code) }
+  _stop(code)
 }
 
 const _cleanupTmp = () => {
@@ -203,6 +226,19 @@ export async function Command({ file, arg, flag, emit }) {
 
   const config = getConfig(metadata, arg, flag)
 
+  // ── A person approves a `confirm: human` run ──────────────────────────────
+  // `fli gui` runs in this process, so its stdin is the terminal `fli gui` was
+  // started from; a run with `emit` has no person at that terminal.
+  const refusal = approvalRefusal(metadata, {
+    approved:    config.flag.approved === true,
+    interactive: !emit && !!process.stdin.isTTY,
+  })
+  if (refusal) {
+    if (emit) await emit({ type: 'log', level: 'error', text: refusal })
+    else logger(refusal, 'error')
+    throw new Error('command cancelled')
+  }
+
   // ── Validate required args ────────────────────────────────────────────────
   const missing = config.args.find((a) => a.required && !a.value)
   if (missing) {
@@ -255,6 +291,10 @@ export async function Command({ file, arg, flag, emit }) {
         detail:  (text) => emit({ type: 'log', level: 'detail',  text }),
       }
     : terminalLog
+
+  // tty: keys, a footer, the screen lent to an editor — core/tty.js. Closed by
+  // the functions Command() returns, whichever way the body ends.
+  config.tty = createTty({ yes: config.flag.yes === true, emit })
 
   // echo: injected into context so the compiled run() can shadow the ZX global.
   // This avoids patching globalThis.echo, making concurrent web requests safe.
@@ -337,12 +377,16 @@ export async function Command({ file, arg, flag, emit }) {
 
       child.on('close', (code, signal) => {
         // Signal-based exit (Ctrl+C, kill) is not an error — user asked to stop.
+        // Inside tty.aside the Ctrl-C was the child's to take, so the command
+        // hears about it as a failure and carries on.
+        if (signal === 'SIGINT' && ttyAside()) return reject(new Error(`interrupted: ${command}`))
         if (signal === 'SIGINT' || signal === 'SIGTERM') {
           const note = signal === 'SIGINT' ? 'aborted (Ctrl+C)' : 'terminated'
           if (emit) emit({ type: 'log', level: 'warn', text: note })
           else logger(note, 'warn')
-          const exitCode = signal === 'SIGINT' ? 130 : 143
-          process.exit(exitCode)
+          // Through _stop, so a tty.onExit gets its turn. The terminal sent
+          // the same signal to this process, and exiting here would cut it off.
+          _stop(signal === 'SIGINT' ? 130 : 143)
           return
         }
         if (code !== 0) reject(new Error(`Command failed (exit ${code}): ${command}`))
@@ -486,6 +530,9 @@ export async function Command({ file, arg, flag, emit }) {
   if (defaultStepsDir && existsSync(defaultStepsDir)) {
     // Return a function that runs the orchestrator then all steps
     const runSteps = async () => {
+      try { return await runStepsOnce() } finally { await config.tty.close() }
+    }
+    const runStepsOnce = async () => {
       // config.config is already there — see the initialization above.
       // Run the orchestrator's own body first (sets up context.config from flags)
       await config.run(config)
@@ -836,9 +883,13 @@ export async function Command({ file, arg, flag, emit }) {
   // the deploy commands are this shape (`deploy:logs`, `:status`, `:run`,
   // `:unlock`), and every one of their refusals exited 0 (`FJS-589`).
   return async () => {
-    const out = await config.run(config)
-    assertNotRefused(config, null)
-    return out
+    try {
+      const out = await config.run(config)
+      assertNotRefused(config, null)
+      return out
+    } finally {
+      await config.tty.close()
+    }
   }
 }
 
@@ -904,7 +955,6 @@ const defaultFlags = {
   test: {
     type: 'boolean',
     char: 't',
-    options: { true: 'NODE_ENV=test', false: '' }
   },
   step: {
     type: 'number',
@@ -971,6 +1021,7 @@ export function getConfig(metadata, rawArg, flag) {
   const cmdFlags = metadata.flags || {}
   const mergedFlags = {}
   for (const [k, v] of Object.entries(defaultFlags)) mergedFlags[k] = { ...v }
+  if (metadata.confirm === 'human' && !('approved' in cmdFlags)) mergedFlags.approved = { ...APPROVED }
   for (const [k, v] of Object.entries(cmdFlags)) {
     mergedFlags[k] = { ...(mergedFlags[k] || {}), ...v }
   }
@@ -1001,28 +1052,14 @@ export function getConfig(metadata, rawArg, flag) {
     }
   })
 
-  // ─── `--no-x` back to the flag that was declared ────────────────────────
-  // minimist reads `--no-push` as `{ push: false }`, so a command declaring a
-  // `no-push` flag and reading `flag['no-push']` reads undefined — forever, and
-  // silently, because the negation still parses. Nine flags across seven
-  // commands were dead this way: `fli git:release --no-push` warned
-  // "[push] flag not defined" and pushed anyway.
-  //
-  // Translated here rather than in each command so there is one owner. The
-  // discriminator is the declaration: `push: false` can only have come from
-  // `--no-push` when the command declares `no-push` and does NOT declare
-  // `push`. An explicit `--push=false` arrives as the STRING 'false', so the
-  // strict `=== false` cannot confuse the two.
-  Object.keys(meta.flags)
-    .filter(name => name.startsWith('no-'))
-    .forEach(negated => {
-      const positive = negated.slice(3)
-      if (positive in meta.flags) return
-      if (flag[positive] === false) {
-        delete flag[positive]
-        flag[negated] = true
-      }
-    })
+  // A declaration is graded before any value is, so a broken one is a message
+  // on every run rather than only on the run that happens to pass that flag.
+  for (const problem of [effectsProblem(metadata), ...Object.entries(cmdFlags).map(([n, d]) => declarationProblem(n, d))]) {
+    if (problem) {
+      logger(problem, 'error')
+      throw new Error('Cancelling action.')
+    }
+  }
 
   Object.entries(flag).forEach(([key, value]) => {
     if (key.length === 1) {
@@ -1088,15 +1125,12 @@ export function getConfig(metadata, rawArg, flag) {
       throw new Error('Cancelling action.')
     }
 
-    if (flagData.options) {
-      if (!flagData.options[value]) {
-        logger(`[${key}] must be one of: [ ${Object.keys(flagData.options).join(', ')} ]`, 'error')
-        throw new Error('Cancelling action.')
-      }
-      flagData.value = flagData.options[value]?.value ?? flagData.options[value]
-    } else {
-      flagData.value = value ?? flagData.defaultValue
+    const problem = [value].flat().map(v => valueProblem(key, flagData, v, meta.flags)).find(Boolean)
+    if (problem) {
+      logger(problem, 'error')
+      throw new Error('Cancelling action.')
     }
+    flagData.value = value ?? flagData.defaultValue
   })
 
   Object.entries(meta.flags).forEach(([key, v]) => {

@@ -32,7 +32,8 @@ function tree(name, files) {
   return dir
 }
 
-const pkg = (fields) => JSON.stringify(fields, null, 2)
+// Every fixture declares the prefix its rows are written under.
+const pkg = (fields) => JSON.stringify({ registers: { prefix: 'FJS' }, ...fields }, null, 2)
 
 beforeAll(() => { ROOT = mkdtempSync(join(tmpdir(), 'fli-repo-map-')) })
 afterAll(()  => { try { rmSync(ROOT, { recursive: true, force: true }) } catch {} })

@@ -8,7 +8,7 @@ import { execSync } from 'child_process'
 </script>
 
 ```js
-const { released, tag, otp, tolerate, interactive, prompts, tty } = context.config
+const { released, tag, otp, tolerate, interactive, prompts } = context.config
 if (!released?.length) { log.info('Nothing to publish'); return }
 
 const published = []
@@ -21,8 +21,11 @@ for (const { name, dir, newVersion } of released) {
   // committed by now, so *not this one, not today* has to be answerable without
   // abandoning the run. The FIRST one always stops, which is where a person
   // gets their authenticator up; `--interactive` keeps stopping after that.
+  // The first stop needs a terminal: `prompt.js` buffers a piped stdin to
+  // `end`, so asking where nobody is typing hangs with no output. The flag
+  // does not, because passing it IS somebody saying they are here.
   const first = !published.length && !failures.length && !skipped.length
-  if ((interactive || (first && tty)) && !flag.dry) {
+  if ((interactive || (first && tty.interactive)) && !flag.dry) {
     echo('')
     if (first) log.info(`  ${released.length} publish(es) from here, each with its own npm 2FA prompt.`)
     log.info(`  Ready: ${name}@${newVersion}  →  npm (tag ${tag})`)

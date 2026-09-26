@@ -21,7 +21,13 @@ const DEFAULTS = {
 }
 
 export function loadConfig() {
-  const configPath = resolve(global.projectRoot, '.fli.json')
+  global.fliConfig = readConfig(global.projectRoot)
+  return global.fliConfig
+}
+
+/** `.fli.json` at `root` over the defaults, without touching the global. */
+export function readConfig(root) {
+  const configPath = resolve(root, '.fli.json')
 
   let userConfig = {}
   if (existsSync(configPath)) {
@@ -32,9 +38,7 @@ export function loadConfig() {
       console.error(`[fli] Warning: could not parse .fli.json — ${err.message}`)
     }
   }
-
-  global.fliConfig = { ...DEFAULTS, ...userConfig }
-  return global.fliConfig
+  return { ...DEFAULTS, ...userConfig }
 }
 
 // Convenience getter with safe fallback if loadConfig hasn't run yet

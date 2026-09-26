@@ -169,6 +169,7 @@ describe('doc-cites-dead', () => {
 
   test('reports a register id that resolves nowhere, and not one that does', () => {
     const root = tree('cite-id', {
+      'package.json': JSON.stringify({ registers: { prefix: 'FJS' } }),
       'ISSUES.md': '# Issues\n\n## S2 — high\n\n' +
                    '| Id | Pkg | Title | Status | Verified | Detail |\n' +
                    '| --- | --- | --- | --- | --- | --- |\n' +

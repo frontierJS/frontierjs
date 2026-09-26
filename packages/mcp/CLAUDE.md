@@ -10,10 +10,34 @@ spoken to an agent.
 ## Layout
 
 ```
-index.ts              the public surface — projectTools, resolveModel, the types
-src/projection.ts     all of it
-test/projection.test.ts
+index.ts                     the public surface — projectTools, resolveModel, the types
+src/projection.ts            which tools a standing sees, and what decided each
+src/plugin.ts                mcpPlugin — the endpoint mounted inside the running API
+src/await.ts                 hold an awaited call until the jobs its correlation id names are terminal (FJS-D406)
+src/breadcrumbs.ts           what a one-row answer offers next — the caller's own tools, narrowed by the row (FJS-D398)
+src/client/                  `@frontierjs/mcp/client` — the terminal client's half,
+  argv.ts                      a tool's input schema read as a command line
+  run.ts                       one command line against an app's /mcp — globals, output, exit codes
+  profiles.ts                  the signed-in credential: one 0600 file per app under XDG_CONFIG_HOME
+  cache.ts                     the command tree per build (x-fjs-build) under XDG_CACHE_HOME — none without a build
+  routes.ts                    cli/src/routes/<service>/<method> — declared `uses`, checkRoutes
+  main.ts                      an app's whole entry: main({ name, tenantHeader, url, routes })
+  bin.ts                       main() for an app with no cli/ surface — FJS_* stands in for its config
+  index.ts                     held here until the CLI package is named (IDEAS/app-cli.md)
+test/projection.test.ts      the rules, against test/fixtures/shop.lite
+test/plugin.test.ts          the endpoint inside a real Junction app on a real port
+test/principal-standing.test.ts  the standing a membership resolver answers
+test/await.test.ts           the wait over a reader and a clock of its own
+test/breadcrumbs.test.ts     breadcrumbs against the real fixture and the real projection
+test/argv.test.ts            every tool in test/fixtures/tools/ (example, basecamp) as argv
+test/run.test.ts             globals, tenant header, exit codes, profiles, cache and routes, over a stubbed session
 ```
+
+**`src/client/` imports nothing from the server half, and must not** — it moves
+into its own package whole, and the fixtures it is graded against are captured
+`tools/list` answers rather than projections run in the test, so a projection
+change reaches them only when somebody recaptures (the header of `argv.test.ts`
+says how).
 
 ## What it owns
 
@@ -25,6 +49,9 @@ says whose decision a move is, and the method lifting it keeps the gate (`FJS-D1
 It reads a NARROWED view of the generated schema on purpose — `ModelDef` declares
 two keywords. Taking the whole `$def` would leave the projection free to start
 grading on any keyword in it, and which three it may grade on is the design.
+`breadcrumbs.ts` reads `x-relations` too, under its own type, and grades nothing:
+a breadcrumb is a tool the projection already offered this caller, and one that
+is not must never be added to make a list look complete.
 
 ## Traps
 
@@ -56,6 +83,18 @@ grading on any keyword in it, and which three it may grade on is the design.
 - **`ungraded` must not be filed with `model-gate` and `move-floor`.** *Nothing
   refused this* and *a rule allowed it* are different facts and only one is
   evidence.
+- **The standing is the one the app's principal RESOLVER answers, never the
+  session.** Under `strategy row` a membership role is a claim added per call, so
+  grading `ctx.user` offered basecamp's admin and viewer one identical list.
+  `standingOf` goes through `app.withDb`, which runs the resolver — and the
+  resolver reads its tenant off the request, so an MCP client must send whatever
+  header the app's `tenantFrom` reads (`x-workspace-id` there).
+- **An awaited call's correlation id is read in the ROUTE, not in the tool
+  handler.** The route runs inside junction's request scope, which is what every
+  service call in the tool inherits and what Caravan stamps on the jobs they
+  dispatch; reading it anywhere else is a bet on the SDK keeping the async chain.
+  And an awaited call is answered as a stream (`enableJsonResponse: false`), or
+  Bun's idle timeout cuts a hold longer than ten seconds with nothing said.
 - **This is an affordance** (Invariant 6). Nothing here is a boundary, and no
   caller of it may treat it as one.
 - **junction has already read the body by the time a route handler runs.**

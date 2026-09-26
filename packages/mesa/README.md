@@ -21,14 +21,11 @@ For the language specification, see
 | `@frontierjs/sierra`    | [`packages/sierra`](../sierra/)       | Meta-framework built on Mesa — **in this monorepo**, not a separate repo                                        |
 | `@frontierjs/email-kit` | [`packages/email-kit`](../email-kit/) | Email component kit — table-based, CSS-inlined, Outlook-safe.                                                   |
 
-> `mesa-bench/` is nested *inside* `packages/mesa`, so the workspace glob
-> (`packages/*`) does not see it — not installed as a member, no tests, no
-> typecheck. That is deliberate and named in `scripts/ci-allowances.json`.
-> **`mesa-vite/` is not in that bracket, and a `package.json` of its own is what
-> would put it there** — a nested member is invisible the same way: uninstalled, so
-> nothing imports it and nothing can test it. It is a
-> subpath (`@frontierjs/mesa/vite`), reached by relative path, and four
-> suites cover it.
+> **`mesa-vite/` and `bench/` are directories of this package, not packages, and
+> a `package.json` of its own is what would change that** — a nested package is
+> invisible to the workspace glob (`packages/*`): uninstalled, so nothing imports
+> it and nothing can test it. `mesa-vite/` is a subpath
+> (`@frontierjs/mesa/vite`), reached by relative path, and four suites cover it.
 
 ---
 
@@ -70,7 +67,7 @@ or `.md` files alongside your other source. See [Vite plugin](#vite-plugin).
 | `example/README.md` | What the REPL is, how to run it, how to add an example |
 | `test/` | Every suite, plus `spec-check.mjs`. See the table below |
 | `mesa-vite/` | Vite plugin |
-| `mesa-bench/` | Benchmark component |
+| `bench/` | `bun run bench` — gzip bytes, DOM mutations per operation and time for a keyed 1k-row table, against a hand-written floor. `bench/run.mjs` says what each number is and which are gated |
 
 ---
 

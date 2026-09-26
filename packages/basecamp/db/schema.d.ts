@@ -2586,7 +2586,6 @@ export interface Job {
   status: JobStatus
   command?: string | null
   cronExpression?: string | null
-  nextRunAt?: string | null
   trigger: string
   triggerConfig: unknown
   timeoutSeconds: number
@@ -2609,7 +2608,6 @@ export interface JobCreate {
   status?: JobStatus
   command?: string | null
   cronExpression?: string | null
-  nextRunAt?: string | null
   trigger?: string
   triggerConfig?: unknown
   timeoutSeconds?: number
@@ -2629,7 +2627,6 @@ export interface JobUpdate {
   status?: JobStatus
   command?: string | null
   cronExpression?: string | null
-  nextRunAt?: string | null
   trigger?: string
   triggerConfig?: unknown
   timeoutSeconds?: number
@@ -2649,7 +2646,6 @@ export interface JobWhere extends WhereBase {
   status?: JobStatus | WhereOp<JobStatus> | null
   command?: string | WhereOp<string> | null
   cronExpression?: string | WhereOp<string> | null
-  nextRunAt?: string | WhereOp<string> | null
   trigger?: string | WhereOp<string> | null
   triggerConfig?: unknown | WhereOp<unknown> | null
   timeoutSeconds?: number | WhereOp<number> | null
@@ -4197,7 +4193,7 @@ export interface CursorResult<T> {
 // ── Table client interface ───────────────────────────────────────────────────
 
 export interface TableClient<TRow, TCreate, TUpdate, TWhere> {
-  findMany(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: any; select?: any; withDeleted?: boolean; onlyDeleted?: boolean }): Promise<TRow[]>
+  findMany(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: any; select?: any; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<TRow[]>
   findFirst(args?: { where?: TWhere; orderBy?: any; include?: any; select?: any }): Promise<TRow | null>
   findUnique(args: { where: TWhere; include?: any; select?: any }): Promise<TRow | null>
   findFirstOrThrow(args?: { where?: TWhere }): Promise<TRow>
@@ -4228,6 +4224,8 @@ export interface TableClient<TRow, TCreate, TUpdate, TWhere> {
   query(args?: Record<string, unknown>): Promise<any>
   /** @@transitions — [] on a model that declares none. */
   transitions(idOrRow: TRow | string | number): Promise<TransitionOption[]>
+  /** @@commitment — the rows owing a declared transition by `by` (the client's clock unless stated). */
+  due(args?: { by?: Date | string; timeZone?: string; transition?: string; where?: TWhere }): Promise<Array<{ transition: string; id: any; dueAt: string }>>
 }
 
 // ── View client interface ────────────────────────────────────────────────────
@@ -4395,6 +4393,8 @@ export interface LitestoneClient {
   readonly $walStatus:  Record<string, unknown>
   /** Is a transaction open on this connection right now? */
   readonly $inTransaction: boolean
+  /** The clock this client reads and writes: the now option, else the wall clock. A deadline is minted from it. */
+  $now(): Date
 }
 
 // ── createClient ─────────────────────────────────────────────────────────────

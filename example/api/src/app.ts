@@ -23,12 +23,13 @@ import { conduit }                              from '@frontierjs/conduit'
 import { notificationsPlugin }                  from '@frontierjs/notifications'
 import { orion }                                from '@frontierjs/orion/plugin'
 import { mcpPlugin }                            from '@frontierjs/mcp'
-import { mailerPlugin, outbox }                 from '@frontierjs/junction'
+import { mailerPlugin, outbox, commitments }    from '@frontierjs/junction'
 
 import { db, shops, DEFAULT_SHOP, DEV_KEY, STORAGE_ROOT, TIME_ZONE_FLOOR } from './core/db.ts'
 import { perShopAuth }                          from './core/auth.ts'
 import { shopGateLevel, SYSTEM }                from './core/gate.ts'
 import { joinChannels }                         from './core/channels.ts'
+import { commitmentHooks }                      from './core/commitments.ts'
 import { CART_HEADER, CART_PURPOSE, cartKey }  from './domain/shop'
 import { IDP_URL }                              from './providers/idp/sink.ts'
 import { createConduitMailer, MAIL_TARGET }     from './providers/mail/mailer.ts'
@@ -472,8 +473,8 @@ app.configure(createAuthPlugin(auth, {
 // Caravan is a SQLite queue in its own file — nothing about it touches
 // db/shop.db, so a wiped queue loses no shop data and a wiped shop loses no
 // jobs. `app.configure` claims `app.jobs`; `boot()` starts the workers and
-// autoloads `api/jobs/*.job.ts` — including the recurring one, which declares
-// its own `cron` and therefore needs no line here.
+// autoloads `api/jobs/*.job.ts` — including the recurring ones, which declare
+// their own `cron` and therefore need no line here.
 //
 // The queue's own settings — its database, its job directory, `admin: true` and
 // the per-queue concurrencies — are DECLARED in api/config/junction.config.js.
@@ -499,6 +500,26 @@ app.configure(queue)
 // a committed call kicks the relay immediately. It is how long a row a crash
 // left behind waits, and one second keeps the drive's assertions quick.
 app.configure(outbox({ intervalMs: 1_000 }))
+
+// ─── Commitments ──────────────────────────────────────────────────────────
+//
+// The clock under `@@commitment` in db/schema.lite: an order still `pending`
+// fourteen days after it was placed is abandoned, an invoice unpaid past its
+// terms lapses and then cancels the subscription behind it, and a subscription
+// period closes at its end. One sweep a minute across every shop's file, and a
+// fire per due row delayed to its own time. AFTER the queue, which it declares
+// it requires.
+//
+// `dueOn` is a DAY, and which day it is depends on whose calendar — the shop's,
+// as every other billing date here. Loaded rather than read with `configFor`,
+// because a sweep reaches a shop cold and `configFor` would answer the floor.
+//
+// A period closing is a renewal, and `hooks` is what that close owes — the next
+// period and its invoice, in the transaction that closed it (`FJS-D368`).
+app.configure(commitments({
+  timeZone: async (shop) => (shop ? await app.loadTenantConfig(shop) : app.configFor()).timeZone as string,
+  hooks:    commitmentHooks(() => app.jobs as never),
+}))
 
 // ─── Automations ──────────────────────────────────────────────────────────
 //

@@ -313,7 +313,7 @@ describe('methods: declared on createBaseService', () => {
     const svc = built()
     const ctx = {
       service: 'notes', method: 'create', data: { a: 1 },
-      params: {}, query: {}, directives: {}, auth: {}, client: {},
+      params: {}, query: {}, directives: {}, auth: {}, caller: {},
       locals: {}, app: {}, result: null, error: null,
     } as never
 

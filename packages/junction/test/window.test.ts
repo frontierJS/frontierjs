@@ -51,7 +51,7 @@ async function shop() {
 
 const svcCtx = (db: unknown, over: Record<string, unknown> = {}): ServiceContext => ({
   service: 'items', method: 'find', id: undefined, data: null,
-  params: {}, query: {}, auth: {}, client: {},
+  params: {}, query: {}, auth: {}, caller: {},
   locals: { db }, app: {},
   ...over,
 } as unknown as ServiceContext)

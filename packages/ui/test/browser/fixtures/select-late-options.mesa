@@ -1,0 +1,77 @@
+<script>
+  // select-late-options.mesa — a picker whose value is known before its list.
+  //
+  // An edit screen has the row in hand before the lists its pickers offer, so
+  // the value reaches the <select> first and the options a flush or a request
+  // later. The select applied its value when the VALUE changed and never when
+  // the OPTIONS did, so the browser selected the first option it was given and
+  // the screen showed every field wrong (`FJS-1320`).
+  //
+  // Two shapes, because they arrive by different doors: options the CALLER
+  // passes once it has them, and options a <Form> fetches for the control.
+  //
+  // And a third, which is the caller's side of `FJS-D380`: a change the app
+  // refuses. A one-way `value` is where the control STARTS, like a native
+  // one, so the pick stays on screen when the row does not move. The caller
+  // keeps a draft through `bind:value`, follows the row with a `$:`, and puts
+  // the draft back when the write is refused.
+  import Form from '../../../components/forms/Form.mesa'
+  import Select from '../../../components/forms/Select.mesa'
+
+  const STATES = [
+    { value: 'backlog',  label: 'Backlog' },
+    { value: 'progress', label: 'In Progress' },
+    { value: 'done',     label: 'Done' },
+  ]
+  let states = []
+  const load = () => states = STATES
+
+  const FIELDS = {
+    status: { type: 'string', title: 'Status',
+              values: { set: 'States', strength: 'required', model: 'State', value: 'name', label: 'name' } },
+  }
+  // Answered after a delay: a request, not a promise that is already settled.
+  const LATE = {
+    context: { model: 'Post', service: 'posts', idField: 'id' },
+    fields:  FIELDS,
+    formFields: () => [],
+    options: () => new Promise((r) => setTimeout(() => r({
+      options: [{ value: 'alpha', label: 'alpha' }, { value: 'bravo', label: 'bravo' }, { value: 'charlie', label: 'charlie' }],
+      total: 3, truncated: false,
+    }), 50)),
+    make: () => ({ status: 'bravo' }),
+    validate: () => [],
+    fieldErrors: () => ({ fields: {}, message: '' }),
+    service: {},
+  }
+
+  // The row as the server holds it. Only `done` is a move the workflow
+  // allows; anything else is refused after a round trip.
+  let row   = { state: 'progress' }
+  let draft = row.state
+  $: row.state, () => { draft = row.state }
+  const move = async (to) => {
+    await new Promise((r) => setTimeout(r, 30))
+    if (to !== 'done') { draft = row.state; return }
+    row = { ...row, state: to }
+  }
+  const elsewhere = () => row = { ...row, state: 'backlog' }
+</script>
+
+<div id="refused">
+  <Select name="state" placeholder="" options={STATES} bind:value={draft}
+          onchange={(e) => move(e.target.value)} />
+  <button type="button" id="elsewhere" on:click={elsewhere}>elsewhere</button>
+  <output id="row">{row.state}</output>
+</div>
+
+<div id="passed">
+  <Select name="state" value="progress" placeholder="" options={states} />
+  <button type="button" id="load" on:click={load}>load</button>
+</div>
+
+<div id="fetched">
+  <Form resource={LATE}>
+    <Select name="status" value="bravo" />
+  </Form>
+</div>

@@ -10,7 +10,7 @@ classifies: a change N-1 survives is an **expand** and the deploy can be taken
 back; a change it does not is a **contract**, and that deploy is the pivot.
 
 ```
-55 model(s) · 24 enum(s) · 2 database(s) · 2 value set(s)
+56 model(s) · 25 enum(s) · 2 database(s) · 2 value set(s)
 audit → logger · main → sqlite
 ```
 
@@ -38,6 +38,7 @@ A member is a CHECK constraint. Removing one refuses every write of it.
 | `PayComponentKind` | `basicPay` · `bonus` · `employeePension` · `employerNI` · `employerPension` · `incomeTax` · `overtime` |
 | `PaymentStatus` | `failed` · `pending` · `refunded` · `requiresAction` · `succeeded` |
 | `PayRunStatus` | `approved` · `calculated` · `draft` · `paid` |
+| `PeriodStatus` | `closed` · `open` |
 | `PlanInterval` | `monthly` · `yearly` |
 | `RateKind` | `employeePension` · `employerNI` · `employerPension` · `incomeTax` |
 | `Size` | `l` · `m` · `one` · `s` · `xl` · `xs` · `xxl` |
@@ -415,6 +416,8 @@ table `invoice` · db `main` · gate `1.8.4.8`
 | `customer` | `Customer` | — | — | relation |
 | `customerId` | `Int` | no | — | **required on write** |
 | `dueOn` | `String` | no | — | **required on write** |
+| `dunningDays` | `Int` | no | — | **required on write** |
+| `graceDays` | `Int` | no | — | **required on write** |
 | `id` | `Int` | no | — | id |
 | `issuedAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
 | `lines` | `InvoiceLine[]` | — | — | relation |
@@ -423,6 +426,7 @@ table `invoice` · db `main` · gate `1.8.4.8`
 | `payments` | `Payment[]` | — | — | relation |
 | `periodEnd` | `String` | no | — | **required on write** |
 | `periodStart` | `String` | no | — | **required on write** |
+| `reminded` | `Boolean` | no | `0` | @system |
 | `status` | `InvoiceStatus` | no | `'draft'` | — |
 | `subscription` | `Subscription` | — | — | relation |
 | `subscriptionId` | `Int` | yes | — | — |
@@ -438,6 +442,7 @@ table `invoice` · db `main` · gate `1.8.4.8`
 @@allow('read', auth().isStaff)
 @@allow('read', userId == auth().id)
 @@allow('update', auth().isStaff)
+transition reminded.remind: false → true @system
 transition status.issue: draft → issued @system @seals
 transition status.settle: issued → paid @system
 transition status.void: issued → void @gate(5)
@@ -664,6 +669,7 @@ table `order` · db `main` · gate `1.4.4.5` · @@softDelete(cascade)
 @@check(subtotal = 0 OR total = subtotal - discount + shipping + tax)
 @@allow('read', auth().isStaff)
 @@allow('read', userId == auth().id)
+transition status.abandon: pending → cancelled @system
 transition status.cancel: paid, pending → cancelled
 transition status.pay: pending → paid
 transition status.refund: paid → refunded @gate(5)
@@ -1197,12 +1203,13 @@ table `subscription` · db `main` · gate `1.4.4.5`
 | `cancelAtPeriodEnd` | `Boolean` | no | `0` | @system |
 | `cancelledAt` | `DateTime` | yes | — | @system |
 | `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
-| `currentPeriodEnd` | `String` | no | — | @system · **required on write** |
-| `currentPeriodStart` | `String` | no | — | @system · **required on write** |
+| `currentPeriodEnd` | `String` | — | — | from |
+| `currentPeriodStart` | `String` | — | — | from |
 | `customer` | `Customer` | — | — | relation |
 | `customerId` | `Int` | no | — | **required on write** |
 | `id` | `Int` | no | — | id |
 | `invoices` | `Invoice[]` | — | — | relation |
+| `periods` | `SubscriptionPeriod[]` | — | — | relation |
 | `planVersion` | `PlanVersion` | — | — | relation |
 | `planVersionId` | `Int` | no | — | **required on write** |
 | `quantity` | `Int` | no | `1` | — |
@@ -1222,6 +1229,31 @@ transition status.activate: trialing → active @system
 transition status.cancel: active, pastDue, trialing → cancelled @system
 transition status.lapse: active → pastDue @system
 transition status.recover: pastDue → active @system
+```
+
+### `SubscriptionPeriod`
+
+table `subscription_period` · db `main` · gate `1.8.7.8`
+
+| Field | Type | Null | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `createdAt` | `DateTime` | no | `(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))` | — |
+| `endsOn` | `String` | no | — | @system · **required on write** |
+| `id` | `Int` | no | — | id |
+| `startsOn` | `String` | no | — | **required on write** |
+| `status` | `PeriodStatus` | no | `'open'` | — |
+| `subscription` | `Subscription` | — | — | relation |
+| `subscriptionId` | `Int` | no | — | **required on write** |
+| `userId` | `String` | yes | — | @system |
+
+```
+@@unique(subscriptionId), where: "status" = 'open'
+@@index(subscriptionId, startsOn)
+@@check(startsOn < endsOn)
+@@allow('read', auth().isStaff)
+@@allow('read', userId == auth().id)
+@@allow('update', auth().isStaff)
+transition status.close: open → closed @system
 ```
 
 ### `TaxRate`

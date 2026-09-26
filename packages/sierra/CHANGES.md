@@ -1,5 +1,63 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-25 — `bytes` is an interaction task
+
+`controlFor` answers `task: 'bytes'` for a `File` column, where it answered
+`select`, and `INTERACTION_TASKS` is five long (`FJS-D387`). A file is picked the
+way a select is, but its technique carries size, type and progress, which a
+registered select control cannot, so grouping the two by task put a file input
+among the choosers. `test/control-task.test.js` pins `photo → bytes`.
+
+## 2026-09-25 — `controlFor` answers a `task`
+
+Each answer now carries `task` next to `control`. The task is what the person
+does to the value: `select`, `quantify`, `text` or `position` (Foley, Wallace &
+Chan 1984). The control is one technique for doing it. The task comes from the
+column, so an `input` over a count is `quantify` and over a name is `text`.
+`@money` and `@scale` answer `quantify` with no control. A registered control
+may claim a task in its descriptor. Otherwise it inherits the table's, and a
+claim outside `INTERACTION_TASKS` is replaced with a warning. A read-only column
+answers no task. `test/control-task.test.js` visits every control the table can
+name. The descriptors pinned in three suites now include the field
+(`IDEAS/ui-ontology.md` § 7 step 3).
+
+## 2026-09-24 — every route renders inside a boundary
+
+`FJS-D376`, for [`FJS-1326`](../../ISSUES.md#fjs-1326). `ChainRenderer` wraps each level of the chain
+in a `<mesa:boundary>`, so a page or a layout that throws while rendering is replaced by `failed` and
+the levels above it stay standing, where it used to leave a half-drawn page and a console line. The
+three boundaries share one global `failed` snippet; it renders the app's own when `RouterView` was
+given `failed={…}` and a plain message with a *Try again* button otherwise. They read no async value,
+so they wait on nothing (`FJS-D378`). `test/outlet-boundary.test.js` mounts the real `ChainRenderer`
+and is red against the previous one.
+
+## 2026-09-23 — a killed process's `.sierra-fresh-*` copies are swept
+
+`importFresh` copies a companion beside itself to get past bun's module cache
+and unlinks the copy in a `finally`, which a process killed mid-import never
+reaches — eight copies of `automations.mount.js` were found untracked in
+`example/web/src/routes/`, all from one dead pid. The first import into a
+directory now removes every copy whose pid is not alive. A live pid's copy is
+left, since two servers can share a routes directory and deleting a copy under
+a pending import fails it. Proof: `test/scanner-refusals.test.js`, one row,
+red with the sweep removed.
+
+## 2026-09-23 — `resource.commitments(row)`: the moves no button makes, as a date
+
+`commitmentsAt(spec, row, { target })` beside `transitionsAt`, and
+`resource.commitments(row, opts)` beside `resource.transitions()`. A `@system`
+move is left off a screen's buttons; this is where it comes back —
+`[{ name, transition, via, target, dueAt, kind }]` for every `@@commitment`
+still owed. The date is `@frontierjs/toolbelt/datetime`'s `dueAt`, the function
+litestone's `due()` answers with. Whether it is still owed is graded off what
+the row carries: the move's from-state on the row it moves, and `while:` through
+the evaluator `requiredFor` already runs. **Across a relation the target is the
+caller's to pass** — `{ target: sub }` for the row it holds, `{ target: null }`
+for *there is none*, which owes nothing as `due()` does; a target nobody read is
+not graded, the permissive answer every `x-*` affordance gives. Proof:
+`test/resource-commitments.test.js`, 13, where removing the from-state check
+turns four red.
+
 ## 2026-09-22 — `@unit` reaches a form
 
 `FJS-D348`. `_CARRIED` is an allowlist, so a keyword litestone emits and this

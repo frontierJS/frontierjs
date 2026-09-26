@@ -57,7 +57,7 @@ function mkClient(rows: Record<string, unknown>[] = []) {
 function ctx(service: string, method = 'find', over: Record<string, unknown> = {}): ServiceContext {
   return {
     service, method, id: undefined, data: null,
-    params: {}, query: {}, auth: {}, client: {},
+    params: {}, query: {}, auth: {}, caller: {},
     locals: { db: mkClient([{ id: '1', title: 'Hi' }]) }, app: {},
     ...over,
   } as unknown as ServiceContext

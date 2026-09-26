@@ -23,7 +23,7 @@
 
   import Field  from './Field.mesa'
   import Button from './Button.mesa'
-  import { tone as toTone, cx, humanize, bandIndex, resolveError, stated, lockedBy } from '../../utils.js'
+  import { tone as toTone, cx, bandIndex, resolveError, stated, lockedBy } from '../../utils.js'
 
   // ── Props ───────────────────────────────────────────────────────────────────
 
@@ -51,7 +51,6 @@
 
   const form             = $context.form
   const resolvedDisabled = stated(disabled, lockedBy(form, name)) ?? false
-  const resolvedLabel    = stated(label, name ? humanize(name) : undefined)
   const displayError     = resolveError(form, name, error, errors)
   const t                = toTone(tone)
 

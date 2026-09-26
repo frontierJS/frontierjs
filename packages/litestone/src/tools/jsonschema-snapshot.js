@@ -97,6 +97,22 @@ function defaultOf(raw) {
   return prop.default === undefined ? '' : ` = \`${JSON.stringify(prop.default)}\``
 }
 
+// A predicate AST back as `.lite`, for a line a reader diffs. A `while:` may
+// name no `auth()`, `now()` or relation, so the node types below are all it
+// can hold; anything else prints as JSON rather than as a guess.
+function predicateText(n) {
+  switch (n?.type) {
+    case 'literal': return typeof n.value === 'string' ? `'${n.value}'` : String(n.value)
+    case 'field':   return n.name
+    case 'not':     return `!${predicateText(n.expr)}`
+    case 'and':     return `(${predicateText(n.left)} && ${predicateText(n.right)})`
+    case 'or':      return `(${predicateText(n.left)} || ${predicateText(n.right)})`
+    case 'compare': return `${predicateText(n.left)} ${n.op} ${predicateText(n.right)}`
+    case 'list':    return `[${(n.items ?? []).map(v => predicateText({ type: 'literal', value: v })).join(', ')}]`
+    default:        return JSON.stringify(n)
+  }
+}
+
 function constraintsOf(raw) {
   const { prop } = flatten(raw)
   const out = []
@@ -278,6 +294,17 @@ export function renderJsonSchemaSnapshot(schema, opts = {}) {
         .map(([move, m]) => `\`${move}\`: ${(m.from ?? []).join('|') || '—'} → ${m.to}` +
                             `${m.system ? ' @system' : ''}${m.gate != null ? ` @${m.gate}` : ''}`)
         .join(' · ')}`)
+    }
+
+    // A screen derives *will be abandoned on 5 Oct* from these and the row, so
+    // a commitment that stops being emitted is a date that silently stops
+    // showing — the same reason the transitions line exists.
+    for (const [name, c] of Object.entries(def['x-commitments'] ?? {})) {
+      const off = !c.offset ? '' : ` ${c.offset.sign < 0 ? '-' : '+'} ` +
+        (c.offset.field ? `\`${c.offset.field}\` ${c.offset.unit}` : `${c.offset.value}${c.offset.unit}`)
+      bullets.push(`- commitment \`${name}\` — on \`${c.on}\`${off} (${c.kind})` +
+        ` · moves \`${c.target}.${c.field}\` from ${(c.from ?? []).join('|')}` +
+        (c.while ? ` · while \`${predicateText(c.while)}\`` : ''))
     }
 
     // The grid, beside the gate the header already carries. It is here for the

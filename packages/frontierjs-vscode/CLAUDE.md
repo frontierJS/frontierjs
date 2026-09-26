@@ -17,6 +17,7 @@ src/
   litestone/
     client.ts         the VS Code side
     server.ts         the language server — diagnostics, completion, hover
+    format.ts         the formatter — whitespace only, refuses its own output otherwise
   mesa/
     client.ts
     completions.js · hover.js · symbols.js
@@ -174,6 +175,13 @@ out/                  build output, not source
 - **The Litestone server embeds an understanding of `.lite`** that the real
   parser owns (`packages/litestone/src/core/parser.js`). Any schema-language
   change is a change in two places, and this is the one that gets forgotten.
+- **The formatter may change whitespace and nothing else** (`FJS-1341`). A line
+  is aligned only if it OPENS a field at the model body's depth, and
+  `formatLite` refuses any output whose tokens — through litestone's lexer,
+  `tokenize` in `parser-bundle.js` — differ from the input. Reading every model
+  line as `name type @attrs` is what cut `-> paid` off every transition. The
+  suite formats every `.lite` in the workspace with the aligner ALONE, so a
+  misread shape fails there instead of being silently refused in an editor.
 - **`out/` is build output.** Editing it looks like it works until the next build.
 - **Packaging cannot use vsce's dependency walk.** bun installs
   `vscode-languageclient` and friends as symlinks into the workspace root's

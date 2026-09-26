@@ -255,7 +255,7 @@ const EXTERNAL = new Set([
   // Place names, which arrive through time-zone examples.
   'Greenwich', 'Auckland', 'London', 'Los', 'Angeles', 'Denver', 'Tokyo', 'DigitalOcean', 'Hetzner', 'Fly', 'Vercel', 'Netlify',
   // specs and protocols people name in prose
-  'Http', 'Https', 'Websocket', 'Json', 'Yaml', 'Toml', 'Oauth', 'Jwt', 'Smtp',
+  'Http', 'Https', 'Websocket', 'WebSocket', 'Json', 'Yaml', 'Toml', 'Oauth', 'Jwt', 'Smtp',
   'Imap', 'Dns', 'Tls', 'Ssh', 'Cdp', 'Opfs', 'Cors', 'Csp', 'Mcp', 'Lsp', 'Mv',
   'Intl', 'Icu', 'Utc', 'Iso', 'Unicode', 'Ascii',
   // Platform globals. They read as nouns in prose and are somebody else's
@@ -563,7 +563,12 @@ const COMMON = new Set(
     'Whatever',
     'White',
     'Working',
-    'Your'
+    'Your',
+    // Ruled ordinary English: a Plugin Junction ships is a Plugin (`FJS-D394`),
+    // and a CRUD verb is a method name, not a concept.
+    'Battery',
+    'Batteries',
+    'Create'
   ].filter((w) => !DROPPED.has(w.toLowerCase()))
 )
 
@@ -632,16 +637,21 @@ export function authoredVocabulary(root) {
   const out  = new Map()
   if (!existsSync(file)) return out
 
+  // Columns are found by the header row's names, so a column added to the
+  // file does not shift `means` into `note` for every row below it.
+  let cols = null
   for (const line of readFileSync(file, 'utf8').split('\n')) {
-    const cells = line.match(/^\|([^|]+)\|([^|]+)\|([^|]*)\|([^|]*)\|\s*$/)
-    if (!cells) continue
-    const term   = cells[1].trim()
-    const status = cells[2].trim().replace(/`/g, '')
-    // The status table at the top of the file has the same shape as a term row,
-    // and its header row does too. A row is a TERM only when its status is one
-    // of the four, which is the same test the file asks a reader to apply.
+    if (!/^\|.*\|\s*$/.test(line)) { cols = null; continue }
+    const cells = line.trim().slice(1, -1).split('|').map(c => c.trim())
+    if (cells[0] === 'Term') { cols = Object.fromEntries(cells.map((c, i) => [c.toLowerCase(), i])); continue }
+    if (!cols) continue
+    const at     = (name) => cols[name] == null ? '' : (cells[cols[name]] ?? '')
+    const term   = at('term')
+    const status = at('status').replace(/`/g, '')
+    // A row is a TERM only when its status is one of the four, which is the
+    // same test the file asks a reader to apply.
     if (!['blessed', 'refused', 'alias', 'open'].includes(status)) continue
-    out.set(term.toLowerCase(), { term, status, means: cells[3].trim(), note: cells[4].trim() })
+    out.set(term.toLowerCase(), { term, status, home: at('home'), under: at('under'), means: at('means'), note: at('note') })
   }
   return out
 }
@@ -678,9 +688,18 @@ const PACKAGE_REGISTERS = [
 function readCssVocabulary(text) {
   const out = new Map()
   const doc = JSON.parse(text)
+  // A tier is css's answer to *what is this inside*, which is the root file's
+  // `Under` column; reading it here is what keeps the UI rows' container half
+  // from being authored twice and drifting the first time css re-tiers a term.
   for (const t of doc.terms ?? []) {
     if (!t?.term) continue
-    out.set(t.term.toLowerCase(), { term: t.term, means: t.meaning ?? '', note: t.element ?? '' })
+    out.set(t.term.toLowerCase(), {
+      term:  t.term,
+      means: t.meaning ?? '',
+      note:  t.element ?? '',
+      home:  'UI',
+      under: t.tier ? `${t.tier} tier` : '',
+    })
   }
   // After the terms, so `Heading` keeps the definition rather than the axis —
   // it is both a term and the name of the group css files its own h1–h6 under.
@@ -694,6 +713,17 @@ function readCssVocabulary(text) {
     })
   }
   return out
+}
+
+// The root row wins, and a package's `Under` fills only a UI row that left
+// its own blank. Home is the test for *same sense*: `Table` is a Data row and
+// css's `<table>` is not its parent's child, `Surface` is a Framework row and
+// css's Base shape is a different word spelled the same, and an authored
+// `Under` (Switch under Select task) is a placement css cannot see.
+export function placed(root, pkg) {
+  if (!root) return pkg ?? null
+  if (!pkg || root.under || root.home !== pkg.home || !pkg.under) return root
+  return { ...root, under: pkg.under, underFrom: pkg.owner }
 }
 
 // Every package register, joined. A malformed or missing one is SKIPPED rather
@@ -1105,7 +1135,7 @@ export function collectTerms({ root }) {
     // invariant, ruling, map, package document — so a word the root file and a
     // package both name is the root file's, and nothing here can widen a term
     // the doctrine already ruled on.
-    const label = authored.get(lower) ?? pkgVocab.terms.get(lower) ?? null
+    const label = placed(authored.get(lower), pkgVocab.terms.get(lower))
     const status = blessed.has(lower)
       ? 'blessed'
       : clarified.has(lower)

@@ -8,7 +8,7 @@
 //  ✓  Completions      — field types, attributes, model/enum/function keywords,
 //                        @funcName(fieldArg) completions
 //  ✓  Hover            — attribute docs, type docs, function signature on hover
-//  ✓  Formatting       — re-align fields, normalize spacing, sort attributes
+//  ✓  Formatting       — align field columns; whitespace only (format.ts)
 //  ✓  Go-to-definition — jump from @relation to model, from @funcName to function
 //
 // ─── Parser bridge ───────────────────────────────────────────────────────────
@@ -41,6 +41,7 @@ import {
 import { TextDocument } from 'vscode-languageserver-textdocument'
 import * as path from 'path'
 import * as fs   from 'fs'
+import { formatLite, type Tokenize } from './format'
 
 // ─── Connection ───────────────────────────────────────────────────────────────
 
@@ -73,6 +74,7 @@ function loadParser() {
     _hasImports    = bundle.hasImports    ?? null
     _inlineImports = bundle.inlineImports ?? null
     _resolveImport = bundle.resolveImportSpecifier ?? null
+    _tokenize      = bundle.tokenize      ?? null
   } catch (e: any) {
     _parseError = [
       `Litestone parser bundle not found.`,
@@ -110,6 +112,9 @@ function loadParser() {
 let _hasImports:    ((text: string) => boolean) | null = null
 let _inlineImports: ((text: string, parent: string, opts: any) => string) | null = null
 let _resolveImport: ((spec: string, from: string) => { path: string | null }) | null = null
+// Litestone's own lexer — the formatter's second guard, so "only whitespace
+// changed" is answered by the tokens the parser reads.
+let _tokenize: Tokenize | null = null
 
 function withImports(src: string, uri?: string): string {
   if (!uri || !uri.startsWith('file://'))          return src
@@ -791,99 +796,12 @@ connection.onDocumentFormatting((params: DocumentFormattingParams): TextEdit[] =
   const doc = documents.get(params.textDocument.uri)
   if (!doc) return []
 
-  const formatted = formatLite(doc.getText())
+  const text      = doc.getText()
+  const formatted = formatLite(text, _tokenize)
+  if (formatted === text) return []
   const full      = Range.create(0, 0, doc.lineCount, 0)
   return [TextEdit.replace(full, formatted)]
 })
-
-function formatLite(src: string): string {
-  const lines = src.split('\n')
-  const out: string[] = []
-  let inBlock    = false
-  let blockLines: string[] = []
-  let blockType  = ''
-
-  function flushBlock() {
-    if (!blockLines.length) return
-    if (blockType === 'model') {
-      out.push(...formatModelBlock(blockLines))
-    } else {
-      out.push(...blockLines)
-    }
-    blockLines = []
-    out.push('')
-  }
-
-  for (const raw of lines) {
-    const trimmed = raw.trim()
-
-    if (!inBlock) {
-      if (
-        trimmed.startsWith('model ')    ||
-        trimmed.startsWith('enum ')     ||
-        trimmed.startsWith('function ') ||
-        trimmed.startsWith('database ')
-      ) {
-        flushBlock()
-        blockType = trimmed.split(' ')[0]
-        inBlock   = true
-        blockLines.push(raw)
-      } else if (trimmed.startsWith('import ') || trimmed.startsWith('///') || trimmed.startsWith('//')) {
-        flushBlock()
-        out.push(trimmed)
-      } else if (trimmed === '') {
-        if (out.length && out[out.length - 1] !== '') out.push('')
-      } else {
-        out.push(raw.trimEnd())
-      }
-    } else {
-      blockLines.push(raw)
-      if (trimmed === '}') {
-        inBlock = false
-        flushBlock()
-      }
-    }
-  }
-
-  flushBlock()
-  while (out.length && out[out.length - 1] === '') out.pop()
-  return out.join('\n') + '\n'
-}
-
-function formatModelBlock(lines: string[]): string[] {
-  const header = lines[0]
-  const footer = lines[lines.length - 1]
-  const fields = lines.slice(1, -1)
-
-  const parsed = fields.map(line => {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith('//') || trimmed.startsWith('@')) {
-      return { raw: trimmed, isField: false }
-    }
-    const attrStart = trimmed.search(/\s+@/)
-    const [nameType, attrsRaw] = attrStart !== -1
-      ? [trimmed.slice(0, attrStart).trim(), trimmed.slice(attrStart).trim()]
-      : [trimmed, '']
-    const parts = nameType.split(/\s+/)
-    return { raw: line, isField: true, name: parts[0] ?? '', type: parts[1] ?? '', attrs: attrsRaw }
-  })
-
-  const fieldRows = parsed.filter(p => p.isField)
-  if (!fieldRows.length) return lines
-
-  const maxName = Math.max(...fieldRows.map(p => (p.name ?? '').length))
-  const maxType = Math.max(...fieldRows.map(p => (p.type ?? '').length))
-
-  const formatted = parsed.map(p => {
-    if (!p.isField) return `  ${p.raw}`
-    const name  = (p.name ?? '').padEnd(maxName)
-    const type  = (p.type ?? '').padEnd(maxType)
-    const attrs = p.attrs ? `  ${p.attrs}` : ''
-    return `  ${name}  ${type}${attrs}`.trimEnd()
-  })
-
-  return [header, ...formatted, footer]
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

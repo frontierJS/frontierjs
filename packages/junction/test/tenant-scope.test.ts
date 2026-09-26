@@ -224,7 +224,7 @@ describe('a job runs IN a tenant', () => {
       auth,
       principal: membershipClaim({
         // A header, which a queue does not have — the whole of the problem.
-        tenantFrom: (ctx: ServiceContext) => (ctx.client?.headers?.['x-workspace-id'] as string) ?? null,
+        tenantFrom: (ctx: ServiceContext) => (ctx.caller?.headers?.['x-workspace-id'] as string) ?? null,
         model:      'member',
         subject:    'userId',
         tenant:     'workspaceId',

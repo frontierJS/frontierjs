@@ -177,11 +177,12 @@ const TOP = [
     'claim',
     'schema',
     'declare',
-    '<name>',
-    'A claim the principal carries that is on no row. `@@auth <Model>` already names every claim that IS a column; this names the rest — a cart token, a device id — so `auth().<name>` is graded rather than compiling to NULL. Names only: the app resolves the value per request. A tool that has the schema and not the app (studio, tinker) reads this and nothing else.',
-    'claim cartToken',
+    '<name> [from <Model>(<subject>)[.<column>]]',
+    'A claim the principal carries that is not a column of the `@@auth` model, so `auth().<name>` is graded rather than compiling to NULL. Bare, it is a name and the app resolves the value per request — a cart token, a device id. With `from`, the value is read per request off the one row whose `<subject>` points at the caller — the row\'s primary key, or `<column>` — so a role held on another model (an Employee, a Customer) needs no resolver. The subject must be a key to the `@@auth` model and unique; a caller with no row holds null.',
+    'claim cartToken\nclaim employeeId from Employee(userId)\nclaim siteId     from Employee(userId).siteId',
     {
       seeAlso: ['auth', 'allow'],
+      context: 'model User { id Int @id  @@auth }\nmodel Employee {\n  id     Int  @id\n  userId Int  @unique\n  user   User @relation(fields: [userId], references: [id])\n  siteId Int\n}',
       note: 'Declared and never used in a policy is reported by `litestone advise`; used and never declared is a parse-time refusal.'
     }
   ),
@@ -936,6 +937,21 @@ const MODEL = [
     { extraFields: 'orderId Int?\n  productId Int?', seeAlso: ['check', 'relation'] }
   ),
   t(
+    'relator',
+    'model',
+    'shape',
+    '([field, …], once | many | many: <column>)',
+    'Whether a relationship may happen TWICE. A relator is a relationship that is a row — a membership, a placement, a subscription — existentially dependent on the things it relates, so a relatum may be neither optional nor `onDelete: SetNull` and there must be at least two distinct ones. `Cascade` and `Restrict` both pass: they honor the dependence and differ only on who wins. The repeatability argument is REQUIRED and a bare list is a parse error naming the three choices, because `once` and a bare `many` differ by an ABSENCE and a default answers in silence the one question the word exists to ask. `once` emits UNIQUE over the relata; `many: <column>` emits UNIQUE over the relata plus that column, which is what makes two of them different; `many` emits no unique at all — a relationship told apart by nothing is something that HAPPENED, and the row usually proves it by copying what it read. Every relatum an emitted unique does not already cover by prefix gets an index, because both ends of a relator are entrances and `@@unique` cannot know that ([`FJS-413`](ISSUES.md#fjs-413) was ten unindexed foreign keys, four of them on cascading join tables, fixed by hand four times). A `@@unique` or an `@@index` beside it over columns it already emits is refused rather than tolerated — one origin, or the two drift. What no rule reaches is the modeling judgment: a credential row with two owners satisfies every refusal here and is not a relationship.',
+    '@@relator([workspaceId, userId], once)',
+    {
+      context:
+        'model Workspace { id Int @id\n  members Example[] }\nmodel User { id Int @id\n  members Example[] }',
+      extraFields:
+        'workspaceId Int\n  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)\n  userId Int\n  user User @relation(fields: [userId], references: [id], onDelete: Cascade)',
+      seeAlso: ['unique', 'index', 'arc', 'relation']
+    }
+  ),
+  t(
     'map',
     'model',
     'shape',
@@ -991,7 +1007,7 @@ const MODEL = [
     'model',
     'operate',
     '(policy)',
-    'This model\'s rows may be written with no server reachable: the client holds the write and replays it when one is. The argument is the COLLISION policy and nothing else — whether a model leaves the device, and in which direction, is a separate question this attribute has not been asked. All four policies behave identically on a reachable network; each decides what happens to a write nobody is standing over when it lands. `server` drops the revision the device read, so the replay applies to whatever the row holds by then. `append` says rows are only ever added, which is what makes a collision impossible rather than resolved — a held patch, remove or restore is refused by name. `refuse` carries the revision and the Data boundary refuses the replay if the row moved, which is why it needs an @version column and is refused without one. `field` carries the revision AND the row the write was made against, and compares them a column at a time: two people who edited different columns both win, and only a column they both moved is a conflict — so it needs @version for the same reason `refuse` does. There is no default and silence is not permission: a model that declares nothing is not syncable, and an offline client refuses to queue a write against it by name rather than dropping it, because a model nobody thought about would otherwise lose a row with nothing said. It crosses to the browser as `x-sync`, and its ABSENCE is what a client reads as a refusal.',
+    "This model's rows may be written with no server reachable: the client holds the write and replays it when one is. The argument is the COLLISION policy and nothing else — whether a model leaves the device, and in which direction, is a separate question this attribute has not been asked. All four policies behave identically on a reachable network; each decides what happens to a write nobody is standing over when it lands. `server` drops the revision the device read, so the replay applies to whatever the row holds by then. `append` says rows are only ever added, which is what makes a collision impossible rather than resolved — a held patch, remove or restore is refused by name. `refuse` carries the revision and the Data boundary refuses the replay if the row moved, which is why it needs an @version column and is refused without one. `field` carries the revision AND the row the write was made against, and compares them a column at a time: two people who edited different columns both win, and only a column they both moved is a conflict — so it needs @version for the same reason `refuse` does. There is no default and silence is not permission: a model that declares nothing is not syncable, and an offline client refuses to queue a write against it by name rather than dropping it, because a model nobody thought about would otherwise lose a row with nothing said. It crosses to the browser as `x-sync`, and its ABSENCE is what a client reads as a refusal.",
     '@@sync(server)',
     {
       seeAlso: ['gate', 'version', 'transitions'],
@@ -1023,12 +1039,13 @@ const MODEL = [
     'model',
     'shape',
     '(column, declaredBy: Model[, max: { kind: N }])',
-    'A column whose KEYS a tenant declares at runtime, and the model whose rows are those declarations — a customer of your app adds a field on a Tuesday, with no deploy. The column stays an ordinary Json blob: declaring says what a form OFFERS, not what may be written. `max:` is the optional half and it is the half that costs — it generates a pool of promoted columns so a declared key can be FILTERED on, and an unused slot is a tax on every write to that table forever, paid by every tenant including the ones who declared nothing. Its keys are members of the declaring model\'s own type enum, and the pool is laid down in that ratio, because a composite index is read left to right and the mix an app declared is the only statement anyone has about which segments should reach it. The declaring model is found by convention — `model`, `key`, `type`, and `slot` where a pool is asked for — with a refusal naming whichever is missing.',
+    "A column whose KEYS a tenant declares at runtime, and the model whose rows are those declarations — a customer of your app adds a field on a Tuesday, with no deploy. The column stays an ordinary Json blob: declaring says what a form OFFERS, not what may be written. `max:` is the optional half and it is the half that costs — it generates a pool of promoted columns so a declared key can be FILTERED on, and an unused slot is a tax on every write to that table forever, paid by every tenant including the ones who declared nothing. Its keys are members of the declaring model's own type enum, and the pool is laid down in that ratio, because a composite index is read left to right and the mix an app declared is the only statement anyone has about which segments should reach it. The declaring model is found by convention — `model`, `key`, `type`, and `slot` where a pool is asked for — with a refusal naming whichever is missing.",
     '@@extensible(fields, declaredBy: CustomField, max: { text: 8, number: 4 })',
     {
-      context: 'enum FieldKind { text number }\n\nmodel CustomField {\n  id    Int    @id\n  model String\n  key   String\n  type  FieldKind\n  slot  String?\n\n  @@unique([model, key])\n  @@unique([model, slot], nullsDistinct: true)\n}',
+      context:
+        'enum FieldKind { text number }\n\nmodel CustomField {\n  id    Int    @id\n  model String\n  key   String\n  type  FieldKind\n  slot  String?\n\n  @@unique([model, key])\n  @@unique([model, slot], nullsDistinct: true)\n}',
       extraFields: 'fields Json @default("{}")',
-      seeAlso: ['type', 'generated', 'index', 'gate'],
+      seeAlso: ['type', 'generated', 'index', 'gate']
     }
   ),
   t(
@@ -1055,6 +1072,44 @@ const MODEL = [
     'Some rows are templates rather than records, flagged on a boolean column. Reads exclude them unless withTemplates is asked for; onlyTemplates on a model without this is refused by name.',
     '@@hasTemplates'
   ),
+  t(
+    'expires',
+    'model',
+    'shape',
+    '(<field>)',
+    "This row is dead from a moment on, and every read and write filters to the rows not yet expired — `asOf` says at what moment, defaulting to the client's own clock, so expiry moves when the clock does and `advance()` in a test stages it. IMPOSED because nothing points at an expired row: a hold, a session, a reset token, where the read that forgot the filter would hand out a dead credential. `withExpired` drops the filter, `onlyExpired` inverts it — a sweep is `deleteMany({ onlyExpired: true })` — and `onlyExpired` on a model declaring no window is refused by name. A hard delete APPLIES it, where soft delete bypasses its own, so a delete keyed on a person means the unexpired rows and a purge says `withExpired`. The column is a `DateTime` or a `String @date`. Nothing here schedules anything — Caravan owns the clock. A row that is HISTORY rather than dead is `@@effective`.",
+    '@@expires(expiresAt)',
+    {
+      extraFields: 'expiresAt DateTime',
+      seeAlso: ['effective', 'softDelete', 'hasTemplates']
+    }
+  ),
+  t(
+    'effective',
+    'model',
+    'shape',
+    '(from: <field>, to: <field>)',
+    'This row is in force inside a window and HISTORY outside it — the price a subscriber is still paying, the terms a payslip was computed under — so the window is ASKED: a read stating `asOf` gets the rows in force at that moment, and a read stating nothing gets every row, which is what a pointer to an old price and a list of past terms both need. `from:` is required and `to:` is optional, a null `to` being *still in force*; the interval is half-open. Both edges are the same KIND — a `DateTime` window is read at an instant and a `String @date` window at a plain date — and a pair that disagrees is refused at parse. Because nothing is filtered without a stated moment, a window over days never spends a zone. `@@effective(to: …)` with no `from:` is refused and names `@@expires`, which is the IMPOSED sibling for a row that is dead after a moment. It implies nothing else: *at most one open row* is still `@@unique([...], where: to == null)` and ordering the pair is still `@@check`.',
+    '@@effective(from: effectiveFrom, to: effectiveTo)',
+    {
+      extraFields: 'effectiveFrom DateTime\n  effectiveTo   DateTime?',
+      seeAlso: ['expires', 'unique', 'check']
+    }
+  ),
+  t(
+    'commitment',
+    'model',
+    'shape',
+    '([<relation>.]<transition>, on: <field> [+|- <n><unit> | <field>] [, while: <expr>])',
+    "A transition the SYSTEM owes this row at a time — the order abandoned fourteen days after it was placed, the subscription lapsed when the grace on an unpaid invoice runs out. The first argument names a transition on this model's `@@transitions`, or on the model a TO-ONE relation reaches (`subscription.lapse` on an invoice) — a to-many relation is refused, since it names no one row to move, and a null relation owes nothing. The target's from-state is the guard and the optimistic lock is the once-ness: a row that has already moved owes nothing. `on:` is a time column of this row — a `DateTime` or a `String @date` — optionally moved by a duration literal or by a required `Int @unit(<duration>) @immutable` column of the SAME row, which is how terms agreed when the row was written travel with it; never a hop. `mo`/`yr` are refused on an instant (a month needs a zone the expression does not have) and the sub-day units on a day. `while:` narrows over this row's own columns, and `auth()`, `now()` and a relation are each refused by name. `due({ by })` answers which rows are owed by an instant — the client's clock unless stated — and when each fell due; a day kind reads `by` in `timeZone`, UTC unless stated. The clock passing makes a WRITE here, where `@@expires` and `@@effective` change only what a read counts, and nothing in the schema names a job: the sweep that fires it is the API realm's, and Caravan owns the clock. Reaches the client as `x-commitments`, keyed by transition.",
+    '@@commitment(abandon, on: createdAt + 14d)',
+    {
+      context: 'enum OrderStatus { pending paid cancelled }',
+      extraFields:
+        'status    OrderStatus @default(pending)\n  createdAt DateTime    @default(now())\n  @@transitions(status, abandon: pending -> cancelled @system)',
+      seeAlso: ['transitions', 'expires', 'unit', 'immutable']
+    }
+  ),
 
   // access
   t(
@@ -1073,7 +1128,10 @@ const MODEL = [
     '(ndjson | csv [, since: <column>])',
     'This dataset may leave in bulk. It adds NO way in: an export is a paginated scoped read, so the rows that leave are exactly the ones the named principal could read one at a time — the @@gate refuses below its level, the row policies narrow the file rather than failing it, a field policy or @guarded column is simply absent, and under tenancy the extract is one tenant\'s because the client is. A @@gate is REQUIRED beside it, even where the schema guards nothing else: a bulk read of every row is a different proposition from one row at a time, and @@gate("0") is how a schema says this dataset is public on purpose. `since:` names a sortable declared column and is what makes an incremental run expressible — the column decides what a resumed run CATCHES, so a createdAt cursor sees new rows and not edits to old ones. Protected columns (@encrypted, @secret, @guarded) are omitted from an extract even for a caller who may read them, because a screen and a file that leaves the machine are the same principal at a different blast radius; keeping them is explicit and is recorded in the manifest. Legal on a view too.',
     '@@export(ndjson, since: updatedAt)',
-    { extraFields: 'updatedAt DateTime @updatedAt\n  @@gate("4")', seeAlso: ['gate', 'allow', 'view'] }
+    {
+      extraFields: 'updatedAt DateTime @updatedAt\n  @@gate("4")',
+      seeAlso: ['gate', 'allow', 'view']
+    }
   ),
   t(
     'allow',
@@ -1372,6 +1430,7 @@ export const DOCS = {
   'field:length': 'schema.md',
   'field:check': 'schema.md',
   'model:arc': 'schema.md',
+  'model:relator': 'relations.md',
   'model:check': 'schema.md',
   'field:startsWith': 'schema.md',
   'field:endsWith': 'schema.md',
@@ -1399,6 +1458,9 @@ export const DOCS = {
   'model:fts': 'full-text-search.md',
   'model:softDelete': 'soft-delete.md',
   'model:hasTemplates': 'schema.md',
+  'model:expires': 'schema.md',
+  'model:effective': 'schema.md',
+  'model:commitment': 'schema.md',
   'model:gate': 'access-control.md',
   'model:export': 'export.md',
   'model:capabilities': 'access-control.md',
@@ -1449,47 +1511,129 @@ export const UNDOCUMENTED = {
 export const TIERS = {
   essential: [
     // declarations
-    'schema:database', 'schema:model', 'schema:enum', 'schema:valueset',
+    'schema:database',
+    'schema:model',
+    'schema:enum',
+    'schema:valueset',
     // field attributes
-    'field:id', 'field:default', 'field:relation', 'field:updatedAt', 'field:label',
-    'field:omit', 'field:guarded', 'field:system', 'field:immutable',  'field:unique', 'field:required',
+    'field:id',
+    'field:default',
+    'field:relation',
+    'field:updatedAt',
+    'field:label',
+    'field:omit',
+    'field:guarded',
+    'field:system',
+    'field:immutable',
+    'field:unique',
+    'field:required',
     // model attributes
-    'model:index', 'model:unique', 'model:gate', 'model:softDelete', 'model:auth',
+    'model:index',
+    'model:unique',
+    'model:gate',
+    'model:softDelete',
+    'model:auth'
   ],
   common: [
     // declarations
-    'schema:view', 'schema:function', 'schema:trait',
+    'schema:view',
+    'schema:function',
+    'schema:trait',
     'schema:type',
     // field attributes
-    'field:from', 'field:computed', 'field:transient', 'field:keep',
-    'field:encrypted', 'field:derived', 'field:generated',
-    'field:date', 'field:datetime', 'field:time',
-    'field:hashed', 'field:secret', 'field:allow', 'field:updatedBy',
-    'field:createdBy', 'field:trim',
-    'field:lower', 'field:values',  'field:email', 'field:url',
-    'field:regex', 'field:length', 'field:lte', 'field:gte',
+    'field:from',
+    'field:computed',
+    'field:transient',
+    'field:keep',
+    'field:encrypted',
+    'field:derived',
+    'field:generated',
+    'field:date',
+    'field:datetime',
+    'field:time',
+    'field:hashed',
+    'field:secret',
+    'field:allow',
+    'field:updatedBy',
+    'field:createdBy',
+    'field:trim',
+    'field:lower',
+    'field:values',
+    'field:email',
+    'field:url',
+    'field:regex',
+    'field:length',
+    'field:lte',
+    'field:gte',
     // model attributes
     'model:label',
-    'model:allow', 'model:deny', 'model:transitions',
-    'model:log', 'model:db', 'model:export',
-    'model:capabilities', 'model:hasTemplates', 'model:scope', 'model:tenant', 'model:trait',
-    'model:createdBy', 'model:updatedBy',
+    'model:allow',
+    'model:deny',
+    'model:transitions',
+    'model:log',
+    'model:db',
+    'model:export',
+    'model:capabilities',
+    'model:hasTemplates',
+    'model:scope',
+    'model:tenant',
+    'model:trait',
+    'model:createdBy',
+    'model:updatedBy'
   ],
   situational: [
     // declarations
-    'schema:import', 'schema:extend',
-    'schema:tenancy', 'schema:claim',
+    'schema:import',
+    'schema:extend',
+    'schema:tenancy',
+    'schema:claim',
     // field attributes
-    'field:map', 'field:sequence', 'field:edge', 'field:scoped', 'field:hardDelete', 'field:sealed', 'field:capability', 'field:big',
-    'field:keepVersions', 'field:upper', 'field:slug', 'field:phone', 'field:markdown',
-    'field:accept', 'field:startsWith', 'field:check',
-    'field:version', 'field:scale', 'field:money', 'field:unit', 'field:point', 'field:vector', 'field:log',
-    'field:endsWith', 'field:contains', 'field:minItems', 'field:maxItems', 'field:uniqueItems',
-    'field:type','field:lt', 'field:gt',
+    'field:map',
+    'field:sequence',
+    'field:edge',
+    'field:scoped',
+    'field:hardDelete',
+    'field:sealed',
+    'field:capability',
+    'field:big',
+    'field:keepVersions',
+    'field:upper',
+    'field:slug',
+    'field:phone',
+    'field:markdown',
+    'field:accept',
+    'field:startsWith',
+    'field:check',
+    'field:version',
+    'field:scale',
+    'field:money',
+    'field:unit',
+    'field:point',
+    'field:vector',
+    'field:log',
+    'field:endsWith',
+    'field:contains',
+    'field:minItems',
+    'field:maxItems',
+    'field:uniqueItems',
+    'field:type',
+    'field:lt',
+    'field:gt',
     // model attributes
-    'model:id', 'model:arc', 'model:map', 'model:external', 'model:noStrict', 'model:sync',
-    'model:fts','model:check', 'model:extensible',
-  ],
+    'model:relator',
+    'model:expires',
+    'model:effective',
+    'model:commitment',
+    'model:id',
+    'model:arc',
+    'model:map',
+    'model:external',
+    'model:noStrict',
+    'model:sync',
+    'model:fts',
+    'model:check',
+    'model:extensible'
+  ]
 }
 
 /** essential | common | situational, or null for a word nobody has tiered. */
@@ -1548,6 +1692,9 @@ export const SYNONYMS = {
   'field:keep':        ['on delete', 'restrict'],
   'field:hardDelete':  ['cascade', 'purge'],
   'model:softDelete':  ['archive', 'trash', 'recycle'],
+  'model:expires':     ['ttl', 'deadline'],
+  'model:effective':   ['valid time', 'validity', 'as of', 'effectivity'],
+  'model:commitment':  ['obligation', 'timeout', 'auto-cancel', 'dunning', 'scheduled transition'],
   'model:transitions': ['workflow', 'status'],
   'model:gate':        ['permission', 'rbac', 'role', 'authorization'],
   'model:allow':       ['rls', 'row level security'],

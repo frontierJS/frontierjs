@@ -1,5 +1,284 @@
 # Changes — example
 
+## 2026-09-25 — `perShopAuth` reads `requestMeta()?.caller` (`FJS-D392`)
+
+Junction renamed `ctx.client` to `ctx.caller`; this follows it.
+
+## 2026-09-25 — `verify:mcp` grades `find`'s filters, and a guarded name per model
+
+Four rows: `orders_find` names `status` with its values, a plain and an operator
+filter both pass the SDK's validator, and a mistyped `limit` is refused naming
+the field. The protected-column search matched by NAME across every tool, which
+read `providerRef` — `@guarded` on `PaymentMethod`, an ordinary column on
+`Payment` — as a leak the moment `payments_find` listed its columns. A name open
+on some other model is graded by a pair now: absent from `paymentMethods_find`'s
+filters, present in `payments_find`'s.
+
+## 2026-09-25 — the basket's hold countdown ticks
+
+[`FJS-1062`](../ISSUES.md#fjs-1062). The timer was `const tick = setInterval(() => { now = Date.now() })`.
+The callback writes `now`, which made the `const` a lazy derivation, and `tick` was read only in
+`$.onDestroy` — so the interval started at teardown and was cleared on the same line, and the countdown
+drew the minute it was rendered with and never moved. It is a `var`. `verify:cart` now reads the countdown
+twice with nothing else moving, and fails with the `const` put back.
+
+## 2026-09-23 — an invoice reminds its customer before it falls due
+
+Step 7 of `IDEAS/ontology.md` § 6 ([`FJS-D370`](../DECISIONS.md#fjs-d370)).
+`Invoice.reminded` is a Boolean machine beside `status`, `remind: false -> true
+@system`, owed three days before `dueOn` while the invoice is `issued`. The
+`Invoice.remind` hook in `api/src/core/commitments.ts` enqueues
+`invoice-remind` on the move's transaction, and that job sends
+`InvoiceDue.notification.ts` to the customer by email, skipping an invoice paid
+or voided since. The lead time is a literal, not a stamped column: it is the
+shop's habit rather than a term the customer was given. The invoice page shows
+the date as an info alert.
+
+Building it found [`FJS-1315`](../ISSUES.md#fjs-1315): litestone refused a
+second `@@transitions` on one model.
+
+Proof: `verify:jobs` 19, with a new section that plants due, paid and not-yet
+invoices, sweeps, and reads the mail sink; removing the hook turns both of its
+assertions red. `verify` 70, where `invoice.owedDates` now includes the
+reminder and turns red if the page hides it. `verify:billing` 40, with the
+reminder owed on the third day before and not the fourth. `verify:collect` 49,
+`verify:account` 44, `verify:proration` 35, `verify:notify` 11, `verify:ui` 35.
+Needs `bun run reset`: `invoice` gained a column.
+
+## 2026-09-23 — a renewal is a period closing
+
+Step 6 of `IDEAS/ontology.md` § 6 ([`FJS-D367`](../DECISIONS.md#fjs-d367)).
+`SubscriptionPeriod` is one cycle — `startsOn`, `endsOn`, `open -> closed` —
+with `@@commitment(close, on: endsOn)`, and junction's `commitments()` closes it
+at its end. The hook in `api/src/core/commitments.ts` runs in that close's
+transaction ([`FJS-D368`](../DECISIONS.md#fjs-d368)): `renewPeriod` issues the
+next invoice and opens the next period, cancels a subscription flagged
+`cancelAtPeriodEnd` instead, and does nothing after a subscription dunning
+already ended; the collection is dispatched after the commit.
+`subscriptions-renew` and `subscription-renew` are deleted, and with them the
+last `occurrenceKey` in renewal — the period's state is the once-ness, and
+`@@unique([subscriptionId], where: status == 'open')` refuses a second open
+period at the database.
+
+**`Subscription.currentPeriodStart`/`End` are `@from` the latest period**, so
+the window has one origin; every screen reads the same two fields. A
+subscription is started with `startSubscription` (the row and its first period
+in one transaction), and the console's *New subscription* opens the first period
+in its create's transaction — it had been refused for the two `@system` columns
+it could not send, and would otherwise have made a subscription that never
+renews. A move to a yearly plan ends the open period on the day and opens a year
+from there (`reanchorPeriod`), closed without the hook so the change is billed
+once.
+
+Proof: `verify:billing` 39, firing periods through junction's own
+`fireCommitment` with fixtures started 230 days back, so each renewal is due on
+the real clock — not opening the next period turns seven red.
+`verify:jobs` 17: a period planted to end yesterday is closed by the live
+sweep, its invoice issued and the new window read back over HTTP, and nothing
+more on a second sweep; with the hook removed from the app both go red.
+`verify:collect` 49 now crosses sweep → fire → close → collect → provider →
+paid. `verify:proration` 35, `verify:account` 44, `verify` 70, `verify:ui` 35.
+The shop's file needs `bun run reset`: the two columns left `subscription`.
+
+## 2026-09-23 — what the system owes, on screen
+
+Step 5 of `IDEAS/ontology.md` § 6. `abandon` left the order screen's buttons in
+step 3 because it is `@system`; it comes back as *If it is still unpaid, it is
+abandoned on Oct 5, 2026*, off `orders.commitments(order)`. The invoice screen
+says when its subscription lapses and is cancelled, reading that subscription
+as the commitment's target — so the second of two unpaid invoices does not
+claim a lapse the first already made — and says nothing until that read has
+answered. The subscription screen shows the soonest of each across its
+invoices, as tiles beside *Renews*. The sentence is each screen's; the date is
+derived. The invoice screen's *dunning counts from the oldest unpaid invoice*
+went with the job it described.
+
+Proof: `verify` 70, whose four new assertions compute the expected dates in
+node from the API's rows with plain day arithmetic and the from-states written
+out, never through the function the screens call. Corrupting the date in
+Sierra turns it red. `verify:ui` 35, `verify:billing` 38, `verify:jobs` 15.
+`verify:build` is refused by the offline shell budget at 911 kB against 899:
+this change is 1 kB of it, measured by building without it (910).
+
+## 2026-09-23 — dunning is two `@@commitment`s, and `recover` is billing's
+
+This is step 4 of `IDEAS/ontology.md` § 6. `Invoice` carries `graceDays` and
+`dunningDays` (`Int @unit(d) @immutable`), stamped by `issueInvoice` from
+`GRACE_DAYS` and `DUNNING_DAYS`. It declares:
+
+```
+@@commitment(subscription.lapse,  on: dueOn + graceDays,   while: status == 'issued')
+@@commitment(subscription.cancel, on: dueOn + dunningDays, while: status == 'issued')
+```
+
+`subscriptions-dun.job.ts` is gone. The shop's terms travel with each document,
+so changing a number moves no deadline already given. The daily 06:00 fire
+became `commitment-sweep`'s minute, and `commitments()` reads the shop's zone,
+because `dueOn` is a day.
+
+**`recover` moved first** ([`FJS-D363`](../../DECISIONS.md#fjs-d363)). It is a
+reaction and not a commitment, and now lives in `recoverIfClear(client,
+subscriptionId)` beside `unpaidInvoices`. `settleInvoice` calls it, and so does a
+new `voidInvoice`, which the `invoices.void` method goes through. The rule is *no
+issued invoice remains*. It runs on the caller's client: a staff settle
+recovered through `@@allow('update', auth().isStaff)` with nothing widened, and
+that is the condition the ruling carried.
+
+**Drives.**
+- `verify:billing` no longer runs a job. It checks the frozen terms, what `due()`
+  owes either side of each deadline, recovery on a settle and on a void, and a
+  subscription with one of two invoices paid staying `pastDue`: 38 assertions.
+- `verify:jobs` plants three subscriptions in the shop's file and runs the sweep
+  (lapsing, past the deadline, and a control), then settles and voids as staff
+  over HTTP: 15 assertions.
+
+**Pre-alpha: `bun run reset`.** The two columns are required, and an existing
+`db/shops/*.db` has invoices without them.
+
+## 2026-09-22 — an abandoned order is a `@@commitment`, not a job
+
+`Order` declares `abandon: pending -> cancelled @system` and
+`@@commitment(abandon, on: createdAt + 14d)`, and `app.ts` configures
+junction's `commitments()` after the queue. `abandoned-orders-sweep.job.ts` and
+`ABANDON_AFTER_DAYS` are gone, and the 03:00 fire is now a sweep every minute
+with each row moved at its own due time. This is step 3 of
+`IDEAS/ontology.md` § 6, the first app to use the feature.
+
+**`verify:jobs` no longer cancels every pending order.** The old section 6 ran
+the sweep with a zero-day horizon, which cancelled the seed's pending orders
+and then re-created them. It now places two orders, sets one's `createdAt` back
+fifteen days in the shop's file, runs `commitment-sweep`, and asserts that the
+aged order ends `cancelled` and its twin stays `pending`. 12 assertions pass.
+With `commitments()` removed, 3 fail.
+
+**The orders screens leave `@system` moves off the buttons.** Before that,
+`abandon` showed as a disabled button on every pending order, and there is no
+standing at which it could be pressed. `verify` (66) and `verify:ui` (35) pass,
+and each fails on the move lists when the filter is removed.
+
+**Adopting it found two things.** The plugin-absent refusal did not grade this
+app, because it asked only `app.db`. It now also asks the tenant registry's
+schema (`packages/junction/CHANGES.md`), and this app refuses to boot without
+the plugin. The audit row for an abandon also did not name the move
+([`FJS-1294`](../ISSUES.md#fjs-1294)). The trail now carries `transition`, and
+`verify:jobs` reads it back from `db/audit/auditLogs.jsonl` after the sweep as
+`commitment.trailNamesTheMove`, 13 assertions.
+
+## 2026-09-22 — `bun run stop` stops only this app's servers
+
+It was `pkill -f 'bun.*api/inde[x].ts'`, which matches any bun process whose command line ends in
+`api/index.ts` — another project's dev API, another session's drive — so stopping this app stopped
+theirs ([`FJS-1285`](../ISSUES.md#fjs-1285)). It now kills a matching process only if its working
+directory, read with `lsof`, is this app's root. Found in basecamp, which had the same line.
+
+## 2026-09-22 — `verify:automations` runs beside another project's dev server
+
+It started its own vite on a hard-coded 8010 and refused to run while another
+project held that port — the ninth drive of that shape, missed by the morning's
+eight because its Chrome port was already 0. It now reads `UI_PORT` (7010) and
+passes `API_PORT`/`UI_PORT` to both servers, as `verify:stock` does; the API
+stays on 8110 for [`FJS-1271`](../ISSUES.md#fjs-1271). 63 assertions pass.
+
+## 2026-09-22 — prices, pay and tax bands declare their windows
+
+`PlanVersion`, `PayWindow` and `PayRate` declare `@@effective(from:
+effectiveFrom, to: effectiveTo)` — ASKED, which is what adopting them decided
+([`FJS-D352`](../DECISIONS.md#fjs-d352)). Imposed, it would have broken this app
+in four places and said nothing: `subscription-renew` and billing's two
+proration reads follow a pointer to the version a subscriber was SOLD at, which
+is usually a closed one, and the subscription screen reads it through
+`planVersions.record(id)`. Asked, a read stating no moment gets every row, so
+none of them changed.
+
+**`coveringAt` is gone.** It was *the one place the half-open rule is written*,
+exported so a second reader could not spell the interval another way; the
+schema is that place now, and `payAsAt`, `payAsAtMany`, `ratesAsAt` and
+`allRatesAsAt` state their day as `asOf`. `verify:employment`'s
+`interval.isSpelledOnceAndExported` became two assertions about the declaration
+— a read stating no day is the history, one stating a day is the window on it.
+The drive already read Dana's whole window history with no day and asserted it
+had two rows, which an imposed window would have failed.
+
+**`Discount` does not declare one, measured.** Both of its reads want the row
+out of its window, because *not valid yet* and *has expired* are different
+sentences to a shopper and a filter can produce neither. `discountProblem` keeps
+them.
+
+The DDL is unchanged: three declarations over columns the models already had.
+
+## 2026-09-22 — every drive lets Chrome pick its own debugging port
+
+Seven more drives were pinned to a fixed one — `verify-cart`, `verify-catalog`,
+`verify-widget`, `verify-money` and `verify-offline` on 9222, `verify-users` and
+`verify-shell` on 9223 with each other. Only the first Chrome binds a fixed
+port; every later one starts, fails to bind, and `GET /json/version` is answered
+by the browser already there, so the drive attaches to somebody else's session
+and grades their screen. It is `FJS-740` one layer over, and it can pass — two
+runs that happen to agree are green. All seven now pass
+`--remote-debugging-port=0`, read the port back off Chrome's own stderr, and run
+in a `mkdtempSync` profile removed on exit, so neither the port nor a sign-in
+outlives the run ([`FJS-1265`](../ISSUES.md#fjs-1265), closed).
+
+**The dev server moved with them, and the API deliberately did not.** Seven
+drives start their own pair and take `UI_PORT` at 7010, because the case that
+blocks them is another project's vite on 8010 — there is no earlier run to stop.
+The API stays on 8110: a `File` ref stores the `publicBase` it was uploaded
+against, so moving it left every seeded photograph pointing at a port nothing
+was on, which is [`FJS-1271`](../ISSUES.md#fjs-1271) and was measured here as
+`ECONNREFUSED 127.0.0.1:8110` inside a browser whose API answered on 7110.
+
+Two more fell out of the move and both were the drive's own to fix.
+`verify:users` now passes `SHOP_CONSOLE_URL`, since the password-reset link is
+minted by the API and points at the CONSOLE. `verify:widget` rewrites
+`data-shop` in the host page the way it already rewrote the widget origin — the
+committed fixture names the dev origins so it can be opened by hand, and
+Checkout navigates to whatever it says.
+
+Proved by running all eight: cart 32, catalog 39, widget 40, money 107,
+offline 55, users 98, stock 41, shell 30 — the last against a scratch baseline
+lent for the run, because its build is blocked by
+[`FJS-1272`](../ISSUES.md#fjs-1272).
+
+## 2026-09-22 — the hold expiry is a declaration
+
+`StockReservation` declares `@@expires(expiresAt)`, and the four
+hand-written `expiresAt: { gt: nowIso() }` clauses in
+`api/src/domain/shop/inventory.ts` are gone with the `nowIso` helper that fed
+them.
+
+**The two reads that deliberately did NOT filter now say so.** `hold()` revives
+the shopper's own dead row on purpose and `release()` purges the lot; both state
+`withExpired: true`, where before an unfiltered read beside three filtered ones
+was indistinguishable from one that had forgotten. `releaseExpired` takes
+`onlyExpired` and an optional `asOf` in place of a `before` cutoff — which is
+now the only way to spell it, since a hard delete applies the window.
+
+The DDL is unchanged: the declaration names a column the model already had.
+
+**`verify:stock` gained three fixes of its own, all found by running it.** It
+takes its ports from `API_PORT`/`UI_PORT` with the 8xxx literals as defaults and
+runs on the TEST tier, so it no longer refuses to start because something else
+holds the dev tier. It takes a `mkdtempSync` profile, so a run that dies after
+signing in does not leave the next one signed in. And it asks Chrome to PICK the
+CDP port rather than pinning 9222: on the fixed port a second Chrome cannot
+bind, `/json/version` is answered by whichever browser got there first, and the
+drive attached to another run's session — reading *a signed-out visitor is told
+it is not for them* as false against a header saying **Sign out**, then dying
+three assertions later on a button that was not there ([`FJS-1265`](../ISSUES.md#fjs-1265)).
+
+## 2026-09-22 — three relationships say whether they repeat
+
+`@@relator` (`FJS-D350`). `CartLine` and `StockReservation` read `once` — the
+comments above both already said so in prose, and now the declaration is what
+emits the key. `Subscription` reads `many`, which is the one that had to be said
+out loud: the same customer may hold the same plan version twice — churn, then
+come back — so there is no key over the pair, and a `once` there would refuse
+the returning customer at the database.
+
+`StockReservation` gets no reverse index, and that is correct: its
+`@@index([variantId, expiresAt])` already leads with the column, and an index is
+prefix-matched. The emitted SQL is byte-identical to before.
+
 ## 2026-09-21 — a job file is named for its subject
 
 **Every other kind-suffixed file in this tree is named for its noun** — `orders.service.ts`,

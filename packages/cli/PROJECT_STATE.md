@@ -312,7 +312,7 @@ DEV_CAPTAIN, CAPROVER_URL, CAPROVER_TOKEN
 
 ### Port schema
 
-`[ENV][CATEGORY][PROJECT][SERVICE]` 4-digit structure. ENV: 7=test, 8=dev, 9=prod. Global tooling reserves `8500`–`8509` whole: `8500` (gui), `8501` (project map, served), `8502` (studio), `8503` (junction devtools). Dynamic project ports assigned at runtime via `~/.fli/sessions.lock` with O_EXCL file lock for atomicity.
+`[ENV][CATEGORY][PROJECT][SERVICE]` 4-digit structure. ENV: 7=test, 8=dev, 9=prod. Global tooling reserves `8500`–`8509` whole: `8500` (gui), `8501` (project map, served), `8502` (studio), `8503` (junction devtools). An app `PROJECTS` does not name is project 0, and `fli dev` gives it a service digit of its own — remembered per app root in `~/.fli/sessions.lock`, under an O_EXCL guard.
 
 ### Startup cost
 

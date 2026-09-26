@@ -6,7 +6,7 @@
 // has to re-derive the grouping every time. This derives it once.
 //
 // Two axes, both read off the path alone:
-//   ZONE — packages/<pkg>, example/<surface>, website, scripts, IDEAS, root
+//   ZONE — packages/<pkg>, a surface (api, web, example/web …), a top folder, root
 //   KIND — what the file IS to that zone (schema, snapshot, test, record, …)
 //
 // Pure: takes the three git readings as strings, returns a model. The command
@@ -14,27 +14,25 @@
 
 // ─── zones ────────────────────────────────────────────────────────────────────
 
-// Order matters — first match wins, and `example/db` must beat `example`.
-const ZONE_RULES = [
-  { re: /^packages\/([^/]+)\//,        name: m => m[1],                 group: 'packages', prefix: m => `packages/${m[1]}/` },
-  { re: /^example\/([^/]+)\//,         name: m => `example/${m[1]}`,    group: 'example'  },
-  { re: /^example\//,                  name: () => 'example',           group: 'example'  },
-  { re: /^website\//,                  name: () => 'website',           group: 'repo'     },
-  { re: /^scripts\//,                  name: () => 'scripts',           group: 'repo'     },
-  { re: /^IDEAS\//,                    name: () => 'IDEAS',             group: 'repo'     },
-  { re: /^\.github\//,                 name: () => '.github',           group: 'repo'     },
-  { re: /^\.claude\//,                 name: () => '.claude',           group: 'repo'     },
-  { re: /^docs\//,                     name: () => 'docs',              group: 'repo'     },
-]
+// The directories Invariant 3 names beside `db/`. A place is a SURFACE when one
+// of these is its first segment (an app checked out on its own) or its second
+// (an app inside a workspace, `example/web`), so one reading covers both trees
+// and neither needs to be told which it is in. `packages/` is held whole —
+// basecamp's `web/` is one package's, and splitting it would scatter auth,
+// litestone and six others into `<pkg>/db` rows.
+const SURFACES = new Set(['db', 'api', 'web', 'site', 'widgets', 'extension', 'desktop', 'cli', 'tests'])
 
 export const zoneOf = (path) => {
-  for (const rule of ZONE_RULES) {
-    const m = rule.re.exec(path)
-    // A place's NAME and its path prefix are not the same string — `litestone`
-    // lives at `packages/litestone/`. Trimming by the name alone left every
-    // package row printing the prefix it had just been grouped under.
-    if (m) return { zone: rule.name(m), group: rule.group, prefix: (rule.prefix ?? (() => `${rule.name(m)}/`))(m) }
-  }
+  // An untracked directory arrives as `web/`. Counted with its trailing slash it
+  // becomes a place of its own whose one file has an empty name.
+  const seg = path.replace(/\/$/, '').split('/')
+  // A place's NAME and its path prefix are not the same string — `litestone`
+  // lives at `packages/litestone/`. Trimming by the name alone left every
+  // package row printing the prefix it had just been grouped under.
+  if (seg[0] === 'packages' && seg.length > 2) return { zone: seg[1], group: 'packages', prefix: `packages/${seg[1]}/` }
+  if (seg.length > 1 && SURFACES.has(seg[0])) return { zone: seg[0], group: 'surface', prefix: `${seg[0]}/` }
+  if (seg.length > 2 && SURFACES.has(seg[1])) return { zone: `${seg[0]}/${seg[1]}`, group: 'surface', prefix: `${seg[0]}/${seg[1]}/` }
+  if (seg.length > 1) return { zone: seg[0], group: 'repo', prefix: `${seg[0]}/` }
   return { zone: '(root)', group: 'repo', prefix: '' }
 }
 

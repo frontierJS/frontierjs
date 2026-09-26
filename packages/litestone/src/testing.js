@@ -227,7 +227,7 @@ async function _buildEnv(schemaText, opts = {}) {
 const READ_METHODS = new Set([
   'aggregate', 'count', 'exists', 'findFirst', 'findFirstOrThrow', 'findMany',
   'findManyAndCount', 'findManyCursor', 'findUnique', 'findUniqueOrThrow',
-  'groupBy', 'query', 'search', 'transitions',
+  'groupBy', 'query', 'search', 'transitions', 'due',
 ])
 
 // `$` members that answer a question. `$rawDbs` hands out the raw WRITE
@@ -1372,8 +1372,13 @@ export async function createTestEnv(opts = {}) {
           // schema that dropped the uniqueness of a session token migrated
           // cleanly and passed every check in the package, which is a security
           // property rather than a schema nicety.
-          const hasUnique = model.fields.some(f => f.attributes.some(a => a.kind === 'unique'))
-          if (!hasUnique && !cases.invalid.length && !cases.boundary.length && !cases.uncheckable?.length) continue
+          const hasUnique  = model.fields.some(f => f.attributes.some(a => a.kind === 'unique'))
+          // `@@relator` is on the MODEL and is exactly `FJS-602`'s argument a
+          // level up: a join table carries foreign keys and a quantity and no
+          // VALUE validator at all, so it generates no cases, so the guard
+          // skipped it whole — which is every relator in this workspace.
+          const hasRelator = model.attributes.some(a => a.kind === 'relator')
+          if (!hasUnique && !hasRelator && !cases.invalid.length && !cases.boundary.length && !cases.uncheckable?.length) continue
 
           // A boundary the generator could not build is REPORTED, never
           // dropped. It is not a defect in the schema and it does not claim to
@@ -1498,6 +1503,93 @@ export async function createTestEnv(opts = {}) {
             // `Product.barcode`, whose own doc comment says exactly this.
             if (first[field.name] === null || first[field.name] === undefined) continue
             await attempt({ field: field.name, value: first[field.name], rule: '@unique' }, 'rejected')
+          }
+
+          // ── @@relator — may the same pair be written twice ───────────────
+          //
+          // Same shape as the `@unique` probe above and for the same reason:
+          // the failing value cannot be generated, it has to be taken off a row
+          // that already exists. What differs is that the EXPECTED answer is
+          // the declaration — `once` refuses the second, `many` takes it — so
+          // this is the only probe here whose verdict flips with the word.
+          //
+          // `many: <column>` is TWO cases, and the second is what makes the
+          // check worth having: the identical tuple is refused, and the same
+          // pair under a different discriminator is ACCEPTED. Without the
+          // second, tightening `many: replicaIndex` to `once` looks correct
+          // from here — which is the survivor this exists to kill, and the one
+          // that quietly costs an app the ability to run two replicas.
+          const relator = model.attributes.find(a => a.kind === 'relator')
+          if (relator) {
+            const cols = relator.discriminator ? [...relator.fields, relator.discriminator] : relator.fields
+            const rule = `@@relator(${relator.repeat}${relator.discriminator ? `: ${relator.discriminator}` : ''})`
+
+            let base
+            try { base = await factory.createOne() }
+            catch (err) {
+              mismatches.push({
+                model: model.name, field: cols.join(' + '), rule, value: null,
+                expect: 'rejected', got: 'error', thrown: err.message,
+                message: `${model.name} — ${rule} could not be checked, no first row: ${err.message}`,
+              })
+              base = null
+            }
+
+            // A write of the SAME tuple, reported against what the word says.
+            const writeAgain = async (overrides, expected, what) => {
+              let thrown = null
+              try { await factory.createOne(overrides) } catch (err) { thrown = err }
+              const refused = thrown !== null
+              if (refused === (expected === 'rejected')) return
+              mismatches.push({
+                model: model.name, field: cols.join(' + '), rule, value: null,
+                expect: expected, got: refused ? 'rejected' : 'accepted',
+                thrown: thrown?.message ?? null,
+                message: expected === 'rejected'
+                  ? `${model.name} — ${rule} says ${what}, and a second one was written`
+                  : `${model.name} — ${rule} says ${what}, and it was refused: ${thrown?.message}`,
+              })
+            }
+
+            if (base) {
+              const same = Object.fromEntries(cols.map(c => [c, base[c]]))
+              // A relatum that came back null means the factory could not build
+              // the row this probe needs. Reported rather than read as a pass,
+              // on the same argument as `uncheckable` above.
+              const missing = cols.filter(c => same[c] === null || same[c] === undefined)
+              if (missing.length) {
+                mismatches.push({
+                  model: model.name, field: missing.join(' + '), rule, value: null,
+                  expect: 'accepted', got: 'uncheckable', thrown: null,
+                  message: `${model.name} — ${rule} could not be checked: the first row left ${missing.join(', ')} unset`,
+                })
+              } else {
+                const keyed = relator.repeat === 'once' || Boolean(relator.discriminator)
+                await writeAgain(same, keyed ? 'rejected' : 'accepted',
+                  keyed ? 'this exact combination happens once' : 'this pair may repeat')
+
+                if (relator.discriminator) {
+                  const d     = relator.discriminator
+                  const field = model.fields.find(f => f.name === d)
+                  const was   = base[d]
+                  const next  = typeof was === 'number' ? was + 1
+                              : typeof was === 'string' ? `${was}-2`
+                              : typeof was === 'bigint' ? was + 1n
+                              : undefined
+                  if (next === undefined) {
+                    mismatches.push({
+                      model: model.name, field: d, rule, value: was,
+                      expect: 'accepted', got: 'uncheckable', thrown: null,
+                      message: `${model.name} — ${rule} could not be checked on a second occurrence: ` +
+                               `no second value for ${d} (${field?.type?.name ?? typeof was})`,
+                    })
+                  } else {
+                    await writeAgain({ ...same, [d]: next }, 'accepted',
+                      `a different ${d} is a different one`)
+                  }
+                }
+              }
+            }
           }
 
           for (const c of cases.invalid)  await attempt(c, 'rejected')

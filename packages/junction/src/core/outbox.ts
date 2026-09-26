@@ -191,7 +191,7 @@ interface TenantRegistryLike {
 }
 
 /** A tenant whose database does not carry the model. Not a result. */
-const SKIPPED = Symbol('outbox.skipped')
+const SKIPPED = Symbol('database.skipped')
 
 /**
  * Refuse the shape that cannot be resolved: rows are written to the tenant's
@@ -216,41 +216,55 @@ function assertOneOutboxHome(app: App): void {
  * Run `fn` against every database this app's outbox rows can be in.
  *
  * An app with no tenancy is one call and `null`. An app with a tenant registry
- * is one call per tenant — the honest cost of having put the rows there — and
- * the walk goes through `registry.query`, which opens each client COLD.
- *
- * That word is the whole of this function. `registry.get(id)` is the request
- * path's verb and it PROMOTES, so walking the registry with it makes the walk
- * the pool's working set: measured against a real registry, one idle pass over
- * 20 tenants evicted the tenant currently being served (`FJS-778`). A relay's
- * timer is not a caller.
+ * is one call per tenant — the honest cost of having put the rows there.
  */
 async function forEachOutboxDatabase<T>(
   app: App,
   fn:  (db: OutboxClient, tenant: string | null) => Promise<T>,
 ): Promise<T[]> {
   assertOneOutboxHome(app)
+  return forEachAppDatabase(app, db => hasOutboxModel(db as OutboxClient),
+    (db, tenant) => fn(db as OutboxClient, tenant))
+}
 
-  const db       = app.db as OutboxClient | undefined
+/**
+ * Run `fn` against every database this app can hold rows in that `has` accepts
+ * — `app.db` alone, or one call per tenant off the registry. Shared by every
+ * timer that sweeps rows (the outbox relay, the commitments sweep), because
+ * the walk has one right answer and it is not the obvious one.
+ *
+ * It goes through `registry.query`, which opens each client COLD. That word is
+ * the whole of this function. `registry.get(id)` is the request path's verb and
+ * it PROMOTES, so walking the registry with it makes the walk the pool's
+ * working set: measured against a real registry, one idle pass over 20 tenants
+ * evicted the tenant currently being served (`FJS-778`). A timer is not a
+ * caller.
+ */
+export async function forEachAppDatabase<T>(
+  app: App,
+  has: (db: unknown) => boolean,
+  fn:  (db: unknown, tenant: string | null) => Promise<T>,
+): Promise<T[]> {
+  const db       = app.db as unknown
   const registry = (app as { tenants?: TenantRegistryLike }).tenants
 
-  if (!registry) return db && hasOutboxModel(db) ? [await fn(db, null)] : []
+  if (!registry) return db && has(db) ? [await fn(db, null)] : []
 
   if (typeof registry.query !== 'function') {
     const out: T[] = []
     for (const id of registry.list()) {
-      const client = await registry.get(id) as OutboxClient
-      if (hasOutboxModel(client)) out.push(await fn(client, id))
+      const client = await registry.get(id)
+      if (has(client)) out.push(await fn(client, id))
     }
     return out
   }
 
   // `query` captures a per-tenant error rather than throwing, which would turn
-  // a database this pass could not reach into a clean pass over an empty queue
+  // a database this pass could not reach into a clean pass over an empty set
   // — `FJS-365`'s failure wearing a different face. The first one is rethrown,
-  // so the relay's own catch logs it as it did before.
+  // so the caller's own catch logs it.
   const results = await registry.query(async (client, id) =>
-    hasOutboxModel(client as OutboxClient) ? await fn(client as OutboxClient, id) : SKIPPED)
+    has(client) ? await fn(client, id) : SKIPPED)
 
   const failed = results.find(r => r.error)
   if (failed) throw failed.error

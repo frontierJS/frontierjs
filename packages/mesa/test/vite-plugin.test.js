@@ -174,8 +174,8 @@ describe('compiler warnings', () => {
     // the served module. The template emitter's warnings used to reach neither
     // — the drain ran before the template was built (FJS-845).
     expect(warnings).toHaveLength(1)
-    expect(warnings[0]).toContain('<mesa:boundary> has no async-derived')
-    expect(code).toContain('// ⚠ Mesa: <mesa:boundary> has no async-derived')
+    expect(warnings[0]).toContain('<mesa:boundary> reads no async value')
+    expect(code).toContain('// ⚠ Mesa: <mesa:boundary> reads no async value')
     parses(code)
   })
 

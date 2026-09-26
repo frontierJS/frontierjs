@@ -24,8 +24,8 @@ title: Invoice
   // Every money column is `@system @immutable` and so are the number, the two
   // period ends, the issue date and the due date. `asSystem()` does not drop
   // `@immutable` (`FJS-D162`), which matters more here than anywhere else in
-  // the schema: the caller that writes invoices IS the system, because the
-  // renewal job has no session. The correction is a credit note beside the row.
+  // the schema: the caller that writes invoices IS the system, because a
+  // renewal has no session. The correction is a credit note beside the row.
   import { invoices } from '@/resources/Invoice.mesa'
   import { subscriptions } from '@/resources/Subscription.mesa'
   import { session } from '@/session.js'
@@ -76,7 +76,45 @@ title: Invoice
   }
   boot()
   $: page.params.id, () => boot()
-  $.onDestroy(() => { unwatch?.(); row?.release() })
+  $.onDestroy(() => { unwatch?.(); row?.release(); unwatchSub?.(); subRow?.release() })
+
+  // The subscription this invoice bills, watched, because its dates are the
+  // subscription's moves (`subscription.lapse`, `subscription.cancel`) and a
+  // move already made is not owed again: the second of two unpaid invoices
+  // does not lapse a subscription the first one already lapsed. Nothing is
+  // said until the read has ANSWERED — a date shown and then withdrawn is a
+  // claim the screen made while it did not know (`FJS-632`'s shape). A read
+  // refused is an answer too, and leaves the target ungraded.
+  let sub         = null
+  let subRow      = null
+  let unwatchSub  = null
+  let subAnswered = false
+
+  function watchSub(id) {
+    if (id == null) {
+      unwatchSub?.(); subRow?.release(); unwatchSub = subRow = null; sub = null
+      subAnswered = true
+      return
+    }
+    if (subRow && String(subRow.id) === String(id)) return
+    unwatchSub?.(); subRow?.release()
+    subAnswered = false
+    subRow = subscriptions.record(id)
+    unwatchSub = subRow.subscribe(v => { sub = v })
+    subRow.ready.then(() => { subAnswered = true }, () => { subAnswered = true })
+  }
+  $: invoice, () => watchSub(invoice?.subscriptionId ?? null)
+
+  // What the system owes this invoice and its subscription, and when — the
+  // reminder and the dunning the schema declares on `Invoice`, derived off this
+  // row's own terms.
+  $: owed = !invoice || !subAnswered ? []
+          : invoices.commitments(invoice, invoice.subscriptionId == null ? { target: null } : sub ? { target: sub } : {})
+  const OWED = {
+    remind:                'The customer is emailed a reminder on',
+    'subscription.lapse':  'Unpaid past its grace, so the subscription lapses on',
+    'subscription.cancel': 'Still unpaid at its deadline, so the subscription is cancelled on',
+  }
 
   // What may be asked for on this row, off the schema. `settle` is `@system` —
   // a caller asking to be marked paid is not a request a shop can honor — so
@@ -152,11 +190,14 @@ title: Invoice
   </div>
 
   {#if overdue}
-    <Alert tone="danger" id="id-overdue">
-      Past its terms. Dunning counts the days from <code>dueOn</code> on the
-      oldest unpaid invoice, so this row is the clock.
-    </Alert>
+    <Alert tone="danger" id="id-overdue">Past its terms.</Alert>
   {/if}
+
+  {#each owed as c}
+    <Alert tone={c.name === 'remind' ? 'info' : 'warning'} data-owed={c.name} data-due={c.dueAt}>
+      {OWED[c.name] ?? c.transition + ' on'} <strong>{day(c.dueAt)}</strong>.
+    </Alert>
+  {/each}
 
   <p class="text-muted">
     For {span(invoice.periodStart, invoice.periodEnd)}

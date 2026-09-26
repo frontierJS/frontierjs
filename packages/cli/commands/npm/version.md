@@ -20,10 +20,10 @@ flags:
     type: string
     description: Prerelease identifier (e.g. alpha, beta, rc)
     defaultValue: ''
-  no-git:
+  git:
     type: boolean
     description: Skip git commit and tag
-    defaultValue: false
+    defaultValue: true
 ---
 
 <script>
@@ -44,7 +44,7 @@ creates a git commit and tag — pass `--no-git` to skip that.
 const root    = context.paths.root
 const before  = getVersion(root)
 const preid   = flag.preid ? `--preid=${flag.preid}` : ''
-const gitFlag = flag['no-git'] ? '--no-git-tag-version' : ''
+const gitFlag = flag.git ? '' : '--no-git-tag-version'
 const cmd     = `npm version ${arg.bump} ${preid} ${gitFlag} --prefix ${root}`.trim().replace(/\s+/g, ' ')
 
 log.info(`Current version: ${before}`)
@@ -58,5 +58,5 @@ if (flag.dry) {
 context.exec({ command: cmd })
 const after = getVersion(root)
 log.success(`${before} → ${after}`)
-if (!flag['no-git']) log.info('Git commit and tag created')
+if (flag.git) log.info('Git commit and tag created')
 ```

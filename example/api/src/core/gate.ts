@@ -57,8 +57,8 @@ export function shopGateLevel(user: Gradable): number {
  * The principal the shop is when it acts on its own behalf.
  *
  * Passed once, as `createApp({ system: SYSTEM })`, and reached by exactly one
- * path: deferred work that NOBODY asked for. The nightly abandoned-order sweep
- * is the only such work here — a timer fired it, so there is no caller to run
+ * path: deferred work that NOBODY asked for. An order abandoned by its
+ * `@@commitment` is that work — a clock fired it, so there is no caller to run
  * as, and no caller is STRANGER(0), refused by Order's own `@@gate` exactly as
  * an anonymous browser would be.
  *
@@ -83,9 +83,9 @@ export const SYSTEM = {
   // The shop acting on its own behalf is one of ours, and this is not a
   // formality. `Order` and `Customer` carry `@@allow('read', auth().isStaff)`,
   // and a job runs through the caller's SCOPED client — not `asSystem()`, so
-  // that the audit actor and the announcement survive. Without this the nightly
-  // sweep grades SYSADMIN(7), clears every gate, reads NO ROWS because it
-  // satisfies neither policy, and cancels nothing. No error, no refusal: a
+  // that the audit actor and the announcement survive. Without this a cron job
+  // grades SYSADMIN(7), clears every gate, reads NO ROWS because it satisfies
+  // neither policy, and changes nothing. No error, no refusal: a
   // background job that quietly stops working, which is the failure a row
   // policy makes and a gate never does.
   isStaff:    true,

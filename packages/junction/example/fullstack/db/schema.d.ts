@@ -121,7 +121,7 @@ export interface CursorResult<T> {
 // ── Table client interface ───────────────────────────────────────────────────
 
 export interface TableClient<TRow, TCreate, TUpdate, TWhere> {
-  findMany(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: any; select?: any; withDeleted?: boolean; onlyDeleted?: boolean }): Promise<TRow[]>
+  findMany(args?: { where?: TWhere; orderBy?: any; limit?: number; offset?: number; include?: any; select?: any; withDeleted?: boolean; onlyDeleted?: boolean; asOf?: string | Date; withExpired?: boolean; onlyExpired?: boolean }): Promise<TRow[]>
   findFirst(args?: { where?: TWhere; orderBy?: any; include?: any; select?: any }): Promise<TRow | null>
   findUnique(args: { where: TWhere; include?: any; select?: any }): Promise<TRow | null>
   findFirstOrThrow(args?: { where?: TWhere }): Promise<TRow>
@@ -152,20 +152,24 @@ export interface TableClient<TRow, TCreate, TUpdate, TWhere> {
   query(args?: Record<string, unknown>): Promise<any>
   /** @@transitions — [] on a model that declares none. */
   transitions(idOrRow: TRow | string | number): Promise<TransitionOption[]>
+  /** @@commitment — the rows owing a declared transition by `by` (the client's clock unless stated). */
+  due(args?: { by?: Date | string; timeZone?: string; transition?: string; where?: TWhere }): Promise<Array<{ transition: string; id: any; dueAt: string }>>
 }
 
 // ── onQuery event ────────────────────────────────────────────────────────────
 
 export interface QueryEvent {
   model:     string
-  operation: 'findMany' | 'findFirst' | 'findUnique' | 'findManyCursor' | 'count' | 'search' | 'create' | 'createMany' | 'update' | 'updateMany' | 'upsertMany' | 'remove' | 'removeMany' | 'restore' | 'delete' | 'deleteMany'
+  operation: 'aggregate' | 'count' | 'create' | 'createMany' | 'delete' | 'deleteMany' | 'exists' | 'findFirst' | 'findMany' | 'findManyCursor' | 'findUnique' | 'groupBy' | 'include' | 'include:count' | 'remove' | 'removeMany' | 'restore' | 'search' | 'update' | 'updateMany' | 'upsert' | 'upsertMany'
   database:  string
   actorId:   string | number | null
   sql:       string
   params:    unknown[]
   duration:  number
   rowCount:  number
-  args:      Record<string, unknown>
+  // The call's own arguments. Absent on include/include:count, whose
+  // arguments are the parent read's.
+  args?:     Record<string, unknown>
 }
 
 // ── write event ($tapEvents / onEvent) ───────────────────────────────────────
@@ -196,6 +200,9 @@ export interface LitestoneClient {
   // flavor of client answers, because it is a fact about the schema.
   $checkWhere(accessor: string, where: Record<string, unknown>): { key: string; suggestion?: string; allowed?: string[] }[]
   $checkOrderBy(accessor: string, orderBy: unknown): { key: string; reason: string; suggestion?: string; sortable?: string[]; message?: string }[]
+  // Which columns must never be written down in plain text — asked for the
+  // same reason, by an application keeping a trail of its own.
+  $protectedFields(accessor: string): Record<string, 'guarded' | 'encrypted' | 'hashed'>
 
   // Transactions
   $transaction<T>(fn: (tx: LitestoneClient) => Promise<T>): Promise<T>
@@ -206,7 +213,12 @@ export interface LitestoneClient {
   // Query tap (temporary capture)
   $tapQuery(fn: (event: QueryEvent) => void): () => void
 
-  // Write-event tap — onEvent's post-construction half
+  // Write-event tap — onEvent's post-construction half. Many subscribers;
+  // each is an OBSERVER: dispatched after the write's transaction commits,
+  // deferred, and a throw is swallowed rather than failing the write.
+  // At-most-once — a crash between the commit and the dispatch loses the
+  // event with nothing recorded that it was owed, so work that may not be
+  // lost belongs in a durable mechanism and not here (FJS-D247).
   $tapEvents(fn: (event: WriteEvent) => void): () => void
 
   // Utilities
@@ -225,6 +237,10 @@ export interface LitestoneClient {
   readonly $attached:   string[]
   readonly $rawDbs:     Record<string, unknown>
   readonly $walStatus:  Record<string, unknown>
+  /** Is a transaction open on this connection right now? */
+  readonly $inTransaction: boolean
+  /** The clock this client reads and writes: the now option, else the wall clock. A deadline is minted from it. */
+  $now(): Date
 }
 
 // ── createClient ─────────────────────────────────────────────────────────────

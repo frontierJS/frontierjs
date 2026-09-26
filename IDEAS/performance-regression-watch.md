@@ -9,8 +9,9 @@ dated: 2026-09-13
 **Status: PARTIAL.** The drift below was measured 2026-08-18 on x64 / bun against
 `4f46e5b` and is reproducible by §Method. The three-tier shape in §What a performance
 claim is was added 2026-09-12 from the prior art in §What the field does, ahead of alpha.
-Order (1) was built 2026-09-13 and §What Order (1) found is its result; the tiers,
-the runner and the phase are not built.
+Order (1) was built 2026-09-13 and §What Order (1) found is its result. Mesa's slice
+of the tiers was built 2026-09-24 (§Mesa's slice); the shared runner and the phase are
+not built.
 
 `packages/litestone/bench/audit-bench.mjs` exists, covers eleven cases, and is run by
 hand. It has been run twice: at the audit that produced it (`docs/PERFORMANCE_AUDIT.md`,
@@ -78,10 +79,10 @@ of access control was unmeasured — [FJS-621](../ISSUES.md#fjs-621), closed 202
 §What Order (1) found.
 
 **Outside litestone there is nothing at all.** Junction, sierra and css carry no bench;
-`packages/mesa/mesa-bench` is a js-framework-benchmark harness excluded from CI by
-name. The one byte finding on record, [FJS-904](../ISSUES.md#fjs-904) — 65% of a
-static build's JavaScript unreachable from any page — was found by reading a bundle,
-not by anything that would have failed.
+`packages/mesa/bench` is a runner nothing calls (§Mesa's slice). The one byte finding
+on record, [FJS-904](../ISSUES.md#fjs-904) — 65% of a static build's JavaScript
+unreachable from any page — was found by reading a bundle, not by anything that would
+have failed.
 
 ---
 
@@ -230,6 +231,54 @@ against the count declared — the control the `scaffold` phase keeps for the sa
 reason, since *nothing moved* and *nothing was measured* are otherwise one answer.
 
 ---
+
+## Mesa's slice, read off Octane's suite
+
+**Octane publishes thirty benchmark suites** ([octanejs.dev/benchmarks](https://octanejs.dev/benchmarks),
+read 2026-09-24), each a checked-in fixture per framework measured on one machine in one run —
+the same-job rule above, applied across frameworks. Mesa is compiled, signal-driven and has no
+virtual DOM, so a suite built around re-rendering a component measures work Mesa never does.
+Graded by whether the workload is Mesa's:
+
+| Octane suite | For Mesa | Why |
+| --- | --- | --- |
+| js-framework · js-framework-reorder | **built** | The keyed reconciler, and the suite everyone else reports. `packages/mesa/bench` |
+| bundle-size | **built** | Bytes repeat on every machine, so it is the one that can gate. The `floor` fixture is the runtime's own cost |
+| lynx-table *commit wire cost* | **built, as DOM mutations** | A count of host commands against the changed-rows floor — deterministic, so gated. The idea worth stealing |
+| signal-favoring · dbmon | next | Deep state bumps and a wall of cell updates: the flush's outside-in settle under load |
+| effectful-list | next | `$:`, `{@attach}` and `bind:this` per row, and whether `destroy()` releases them (`FJS-890`) |
+| spa-navigation | next, in sierra | Routed teardown with the shell kept; heap after N navigations is the leak check |
+| news SSR + hydrate · ssr-throughput | next, in sierra | `renderComponent` and island mount — the `static` target |
+| TodoMVC · chat-stream | later | TodoMVC through `@frontierjs/ui`'s `<Form>`; chat-stream as a Junction live store, not a token loop |
+| the authoring cliff | later | One app written idiomatically and naively — what a `$:` where a `const` would do costs |
+| memo-wall · async-waterfall · async-composition · portal-swarm | no | React's shapes: a memo bail-out and `use()` have no Mesa counterpart. Async returns with `derived-suspense.md` |
+| streaming-ssr · ssr-http · tanstack-start · three · lynx · svg-dashboard · Lighthouse | no | Sierra does not stream, the renderers are not Mesa's, and Lighthouse is too noisy to track |
+
+**Built 2026-09-24 as `packages/mesa/bench/` (`bun run bench`)**, in the three tiers above:
+gzip bytes per fixture and DOM mutations per operation are gated in `bench/baseline.json`,
+milliseconds are reported as a ratio to a hand-written floor measured in the same browser,
+and heap is recorded. It is in neither `test` nor CI yet — (2) below is that step. The
+first read found the reconciler at the floor on all sixteen operations and two outliers,
+[FJS-1332](../ISSUES.md#fjs-1332) and [FJS-1333](../ISSUES.md#fjs-1333).
+
+**Left for later, each on its trigger:**
+
+- **Re-adopt the baseline once the runtime settles.** It was written 2026-09-24 against a
+  tree carrying another session's uncommitted `runtime.js` and `compiler.js` edits. When
+  those land, `bun run bench -- --adopt` from a clean tree, and read any DOM count that
+  moved before accepting it. The FJS-1332 fix is one of them and adds ~194 B gzip to
+  `rows`, so until then `bytes.rows` reads as a rise — the ratchet working, not a fault.
+- **The next fixtures** — signal-favoring, dbmon, effectful-list, in the table's order.
+  Each is a `.mesa` file and a vanilla twin running one workload from `shared/`, and each
+  owes the same two correctness checks before its numbers count.
+- **A/B against the base ref**, for times. Today a time is a ratio to the floor in the
+  same run, which catches Mesa getting slower relative to hand-written code and not a
+  change between two trees. Trigger: the first change whose point is speed.
+- **An upstream js-framework-benchmark entry.** It needs a `package.json` beside the
+  fixture, which is what made the old directory a nested package. Trigger: wanting a
+  number to quote against other frameworks. Until then, this bench's milliseconds are
+  NOT comparable to the published table: paint is excluded and the CPU throttles are
+  its own.
 
 ## Order
 
@@ -382,6 +431,21 @@ few µs, a single-row write is ~30 µs, and the round-to-round spread here is 2�
   below either instrument's resolution. A counted gate in Order (2) would have caught
   `FJS-1106` and `FJS-1107` the day they landed and mostly missed `FJS-1108`; Order (2)'s
   gated byte count wants allocation per op beside instructions, for the reason above.
+
+## Open questions
+
+- **Where does Mesa's gated bench run?** `bun run bench -- --gate` is bytes and DOM
+  mutations only, about 20 s, and needs Chrome, which the `tests` phase already has for
+  mesa's own browser drives. A byte count moves with the bundler, so a Vite upgrade can
+  redden it with nothing wrong, and `--adopt` is the answer then.
+  - **A** — Inside mesa's `test` script, after the browser drives. No new phase; the
+    `tests` phase runs it, and a DOM count is a design fact, which this record already
+    says is a test.
+  - **B** — Its own CI phase, beside `typecheck`, since it is a baseline with a ratchet
+    like typecheck's.
+  - **C** — Stays manual until a second package has a slice, then one phase for all.
+  - **Recommend A** — one owner (mesa's suite), no CI edit, and a rise is caught the
+    day it lands. B and C are the shape once litestone's counts join, per Order (2).
 
 ## Decision questions
 

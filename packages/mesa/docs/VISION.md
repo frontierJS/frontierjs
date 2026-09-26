@@ -164,8 +164,18 @@ const c = b + page                    // derived — reaches `let page`
 
 Deriving is not free, because it makes the initializer LAZY. A `const` whose initializer
 has a side effect — `const handle = subscribe(channelId)` — runs it only if something
-reads the const, so promoting one nothing reads means the subscription never happens.
-Nothing warns and the value is correct everywhere it IS read (`FJS-D212`).
+reads the const, so promoting one nothing reads means the subscription never happens
+(`FJS-D212`). A callback that WRITES a `let` names it too, so `const tick =
+setInterval(() => { now = Date.now() })` is derived. **The compiler warns when a derived
+`const` that calls something is read nowhere, or only in `onDestroy`/`onCleanup`** —
+the disposer shape, where the initializer would run at teardown if at all (`FJS-1062`).
+Work that starts at mount is `var tick = setInterval(…)`: sampled once, eagerly.
+
+A `const` may reach itself from a callback its initializer hands out — `const auto =
+make({ onsaved: () => auto.adopt() })` — and gets the value there, never the memo. A call on
+its own name does not promote it, and when it is derived for another reason the callback
+reads through the memo like every other read. Read outside a callback, before it has a
+value, it is a compile error (`FJS-1064`).
 
 ### 2.3 `var` — Non-Reactive Sampler
 
@@ -306,11 +316,29 @@ Two facts explain nearly every question about which form to use.
 > for that one write. It reads as a no-op and is not one — that is the point of
 > the idiom. It works identically for a local `let` and for a `$:`-watched
 > import, where it has always been the documented way to announce an external
-> mutation.
+> mutation, and identically in a `<script>` function, an inline template
+> handler and a `$:` watch handler.
 
 > **RULE 44** — The compiler tracks what it compiled. It knows every `let` and `const`
 > in the component, so those need no annotation to be read reactively. It knows nothing
 > about an imported binding, so anything imported is inert until a `$:` says otherwise.
+>
+> **An imported primitive is a constant, and no `$:` makes it otherwise.** A watch observes
+> an object's fields and a number has none, so `const d = count * 2` over an imported
+> `count` is static in every position, exactly as `const d = MAX * 2` is. That holds even
+> when the producing module reassigns an `export let count`: the binding changes and nothing
+> re-reads it. State that moves is a field on an exported object — `store.count`, not
+> `count`.
+>
+> **A `const` built from an import is the same read.** `const d = store.count * 2` with no
+> `$:` on `store` computes once, and `{d}` shows it for ever, exactly as `{store.count}`
+> does. Add the watch to make it a derivation, or write `var` to say it is a snapshot (§6).
+>
+> The compiler lists every imported read no `$:` here covers — in the template and in a
+> top-level `const` — on `analysis.staticReads`. A dev build hands the list to the devtools
+> panel, which shows each one beside the component's signals as **static**, with the watch
+> that would track it; `externalReactivityHints: 'strict'`, which Sierra sets, also warns at
+> build time (`FJS-1340`, `docs/EXTERNAL_REACTIVITY.md`).
 
 Everything below follows from those two.
 
@@ -386,18 +414,53 @@ deep copy, which is also what to log and what to send over the wire.
 > same limitation and are not detected; keep them out of watched state.
 
 > **RULE 47** — Watches are a property of the **object**, not of the component that
-> declares them. The registry is keyed by the object and shared process-wide, so if any
-> component declares `$: page`, every other component's reads of `page.*` become covered
-> by that watch and will re-render on any write to `page` — even components that declared
-> nothing. Likewise, a finer watch declared elsewhere (`$: page.user`) becomes the nearest
-> cover for other components' reads under it.
+> declares them. The registry is keyed by the object and shared process-wide, so a watch
+> another component declares can cover a read in yours — **but only a read made through
+> the proxy**, and a component reads an import through the proxy only when it has a `$:`
+> of its own on that import. A component with no `$:` on `store` reads the raw object, and
+> no watch anywhere ever updates it (RULE 44).
 >
-> This is always fail-safe — it can cause an extra render, never a missed one — but it
-> means a component's update granularity is not always determined by its own source.
-> It is a known and accepted limitation: `$: page` reads as "this object is now deeply
-> reactive", which is inherently global. If you need a component's reactivity to be
-> locally explainable, declare the specific paths it reads rather than relying on a
-> coarse watch declared elsewhere.
+> Where it applies — `$: store.other` here, `{store.count}` beside it, `$: store` in some
+> other component — the cover is **incidental**, and two facts decide it:
+>
+> - **It depends on what mounted first.** A read subscribes to the nearest watch that exists
+>   when its binding runs. Mounted after the watcher, the read is covered; mounted before
+>   it, it is not, until something else makes that binding run again.
+> - **A watch is never removed.** It outlives the component that declared it, until the
+>   page reloads, so a cover once gained is kept.
+>
+> This is a feature rather than a defect (`FJS-D381`): a value this component does not
+> watch shows its current value whenever something re-runs the binding, and the component
+> never asked for more. **Write `$:` for the path when you care, and `var` when you want
+> the value as it was.** It can cause an extra render, never a missed one the component
+> asked for. How often it matters is being watched rather than designed away.
+
+> **RULE 64** — **A call follows this component's watches.** The compiler cannot see what an
+> imported function reads, so `{money(v)}` under `$: prefs.currency` would otherwise re-run
+> only when something beside it in the same `render()` happened to name `prefs`. A call to
+> an imported function — or to a local function whose body reaches one — re-runs when any
+> `$:` on an import in this component fires (`FJS-D404`):
+>
+> ```html
+> <script>
+>   import { money } from './money.js'
+>   import { prefs } from './prefs.js'
+>   export let value
+>   $: prefs.currency
+>   const shown = money(value)       // derived over `value`, and now over the watch
+> </script>
+> <p>{shown}</p>
+> <p>{money(value + 1)}</p>          <!-- re-runs when prefs.currency moves -->
+> ```
+>
+> **A watch adds a trigger only where Mesa already re-runs something**: a template binding
+> (text, attribute, `{#if}`, `{#each}`, a prop) and a `const` that is already derived. It
+> never creates reactivity. A static `const` stays the value it was at mount, and a handler,
+> a callback that runs later, an `{#await}` and an `await` in a `const` never read it —
+> a re-run in the last two is a request, not a diff. A watch on another path of the same
+> import does not fire it, so the narrowest `$:` costs the least. What it costs is that
+> every such call in the component re-runs when a watch fires, whether or not it reads the
+> watched path; the result is compared before anything is written.
 
 ---
 
@@ -603,6 +666,38 @@ you just made.
 > **RULE 62** — The *initial* run of an auto-tracked effect happens during component
 > setup, before the template exists. Only updates are ordered after the DOM. Explicit-
 > dependency effects are unaffected, having no initial run at all (RULE 60).
+
+#### The flush in build-system terms
+
+Mokhov, Mitchell & Peyton Jones (*Build Systems à la Carte*, 2018) describe a
+build system as two independent choices: a **scheduler**, which decides what
+order tasks run in, and a **rebuilder**, which decides whether a task needs to
+run at all. Mesa's flush uses the same vocabulary. A signal is an *input*. A
+memo (`const`, `{@const}`) is a *task*. A render and a `$:` effect are tasks
+nobody reads, so they sit at the end of the chain. Dependencies are **dynamic**,
+the paper's *monadic* tasks: a node learns what it read by reading it, and it
+re-subscribes on every run.
+
+- **Rebuilder: dirty bit with early cutoff.** A write marks the node dirty. A
+  memo recomputes and then compares the new value with its `equals` (by default
+  `Object.is`). An equal value wakes nobody, which is the paper's *early
+  cutoff*. The comparison is on the value alone, with no stored trace, so
+  nothing survives a page load. That is Excel's rebuilder with cutoff added,
+  not Shake's verifying traces.
+- **Scheduler: restarting, ordered by DOM depth, with suspending reads.** The
+  queue runs in tiers: first derivations, shallowest DOM depth first; then
+  whatever builds DOM; then user effects (RULE 61). When a node's owning block is
+  still pending, the node is sent back to the queue rather than run. That is the
+  paper's *restarting* scheduler, as in Excel's calc chain. A read that reaches a
+  dirty memo before the flush does recomputes it on the spot, which is the
+  *suspending* strategy of Shake, so the result is a hybrid. The ordering key is
+  *how many blocks enclose this node*, not topological rank. The paper gives no
+  name for this key, because a build has no tasks that another task might remove
+  (`FJS-303`).
+
+The one part of Mesa the paper does not cover is **disposal**: a task can be
+removed by another task in the same flush, and depth ordering exists so that the
+removal happens first.
 
 ---
 
@@ -826,11 +921,15 @@ $: selectedId, async () => {
 }
 ```
 
-**`var` does not belong in the template.** If you need a value in the template, it should
-be `let` or `const`. `var` is for script-side bookkeeping only.
+**A `var` in the template renders the value it was sampled at.** That is what writing
+`var` declares: `var createLevel = orders.gate.create` over a value that never moves, or
+an `export var` prop (§3.3), which exists to be captured once and shown. A value the
+template must follow is `let`, `const` or a `$:`; a read nothing watches is reported by
+the external-reactivity check, which owns that question
+([`FJS-D381`](../../../DECISIONS.md#fjs-d381)).
 
 > **RULE 13** — `var` is a non-reactive sampler — reads without subscribing, writes
-> without notifying. Using `var` in a template is a compiler warning.
+> without notifying. In the template it is the declared snapshot, and nothing warns.
 
 > **RULE 13a** — `bind:` on a `var` is a compile error, and the error names
 > `on:input` rather than `let`. Write-without-re-render is a real thing to want —
@@ -1012,6 +1111,33 @@ running animation, a scroll offset) stays with the POSITION rather than
 traveling with the item. State a key whenever that matters. Keying by the item
 itself is `(item)`, and it is only safe where the values are unique: a duplicate
 key corrupts the reconciler, which is why it is not the default (`FJS-325`).
+
+**A comparison against the row is paid by two rows, not all of them.**
+`class:danger={selected === row.id}` is compiled to a per-key test over one
+`createKeyedEquals(() => selected)` built beside the block, so a new `selected`
+wakes the row it left and the row it arrived at (`FJS-1332`). The compiler does
+this for `===` and `!==` where one side reads the row — its item, index or
+pattern — and the other is a `let`, a prop or a derived `const`, or a member of
+one, that nothing inside the row declares again. Everything else compiles as
+written and re-runs in every row, which is correct and costs what it costs. A
+comparison hidden behind a function is the common case the compiler cannot see;
+call the primitive yourself there:
+
+```html
+<script>
+  import { createKeyedEquals } from '@frontierjs/mesa/runtime'
+  let rows = []
+  let selected = 0
+  const isSelected = createKeyedEquals(() => selected)
+  const rowClass = (row) => isSelected(row.id) ? 'danger' : row.done ? 'muted' : ''
+</script>
+
+{#each rows as row (row.id)}
+  <tr class={rowClass(row)}><td><a onclick={() => selected = row.id}>{row.id}</a></td></tr>
+{/each}
+```
+
+`test/keyed-equals.test.js` mounts this and counts the reads.
 
 **Destructuring in `as` clause** — both array and object patterns are supported:
 
@@ -1604,8 +1730,9 @@ snippet convention and runtime infrastructure. They differ only in what triggers
 Both elements look for `pending` and `failed` snippets in the same priority order:
 
 1. Snippets defined inside the wrapping element (co-located form)
-2. Global `{#snippet pending()}` / `{#snippet failed(error)}` defined anywhere in the template
-3. Nothing — blank pending state, error is silently swallowed
+2. Global `{#snippet pending()}` / `{#snippet failed(error, reset)}` defined anywhere in the template
+3. Nothing — blank pending state, and a rejection is silently swallowed. A boundary
+   with no `failed` does not catch a throw; it goes on to the boundary above
 
 ```html
 <!-- global snippets — shared by both mesa:boundary and mesa:mounted -->
@@ -1613,16 +1740,47 @@ Both elements look for `pending` and `failed` snippets in the same priority orde
   <p>Loading...</p>
 {/snippet}
 
-{#snippet failed(error)}
+{#snippet failed(error, reset)}
   <p>{error.message}</p>
 {/snippet}
 ```
 
-#### `<mesa:boundary>` — Async Derived Data Gate
+#### `<mesa:boundary>` — Async Data Gate and Error Boundary
 
 Gates template content behind the `$async` state of script-level async derived `const`
 values. Renders the `pending` snippet while any watched `$async.x` is in flight.
 Renders the `failed` snippet if any throws.
+
+**It waits on the async values its body reads, and on nothing else** (`FJS-D378`).
+A body that reads none shows at once; one that renders a snippet defined elsewhere
+(`{@render}`) waits on every async value in the component, since those reads are not
+in its subtree. Holding a whole template until everything has loaded is
+`<mesa:mounted>`.
+
+**It also catches a throw during a flush** (`FJS-D372`) — a render, a block, a
+derivation or a `$:` effect inside it, not an event handler or a timer, which leave
+the DOM as it was. The content is disposed and `failed(error, reset)` renders in its
+place; `reset` builds the content again, and nothing retries on its own (`FJS-D375`).
+The error is still logged. The nearest boundary with a `failed` catches, found up the
+owner tree from the node that threw (`FJS-D374`); a derivation's throw lands on the
+boundaries around the nodes that READ it, since the region it leaves half-built is
+theirs. A `$:` belongs to its component's script, so the boundary that catches it is
+one around the component.
+
+```html
+<mesa:boundary>
+  <Chart {points} />
+  {#snippet failed(error, reset)}
+    <p>The chart could not be drawn.</p>
+    <button onclick={reset}>Try again</button>
+  {/snippet}
+</mesa:boundary>
+```
+
+In a server render nothing is caught: the throw fails the render and the build names
+the route (`FJS-D377`), because a prerendered `failed` is an error page published with
+nothing reporting it. Sierra renders every route inside a boundary of its own, whose
+`failed` the app passes to `<RouterView failed={…}>` (`FJS-D376`).
 
 ```html
 <script>
@@ -2443,7 +2601,7 @@ components hydrate to their initial render and serialize cleanly.
 | 10 | Circular reactive store imports are a compiler error |
 | 11 | Static paths → targeted accessors; dynamic paths → runtime effects |
 | 12 | Template path references always safe — compiler wraps with `?.` and `?? ''` |
-| 13 | `var` is a non-reactive sampler — reads without subscribing, writes without notifying |
+| 13 | `var` is a non-reactive sampler — reads without subscribing, writes without notifying; in the template it is the declared snapshot |
 | 13a | `bind:` on a `var` is a compile error naming `on:input` — the capability keeps its road, the half-binding does not |
 | 14 | `let` initializers are snapshots — use `$: name = expr` for ongoing re-derivation |
 | 14a | Writable derived overrides are temporary — dep change always wins back; use `let` + watch+handler for permanent detachment |
@@ -2491,7 +2649,7 @@ components hydrate to their initial render and serialize cleanly.
 | 41 | `bind:value\|mask` requires a pattern argument wrapped in `{ }` — string literal or reactive expression |
 | 42 | `$.inspect` is dev-only — stripped entirely when `config.debug: false`. Top-level only. |
 | 43 | Replacement is reactive, mutation is not — `o = {…}` notifies, `o.n = 2` does not unless a `$:` path watch covers it |
-| 44 | The compiler tracks what it compiled: every `let`/`const` in the component is reactive unaided, an imported binding is inert until a `$:` watch names it |
+| 44 | The compiler tracks what it compiled: every `let`/`const` in the component is reactive unaided, an imported binding is inert until a `$:` watch names it, and an imported primitive is a constant no watch can name |
 | 45 | A watch fires only for writes going THROUGH the proxy Mesa created; a write on the raw object from outside is invisible |
 | 46 | A watch at a path covers that path and everything beneath it; a sibling subtree stays untracked |
 | 47 | Watches belong to the OBJECT, not the component that declared them — the registry is keyed by the object and shared process-wide |
@@ -2511,6 +2669,7 @@ components hydrate to their initial render and serialize cleanly.
 | 61 | Within a flush everything that builds the DOM runs before user effects — a `$:` effect observes the DOM as it is after the change it reacts to |
 | 62 | The initial run of an auto-tracked effect happens during setup, before the template exists; only updates are ordered after the DOM |
 | 63 | In a `.md` file `{…}` in PROSE is a bare path — an identifier or a member chain — and anything else is literal text, with `\{` the escape; attributes and `.mesa` are unchanged |
+| 64 | A call to an imported function, or to a local one reaching it, re-runs when this component's import watches fire — in a template binding, a prop and a derived `const` only; a watch never makes anything reactive that was not |
 
 ---
 

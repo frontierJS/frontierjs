@@ -8,10 +8,14 @@
  * server still owns the port and still holds the old database open.
  */
 
-import { describe, expect, test } from 'bun:test'
-import { appPorts, devPorts, scriptsRunBy, projectIdFor, PROJECTS, DYNAMIC_PROJECT_FLOOR, port,
+import { describe, expect, test, beforeEach, afterEach } from 'bun:test'
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
+import { appPorts, devPorts, scriptsRunBy, projectIdFor, PROJECTS, port,
          GLOBAL, GLOBAL_RANGE, isGlobalPort, isReservedToolingPort,
-         apiContainerName } from '../core/ports.js'
+         apiContainerName, claimSession, getSessionStatus, releaseSession,
+         readLock, readsPortVar } from '../core/ports.js'
 
 // A surface is a directory at the app root (Invariant 3), so a fake tree is
 // exactly a set of directory names — no filesystem needed.
@@ -232,9 +236,127 @@ describe('the scheme itself', () => {
     expect(new Set(be).size).toBe(be.length)
   })
 
-  test('the dynamic allocator starts above every assigned id', () => {
-    const highest = Math.max(...Object.values(PROJECTS))
-    expect(DYNAMIC_PROJECT_FLOOR).toBeGreaterThan(highest)
+  test('an unassigned app has no project id to take, so it takes a service digit', () => {
+    // Every digit is assigned. A dynamic PROJECT id would have to be 10, which
+    // the formula refuses, and that is how the broker came to hand out nothing.
+    expect(Object.values(PROJECTS).sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+    expect(() => port('fe', { env: 'dev', projectId: 10 })).toThrow()
+    expect(port('fe', { env: 'dev', projectId: PROJECTS.scaffold, serviceId: 3 })).toBe(8003)
+  })
+})
+
+describe('claimSession — each app its own dev slot', () => {
+  const DEAD  = 2 ** 30               // no such pid
+  const tree  = treeOf('web', 'api')
+  const free  = async () => []
+  const reads = () => true
+  let dir, lockFile
+  const claim = (root, opts = {}) =>
+    claimSession(root, { exists: tree, busy: free, movable: reads, lockFile, ...opts })
+  const age = (root, pid, startedAt) => {
+    const all = readLock(lockFile)
+    all[root] = { ...all[root], pid, ...(startedAt ? { startedAt } : {}) }
+    writeFileSync(lockFile, JSON.stringify(all))
+  }
+
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'fli-ports-')); lockFile = join(dir, 'sessions.lock') })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  test('two scaffolded apps run side by side', async () => {
+    const a = await claim('/x/a', { name: 'a' })
+    const b = await claim('/x/b', { name: 'b' })
+    expect(a.slot).toBe(0)
+    expect(a.rows.map(r => r.port).sort()).toEqual([8000, 8100])
+    expect(b.slot).toBe(1)
+    expect(b.rows.map(r => r.port).sort()).toEqual([8001, 8101])
+    expect(b.vars).toEqual({ FLI_PORT_FE: '8001', FLI_PORT_BE: '8101' })
+  })
+
+  test('the slot is remembered while the app is not running', async () => {
+    // A tab, an OAuth redirect and WEB_URL all name the port.
+    await claim('/x/a', { name: 'a' })
+    await claim('/x/b', { name: 'b' })
+    age('/x/b', DEAD)
+    expect((await claim('/x/c', { name: 'c' })).slot).toBe(2)
+    expect((await claim('/x/b', { name: 'b' })).slot).toBe(1)
+  })
+
+  test('a new app skips a slot something unrecorded is listening on', async () => {
+    const busy = async (rows) => rows.filter(r => r.port === 8000)
+    expect((await claim('/x/a', { name: 'a', busy })).slot).toBe(1)
+  })
+
+  test("an app's own busy slot is kept, so the caller refuses rather than moving beside a ghost", async () => {
+    await claim('/x/a', { name: 'a' })
+    age('/x/a', DEAD)
+    const busy = async (rows) => rows.filter(r => r.port === 8000)
+    expect((await claim('/x/a', { name: 'a', busy })).slot).toBe(0)
+  })
+
+  test('an app the table assigns keeps its numbers', async () => {
+    await claim('/x/a', { name: 'a' })
+    const ex = await claim('/x/example', { name: '@frontierjs/example' })
+    expect(ex.slot).toBe(0)
+    expect(ex.rows.map(r => r.port).sort()).toEqual([8010, 8110])
+  })
+
+  test('an app whose configs ignore the variable stays at 0, where its server will be', async () => {
+    await claim('/x/a', { name: 'a' })
+    const legacy = await claim('/x/legacy', { name: 'legacy', movable: () => false })
+    expect(legacy.slot).toBe(0)
+  })
+
+  test('ten remembered: the idle one that ran longest ago gives its slot up', async () => {
+    for (let i = 0; i < 10; i++) {
+      await claim(`/x/app${i}`, { name: `app${i}` })
+      age(`/x/app${i}`, DEAD, `2026-09-${String(10 + i).padStart(2, '0')}T00:00:00.000Z`)
+    }
+    age('/x/app0', process.pid)            // running, so not a candidate
+    const n = await claim('/x/new', { name: 'new' })
+    expect(n.slot).toBe(1)
+    expect(readLock(lockFile)['/x/app1']).toBeUndefined()
+  })
+
+  test('ten running: refused, naming the way out', async () => {
+    for (let i = 0; i < 10; i++) await claim(`/x/app${i}`, { name: `app${i}` })
+    await expect(claim('/x/new', { name: 'new' })).rejects.toThrow(/ports:status --clean/)
+  })
+
+  test('--dry answers and writes nothing', async () => {
+    const d = await claim('/x/a', { name: 'a', dry: true })
+    expect(d.slot).toBe(0)
+    expect(existsSync(lockFile)).toBe(false)
+  })
+
+  test('status and forget are keyed by root, so two apps with one name are two apps', async () => {
+    await claim('/x/one/app', { name: 'app' })
+    await claim('/x/two/app', { name: 'app' })
+    const rows = getSessionStatus({ lockFile })
+    expect(rows.map(r => [r.root, r.slot, r.alive])).toEqual([['/x/one/app', 0, true], ['/x/two/app', 1, true]])
+    releaseSession('/x/one/app', { lockFile })
+    expect(Object.keys(readLock(lockFile))).toEqual(['/x/two/app'])
+  })
+})
+
+describe('readsPortVar — would this surface follow a slot', () => {
+  let root
+  beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'fli-reads-')) })
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  test('the scaffold reads it; a config with a literal does not; node_modules is not the app', () => {
+    mkdirSync(join(root, 'web/config'), { recursive: true })
+    const row = { surface: 'web', env: 'FLI_PORT_FE' }
+    writeFileSync(join(root, 'web/config/vite.config.js'), 'export default { server: { port: 8000 } }')
+    mkdirSync(join(root, 'web/node_modules/x'), { recursive: true })
+    writeFileSync(join(root, 'web/node_modules/x/index.js'), 'process.env.FLI_PORT_FE')
+    expect(readsPortVar(root, row)).toBe(false)
+
+    writeFileSync(join(root, 'web/config/vite.config.js'), "port: parseInt(process.env.FLI_PORT_FE ?? '8000')")
+    expect(readsPortVar(root, row)).toBe(true)
+  })
+
+  test('a surface with no variable has nothing to follow and blocks nothing', () => {
+    expect(readsPortVar(root, { surface: 'extension', env: null })).toBe(true)
   })
 })
 

@@ -1,5 +1,26 @@
 # Changes — @frontierjs/orion
 
+## 2026-09-25 — the tenancy test reads `ctx.caller.headers` (`FJS-D392`)
+
+Junction renamed `ctx.client` to `ctx.caller`; this follows it.
+
+## 2026-09-22 — `KvEntry` declares its deadline
+
+`KvEntry` carries `@@expires(expiresAt)` ([`FJS-D352`](../../DECISIONS.md#fjs-d352)),
+so an entry past its ttl reads as absent at the Data boundary and `kv.ts`'s
+`live()` helper is gone. **The ttl is minted from the client's clock**
+(`$now()`), not `Date.now()`, and the sweep is `deleteMany({ onlyExpired: true })`
+— on the client's clock too, the one that already reads the entry as absent,
+where the hand-written `expiresAt < now()` read the runner's. The two lookups
+that must see a lapsed row state `withExpired`: `set`, which overwrites it in
+place rather than colliding on `@@unique([scope, key])`, and `delete`, which
+removes it and still answers *nothing live was there*. `litestoneKeyValue` no
+longer takes a `now`; nothing passed one.
+
+`test/kv.test.ts` is new and is the first suite over the port: five rows on a
+clock staged in 2031, so a host-clock mint is born lapsed. Putting the sweep back
+on the runner's clock reds its row (measured).
+
 ## 2026-09-21 — the suite directory is `test/`
 
 **`tests/` is a surface, not a suite.** In an FJS app it sits beside `api/` and `web/` and holds

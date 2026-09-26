@@ -70,7 +70,7 @@ model Journal {
   @@gate("8")
 }
 
-/// One immutable artefact-plus-bindings, addressed by its own content.
+/// One immutable artefact-plus-configuration, addressed by its own content.
 ///
 /// Two builds of an unchanged tree mint the same id, which is what makes
 /// *promote a digest* and *revert to a known thing* one operation rather than
@@ -89,10 +89,10 @@ model Release {
   digest         String?
   imageRef       String?
 
-  /// The binding set this Release was minted against. The counter answers
+  /// The configuration set this Release was minted against. The counter answers
   /// which came first; the hash answers whether anything has moved, which is
   /// the question a revert actually asks.
-  bindingsHash   String
+  configurationHash String
   generation     Int
 
   /// The release surface at this commit — what `db/release.snapshot.md` holds.
@@ -127,12 +127,12 @@ model Release {
   @@index([retentionUntil])
 }
 
-/// The bindings an Environment provides, as they stood at one generation.
+/// The configuration an Environment provides, as it stood at one generation.
 ///
 /// Mutable but generational: serving state is the pair (Release, Generation),
-/// and reverting a Release onto today's bindings is the documented failure this
+/// and reverting a Release onto today's configuration is the documented failure this
 /// separation exists to refuse.
-model BindingSet {
+model ConfigurationSet {
   id          String   @id @default(uuid())
 
   app         String
@@ -226,7 +226,7 @@ model TransitionStep {
   status       StepStatus @default(pending)
 
   /// What this step checked before it ran — the Release id currently serving,
-  /// the binding generation, and the schema as at last applied. Drift refuses
+  /// the configuration generation, and the schema as at last applied. Drift refuses
   /// and names itself; nothing here reconciles.
   precondition Json       @default("{}")
 

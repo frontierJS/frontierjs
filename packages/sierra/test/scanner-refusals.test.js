@@ -13,7 +13,8 @@
  */
 
 import { describe, test, expect } from 'vitest'
-import { mkdir, writeFile } from 'fs/promises'
+import { mkdir, readdir, writeFile } from 'fs/promises'
+import { spawnSync } from 'child_process'
 import { join } from 'path'
 
 import { scan } from '../src/scanner/index.js'
@@ -193,5 +194,19 @@ describe('a companion edited while the process is running', () => {
     await scan('src/routes', { cwd: root })
     const files = await walk(join(root, 'src/routes'), root)
     expect(files.filter(f => f.includes('sierra-fresh'))).toEqual([])
+  })
+
+  test('a copy left by a killed process is swept, a live process\'s is not', async () => {
+    const dead = spawnSync(process.execPath, ['-e', '0']).pid
+    const live = process.ppid
+    const root = await project({
+      'src/routes/index.mesa':                                    PAGE,
+      'src/routes/index.meta.js':                                 'export const meta = { title: "T" }\n',
+      [`src/routes/.sierra-fresh-${dead}-3-index.meta.js`]:       'x\n',
+      [`src/routes/.sierra-fresh-${live}-3-index.meta.js`]:       'x\n',
+    })
+    await scan('src/routes', { cwd: root })
+    const left = (await readdir(join(root, 'src/routes'))).filter(f => f.includes('sierra-fresh'))
+    expect(left).toEqual([`.sierra-fresh-${live}-3-index.meta.js`])
   })
 })

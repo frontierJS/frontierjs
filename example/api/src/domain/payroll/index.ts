@@ -16,7 +16,7 @@
 
 // ─── who worked here, on what terms, on a given date ──────────────────────
 export {
-  payAsAt, payAsAtMany, coveringAt, lastDayOf, employedAt,
+  payAsAt, payAsAtMany, lastDayOf, employedAt,
   annualGross, weeklyGross, assertEffectiveFrom,
 } from './employment.ts'
 export type { PlainDate, PayWindowRow } from './employment.ts'

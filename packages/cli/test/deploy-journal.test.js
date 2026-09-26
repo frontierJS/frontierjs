@@ -60,7 +60,7 @@ describe('the fragment', () => {
     const tables = (await journal.asSystem().sql`
       SELECT name FROM sqlite_master WHERE type = 'table'`).map(r => r.name)
 
-    for (const t of ['journal', 'release', 'binding_set', 'transition', 'transition_step'])
+    for (const t of ['journal', 'release', 'configuration_set', 'transition', 'transition_step'])
       expect(tables).toContain(t)
   })
 
@@ -83,7 +83,7 @@ describe('the fragment', () => {
 
     await sys.release.create({ data: {
       id: 'rel_1', app: 'shop', environment: 'production',
-      bindingsHash: 'bh1', generation: 1, schemaHash: 'sh1', pivot: 'expand',
+      configurationHash: 'bh1', generation: 1, schemaHash: 'sh1', pivot: 'expand',
     } })
 
     const [row] = await sys.release.findMany()

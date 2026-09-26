@@ -838,6 +838,29 @@ try {
     return !!document.querySelector('#no-items');
   `))
 
+  // ── What the system owes, as a date ─────────────────────────────────────
+  //
+  // `abandon` is `@system`, so it is no button on this screen; the order's
+  // `@@commitment` brings it back as the day it falls due. ORD-CDP-1 was paid
+  // at 9b, so it owes nothing — asserted beside a seeded order that is still
+  // pending, because *no date* is also what a screen that reads nothing shows.
+  t('order.paidOwesNothing', await evaluate(`return document.querySelectorAll('[data-owed]').length;`))
+
+  // The expectation is plain arithmetic over the stored row, and never the
+  // function the screen calls — a date that is wrong the same way twice agrees
+  // with itself.
+  const pendingSeed = ((await (await ledger('/orders?reference=ORD-1001')).json()).data ?? [])[0]
+  await goto(`/orders/${pendingSeed?.id}/`)
+  t('order.owesTheAbandon', await (async () => {
+    const want = pendingSeed ? new Date(Date.parse(pendingSeed.createdAt) + 14 * 864e5).toISOString() : null
+    const shown = await evaluate(`
+      await waitFor(() => document.querySelector('#order-actions'));
+      await waitFor(() => document.querySelector('[data-owed="abandon"]')).catch(() => null);
+      return document.querySelector('[data-owed="abandon"]')?.dataset.due ?? null;
+    `)
+    return { pending: pendingSeed?.status === 'pending', shown: shown != null, agrees: shown === want }
+  })())
+
   // Back to the list, and waited for: the delete below reads a row without one.
   await goto('/orders/')
   await evaluate(`await waitFor(() => byText('tbody tr', 'ORD-CDP-1')); return true;`)
@@ -1088,10 +1111,58 @@ try {
     };
   `))
 
+  // ── Dunning, as dates ───────────────────────────────────────────────────
+  //
+  // `lapse` and `cancel` are this subscription's moves and are declared on
+  // `Invoice` (`FJS-D362`): every issued invoice owes one of each on its own
+  // terms, and the soonest is the one that will happen. The expectation is
+  // worked out here from what the API holds — plain day arithmetic, and the
+  // from-states written out as the oracle, because an expectation read off the
+  // schema would agree with the screen for the same wrong reason.
+  const plusDays = (day, n) => new Date(Date.parse(day + 'T00:00:00Z') + n * 864e5).toISOString().slice(0, 10)
+  const OWES = { 'subscription.lapse': ['graceDays', ['active']],
+                 'subscription.cancel': ['dunningDays', ['trialing', 'active', 'pastDue']] }
+  const owedFor = (status, bills) => Object.fromEntries(Object.entries(OWES).map(([name, [col, from]]) => [name,
+    !from.includes(status) || !bills.length ? null
+      : bills.map(b => plusDays(b.dueOn, b[col])).sort()[0]]))
+
+  const subNow = await (await ledger(`/subscriptions/${subId}`)).json()
+  const issued = ((await (await ledger(`/invoices?subscriptionId=${subId}&status=issued&$limit=50`)).json()).data ?? [])
+  t('subDetail.owedDates', await (async () => {
+    const want  = owedFor(subNow.status, issued)
+    const shown = await evaluate(`
+      await settled('tbody tr[data-invoice]');
+      const due = (name) => document.querySelector('[data-owed="' + name + '"]')?.dataset.due ?? null;
+      return { 'subscription.lapse': due('subscription.lapse'), 'subscription.cancel': due('subscription.cancel') };
+    `)
+    return { owesSomething: Object.values(want).some(Boolean), agrees: JSON.stringify(shown) === JSON.stringify(want) }
+  })())
+
   const invId = await evaluate(`
     return Number(document.querySelector('tbody tr[data-invoice]').dataset.invoice);
   `)
   await goto(`/invoices/${invId}/`)
+
+  // The same two dates off ONE invoice, graded against the subscription it
+  // bills — which the screen has to read, since the move is the subscription's.
+  // And the invoice's own reminder, three days before it falls due, owed while
+  // it is issued and not yet sent: the one move here made on this row.
+  t('invoice.owedDates', await (async () => {
+    const inv  = await (await ledger(`/invoices/${invId}`)).json()
+    const want = {
+      ...owedFor(subNow.status, inv.status === 'issued' ? [inv] : []),
+      remind: inv.status === 'issued' && inv.reminded === false ? plusDays(inv.dueOn, -3) : null,
+    }
+    const n    = Object.values(want).filter(Boolean).length
+    const shown = await evaluate(`
+      await waitFor(() => document.querySelector('#id-totals'));
+      await waitFor(() => document.querySelectorAll('[data-owed]').length === ${n}).catch(() => null);
+      const due = (name) => document.querySelector('[data-owed="' + name + '"]')?.dataset.due ?? null;
+      return { 'subscription.lapse': due('subscription.lapse'), 'subscription.cancel': due('subscription.cancel'),
+               remind: due('remind') };
+    `)
+    return { owesSomething: n > 0, agrees: JSON.stringify(shown) === JSON.stringify(want) }
+  })())
 
   t('invoice.composed', await evaluate(`
     await waitFor(() => document.querySelector('#id-totals'));
@@ -1400,6 +1471,8 @@ const expected = {
   // same number — `verify:money` is where the arithmetic itself is proved.
   'order.itemsSum':         { sum: 42, subtotal: 42, addsUp: true, discounted: true },
   'order.itemsHandRaised':  true,
+  'order.paidOwesNothing':  0,
+  'order.owesTheAbandon':   { pending: true, shown: true, agrees: true },
 
   'orders.deleteEnabledAdmin': true,
   'signedIn.badge':            'alex@shop.test · level 5',
@@ -1484,9 +1557,11 @@ const expected = {
   'subDetail.priceMoved': { alert: true, notTheNew: true, planLoaded: true },
   'subDetail.stopRenewing': { said: true, ends: true, status: true, canUndo: true },
   'subDetail.resume':       { gone: true, renews: true, canStop: true },
+  'subDetail.owedDates':    { owesSomething: true, agrees: true },
   // Exactly one document, and it is an invoice: an upgrade owes money.
   'subDetail.changePlan': 1,
   'invoice.composed': { hasLines: true, linesSum: true, identity: true },
+  'invoice.owedDates': { owesSomething: true, agrees: true },
   // Every one of these headers is derived: humanized from the column name, or
   // from the RELATION for a foreign key, or taken verbatim from an @label.
   'invoicesList.derived': {

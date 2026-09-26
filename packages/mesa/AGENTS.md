@@ -264,8 +264,7 @@ assignment to a derived `const`.
 Everything above is loud somewhere. These are not.
 
 - **`arr.push(x)` and `obj.n = 2` render nothing.** Replace (`arr = [...arr, x]`),
-  declare `$: obj.n`, or follow the mutation with `obj = obj` inside a
-  `<script>` function.
+  declare `$: obj.n`, or follow the mutation with `obj = obj`.
 - **An imported object without a `$:` never updates the screen**, and neither
   does a `.js` module writing its raw object — it must write through
   `watchProxy`.

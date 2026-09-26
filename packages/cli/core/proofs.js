@@ -134,12 +134,17 @@ function target(name, dir, where, root, rows) {
     return { ...base, kind: row ? 'row' : 'script', id: row?.id ?? null, command: `bun run test${suite[1]}` }
   }
 
-  const row = rows.find(r => r.dir === dir && r.name === name && (r.kind === 'drive' || r.kind === 'task'))
-  if (row) return { ...base, kind: 'row', id: row.id, command: row.start }
+  // `test:browser geofield` — a script and its argument. The script is looked up
+  // alone, or a real script carrying a filter grades as a drive renamed away.
+  const [script, ...args] = name.split(/\s+/)
+  const arg = args.length ? ` ${args.join(' ')}` : ''
+
+  const row = rows.find(r => r.dir === dir && r.name === script && (r.kind === 'drive' || r.kind === 'task'))
+  if (row) return { ...base, kind: 'row', id: row.id, command: row.start && `${row.start}${arg}` }
 
   // Not a row, but the package may still declare it.
   const pkg = dir === null ? null : readJson(join(root, dir, 'package.json'))
-  if (pkg?.scripts?.[name]) return { ...base, kind: 'script', id: null, command: `bun run ${name}` }
+  if (pkg?.scripts?.[script]) return { ...base, kind: 'script', id: null, command: `bun run ${name}` }
 
   return { ...base, kind: 'unknown', id: null, command: null }
 }

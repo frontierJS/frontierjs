@@ -24,13 +24,21 @@
  * cases below (a stranger's token, no token) assert 404 rather than a message.
  */
 import { spawn, execFileSync } from 'node:child_process'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir }        from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
-const API  = process.env.API_URL ?? 'http://localhost:8110'
-const UI   = process.env.UI_URL  ?? 'http://localhost:8010'
+// The dev server moves to the test tier, so this runs beside another project's
+// vite on 8010. The API does not move: its origin is written into rows that
+// outlive the process — a `File` ref stores the `publicBase` it was uploaded
+// against (`FJS-1271`). Both are env-overridable.
+const API_PORT = process.env.API_PORT ?? '8110'
+const UI_PORT  = process.env.UI_PORT  ?? '7010'
+const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
+const UI   = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 
 const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
@@ -38,12 +46,15 @@ const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 const procs = []
 // `detached` is what makes stopAll work. `npx vite` is a launcher: SIGTERM to
-// the process this holds kills the launcher and leaves vite itself on 8010, so
-// the NEXT drive refuses the port and says a dev server is running from an
+// the process this holds kills the launcher and leaves vite itself on the port,
+// so the NEXT drive refuses it and says a dev server is running from an
 // earlier run — which it is, and nothing said which run. Detached puts each
 // server in its own process group, and stopAll signals the group.
-function start(cmd, args, name) {
-  const p = spawn(cmd, args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+function start(cmd, args, name, env) {
+  const p = spawn(cmd, args, {
+    cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
+    env: { ...process.env, ...env },
+  })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
   procs.push(p)
@@ -72,7 +83,7 @@ async function waitFor(url, label, tries = 120) {
 // next free port in silence and a dev server serves the code it STARTED with,
 // so a leftover from the previous run would be tested instead of this one —
 // and it would pass, against the old build.
-for (const [port, what] of [[8110, 'the API'], [8010, 'the dev server']]) {
+for (const [port, what] of [[API_PORT, 'the API'], [UI_PORT, 'the dev server']]) {
   let busy = false
   try { await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(500) }); busy = true } catch {}
   if (busy) {
@@ -88,26 +99,37 @@ for (const [port, what] of [[8110, 'the API'], [8010, 'the dev server']]) {
 // database costs one pass of existence checks.
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 
-start('bun', ['run', 'api/index.ts'], 'api')
-start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web')
+const PORT_ENV = { API_PORT, UI_PORT }
+start('bun', ['run', 'api/index.ts'], 'api', PORT_ENV)
+start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web', PORT_ENV)
 
 if (!await waitFor(`${API}/api/products`, 'api')) { stopAll(); process.exit(1) }
 if (!await waitFor(UI, 'web'))                    { stopAll(); process.exit(1) }
 
 // ─── Chrome over CDP ───────────────────────────────────────────────────────
 
+// Chrome picks the debugging port and the profile is this run's own. A FIXED
+// port is answered by whichever browser bound it first, so a second drive
+// attaches to the first one's session and grades that browser's screen
+// (`FJS-740` one layer over, measured in `verify:stock`); and the default
+// profile carries the previous run's sign-in into this one.
+const profile = mkdtempSync(join(tmpdir(), 'fjs-cart-'))
 const chrome = start(CHROME, [
-  '--headless=new', '--remote-debugging-port=9222', '--disable-gpu',
-  '--no-sandbox', '--window-size=1400,1000', 'about:blank',
+  '--headless=new', '--remote-debugging-port=0', '--disable-gpu',
+  '--no-sandbox', '--window-size=1400,1000', `--user-data-dir=${profile}`,
+  'about:blank',
 ], 'chrome')
+process.on('exit', () => { try { rmSync(profile, { recursive: true, force: true }) } catch {} })
 
-let wsUrl = null
-for (let i = 0; i < 80 && !wsUrl; i++) {
-  try {
-    const v = await (await fetch('http://localhost:9222/json/version')).json()
-    wsUrl = v.webSocketDebuggerUrl
-  } catch { await new Promise(r => setTimeout(r, 250)) }
-}
+const wsUrl = await new Promise((resolve) => {
+  let buf = ''
+  const t = setTimeout(() => resolve(null), 20000)
+  chrome.stderr.on('data', (d) => {
+    buf += d
+    const m = buf.match(/ws:\/\/[^\s]+/)
+    if (m) { clearTimeout(t); resolve(m[0]) }
+  })
+})
 if (!wsUrl) { console.error('chrome never came up'); stopAll(); process.exit(1) }
 
 const ws = new WebSocket(wsUrl)
@@ -297,6 +319,19 @@ check('the stepper raises the quantity',
       await evaluate(`document.querySelector('[data-qty]')?.textContent.trim()`), '2')
 check('and the total follows it',
       await evaluate(`document.querySelector('#basket-total')?.textContent.trim()`), t => t !== before)
+
+// The countdown moves with nothing else on the page moving. Its timer is one
+// declaration whose `const` spelling the compiler makes lazy, and read only in
+// teardown it started at destroy, so the clock stood still (`FJS-1062`).
+const holdText = `document.querySelector('#basket-hold-left')?.textContent.trim() ?? null`
+const holdFirst = await evaluate(holdText)
+let holdLater = holdFirst
+for (let i = 0; i < 25 && holdLater === holdFirst; i++) {
+  await new Promise(r => setTimeout(r, 200))
+  holdLater = await evaluate(holdText)
+}
+check('the basket shows how long its stock is held', holdFirst, v => /^\d+:\d\d$/.test(v ?? ''))
+check('and the countdown ticks on its own',          holdLater, v => v !== holdFirst)
 
 console.log('\n  basket — checkout')
 

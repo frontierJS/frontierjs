@@ -25,6 +25,7 @@ import { conduit }           from '@frontierjs/conduit'
 import { createSQLiteStore } from '@frontierjs/conduit/stores/sqlite'
 import { createCaravan }     from '@frontierjs/caravan'
 import { orion }             from '@frontierjs/orion/plugin'
+import { mcpPlugin }         from '@frontierjs/mcp'
 
 import { env }                       from './core/env.ts'
 import { buildProviders }            from './providers/index.ts'
@@ -404,6 +405,20 @@ export async function buildBasecampApp(
   // that had not claimed its sections yet.
   app.configure(metricsPlugin())
 
+  // ── The agent surface ─────────────────────────────────────────────────
+  //
+  //   POST /mcp   —  an MCP client, scoped by the caller's own standing
+  //
+  // A tool call goes through `app.service(name)`, so the hooks, the membership
+  // claim and the boundary are the ones an HTTP call gets (`FJS-D258`). The
+  // workspace is the member's default: `resolveWorkspaceId` reads a header the
+  // MCP route does not forward, so an agent acting in a second workspace has no
+  // way to say so yet (`FJS-D399` is the CLI's answer and not built).
+  //
+  // `keepAliveMs` under junction's 10s `http.idleTimeout`, or the stream is cut
+  // five seconds before the frame that would have held it open.
+  app.configure(mcpPlugin({ name: 'basecamp', version: '1.0.0', keepAliveMs: 5_000 }))
+
   // ── Devtools console ──────────────────────────────────────────────────
   // AFTER health and the queue: the console reads what plugins contributed, so
   // configuring it first would open on an app that has not claimed its sections
@@ -774,15 +789,34 @@ export async function buildBasecampApp(
       if (!claimed?.count) return refuse()
 
       const secret = mintOutpostSecret()
-      const row    = await sys.secret.create({ data: {
-        workspaceId: server.workspaceId,
-        // The unique is [workspaceId, name] and a slug is already unique in the
-        // workspace, so this cannot collide where the machine did not.
-        name:        `outpost:${server.slug}`,
-        kind:        'generic',
-        data:        JSON.stringify({ secret }),
-      }})
-      await sys.server.update({ where: { id }, data: { outpostSecretId: row.id } })
+      const data   = JSON.stringify({ secret })
+
+      // A machine enrolling AGAIN — reinstalled, or its key lost — ROTATES the
+      // key it had rather than minting a second one. `issueEnrollment` may be
+      // run again by design, and a second `outpost:<slug>` beside the first
+      // hits the [workspaceId, name] unique — a machine that had enrolled once
+      // could never enroll again. The old key stops verifying here, which is the point: a burned token
+      // is the proof of authority, and whoever held the previous key does not
+      // hold this one.
+      const held = server.outpostSecretId
+        ? await sys.secret.findFirst({ where: { id: server.outpostSecretId } })
+        : null
+      const row  = held
+        ? await sys.secret.update({ where: { id: held.id }, data: { data, version: held.version } })
+        : await sys.secret.create({ data: {
+            workspaceId: server.workspaceId,
+            // The unique is [workspaceId, name] and a slug is already unique in
+            // the workspace, so a FIRST enrollment cannot collide.
+            name:        `outpost:${server.slug}`,
+            kind:        'generic',
+            data,
+          }})
+      // An update that matched nothing — the row deleted, or its version moved
+      // between the read and the write — is a key this machine will be handed
+      // and nothing will verify. The token is already burned, so the answer is
+      // the same refusal as everything above; the machine asks for another.
+      if (!row) return refuse()
+      if (!held) await sys.server.update({ where: { id }, data: { outpostSecretId: row.id } })
 
       logger.info('outpost enrolled', { server_id: id, secret_id: row.id })
 

@@ -36,7 +36,7 @@ const mkDb = () => createClient({ db: ':memory:', schema: SCHEMA }) as unknown a
 function mkCtx(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
   return {
     service: 'posts', method: 'create', id: undefined, data: { title: 't' },
-    query: {}, auth: { user: null }, client: {}, route: {},
+    query: {}, auth: { user: null }, caller: {}, route: {},
     locals: { db }, app: {}, result: null, type: 'before', ...over,
   } as unknown as ServiceContext
 }

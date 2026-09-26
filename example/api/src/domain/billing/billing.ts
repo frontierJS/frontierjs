@@ -41,15 +41,15 @@ export type BillingLine = {
  *  how terms are written; the deadline below is measured from the same column. */
 export const TERMS_DAYS = 7
 
-/** How long a subscription may sit unpaid before it is cancelled, measured from
- *  the DUE date of its oldest unpaid invoice rather than from a counter on the
- *  row. A counter is a second answer to a question the invoices already
- *  answer, and the two disagree the first time a job runs twice. */
+/** How long a subscription may sit unpaid before it is cancelled, counted from
+ *  an invoice's DUE date. Stamped onto each invoice as `dunningDays` when it is
+ *  issued, so changing this number moves no deadline anybody was already given
+ *  — `Invoice`'s `@@commitment` reads the column, never this. */
 export const DUNNING_DAYS = 21
 
 /** The grace between an invoice falling due and the subscription lapsing. A
  *  card that fails on a Friday should not read `pastDue` on the shop floor
- *  before anybody has had a chance to fix it. */
+ *  before anybody has had a chance to fix it. Stamped as `graceDays`. */
 export const GRACE_DAYS = 3
 
 /** Move a period boundary on by one billing interval — a plain date in, a plain
@@ -266,6 +266,8 @@ export async function issueInvoice(
       periodStart:    args.periodStart,
       periodEnd:      args.periodEnd,
       issuedAt, dueOn,
+      graceDays:      GRACE_DAYS,
+      dunningDays:    DUNNING_DAYS,
     } })
 
     await tx.invoiceLine.createMany({ data: args.lines.map(l => ({
@@ -302,11 +304,27 @@ export async function issueInvoice(
  */
 export async function settleInvoice(client: Client, id: number, at?: string): Promise<unknown> {
   await client.invoice.transition(id, 'settle', { system: true })
-  return await client.invoice.update({
+  const row = await client.invoice.update({
     where: { id },
     data:  { paidAt: at ?? new Date().toISOString() },
     system: ['paidAt'],
   })
+  if (row?.subscriptionId) await recoverIfClear(client, row.subscriptionId)
+  return row
+}
+
+/**
+ * It should never have been issued.
+ *
+ * The move is `@gate(5)` and not `@system`, so the caller's client grades who
+ * pressed it. It is a function here rather than one line in the service because
+ * a void can clear a ledger as surely as a settle can, and the subscription
+ * behind it is owed the same recovery.
+ */
+export async function voidInvoice(client: Client, id: number): Promise<unknown> {
+  const row = await client.invoice.transition(id, 'void')
+  if (row?.subscriptionId) await recoverIfClear(client, row.subscriptionId)
+  return row
 }
 
 /**
@@ -427,16 +445,136 @@ export async function changePlan(
   }
 
   // The arrangement moves whatever the money does, and after the document
-  // rather than before it — the renewal job's order, since a crash between a
-  // moved window and its invoice reads as billed and is not.
-  await sys.subscription.update({
-    where: { id: sub.id },
-    data:  reanchor
-      ? { planVersionId: to.id, quantity, currentPeriodStart: periodStart, currentPeriodEnd: periodEnd }
-      : { planVersionId: to.id, quantity },
-    ...(reanchor && { system: ['currentPeriodStart', 'currentPeriodEnd'] }),
-  })
+  // rather than before it, since a crash between a moved window and its
+  // invoice reads as billed and is not.
+  await sys.subscription.update({ where: { id: sub.id }, data: { planVersionId: to.id, quantity } })
+  if (reanchor) await reanchorPeriod(sys, sub.id, periodStart, periodEnd)
   return result
+}
+
+// ─── Renewal ──────────────────────────────────────────────────────────────
+//
+// A renewal is a PERIOD closing (`FJS-D367`). `SubscriptionPeriod`'s
+// `@@commitment(close, on: endsOn)` owes the move and junction's
+// `commitments()` makes it; `renewPeriod` is what the move owes, run as its
+// hook inside the same transaction (`FJS-D368`), so a period is closed, its
+// successor opened and the invoice issued together or not at all.
+//
+// Once-ness is the period's state machine and nothing else: a second fire for
+// one period meets a row already `closed` and does nothing, and the schema's
+// one-open-period constraint refuses a successor written twice.
+
+/** The first period of a subscription starting at `at`: from that day in the
+ *  shop's calendar to the day its trial ends, or one interval on where there is
+ *  no trial. Its close is the first renewal, and converts the trial. */
+export async function openFirstPeriod(
+  sys: Client,
+  sub: { id: number, planVersionId: number, trialEndsAt?: string | null, userId?: string | null },
+  opts: { timeZone: string, at?: string },
+): Promise<void> {
+  const startsOn = plainDateIn(opts.at ?? new Date().toISOString(), opts.timeZone)
+  let endsOn = sub.trialEndsAt ? plainDateIn(sub.trialEndsAt, opts.timeZone) : null
+  if (!endsOn || endsOn <= startsOn) {
+    const version = await sys.planVersion.findFirst({ where: { id: sub.planVersionId } })
+    const plan    = version && await sys.plan.findFirst({ where: { id: version.planId } })
+    endsOn = advancePeriod(startsOn, plan?.interval ?? 'monthly')
+  }
+  await sys.subscriptionPeriod.create({ data: { subscriptionId: sub.id, startsOn, endsOn, userId: sub.userId ?? null } })
+}
+
+/** Start a subscription: the row and its first period, in one transaction —
+ *  a subscription with no period has no window and would never renew. */
+export async function startSubscription(
+  sys: Client,
+  data: Record<string, unknown> & { userId?: string | null },
+  first: { startsOn: string, endsOn: string },
+): Promise<any> {
+  return await sys.$transaction(async (tx: Client) => {
+    const sub = await tx.subscription.create({ data })
+    await tx.subscriptionPeriod.create({ data: {
+      subscriptionId: sub.id, startsOn: first.startsOn, endsOn: first.endsOn, userId: sub.userId ?? null,
+    } })
+    return await tx.subscription.findFirst({ where: { id: sub.id } })
+  })
+}
+
+/**
+ * What a closed period owes: the next period and its invoice, or the end of
+ * the arrangement. Answers the invoice issued, or null where there was none to
+ * issue — a subscription already cancelled by dunning, or one asked to stop at
+ * this boundary, which is where that asking lands.
+ *
+ * `client` is the fire's, inside the transaction that closed `period`: the
+ * subscription's moves go through it with `{ system: true }` so the
+ * transitions graph still grades them, and the documents through its
+ * `asSystem()`, since an invoice and a period are created at 8.
+ *
+ * `at` is the instant to bill at and `timeZone` the shop's calendar the terms
+ * are counted in — both the fire's, passed rather than read, so a drive with
+ * no app says which it bills in.
+ */
+export async function renewPeriod(
+  client: Client,
+  period: { subscriptionId: number, endsOn: string },
+  opts: { timeZone: string, at: string },
+): Promise<{ id: number, number: string, total: number } | null> {
+  const sys = client.asSystem()
+  const sub = await sys.subscription.findFirst({ where: { id: period.subscriptionId } })
+  if (!sub || sub.status === 'cancelled') return null
+
+  // Asked to stop. `subscriptions.cancel` sets a flag rather than moving the
+  // row, because the period had been paid for; this is the boundary the flag
+  // names, so the arrangement ends here and nothing is issued for a period
+  // nobody wanted.
+  if (sub.cancelAtPeriodEnd) {
+    await client.subscription.transition(sub.id, 'cancel', { system: true })
+    return null
+  }
+
+  const version = await sys.planVersion.findFirst({ where: { id: sub.planVersionId } })
+  const plan    = version && await sys.plan.findFirst({ where: { id: version.planId } })
+  if (!version || !plan) throw new Error(`renewPeriod: ${sub.reference} names no plan version`)
+
+  const startsOn = period.endsOn
+  const endsOn   = advancePeriod(startsOn, plan.interval)
+
+  const invoice = await issueInvoice(sys, {
+    number:         await nextInvoiceNumber(sys),
+    customerId:     sub.customerId,
+    subscriptionId: sub.id,
+    userId:         sub.userId,
+    issuedAt:       opts.at,
+    periodStart:    startsOn,
+    periodEnd:      endsOn,
+    timeZone:       opts.timeZone,
+    lines: periodLines({ name: plan.name, quantity: sub.quantity, unitAmount: version.price, periodStart: startsOn, periodEnd: endsOn }),
+  })
+  await sys.subscriptionPeriod.create({ data: { subscriptionId: sub.id, startsOn, endsOn, userId: sub.userId ?? null } })
+
+  // A trial that ran out has converted, and *converted* is a declared move —
+  // `@@transitions` refuses it from anywhere but `trialing`.
+  if (sub.status === 'trialing') await client.subscription.transition(sub.id, 'activate', { system: true })
+
+  return invoice
+}
+
+/** A new interval starts a new period today: the open one ends here and the
+ *  next runs `[startsOn, endsOn)`. A period that began today is the same days,
+ *  so it is stretched rather than closed — a zero-day period is refused by the
+ *  table's own check. Closed with `asSystem()`, which runs no hook: the invoice
+ *  for this change is `changePlan`'s, and a renewal here would bill twice. */
+async function reanchorPeriod(sys: Client, subscriptionId: number, startsOn: string, endsOn: string): Promise<void> {
+  const open = await sys.subscriptionPeriod.findFirst({ where: { subscriptionId, status: 'open' } })
+  if (open?.startsOn === startsOn) {
+    await sys.subscriptionPeriod.update({ where: { id: open.id }, data: { endsOn }, system: ['endsOn'] })
+    return
+  }
+  if (open) {
+    await sys.subscriptionPeriod.update({ where: { id: open.id }, data: { endsOn: startsOn }, system: ['endsOn'] })
+    await sys.subscriptionPeriod.transition(open.id, 'close')
+  }
+  await sys.subscriptionPeriod.create({ data: { subscriptionId, startsOn, endsOn,
+    userId: (await sys.subscription.findFirst({ where: { id: subscriptionId } }))?.userId ?? null } })
 }
 
 // ─── Collection ───────────────────────────────────────────────────────────
@@ -448,8 +586,8 @@ export async function changePlan(
 // what this app is for.
 //
 // So collection is one call out through `app.conduit` and one row written here.
-// Everything about WHEN it happens is `subscriptions-renew` and
-// `subscriptions-dun`, and everything about whether it worked comes back as a
+// Everything about WHEN it happens is `SubscriptionPeriod`'s and `Invoice`'s
+// `@@commitment`s, and everything about whether it worked comes back as a
 // webhook the provider signs.
 
 /** What a decline MEANS, which is not the same question as whether the request
@@ -591,24 +729,32 @@ export async function nextInvoiceNumber(sys: Client, prefix = 'INV'): Promise<st
   return `${prefix}-${3000 + (last?.id ?? 0) + 1}`
 }
 
-/** Which subscriptions are due to be charged on `today`, the shop's day.
- *
- *  A period is `[start, end)`, so it is over on the day it ends — `lte`, and a
- *  plain date compares as its text. A trial that has ended counts: the whole of
- *  *the trial converts* is that the period ran out and the next one is charged
- *  for. */
-export async function dueForRenewal(sys: Client, today: string): Promise<any[]> {
-  return await sys.subscription.findMany({
-    where:   { status: { in: ['trialing', 'active', 'pastDue'] }, currentPeriodEnd: { lte: today } },
-    orderBy: { id: 'asc' },
-  })
-}
-
-/** The unpaid invoices behind a subscription, oldest first. What dunning reads,
- *  and what makes a counter on the row unnecessary. */
+/** The unpaid invoices behind a subscription, oldest first. What makes a
+ *  counter on the row unnecessary. */
 export async function unpaidInvoices(sys: Client, subscriptionId: number): Promise<any[]> {
   return await sys.invoice.findMany({
     where:   { subscriptionId, status: 'issued' },
     orderBy: { dueOn: 'asc' },
   })
+}
+
+/**
+ * A `pastDue` subscription whose ledger has come clean goes back to `active`
+ * (`FJS-D363`).
+ *
+ * A reaction to an invoice LEAVING `issued`, not a commitment: nothing is owed
+ * at a time, so the clock has no part in it. The rule is *no issued invoice
+ * remains*, not *this invoice was paid* — a subscription two invoices behind
+ * stays `pastDue` until both are settled or voided.
+ *
+ * On the caller's client, for `settleInvoice`'s reason: the staff button holds
+ * the caller's, the webhook holds the system's. Not in a transaction with the
+ * settle — a payment is recorded whatever happens to the subscription after it.
+ */
+export async function recoverIfClear(client: Client, subscriptionId: number): Promise<boolean> {
+  const sub = await client.subscription.findFirst({ where: { id: subscriptionId } })
+  if (sub?.status !== 'pastDue') return false
+  if ((await unpaidInvoices(client, subscriptionId)).length) return false
+  await client.subscription.transition(subscriptionId, 'recover', { system: true })
+  return true
 }

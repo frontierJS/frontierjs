@@ -9,6 +9,15 @@
 
   export let chain    // { component, ownParams, meta }[]
   export let depth    // current depth in chain
+  // The app's `failed(error, reset)`, handed down from RouterView's `failed`.
+  //
+  // Every level of the chain renders inside a `<mesa:boundary>`, so a throw
+  // while a page or a layout renders replaces that level with `failed` rather
+  // than leaving it half-drawn (FJS-D376). The nearest level catches, so a
+  // page's throw leaves its layouts standing. The three boundaries below share
+  // the one `failed` snippet through RULE 40's global fallback, and read no
+  // async value, so none of them waits on anything (FJS-D378).
+  export let appFailed = null
 
   // A chain can be empty: nothing registered a component for the route. The
   // router refuses that navigation now, naming the file — this is the belt, so
@@ -30,21 +39,32 @@
   }
 </script>
 
+{#snippet failed(error, reset)}
+  {#if appFailed}
+    {@render appFailed(error, reset)}
+  {:else}
+    <div role="alert">
+      <p>Something went wrong showing this page.</p>
+      <button type="button" onclick={reset}>Try again</button>
+    </div>
+  {/if}
+{/snippet}
+
 {#if Component}
   {#key Component}
     {#if isLast}
       {#if getRemountKey() !== null}
         {#key getRemountKey()}
-          <Component data={page.data} />
+          <mesa:boundary><Component data={page.data} /></mesa:boundary>
         {/key}
       {:else}
-        <Component data={page.data} />
+        <mesa:boundary><Component data={page.data} /></mesa:boundary>
       {/if}
     {:else}
       {#snippet inner()}
-        <ChainRendererInner {chain} depth={depth + 1} />
+        <ChainRendererInner {chain} depth={depth + 1} {appFailed} />
       {/snippet}
-      <Component children={inner} />
+      <mesa:boundary><Component children={inner} /></mesa:boundary>
     {/if}
   {/key}
 {/if}

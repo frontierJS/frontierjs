@@ -811,6 +811,147 @@ rows a statement is about. The flags are the only way past it, for every client.
 A `@from(Target, …)` reads its target the way the target reads: templates are
 out unless the `@from` declares `withTemplates: true`.
 
+### The window
+
+```
+@@expires(expiresAt)                               dead from a moment on — IMPOSED
+@@effective(from: effectiveFrom, to: effectiveTo)  in force inside a window — ASKED
+```
+
+**Two words for one predicate with two defaults** (`FJS-D352`). The predicate is
+the same — `from <= at AND (to IS NULL OR to > at)`, half-open, so a row opening
+on the instant another closes belongs to exactly one of them. What differs is
+what a read that states nothing gets, and only the author knows which a model is:
+whether a row outside its window is **dead** or **history**.
+
+**`@@expires` is imposed.** A hold, a session, a reset token: nothing points at
+an expired row, and the read that forgot the filter would hand out a dead
+credential. Every read AND write filters to the rows not yet expired, at `asOf`
+— unstated, the client's own clock, which is what makes expiry testable:
+`env.clock.advance()` moves it, where a `new Date()` written into a service
+moves nothing. **Mint the deadline from the same clock**: `db.$now()` is the
+client's clock as a `Date`, and a deadline written as `Date.now() + ttl` lapses
+on the host's clock while the window reads the client's — they agree
+everywhere but the test that moves one.
+
+```js
+await db.hold.create({ data: { …, expiresAt: new Date(db.$now().getTime() + 15 * 60_000) } })
+await db.hold.findMany()                                      // not yet expired
+await db.hold.findMany({ asOf: '2026-06-01T09:00:00.000Z' })  // … as of then
+await db.hold.findMany({ withExpired: true })                 // every row
+await db.hold.deleteMany({ onlyExpired: true })               // the sweep
+```
+
+**A hard `delete` applies it** — the one place this parts company with
+`@@softDelete`, which `delete` bypasses by design: soft delete's bypass is the
+contract of `delete` against `remove`, and this declares no verb for one to be
+the counterpart of. So a delete keyed on a person means their unexpired rows,
+and a purge — *sign out everywhere* — says `withExpired`. A delete that removes
+no rows still answers a count, so a forgotten flag is silent.
+
+**`@@effective` is asked.** A price, a pay window, a tax band: a row outside its
+window is the price a subscriber is still paying, the terms a payslip was
+computed under — pointed at and listed far more often than filtered. Imposed,
+the pointer answers null and nothing says so. So a read that states `asOf` gets
+the rows in force at that moment, and a read that states nothing gets them all:
+
+```js
+await db.payWindow.findMany({ where: { employeeId } })                    // the history
+await db.payWindow.findFirst({ where: { employeeId }, asOf: '2026-03-31' })  // in force then
+await db.payWindow.findMany({ asOf: '2026-03-31', onlyExpired: true })    // … and not
+```
+
+`onlyExpired` is the **complement**, not *past its end*: it holds the rows whose
+window has not opened yet as well as the ones whose window has closed. On an
+`@@effective` model it needs `asOf` and is refused without one — there is no
+moment to be out of force at until the read states it. An include and a `_count`
+never filter an `@@effective` target, since neither takes `asOf`.
+
+`from:` is required. `@@effective(to: expiresAt)` is refused at parse and names
+`@@expires`, because the line reads as an expiry and would otherwise behave as a
+window nobody asks — an expired session read back as live. A model declares one
+of the two.
+
+**Both edges are the same KIND**, and a pair that disagrees is refused at parse.
+A `DateTime` window is read at an instant and a `String @date` window at a plain
+date, so `asOf` carries whichever the model is — a price changes at a moment, a
+salary changes on a day. No zone is spent on a stated `asOf`: the caller is
+already on the side the column is on. The one default that owes a zone is an
+`@@expires` over days, where *today* is derived from an instant; it reads UTC.
+An `@@effective` window has no default to owe one.
+
+`asSystem()` does **not** lift either, for the reason it lifts neither
+`@@softDelete` nor `@@hasTemplates`: it lifts the access rules, and a window
+shapes which rows a statement is about.
+
+**They imply nothing else.** *At most one open row per parent* is
+`@@unique([parentId], where: effectiveTo == null)`, ordering the pair is
+`@@check`, and nothing here schedules anything — Caravan owns the clock.
+
+**A `@from` over an `@@expires` model is refused** unless it states its own
+`where:`. A `@from` compiles once at startup into SQL with no binds, so it cannot
+read the client's clock; filtering it with SQLite's would give one model two
+clocks that agree in production and disagree under exactly the frozen clock a
+test stages expiry with. The refusal names the `where:` to write. An
+`@@effective` target is not refused — nothing filters it without a stated
+moment, so a `@from` over every row reads it the way it is read.
+
+**What neither reaches is a broadcast that nothing triggers.** `$inWindow` is
+asked at the fan-out, so a frame about an expired row is not sent — except a
+removal, which is sent anyway, because suppressing it strands the row in every
+store already holding it. A row that expires with no write behind it announces
+nothing at all, and no store learns it fell out ([`FJS-1274`](../../../ISSUES.md#fjs-1274)).
+
+### The commitment
+
+```
+@@commitment(abandon,            on: createdAt + 14d)
+@@commitment(lapse,              on: dueOn + graceDays, while: held == false)
+@@commitment(subscription.lapse, on: dueOn + graceDays, while: status == 'issued')
+```
+
+**A transition the system owes a row at a time** (`FJS-D353`). The window
+changes what a read COUNTS and writes nothing; a commitment is the clock causing
+a WRITE. The first argument names a transition on this model's `@@transitions`,
+so the from-state is the guard — a paid order owes no `abandon` however old —
+and the optimistic lock on the transition is the once-ness. A row may carry
+both on one date: the window is the truth for reads, the transition is the
+record that catches up.
+
+**The move may be on the row a to-one relation reaches** (`FJS-D362`):
+`subscription.lapse` on an `Invoice` is the invoice's deadline and the
+subscription's transition. Only the target crosses — `on:` and `while:` still
+read the declaring row — and the TARGET's from-state is what guards it, so
+with two unpaid invoices the oldest fires the lapse and the later one then owes
+nothing. A null relation owes nothing, and a to-many relation is refused
+because it names no one row.
+
+`on:` is a time column of the row, optionally moved by a duration literal or by
+a column of the SAME row (`FJS-D355`). The column is a required `Int` carrying a
+duration `@unit` and `@immutable`, stamped when the terms are agreed — the grace
+on an invoice is a receipt, so editing the plan does not move a deadline
+somebody was already given. Never a hop: the read is one table.
+
+```js
+await db.order.due()                                             // owed by now
+await db.order.due({ by: '2026-10-05T00:00:00.000Z' })           // … by then
+await db.invoice.due({ timeZone: 'Pacific/Auckland' })           // a day kind, read there
+await db.order.due({ where: { id } })                            // this row, asked again
+// → [{ transition: 'abandon', id: 7, dueAt: '2026-10-05T00:00:00.000Z',
+//      target: { model: 'Order', accessor: 'order', transition: 'abandon', id: 7 } }]
+```
+
+`due()` makes no transition. It is a read through `findMany`, so the caller's
+gate and policies apply and the sweep asks it of a system client; a row it
+returns may have moved before anybody acts, which is why a fire asks again with
+`where`. **Units follow the anchor's kind**: `mo`/`yr` are refused on a
+`DateTime` (a month needs a zone the expression does not have) and the sub-day
+units on a `String @date`. A month lands on the same day or the month's last,
+as `addToDate` does — SQLite's own `+1 months` overflows January 31st into March,
+so the SQL spells the clamp out. `while:` reads this row alone; `auth()`, `now()`
+and a relation are refused by name. It emits no DDL, and nothing in the schema
+names a job: the sweep is the API realm's, and Caravan owns the clock.
+
 ### Full-text search
 ```
 @@fts([field1, field2])          FTS5 virtual table + sync triggers

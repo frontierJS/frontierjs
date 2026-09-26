@@ -24,23 +24,22 @@ it re-resolved when it runs. Survives a restart.
 
 | Job | Queue | Schedule | Zone | Attempts | Retry delay | Timeout |
 | --- | --- | --- | --- | --- | --- | --- |
-| `abandoned-orders-sweep` | `default` | `0 3 * * *` | — | 3 | default | **none** |
+| `commitment-fire` | `default` | on dispatch | — | 3 | default | **none** |
+| `commitment-sweep` | `default` | `* * * * *` | — | 3 | default | **none** |
 | `courier-book` | `fulfillment` | on dispatch | — | 5 | 60000, 300000, 1800000 | 30000ms |
 | `holds-release` | `default` | `*/5 * * * *` | — | 3 | default | **none** |
 | `invoice-collect` | `default` | on dispatch | — | 4 | default | **none** |
+| `invoice-remind` | `default` | on dispatch | — | 3 | default | **none** |
 | `orion.run` | `orion` | on dispatch | — | 3 | default | **none** |
 | `orion.sweep` | `orion` | `* * * * *` | — | 3 | default | **none** |
 | `payment-announce` | `fulfillment` | on dispatch | — | 5 | 30000, 120000, 600000 | **none** |
 | `payslip-calculate` | `default` | on dispatch | — | 3 | default | **none** |
 | `payslip-send` | `default` | on dispatch | — | 5 | default | **none** |
 | `retention` | `default` | `0 4 * * *` | — | 3 | default | **none** |
-| `subscription-renew` | `default` | on dispatch | — | 3 | default | **none** |
-| `subscriptions-dun` | `default` | `0 6 * * *` | — | 3 | default | **none** |
-| `subscriptions-renew` | `default` | `0 * * * *` | — | 3 | default | **none** |
 
-13 handler(s), 6 of them on a clock.
+12 handler(s), 4 of them on a clock.
 
-**12 with no timeout.** Absent means no bound, honestly — but a
+**11 with no timeout.** Absent means no bound, honestly — but a
 handler that never settles holds its slot for the life of the process, and on a
 single-concurrency queue everything behind it waits (`FJS-295`). Worth knowing
 which ones those are, which is why the column is here rather than omitted when

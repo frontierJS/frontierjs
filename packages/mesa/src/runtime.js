@@ -54,6 +54,14 @@ let _batching = false
 const _queue = new Set()
 let _microtaskPending = false
 
+// What is causing the notifications happening right now — a write entry from
+// `set()`, or the node `_runNode` is running. Stamped onto a node as `_cause`
+// when it is queued, which is the one fact `_deps`/`_subs` cannot answer: an
+// edge says what COULD wake a node, not what did. Read by `__dev` only, and
+// both stay inert until a dev build registers something.
+let _devOn = false
+let _devCause = null
+
 // Schedule a microtask flush if one isn't already queued and we're not inside
 // a synchronous batch(). This is the heart of automatic coalescing: multiple
 // signal writes anywhere (async fns, timers, Promise callbacks) in the same
@@ -91,7 +99,21 @@ function _scheduleFlush() {
 // layer first means renders and user effects in this generation read
 // derivations that have stopped moving. It settles one DOM-depth at a time
 // rather than to quiescence — see the note inside the loop.
+//
+// A flush asked for while one is running joins it: the writes are already in
+// `_queue`, and the running loop drains it. A second drain underneath would
+// start a new generation, zeroing every node's run count, so a cycle through it
+// never tripped the guard and recursed until the stack gave out. `batch()` asks
+// for one on every event and every prop push, and a parent pushes its child's
+// props from inside its own render (`FJS-1329`).
+let _flushing = false
 function _flush() {
+  if (_flushing) return
+  _flushing = true
+  try { _drain() } finally { _flushing = false }
+}
+
+function _drain() {
   _microtaskPending = false
   _flushGen++
   _flushWork = 0
@@ -172,16 +194,26 @@ function _flush() {
       if (_ownerPending(node, gen)) { (deferred ??= []).push(node); continue }
       _runNode(node)
     }
-    // User effects need no such guard: they run after everything that builds
-    // the DOM, so an owner that was going to dispose them already has.
-    for (const node of pending) if (node._isUserEffect) _runNode(node)
+    if (_halted) break
 
     // Whatever was held back goes round again — its owner has now run, so it
     // is either disposed (and `_run` is a no-op) or free to proceed. Each pass
     // runs at least the outermost pending node, so this terminates in tree
     // depth rather than node count.
-    if (_halted) break
     if (deferred) for (const node of deferred) if (!node._disposed) _queue.add(node)
+
+    // User effects need no such guard: they run after everything that builds
+    // the DOM, so an owner that was going to dispose them already has. Which
+    // means after the DOM work this tier QUEUED as well — a parent's render
+    // pushes its child's props, and the child re-renders in the next pass, so a
+    // `$:` in the parent that ran now would read the child as it was.
+    let building = false
+    for (const node of _queue) if (!node._isUserEffect) { building = true; break }
+    if (building) {
+      for (const node of pending) if (node._isUserEffect && !node._disposed) _queue.add(node)
+      continue
+    }
+    for (const node of pending) if (node._isUserEffect) _runNode(node)
   }
   if (_halted) _queue.clear()
 }
@@ -238,6 +270,11 @@ function _runNode(node) {
 
   const comps = _compStack.length
   const ctxs = _contextStack.length
+  const prevCause = _devCause
+  if (_devOn) {
+    __dev._onRun(node)
+    _devCause = node
+  }
   try {
     node._run()
   } catch (e) {
@@ -249,9 +286,52 @@ function _runNode(node) {
     // depth we entered at. (_owner and _listener need no repair — _run restores
     // those in its own finally.)
     _unwindComponents(comps, ctxs)
-    console.error(e)
+    _raise(node, e)
+  } finally {
+    _devCause = prevCause
   }
 }
+
+// A throw during a flush goes to the nearest `<mesa:boundary>` above the node
+// that threw (`FJS-D372`). The owner tree is the render tree and is still
+// standing here, where the context stack was popped when setup returned
+// (`FJS-D374`). A boundary claims a throw by setting `_catch` on the owner of
+// its content; with none above, the console is all there is.
+function _raise(node, e) {
+  _catcherOf(node)?.(e)
+  console.error(e)
+}
+
+function _catcherOf(node) {
+  for (let o = node; o; o = o._owner) if (o._catch && !o._disposed) return o._catch
+  return null
+}
+
+// A derivation's throw lands on the boundaries around the nodes that READ it.
+// The memo is owned where it was declared, usually the component's script,
+// outside any boundary in that component's template — and the region a throw
+// leaves half-built is the reader's. Memos in between are followed to their
+// own readers. Routed rather than re-pulled: a reader that re-runs without
+// reading the memo again would drop the throw with nothing said.
+function _raiseToReaders(subs, e) {
+  const catchers = new Set()
+  const seen = new Set()
+  const walk = (subs) => {
+    for (const sub of subs) {
+      if (seen.has(sub)) continue
+      seen.add(sub)
+      if (sub._out) walk(sub._out._subs)
+      else { const c = _catcherOf(sub); if (c) catchers.add(c) }
+    }
+  }
+  walk(subs)
+  for (const c of catchers) c(e)
+  console.error(e)
+}
+
+// A boundary's `_catch` during a server render. The throw leaves the flush and
+// reaches `renderToHTML`, which fails the page (`FJS-D377`).
+function _rethrow(e) { throw e }
 
 // Truncate the component and context stacks back to a known-good depth after a
 // throw, restoring the module-globals that pop_component would have restored.
@@ -347,10 +427,15 @@ export function createSignal(value, opts) {
     // which is otherwise a no-op precisely because the reference is unchanged.
     // Per-write, never per-signal: making a signal always-notify would discard
     // the equality optimization for every ordinary write to it.
-    if (!force && eq(value, next)) return
+    if (!force && eq(value, next)) return false
     value = next
     for (const sub of [...self._subs]) sub._notify()
+    return true
   }
+  // The signal's own node, for `__dev` to read its edges from. Devtools that
+  // kept a log of edges beside `_subs` would be a second graph that can drift
+  // from the one that actually runs.
+  read._src = self
   return [read, write]
 }
 
@@ -454,6 +539,7 @@ function _makeNode(fn) {
     // creates carry no `_fn` and are managed by that block instead.
     _selfOwned: true,
     _notify() {
+      if (_devOn) this._cause = _devCause
       _queue.add(this)
       _scheduleFlush()
     },
@@ -500,6 +586,7 @@ function _makeNode(fn) {
         prevO = _owner
       _listener = this
       _owner = this
+      const run = (this._runs = (this._runs ?? 0) + 1)
       try {
         const result = this._fn()
         // Return-based cleanup: if the effect fn returns a function, register it
@@ -512,8 +599,13 @@ function _makeNode(fn) {
           this._cleanups.push(result)
         } else if (result && typeof result.then === 'function') {
           const node = this
+          // A teardown arriving after its run is over — the node disposed, or
+          // run again — is called now. Stored, it never ran after a dispose,
+          // and after a re-run it ran beside a later run's (`FJS-1328`).
           result.then((ret) => {
-            if (typeof ret === 'function') node._cleanups.push(ret)
+            if (typeof ret !== 'function') return
+            if (node._disposed || node._runs !== run) _safeCall(ret)
+            else node._cleanups.push(ret)
           })
         }
       } finally {
@@ -584,6 +676,16 @@ export function createMemo(fn, opts) {
   let dirty = true
   let computed = false // has fn() ever run?
   let moved = false    // value changed since we last told ownSubs about it
+  // What the last recompute threw, held until a dependency moves. `dirty` stays
+  // set after a throw, and `_notify` reads a set `dirty` as "already queued" —
+  // without this the memo was never queued again and every consumer kept the
+  // last good value (`FJS-1325`). A read while it is held throws it again
+  // rather than running `fn` once per reader.
+  const NONE = {}
+  let error = NONE
+  // A reader pulled a throw and holds no value, so the next success is owed
+  // to them even where `eq` calls it unchanged.
+  let owed = false
   const ownSubs = new Set()
 
   // Recompute now; report whether the value actually moved.
@@ -604,6 +706,12 @@ export function createMemo(fn, opts) {
       const next = fn()
       const first = !computed
       computed = true
+      // On a FIRST computation too, where there is nothing to compare.
+      if (owed) {
+        owed = false
+        value = next
+        return true
+      }
       // First computation: nobody has seen a previous value, so there is
       // nothing to have moved away from. Note that on later runs a truthy `eq`
       // keeps the existing value rather than the new one — for a custom
@@ -617,6 +725,8 @@ export function createMemo(fn, opts) {
       return true
     } catch (e) {
       dirty = true
+      error = e
+      owed = true
       throw e
     } finally {
       _listener = prevL
@@ -630,6 +740,10 @@ export function createMemo(fn, opts) {
     _owner: _owner,
     _isDerived: true,
     _disposed: false,
+    // Created by the body of whatever owns it, so that owner's re-run replaces
+    // it. Unset, each re-run of an effect that built a memo left one more
+    // subscribed to its sources (`FJS-1327`).
+    _selfOwned: true,
     // A dependency moved. Queue ourselves, but do NOT touch ownSubs yet.
     // Whether consumers need to re-run is not knowable until fn() has run and
     // the result has been compared — and suppressing that re-run when the
@@ -638,7 +752,9 @@ export function createMemo(fn, opts) {
     // it cached the value but could never cut off propagation, so a memo like
     // `count > 0` re-rendered every consumer on each increment.
     _notify() {
-      if (dirty || this._disposed) return
+      if ((dirty && error === NONE) || this._disposed) return
+      if (_devOn) this._cause = _devCause
+      error = NONE
       dirty = true
       _queue.add(this)
       _scheduleFlush()
@@ -654,14 +770,25 @@ export function createMemo(fn, opts) {
         moved = false
         return
       }
-      if (dirty && _recompute()) moved = true
+      // Readers are not woken by a throw: they keep the last good value, and
+      // the ones inside a boundary are replaced by its `failed`.
+      if (dirty) {
+        if (error === NONE) {
+          try { if (_recompute()) moved = true } catch {}
+        }
+        if (error !== NONE) {
+          moved = false
+          return _raiseToReaders(ownSubs, error)
+        }
+      }
       if (!moved) return
       moved = false
       for (const sub of [...ownSubs]) sub._notify()
     }
   }
   if (_owner) _owner._children.push(memoNode)
-  const memoSignal = { _subs: ownSubs }
+  const memoSignal = { _subs: ownSubs, _node: memoNode }
+  memoNode._out = memoSignal
   const read = () => {
     if (_listener) {
       ownSubs.add(_listener)
@@ -670,10 +797,69 @@ export function createMemo(fn, opts) {
     // Still a pull: a read that arrives before the flush reaches us recomputes
     // on demand. Remember that the value moved so _run() still propagates to
     // everyone who did not read us directly.
-    if (dirty && _recompute()) moved = true
+    if (dirty) {
+      if (error !== NONE) throw error
+      if (_recompute()) moved = true
+    }
     return value
   }
+  read._src = memoSignal
   return read
+}
+
+// ─── createKeyedEquals ──────────────────────────────────────────────────────
+//
+// `const isSelected = createKeyedEquals(() => selected)` answers
+// `isSelected(key)` as `key === selected`, and subscribes the reader to that KEY
+// rather than to `selected`. A write then wakes the readers of the old value and
+// of the new one, where a plain comparison woke every reader: a thousand rows
+// comparing `selected === row.id` re-ran a thousand effects to move one class
+// (`FJS-1332`). The compiler emits one of these for that shape inside an
+// `{#each}`, so an author who writes the comparison never meets the name.
+//
+// A reader subscribes to a bucket, a `{ _subs }` source like any other, so the
+// ordinary unsubscribe paths — a re-run, a memo recompute, a dispose — reach it.
+// The bucket leaves the map when its last reader goes; without that, a list
+// replaced wholesale leaves one empty bucket per key it ever showed.
+//
+// Buckets are a Map, so keys are grouped by SameValueZero, which is looser than
+// `===` only at NaN. Waking a NaN reader that did not need it is harmless: the
+// answer is recomputed with `===`, and the map only decides who is asked.
+class KeyedSubs extends Set {
+  constructor(buckets, key) { super(); this._buckets = buckets; this._key = key }
+  delete(node) {
+    const had = super.delete(node)
+    if (this.size === 0 && this._buckets.get(this._key)?._subs === this) this._buckets.delete(this._key)
+    return had
+  }
+}
+
+export function createKeyedEquals(source) {
+  const current = createMemo(source)
+  const buckets = new Map()
+  let prev
+  let seen = false
+  // Derived tier, so the readers it wakes are queued in the same flush as the
+  // write and run with the renders.
+  createEffect(() => {
+    const next = current()
+    if (!seen) { seen = true; prev = next; return }
+    if (Object.is(next, prev)) return
+    const woke = [buckets.get(prev), buckets.get(next)]
+    prev = next
+    for (const b of woke) if (b) for (const sub of [...b._subs]) sub._notify()
+  }, { derived: true })
+  return (key) => {
+    if (_listener) {
+      let b = buckets.get(key)
+      if (!b) { b = { _subs: new KeyedSubs(buckets, key) }; buckets.set(key, b) }
+      b._subs.add(_listener)
+      _listener._deps.add(b)
+    }
+    // Read live rather than from `prev`: a handler that writes and then asks
+    // before the flush must see its own write.
+    return key === untrack(current)
+  }
 }
 
 export function batch(fn) {
@@ -735,6 +921,22 @@ export function onMount(fn) {
 }
 export function onDestroy(fn) {
   onCleanup(fn)
+}
+
+// A component's mount callbacks run a microtask after it is built, and it can
+// be destroyed in between — an `{#if}` opened and closed in one flush. They ran
+// anyway and their teardowns went onto a root nothing would dispose again, so a
+// socket or listener opened for a component that never mounted stayed open
+// (`FJS-1335`). Answers whether the component is still there.
+function _runMounts(rootNode, mountList) {
+  for (const fn of mountList) {
+    if (rootNode._disposed) return false
+    const result = _safeCall(fn)
+    if (typeof result !== 'function') continue
+    if (rootNode._disposed) _safeCall(result)
+    else rootNode._cleanups.push(result)
+  }
+  return !rootNode._disposed
 }
 
 export function createContext(defaultValue) {
@@ -1204,35 +1406,49 @@ export function bindInput(el, name, get, set) {
     }
     addEvent(el, 'input', handler)
     addEvent(el, 'change', handler)
+    let v
+    const apply = () => {
+      // Snapshot: el.options is a LIVE collection and writing `selected`
+      // re-derives it, so iterating it directly reads entries that have
+      // already moved.
+      const opts = [...el.options]
+      if (el.multiple) {
+        const wanted = Array.isArray(v) ? v : v == null ? [] : [v]
+        for (const o of opts) o.selected = wanted.includes(optionValue(o))
+      } else {
+        // selectedIndex, not per-option flags: a single select must always
+        // have exactly one selection, so clearing the old one and setting the
+        // new one as two writes is a state the element quietly repairs.
+        // -1 is the documented way to select nothing.
+        const idx = opts.findIndex((o) => optionValue(o) === v)
+        el.selectedIndex = idx
+        // Nothing matched and the value is a plain string — let the DOM have
+        // its own say, which also covers options added by other means.
+        if (idx === -1 && typeof v === 'string') el.value = v
+      }
+    }
     createEffect(() => {
-      const v = get()
+      v = get()
       // The options may not exist yet — an {#each} inside the select renders in
       // the same flush, and a select in a detached fragment reports none at all.
       // `_resolved.then` re-applies once they are there; with static options the
       // first pass already did the work and the second is a no-op.
-      const apply = () => {
-        // Snapshot: el.options is a LIVE collection and writing `selected`
-        // re-derives it, so iterating it directly reads entries that have
-        // already moved.
-        const opts = [...el.options]
-        if (el.multiple) {
-          const wanted = Array.isArray(v) ? v : v == null ? [] : [v]
-          for (const o of opts) o.selected = wanted.includes(optionValue(o))
-        } else {
-          // selectedIndex, not per-option flags: a single select must always
-          // have exactly one selection, so clearing the old one and setting the
-          // new one as two writes is a state the element quietly repairs.
-          // -1 is the documented way to select nothing.
-          const idx = opts.findIndex((o) => optionValue(o) === v)
-          el.selectedIndex = idx
-          // Nothing matched and the value is a plain string — let the DOM have
-          // its own say, which also covers options added by other means.
-          if (idx === -1 && typeof v === 'string') el.value = v
-        }
-      }
       apply()
       _resolved.then(apply)
     })
+    // Options that arrive in a LATER flush — every list fetched from a server —
+    // change the select's children and not the value, so the effect above never
+    // re-runs, and the browser selects the first option it is given. An edit
+    // screen then shows every picker wrong, and a person correcting what they
+    // see overwrites what is stored (`FJS-1320`). An unkeyed {#each} reorder adds
+    // no option at all and only rewrites each one's value, so the attribute is
+    // watched as well as the list. `apply` writes properties only, so it cannot
+    // wake the observer that calls it.
+    if (typeof MutationObserver === 'function') {
+      const watch = new MutationObserver(apply)
+      watch.observe(el, { childList: true, subtree: true, attributes: true, attributeFilter: ['value'] })
+      onCleanup(() => watch.disconnect())
+    }
     return
   }
 
@@ -2230,13 +2446,8 @@ export function makeComponent(init) {
       }
     }
 
-    // Flush mount callbacks. If a callback returns a function, register it as
-    // a cleanup on the component's root node (runs on destroy).
     _resolved.then(() => {
-      for (const fn of mountList) {
-        const result = _safeCall(fn)
-        if (typeof result === 'function') rootNode._cleanups.push(result)
-      }
+      if (!_runMounts(rootNode, mountList)) return
 
       // Apply parent-provided attachments to the component's root DOM element.
       // Attachments are passed via $option.attachments — an array of (el) => cleanup fns.
@@ -3515,15 +3726,23 @@ export function mountedBlock(anchor, getPromise, pendingBlock, contentBlock, fai
  * accessing them here subscribes to the underlying signals automatically.
  *
  * States:
+ *   - the content threw          → failedBlock(err, reset)  [FJS-D372]
  *   - any state.error !== null  → failedBlock(err)  [error wins]
  *   - any state.loading === true → pendingBlock()   [first-load gate]
  *   - all resolved              → contentBlock()    [mounted once, stays]
+ *
+ * A throw is caught only where a `failed` exists to show — with no failedBlock
+ * it carries on up the owner tree to the next boundary. The content is disposed
+ * rather than left half-built, and `reset` builds it again (`FJS-D375`). In a
+ * server render nothing is caught: a prerendered `failed` is an error page
+ * published with nothing reporting it, so the throw fails the render
+ * (`FJS-D377`).
  *
  * @param {Comment}   anchor        Anchor comment node
  * @param {Function}  getStates     () => makeAsyncState[] — reactive getter
  * @param {Function}  contentBlock  () => DOM | null
  * @param {Function}  pendingBlock  () => DOM | null
- * @param {Function}  failedBlock   (err) => DOM | null
+ * @param {Function}  failedBlock   (err, reset?) => DOM | null
  */
 export function boundaryBlock(anchor, getStates, contentBlock, pendingBlock, failedBlock) {
   const withContext = captureContext()
@@ -3533,6 +3752,29 @@ export function boundaryBlock(anchor, getStates, contentBlock, pendingBlock, fai
   let contentMounted = false
   let startMarker  = null   // comment delimiting the mounted branch, owned here
   let branchNode   = null   // owner node for the mounted branch's effects
+
+  const catches = !!failedBlock && _isClient
+  const NONE = {}
+  let caught = NONE
+  let tries  = 0
+  const [attempt, setAttempt] = createSignal(0)
+  const reset = () => {
+    if (caught === NONE) return
+    caught = NONE
+    contentMounted = false
+    setAttempt(++tries)
+  }
+  // A throw from a node inside the content, during a flush. The content goes
+  // now, so nothing else queued inside it runs against a half-built region;
+  // the failed branch is mounted by the boundary's own effect when it re-runs.
+  const _catch = (e) => {
+    if (branchNode) {
+      _disposeNode(branchNode, true)
+      branchNode = null
+    }
+    caught = e
+    setAttempt(++tries)
+  }
 
   // pendingBlock and failedBlock may be compiler-emitted snippet wrappers
   // (__anchor) => $$snippet_pending(__anchor) — or factory blocks returning DOM.
@@ -3592,15 +3834,28 @@ export function boundaryBlock(anchor, getStates, contentBlock, pendingBlock, fai
     }
     if (outerOwner) outerOwner._children.push(node)
     branchNode = node
+    // The content is a block factory and is called once. `_callSnippetBlock`
+    // retries a call that threw in the snippet calling style, which would build
+    // content that threw a second time, under the same owner.
+    const content = factory === contentBlock
+    if (content && failedBlock) node._catch = catches ? _catch : _rethrow
     const prev = _owner
     _owner = node
-    try { _swap(withContext(() => _callSnippetBlock(factory, ...args))) } finally { _owner = prev }
+    try {
+      _swap(withContext(() => content ? factory() : _callSnippetBlock(factory, ...args)))
+    } finally { _owner = prev }
   }
 
   createEffect(() => {
     // The enclosing effect node — branch owners hang off it, and are removed
     // from its children on swap so re-runs cannot accumulate them.
     const outerOwner = _owner
+    attempt()
+    if (caught !== NONE) {
+      contentMounted = false
+      _mountBranch(outerOwner, failedBlock, caught, reset)
+      return
+    }
     const states = getStates()
     // Error wins — show failed if any state has an error
     const errState = states.find(s => s.error !== null)
@@ -3617,7 +3872,20 @@ export function boundaryBlock(anchor, getStates, contentBlock, pendingBlock, fai
     // All resolved — mount content once and leave it
     if (!contentMounted) {
       contentMounted = true
-      _mountBranch(outerOwner, contentBlock)
+      const comps = _compStack.length
+      const ctxs = _contextStack.length
+      try {
+        _mountBranch(outerOwner, contentBlock)
+      } catch (e) {
+        // Building the content threw — this effect's own first run, or a
+        // rebuild after `reset`. Not a flush throw, so `_runNode` never saw it.
+        if (!catches) throw e
+        _unwindComponents(comps, ctxs)
+        console.error(e)
+        caught = e
+        contentMounted = false
+        _mountBranch(outerOwner, failedBlock, e, reset)
+      }
     }
   })
 }
@@ -4253,6 +4521,29 @@ function _warnOpaqueWatch(value, path) {
   )
 }
 
+// A data property that can neither be written nor redefined. The object it holds
+// is handed back unwrapped, so nothing below it is watched.
+function _isLocked(target, key) {
+  const d = Reflect.getOwnPropertyDescriptor(target, key)
+  return d !== undefined && d.configurable === false && d.writable === false
+}
+
+// Unwrapped is right for a deep-frozen value, which cannot change. A MUTABLE
+// object under a frozen parent is the shape that fails quietly: a write to it
+// reaches the raw object and fires no watch. Once per value, as
+// `_warnOpaqueWatch` does.
+const _warnedLocked = new WeakSet()
+function _warnLockedWatch(value, path) {
+  if (typeof console === 'undefined' || !console.warn) return
+  if (Object.isFrozen(value) || _warnedLocked.has(value)) return
+  _warnedLocked.add(value)
+  console.warn(
+    `[Mesa] ${path || 'a watched property'} is a read-only property of a frozen ` +
+    `object, so the object it holds cannot be watched: a write inside it ` +
+    `re-renders nothing. Freeze it too if it is constant, or leave the parent unfrozen.`
+  )
+}
+
 // True for a plain object or array — something that cannot have private fields,
 // so its accessors are safe to invoke with the proxy as `this`. Computed once
 // per proxy rather than per read.
@@ -4329,6 +4620,13 @@ function _buildProxy(obj, byTarget, entry, pathPrefix) {
       // to re-run when a covering watch fires.
       if (_listener) for (let i = 0; i < nodes.length; i++) _watchSubscribe(nodes[i], key)
       if (typeof value === 'object' && value !== null) {
+        // A Proxy must return a non-writable, non-configurable property's own
+        // value, so wrapping it threw on the READ — `Object.freeze(config)` then
+        // `$: config` failed at `config.tax.rate` before anything was written.
+        if (_isLocked(target, key)) {
+          _warnLockedWatch(value, pathPrefix ? `${pathPrefix}.${key}` : key)
+          return value
+        }
         if (!_isOpaque(value)) {
           const child = _proxyFor(value, byTarget, _watchDescend(nodes[0], key), pathPrefix, key)
           // An aliased parent puts the child at as many positions as the parent
@@ -4427,8 +4725,31 @@ function _warnAccessorWatch(target, path) {
   }
 }
 
-export function watchPath(obj, path) {
+// A watch over a primitive, null or undefined can never fire: a watch observes an
+// object's fields (RULE 44). The registry is a WeakMap, so it threw `WeakMap keys
+// must be objects` at mount, naming neither the watch nor its line. Keyed by the
+// label rather than the value, since a primitive cannot go in a WeakSet.
+const _warnedPrimitive = new Set()
+function _warnPrimitiveWatch(obj, path, label) {
+  if (typeof console === 'undefined' || !console.warn) return
+  const name = label ? (path ? `${label}.${path}` : label) : (path || 'a watched value')
+  const kind = obj === null ? 'null' : typeof obj
+  const key = `${name}|${kind}`
+  if (_warnedPrimitive.has(key)) return
+  _warnedPrimitive.add(key)
+  console.warn(
+    `[Mesa] $: ${name} watches a ${kind}, so it will never fire — a watch observes an ` +
+    `object's fields, and an imported primitive is a constant (RULE 44). Put the ` +
+    `state on an exported object and watch its field instead (e.g. $: store.count).`
+  )
+}
+
+export function watchPath(obj, path, label) {
   if (!_isClient) return [() => undefined, () => {}] // Rule 19: no-op on server
+  if (obj === null || (typeof obj !== 'object' && typeof obj !== 'function')) {
+    _warnPrimitiveWatch(obj, path, label)
+    return [() => undefined, () => {}]
+  }
 
   // Normalize a proxy to its root. The signal registry is keyed by the raw
   // object because that is what the proxy's set trap fires against — registering
@@ -4705,39 +5026,148 @@ function _readSignalValue(sig) {
   return undefined
 }
 
+const _MAX_RUNS = 500
+let _devWriteCount = 0
+let _devNodeCount  = 0
+
+// A registered binding's signal node — the object whose `_subs` are its
+// dependents. `track()` hands out `{ _read }`, `trackDerived()` `{ _memo }`,
+// and a writable derived registers its bare reader.
+function _srcOf(tracked) {
+  return tracked?._read?._src ?? tracked?._memo?._src ?? tracked?._src ?? null
+}
+
+function _nodeKind(node) {
+  if (node._isDerived) return 'derived'
+  if (node._isUserEffect) return 'effect'
+  return 'block'
+}
+
+// The component a node was created inside — the nearest owner that is a
+// dev-registered component root.
+function _nodeComponent(node) {
+  for (let o = node._owner; o; o = o._owner) {
+    if (o._devComp != null) return o._devComp
+  }
+  return null
+}
+
+function _describeSignal(src) {
+  const rec = __dev._bySrc.get(src)
+  return rec
+    ? { signalId: rec.id, name: rec.name, kind: rec.kind, componentId: rec.componentId }
+    : { signalId: null, name: null, kind: src._node ? 'derived' : 'signal', componentId: null }
+}
+
+function _describeNode(node) {
+  const rec = node._out ? __dev._bySrc.get(node._out) : null
+  return {
+    nodeId:      node._devId ??= ++_devNodeCount,
+    kind:        _nodeKind(node),
+    name:        rec?.name ?? (node._fn?.name || null),
+    signalId:    rec?.id ?? null,
+    componentId: _nodeComponent(node),
+    pending:     _queue.has(node),
+  }
+}
+
+// What woke a node: each link is what notified the one before it, back to a
+// write — and past it, to the node that made the write, when one did.
+// Snapshotted when the node runs, since `_cause` is overwritten by the next wake.
+function _causeChain(node) {
+  const chain = []
+  const seen = new Set()
+  for (let c = node._cause; c && !seen.has(c); c = c._isWrite ? c._by : c._cause) {
+    seen.add(c)
+    chain.push(c._isWrite
+      ? { write: c.write, signalId: c.signalId, name: c.name, value: c.value }
+      : _describeNode(c))
+  }
+  return chain
+}
+
 export const __dev = {
   _signals:    new Map(),   // sig → { id, name, kind, componentId }
+  _bySrc:      new Map(),   // signal node → the same record, for naming an edge
   _components: new Map(),   // instanceId → { id, name, file, signals: Set, mountTime }
-  _log:        [],
+  _log:        [],          // writes that moved a value, with what each woke
+  _runs:       [],          // nodes the flush ran, with the chain that woke each
   _listeners:  new Set(),
 
   /** Register a signal. Called by compiler-emitted __dev.r() calls in dev builds. */
   r(sig, name, kind) {
     if (!sig) return
+    _devOn = true
     const id = ++_devSigCount
     const record = { id, name, kind, componentId: _devCompId }
     this._signals.set(sig, record)
+    const src = _srcOf(sig)
+    if (src) this._bySrc.set(src, record)
     if (_devCompId !== null) {
       const comp = this._components.get(_devCompId)
       if (comp) comp.signals.add(sig)
     }
   },
 
-  /** Called from set() when a registered signal changes. */
-  _onUpdate(sig, value) {
+  /** Called from set() before a registered signal is written. What it wakes
+   *  is read off the signal's own `_subs` before they are notified. */
+  _beginWrite(sig, value) {
     const record = this._signals.get(sig)
-    if (!record) return
-    const entry = {
+    if (!record) return null
+    const src = _srcOf(sig)
+    return {
+      _isWrite:    true,
+      // The node running when the write happened — an effect writing a
+      // signal is itself caused by something, and the chain continues there.
+      _by:         _devCause,
+      write:       ++_devWriteCount,
       ts:          Date.now(),
       signalId:    record.id,
       name:        record.name,
       kind:        record.kind,
       componentId: record.componentId,
       value:       _serializeValue(value),
+      woke:        src ? [...src._subs].map(_describeNode) : [],
+      by:          _devCause && !_devCause._isWrite ? _describeNode(_devCause) : null,
     }
+  },
+
+  _endWrite(entry) {
+    const { _isWrite, _by, ...data } = entry
     if (this._log.length >= _MAX_LOG) this._log.shift()
-    this._log.push(entry)
-    this._emit({ type: 'update', data: entry })
+    this._log.push(data)
+    this._emit({ type: 'update', data })
+  },
+
+  /** Called by the flush for every node it runs. */
+  _onRun(node) {
+    if (node._disposed) return
+    const data = { ts: Date.now(), ...(_describeNode(node)), cause: _causeChain(node) }
+    if (this._runs.length >= _MAX_RUNS) this._runs.shift()
+    this._runs.push(data)
+    this._emit({ type: 'run', data })
+  },
+
+  /** A registered signal's edges, read off the live graph: what it reads
+   *  (a derivation's `_deps`) and what reads it (`_subs`). */
+  graph(signalId) {
+    let src = null, rec = null
+    for (const [s, r] of this._bySrc) if (r.id === signalId) { src = s; rec = r; break }
+    if (!src) return null
+    return {
+      ...rec,
+      dependencies: src._node ? [...src._node._deps].map(_describeSignal) : [],
+      dependents:   [...src._subs].map(_describeNode),
+    }
+  },
+
+  /** A node's most recent run and the chain that woke it. The id is one
+   *  `graph()` handed out; null means the flush has not run it since. */
+  why(nodeId) {
+    for (let i = this._runs.length - 1; i >= 0; i--) {
+      if (this._runs[i].nodeId === nodeId) return this._runs[i]
+    }
+    return null
   },
 
   _emit(event) {
@@ -4753,7 +5183,13 @@ export const __dev = {
   snapshot() {
     const signals = []
     for (const [sig, rec] of this._signals) {
-      signals.push({ ...rec, value: _serializeValue(_readSignalValue(sig)) })
+      const g = this.graph(rec.id)
+      signals.push({
+        ...rec,
+        value:        _serializeValue(_readSignalValue(sig)),
+        dependencies: g ? g.dependencies.map((d) => d.name ?? `<${d.kind}>`) : [],
+        dependents:   g ? g.dependents.length : 0,
+      })
     }
     const components = []
     for (const [, comp] of this._components) {
@@ -4763,9 +5199,10 @@ export const __dev = {
         file:      comp.file,
         mountTime: comp.mountTime,
         signals:   [...comp.signals].map(s => this._signals.get(s)?.id).filter(Boolean),
+        statics:   comp.statics,
       })
     }
-    return { signals, components, log: [...this._log] }
+    return { signals, components, log: [...this._log], runs: [...this._runs] }
   },
 }
 
@@ -4775,7 +5212,7 @@ if (typeof window !== 'undefined') window.__MESA_DEV__ = __dev
 
 const _compStack = []
 
-export function push_component(devName, devFile) {
+export function push_component(devName, devFile, devStatic) {
   const rootNode = {
     _fn: null, _deps: new Set(), _cleanups: [],
     _children: [], _owner: _owner, _notify() {}, _run() {}
@@ -4800,17 +5237,23 @@ export function push_component(devName, devFile) {
   if (devName) {
     const id = ++_devInstCount
     _devCompId = id
+    _devOn = true
+    rootNode._devComp = id
+    // `statics`: imported reads nothing in this component watches, as the
+    // compiler found them (`FJS-1340`), and absent when there are none.
     __dev._components.set(id, {
       id, name: devName, file: devFile ?? '',
-      signals: new Set(), mountTime: Date.now(),
+      signals: new Set(), mountTime: Date.now(), statics: devStatic,
     })
-    __dev._emit({ type: 'mount', data: { id, name: devName, file: devFile ?? '' } })
+    __dev._emit({ type: 'mount', data: { id, name: devName, file: devFile ?? '', statics: devStatic } })
     // Cleanup fires when the component is destroyed
     rootNode._cleanups.push(() => {
-      __dev._components.delete(id)
-      // Remove all signal registrations belonging to this instance
       const comp = __dev._components.get(id)
-      if (comp) for (const sig of comp.signals) __dev._signals.delete(sig)
+      if (comp) for (const sig of comp.signals) {
+        __dev._signals.delete(sig)
+        __dev._bySrc.delete(_srcOf(sig))
+      }
+      __dev._components.delete(id)
       __dev._emit({ type: 'unmount', data: { id } })
     })
   } else {
@@ -4832,12 +5275,7 @@ export function pop_component() {
   _exportRegistry = frame.exports
   _devCompId      = frame.devCompId   // restore enclosing component's id
   _contextStack.pop()
-  _resolved.then(() => {
-    for (const fn of mountList) {
-      const result = _safeCall(fn)
-      if (typeof result === 'function') rootNode._cleanups.push(result)
-    }
-  })
+  _resolved.then(() => _runMounts(rootNode, mountList))
   rootNode._registry = registry
   rootNode._exports  = exports
 }
@@ -5208,9 +5646,22 @@ export function set(tracked, value, force) {
     // (count++ → set(sig, get(sig) + 1)) so the value passed here is always the
     // final value, never an updater function. Calling a function value would
     // accidentally invoke snippet functions stored in signals (e.g. sidebarFn).
-    tracked._write(value, force)
-    // Dev instrumentation — zero cost in prod (signals map stays empty)
-    if (__dev._signals.size) __dev._onUpdate(tracked, value)
+    if (!_devOn) {
+      tracked._write(value, force)
+      return value
+    }
+    // The entry is the cause while the write notifies, so every node it wakes
+    // is stamped with it; it is logged only if the write moved the value.
+    const entry = __dev._beginWrite(tracked, value)
+    const prevCause = _devCause
+    if (entry) _devCause = entry
+    let changed
+    try {
+      changed = tracked._write(value, force)
+    } finally {
+      _devCause = prevCause
+    }
+    if (entry && changed) __dev._endWrite(entry)
   }
   // tracked is a raw setter fn (e.g. from createWritableSignal)
   return value
@@ -5351,6 +5802,22 @@ export function append(anchor, dom) { anchor.before(dom) }
 export function render(fn, init) {
   const prev = Object.assign({}, init)
   createEffect(() => fn(prev))
+}
+
+// One binding of a `render()` threw. Every binding at a level shares that one
+// effect, so a throw let out of the body stopped each binding after it from
+// ever updating again. Reported instead, and answers the binding's last value
+// to keep, which is what a binding with an effect of its own already does
+// (`FJS-D379`). The first run still throws: a failure while building is the
+// caller's to see, as it is for every effect.
+export function contain(e, last) {
+  const node = _listener
+  if (!node || node._runs === 1) throw e
+  _raise(node, e)
+  // A boundary took its content and this node with it. The bindings still to
+  // run would subscribe a node nothing will run again.
+  if (node._disposed) _listener = null
+  return last
 }
 
 // ── set_text / set_attribute ─────────────────────────────────────────────────

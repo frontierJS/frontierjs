@@ -31,9 +31,9 @@
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { join }                                  from 'node:path'
+import { join, relative }                        from 'node:path'
 
-import { readRegisters } from './registers.js'
+import { readRegisters, registerLayout } from './registers.js'
 
 // A paper arguing its own questions under a numbered or qualified heading is
 // still arguing them — `## 9. Open questions`, `## The open question worth
@@ -75,7 +75,7 @@ export function openDecisions(root) {
  * but the section that points back at the queue.
  */
 export function rulingSections(root) {
-  const file = join(root, 'DECISIONS.md')
+  const file = join(registerLayout(root).dir, 'DECISIONS.md')
   if (!existsSync(file)) return []
   return readFileSync(file, 'utf8').split('\n')
     .map(l => l.match(/^##\s+(.+?)\s*$/)?.[1])
@@ -85,12 +85,12 @@ export function rulingSections(root) {
 // ─── IDEAS ────────────────────────────────────────────────────────────────────
 
 function ideaQuestions(root) {
-  const dir = join(root, 'IDEAS')
+  const dir = join(registerLayout(root).dir, 'IDEAS')
   if (!existsSync(dir)) return []
 
   const out = []
   for (const name of readdirSync(dir).filter(n => n.endsWith('.md')).sort()) {
-    const rel   = join('IDEAS', name)
+    const rel   = relative(root, join(dir, name))
     const lines = readFileSync(join(dir, name), 'utf8').split('\n')
     const meta  = frontmatter(lines)
     if (MOOT_STATUS.has(meta.status)) continue

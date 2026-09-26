@@ -46,7 +46,7 @@ function subscriber(manager: Manager, channelName: string) {
 function ctx(manager: Manager, method: string, over: Record<string, unknown> = {}): ServiceContext {
   return {
     service: 'posts', method, id: 1, data: { title: 'x' },
-    params: {}, query: {}, directives: {}, auth: {}, client: {},
+    params: {}, query: {}, directives: {}, auth: {}, caller: {},
     locals: { __channels: manager }, app: {},
     // Non-null result reads as "a before hook already answered" and skips the
     // method — the same trap event-origin.test.ts documents.

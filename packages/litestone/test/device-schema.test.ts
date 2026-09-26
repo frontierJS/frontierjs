@@ -301,10 +301,10 @@ describe('the result is a schema a client can open', () => {
 // ─── over the real thing ──────────────────────────────────────────────────
 
 describe("example's own schema", () => {
-  test('three models cross out of fifty-three, and the ones that do are the ones that said so', () => {
+  test('four models cross out of fifty-three, and the ones that do are the ones that said so', () => {
     const r = deviceSchema(parseFile(EXAMPLE))
-    expect(r.models.sort()).toEqual(['InventoryMovement', 'StocktakeCount', 'StocktakeSheet'])
-    expect(r.parsed.schema.enums.map((e: any) => e.name)).toEqual(['StockMovementKind'])
+    expect(r.models.sort()).toEqual(['InventoryMovement', 'ProductVariant', 'StocktakeCount', 'StocktakeSheet'])
+    expect(r.parsed.schema.enums.map((e: any) => e.name)).toEqual(['Size', 'StockMovementKind'])
   })
 
   // Not a byte budget — `FJS-D302` owns that — but a floor under the claim the
@@ -327,6 +327,9 @@ describe("example's own schema", () => {
       parsed: JSON.parse(JSON.stringify(deviceSchema(parseFile(EXAMPLE)).parsed)), db: ':memory:',
     })).asSystem()
 
+    // The variant crosses on its own `@@sync(field)`, so the ledger's foreign key
+    // resolves to a real table on the device and a movement needs a row to name.
+    await db.productVariant.create({ data: { id: 42, productId: 1, sku: 'TEE-RED-M', price: 1299 } })
     const sheet = await db.stocktakeSheet.create({ data: { note: 'aisle 3' } })
     await db.stocktakeCount.create({
       data: { sheetId: sheet.id, variantId: 42, counted: 9, expected: 11 },

@@ -2,7 +2,7 @@
 //
 // The one writer behind `fli register:decide` and `fli gui`'s decisions panel.
 // A pick does three things and they are one act: a ruling is prepended to its
-// `DECISIONS.md` section under the next free `FJS-D` id, the question is struck
+// `DECISIONS.md` section under the next free `<PREFIX>-D` id, the question is struck
 // in its paper with that id beside it, and `register:check` grades the result.
 // A write that makes the registers disagree with themselves is put back and
 // refused, so neither file is ever left half answered.
@@ -19,10 +19,11 @@
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { join }                                                from 'node:path'
+import { join, relative }                                      from 'node:path'
 
 import { readDecisions, rulingSections } from './decisions.js'
 import { runRegisterCheck }              from './register-check.js'
+import { registerLayout }                from './registers.js'
 
 const WHY_MAX = 2000
 
@@ -55,16 +56,21 @@ export function decide({ root, id, pick, why = '', section, today = new Date() }
   }
   if (reason.length > WHY_MAX) return refuse(`the reason is ${reason.length} characters; ${WHY_MAX} is the limit`)
 
+  const { dir, prefix, declared } = registerLayout(root)
+  if (!prefix) return refuse(`package.json declares no usable registers.prefix${declared ? ` (${JSON.stringify(declared)} is not [A-Z][A-Z0-9]*)` : ''}, so there is no id to issue`)
+
   const date     = isoDate(today)
-  const ruling   = `FJS-D${nextDecisionNumber(root)}`
-  const decPath  = join(root, 'DECISIONS.md')
+  const ruling   = `${prefix}-D${nextDecisionNumber(root)}`
+  const decPath  = join(dir, 'DECISIONS.md')
   const paperAbs = join(root, q.file)
   const before   = { dec: readFileSync(decPath, 'utf8'), paper: readFileSync(paperAbs, 'utf8') }
 
   const struck = strikeQuestion(before.paper, q, { date, ruling, option })
   if (!struck) return refuse(`${q.file}:${q.line} no longer starts with the question's bold lead — reread it`)
 
-  const entry = rulingEntry({ q, option, ruling, date, reason: reason || q.recommend.why, followed: !reason })
+  // The link is written INTO `DECISIONS.md`, so it is relative to that file.
+  const link  = relative(dir, paperAbs)
+  const entry = rulingEntry({ q, link, option, ruling, date, reason: reason || q.recommend.why, followed: !reason })
   const dec   = insertRuling(before.dec, section, entry)
 
   const baseline = findingKeys(root)
@@ -98,13 +104,13 @@ function strikeQuestion(src, q, { date, ruling, option }) {
   return lines.join('\n')
 }
 
-function rulingEntry({ q, option, ruling, date, reason, followed }) {
+function rulingEntry({ q, link, option, ruling, date, reason, followed }) {
   const others = q.options.filter(o => o !== option)
     .map(o => `**${o.letter}** (${trimStop(o.text)})`).join(', ')
   return [
     `### <a id="${ruling.toLowerCase()}"></a>${date} · \`${ruling}\` — ${trimStop(q.question)} — ${capitalize(trimStop(option.text))}.`,
     '',
-    `Asked in [\`${q.file}\`](${q.file}) § Open questions. **${option.letter}** was picked over ${others || 'no other option'}.`,
+    `Asked in [\`${q.file}\`](${link}) § Open questions. **${option.letter}** was picked over ${others || 'no other option'}.`,
     '',
     `${followed ? `The paper's recommendation, taken as written: ` : ''}${trimStop(reason)}.`,
     '',
@@ -128,14 +134,16 @@ function insertRuling(src, section, entry) {
 // next is one past the highest seen in any of them.
 
 export function nextDecisionNumber(root) {
-  const files = ['DECISIONS.md', 'ISSUES.md', 'ISSUES_ARCHIVE.md'].map(f => join(root, f))
-  const ideas = join(root, 'IDEAS')
+  const { dir, prefix } = registerLayout(root)
+  const files = ['DECISIONS.md', 'ISSUES.md', 'ISSUES_ARCHIVE.md'].map(f => join(dir, f))
+  const ideas = join(dir, 'IDEAS')
+  const id    = new RegExp(`${prefix}-D(\\d+)`, 'g')
   if (existsSync(ideas)) for (const n of readdirSync(ideas)) if (n.endsWith('.md')) files.push(join(ideas, n))
 
   let max = 0
   for (const f of files) {
     if (!existsSync(f)) continue
-    for (const m of readFileSync(f, 'utf8').matchAll(/FJS-D(\d+)/g)) max = Math.max(max, Number(m[1]))
+    for (const m of readFileSync(f, 'utf8').matchAll(id)) max = Math.max(max, Number(m[1]))
   }
   return max + 1
 }

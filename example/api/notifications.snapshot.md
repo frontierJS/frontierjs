@@ -20,10 +20,11 @@ on the definition is what holds it still.
 
 | Type | Transports |
 | --- | --- |
+| `InvoiceDue` | `email` |
 | `OrderConfirmation` | `email` |
 | `OrderPaid` | `inApp` |
 
-2 notification(s).
+3 notification(s).
 
 Which transports a given send *uses* is not here: `via` is a function of the
 payload and the recipient, so it is a runtime answer. This is the set each

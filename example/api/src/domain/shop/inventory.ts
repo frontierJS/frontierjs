@@ -88,7 +88,6 @@ export function holdExpiry(minutes = HOLD_MINUTES): string {
   return new Date(Date.now() + minutes * 60_000).toISOString()
 }
 
-const nowIso = () => new Date().toISOString()
 
 // ─── Reading ──────────────────────────────────────────────────────────────
 
@@ -102,10 +101,11 @@ const nowIso = () => new Date().toISOString()
  * that is being kept for them. The hold being asked about has to come out of
  * the sum before the comparison.
  *
- * THE READ IS THE TRUTH. `expiresAt > now` is in the filter, so a hold is dead
- * the instant it passes whether or not `holds-release` has run. The sweep keeps
- * the table small; it is not what makes the number right. Depending on a cron
- * for correctness means a queue outage quietly stops the shop from selling.
+ * THE READ IS THE TRUTH, and the filter is `@@expires(expiresAt)` on the
+ * model rather than a clause written out here. A hold is dead the instant it
+ * passes whether or not `holds-release` has run; the sweep keeps the table
+ * small and is not what makes the number right. Depending on a cron for
+ * correctness means a queue outage quietly stops the shop from selling.
  */
 export async function levelsFor(
   client: Client,
@@ -131,7 +131,6 @@ export async function levelsFor(
   // shape that makes a feature look expensive when it is not.
   const where: Record<string, unknown> = {
     variantId: { in: variantIds },
-    expiresAt: { gt: nowIso() },
   }
   if (opts.exceptCartId != null) where.cartId = { not: opts.exceptCartId }
 
@@ -203,9 +202,14 @@ export async function hold(
   )
 
   const expiresAt = holdExpiry()
-  const existing  = await client.stockReservation.findFirst({ where: { cartId, variantId } })
+  // `withExpired` on both halves, and it is the point of declaring the window:
+  // re-holding a shelf REVIVES the shopper's own dead row rather than colliding
+  // with it on `@@relator([cartId, variantId], once)`. That was always the
+  // intent and there was nothing in the code that said so — an unfiltered read
+  // beside three filtered ones is indistinguishable from one that forgot.
+  const existing = await client.stockReservation.findFirst({ where: { cartId, variantId }, withExpired: true })
 
-  if (existing) await client.stockReservation.update({ where: { id: existing.id }, data: { quantity, expiresAt } })
+  if (existing) await client.stockReservation.update({ where: { id: existing.id }, data: { quantity, expiresAt }, withExpired: true })
   else          await client.stockReservation.create({ data: { cartId, variantId, quantity, expiresAt } })
 
   return { expiresAt, level }
@@ -218,8 +222,11 @@ export async function release(
   cartId: number, variantId?: number,
 ): Promise<number> {
   const where = variantId == null ? { cartId } : { cartId, variantId }
-  const rows  = await client.stockReservation.findMany({ where }) as Array<{ id: number }>
-  for (const r of rows) await client.stockReservation.delete({ where: { id: r.id } })
+  // A purge takes them all, dead ones included — `withExpired` says so on both
+  // statements, since a hard delete APPLIES the window (destroying rows no read
+  // returns is data loss a caller cannot anticipate, so the escape is stated).
+  const rows  = await client.stockReservation.findMany({ where, withExpired: true }) as Array<{ id: number }>
+  for (const r of rows) await client.stockReservation.delete({ where: { id: r.id }, withExpired: true })
   return rows.length
 }
 
@@ -228,7 +235,7 @@ export async function release(
  *  not held. Null for a basket holding nothing. */
 export async function heldUntil(client: Client, cartId: number): Promise<string | null> {
   const rows = await client.stockReservation.findMany({
-    where:   { cartId, expiresAt: { gt: nowIso() } },
+    where:   { cartId },
     orderBy: { expiresAt: 'asc' },
     limit:   1,
   }) as Array<{ expiresAt: string }>
@@ -373,14 +380,25 @@ export async function restock(
   return back
 }
 
+/**
+ * Housekeeping: take the dead rows out of the table.
+ *
+ * `onlyExpired` rather than a cutoff, which is the same intent said in the
+ * declaration's own words — and it is now the ONLY way to spell it, because a
+ * hard delete applies the window, so `where: { expiresAt: { lte: before } }`
+ * would be ANDed with `expiresAt > now` and match nothing at all.
+ *
+ * `asOf` is what a caller reaching further back states. It replaces the
+ * `before` parameter it is the same idea as, and it is read against the same
+ * clock every other read of this model uses.
+ */
 export async function releaseExpired(
   client: Client,
-  before: string = nowIso(),
+  asOf?: string,
 ): Promise<number> {
-  const rows = await client.stockReservation.findMany({
-    where: { expiresAt: { lte: before } },
-  }) as Array<{ id: number }>
-  for (const r of rows) await client.stockReservation.delete({ where: { id: r.id } })
+  const args = { onlyExpired: true, ...(asOf ? { asOf } : {}) }
+  const rows = await client.stockReservation.findMany(args) as Array<{ id: number }>
+  for (const r of rows) await client.stockReservation.delete({ where: { id: r.id }, onlyExpired: true, ...(asOf ? { asOf } : {}) })
   return rows.length
 }
 

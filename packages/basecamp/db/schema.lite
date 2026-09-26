@@ -667,12 +667,11 @@ model WorkspaceMember {
 
   @@gate("1.5")
   @@log(audit)
-  @@unique([workspaceId, userId])
-  @@index([workspaceId, userId])
-  // Both of the above LEAD with workspaceId, so *which workspaces is this
-  // person in* — what the switcher asks on every session — had no index to use
-  // (`FJS-413`). A composite is usable for a prefix and for nothing else.
-  @@index([userId])
+  // A person is in a workspace once. The membership IS the pair, so `once`
+  // emits the key, and *which workspaces is this person in* — what the switcher
+  // asks on every session — gets the reverse index a composite leading with
+  // workspaceId could never serve (`FJS-413`).
+  @@relator([workspaceId, userId], once)
 
   // FJS-410. A @@gate is per MODEL, so `@@gate("1.5")` says *an admin may update
   // a membership* and has no way to say *not their own* — while `role` is the
@@ -1268,11 +1267,7 @@ model ServerNetwork {
   joinedAt  DateTime @default(now())
 
   @@gate("2.5")
-  @@unique([serverId, networkId])
-  // networkId leads no index otherwise: the @@unique above starts with
-  // serverId, and the FK cascades — SQLite scans the child table once per
-  // deleted network without this (`FJS-413`).
-  @@index([networkId])
+  @@relator([serverId, networkId], once)
 }
 
 // ============================================================
@@ -1455,8 +1450,11 @@ model AppServer {
   stoppedAt    DateTime?
 
   @@gate("2.8")
-  @@unique([appId, serverId, replicaIndex])
-  @@index([serverId])
+  // An app runs on a server more than once, and `replicaIndex` is the whole of
+  // what makes two placements different. Without the column named here, two
+  // replicas of one app on one machine is a constraint violation and the app
+  // quietly loses the ability to scale.
+  @@relator([appId, serverId], many: replicaIndex)
 }
 
 model AppNetwork {
@@ -1470,8 +1468,9 @@ model AppNetwork {
   joinedAt  DateTime @default(now())
 
   @@gate("2.8")
-  @@unique([appId, networkId])
-  @@index([networkId])
+  // `once`, where AppServer above is `many` — an app joins a network or it does
+  // not, and there is no second membership to tell apart.
+  @@relator([appId, networkId], once)
 }
 
 // ============================================================
@@ -1581,7 +1580,6 @@ model Job {
   status         JobStatus    @default(pending)
   command        String?
   cronExpression String?
-  nextRunAt      DateTime?
   trigger        String       @default("manual")
   triggerConfig  Json         @default("{}")
   timeoutSeconds Int          @default(300)
@@ -1613,7 +1611,6 @@ model Job {
   @@softDelete
   @@log(audit)
   @@index([workspaceId])
-  @@index([nextRunAt])
   @@index([appId])
   @@index([environmentId])
 }
@@ -1737,8 +1734,11 @@ model RecipeRun {
   createdAt   DateTime  @default(now())
 
   @@gate("2.4.8.8")
-  @@index([recipeId])
-  @@index([serverId])
+  // `many`, and no key, because running a recipe on a server is something that
+  // HAPPENS rather than a standing fact — which is what `script` above is
+  // copied for. Set beside AppServer: identical foreign keys, identical
+  // cascades, and that model has a key because *app on server* is a state.
+  @@relator([recipeId, serverId], many)
 }
 
 // What the outpost last saw about a machine's disk. OBSERVED, like Volume: a row
@@ -1898,8 +1898,7 @@ model FlagOverride {
 
   @@gate("2.4.4.4")
   @@log(audit)
-  @@unique([flagId, environmentId])
-  @@index([environmentId])
+  @@relator([flagId, environmentId], once)
 }
 
 // ============================================================
@@ -2028,8 +2027,7 @@ model AlertRuleChannel {
   createdAt DateTime            @default(now())
 
   @@gate("2.5")
-  @@unique([ruleId, channelId])
-  @@index([channelId])
+  @@relator([ruleId, channelId], once)
 }
 
 // Fired by the system; acknowledged by a person — hence the split gate.

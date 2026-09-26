@@ -2170,7 +2170,7 @@ await db.$audit({ operation, model, records, actorId, meta })
 const stop = db.$tapEvents(e => …)      // every write, announced
 db.$checkWhere('post', where)           // is this a valid filter?
 db.$checkOrderBy('post', orderBy)       // …and a valid sort?
-await db.$lock('nightly-sweep', fn)     // an application-level lock
+await db.$lock('nightly-sweep', fn, { wait: 5_000 })  // an application-level lock; no `wait` is try-once
 ```
 
 **`db.$plugins` is worth knowing about**: a schema declaring any `@@gate`

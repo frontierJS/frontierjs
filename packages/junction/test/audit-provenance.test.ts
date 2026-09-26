@@ -113,7 +113,7 @@ describe('an audit row says where the write came from', () => {
     const h = await harness()
     try {
       await enterRequest(
-        { origin: 'http', client: { ip: '10.1.2.3', userAgent: 'probe/1', headers: {} } },
+        { origin: 'http', caller: { ip: '10.1.2.3', userAgent: 'probe/1', headers: {} } },
         () => h.app.service('orders').create({ id: 1, status: 'new' }),
       )
       const [row] = await h.rows()
@@ -165,7 +165,7 @@ describe('an audit row says where the write came from', () => {
       await app._startForTest()
 
       await enterRequest(
-        { origin: 'http', headers: { 'x-cart-token': 'tok' }, client: { headers: { 'x-cart-token': 'tok' } } } as never,
+        { origin: 'http', headers: { 'x-cart-token': 'tok' }, caller: { headers: { 'x-cart-token': 'tok' } } } as never,
         () => app.service('notes').create({ cartId: 42, body: 'mine' }),
       )
       await tick()
@@ -190,7 +190,7 @@ describe('an audit row says where the write came from', () => {
     } as never))
     try {
       await enterRequest(
-        { origin: 'websocket', client: { ip: '9.9.9.9', headers: {} } },
+        { origin: 'websocket', caller: { ip: '9.9.9.9', headers: {} } },
         () => h.app.service('checkout').create({}),
       )
       const [row] = await h.rows()

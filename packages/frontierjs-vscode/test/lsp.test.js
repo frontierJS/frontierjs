@@ -314,6 +314,85 @@ async function main() {
   ok('returns edits for a valid document', Array.isArray(edits) && edits.length > 0,
     JSON.stringify(edits)?.slice(0, 120))
 
+  // FJS-1341: every line inside a model was read as `name type @attrs`, so a
+  // continuation lost everything between its second word and its first `@`, and
+  // the `}` of a nested `@@transitions(field) {` ended the model. One save of
+  // example's schema cut `-> paid` off every transition and left a quote open.
+  {
+    const src = [
+      'enum Status { pending paid cancelled }',
+      '',
+      'model Order {',
+      '  id Int @id',
+      '  status Status @default(pending)',
+      '  total Int @check(total >= 0, "A total',
+      '            is never negative")',
+      '  customer String @required("Every order',
+      '    needs a @customer")',
+      '  @@transitions(status) {',
+      '    pay: pending -> paid,',
+      '    cancel: [pending, paid] -> cancelled',
+      '  }',
+      '  note String?',
+      '}',
+      '',
+    ].join('\n')
+    await c.openDoc('file:///fjs1341.lite', src)
+    const [edit] = await c.formatting('file:///fjs1341.lite')
+    const out = edit?.newText ?? ''
+    ok('a nested @@transitions body is kept byte for byte',
+      out.includes('    pay: pending -> paid,\n    cancel: [pending, paid] -> cancelled\n  }\n'), out)
+    ok('a wrapped attribute message is kept byte for byte',
+      out.includes('"A total\n            is never negative")'), out)
+    // `needs a @customer")` has the shape of a field; only the open string says otherwise.
+    ok('a continuation shaped like a field is not aligned as one',
+      out.includes('"Every order\n    needs a @customer")'), out)
+    ok('a field whose attribute wraps is still aligned',
+      out.includes('  total    Int     @check(') && out.includes('  customer String  @required('), out)
+    ok('fields after the nested body are still aligned as the same model',
+      out.includes('  note     String?\n'), out)
+  }
+
+  // The formatter's contract, graded over every schema in the workspace: its
+  // output lexes to the same tokens as its input. `layout` is the aligner alone,
+  // BEHIND formatLite's guard, so a misread shape fails here rather than being
+  // quietly refused in an editor.
+  section('formatting — every .lite in the workspace')
+  {
+    const { layout, formatLite, sameContent } = require(path.join(ROOT, 'out', 'litestone', 'format'))
+    const { tokenize } = require(path.join(ROOT, 'out', 'litestone', 'parser-bundle'))
+    ok('the parser bundle carries litestone\'s lexer', typeof tokenize === 'function')
+    const repo  = path.resolve(ROOT, '..', '..')
+    const skip  = new Set(['node_modules', 'out', 'dist', '.git'])
+    const files = []
+    const walk  = dir => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (skip.has(e.name)) continue
+        const p = path.join(dir, e.name)
+        if (e.isDirectory()) walk(p)
+        else if (e.name.endsWith('.lite')) files.push(p)
+      }
+    }
+    walk(repo)
+    ok('found the workspace schemas', files.length >= 20, `${files.length} under ${repo}`)
+    const changed = [], unstable = []
+    for (const f of files) {
+      const src = fs.readFileSync(f, 'utf8')
+      if (!sameContent(src, layout(src), tokenize)) changed.push(path.relative(repo, f))
+      const once = formatLite(src, tokenize)
+      if (formatLite(once, tokenize) !== once) unstable.push(path.relative(repo, f))
+    }
+    ok('formatting changes whitespace and nothing else', !changed.length, changed.join(', '))
+    ok('formatting twice is formatting once', !unstable.length, unstable.join(', '))
+    // A lexer that sees different tokens each time stands in for an aligner bug.
+    let n = 0
+    const drifting = () => [{ type: 'IDENT', value: n++ }]
+    const unaligned = 'model A {\n  id Int @id\n  name String\n}\n'
+    ok('a change beyond whitespace is refused, not applied',
+      formatLite(unaligned, drifting) === unaligned && formatLite(unaligned, tokenize) !== unaligned)
+    ok('two words run together is a change beyond whitespace', !sameContent('a b', 'ab', tokenize))
+  }
+
   // ── Imports ────────────────────────────────────────────────────────────────
   //
   // `parse()` resolves nothing, so until the server spliced imports itself, a

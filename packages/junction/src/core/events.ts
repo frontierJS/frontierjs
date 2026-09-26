@@ -27,6 +27,17 @@ export const AUTO_EVENT_MAP: Record<string, string> = {
   restore: 'restored',
 }
 
+/**
+ * The events whose whole meaning is *this row is gone from your store*.
+ *
+ * Derived from the map above rather than spelled again, so a rename moves both.
+ * Read by the fan-out's window carve: an `@@expires` row may suppress a frame
+ * about a row that has stopped counting, and it may never suppress one of
+ * these — a subscriber holding the row has no other way to learn it is gone,
+ * and a suppressed removal strands it there for ever.
+ */
+export const REMOVAL_EVENTS: ReadonlySet<string> = new Set([AUTO_EVENT_MAP.remove])
+
 // Every hook `publish()` ever produced. A service that declares `channel:` is
 // already announced by callService, so a publish hook on the same service sends
 // the frame a second time — and a name check cannot tell the two apart, because

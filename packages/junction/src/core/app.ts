@@ -5,7 +5,7 @@
 
 import { HttpTransport }            from '../transport/http.ts'
 import { bridge, errorResponse } from '../transport/bridge.ts'
-import { freezeUser, enterRequest, requestMeta, currentCall, resolvePrincipal, inheritedClient, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions } from './context.ts'
+import { freezeUser, enterRequest, requestMeta, currentCall, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions } from './context.ts'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
 import { withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites, installLogContext, installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY, TENANT_CLIENT_OBSERVERS } from './litestone.ts'
@@ -258,6 +258,10 @@ export interface App {
   // `ctx.enqueue` refuses when it is absent — a row nothing delivers is worse
   // than a refusal.
   outbox?:   import('./outbox.ts').OutboxApi
+
+  // The commitments sweep, when `app.configure(commitments())` installed one.
+  // Concrete for the reason `outbox` is.
+  commitments?: import('../plugins/commitments/index.ts').CommitmentsApi
 
   // Notifications are provided by @frontierjs/notifications, which attaches
   // app.notify in its register(). Same augmentable-interface rule: the plugin
@@ -865,7 +869,7 @@ export function createApp(opts: AppOptions = {}): App {
         headers:       ctx?.headers ?? {},
         correlationId: ctx?.headers?.['x-request-id'] ?? ctx?.requestId,
         user:          ctx?.user ?? null,
-        client:        { ip: ctx?.ip, userAgent: ctx?.headers?.['user-agent'], headers: ctx?.headers ?? {} },
+        caller:        { ip: ctx?.ip, userAgent: ctx?.headers?.['user-agent'], headers: ctx?.headers ?? {} },
       }, () => handler(ctx, ...rest))
     }) as unknown as H
 
@@ -1071,7 +1075,7 @@ export function createApp(opts: AppOptions = {}): App {
           // Propagates, like the principal and for the same reason: an audit
           // hook three calls deep has no other route to the IP of the request
           // that caused the write. `{}` when there is no request at all.
-          client: inheritedClient(),
+          caller: inheritedCaller(),
           route:  {},
           locals: opts.locals ? { ...opts.locals } : {},
           // Fresh, like locals: a transient value belongs to the call that
@@ -1233,7 +1237,7 @@ export function createApp(opts: AppOptions = {}): App {
       // in scope and nothing a request carries. A resolver reads the tenant off
       // the request meta `runAs` set, as it does for a job's own service calls.
       const ctx = {
-        app, auth: { user: app.principal() }, locals: {}, client: inheritedClient(),
+        app, auth: { user: app.principal() }, locals: {}, caller: inheritedCaller(),
         route: {}, query: {}, directives: {}, reserved: {}, data: null, id: null,
       } as unknown as ServiceContext
       let out!: T
@@ -1871,6 +1875,19 @@ export function createApp(opts: AppOptions = {}): App {
           for (const f of (svc as { _authoringFindings?: string[] })._authoringFindings ?? [])
             _authoringFindings.push(f)
         }
+        // A schema that owes a transition at a time, with nothing installed to
+        // keep the clock, owes it forever and nothing says so. A tenanted app
+        // has no `app.db`, so its registry's parsed schema is asked instead —
+        // opening a tenant to read a client would create a database file.
+        const db = app.db as { $commitments?: unknown[] } | undefined
+        const registrySchema = (app as { tenants?: { schema?: { models?: Array<{ attributes: Array<{ kind: string }> }> } } })
+          .tenants?.schema
+        const owes = (db && typeof db === 'object' && '$commitments' in db && (db.$commitments?.length ?? 0) > 0) ||
+          !!registrySchema?.models?.some(m => m.attributes.some(a => a.kind === 'commitment'))
+        if (owes && !plugins.some(p => p.name === 'commitments'))
+          _authoringFindings.push(
+            `this schema declares @@commitment and no commitments() plugin is configured — ` +
+            `nothing will make the transitions it owes. app.configure(commitments()), after caravan.`)
         if (_authoringFindings.length === 0) return
         throw new Error(
           `[Junction] ${_authoringFindings.length} authoring mistake(s) — this app declares ` +
@@ -1973,7 +1990,7 @@ export function createApp(opts: AppOptions = {}): App {
         }
       }},
 
-      { name: 'announce', needsHost: true, run: () => {
+      { name: 'log-listening', needsHost: true, run: () => {
         events.emit('app:ready', { port: config.port })
 
         const _base   = `http://${config.hostname}:${config.port}`
@@ -2291,7 +2308,7 @@ export function registerServiceRoutes(app: App): void {
         // WHO, request-wide. This is what makes `ctx.auth` propagate: an
         // internal call naming no principal reads it back out of the store.
         user:   svcCtx.auth.user,
-        client: svcCtx.client,
+        caller: svcCtx.caller,
       }, async () => {
         await callService(service, svcCtx, app._appHooks, app.events, app.telemetry)
         return bridge.toResponse(svcCtx, wrap)

@@ -121,7 +121,7 @@ async function serveWithResolver() {
     // Reads the request, not the row — which is the whole point. A resolver
     // like this is what `membershipClaim` is, one indirection down.
     principal: async (ctx: any) => {
-      const dept = ctx.client?.headers?.['x-dept'] ?? ctx.reserved?.dept
+      const dept = ctx.caller?.headers?.['x-dept'] ?? ctx.reserved?.dept
       return dept ? { deptId: String(dept) } : {}
     },
     config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },

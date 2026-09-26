@@ -95,6 +95,6 @@ $: (store.a, store.b)`), 'MultiPath.mesa')
 let hits = 0
 $: (store?.a, store.b)`), 'SoftPath.mesa')
     expect(ctx.analysis.errors).toEqual([])
-    expect(ctx.result).toContain(`watchPath(store, 'a')`)
+    expect(ctx.result).toContain(`watchPath(store, 'a', 'store')`)
   })
 })

@@ -22,7 +22,7 @@ import { resolve } from 'path'
 import {
   JOURNAL_FORMAT, TABLE, journalClient, JournalError,
   openJournal, journalVerdict, readState, readAttempts, attemptDecision,
-  recordRelease, recordBindings, openTransition, claimStep, finishStep,
+  recordRelease, recordConfiguration, openTransition, claimStep, finishStep,
   settleTransition, resumeDecision, preconditionVerdict, formatDrift,
   readHistory, readSteps, readLiveTransition,
 } from '../core/journal.js'
@@ -46,8 +46,8 @@ describe('the tables are the ones the schema emits', () => {
       ...openJournal({ app: 'a', host: 'h' }),
       ...readState({ app: 'a', environment: 'e' }),
       ...readAttempts({ kind: 'deploy', app: 'a', environment: 'e', releaseId: 'r', generation: 1 }),
-      ...recordRelease({ id: 'r', app: 'a', environment: 'e', bindingsHash: 'b' }),
-      ...recordBindings({ app: 'a', environment: 'e', generation: 1, hash: 'h' }),
+      ...recordRelease({ id: 'r', app: 'a', environment: 'e', configurationHash: 'b' }),
+      ...recordConfiguration({ app: 'a', environment: 'e', generation: 1, hash: 'h' }),
       ...openTransition({ transition: { id: 't', kind: 'deploy', app: 'a', environment: 'e', releaseId: 'r', generation: 1, plan: {} }, steps: [] }),
       ...claimStep({ id: 's' }), ...finishStep({ id: 's', status: 'succeeded' }),
       ...settleTransition({ id: 't', status: 'succeeded' }),
@@ -67,7 +67,7 @@ describe('the tables are the ones the schema emits', () => {
   test('no statement interpolates a value — every one is bound', () => {
     const stmts = [
       ...openJournal({ app: "'; DROP TABLE release; --", host: 'h' }),
-      ...recordRelease({ id: "'x", app: "'y", environment: 'e', bindingsHash: 'b' }),
+      ...recordRelease({ id: "'x", app: "'y", environment: 'e', configurationHash: 'b' }),
       ...claimStep({ id: "' OR 1=1 --" }),
     ]
     for (const s of stmts) {
@@ -227,7 +227,7 @@ describe('the journal, through the runner that ships to the target', () => {
 
   const RELEASE = {
     id: 'r2aaaaaaaaaa', app: 'shop', environment: 'production',
-    digest: null, bindingsHash: 'b'.repeat(64), generation: 1,
+    digest: null, configurationHash: 'b'.repeat(64), generation: 1,
     schemaHash: 'c'.repeat(64), pivot: 'expand', createdBy: 'jordan',
   }
   const NAMES = ['01-preflight', '02-pull', '04-build-api', '06-swap']
@@ -428,10 +428,10 @@ describe('the journal, through the runner that ships to the target', () => {
     expect((await j.state({ app: 'shop', environment: 'production' })).serving).toBeNull()
   })
 
-  test('the binding generation comes back off the recorded set', async () => {
+  test('the configuration generation comes back off the recorded set', async () => {
     await j.begin({
       release: RELEASE, transition: TRANSITION, steps: steps('t1'),
-      bindings: { app: 'shop', environment: 'production', generation: 4, hash: 'h', values: { A: '1' }, secretRefs: {} },
+      configuration: { app: 'shop', environment: 'production', generation: 4, hash: 'h', values: { A: '1' }, secretRefs: {} },
     })
     expect((await j.state({ app: 'shop', environment: 'production' })).generation).toBe(4)
   })

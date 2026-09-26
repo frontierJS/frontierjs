@@ -479,6 +479,28 @@ function updateExpr(node, setter, name) {
     : `$$runtime.postUpdate(${sig}, ${setter}, ${op}1)`
 }
 
+// ─── self-assignment ─────────────────────────────────────────────────────────
+//
+// `x = x` means "I mutated this in place, notify anyway". A signal write is
+// skipped when the reference is unchanged, so the idiom compiles to a forced
+// write — or, for a root with a proxy fire function, to that function, since an
+// imported binding is read-only and the assignment would throw. Both rewriters
+// emit it from here: a copy in only one of them made the idiom work in a
+// `<script>` function and no-op in a template handler (FJS-1111).
+
+const isSelfAssignment = (n) =>
+  n.operator === '=' &&
+  n.left.type === 'Identifier' &&
+  n.right.type === 'Identifier' &&
+  n.right.name === n.left.name
+
+/** The forced write for `name = name`, or null when `name` is nothing reactive. */
+function selfAssignmentWrite(name, setters, fireFns) {
+  if (fireFns?.[name]) return `${fireFns[name]}()`
+  if (setters?.[name]) return `$$runtime.set($$sig_${name}, $$runtime.get($$sig_${name}), true)`
+  return null
+}
+
 /**
  * Rewrite identifier references in a JS expression string.
  *
@@ -521,14 +543,39 @@ function noteReadonlyWrite(accessorMap, name, shadowed) {
   return true
 }
 
-export function rewriteExpr(expr, accessorMap, setterMap) {
+// ─── calls that follow the component's watches ───────────────────────────────
+//
+// A function imported from another file reads what it reads out of the
+// compiler's sight, so `{money(v)}` under `$: prefs.currency` subscribed to
+// nothing, and moved only when some OTHER binding sharing its `render()` named
+// `prefs` (`FJS-D404`). A call to one — or to a local function that reaches one
+// — reads the component's import watches first, so it re-runs when they fire.
+//
+// Only where Mesa already re-runs the expression: a template binding, a prop
+// and a synchronous derived `const`. A function literal is skipped unless it is
+// handed to a method call (`rows.map((r) => money(r))`), because anything else —
+// a handler first — runs later, outside the effect. `{#await}` and an async `const` are given a map without the register,
+// since a re-run there is a request rather than a diff.
+
+const WATCHED_CALLS = Symbol.for('mesa.watchedCalls')
+
+function withoutWatchedCalls(accessorMap) {
+  if (!accessorMap?.[WATCHED_CALLS]) return accessorMap
+  const m = { ...accessorMap }
+  delete m[WATCHED_CALLS]
+  if (accessorMap[EACH_LIFT]) Object.defineProperty(m, EACH_LIFT, { value: accessorMap[EACH_LIFT], configurable: true })
+  return m
+}
+
+export function rewriteExpr(expr, accessorMap, setterMap, fireFns) {
   if (!accessorMap || !expr) return expr
 
   const rewrites = {}
   for (const [name, acc] of Object.entries(accessorMap)) {
     if (acc !== name) rewrites[name] = acc
   }
-  if (!Object.keys(rewrites).length && !setterMap) return expr
+  const watched = accessorMap[WATCHED_CALLS]
+  if (!Object.keys(rewrites).length && !setterMap && !fireFns && !watched) return expr
 
   let ast
   try {
@@ -542,6 +589,12 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
   }
 
   const patches = []
+  // Function literals handed to a method call run inside the expression; the
+  // depths say whether the walk is inside one that runs later, or inside a call
+  // that already reads the watches.
+  const syncCallbacks = new Set()
+  let laterDepth = 0
+  let watchedDepth = 0
 
   // Collect parameter names for a function node.
   const collectParams = (node) => {
@@ -640,6 +693,8 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
       // `const g = function f(){}` beside a `let f` emitted
       // `function $$runtime.get($$sig_f)(){}`.
       if (n.id) inner.add(n.id.name)
+      const later = !syncCallbacks.has(n)
+      if (later) laterDepth++
       for (const k of Object.keys(n)) {
         if (k === 'start' || k === 'end' || k === 'type' || k === 'raw' || k === 'id') continue
         const v = n[k]
@@ -649,6 +704,7 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
           })
         else if (v?.type) walk(v, k, inner)
       }
+      if (later) laterDepth--
       return // already handled all children
     }
 
@@ -705,6 +761,18 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
       noteReadonlyWrite(accessorMap, n.argument.name, localScope.has(n.argument.name))
     ) return
 
+    if (
+      n.type === 'AssignmentExpression' &&
+      isSelfAssignment(n) &&
+      !localScope.has(n.left.name)
+    ) {
+      const replacement = selfAssignmentWrite(n.left.name, setterMap, fireFns)
+      if (replacement) {
+        patches.push({ start: n.start, end: n.end, replacement })
+        return
+      }
+    }
+
     // Rewrite assignments to reactive lets: x = val → $$set_x(val)
     if (setterMap && n.type === 'AssignmentExpression') {
       const left = n.left
@@ -712,7 +780,7 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
         const setter = setterMap[left.name]
         const op = n.operator
         const rightRaw = expr.slice(n.right.start, n.right.end)
-        const rightRw = rewriteExpr(rightRaw, accessorMap, setterMap)
+        const rightRw = rewriteExpr(rightRaw, accessorMap, setterMap, fireFns)
         let replacement
         if (op === '=') {
           replacement = `${setter}(${rightRw})`
@@ -735,7 +803,7 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
           source:    expr,
           setterFor: (name) => (localScope.has(name) ? null : setterMap[name] || null),
           rewriteSub: (sub) =>
-            rewriteExpr(expr.slice(sub.start, sub.end), accessorMap, setterMap)
+            rewriteExpr(expr.slice(sub.start, sub.end), accessorMap, setterMap, fireFns)
         })
         if (replacement) {
           patches.push({ start: n.start, end: n.end, replacement })
@@ -792,6 +860,23 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
       n.arguments[0]?.type === 'Identifier'
     ) return
 
+    if (n.type === 'CallExpression' && n.callee.type === 'MemberExpression') {
+      for (const a of n.arguments)
+        if (a.type === 'ArrowFunctionExpression' || a.type === 'FunctionExpression') syncCallbacks.add(a)
+    }
+    if (
+      watched && !laterDepth && !watchedDepth &&
+      n.type === 'CallExpression' && n.callee.type === 'Identifier' &&
+      watched.callees.has(n.callee.name) &&
+      !localScope.has(n.callee.name) && rewrites[n.callee.name] === undefined
+    ) {
+      patches.push({ start: n.callee.start, end: n.callee.end, replacement: `$$watches(${n.callee.name})` })
+      watchedDepth++
+      for (const a of n.arguments) walk(a, 'arguments', localScope)
+      watchedDepth--
+      return
+    }
+
     if (n.type === 'Identifier') {
       // Skip non-computed property names (obj.name) but NOT computed keys (obj[name])
       const skip = parentKey === 'key'
@@ -825,14 +910,131 @@ export function rewriteExpr(expr, accessorMap, setterMap) {
   }
 
   walk(ast, null, new Set())
-  if (!patches.length) return expr
+  const lift = accessorMap[EACH_LIFT]
+  if (!patches.length) return lift ? liftKeyedEquals(expr, lift) : expr
 
   patches.sort((a, b) => b.start - a.start)
   let result = expr
   for (const p of patches) {
     result = result.slice(0, p.start) + p.replacement + result.slice(p.end)
   }
-  return result
+  return lift ? liftKeyedEquals(result, lift) : result
+}
+
+// ─── {#each} keyed-equality lift ────────────────────────────────────────────
+//
+// `selected === row.id` in a row reads `selected`, so one write re-runs that
+// comparison in every row to move one class (`FJS-1332`). Inside an `{#each}`
+// the comparison is rewritten to `$$selN(row().id)` over one
+// `createKeyedEquals(() => selected)` emitted beside the block, which wakes the
+// old row and the new one.
+//
+// The frame rides on the accessor map, because that map is the one thing every
+// expression in a row passes through, and it is non-enumerable so the copies
+// taken of that map elsewhere do not carry it into a scope that is not a row.
+//
+// The lifted side is emitted OUTSIDE the row, so it may read only what no row
+// can shadow: a `let` or a prop (`$$sig_*`, a reserved prefix), or a derived
+// `const` that no header inside the row declares again, and member reads off
+// those. Anything else stays as written and costs what it did before.
+export const EACH_LIFT = Symbol('mesa.eachLift')
+
+export function eachLiftFrame(ctx, { getters, rowSource }) {
+  const derived = new Set()
+  for (const [name, acc] of Object.entries(ctx.accessors)) {
+    if (acc === `$$runtime.get(${name})`) derived.add(name)
+  }
+  // Every word in a header that can bind a name. Over-collects on purpose: a
+  // derived name that also appears there is simply not lifted.
+  const shadowed = new Set()
+  for (const s of rowSource) {
+    if (/^\s*(#each|#snippet|#await|:then|:catch|@const)\b/.test(s)) {
+      for (const w of s.match(/[A-Za-z_$][\w$]*/g) ?? []) shadowed.add(w)
+    }
+  }
+  for (const name of shadowed) derived.delete(name)
+  return {
+    getters: new Set(getters.filter(Boolean)),
+    derived,
+    names: new Map(),                       // lifted source → `$$selN`
+    // Per compile, not per process: a module-level counter numbers the same
+    // component differently by what compiled before it (Invariant 12).
+    next: () => `$$sel${(ctx._eachLiftSeq = (ctx._eachLiftSeq ?? 0) + 1)}`,
+  }
+}
+
+function liftKeyedEquals(code, frame) {
+  if (!code.includes('===') && !code.includes('!==')) return code
+  let ast
+  try { ast = acorn.parseExpressionAt(code, 0, { ecmaVersion: 'latest' }) }
+  catch { try { ast = acorn.parse(code, { ecmaVersion: 'latest', sourceType: 'module' }) } catch { return code } }
+
+  const isRuntimeGet = (n) =>
+    n.type === 'CallExpression' &&
+    n.callee?.type === 'MemberExpression' && !n.callee.computed &&
+    n.callee.object?.name === '$$runtime' && n.callee.property?.name === 'get' &&
+    n.arguments.length === 1 && n.arguments[0].type === 'Identifier'
+
+  const hoistable = (n) => {
+    if (n.type === 'ChainExpression') return hoistable(n.expression)
+    if (n.type === 'MemberExpression') {
+      if (n.computed && n.property.type !== 'Literal') return false
+      return hoistable(n.object)
+    }
+    if (!isRuntimeGet(n)) return false
+    const name = n.arguments[0].name
+    return name.startsWith('$$sig_') || frame.derived.has(name)
+  }
+
+  const readsRow = (n) => {
+    let found = false
+    const visit = (x) => {
+      if (found || !x || typeof x.type !== 'string') return
+      if (x.type === 'CallExpression' && x.callee.type === 'Identifier' &&
+          x.arguments.length === 0 && frame.getters.has(x.callee.name)) { found = true; return }
+      for (const k of Object.keys(x)) {
+        if (k === 'start' || k === 'end' || k === 'type') continue
+        const v = x[k]
+        if (Array.isArray(v)) v.forEach(visit)
+        else if (v && typeof v === 'object') visit(v)
+      }
+    }
+    visit(n)
+    return found
+  }
+
+  const patches = []
+  const walk = (n) => {
+    if (!n || typeof n.type !== 'string') return
+    if (n.type === 'BinaryExpression' && (n.operator === '===' || n.operator === '!==')) {
+      const [outer, row] =
+        hoistable(n.left) && !readsRow(n.left) && readsRow(n.right) ? [n.left, n.right]
+        : hoistable(n.right) && !readsRow(n.right) && readsRow(n.left) ? [n.right, n.left]
+        : [null, null]
+      if (outer) {
+        const src = code.slice(outer.start, outer.end)
+        let name = frame.names.get(src)
+        if (!name) { name = frame.next(); frame.names.set(src, name) }
+        let arg = code.slice(row.start, row.end)
+        if (row.type === 'SequenceExpression') arg = `(${arg})`
+        const call = `${name}(${arg})`
+        patches.push({ start: n.start, end: n.end, replacement: n.operator === '===' ? call : `(!${call})` })
+        return
+      }
+    }
+    for (const k of Object.keys(n)) {
+      if (k === 'start' || k === 'end' || k === 'type') continue
+      const v = n[k]
+      if (Array.isArray(v)) v.forEach(walk)
+      else if (v && typeof v === 'object') walk(v)
+    }
+  }
+  walk(ast)
+  if (!patches.length) return code
+  patches.sort((a, b) => b.start - a.start)
+  let out = code
+  for (const p of patches) out = out.slice(0, p.start) + p.replacement + out.slice(p.end)
+  return out
 }
 
 /**
@@ -888,31 +1090,6 @@ export function rewriteTextResult(pe, accessorMap, opts) {
  * @param {object} ctx       Compile context (ctx.setters, ctx.accessors, ctx.script)
  * @returns {string}
  */
-/**
- * rewriteAssignments for a source FRAGMENT — a handler body lifted out of the
- * script, whose AST offsets start at 0.
- *
- * `rewriteAssignments` reads `ctx.script.source` when it needs the text of a
- * sub-node, so a node parsed from a fragment indexes into the wrong string: the
- * offsets are fragment-relative and the slice is file-relative. The result was
- * spliced from unrelated characters — a `$: rows(), () => { high = ceiling }`
- * handler emitted `$$set_high(sa'`, taken from the middle of an import
- * statement. Clean compile, unterminated string, and Vite reporting only that
- * the .mesa file "contains invalid JS syntax".
- *
- * Handing it a ctx whose script source IS the fragment puts both back in the
- * same coordinate system.
- */
-function rewriteFragmentAssignments(src, ctx) {
-  let ast
-  try {
-    ast = acorn.parseExpressionAt(src, 0, { ecmaVersion: 'latest' })
-  } catch (_) {
-    return src
-  }
-  return rewriteAssignments(src, ast, { ...ctx, script: { ...ctx.script, source: src } })
-}
-
 /**
  * Rewrite one destructuring assignment whose pattern names at least one
  * reactive binding: `[a, b] = [b, a]`, `({x: a} = o)`.
@@ -1031,46 +1208,12 @@ export function rewriteAssignments(src, node, ctx) {
 
     if (n.type === 'AssignmentExpression') {
       const left = n.left
-      // Self-assignment on an imported proxy root: `themeNew = themeNew`
-      // This is the developer's way of saying "I mutated this object externally,
-      // please force a re-render". ES module bindings are read-only so the assignment
-      // would throw at runtime. Rewrite to fire the root signal instead.
-      if (
-        left.type === 'Identifier' &&
-        ctx.proxyFireFns?.[left.name] &&
-        n.right.type === 'Identifier' &&
-        n.right.name === left.name &&
-        n.operator === '='
-      ) {
-        const fireVar = ctx.proxyFireFns[left.name]
-        patches.push({ start: n.start, end: n.end, replacement: `${fireVar}()` })
-        return
-      }
-      // Self-assignment on a LOCAL reactive binding: `user = user`.
-      //
-      // Same idiom, same meaning as the imported-proxy case above — "I mutated
-      // this in place, notify anyway" — but it used to compile to an ordinary
-      // `$$set_user(user)`, and a signal writes through Object.is, so assigning
-      // the identical reference was skipped and nothing happened. The idiom
-      // worked for an imported object and silently no-opped for a local one.
-      //
-      // Emitted as a forced write rather than through the named setter, whose
-      // signature is fixed at `(v) => set(sig, v)`. `$$sig_<name>` is the same
-      // assumption the compound-operator branch below already makes.
-      if (
-        left.type === 'Identifier' &&
-        setters[left.name] &&
-        n.operator === '=' &&
-        n.right.type === 'Identifier' &&
-        n.right.name === left.name
-      ) {
-        const sigName = `$$sig_${left.name}`
-        patches.push({
-          start: n.start,
-          end: n.end,
-          replacement: `$$runtime.set(${sigName}, $$runtime.get(${sigName}), true)`
-        })
-        return
+      if (isSelfAssignment(n)) {
+        const replacement = selfAssignmentWrite(left.name, setters, ctx.proxyFireFns)
+        if (replacement) {
+          patches.push({ start: n.start, end: n.end, replacement })
+          return
+        }
       }
       if (left.type === 'Identifier' && setters[left.name]) {
         const setter = setters[left.name]
@@ -2255,6 +2398,40 @@ function collectRefs(node) {
   return refs
 }
 
+// Whether `node` reads `name`. `enter(fn, call)` decides whether a function is
+// walked — `call` is the call it is handed to, if any — since a read inside a
+// function happens when it is called rather than where it is written. The
+// binding a declarator introduces is a name, not a read.
+function readsName(node, name, enter) {
+  let found = false
+  const walk = (n, key, parent) => {
+    if (found || !n || typeof n !== 'object') return
+    if (/^(FunctionDeclaration|FunctionExpression|ArrowFunctionExpression|ClassBody)$/.test(n.type)) {
+      if (!enter(n, key === 'arguments' && parent?.type === 'CallExpression' ? parent : null)) return
+    }
+    if (n.type === 'Identifier' && n.name === name) {
+      const isName = ((key === 'key' || key === 'property') && !parent?.computed) ||
+        (key === 'id' && parent?.type === 'VariableDeclarator')
+      if (!isName) { found = true; return }
+    }
+    for (const k of Object.keys(n)) {
+      if (k === 'start' || k === 'end' || k === 'type') continue
+      const c = n[k]
+      if (Array.isArray(c)) c.forEach((i) => { if (i?.type) walk(i, k, n) })
+      else if (c?.type) walk(c, k, n)
+    }
+  }
+  walk(node, null, null)
+  return found
+}
+
+// `onDestroy(fn)`, `$.onDestroy(fn)`, and the same for `onCleanup`.
+const _callsHook = (call, names) => {
+  const c = call?.callee
+  return !!c && ((c.type === 'Identifier' && names.includes(c.name)) ||
+    (c.type === 'MemberExpression' && !c.computed && names.includes(c.property.name)))
+}
+
 // Every source string in a template subtree that can carry an expression:
 // `{expr}` interpolations (which live inside `value` on text nodes too), block
 // headers (`#each cities as c`), `@const`, snippet args, and attribute values.
@@ -2304,22 +2481,23 @@ function templateSource(node, out = []) {
 // one component always showed and hid together. The watch set is now the async
 // values the body reads.
 //
-// Two deliberate fallbacks to the old union, because under-watching is the
-// dangerous direction — it shows content before its data arrived:
-//   • the body renders a snippet defined elsewhere (`@render`), whose reads are
-//     not in this subtree
-//   • the body reads no async value at all, which is how you say "gate this
-//     region on everything" and is the only way to say it
+// A body that reads none waits on nothing (`FJS-D378`): a boundary written to
+// catch a throw is not also a loading gate, and whether a region waits is read
+// off the region. Holding a whole template until everything has loaded is
+// `<mesa:mounted>`.
+//
+// One fallback to the whole-component union, because under-watching shows
+// content before its data arrived: a body that renders a snippet defined
+// elsewhere (`@render`), whose reads are not in this subtree.
 function boundaryWatchSet(asyncVars, body) {
-  if (asyncVars.length < 2) return asyncVars
+  if (!asyncVars.length) return asyncVars
   const scanned = (body || []).filter(
     nd => !(nd.type === 'snippet' && (nd.name === 'pending' || nd.name === 'failed'))
   )
   const src = templateSource(scanned).join('\n')
   if (src.includes('@render')) return asyncVars
   const names = new Set(src.match(/[A-Za-z_$][\w$]*/g) || [])
-  const read  = asyncVars.filter(v => names.has(v.name))
-  return read.length ? read : asyncVars
+  return asyncVars.filter(v => names.has(v.name))
 }
 
 function memberPath(node) {
@@ -2749,22 +2927,47 @@ function refuseDollarMisuse(ast) {
 // compiled to a plain const and the filter bar above the table never moved
 // (`FJS-1065`).
 //
-// A BARE dep is not here. Registering a proxy for it would change its accessor
-// from `$$runtime.get($$sig_a)` to `$$proxy_a`, which is the deep-watch opt-in
-// only the bare `$: a` form should trigger — and that form arrives as a
-// watchPath. The emitter reads a bare dep only where a root already exists.
-function dottedWatchDeps(watchPaths, watchHandlers, watchGroups) {
+// A BARE dep on a local is not here. Registering a proxy for it would change
+// its accessor from `$$runtime.get($$sig_a)` to `$$proxy_a`, which is the
+// deep-watch opt-in only the bare `$: a` form should trigger — and that form
+// arrives as a watchPath. The emitter reads a bare local dep only where a root
+// already exists.
+//
+// A bare dep on an IMPORT is here. An import has no signal to fall back on, so
+// leaving it out compiled `$: store, () => f()` to a read of an inert object:
+// the handler never ran again and nothing said so, while `$: store.x, () => f()`
+// beside it worked (`FJS-1339`). The whole-object watch is the only thing the
+// dep can mean.
+function dottedWatchDeps(watchPaths, watchHandlers, watchGroups, isImport) {
+  const counts = (d) => d.includes('.') || isImport(d)
   return [
     ...watchPaths.map((p) => p.path),
-    ...watchHandlers.flatMap((wh) => wh.deps.filter((d) => d.includes('.'))),
+    ...watchHandlers.flatMap((wh) => wh.deps.filter(counts)),
     ...watchGroups
       .flatMap((g) => g.entries.flatMap((e) => e.deps))
-      .filter((d) => d.includes('.')),
+      .filter(counts),
   ]
 }
 
-const watchRootsOf = (paths) =>
-  new Set(paths.map((path) => path.replace(/\?\.|\./g, '.').split('.')[0]))
+// A `$:` path as its root and the dotted rest, with `?.` read as `.`.
+function splitWatchPath(path) {
+  const norm = path.replace(/\?\./g, '.')
+  const i = norm.indexOf('.')
+  return i >= 0 ? { root: norm.slice(0, i), dotPath: norm.slice(i + 1) } : { root: norm, dotPath: '' }
+}
+
+// The signal a watch on `path` reads, in the one spelling the declarations and
+// every reference share. It was built by hand at six sites, and two of them
+// sliced before normalizing, so `$: (server?.status, …)` referenced
+// `$$watch_server__status` beside a declared `$$watch_server_status` (`FJS-599`,
+// `FJS-1025`).
+function watchSigName(path) {
+  const { root, dotPath } = splitWatchPath(path)
+  return dotPath ? `$$watch_${root}_${dotPath.replace(/\./g, '_')}` : `$$watch_${root}`
+}
+
+const watchRootsOf = (paths) => new Set(paths.map((path) => splitWatchPath(path).root))
+
 
 export function analyzeScript(raw, ast) {
   const vars = {}
@@ -3466,7 +3669,9 @@ export function analyzeScript(raw, ast) {
   // Also include imported names any `$:` form watches — they are the emitter's
   // proxy roots. A const that references one (e.g. `const style = themeNew`)
   // must be detected as derived so it gets a createMemo wrapper, not a static const.
-  watchRootsOf(dottedWatchDeps(watchPaths, watchHandlers, watchGroups)).forEach((root) => {
+  const importedHere = new Set(imports.flatMap((imp) => imp.specifiers.map((sp) => sp.local.name)))
+  const isImport = (name) => !vars[name] && importedHere.has(name)
+  watchRootsOf(dottedWatchDeps(watchPaths, watchHandlers, watchGroups, isImport)).forEach((root) => {
     if (!vars[root]) reactiveSet.add(root)  // only add imports, not local lets
   })
   // A call to a binding THIS SCRIPT holds is a second door reactivity comes
@@ -3483,14 +3688,19 @@ export function analyzeScript(raw, ast) {
   // and a function is state; so `const handle = subscribe(id)` over an imported
   // `subscribe` stays eager and keeps its side effect, which is what FJS-D212
   // is for.
-  const callsLocal = (node) => {
+  //
+  // A call on the binding's OWN name is not that door: `const auto =
+  // make({ onsaved: () => auto.adopt() })` calls the value being defined, and
+  // promoting it for that turned `auto` in the callback into the memo handle
+  // (`FJS-1064`).
+  const callsLocal = (node, self) => {
     let found = false
     const walk = (n) => {
       if (!n || typeof n !== 'object' || found) return
       if (n.type === 'CallExpression' || n.type === 'NewExpression') {
         let callee = n.callee
         while (callee?.type === 'MemberExpression') callee = callee.object
-        if (callee?.type === 'Identifier' && vars[callee.name]) { found = true; return }
+        if (callee?.type === 'Identifier' && callee.name !== self && vars[callee.name]) { found = true; return }
       }
       for (const k of Object.keys(n)) {
         if (k === 'start' || k === 'end' || k === 'type' || k === 'raw') continue
@@ -3505,7 +3715,7 @@ export function analyzeScript(raw, ast) {
   const opaqueLocalCall = new Set()
   for (const v of Object.values(vars)) {
     if (v.kind === 'var' || reactiveSet.has(v.name) || !v.initNode) continue
-    if (callsLocal(v.initNode)) { reactiveSet.add(v.name); opaqueLocalCall.add(v.name) }
+    if (callsLocal(v.initNode, v.name)) { reactiveSet.add(v.name); opaqueLocalCall.add(v.name) }
   }
 
   // Whether a name is PROMOTED and whether a binding over it is STATIC are two
@@ -3576,6 +3786,18 @@ export function analyzeScript(raw, ast) {
     // decided inside the callee — so it is derived on the strength of the call
     // alone and its dependencies are whatever the memo tracks at runtime.
     v.isDerived = v.deps.length > 0 || opaqueLocalCall.has(v.name)
+  }
+
+  // A `const` read in its own initializer, outside any function, is read
+  // before it has a value — a TDZ throw when static and a memo computing from
+  // its own handle when derived. Inside a callback it is fine, and the
+  // emitter reads it through the memo there (`FJS-1064`).
+  for (const v of Object.values(vars)) {
+    if (v.kind !== 'const' || !v.initNode || !readsName(v.initNode, v.name, () => false)) continue
+    errors.push(
+      `'${v.name}' reads itself in its own initializer, before it has a value. ` +
+      `Read it inside a callback the initializer hands out, which runs once '${v.name}' exists.`
+    )
   }
 
   // ── Pass 3: annotate handlers and effects ──────────────────────────────────
@@ -4235,7 +4457,7 @@ export function buildRuntime() {
     // onerror attr — rewrite through accessors/setters so reactive vars work
     const onerrorAttr = (mountedNode.attributes || []).find(a => a.name === 'onerror')
     const onerrorExpr = onerrorAttr?.value
-      ? rewriteExpr(unwrapExp(onerrorAttr.value), ctx.accessors, ctx.setters)
+      ? rewriteExpr(unwrapExp(onerrorAttr.value), ctx.accessors, ctx.setters, ctx.proxyFireFns)
       : 'null'
 
     // mount={expr} — sync or async condition. If the resolved value is falsy,
@@ -4244,7 +4466,7 @@ export function buildRuntime() {
     //   <mesa:mounted mount={hero} />  →  show template only if hero is truthy
     const mountAttr = (mountedNode.attributes || []).find(a => a.name === 'mount')
     const mountExpr = mountAttr?.value
-      ? rewriteExpr(unwrapExp(mountAttr.value), ctx.accessors, ctx.setters)
+      ? rewriteExpr(unwrapExp(mountAttr.value), ctx.accessors, ctx.setters, ctx.proxyFireFns)
       : null
 
     // Static elimination: if mount={expr} is a statically-detectable falsy value
@@ -4578,9 +4800,6 @@ export function buildBlock(data, option = {}) {
             // that keep the old whole-component union.
             const allAsyncVars = Object.values(ctx.analysis.vars || {}).filter(v => v.isAsync)
             const asyncVars = boundaryWatchSet(allAsyncVars, n.body)
-            if (!asyncVars.length) {
-              ctx.analysis.warnings.push('<mesa:boundary> has no async-derived variables to watch. Content will show immediately.')
-            }
 
             // Co-located snippets inside <mesa:boundary> body
             const bodySnippets = (n.body || []).filter(nd => nd.type === 'snippet')
@@ -4591,6 +4810,14 @@ export function buildBlock(data, option = {}) {
             const globalSnippets = (ctx.DOM.body || []).filter(nd => nd.type === 'snippet')
             const hasPendingGlobal = !hasPendingLocal && globalSnippets.some(s => s.name === 'pending')
             const hasFailedGlobal  = !hasFailedLocal  && globalSnippets.some(s => s.name === 'failed')
+
+            // Waiting on nothing and catching nothing: the boundary is inert.
+            if (!asyncVars.length && !hasFailedLocal && !hasFailedGlobal) {
+              ctx.analysis.warnings.push(
+                '<mesa:boundary> reads no async value and has no `failed` snippet, so it neither waits nor catches. ' +
+                'Read the awaited value inside it, or add {#snippet failed(error, reset)}.'
+              )
+            }
 
             // Compile co-located snippets into the outer (component) scope
             // so boundaryBlock can reference $$snippet_pending/failed as closures.
@@ -4627,7 +4854,7 @@ export function buildBlock(data, option = {}) {
               ? '(__anchor) => $$snippet_pending(__anchor)'
               : 'null'
             const failedRef = (hasFailedLocal || hasFailedGlobal)
-              ? '(__anchor, $$err) => $$snippet_failed(__anchor, () => $$err)'
+              ? '(__anchor, $$err, $$reset) => $$snippet_failed(__anchor, () => $$err, () => $$reset)'
               : 'null'
 
             binds.push(xNode('boundary:bind',
@@ -4665,7 +4892,7 @@ export function buildBlock(data, option = {}) {
                 const { directive, modifiers } = parseModifiers(pname)
                 const event = directive.startsWith('on:') ? directive.slice(3) : directive.slice(1)
                 const rawHand = p.value ? unwrapExp(p.value) : '() => {}'
-                let handler = ctx.accessors ? rewriteExpr(rawHand, ctx.accessors, ctx.setters) : rawHand
+                let handler = ctx.accessors ? rewriteExpr(rawHand, ctx.accessors, ctx.setters, ctx.proxyFireFns) : rawHand
 
                 const guardMods = modifiers.filter(m =>
                   ['preventDefault','stopPropagation','self','trusted'].includes(m.name))
@@ -5617,7 +5844,14 @@ export function makeEachBlock(data, option) {
   // Temporarily register item/index as signal-getter accessors so template
   // expressions inside the each block get rewritten correctly.
   const prevAccessors = this.accessors ? { ...this.accessors } : null
+  const outerLift = this.accessors?.[EACH_LIFT] ?? null
+  let lift = null
   if (this.accessors) {
+    lift = eachLiftFrame(this, {
+      getters: isDestructure ? ['$$item', patFn, indexName] : [itemName, indexName],
+      rowSource: templateSource(data.mainBlock),
+    })
+    Object.defineProperty(this.accessors, EACH_LIFT, { value: lift, configurable: true })
     if (isDestructure) {
       patNames.forEach(n => { this.accessors[n] = `${patFn}().${n}` })
       this.accessors['$$item'] = '$$item()'
@@ -5642,7 +5876,12 @@ export function makeEachBlock(data, option) {
     { allowSingleBlock: !false, each: blockEachOpts }
   )
 
-  if (prevAccessors) this.accessors = prevAccessors
+  if (prevAccessors) {
+    this.accessors = prevAccessors
+    // The copy is a spread, which drops a non-enumerable key: an `{#each}`
+    // nested in a row would otherwise end lifting for the rest of that row.
+    if (outerLift) Object.defineProperty(this.accessors, EACH_LIFT, { value: outerLift, configurable: true })
+  }
 
   let elseBlock = null
   if (data.elseBlock) {
@@ -5661,7 +5900,8 @@ export function makeEachBlock(data, option) {
       elseBlock,
       label: option.label,
       onlyChild: option.onlyChild,
-      arrayExpr: rewrittenArray
+      arrayExpr: rewrittenArray,
+      lifts: lift ? [...lift.names] : []
     },
     (w, n) => {
       const el = n.onlyChild ? n.label : n.label.name
@@ -5669,6 +5909,7 @@ export function makeEachBlock(data, option) {
       // mode=0: anchor is a comment node (insert before it)
       // onlyChild: the each IS the only child of an element passed directly
       const mode = n.onlyChild ? 1 : !n.label.node ? 1 : 0
+      for (const [outer, name] of n.lifts) w.writeLine(`const ${name} = $$runtime.createKeyedEquals(() => ${outer});`)
       w.writeLine(`$$runtime.$$eachBlock(${el}, ${mode}, () => (${n.arrayExpr}),`)
       w.indent++
       w.write(true)
@@ -5816,7 +6057,7 @@ export function makeAwaitBlock(data, label) {
   const rx = data.value.match(/^#await\s+(.+)$/s)
   assert(rx, 'Wrong #await expression')
   const rawExp = rx[1].trim()
-  const exp = this.accessors ? rewriteExpr(rawExp, this.accessors) : rawExp
+  const exp = this.accessors ? rewriteExpr(rawExp, withoutWatchedCalls(this.accessors)) : rawExp
   this.detectDependency(rawExp)
 
   const pendingBlock = data.parts.main?.length
@@ -6548,7 +6789,7 @@ export function bindProp(prop, node, element) {
     const rawHand = prop.value ? unwrapExp(prop.value) : '() => {}'
     // Scan raw handler for $$emit / $$props / $$attributes / $context / $.transition usage.
     ctx.detectDependency(rawHand)
-    let handler = ctx.accessors ? rewriteExpr(rawHand, ctx.accessors, ctx.setters) : rawHand
+    let handler = ctx.accessors ? rewriteExpr(rawHand, ctx.accessors, ctx.setters, ctx.proxyFireFns) : rawHand
 
     // Separate compile-time modifiers from runtime ones
     const listenerOpts = {}   // once, passive, capture → addEventListener options
@@ -6775,7 +7016,7 @@ export function inspectProp(prop) {
     // loaded, and the click threw `Invalid left-hand side in assignment`, so a
     // dialog's Cancel button did nothing. `on:click` on an ELEMENT has always
     // passed setters here — this is the same call, on the component path.
-    const exp = ctx.accessors ? rewriteExpr(rawExp, ctx.accessors, ctx.setters) : rawExp
+    const exp = ctx.accessors ? rewriteExpr(rawExp, ctx.accessors, ctx.setters, ctx.proxyFireFns) : rawExp
     return { name, value: exp, static: false, mod: {} }
   }
   if (prop.value.includes('{')) {
@@ -6978,8 +7219,68 @@ function _valueReads(exprSrc) {
 
 /**
  * Warn about template reads of imported names that externalSignals doesn't
- * cover, for modules it otherwise describes.
+ * cover, for modules it otherwise describes — and record every read of an
+ * imported object that no `$:` here covers, warned or not, on
+ * `analysis.staticReads` (`FJS-1340`).
+ *
+ * The record is for whoever asks why a value does not move: a dev build hands
+ * it to devtools with the component. It does not depend on the confidence
+ * level, since the question is the same for a component the default level
+ * stays quiet about.
  */
+// A derived `const` is lazy: its initializer runs when something reads it. One
+// whose initializer calls something, read nowhere but a teardown callback, is
+// a side effect that never happens — `const off = svc.on('*', f)` read only
+// in `onDestroy` registered its listener at teardown, and `const tick =
+// setInterval(f)` started its timer there (`FJS-1062`). A value read by an
+// ordinary function is left alone: lazy is right for it.
+function _checkUnreadDerived(ctx) {
+  const { vars } = ctx.analysis
+  const body = ctx.script?.ast?.body ?? []
+  const callsEagerly = (n) => {
+    if (!n || typeof n !== 'object') return false
+    if (/^(FunctionExpression|ArrowFunctionExpression|ClassExpression|ClassBody)$/.test(n.type)) return false
+    if (/^(CallExpression|NewExpression|TaggedTemplateExpression)$/.test(n.type)) return true
+    return Object.keys(n).some((k) => {
+      if (k === 'start' || k === 'end' || k === 'type') return false
+      const c = n[k]
+      return Array.isArray(c) ? c.some(callsEagerly) : c?.type ? callsEagerly(c) : false
+    })
+  }
+  const exported = new Set()
+  for (const node of body)
+    if (node.type === 'ExportNamedDeclaration' && node.declaration?.type === 'VariableDeclaration')
+      for (const d of node.declaration.declarations) if (d.id.type === 'Identifier') exported.add(d.id.name)
+  // The markup as text rather than the collected expressions, which miss
+  // `style:left="{x}%"` and `{@const}` — a word match over-counts reads, and
+  // over-counting only costs a warning not given.
+  const markup = (ctx.source ?? '').replace(/<(script|style)\b[\s\S]*?<\/\1>/g, '')
+  const beyondTeardown = (fn, call) => !_callsHook(call, ['onDestroy', 'onCleanup'])
+
+  for (const v of Object.values(vars ?? {})) {
+    if (v.kind !== 'const' || !v.isDerived || v.isProp || v.isAsync || v.isContextConsume) continue
+    if (!v.initNode || exported.has(v.name) || !callsEagerly(v.initNode)) continue
+    const word = new RegExp(`(^|[^\\w$.]|\\.\\.\\.)${v.name.replace(/\$/g, '\\$')}(?![\\w$])`)
+    if (word.test(markup)) continue
+    const readElsewhere = body.some((node) => {
+      const decl = node.type === 'ExportNamedDeclaration' ? node.declaration : node
+      if (decl?.type === 'VariableDeclaration')
+        return decl.declarations.some((d) => d.init !== v.initNode && readsName(d, v.name, beyondTeardown))
+      return readsName(node, v.name, beyondTeardown)
+    })
+    if (readElsewhere) continue
+    const inTeardown = body.some((node) => node !== v.initNode && readsName(node, v.name, () => true) &&
+      !(node.type === 'VariableDeclaration' && node.declarations.some((d) => d.init === v.initNode)))
+    ctx.analysis.warnings.push(
+      `'${v.name}' never runs: a 'const' that reads reactive state is computed when it is read, and ` +
+      (inTeardown ? `'${v.name}' is read only in teardown, so its initializer runs there if at all. `
+                  : `nothing reads '${v.name}'. `) +
+      `For work that starts at mount, write 'var ${v.name} = …'` +
+      (inTeardown ? '.' : `; for a value nobody needs, delete it.`)
+    )
+  }
+}
+
 function _checkExternalReactivity(ctx, imports) {
   if (!ctx.DOM) return
   // externalSignals drives the signal tier; the path-watch tier works without it.
@@ -7000,18 +7301,36 @@ function _checkExternalReactivity(ctx, imports) {
   }
   if (!bindings.size) return
 
-  // Paths declared with `$:` in this file. A watch on a prefix counts as
-  // covering everything under it: `$: page` covers `page.params.id`, and
+  // Paths a `$:` in this file watches. A watch on a prefix counts as covering
+  // everything under it: `$: page` covers `page.params.id`, and
   // `$: page.params` covers it too. Deliberately lenient — a deeper read under
   // a watched prefix is a surgical-granularity question, not a wiring bug.
-  const watched = (ctx.analysis.watchPaths ?? []).map(w => w.path)
+  //
+  // Every `$:` form, read off the list the emitter registers proxies from. The
+  // bare `$: path` lines alone missed a handler's deps, so `$: s.count, () => f()`
+  // beside `{s.count}` was warned about as unwatched (`FJS-1065`'s drift).
+  const { vars, watchPaths = [], watchHandlers = [], watchGroups = [] } = ctx.analysis
+  const watched = dottedWatchDeps(watchPaths, watchHandlers, watchGroups,
+    (n) => !vars?.[n] && bindings.has(n)).map((w) => w.replace(/\?\./g, '.'))
   const isWatched = (path) =>
     watched.some(w => path === w || path.startsWith(w + '.') || w.startsWith(path + '.'))
 
   const strict = ctx.config?.externalReactivityHints === 'strict'
 
+  // Where a read is made. The template, and every top-level `const` — the
+  // place a reader expects a derivation, so `const d = store.n * 2` beside no
+  // watch is the same silence as `{store.n}`. A `const` holding a function
+  // reads when it is called, and `var` is the stated snapshot (§6).
+  const sites = _collectTemplateExpressions(ctx.DOM.body).map((expr) => ({ expr, where: 'template' }))
+  for (const v of Object.values(vars ?? {})) {
+    if (v.kind !== 'const' || v.isProp || !v.initRaw) continue
+    if (/^(Arrow)?FunctionExpression$|^ClassExpression$/.test(v.initNode?.type ?? '')) continue
+    sites.push({ expr: v.initRaw, where: `const ${v.name}` })
+  }
+  const staticReads = (ctx.analysis.staticReads ??= [])
+
   const seen = new Set()
-  for (const expr of _collectTemplateExpressions(ctx.DOM.body)) {
+  for (const { expr, where } of sites) {
     for (const [name, read] of _valueReads(expr)) {
       const member = read.member
       const b = bindings.get(name)
@@ -7035,14 +7354,18 @@ function _checkExternalReactivity(ctx, imports) {
         // still uses the signal architecture.
         const isDeclaredSignal = declared?.[b.source]?.includes(b.importedName)
         const anyWatchOnThisRoot = watched.some(w => w === name || w.startsWith(name + '.'))
-        if (!isDeclaredSignal && (anyWatchOnThisRoot || strict)) {
+        if (!isDeclaredSignal && !b.source.endsWith('.mesa')) {
           for (const path of read.paths) {
             if (path === name) continue           // bare read, handled below
             if (isWatched(path)) continue
+            if (!staticReads.some((r) => r.path === path && r.where === where))
+              staticReads.push({ path, where, from: b.source, watchedHere: anyWatchOnThisRoot })
+            if (!(anyWatchOnThisRoot || strict)) continue
             if (seen.has(`p:${path}`)) continue
             seen.add(`p:${path}`)
+            const at = where === 'template' ? 'in the template' : `by '${where}'`
             ctx.analysis.warnings.push(
-              `'${path}' is read in the template but no '$: ${path}' watch covers it. ` +
+              `'${path}' is read ${at} but no '$: ${path}' watch covers it. ` +
               `Imported objects are inert — the read compiles to a static value and will ` +
               `not update when '${name}' mutates. Add '$: ${path}' to the script block.`
             )
@@ -7189,6 +7512,7 @@ export function emitScript(ctx) {
   }
 
   _checkExternalReactivity(ctx, imports)
+  _checkUnreadDerived(ctx)
 
   // ── 2. Watch proxies ──────────────────────────────────────────────────────
   // Two cases:
@@ -7208,7 +7532,8 @@ export function emitScript(ctx) {
   // object and the handler never fires — so the list is `dottedWatchDeps`, which
   // the analyzer's reactive-root seed reads too.
   const groupDeps = watchGroups.flatMap((g) => g.entries.flatMap((e) => e.deps))
-  const dottedDeps = dottedWatchDeps(watchPaths, watchHandlers, watchGroups)
+  const dottedDeps = dottedWatchDeps(watchPaths, watchHandlers, watchGroups,
+    (name) => !vars[name] && importedNames.has(name))
   const proxyRoots = watchRootsOf(dottedDeps)
 
   // A BARE dep whose root is already a proxy root is the other half. It adds no
@@ -7327,15 +7652,7 @@ export function emitScript(ctx) {
   // module that PARSES and throws a ReferenceError from inside createEffect on
   // mount, which no parse check can see (`FJS-599`) — so a dep that resolved to
   // one is reported at compile time instead of being written out.
-  const declaredWatchSigs = new Set(
-    watchedPaths.map((rawPath) => {
-      const norm = rawPath.replace(/\?\./g, '.')
-      const dotIdx = norm.indexOf('.')
-      const root = dotIdx >= 0 ? norm.slice(0, dotIdx) : norm
-      const dotPath = dotIdx >= 0 ? norm.slice(dotIdx + 1) : ''
-      return dotPath ? `$$watch_${root}_${dotPath.replace(/\./g, '_')}` : `$$watch_${root}`
-    })
-  )
+  const declaredWatchSigs = new Set(watchedPaths.map(watchSigName))
   const requireWatchSig = (sigVar, dep) => {
     if (declaredWatchSigs.has(sigVar)) return sigVar
     ctx.analysis.errors.push(
@@ -7350,18 +7667,12 @@ export function emitScript(ctx) {
   const seenPaths = new Set()
 
   watchedPaths.forEach((rawPath) => {
-    const p = { path: rawPath }
-    const normalized = p.path.replace(/\?\./g, '.')
-    const dotIdx = normalized.indexOf('.')
-    const root = dotIdx >= 0 ? normalized.slice(0, dotIdx) : normalized
-    const dotPath = dotIdx >= 0 ? normalized.slice(dotIdx + 1) : ''
+    const { root, dotPath } = splitWatchPath(rawPath)
     const key = `${root}::${dotPath}`
     if (seenPaths.has(key)) return
     seenPaths.add(key)
 
-    const sigVar = dotPath
-      ? `$$watch_${root}_${dotPath.replace(/\./g, '_')}`
-      : `$$watch_${root}`
+    const sigVar = watchSigName(rawPath)
 
     if (importProxyRoots.has(root)) {
       // Static proxy — watchPath against the import directly.
@@ -7369,11 +7680,11 @@ export function emitScript(ctx) {
       // so self-assignment `root = root` can be rewritten to force a refresh.
       if (dotPath === '') {
         const fireVar = `$$fire_${root}`
-        mod.head.push(xNode.raw(`const [${sigVar}, ${fireVar}] = $$runtime.watchPath(${root}, '${dotPath}');`))
+        mod.head.push(xNode.raw(`const [${sigVar}, ${fireVar}] = $$runtime.watchPath(${root}, '${dotPath}', '${root}');`))
         ctx.proxyFireFns = ctx.proxyFireFns || {}
         ctx.proxyFireFns[root] = fireVar
       } else {
-        mod.head.push(xNode.raw(`const [${sigVar}] = $$runtime.watchPath(${root}, '${dotPath}');`))
+        mod.head.push(xNode.raw(`const [${sigVar}] = $$runtime.watchPath(${root}, '${dotPath}', '${root}');`))
       }
       watchSigVars.push(sigVar)
     }
@@ -7389,22 +7700,58 @@ export function emitScript(ctx) {
     )
   }
 
+  // The calls that follow these watches (`FJS-D404`, `WATCHED_CALLS`): every
+  // imported name, and every local function whose body reaches one, since
+  // moving `money(r.total)` into a helper must not change what re-runs.
+  let watchedCalls = null
+  if (watchSigVars.length) {
+    const callees = new Set([...importedNames].filter((n) => !vars[n]))
+    const localFns = new Map()
+    for (const v of Object.values(vars)) {
+      const t = v.initNode?.type
+      if (v.kind !== 'let' && (t === 'ArrowFunctionExpression' || t === 'FunctionExpression')) localFns.set(v.name, v.initNode)
+    }
+    for (const s of ast?.body ?? []) {
+      const d = s.type === 'ExportNamedDeclaration' ? s.declaration : s
+      if (d?.type === 'FunctionDeclaration' && d.id) localFns.set(d.id.name, d)
+    }
+    const callsOneOf = (node) => {
+      let found = false
+      const visit = (n) => {
+        if (found || !n || typeof n.type !== 'string') return
+        if (n.type === 'CallExpression' && n.callee.type === 'Identifier' && callees.has(n.callee.name)) { found = true; return }
+        for (const k of Object.keys(n)) {
+          if (k === 'start' || k === 'end' || k === 'type') continue
+          const c = n[k]
+          if (Array.isArray(c)) c.forEach(visit)
+          else if (c && typeof c === 'object') visit(c)
+        }
+      }
+      visit(node.body)
+      return found
+    }
+    for (let grew = true; grew;) {
+      grew = false
+      for (const [name, fn] of localFns) {
+        if (!callees.has(name) && callsOneOf(fn)) { callees.add(name); grew = true }
+      }
+    }
+    // Wraps the callee rather than the call: `$$watches(money)(v)` keeps the
+    // call's precedence, and `_renderGroup` strips a pair of parens it did not write.
+    mod.head.push(xNode.raw(`const $$watches = (fn) => { ${watchSigVars.map((s) => `${s}();`).join(' ')} return fn };`))
+    watchedCalls = { callees }
+  }
+
   // For local let roots: register path metadata so step 5 can emit re-proxy logic
   // after the signal is created.
   const localProxyPaths = {}   // root → [{ dotPath, sigVar }]
   watchedPaths.forEach((rawPath) => {
-    const p = { path: rawPath }
-    const normalized = p.path.replace(/\?\./g, '.')
-    const dotIdx = normalized.indexOf('.')
-    const root = dotIdx >= 0 ? normalized.slice(0, dotIdx) : normalized
+    const { root, dotPath } = splitWatchPath(rawPath)
     if (!localProxyRoots.has(root)) return
-    const dotPath = dotIdx >= 0 ? normalized.slice(dotIdx + 1) : ''
     const key = `${root}::${dotPath}`
     if (!localProxyPaths[root]) localProxyPaths[root] = []
     if (!localProxyPaths[root].find((e) => e.key === key)) {
-      const sigVar = dotPath
-        ? `$$watch_${root}_${dotPath.replace(/\./g, '_')}`
-        : `$$watch_${root}`
+      const sigVar = watchSigName(rawPath)
       localProxyPaths[root].push({ key, dotPath, sigVar })
     }
   })
@@ -7413,16 +7760,12 @@ export function emitScript(ctx) {
   // in mod.code after the variable declaration (avoids TDZ crash).
   const localVarProxyPaths = {}  // root → [{ dotPath, sigVar, fireVar }]
   watchedPaths.forEach((rawPath) => {
-    const p = { path: rawPath }
-    const normalized = p.path.replace(/\?\./g, '.')
-    const dotIdx = normalized.indexOf('.')
-    const root = dotIdx >= 0 ? normalized.slice(0, dotIdx) : normalized
+    const { root, dotPath } = splitWatchPath(rawPath)
     if (!localVarRoots.has(root)) return
-    const dotPath = dotIdx >= 0 ? normalized.slice(dotIdx + 1) : ''
     const key = `${root}::${dotPath}`
     if (!localVarProxyPaths[root]) localVarProxyPaths[root] = []
     if (!localVarProxyPaths[root].find((e) => e.key === key)) {
-      const sigVar  = dotPath ? `$$watch_${root}_${dotPath.replace(/\./g, '_')}` : `$$watch_${root}`
+      const sigVar  = watchSigName(rawPath)
       const fireVar = dotPath ? null : `$$fire_${root}`
       localVarProxyPaths[root].push({ key, dotPath, sigVar, fireVar })
     }
@@ -7644,7 +7987,14 @@ export function emitScript(ctx) {
         ))
         // Not reactive — no accessor entry
       } else {
-        const rewrittenInit = rewriteExpr(init, ctx.accessors)
+        // rewriteAssignments first, as the derived-const branch does: `var tick =
+        // setInterval(() => { now = Date.now() })` otherwise wrote to a getter
+        // call, and the module failed to parse (`FJS-1062`, whose warning is
+        // what sends a reader here).
+        const rewrittenInit = rewriteExpr(
+          v.initNode ? rewriteAssignments(init, v.initNode, ctx) : init,
+          ctx.accessors
+        )
         mod.code.push(xNode.raw(`let ${v.name} = $$runtime.untrack(() => (${rewrittenInit}));`))
       }
       // var stays as a plain variable — no accessor entry needed.
@@ -7735,9 +8085,12 @@ export function emitScript(ctx) {
       // initNode is absent for a synthesized declarator (a destructured pattern
       // expanded into flat vars), and rewriteAssignments needs a real node to
       // take its source offset from.
+      // The binding's own name inside the initializer is the memo handle, so a
+      // callback reaching back at it reads through the memo like every other
+      // read does (`FJS-1064`). A read outside a callback was refused above.
       const rewrittenInit = rewriteExpr(
         v.initNode ? rewriteAssignments(init, v.initNode, ctx) : init,
-        ctx.accessors
+        { ...ctx.accessors, [v.name]: `$$runtime.get(${v.name})`, [WATCHED_CALLS]: watchedCalls }
       )
       mod.code.push(xNode.raw(`const ${v.name} = $$runtime.trackDerived(() => (${rewrittenInit}), void 0, void 0, __block);`))
       if (ctx.config?.dev) mod.code.push(xNode.raw(`$$runtime.__dev?.r(${v.name}, '${v.name}', 'derived');`))
@@ -7756,9 +8109,9 @@ export function emitScript(ctx) {
         ctx.accessors[v.name] = `$$proxy_${v.name}`
         varPaths.forEach(({ sigVar, fireVar, dotPath }) => {
           if (fireVar) {
-            mod.code.push(xNode.raw(`const [${sigVar}, ${fireVar}] = $$runtime.watchPath(${v.name}, '${dotPath}');`))
+            mod.code.push(xNode.raw(`const [${sigVar}, ${fireVar}] = $$runtime.watchPath(${v.name}, '${dotPath}', '${v.name}');`))
           } else {
-            mod.code.push(xNode.raw(`const [${sigVar}] = $$runtime.watchPath(${v.name}, '${dotPath}');`))
+            mod.code.push(xNode.raw(`const [${sigVar}] = $$runtime.watchPath(${v.name}, '${dotPath}', '${v.name}');`))
           }
         })
         const sigVars = varPaths.map(({ sigVar }) => sigVar)
@@ -8094,13 +8447,10 @@ export function emitScript(ctx) {
     // `undefined`, so the value has to be read off the proxy separately.
     const depInfo = wh.deps
       .map((dep) => {
-        const root = dep.split('?.')[0].split('.')[0]
+        const { root } = splitWatchPath(dep)
         const acc = ctx.accessors[root]
         if (acc === `$$proxy_${root}`) {
-          const dotPath = dep.slice(root.length + 1).replace(/\?\./g, '.')
-          const sigVar = dotPath
-            ? `$$watch_${root}_${dotPath.replace(/\./g, '_')}`
-            : `$$watch_${root}`
+          const sigVar = watchSigName(dep)
           // $$runtime.get(), not `sigVar()`. A watch signal is a read FUNCTION when
           // the root is a proxied import or a local const/var (watchPath), and a
           // TRACKED OBJECT when the root is a local `let` (track). Calling it
@@ -8118,14 +8468,7 @@ export function emitScript(ctx) {
 
     const depReads = depInfo.map((d) => d.subscribe).filter(Boolean).join('; ')
 
-    // rewriteExpr with ctx.setters handles signal assignments (count++, x = v).
-    // Additionally pre-process proxy fire self-assignments (`connectedArr = connectedArr`)
-    // which rewriteExpr doesn't know about — only when proxyFireFns exist.
-    let handlerSrc = wh.handlerRaw
-    if (ctx.proxyFireFns && Object.keys(ctx.proxyFireFns).length > 0) {
-      handlerSrc = rewriteFragmentAssignments(handlerSrc, ctx)
-    }
-    const rewrittenHandler = rewriteExpr(handlerSrc, ctx.accessors, ctx.setters)
+    const rewrittenHandler = rewriteExpr(wh.handlerRaw, ctx.accessors, ctx.setters, ctx.proxyFireFns)
     const depPart = depReads ? `${depReads}; ` : ''
 
     // Single dep → the handler receives (value, prev).
@@ -8187,16 +8530,7 @@ export function emitScript(ctx) {
       return
     }
 
-    // Exactly what the $: watch path does: `ctx.setters` turns an assignment in
-    // the handler into a signal write, and the proxy-fire pre-pass only runs
-    // when there is something for it to fire. This used to hand
-    // rewriteAssignments a fragment-relative AST and produce spliced garbage —
-    // see rewriteFragmentAssignments.
-    let handlerSrc = handlerRaw
-    if (ctx.proxyFireFns && Object.keys(ctx.proxyFireFns).length > 0) {
-      handlerSrc = rewriteFragmentAssignments(handlerSrc, ctx)
-    }
-    const rewrittenHandler = rewriteExpr(handlerSrc, ctx.accessors, ctx.setters)
+    const rewrittenHandler = rewriteExpr(handlerRaw, ctx.accessors, ctx.setters, ctx.proxyFireFns)
 
     if (isAsync) {
       mod.code.push(xNode.raw(
@@ -8222,14 +8556,10 @@ export function emitScript(ctx) {
       // Resolve dep reads — same logic as step 7
       const depReads = entry.deps
         .map((dep) => {
-          const root = dep.split('?.')[0].split('.')[0]
+          const { root } = splitWatchPath(dep)
           const acc = ctx.accessors[root]
           if (acc === `$$proxy_${root}`) {
-            const dotPath = dep.slice(root.length + 1).replace(/\?\./g, '.')
-            const sigVar = dotPath
-              ? `$$watch_${root}_${dotPath.replace(/\./g, '_')}`
-              : `$$watch_${root}`
-            return requireWatchSig(sigVar, dep)
+            return requireWatchSig(watchSigName(dep), dep)
           }
           // New accessor format: $$runtime.get($$sig_x) → extract $$sig_x as fn ref
           if (acc) {
@@ -8241,7 +8571,7 @@ export function emitScript(ctx) {
         })
         .filter(Boolean)
 
-      const rewrittenHandler = rewriteExpr(entry.handlerRaw, ctx.accessors, ctx.setters)
+      const rewrittenHandler = rewriteExpr(entry.handlerRaw, ctx.accessors, ctx.setters, ctx.proxyFireFns)
       const depsArray = `[${depReads.join(', ')}]`
       return `{ deps: ${depsArray}, handler: ${rewrittenHandler} }`
     })
@@ -8261,6 +8591,9 @@ export function emitScript(ctx) {
     const entries = exportedMembers.map(m => m.name).join(', ')
     mod.code.push(xNode.raw(`$$runtime.registerExports({ ${entries} });`))
   }
+
+  // The template is compiled after this, against the same map.
+  if (watchedCalls) ctx.accessors[WATCHED_CALLS] = watchedCalls
 }
 
 /**
@@ -8424,8 +8757,10 @@ function _domTraversal(code) {
 //   $$runtime.bindText(el1, () => expr1);
 // Into a single:
 //   $$runtime.render((__prev) => {
-//     var __a = expr0; if (__prev.a !== __a) $$runtime.set_text(el0, __prev.a = __a)
-//     var __b = expr1; if (__prev.b !== __b) $$runtime.set_text(el1, __prev.b = __b)
+//     var __a; try { __a = expr0 } catch (e) { __a = $$runtime.contain(e, __prev.a) }
+//     if (__prev.a !== __a) $$runtime.set_text(el0, __prev.a = __a)
+//     var __b; try { __b = expr1 } catch (e) { __b = $$runtime.contain(e, __prev.b) }
+//     if (__prev.b !== __b) $$runtime.set_text(el1, __prev.b = __b)
 //   }, { a: ' ', b: ' ' })
 //
 // bindAttribute calls similarly grouped with set_attribute.
@@ -8445,7 +8780,7 @@ function indexToKey(i) {
 //   - \bword()                — bare no-arg function call (each-block item/index getter)
 //     e.g. item().r, index()  — these are signal getters passed as makeBlock params
 function _isReactive(expr, opaqueRe) {
-  if (expr.includes('$$runtime.get') || expr.includes('$$proxy_')) return true
+  if (expr.includes('$$runtime.get') || expr.includes('$$proxy_') || expr.includes('$$watches(')) return true
   // A value that came out of a call, named by the analysis rather than guessed
   // from here. Everything below this line reads emitted TEXT and answers by the
   // SHAPE of the read, which is why a call on a bare local was reactive and the
@@ -8584,7 +8919,9 @@ function _renderGroup(code, opaqueValues) {
       reactive.forEach((b, i) => {
         const k = indexToKey(i)
         init[k] = b.type === 'text' ? "' '" : 'null'
-        body.push(I + '  var __' + k + ' = ' + b.expr + ';')
+        // A throw is contained to its own binding: the rest of the level still
+        // updates, and this one keeps its last value (FJS-D379).
+        body.push(I + '  var __' + k + '; try { __' + k + ' = ' + b.expr + '; } catch (e) { __' + k + ' = $$runtime.contain(e, __prev.' + k + '); }')
         if (b.type === 'text') {
           body.push(I + '  if (__prev.' + k + ' !== __' + k + ') $$runtime.set_text(' + b.el + ', __prev.' + k + ' = __' + k + ');')
         } else {
@@ -8879,6 +9216,7 @@ export async function compile(source, config = {}) {
     // own frontmatter parser (Sierra's scanner does) is unaffected; a caller
     // that has only the compiled ctx can now see what the file declared.
     frontmatter: _fm.frontmatter,
+    source,
 
     buildBlock: function (...a) {
       return buildBlock.call(this, ...a)
@@ -8941,20 +9279,6 @@ export async function compile(source, config = {}) {
           if (name.includes('$context')) this.require('$context')
           if (name.includes('$.transition') || name.includes('$.entrance') ||
               name.includes('$.fade') || name.includes('$.slide') || name.includes('$.fly')) this.require('$mesa')
-
-          // Warn if a var variable is referenced in the template — var is non-reactive,
-          // so the template will render its initial value and never update.
-          // Off by default — enable with warnVarTemplate: true in mesa.config.js.
-          if (this.config?.warnVarTemplate) {
-            const topLevel = name.split(/[.([]/, 1)[0].trim()
-            if (topLevel && this.analysis?.vars?.[topLevel]?.kind === 'var') {
-              this.warning({
-                message: `Warning: '${topLevel}' is a 'var' variable and is non-reactive. ` +
-                  `Template binding '${topLevel}' will render its initial value and never update. ` +
-                  `Use 'let' or 'const' for reactive template bindings.`
-              })
-            }
-          }
         }
       }
       if (typeof data === 'string') check(data)
@@ -9504,7 +9828,13 @@ export async function compile(source, config = {}) {
       // In dev builds, pass component name + file so __dev can track instances.
       const _escFilename = (_filename ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'")
       if (config.dev) {
-        w.write(true, `$$runtime.push_component('${_displayName}', '${_escFilename}');`)
+        // The imported reads nothing here watches (`FJS-1340`), for the
+        // devtools panel to show beside the component. Dev only, and only when
+        // there are some, so a clean component emits what it did before.
+        const _static = ctx.analysis?.staticReads?.length
+          ? ', ' + JSON.stringify(ctx.analysis.staticReads.map(({ path, where, watchedHere }) => ({ path, where, watchedHere })))
+          : ''
+        w.write(true, `$$runtime.push_component('${_displayName}', '${_escFilename}'${_static});`)
       } else {
         w.write(true, '$$runtime.push_component();')
       }

@@ -143,7 +143,10 @@ export function createServersService(app: BasecampApp) {
     // where an `after: { all: [...] }` hook broadcast every read to every browser
     // in the workspace (FJS-031). Declaring both is refused at construction.
     channel: workspaceChannel(app),
-    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+    // ?workspace_id= is not a filter — see core/hooks.ts. Nor is ?search=,
+    // the list's name box: no column is called that, and it is not the
+    // full-text `$search` directive either, which needs @@fts (FJS-1284).
+    reservedQuery: [...WORKSPACE_QUERY, 'search'],
 
     // Declared because `heartbeat` has to be, and a `methods:` list is the
     // whole surface or it is a narrowing — so every verb this service answers
@@ -177,7 +180,7 @@ export function createServersService(app: BasecampApp) {
     async find() {
       const status = $.query.status as string | undefined
       const role   = $.query.role   as string | undefined
-      const search = $.query.search as string | undefined
+      const search = $.reserved.search as string | undefined
 
       const where: Record<string, unknown> = {}
       if (status) where.status = status

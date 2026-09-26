@@ -10,7 +10,7 @@
 // whole life, so requestMeta() was undefined for every WS call and the
 // Idempotency-Key that decides whether a create runs twice applied to half the
 // transports; and withTestMeta() forwarded four of six fields, so `user` and
-// `client` were dropped and propagation behaved one way under test and another
+// `caller` were dropped and propagation behaved one way under test and another
 // in production.
 //
 // Neither is visible from inside the entry point that has the bug — the app
@@ -131,7 +131,7 @@ describe('every entry point opens the request scope', () => {
     expect(seen).toBeDefined()
     expect(seen!.origin).toBe('http')
     expect(seen!.user?.userId).toBe('u-alice')
-    expect(seen!.client).toBeDefined()
+    expect(seen!.caller).toBeDefined()
     // The header-derived fields have one reader, and this is what it reads.
     expect(seen!.correlationId).toBe('corr-http')
     expect(seen!.idempotencyKey).toBe('idem-http')
@@ -193,7 +193,7 @@ describe('every entry point opens the request scope', () => {
     expect(seen!.origin).toBe('websocket')
     expect(seen!.correlationId).toBe('corr-ws')
     expect(seen!.idempotencyKey).toBe('idem-ws')
-    expect(seen!.client).toBeDefined()
+    expect(seen!.caller).toBeDefined()
   })
 
   test('runAs(userId) — the principal is re-resolved, not restored', async () => {
@@ -242,16 +242,16 @@ describe('every entry point opens the request scope', () => {
     expect(seen!.correlationId).toBeTruthy()
   })
 
-  test('withTestMeta forwards user and client, like a real transport', () => {
+  test('withTestMeta forwards user and caller, like a real transport', () => {
     // The regression: it built the meta itself and forwarded four of six
     // fields, so a test could not reproduce propagation at all.
     let inner: RequestMeta | undefined
     withTestMeta(
-      { user: ALICE, client: { ip: '1.2.3.4', headers: {} }, origin: 'http' },
+      { user: ALICE, caller: { ip: '1.2.3.4', headers: {} }, origin: 'http' },
       () => { inner = requestMeta() },
     )
     expect(inner!.user?.userId).toBe('u-alice')
-    expect(inner!.client?.ip).toBe('1.2.3.4')
+    expect(inner!.caller?.ip).toBe('1.2.3.4')
     expect(inner!.origin).toBe('http')
   })
 })

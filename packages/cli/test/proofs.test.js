@@ -100,6 +100,21 @@ describe('resolving the run column', () => {
     } finally { cleanup() }
   })
 
+  test('a script with an argument resolves on the script and keeps the argument', () => {
+    // `test:browser geofield` looked up whole is absent, which grades a real
+    // script carrying a filter the same as a drive renamed away.
+    const { root, cleanup } = fixture([])
+    try {
+      const [s] = run('`sierra`: `test:widgets geofield`', root)
+      expect(s.kind).toBe('script')
+      expect(s.command).toBe('bun run test:widgets geofield')
+      const [r] = run('`shop`: `verify:live cart`', root)
+      expect(r.kind).toBe('row')
+      expect(r.command).toBe('bun run verify:live cart')
+      expect(run('`sierra`: `test:renamed geofield`', root)[0].kind).toBe('unknown')
+    } finally { cleanup() }
+  })
+
   test('several targets under one where, joined by + and and', () => {
     const { root, cleanup } = fixture([])
     try {

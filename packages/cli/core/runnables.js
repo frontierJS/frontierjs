@@ -442,10 +442,12 @@ export async function probeState(rows, { childOf = () => null, lastOf = () => nu
   const withPort = rows.filter(r => typeof r.port === 'number')
   const up       = new Set((await busyPorts(withPort)).map(p => p.port))
 
-  // Every port some session has claimed, whether or not anything answers it.
-  // `ports` is keyed by category and each value is a LIST of service slots.
+  // Every port a RUNNING `fli dev` holds, whether or not anything answers it.
+  // An idle session only remembers a slot. `ports` is keyed by category and
+  // each value is a LIST.
   const claimed = new Set()
   for (const session of getSessionStatus()) {
+    if (!session?.alive) continue
     for (const slots of Object.values(session?.ports ?? {})) {
       for (const p of [].concat(slots)) if (typeof p === 'number') claimed.add(p)
     }

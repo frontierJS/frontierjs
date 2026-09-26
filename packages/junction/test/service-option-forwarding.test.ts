@@ -46,7 +46,7 @@ function mkDb(log: Log) {
 function ctx(method: string, id: unknown = 1): ServiceContext {
   return {
     service: 'leads', method, id, data: null,
-    params: {}, query: {}, auth: {}, client: {}, locals: {}, app: {},
+    params: {}, query: {}, auth: {}, caller: {}, locals: {}, app: {},
   } as unknown as ServiceContext
 }
 

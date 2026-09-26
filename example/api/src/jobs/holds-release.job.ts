@@ -27,11 +27,11 @@ import { releaseExpired } from '../domain/shop'
  * Drop every hold that ran out before `before` — an ISO-8601 instant,
  * defaulting to now.
  *
- * Parameterized for the same reason `abandoned-orders-sweep` takes `days`: a cron
- * whose only proof is `nextRuns()` is a schedule and not a behavior. The drive
- * posts `{"before":"2099-01-01T00:00:00.000Z"}` to expire every live hold, and
- * that runs the SAME comparison the scheduled fire runs — where a `releaseAll`
- * flag would be a second code path proving nothing about the first.
+ * Parameterized because a cron whose only proof is `nextRuns()` is a schedule
+ * and not a behavior. The drive posts `{"before":"2099-01-01T00:00:00.000Z"}`
+ * to expire every live hold, and that runs the SAME comparison the scheduled
+ * fire runs — where a `releaseAll` flag would be a second code path proving
+ * nothing about the first.
  *
  * `db.asSystem()` and not a service: StockReservation is `@@gate("5.8.8.8")`,
  * so nothing below a system context deletes one, and there is no service over
@@ -40,15 +40,23 @@ import { releaseExpired } from '../domain/shop'
  * screen reads is recomputed on demand rather than pushed.
  */
 export async function releaseHolds(ctx: JobContext<{ before?: string }>): Promise<number> {
-  const before = ctx.data?.before ?? new Date().toISOString()
+  const before = ctx.data?.before
 
   // Refused rather than passed through. `expiresAt` is TEXT and the comparison
   // is lexicographic, so a cutoff that is not an ISO-8601 instant does not
   // fail — it matches some arbitrary prefix of the table and deletes live
   // holds, which is a shop overselling because somebody typo'd a timestamp.
-  if (Number.isNaN(Date.parse(before)))
+  //
+  // The Data boundary refuses an unparseable `asOf` by name as well, so this is
+  // the second of two. It stays because it names the JOB's own parameter, which
+  // is what somebody dispatching by hand got wrong, and it fails before any row
+  // is read rather than inside the first statement.
+  if (before !== undefined && Number.isNaN(Date.parse(before)))
     throw new Error(`holds-release: 'before' must be an ISO-8601 instant, got ${JSON.stringify(before)}`)
 
+  // Unstated is *now*, read off the client's own clock — the same clock the
+  // model's window is filtered by, so the sweep and every read of the table
+  // agree about which holds are dead.
   const released = await releaseExpired(db.asSystem(), before)
   if (released) console.log(`[holds] released ${released} expired hold(s)`)
   return released

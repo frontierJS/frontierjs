@@ -1,5 +1,426 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-25 — a column the server fills is required by nobody (`FJS-1296`)
+
+The create-mode JSON Schema's `required` list and the client's required
+pre-flight each kept their own list of exempting attributes, and the schema's
+was shorter: `@sequence`, and `@updatedAt` with no default, were required of the
+caller by one and exempt in the other. A browser validating against the schema
+refused every create of a model that numbers its rows, before any request.
+`isServerFilled(field)` in `src/core/ids.js` is now the one list and both read
+it. The column stays writable, since a stated sequence value is honored.
+`test/server-filled.test.ts`.
+
+## 2026-09-24 — the wait is set before the WAL switch, everywhere (`FJS-1331`)
+
+`applyWal(db, timeout)` in `src/core/pragmas.js` sets `busy_timeout` and then
+`journal_mode = WAL`, and `createClient`, the tenant registry and
+`TenantRegistry.create` all call it. The last two had the order reversed, which
+is `FJS-655`'s shape: on a file not yet in WAL that another process is writing,
+the switch needs the lock, and with no wait set it threw `SQLITE_BUSY` in 0 ms
+where the right order waits the holder out. The jsonl index keeps its own
+short-then-long sequence. Dead `REGISTRY_DDL` removed. `docs/concurrency.md`
+now says that `busy_timeout` does not cover `SQLITE_BUSY_SNAPSHOT` from a
+deferred `BEGIN` in raw code, and states the `synchronous = NORMAL` trade: a
+process crash loses nothing, a power loss can lose the last commits.
+
+## 2026-09-23 — an argument a verb does not read is refused by name (`FJS-1310`)
+
+A typo inside `where` was refused and a key beside it was dropped, so
+`deleteMany({ wher: { id: 1 } })` deleted every row the caller could reach and
+answered the count, and `findMany({ search })` answered every row as the hits.
+Each verb `withArgValidation` wraps, plus `create` and `search`, now grades its
+argument object against `ARG_NAMES`, one closed list per verb read off the
+method body, and the refusal carries a did-you-mean and the list. A named
+aggregate passes by shape; `count` accepts a page's own arguments, since
+`count(args)` over a page is how the page learns its total; a `search` key
+points at `.search()`.
+
+Two options that were silently ignored are refused now: `orderBy` on
+`updateMany`, and `distinct` on `findManyCursor`. A verb growing an option adds
+it to `ARG_NAMES` or its first caller is refused. `test/unknown-args.test.ts`.
+
+## 2026-09-23 — two state machines on one model parse again (`FJS-1315`)
+
+A second `@@transitions` on a different field was refused as an attribute
+declared twice. `FJS-1174`'s check treated `transitions` as single-valued, but
+the runtime has always kept one machine per field: `buildTransitionMap` keys by
+field, `transition()` walks every machine for the name, and `x-transitions`
+carries one entry per field. `transitions` is repeatable now. The same field
+twice is still refused, and so is one move name on two machines, since
+`transition(id, name)` would only ever make the first.
+
+Found by `example`'s `Invoice.reminded` (`FJS-D370`): `remind: false -> true`
+beside `status`, with `@@commitment(remind, on: dueOn - 3d, while: status ==
+'issued')` reading the other machine. `test/commitment.test.ts` drives that
+shape through `due()` and `transition()`; `test/repeatable-attrs.test.ts` has
+the fixture. Removing either half turns them red.
+
+## 2026-09-23 — `x-commitments` carries the move it owes, and the snapshot shows it
+
+Each entry gains `target`, `field` and `from` — the model the move is made on,
+its state column and its from-states — so a screen holding the row a
+commitment reaches can grade *is this still owed* without that model's own
+document. They are read off `buildCommitmentMap`, the same entries `due()`
+filters by, rather than derived a second time. The JS half of the due time is
+now `@frontierjs/toolbelt/datetime`'s `dueAt`, imported rather than kept here,
+and `test/commitment.test.ts` still grades the SQL half against it.
+
+`litestone jsonschema --snapshot` renders one line per commitment — anchor,
+offset, kind, the move and its `while:`. A screen derives a date from these, so
+a keyword that stopped being emitted was a date that silently stopped showing.
+Proof: `test/commitment.test.ts`, 50.
+
+## 2026-09-23 — `@@commitment` may name a related model's transition
+
+`@@commitment(subscription.lapse, on: dueOn + graceDays, while: status == 'issued')`
+on an `Invoice` is the invoice's deadline and the subscription's move
+([`FJS-D362`](../../DECISIONS.md#fjs-d362)). Only the target crosses: `on:` and
+`while:` still read the declaring row. The relation must be to-ONE, and a
+to-many one, an unknown one, or a transition the target does not declare is
+refused at parse, by name.
+
+**The TARGET's from-state is in `due()`'s WHERE**, as a relation filter. With
+two unpaid invoices the older one comes due first, and once the subscription has
+lapsed the later one owes nothing, rather than firing a refused move on every
+sweep for as long as it stays unpaid. A null relation owes nothing either.
+
+`due()` answers `target: { model, accessor, transition, id }` on every row, the
+declaring row's own where there is no hop, so a fire has one path. The
+commitment's NAME is the declared spelling (`subscription.lapse`): what
+`due({ transition })` selects by, what `$commitments` lists and what keys
+`x-commitments`, which gains `via` and `transition`. `@@commitment` joins
+`REPEATABLE_MODEL_ATTRS`: an invoice owes a lapse and a cancel, and the generic
+*declared twice* refusal rejected the second. Its own same-move refusal stays.
+`test/commitment.test.ts` covers the new cases.
+
+## 2026-09-23 — `tenancy { resolve }` belongs to `strategy database`
+
+Refused at parse under `strategy row`, naming the resolver's `tenantFrom`
+([`FJS-D360`](../../DECISIONS.md#fjs-d360)). The tenant registry is the only thing
+that reads `resolve`, and it exists only under `database`; under row a declared
+one was printed by junction's `describe()` and routed nothing. `resolveTenancy`
+no longer hands row the default `{ kind: 'claim' }` nobody acted on, and
+`RowTenancy` drops the field. `test/tenancy.test.ts` pairs the refusal with the
+same line accepted under `database`.
+
+## 2026-09-23 — `claim … from`: a claim whose value is on another row
+
+`claim employeeId from Employee(userId)` · `claim siteId from Employee(userId).siteId`.
+A claim the policies read about the CALLER — *rows at my site* — usually lives on a
+row pointing at the user rather than on `User`, and the schema could name it and
+not say where it was ([`FJS-D359`](../../DECISIONS.md#fjs-d359), [`FJS-1288`](../../ISSUES.md#fjs-1288)).
+`schema.claims` still lists every name; `schema.claimSources` maps the sourced ones
+to `{ model, subject, column }`, merged across imports.
+
+**Every refusal is a claim that would resolve to the WRONG value rather than to
+none**: a subject that is not a key to the `@@auth` model, or not unique, or
+unique only per tenant — which the message names as `membershipClaim`'s shape — a
+column that is not one stored value, a protected column, a name `@@auth` or the
+tenancy block already answers, and two imports reading one claim off two rows.
+One of the framework's nine is refused by `buildClaimSet` at `createClient`,
+since that is where the list lives.
+
+**`db.$claimsFor(principal)` is the read**, the eighth sibling of
+`$capabilitiesFor` and on every flavor: one `findFirst` per (model, subject) as
+the system, so the row that decides access is not read through a client scoped
+by it — and with the model's own exclusions intact, so a soft-deleted role row
+resolves to nothing. No id is `{}`; no row is `null` per claim, which denies in
+both interpreters. `test/claim-source.test.ts`.
+
+## 2026-09-22 — the audit trail names the move
+
+The logger auto-model gains `transition`, a nullable column beside `field`. An
+update the Data boundary resolved as a named `@@transitions` move writes its name
+there, on the model row and on every field row, whether the move was matched
+from `(from, to)` or asked for by `transition()`. Two moves between the same
+states write identical `before` and `after`, so without it an order `abandon`ed
+by its `@@commitment` and one a person `cancel`led were the same row
+([`FJS-1294`](../../ISSUES.md#fjs-1294)). `operation` stays `update`. `meta` was
+not used, because `onLog` owns that cell and overwrites it whole.
+
+It is written for an unannounced move as well, since that is the case the
+announcement cannot cover. An `asSystem()` write names nothing, because it never
+resolves a move. `LogEntry` in `index.d.ts` gains the field.
+`test/audit-transition.test.ts`.
+
+## 2026-09-22 — `db.$commitments`: what a sweep walks
+
+Every declared `@@commitment` as `{ model, accessor, transition }`, on every
+flavor of client and a fresh array per read — `$softDelete`'s contract. It is
+what junction's `commitments()` sweep asks `due()` of, so the set it walks comes
+off the schema rather than a list an app keeps beside it. Typed in `index.d.ts`
+and emitted by typegen.
+
+## 2026-09-22 — `@@commitment`: a transition owed at a time, and `due()` to ask which rows owe one
+
+**Step 1 of `IDEAS/ontology.md` § 6, ruled by `FJS-D353`–`FJS-D356`.** A model
+declares the transition the SYSTEM owes a row and when:
+`@@commitment(abandon, on: createdAt + 14d)` beside
+`abandon: pending -> cancelled @system`. The from-state is the guard, so a row
+that has already moved owes nothing. Nothing is scheduled and nothing moves a
+row — that is step 2's sweep, in Junction, over Caravan's clock.
+
+**`on:` is a time column of the row, moved by a literal or by a column of the
+same row** (`FJS-D355`). The column must be a required `Int` with a duration
+`@unit` and `@immutable` — `FJS-D348`'s first consumer. Refused at parse, each by
+name: a transition `@@transitions` does not declare, a second commitment on one
+transition, an anchor that is not a `DateTime` or `String @date`, `mo`/`yr` on
+an instant, a sub-day unit on a day, an offset column that is optional, unitless
+or editable, and `auth()`, `now()` or a relation inside `while:`. A related
+model's transition (`subscription.lapse`) is refused too, naming the open
+question it waits on. The emitted DDL is byte-identical with the attribute and
+without it.
+
+**`db.<model>.due({ by, timeZone, transition, where })`** answers
+`[{ transition, id, dueAt }]` — the rows owing a transition by `by`, the
+client's clock unless stated, so `env.clock.advance()` stages a row falling due
+with nothing written. It is a read through `findMany`, so the caller's gate,
+policies, soft delete and window apply; a day-kind anchor reads `by` in
+`timeZone`, UTC unless stated. A model with no declaration refuses it with
+`CapabilityNotDeclaredError`.
+
+**The due time is computed twice and the two are graded against each other.**
+The filter is SQL and the `dueAt` handed back is JavaScript, because a browser
+will compute it off `x-commitments` with no database. SQLite's own `+1 months`
+overflows January 31st into March where `@frontierjs/toolbelt/datetime`'s
+`addToDate` clamps to February 28th, so the SQL spells the clamp out; the grid
+in `test/commitment.test.ts` over month ends, leap days and negative offsets
+goes red on five cases when the clamp is replaced by the bare modifier.
+`src/core/commitment.js` owns both halves.
+
+`x-commitments` is emitted beside `x-transitions`, keyed by transition, with
+`while` as the AST `@frontierjs/toolbelt/predicate` evaluates; the due time
+itself is not emitted. `due()` is in the typings, the generated `.d.ts`, the
+console's completions and `readOnly()`'s read list. `eject` is not touched — it
+promotes edges and prints no model attributes — and `litestone mutate` gains no
+`@@commitment` operator until something in the derived suite could notice one
+dropped.
+
+## 2026-09-22 — `$lock`'s wait budget is `wait` in the types too, and any other key is refused
+
+**The typed spelling turned the lock into try-once.** `index.d.ts` declared
+`$lock(key, fn, { ttl, timeout })` and `acquire()` read `wait`, so a caller who
+followed the types passed `timeout`, got `wait = 0`, and the second contender
+was refused immediately instead of queueing — as a 409 with `retryable: true`,
+which reads as ordinary contention ([`FJS-1217`](../../ISSUES.md#fjs-1217)).
+Both stressors had written `wait` against the types to get a lock that waits.
+`wait` is the name kept — every caller and test already used it, and `timeout`
+reads as a bound on `fn`.
+
+`LockOptions` is now one interface for `$lock` and `$locks.acquire`, carrying
+`retryEvery` and `owner` as well, and `$lock` returns the callback's own type.
+`acquire()` refuses a key it does not read, by name — `timeout` with an answer
+pointing at `wait`, anything else with the nearest option — because an untyped
+JS caller gets no help from the declaration and a dropped wait budget is
+silent. The handle's `heartbeat()` lost a `ms` parameter it never read.
+`test/litestone.test.ts` § *lock primitive — options* reads `LockOptions` out
+of `index.d.ts` and passes every key it names to `acquire()`, so the type and
+the destructure cannot part again without a red.
+
+## 2026-09-22 — `$lock` is on every flavor of the client, and it locks on all of them
+
+**The client a service holds could not take a lock.** `$setAuth` and `$scopedBy`
+built their proxies without `$lock`/`$locks`, so `$.db.$lock(…)` — and the same
+call inside junction's `app.withDb` — threw `"$lock" is not a table in this
+schema`, listing every table and not the thing asked for
+([`FJS-1216`](../../ISSUES.md#fjs-1216)). **And the one flavor that had it did
+nothing**: `asSystem()` carried its own `$lock` that ran the callback without
+acquiring, so the stressor apps that reached for it landed 10 of 10 concurrent
+writers on one range. Both went to the same place: every flavor hands out the
+one primitive, and a system caller that asks for a lock gets exclusion like
+anyone else — a lock is a fact about the connection, not an access check. The
+cost that falls out of it is the audit trail: a write inside a lock can now be
+made through the caller's own client, so it is filed against the person rather
+than as `actorType: 'system'`.
+
+`test/litestone.test.ts` § *every flavor of the client* grades each flavor
+against every other; the test pinning the system bypass is gone with it.
+`$config` stays on the root — it is the schema's file paths, and FJS-D126's
+per-tenant settings are junction's `$.config`, a different thing.
+
+`test/device-schema.test.ts` now expects the four models and two enums that
+cross since `ProductVariant` declared `@@sync(field)`; it had been red at HEAD.
+
+## 2026-09-22 — `db.$now()`: a deadline is minted from the clock that grades it
+
+**The window reads the client's clock and nothing could write from it.** An
+`@@expires` row is graded at the `now` option (`createTestEnv`'s `clock`), but
+the one caller that mints its deadlines — `@frontierjs/auth`'s
+`expiresAt(ttl)`, and orion's `KvEntry` ttl — had only `Date.now()` to add a
+ttl to. The two clocks agree everywhere but a test that moves one, which is the
+only place the lapse is graded, so `auth`'s expiry test had to start its clock
+AT the host's to stay green.
+
+`$now()` returns `nowDate` — the reading `@updatedAt`, `@default(now())` and the
+cross-process announcements already make — on the root, system, auth and scoped
+clients, and `litestone types` declares it. Pinned in `test/effective.test.ts`:
+a hold minted from `$now()` lapses on `env.clock.advance`.
+
+## 2026-09-22 — the window is two words: `@@expires` imposed, `@@effective` asked
+
+Ruled [`FJS-D352`](../../DECISIONS.md#fjs-d352), which amends the entry below.
+**The two arities share a predicate and not a default.** Adopting `from:` on
+`example`'s price and pay tables found every candidate read by POINTER and by
+HISTORY more than by window: of sixteen reads, six asked the window's question,
+and imposed, the other ten opt out or fail silently — a subscription's pointer
+to the price it was sold at answered null, which is a renewal that stops
+charging with nothing said.
+
+**`@@expires(expiresAt)` is exactly what shipped this morning as
+`@@effective(to:)`**: imposed, every read and write filtered at the client's
+clock or a stated `asOf`, a hard delete applying it. **`@@effective(from:, to:)`
+is ASKED**: `asOf` stated gets the rows in force then, and nothing stated gets
+every row — reads, writes, includes, `_count` and `$inWindow` alike.
+`onlyExpired` on it needs `asOf` and is refused by name without one, and an
+include cannot ask it at all, since an include takes no `asOf`.
+
+**`@@effective` requires `from:`**, because `@@effective(to: expiresAt)` reads as
+an expiry and would behave as a window nobody asks — an expired session read
+back as live. It is refused at parse and the message names `@@expires`. A model
+declaring both is refused. The `@from` refusal narrows to `@@expires`: an asked
+window has no clock a `@from` could fail to read.
+
+`effectiveMap` carries `imposed`, and `effMode` is the one place the default is
+decided: an asked window with no `asOf` resolves to `withExpired`, so every path
+that already asked `effMode` — the fifteen write verbs, search, the upsert —
+needed no change of its own. The include and `_count` paths build their own SQL
+and check `imposed` themselves. The catalog carries both words; `ttl` and
+`deadline` search to `@@expires`.
+
+`test/effective.test.ts` is 29 cases, and its new section is the one that would
+catch the window being imposed again: a subscriber on a closed price reads it by
+include and by id, and the price table reads the whole history.
+
+Two committed generated type files were stale against this morning's typegen,
+which added `asOf`/`withExpired`/`onlyExpired` to every `findMany` signature:
+basecamp's `db/schema.d.ts`, which its own suite caught, and
+`junction/example/fullstack/db/schema.d.ts`, which nothing gates and which was
+already drifted in older ways. Both are regenerated, and both diffs are
+additive.
+
+## 2026-09-22 — a row that stops counting
+
+`@@effective(to: expiresAt)` · `@@effective(from:, to:)`. The third exclusion,
+beside `@@softDelete` and `@@hasTemplates`, and the first one whose edge is a
+VALUE. Every read and every write filters to the rows in force at `asOf`, which
+defaults to the client's own clock.
+
+**One word at two arities, because they are one filter.** `expiresAt > now` IS
+the one-sided case of `from <= asOf AND (to IS NULL OR to > asOf)`, so a second
+spelling for the shorter form would be two names for one mechanism. Six
+instances of the idea existed across `example` and `basecamp` and zero
+declarations: five hand-filtered deadline columns and three models hand-rolling
+an identical four-part window, one of them with a comment saying the idiom *was
+met here*.
+
+**The clock is the prize.** The filter reads the injected `now`, so
+`env.clock.advance()` moves expiry — `packages/litestone/test/effective.test.ts`
+stages a dead stock hold that way, which is an assertion that could not be
+written at all before: every deadline filter in the repo read a `new Date()`
+written into a service, and the one drive that tried staged expiry by moving the
+CUTOFF to 2099, which proves the sweep deletes rows and never touches the read.
+
+**Three decisions with no precedent to copy.** A hard `delete` APPLIES the
+window, where soft delete's `delete` bypasses its own — `delete` is the
+counterpart verb to `remove` and this declares no verb, and a row before its
+`from` is a live row rather than an end state, so destroying it is `FJS-176`'s
+data loss exactly. `asOf` is reads-only: it reaches a write as `withExpired` and
+never as a value, because a write *as at* a past instant is bitemporality.
+And the fan-out asks `$inWindow` — a frame about a row that has stopped counting
+is not sent, except a removal, which is sent anyway because suppressing one
+strands the row in every store already holding it.
+
+**Both edges are the same KIND and a mixed pair is refused at parse.** The live
+schemas disagree inside one file — `PlanVersion.effectiveFrom` is a `DateTime`
+and `PayWindow.effectiveFrom` is a `String @date` (`FJS-D143`) — so `asOf`
+carries the column's own kind and no zone is spent. Only the DEFAULT on a day
+window owes one, and it reads UTC.
+
+**A `@from` over a windowed model is refused unless it states its own
+`where:`.** A `@from` compiles once at startup into SQL with no binds and cannot
+read the injected clock; filtering it with SQLite's would give one model two
+clocks that agree in production and disagree under exactly the frozen clock a
+test uses. The refusal names the `where:` to write.
+
+It implies nothing else: *at most one open row* is still
+`@@unique([...], where: to == null)`, ordering the pair is still `@@check`, and
+nothing here schedules anything. No column is injected, so the DDL is unchanged.
+
+New: `buildEffectiveMap`, `injectEffectiveFilter`, `db.$inWindow(accessor, row,
+asOf?)`. The fast paths for `findMany`, `findUnique` and `upsert` stand down for
+a windowed model, as they already do for `@@hasTemplates`.
+
+## 2026-09-22 — can this relationship happen twice
+
+`@@relator([workspaceId, userId], once)`. A relationship that is a ROW — a
+membership, a placement, a subscription — and the one question about it that no
+reader can derive. `FJS-D350` rules the shape.
+
+**The gap was filed as a missing LABEL and the correction is the feature.** The
+`.lite` surface audit's gap 05 asked for a word saying *this is a join table*,
+which would have been the first attribute in the language whose only job is to
+be read — unexecuted, therefore ungradeable. Relator-ness is derivable anyway:
+two or more required relations with a unique across them was tested against both
+apps and missed nothing. Repeatability is not, because `once` and a bare `many`
+are distinguished by an ABSENCE. Eleven models across `example` and `basecamp`
+answer it, in four spellings, and state it zero times.
+
+**Repeatability is required and a bare list is a parse error naming the three
+choices.** `once` emits `UNIQUE(relata)`; `many: <column>` emits
+`UNIQUE(relata + column)`; `many` emits no key at all. **Every relatum an
+emitted key does not already cover by prefix gets an index** — which is
+`FJS-413`, ten unindexed foreign keys, four of them written by hand with the
+defect id in the comment, because `@@unique` cannot know that both ends of a
+relator are entrances and a relator by definition does.
+
+**`many` indexes EVERY relatum and the design said otherwise.** With no unique
+there is no prefix to ride, so the leading relatum is as unindexed as the
+trailing one. `Subscription` would have lost an index it has today.
+
+**It expands into ordinary `uniqueIndex` and `index` nodes at parse**, the move
+`@@extensible` already makes, so the DDL emitter, the migrator and `advise` are
+untouched by the word. Two coverage rules keep it from adding dead b-trees: an
+`@@index` that LEADS with a relatum is already the reverse index and is doing
+more besides (`StockReservation`), and a composite primary key over exactly the
+relata already IS the key — which is what `litestone edge eject` now writes,
+since a side table keys both dimensions and an edge is class-1 by construction.
+The reverse index still lands there, and an ejected model has never had one on
+its trailing dimension.
+
+**The refusals.** A relatum may be neither optional nor `onDelete: SetNull`.
+`Cascade` and `Restrict` both pass. At least two DISTINCT relations, counted
+over relations rather than columns, because a composite foreign key is two
+columns naming one thing. A `@@unique` or an `@@index` beside it over columns it
+already emits is refused — one origin, or the two drift. What no rule reaches is
+a `@@relator` on a credential row: `ApiKey` satisfies every refusal and is not a
+relationship.
+
+**Two things now READ it, which is what keeps the word from being a label.**
+
+`upsert` refuses to be addressed by a repeatable pair. Its single-statement path
+needs one unique column, so a pair never reaches it and the call falls to
+find-then-update — on a `many` relator that matches every occurrence there has
+ever been and overwrites the oldest. `once` is unaffected, and so is an upsert
+by id.
+
+`verifyConstraints` writes the pair twice and compares the outcome against the
+declaration, which makes `litestone mutate` able to kill a relator mutant.
+**Measured on basecamp: 0% → 100% killed, 8 of 8** — among them
+`AppServer many: replicaIndex → once`, the survivor the design named and no
+suite in this repo could see. The probe carries two cases for `many: <column>`,
+and the second is why it works: the same pair under a DIFFERENT discriminator
+must be accepted, or tightening to `once` looks correct from the outside. The
+model-level guard is `FJS-602`'s argument one level up — a join table carries
+foreign keys and a quantity and no value validator at all, so it generated no
+cases and was skipped whole, which is every relator in this workspace.
+
+**Also fixed, adjacent.** `attrAnswer` hardcoded *the first* for both halves of
+the duplicate-attribute message, so any attribute whose argument has no short
+spelling read *the first @@relator is the one in force; the first @@relator is
+ignored* — one name for two attributes, which is the reading failure that
+message exists to prevent.
+
 ## 2026-09-22 — what a number counts
 
 `timeout Int @unit(s)`, `size Int @unit(MB)`, `share Float @unit("%")`. The

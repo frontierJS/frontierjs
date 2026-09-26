@@ -75,23 +75,54 @@ function validate(
     const limit   = findNext === true ? 60 * 24 : findNext
     const next    = new Date(date)
     let   count   = limit
+    let   step    = 1
 
-    while (count > 0) {
-      // A minute of REAL time, not a local minute. `setMinutes(getMinutes()+1)`
+    while (count >= step) {
+      // Minutes of REAL time, not local ones. `setMinutes(getMinutes()+1)`
       // reads and writes the host's wall clock, so across a fall-back the step
       // can cross an ambiguous hour and skip sixty candidate minutes the
       // schedule should have been asked about — and the zone this search is
       // FOR is `timeZone` below, never the host's.
-      next.setTime(next.getTime() + 60_000)
-      const result = validate(cronConfig, next, { timeZone })
-      if (result.isValid) return { isValid: false, date: new Date(next) }
-      count--
+      next.setTime(next.getTime() + step * 60_000)
+      count -= step
+      const map = getDateMap(next, timeZone)
+
+      if (cronMatches(cronConfig, map)) return { isValid: false, date: new Date(next) }
+      step = skipAhead(cronConfig, map)
     }
 
     return { isValid: false, date: undefined }
   }
 
   return { isValid, date: isValid ? date : undefined }
+}
+
+/**
+ * How many minutes forward the next candidate can be, given this one failed.
+ *
+ * A search one minute at a time costs a zone lookup per minute, which made a
+ * weekly schedule's next run take seconds to answer and a monthly one fall off
+ * the end of the horizon (`FJS-1283`). A day the expression cannot match is left
+ * for its last hour and an hour it cannot match for its next one; only inside a
+ * matching hour are minutes walked.
+ *
+ * The day and hour tests are the grammar's own, asked with the finer fields
+ * pinned to a value the expression accepts, so the day-of-month / day-of-week
+ * rule stays in `@frontierjs/toolbelt/cron` rather than being restated here.
+ *
+ * A jump is REAL minutes aimed at a wall-clock :00, so it is exact only while a
+ * daylight transition happens on the hour and moves the clock by an hour or
+ * less — which every rule in the zone database does. Day jumps stop an hour
+ * short of midnight for that hour: a 23-hour day would otherwise land at 01:00
+ * and step over the next day's first hour.
+ */
+function skipAhead(cronConfig: CronConfig, map: Record<FieldKey, number>): number {
+  const minute = cronConfig.minutes.values().next().value as number
+  const hour   = cronConfig.hours.values().next().value as number
+  const dayOk  = cronMatches(cronConfig, { ...map, minutes: minute, hours: hour })
+  if (!dayOk && map.hours < 23) return (23 - map.hours) * 60 - map.minutes
+  const hourOk = dayOk && cronMatches(cronConfig, { ...map, minutes: minute })
+  return hourOk ? 1 : 60 - map.minutes
 }
 
 // ─── Public parse ─────────────────────────────────────────────────────────────
@@ -108,7 +139,13 @@ export function parseCronExpr(
   return validate(config, date, options)
 }
 
-/** Returns the next Date this expression will fire, or null if not within lookahead. */
+/**
+ * Returns the next Date this expression will fire, or null if not within lookahead.
+ *
+ * A year by default, because every expression the grammar accepts fires at
+ * least once a year except one naming February 29th — which answers null in
+ * three years of four. A week left a monthly schedule reading as none at all.
+ */
 export function nextFireTime(
   expr:     string,
   from:     Date = new Date(),
@@ -116,7 +153,7 @@ export function nextFireTime(
 ): Date | null {
   const result = parseCronExpr(expr, new Date(from), {
     timeZone: options.timeZone,
-    findNext: options.lookaheadMinutes ?? 60 * 24 * 7,  // default: 1 week
+    findNext: options.lookaheadMinutes ?? 60 * 24 * 366,
   })
   return result.date ?? null
 }

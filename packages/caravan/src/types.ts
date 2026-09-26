@@ -692,6 +692,13 @@ export interface CaravanInstance {
   find(id: string): JobRecord | null
 
   /**
+   * Every job one request dispatched — the correlation id stamped on each at
+   * dispatch, oldest first, at most 100. How work that holds a request open
+   * finds what the request started without anything declaring it (`FJS-D406`).
+   */
+  findByCorrelation(correlationId: string): JobRecord[]
+
+  /**
    * Register a recurring cron job.
    * Uses standard 5-field cron syntax: '0 2 * * *' = 2am daily.
    *

@@ -334,10 +334,17 @@ resolve header("X-Tenant-Id")  // the header's value
 resolve claim(workspaceId)     // a field on the principal
 ```
 
-`strategy row` defaults to `claim(<claim>)` — the principal already carries the
-answer. `strategy database` has **no default**: which of a host, a header and a
-claim names the tenant is a deployment fact nothing can infer, and guessing
-would route every request at one tenant in silence.
+**`resolve` belongs to `strategy database` and is refused under `strategy row`**
+(`FJS-D360`). The tenant registry is the only thing that reads it, and it exists
+only under `database`; a row app's tenant is a CLAIM on the principal, and where
+a request names it — a header, a query key, the session, tried in whatever
+order the app wants — is the app resolver's `tenantFrom`, a function
+(`createApp({ principal: membershipClaim({ tenantFrom, … }) })`). A declared
+`resolve` there would be a transport rule that looks enforced and routes nothing.
+
+`strategy database` has **no default**: which of a host, a header and a claim
+names the tenant is a deployment fact nothing can infer, and guessing would
+route every request at one tenant in silence.
 
 Applied in one place — `registry.tenantFor({ host, headers, principal })` — so
 the API realm asks rather than re-reading the declaration:

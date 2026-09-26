@@ -786,7 +786,9 @@ export function createRunner(opts: RunnerOptions) {
     })
     for (const run of lost) await dispatchRun(run.id, run.actorId, tenant)
 
-    const { count: kvExpired } = await db.kvEntry.deleteMany({ where: { expiresAt: { lt: new Date(now()).toISOString() } } })
+    // The window reads the CLIENT's clock, not this runner's `now`: an entry is
+    // swept on the clock that already reads it as absent.
+    const { count: kvExpired } = await db.kvEntry.deleteMany({ onlyExpired: true })
     return { expired, redispatched: lost.length, kvExpired }
   }
 

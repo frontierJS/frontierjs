@@ -2,8 +2,8 @@
 //
 // **Every one of the four declared moves is `@system`** — `activate` when a
 // trial converts, `lapse` when an invoice goes unpaid past its grace, `recover`
-// when the ledger comes clean, and `cancel` when the renewal job reaches a
-// period end and finds the flag below set. No request can ask for any of them,
+// when the ledger comes clean, and `cancel` when a period closes and finds the
+// flag below set. No request can ask for any of them,
 // which is not a gate set high: a gate is a question about the caller, and
 // *nobody may ask for this, ever* is a different sentence (`FJS-D150`).
 //
@@ -18,7 +18,7 @@
 // is nothing to undo and `resume` is an ordinary write rather than a move back
 // out of a terminal state.
 import { createBaseService, $ } from '@frontierjs/junction'
-import { changePlan }           from '../domain/billing'
+import { changePlan, openFirstPeriod } from '../domain/billing'
 
 /** The scoped client for this call, loosely typed — `orders.service.ts` carries
  *  the same line for the same reason. */
@@ -54,17 +54,29 @@ async function setCancelling(on: boolean) {
   })
 }
 
+/** A subscription with no period has no window and never renews, so the one
+ *  that was just created opens its first — in the create's own transaction,
+ *  so a refused period takes the subscription back with it. Through
+ *  `asSystem()` because a period is created at 8, by billing alone. */
+async function openPeriodOf(ctx: { result?: unknown }) {
+  const sub = ctx.result as { id: number, planVersionId: number, trialEndsAt?: string | null, userId?: string | null }
+  if (sub?.id) await openFirstPeriod(subs().asSystem(), sub, { timeZone: $.config.timeZone })
+}
+
 export function createSubscriptionsService() {
   return createBaseService({
     model:   'Subscription',
     channel: 'subscriptions',
 
+    transactional: ['create'],
+    hooks: { after: { create: [openPeriodOf] } },
+
     /**
      * Stop it renewing — at the end of the period, not now.
      *
      * The period has been paid for, so ending it the moment somebody asks
-     * forfeits the rest of it. `subscription-renew` reads the flag when it
-     * reaches the boundary and cancels there instead of issuing.
+     * forfeits the rest of it. `renewPeriod` reads the flag when the period
+     * closes and cancels there instead of issuing.
      *
      * It does NOT touch invoices. An invoice already issued is a document
      * (`FJS-D162`) and the money is owed whether or not the arrangement

@@ -94,7 +94,7 @@ export interface JunctionClientOptions {
   // built as one hardcoded name on both sides; a guest basket needs the same
   // shape and there was no second way in. Over HTTP these are real headers;
   // over the socket they ride the frame and the server merges them into
-  // `ctx.client.headers`, but ONLY the names the app declared in
+  // `ctx.caller.headers`, but ONLY the names the app declared in
   // `http.callHeaders` — a frame that could name its own header could name
   // Authorization, and the identity belongs to the upgrade.
   callHeaders?: Record<string, string>

@@ -1018,6 +1018,31 @@ following the declaration rather than by adding one.
   - **The blocker this question named turned out not to need B.** `localDb()` answers null on any failure by design, so skipping the warm on the CONFIG saying `db: true` would leave a device whose database could not open with an empty screen and nothing said — § V's last question, failed. The fix is a condition rather than a different option: `configureLocalDb()` opens eagerly, so whether it opened is a fact available when the warm runs, and a warm that finds it did not fills the cache under the screen's question, which is A.
   - **And the question it was really asking was settled beside it.** *May the local database be load-bearing* is answered by `FJS-D334`: a device required to supply the base row for a per-column merge is one whose copy is load-bearing, so the read side follows the write side rather than being decided on its own.
 
+- **Q11 — when the server refuses a replayed write, what happens to the writes queued behind it? (`FJS-D364`)**
+  `FJS-D300` rules that a queued write is graded at replay, at the caller's
+  level then. It says nothing about the writes queued BEHIND a refused one, and
+  the queue has an answer nobody made: `drain()` skips non-pending entries and
+  stops only on *unreachable*, so every successor is sent. **Driven in linear
+  (Phase 2, `web/test/verify-replay.mjs`, Chrome and Firefox, build and dev —
+  identical)** with the refusal D300 is about: Ana is removed from a private
+  team while offline. Behind her refused create:
+
+  | # | Its relation to the refused create | What happened | What should |
+  | --- | --- | --- | --- |
+  | 1 | a comment naming it by KEY (`issueId`) | sent; refused `403 Outside your workspaceId`. Its screenshot, drained after, refused `400` for a missing version (`FJS-1298`) | not sent; held beside the refusal, as one thing |
+  | 2 | a patch of it (`id`) | sent; refused `400` for a missing version, which it would have been if the create had landed (`FJS-1299`) | not sent; held beside the refusal |
+  | 3 | an edit to an issue in a team she kept | landed | lands |
+  | 4 | a comment naming it in PROSE (`SEC-?`) | landed, and says `SEC-?` for good | lands. Nothing can know this one, which is why the refusal has to be SEEN |
+
+  A queue CAN tell #1 and #2 from #3 without being told: #0 was a create whose
+  id the browser minted, #2's `id` is that id, and #1's `issueId` is that id in a
+  column the schema declares a relation (`x-relations`). #4 is beyond any queue.
+  - **A** — send everything, as now, and make the refusal visible (`FJS-1302`). A dependent write fails on its own and is shown on its own
+  - **B** — a refusal HOLDS every later entry that names the refused row by key — its own id, or a relation column holding it — and lets the rest go. Held entries surface with the refusal as one item, and are released or discarded with it
+  - **C** — a refusal holds the whole queue behind it until a person decides
+  - **D** — each entry records at enqueue which earlier entries it depends on, and the drain honours the graph
+  - **Recommend B** — it derives, from two things the queue already holds (the ids it minted and the relation map the schema ships), exactly the set D would make every write declare, and it costs no enqueue-time bookkeeping. A sends writes it knows will fail and reports each with the wrong reason (#1's *Outside your workspaceId* is what a comment on a missing issue gets). C holds #3 and every other independent write of the day hostage to one private team, which on a train is the whole morning's work. None of the four helps #4, so B lands only with `FJS-1302`'s artifact, the way D300 was meant to
+
 ## See also
 
 - `IDEAS/offline-first-and-release.md` — the vision, the re-probed survey, and the Release half

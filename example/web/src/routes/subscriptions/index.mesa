@@ -6,8 +6,8 @@ title: Subscriptions
   //
   // The status column is a `@@transitions` machine and ALL FOUR moves are
   // `@system` — the trial converting, the lapse past an invoice's grace, the
-  // recovery when the ledger comes clean, and the cancellation the renewal job
-  // makes when it reaches a period end and finds `cancelAtPeriodEnd` set. So
+  // recovery when the ledger comes clean, and the cancellation made when a
+  // period closes and finds `cancelAtPeriodEnd` set. So
   // `transitions(row, level)` answers nothing here, and this is the first
   // screen in the app whose action buttons are NOT derived from the schema.
   //
@@ -150,10 +150,10 @@ title: Subscriptions
 </Table>
 
 <Alert tone="muted">
-  All four of this model's moves are <code>@system</code> — the renewal and
-  dunning jobs, not a request. <em>Stop renewing</em> writes
-  <code>cancelAtPeriodEnd</code> instead, and the arrangement ends when the
-  renewal job reaches the period that has already been paid for. So these are
+  All four of this model's moves are <code>@system</code> — made when a period
+  closes or an invoice goes unpaid, never by a request. <em>Stop renewing</em>
+  writes <code>cancelAtPeriodEnd</code> instead, and the arrangement ends when
+  the period that has already been paid for closes. So these are
   the one set of buttons in this app that <code>transitions(row, level)</code>
   cannot answer for.
 </Alert>

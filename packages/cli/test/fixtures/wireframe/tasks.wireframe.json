@@ -1,0 +1,865 @@
+{
+  "$comment": "The Tasks screen of a field-service app, read off a screenshot by hand. Names and numbers are invented.",
+  "screen": "Tasks",
+  "names": {
+    "9ed22d": "ClientGroup",
+    "27b909": "InboxRow",
+    "74105e": "Lane",
+    "8e4d0e": "TicketCard"
+  },
+  "models": {
+    "InboxRow": "InboxItem"
+  },
+  "tree": {
+    "term": "App",
+    "children": [
+      {
+        "term": "Shell",
+        "children": [
+          {
+            "term": "Sidebar",
+            "width": 13,
+            "children": [
+              {
+                "term": "Icon",
+                "text": "ѱ"
+              },
+              {
+                "term": "Button",
+                "text": "+",
+                "mods": [
+                  "success",
+                  "ghost"
+                ]
+              },
+              {
+                "term": "Nav",
+                "text": "◷\n☺☺\n☺☺\n▤\n▥\n◷\n▦\n▁▃▅\n◇\n✲\n▭\n◩\n▤\n✉\n◉\n☺☺\nϟ\n⋈"
+              }
+            ]
+          },
+          {
+            "term": "Topbar",
+            "children": [
+              {
+                "term": "Heading",
+                "text": "Tasks",
+                "level": 1
+              },
+              {
+                "term": "Link",
+                "text": "Dashboard",
+                "unsure": [
+                  "Nav",
+                  "Tabs"
+                ]
+              },
+              {
+                "term": "Link",
+                "text": "Boards"
+              }
+            ]
+          },
+          {
+            "term": "Screen",
+            "dir": "row",
+            "children": [
+              {
+                "term": "Pane",
+                "width": 48,
+                "mods": [
+                  "primary"
+                ],
+                "children": [
+                  {
+                    "term": "Bar",
+                    "children": [
+                      {
+                        "term": "Heading",
+                        "text": "INBOX",
+                        "level": 2
+                      },
+                      {
+                        "term": "Pill",
+                        "text": "9"
+                      },
+                      {
+                        "term": "Icon",
+                        "text": "?"
+                      },
+                      {
+                        "term": "Icon",
+                        "text": "bug"
+                      },
+                      {
+                        "term": "Pill",
+                        "text": "2",
+                        "mods": [
+                          "danger"
+                        ]
+                      },
+                      {
+                        "term": "Icon",
+                        "text": "filter"
+                      },
+                      {
+                        "term": "Button",
+                        "text": "»",
+                        "mods": [
+                          "ghost"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "term": "Split",
+                    "children": [
+                      {
+                        "term": "Text",
+                        "text": "9 unplaced · by client"
+                      },
+                      {
+                        "term": "Button",
+                        "text": "By time",
+                        "mods": [
+                          "outlined"
+                        ],
+                        "unsure": [
+                          "Button",
+                          "Tabs"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "term": "Field",
+                    "text": "Search inbox…"
+                  },
+                  {
+                    "term": "Section",
+                    "children": [
+                      {
+                        "term": "Split",
+                        "children": [
+                          {
+                            "term": "Text",
+                            "text": "(555) 010-2036 ⌕"
+                          },
+                          {
+                            "term": "Pill",
+                            "text": "1 loose",
+                            "mods": [
+                              "muted"
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "term": "Row",
+                        "dir": "row",
+                        "unsure": [
+                          "Row",
+                          "Disclosure"
+                        ],
+                        "children": [
+                          {
+                            "term": "Icon",
+                            "text": "☏"
+                          },
+                          {
+                            "term": "Text",
+                            "text": "null"
+                          },
+                          {
+                            "term": "Button",
+                            "text": "⌄",
+                            "mods": [
+                              "ghost"
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "term": "Section",
+                    "children": [
+                      {
+                        "term": "Split",
+                        "children": [
+                          {
+                            "term": "Text",
+                            "text": "Greenline Lawn Care ⌕"
+                          },
+                          {
+                            "term": "Pill",
+                            "text": "2 loose",
+                            "mods": [
+                              "muted"
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "term": "Row",
+                        "dir": "row",
+                        "children": [
+                          {
+                            "term": "Avatar",
+                            "text": "G",
+                            "mods": [
+                              "warning"
+                            ]
+                          },
+                          {
+                            "term": "Text",
+                            "text": "Reminder to set up new service · 49m"
+                          }
+                        ]
+                      },
+                      {
+                        "term": "Row",
+                        "dir": "row",
+                        "children": [
+                          {
+                            "term": "Avatar",
+                            "text": "G",
+                            "mods": [
+                              "warning"
+                            ]
+                          },
+                          {
+                            "term": "Text",
+                            "text": "Reminder to set up new service · 2h"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "term": "Section",
+                    "children": [
+                      {
+                        "term": "Split",
+                        "children": [
+                          {
+                            "term": "Text",
+                            "text": "Sam Ortega ↻"
+                          },
+                          {
+                            "term": "Pill",
+                            "text": "1 loose",
+                            "mods": [
+                              "muted"
+                            ]
+                          }
+                        ]
+                      },
+                      {
+                        "term": "Row",
+                        "dir": "row",
+                        "children": [
+                          {
+                            "term": "Avatar",
+                            "text": "S",
+                            "mods": [
+                              "info"
+                            ]
+                          },
+                          {
+                            "term": "Text",
+                            "text": "Your call recording with 1555… · 2h"
+                          }
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "term": "Text",
+                    "text": "… 5 more client groups"
+                  }
+                ]
+              },
+              {
+                "term": "Section",
+                "grow": 1,
+                "text": "board",
+                "children": [
+                  {
+                    "term": "Bar",
+                    "unsure": [
+                      "Bar",
+                      "Toolbar"
+                    ],
+                    "children": [
+                      {
+                        "term": "Button",
+                        "text": "☏ New Call",
+                        "mods": [
+                          "success"
+                        ]
+                      },
+                      {
+                        "term": "Button",
+                        "text": "▭ New Ticket",
+                        "mods": [
+                          "secondary"
+                        ]
+                      },
+                      {
+                        "term": "Field",
+                        "text": "⌕ Search cards, members, labels…"
+                      },
+                      {
+                        "term": "Button",
+                        "text": "Filters",
+                        "mods": [
+                          "outlined"
+                        ]
+                      },
+                      {
+                        "term": "Button",
+                        "text": "Unread",
+                        "mods": [
+                          "outlined"
+                        ]
+                      },
+                      {
+                        "term": "Pill",
+                        "text": "2",
+                        "mods": [
+                          "primary"
+                        ]
+                      },
+                      {
+                        "term": "Button",
+                        "text": "Snoozed",
+                        "mods": [
+                          "outlined"
+                        ]
+                      },
+                      {
+                        "term": "Pill",
+                        "text": "99",
+                        "mods": [
+                          "warning"
+                        ]
+                      },
+                      {
+                        "term": "Button",
+                        "text": "Closed",
+                        "mods": [
+                          "outlined"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "term": "Group",
+                    "unsure": [
+                      "Group",
+                      "Cluster"
+                    ],
+                    "children": [
+                      {
+                        "term": "Section",
+                        "mods": [
+                          "success"
+                        ],
+                        "children": [
+                          {
+                            "term": "Bar",
+                            "children": [
+                              {
+                                "term": "Icon",
+                                "text": "●",
+                                "mods": [
+                                  "success"
+                                ]
+                              },
+                              {
+                                "term": "Heading",
+                                "text": "Sales",
+                                "level": 3
+                              },
+                              {
+                                "term": "Pill",
+                                "text": "30"
+                              },
+                              {
+                                "term": "Pill",
+                                "text": "30",
+                                "mods": [
+                                  "warning"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "term": "Card",
+                            "children": [
+                              {
+                                "term": "Kicker",
+                                "text": "Harbor Water Co · 6d"
+                              },
+                              {
+                                "term": "Heading",
+                                "text": "Commercial Snow",
+                                "level": 4
+                              },
+                              {
+                                "term": "Text",
+                                "text": "Here is the recording of your recent call…"
+                              },
+                              {
+                                "term": "Badge",
+                                "text": "Warm Up",
+                                "mods": [
+                                  "success",
+                                  "outlined"
+                                ]
+                              },
+                              {
+                                "term": "Badge",
+                                "text": "HIGH",
+                                "mods": [
+                                  "warning"
+                                ]
+                              },
+                              {
+                                "term": "Avatar",
+                                "text": "M",
+                                "mods": [
+                                  "primary"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "term": "Card",
+                            "children": [
+                              {
+                                "term": "Kicker",
+                                "text": "Dana Whitfield · 2w"
+                              },
+                              {
+                                "term": "Heading",
+                                "text": "Photos of 12 Example St",
+                                "level": 4
+                              },
+                              {
+                                "term": "Text",
+                                "text": "Here are some photos of the front…"
+                              },
+                              {
+                                "term": "Badge",
+                                "text": "New Request",
+                                "mods": [
+                                  "success",
+                                  "outlined"
+                                ]
+                              },
+                              {
+                                "term": "Avatar",
+                                "text": "M",
+                                "mods": [
+                                  "primary"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "term": "Text",
+                            "text": "… 28 more"
+                          }
+                        ]
+                      },
+                      {
+                        "term": "Section",
+                        "mods": [
+                          "info"
+                        ],
+                        "children": [
+                          {
+                            "term": "Bar",
+                            "children": [
+                              {
+                                "term": "Icon",
+                                "text": "●",
+                                "mods": [
+                                  "info"
+                                ]
+                              },
+                              {
+                                "term": "Heading",
+                                "text": "Customer Supp…",
+                                "level": 3
+                              },
+                              {
+                                "term": "Pill",
+                                "text": "27"
+                              },
+                              {
+                                "term": "Pill",
+                                "text": "39",
+                                "mods": [
+                                  "warning"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "term": "Card",
+                            "children": [
+                              {
+                                "term": "Kicker",
+                                "text": "Omar Lindqvist · 6d"
+                              },
+                              {
+                                "term": "Heading",
+                                "text": "Paver/Retaining wall",
+                                "level": 4
+                              },
+                              {
+                                "term": "Text",
+                                "text": "Here is the recording…"
+                              },
+                              {
+                                "term": "Badge",
+                                "text": "New",
+                                "mods": [
+                                  "success",
+                                  "outlined"
+                                ]
+                              },
+                              {
+                                "term": "Badge",
+                                "text": "HIGH",
+                                "mods": [
+                                  "warning"
+                                ]
+                              },
+                              {
+                                "term": "Avatar",
+                                "text": "K",
+                                "mods": [
+                                  "warning"
+                                ]
+                              },
+                              {
+                                "term": "Avatar",
+                                "text": "M",
+                                "mods": [
+                                  "secondary"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "term": "Card",
+                            "children": [
+                              {
+                                "term": "Kicker",
+                                "text": "The Commons at Eastside · 8d"
+                              },
+                              {
+                                "term": "Heading",
+                                "text": "2026 SNOW",
+                                "level": 4
+                              },
+                              {
+                                "term": "Text",
+                                "text": "COMMERCIAL Snow contract"
+                              },
+                              {
+                                "term": "Badge",
+                                "text": "New",
+                                "mods": [
+                                  "success",
+                                  "outlined"
+                                ]
+                              },
+                              {
+                                "term": "Badge",
+                                "text": "HIGH",
+                                "mods": [
+                                  "warning"
+                                ]
+                              },
+                              {
+                                "term": "Avatar",
+                                "text": "M",
+                                "mods": [
+                                  "primary"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "term": "Text",
+                            "text": "… 25 more"
+                          }
+                        ]
+                      },
+                      {
+                        "term": "Section",
+                        "mods": [
+                          "danger"
+                        ],
+                        "children": [
+                          {
+                            "term": "Bar",
+                            "children": [
+                              {
+                                "term": "Icon",
+                                "text": "●",
+                                "mods": [
+                                  "danger"
+                                ]
+                              },
+                              {
+                                "term": "Heading",
+                                "text": "Site Visit",
+                                "level": 3
+                              },
+                              {
+                                "term": "Pill",
+                                "text": "10"
+                              },
+                              {
+                                "term": "Pill",
+                                "text": "10",
+                                "mods": [
+                                  "warning"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "term": "Card",
+                            "children": [
+                              {
+                                "term": "Kicker",
+                                "text": "Rita Okafor · 7d"
+                              },
+                              {
+                                "term": "Heading",
+                                "text": "Your call recording…",
+                                "level": 4
+                              },
+                              {
+                                "term": "Text",
+                                "text": "Here is the recording…"
+                              },
+                              {
+                                "term": "Badge",
+                                "text": "New",
+                                "mods": [
+                                  "success",
+                                  "outlined"
+                                ]
+                              },
+                              {
+                                "term": "Badge",
+                                "text": "HIGH",
+                                "mods": [
+                                  "warning"
+                                ]
+                              },
+                              {
+                                "term": "Avatar",
+                                "text": "M",
+                                "mods": [
+                                  "primary"
+                                ]
+                              },
+                              {
+                                "term": "Avatar",
+                                "text": "K",
+                                "mods": [
+                                  "warning"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "term": "Card",
+                            "children": [
+                              {
+                                "term": "Kicker",
+                                "text": "Nell Hart · 11d"
+                              },
+                              {
+                                "term": "Heading",
+                                "text": "⚠ IMPORTANT: lead Nel…",
+                                "level": 4
+                              },
+                              {
+                                "term": "Text",
+                                "text": "The form did not send any data…"
+                              },
+                              {
+                                "term": "Badge",
+                                "text": "New",
+                                "mods": [
+                                  "success",
+                                  "outlined"
+                                ]
+                              },
+                              {
+                                "term": "Badge",
+                                "text": "HIGH",
+                                "mods": [
+                                  "warning"
+                                ]
+                              },
+                              {
+                                "term": "Avatar",
+                                "text": "M",
+                                "mods": [
+                                  "secondary"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "term": "Text",
+                            "text": "… 8 more"
+                          }
+                        ]
+                      },
+                      {
+                        "term": "Section",
+                        "mods": [
+                          "secondary"
+                        ],
+                        "children": [
+                          {
+                            "term": "Bar",
+                            "children": [
+                              {
+                                "term": "Icon",
+                                "text": "●"
+                              },
+                              {
+                                "term": "Heading",
+                                "text": "Productio…",
+                                "level": 3
+                              },
+                              {
+                                "term": "Pill",
+                                "text": "5"
+                              }
+                            ]
+                          },
+                          {
+                            "term": "Card",
+                            "mods": [
+                              "primary"
+                            ],
+                            "unsure": [
+                              "Card.primary",
+                              "aria-current"
+                            ],
+                            "children": [
+                              {
+                                "term": "Kicker",
+                                "text": "Sam Ortega"
+                              },
+                              {
+                                "term": "Heading",
+                                "text": "● New Lead: Sam Ortega",
+                                "level": 4
+                              },
+                              {
+                                "term": "Text",
+                                "text": "Contact Sam Ortega…"
+                              },
+                              {
+                                "term": "Pill",
+                                "text": "1 unread",
+                                "mods": [
+                                  "primary"
+                                ]
+                              },
+                              {
+                                "term": "Badge",
+                                "text": "New",
+                                "mods": [
+                                  "success",
+                                  "outlined"
+                                ]
+                              },
+                              {
+                                "term": "Avatar",
+                                "text": "M",
+                                "mods": [
+                                  "primary"
+                                ]
+                              },
+                              {
+                                "term": "Avatar",
+                                "text": "K",
+                                "mods": [
+                                  "warning"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "term": "Card",
+                            "children": [
+                              {
+                                "term": "Kicker",
+                                "text": "Tess Jardine"
+                              },
+                              {
+                                "term": "Heading",
+                                "text": "New Lead: Tess Jardine",
+                                "level": 4
+                              },
+                              {
+                                "term": "Text",
+                                "text": "Contact Tess Jardine…"
+                              },
+                              {
+                                "term": "Badge",
+                                "text": "New",
+                                "mods": [
+                                  "success",
+                                  "outlined"
+                                ]
+                              },
+                              {
+                                "term": "Badge",
+                                "text": "HIGH",
+                                "mods": [
+                                  "warning"
+                                ]
+                              },
+                              {
+                                "term": "Avatar",
+                                "text": "K",
+                                "mods": [
+                                  "warning"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "term": "Text",
+                            "text": "… 3 more"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

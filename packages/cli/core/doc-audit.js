@@ -315,7 +315,7 @@ function packageRootOf(root, docPath) {
 // this repo has. Ungraded rather than guessed at — the cost is that a genuinely
 // dead `packages/x/db/…` goes unseen, which is the cheaper of the two errors.
 const AMBIGUOUS = new Set(['db', 'docs', 'src', 'test', 'tests', 'config', 'dist',
-  'api', 'web', 'site', 'widgets', 'extension', 'public', 'components', 'commands'])
+  'api', 'web', 'site', 'widgets', 'extension', 'cli', 'public', 'components', 'commands'])
 
 function addressesThisRepo(top, path) {
   // An explicitly relative path in prose is almost always a quoted IMPORT

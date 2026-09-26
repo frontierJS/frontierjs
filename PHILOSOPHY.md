@@ -20,7 +20,7 @@ A developer facing five copies of the same fact doesn't just risk them
 disagreeing — they have to hold five pictures of the same thing in their
 head at once, and guess which one is authoritative. Protect the truth and
 you protect the mind trying to hold it. Everything below is a consequence
-of taking that seriously.
+of taking that seriously. Remember, we want a consistent unified mental model as best we can.
 
 ---
 

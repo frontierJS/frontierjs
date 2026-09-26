@@ -363,6 +363,7 @@ describe('every directive the client sends is one the bridge strips', () => {
     select: ['a', 'b'], populate: 'customer',
     search: 'acme', withDeleted: true, onlyDeleted: false,
     withTemplates: true, onlyTemplates: false,
+    asOf: '2026-06-01T00:00:00.000Z', withExpired: true, onlyExpired: false,
   }
   const FILTERS = { status: 'active' }
 

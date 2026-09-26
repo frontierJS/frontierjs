@@ -12,6 +12,9 @@ import { fileURLToPath } from 'url'
 
 import { rankNext, blockedBy, WEIGHTS } from '../core/next.js'
 
+// Every fixture declares the prefix its rows are written under.
+const DECLARED = JSON.stringify({ registers: { prefix: 'FJS' } })
+
 const REPO = fileURLToPath(new URL('../../..', import.meta.url))
 
 const row = (id, pkg, title, detail = '—') =>
@@ -19,6 +22,7 @@ const row = (id, pkg, title, detail = '—') =>
 
 function fixture(rows, { closed = [], decisions = [] } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'fli-next-'))
+  writeFileSync(join(root, 'package.json'), DECLARED)
   mkdirSync(join(root, 'IDEAS'))
   mkdirSync(join(root, 'src'))
   for (const f of ['a.js', 'b.js', 'notes.md']) writeFileSync(join(root, 'src', f), '')

@@ -149,7 +149,7 @@ render: static
                     <td>Yes — identity must stay consistent</td>
                   </tr>
                   <tr>
-                    <td><code>ctx.client</code></td>
+                    <td><code>ctx.caller</code></td>
                     <td>ip, user-agent, headers. Read-only.</td>
                     <td>Yes — <code>&#123;&#125;</code> when there is no real caller</td>
                   </tr>

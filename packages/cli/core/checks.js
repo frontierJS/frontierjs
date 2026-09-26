@@ -57,6 +57,8 @@ import { docWordUnknown, docCitesDead, docClaimsCount, docInvariantRef,
          docUncheckedCount } from './doc-audit.js'
 import { invariantCoverage }                   from './invariants.js'
 import { seamOwnership, unlisted, keyLiteral, SKILL as SEAM_SKILL } from './seams.js'
+import { parseCommands }                       from './command-parse.js'
+import { readConfig }                          from './config.js'
 
 export const RULES = [
   { id: 'model-name-case',      scope: 'app',  severity: 'error', invariant: 2,
@@ -75,6 +77,8 @@ export const RULES = [
     title: 'one Resource per file' },
   { id: 'vite-strict-port',     scope: 'app',  severity: 'error', invariant: null,
     title: 'every vite config sets strictPort' },
+  { id: 'drive-cdp-port',       scope: 'app',  severity: 'error', invariant: null,
+    title: 'a drive lets Chrome pick its debugging port' },
   { id: 'body-tag-in-comment',  scope: 'app',  severity: 'error', invariant: null,
     title: 'the body tag is never written inside a comment' },
   { id: 'untrusted-upload-root', scope: 'app', severity: 'warn', invariant: null,
@@ -92,7 +96,7 @@ export const RULES = [
   { id: 'raw-route-param',      scope: 'app',  severity: 'error', invariant: null,
     title: 'a raw route names a capture {id}, never :id' },
   { id: 'ctx-params',           scope: 'app',  severity: 'error', invariant: null,
-    title: 'a service context has no ctx.params' },
+    title: 'a service context has no ctx.params and no ctx.client' },
   { id: 'set-auth-discarded',   scope: 'app',  severity: 'error', invariant: null,
     title: '$setAuth answers a scoped client rather than mutating one' },
   { id: 'call-header-declared', scope: 'app',  severity: 'error', invariant: null,
@@ -129,12 +133,16 @@ export const RULES = [
     title: 'every model the app runs is one the committed artefacts describe' },
   { id: 'transition-methods',   scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a declared move and the code that makes it still name each other' },
+  { id: 'commitment-swept',     scope: 'app',  severity: 'warn',  invariant: null,
+    title: 'a move a @@commitment owes is made by the commitment, not by a job too' },
   { id: 'capability-ladder',    scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a model graded by capability is not also graded by ladder' },
   { id: 'polymorphic-subject',  scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a polymorphic pair names which models it can point at' },
   { id: 'log-db-unbound',       scope: 'app',  severity: 'warn',  invariant: null,
     title: 'a jsonl/logger database the deploy can point at the volume' },
+  { id: 'command-parses',       scope: 'app',  severity: 'error', invariant: 15,
+    title: 'every project command compiles, with its namespace module, to JavaScript that parses' },
   { id: 'css-token-undefined',  scope: 'app',  severity: 'error', invariant: 13,
     title: 'a styled value names a token the stylesheets define' },
   { id: 'package-root-md',      scope: 'repo', severity: 'warn',  invariant: 17,
@@ -701,6 +709,44 @@ const CHECKS = {
     })) }
   },
 
+  // The same hazard as the rule above, at the browser end, and it is worse
+  // because it can pass. On a FIXED debugging port only the first Chrome binds;
+  // every later one starts, fails to bind, and `GET /json/version` is answered
+  // by the browser that got there first — so the drive attaches to somebody
+  // else's session and grades their screen. Measured: a drive read *a
+  // signed-out visitor is refused* as FALSE against a browser signed in as an
+  // administrator, and died three assertions later on a button that was not
+  // there ([FJS-1265](../../../ISSUES.md#fjs-1265)). Two runs that happen to
+  // agree are green, which is why nothing caught it for seven drives.
+  //
+  // Port 0 and read the port back off Chrome's own stderr.
+  'drive-cdp-port': ({ root }) => {
+    const files = []
+    walk(root, 5, dir => {
+      if (!/^tests?$/.test(basename(dir))) return
+      for (const name of readdirSync(dir)) {
+        if (/\.(mjs|js|ts)$/.test(name)) files.push(join(dir, name))
+      }
+    })
+    if (!files.length) return { skipped: 'no test directory' }
+    const findings = []
+    for (const path of files) {
+      let text
+      try { text = readFileSync(path, 'utf8') } catch { continue }
+      const m = /--remote-debugging-port=(\d+)/.exec(text)
+      if (!m || m[1] === '0') continue
+      findings.push({
+        file: path,
+        line: lineOf(text, m.index),
+        message: `Chrome is pinned to port ${m[1]}. Only the first browser binds it, so a second drive ` +
+                 `attaches to the FIRST one's session and asserts against a page it did not open — green ` +
+                 `whenever the two runs agree. Use --remote-debugging-port=0 and read the port back off ` +
+                 `Chrome's stderr.`,
+      })
+    }
+    return { findings }
+  },
+
   // Vite injects the built <script> at the first TEXTUAL match for the body tag
   // and does not skip comments. Mention it in one ABOVE the real tag and the
   // build succeeds, dist/index.html looks right, and the page loads no
@@ -767,6 +813,18 @@ const CHECKS = {
       })
     }
     return { findings }
+  },
+
+  // A command compiles when it is run, so one nobody has run is broken with
+  // nothing saying so — and `fli check` is the one thing an agent runs after
+  // editing a `.md`. Findings name the `.md` line, the command's or its module's.
+  'command-parses': ({ root }) => {
+    const { routesDir } = readConfig(root)
+    const dir = join(root, routesDir)
+    if (!existsSync(dir)) return { skipped: `no ${routesDir}/` }
+    const { checked, problems } = parseCommands(dir)
+    if (!checked) return { skipped: `no command files under ${routesDir}/` }
+    return { findings: problems }
   },
 
   'body-tag-in-comment': ({ root }) => {
@@ -1191,10 +1249,12 @@ const CHECKS = {
   },
 
   // There is no `ctx.params` in Junction. A ServiceContext splits into `auth`
-  // (the principal), `client`, `route` (path captures) and `locals` (per-call
+  // (the principal), `caller`, `route` (path captures) and `locals` (per-call
   // scratch) — so `ctx.params.user` is undefined and a role check written
   // against it admits everyone. The name is Feathers's and survives in older
-  // notes, which is exactly how it gets written a second time.
+  // notes, which is exactly how it gets written a second time. `ctx.client` is
+  // the same trap from this framework's own notes (`FJS-D392`): a rate limit
+  // keyed on `ctx.client.ip` puts every caller in one bucket.
   'ctx-params': ({ root }) => {
     const files = scripts(root, 'api')
     if (!files.length) return { skipped: 'no api/ source' }
@@ -1202,10 +1262,10 @@ const CHECKS = {
     const findings = []
     for (const path of files) {
       const code = readCode(path)
-      for (const m of code.matchAll(/\bctx\.params\b/g)) findings.push({
+      for (const m of code.matchAll(/\bctx\.(params|client)\b/g)) findings.push({
         file: path, line: lineOf(code, m.index),
-        message: `ctx.params does not exist. A ServiceContext is auth (the principal — frozen, and it ` +
-                 `propagates), client (ip, userAgent, headers), route (path captures alone) and locals ` +
+        message: `ctx.${m[1]} does not exist. A ServiceContext is auth (the principal — frozen, and it ` +
+                 `propagates), caller (ip, userAgent, headers), route (path captures alone) and locals ` +
                  `(per-call scratch, where the scoped db is). This reads undefined, so a check written ` +
                  `on it passes for every caller.`,
       })
@@ -2605,9 +2665,13 @@ const CHECKS = {
     const code     = files.map(p => readCode(p))
     const all      = code.join('\n')
     const literal  = (word) => new RegExp(`['"\`]${word}['"\`]`).test(all)
+    // A move a @@commitment owes is made by junction's commitments(), which no
+    // file under api/ names — a reminder's `remind` has no other caller.
+    const owed     = new Set(declaredCommitments(schema).map(c => `${c.target}.${c.move}`))
     const findings = []
 
     for (const m of moves) {
+      if (owed.has(`${m.model}.${m.move}`)) continue
       if (literal(m.move) || literal(m.to)) continue
       const gate = m.gate ? ` @gate(${m.gate})` : ''
       findings.push({
@@ -2633,6 +2697,77 @@ const CHECKS = {
                    `Litestone resolves the name against @@transitions and throws TransitionNotFoundError ` +
                    `(400) — so this is a call that has never worked, found by whoever asks for it first. ` +
                    `Declared moves: ${[...declared].join(', ') || 'none'}.`,
+        })
+      }
+    }
+
+    return { findings }
+  },
+
+  // ─── commitment-swept ───────────────────────────────────────────────────
+  //
+  // `@@commitment` hands a move to junction's `commitments()`, which makes it
+  // once, at each row's due time (`FJS-D353`, `FJS-D358`). A job still making
+  // the same move is a second owner of it and nothing says so: the from-state
+  // lock turns whichever runs second into a quiet no-op, so both look like they
+  // work while the job's cron, cutoff and zone decide when rows move rather
+  // than the declaration every screen reads its date off.
+  //
+  // **The job this was written against used none of the obvious spellings.**
+  // `abandon` was declared after the sweep existed, and the sweep made
+  // `cancel` — another move of `Order` from `pending` into the same
+  // `cancelled`. So a file makes the committed move if it names that move, any
+  // move of the same model sharing a from-state and the to-state, or the
+  // to-state itself (`transition-methods`' either-spelling argument). It must
+  // also name the MODEL, by accessor or by a service resolving to it, or every
+  // job mentioning `'cancelled'` would be one.
+  //
+  // Job files only: a service making the move is somebody asking for it early,
+  // and a commitment hook runs inside the fire. A warning, because a job may
+  // make the move for a reason that is not the clock — a webhook, an operator's
+  // re-run — and the baseline is where an app says so.
+  'commitment-swept': ({ root }) => {
+    const schema = schemaFile(root)
+    if (!schema) return { skipped: 'no db/schema.lite' }
+
+    const owed = declaredCommitments(schema)
+    if (!owed.length) return { skipped: 'no @@commitment in db/schema.lite' }
+
+    const files = scripts(root, 'api').filter(p => /\.job\.[cm]?[jt]s$/.test(p))
+    if (!files.length) return { skipped: 'no *.job.* under api/' }
+
+    const moves    = declaredMoves(schema)
+    const findings = []
+
+    for (const path of files) {
+      const code     = readCode(path)
+      const services = [...code.matchAll(/\bservice\s*\(\s*['"`]([A-Za-z0-9_-]+)['"`]/g)].map(m => modelName(m[1]))
+
+      for (const c of owed) {
+        const move = moves.find(m => m.model === c.target && m.move === c.move)
+        if (!move) continue
+
+        const accessor = c.target[0].toLowerCase() + c.target.slice(1)
+        if (!new RegExp(`\\.${accessor}\\b`).test(code) && !services.includes(c.target)) continue
+
+        const same  = moves.filter(m => m.model === c.target && m.to === move.to &&
+                                        m.from.some(f => f === '*' || move.from.includes(f)))
+        // The move's name before its target, so the line reported is the call
+        // rather than the status filter that picked the rows.
+        const quoted = (words) => code.match(new RegExp(`['"\`](${words.join('|')})['"\`]`))
+        const hit    = quoted(same.map(m => m.move)) ?? quoted([move.to])
+        if (!hit) continue
+
+        const declared = c.relation ? `${c.relation}.${c.move}` : c.move
+        findings.push({
+          file: path, line: lineOf(code, hit.index),
+          message: `This job makes ${c.target}.${c.move} (it names '${hit[1]}'), and ${c.model} declares ` +
+                   `@@commitment(${declared}) at db/schema.lite:${c.line} — so commitments() already makes ` +
+                   `that move at each row's due time. Two owners of one move both look like they work: the ` +
+                   `from-state lock turns whichever runs second into a no-op, and this job's own schedule ` +
+                   `decides when rows move instead of the declaration the screens read the date off. Delete ` +
+                   `the sweep; an effect the move owes belongs in commitments({ hooks }). A job that makes ` +
+                   `the move for a reason that is not the clock is a warning to keep: fli check --adopt.`,
         })
       }
     }
@@ -3654,6 +3789,33 @@ function declaredGates({ text }) {
  * schema in this repo uses it. A model whose machine arrives that way is
  * invisible here, which is a rule that misses rather than one that misfires.
  */
+// Every `@@commitment` and the model its move is made ON — the declaring model
+// for `close`, the relation's type for `subscription.lapse`. A line scan like
+// `declaredMoves`, reading the relation's type off the field that names it.
+function declaredCommitments({ text }) {
+  const out    = []
+  const fields = {}
+  const lines  = text.split('\n')
+  let model    = null, inBlock = false
+
+  for (let i = 0; i < lines.length; i++) {
+    const [line, still] = withoutComments(lines[i], inBlock)
+    inBlock = still
+    const m = line.match(/^\s*model\s+([A-Za-z_][A-Za-z0-9_]*)/)
+    if (m) { model = m[1]; fields[model] = {}; continue }
+    if (!model) continue
+
+    const f = line.match(/^\s*([a-z][A-Za-z0-9_]*)\s+([A-Z][A-Za-z0-9_]*)[?\[\]]*(\s|$)/)
+    if (f) fields[model][f[1]] = f[2]
+
+    const c = line.match(/@@commitment\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)(?:\.([A-Za-z_][A-Za-z0-9_]*))?/)
+    if (c) out.push({ model, relation: c[2] ? c[1] : null, move: c[2] ?? c[1], line: i + 1 })
+  }
+
+  for (const c of out) c.target = c.relation ? fields[c.model]?.[c.relation] ?? null : c.model
+  return out.filter(c => c.target)
+}
+
 function declaredMoves({ text }) {
   const out   = []
   const lines = text.split('\n')
@@ -3712,7 +3874,9 @@ function declaredMoves({ text }) {
       if (!to) continue
       const named = clause.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:/)
       const gate  = clause.match(/@gate\s*\(\s*['"`]?([A-Za-z0-9_]+)['"`]?\s*\)/)
-      out.push({ model, move: named ? named[1] : to[1], to: to[1], gate: gate ? gate[1] : null, line: i + 1 })
+      const from  = clause.slice(named ? clause.indexOf(':') + 1 : 0, clause.indexOf('->'))
+        .match(/[A-Za-z_*][A-Za-z0-9_]*|\*/g) ?? []
+      out.push({ model, move: named ? named[1] : to[1], from, to: to[1], gate: gate ? gate[1] : null, line: i + 1 })
     }
     i = j
   }

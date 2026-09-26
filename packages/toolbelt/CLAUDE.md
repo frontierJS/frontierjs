@@ -176,7 +176,12 @@ src/datetime/        an instant read as a place's wall clock, and written back �
                      a billing period is (`FJS-D288`): the zone is spent at the
                      two crossings and the calendar arithmetic has none.
                      Temporal's words over plain values, not its classes
-                     (`FJS-D268`). Ships a `.d.ts` — caravan reads zone parts
+                     (`FJS-D268`). And `dueAt`, when a `@@commitment` falls due
+                     on a row — here because litestone answers it beside its
+                     SQL and a screen answers it off `x-commitments`, and two
+                     copies disagree first about a month added to the 31st.
+                     It reads `/units` for a duration's factor. Ships a
+                     `.d.ts` — caravan reads zone parts
 test/run.js          the harness
 test/specs/          one .spec.js per export
 test/fixtures/       guide-samples.json — 137 real samples from the css guide

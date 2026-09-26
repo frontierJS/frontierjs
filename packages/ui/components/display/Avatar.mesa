@@ -58,9 +58,12 @@
 
   // Deterministic tone from the name, so the same person is always the same
   // color. Picking from the 7 tones rather than a private palette means the
-  // fill and the text contrast are both derived by chip.css.
+  // fill and the text contrast are both derived by chip.css. The table is fixed,
+  // so its size is a `var` — an imported read inside a `const` is otherwise
+  // reported as one nothing watches (`FJS-1340`).
+  var toneCount = TONES.length
   const autoTone = TONES[
-    name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % TONES.length
+    name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0) % toneCount
   ]
 
   const sz          = sizeMap[size] ?? sizeMap.md

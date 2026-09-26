@@ -923,9 +923,9 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
       return fail('the refused deploy left the target without a working release', dockerLogs(container))
     log('  ✓ an unbound attachment refuses the deploy, names the service, and rolls back')
 
-    // ── 7 · a declared binding key the target does not carry ──
+    // ── 7 · a declared configuration key the target does not carry ──
     //
-    // `deploy.bindings` and `deploy.secrets` feed the Release hash, and their
+    // `deploy.configuration` and `deploy.secrets` feed the Release hash, and their
     // VALUES are applied by nothing — `fli` writes no `.env` on a target. So the
     // keys are graded for presence instead (`FJS-585`), and this is the
     // assertion that they are graded at all: a declaration nothing checks is the
@@ -934,9 +934,9 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
     // Cheap, because `01b-env-check` runs before the build — this costs a
     // handful of ssh round trips rather than an image.
     writeFileSync(confPath, readFileSync(confPath, 'utf8').replace(
-      /app_id: '([^']*)',/, `app_id: '$1',\n    bindings: { FJS_DECLARED_ONLY: 'x' },`))
+      /app_id: '([^']*)',/, `app_id: '$1',\n    configuration: { FJS_DECLARED_ONLY: 'x' },`))
     git(app, ['add', '-A'])
-    git(app, ['commit', '-qm', 'declare a binding key the server does not carry'])
+    git(app, ['commit', '-qm', 'declare a configuration key the server does not carry'])
 
     const wasServing = running()
     const d7 = inApp(['deploy', '--api'])
@@ -959,7 +959,7 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
       return fail('a refused env check swapped the container anyway', d7.output)
     if (health() !== '200')
       return fail('a refused env check took the running release down', dockerLogs(container))
-    log('  ✓ a declared binding key the target does not carry stops the deploy before it builds')
+    log('  ✓ a declared configuration key the target does not carry stops the deploy before it builds')
 
     return { findings, skipped: null }
 

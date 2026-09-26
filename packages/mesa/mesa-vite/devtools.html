@@ -106,6 +106,8 @@
   .kind-writable-derived { background: #2a1e30; color: #c084fc; }
   .kind-let-context   { background: #1e3040; color: var(--teal); }
   .kind-derived-context { background: #1e2a14; color: var(--green); }
+  .kind-static        { background: var(--bg3); color: var(--text-dimmer); }
+  .static-note        { color: var(--text-dimmer); font-size: 11px; }
   .sig-value { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); word-break: break-all; }
   .sig-value .null  { color: var(--text-dimmer); font-style: italic; }
   .sig-value .bool  { color: var(--orange); }
@@ -119,7 +121,7 @@
   /* ── Log panel ── */
   .log-panel { flex: 1; overflow-y: auto; font-family: var(--font-mono); font-size: 11px; }
   .log-row {
-    display: grid; grid-template-columns: 60px 120px 80px 1fr;
+    display: grid; grid-template-columns: 60px 120px 80px 1fr 1.5fr;
     padding: 5px 12px; border-bottom: 1px solid var(--border);
     align-items: baseline; transition: background .1s;
   }
@@ -130,7 +132,15 @@
   .log-comp { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .log-name { color: var(--text); font-weight: 600; }
   .log-val  { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .log-woke { color: var(--text-dimmer); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .log-empty { padding: 20px 16px; color: var(--text-dimmer); }
+  .run-row {
+    display: grid; grid-template-columns: 60px 120px 140px 1fr;
+    padding: 5px 12px; border-bottom: 1px solid var(--border); align-items: baseline;
+  }
+  .run-node  { color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .run-cause { color: var(--text-dim); }
+  .run-cause .write { color: var(--orange); }
 
   /* ── Scrollbar ── */
   ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -165,12 +175,16 @@
     <div class="tabs">
       <div class="tab active" data-tab="signals">Signals</div>
       <div class="tab" data-tab="log">Update Log <span id="log-badge"></span></div>
+      <div class="tab" data-tab="runs">Runs <span id="runs-badge"></span></div>
     </div>
     <div id="panel-signals" class="signals-panel">
       <div class="no-selection">← Select a component to inspect its signals</div>
     </div>
     <div id="panel-log" class="log-panel" style="display:none">
       <div class="log-empty">No updates yet.</div>
+    </div>
+    <div id="panel-runs" class="log-panel" style="display:none">
+      <div class="log-empty">Nothing has re-run yet.</div>
     </div>
   </main>
 
@@ -179,9 +193,10 @@
 <script>
 // ── State ────────────────────────────────────────────────────────────────────
 const state = {
-  components: new Map(),  // id → { id, name, file, signals, mountTime }
+  components: new Map(),  // id → { id, name, file, signals, mountTime, statics }
   signals:    new Map(),  // id → { id, name, kind, componentId, value, updatedAt }
   log:        [],
+  runs:       [],         // nodes the flush ran, each with the chain that woke it
   selected:   null,
   activeTab:  'signals',
 }
@@ -196,6 +211,7 @@ bc.onmessage = (e) => {
   else if (type === 'mount')     onMount(data)
   else if (type === 'unmount')   onUnmount(data)
   else if (type === 'update')    onUpdate(data)
+  else if (type === 'run')       onRun(data)
 }
 
 // Request snapshot as soon as we open
@@ -207,18 +223,19 @@ function onOnline() {
   bc.postMessage({ type: 'request-snapshot' })
 }
 
-function onSnapshot({ signals = [], components = [], log = [] }) {
+function onSnapshot({ signals = [], components = [], log = [], runs = [] }) {
   document.getElementById('status-dot').classList.add('online')
   state.components.clear()
   state.signals.clear()
   for (const c of components) state.components.set(c.id, { ...c })
   for (const s of signals)    state.signals.set(s.id, { ...s })
   state.log = log.slice()
+  state.runs = runs.slice().reverse()
   renderAll()
 }
 
-function onMount({ id, name, file }) {
-  state.components.set(id, { id, name, file, signals: [], mountTime: Date.now() })
+function onMount({ id, name, file, statics = [] }) {
+  state.components.set(id, { id, name, file, signals: [], mountTime: Date.now(), statics })
   renderSidebar()
   updateBadges()
 }
@@ -231,19 +248,25 @@ function onUnmount({ id }) {
   updateBadges()
 }
 
-function onUpdate({ signalId, name, componentId, value, ts }) {
-  const rec = state.signals.get(signalId)
+function onUpdate(entry) {
+  const rec = state.signals.get(entry.signalId)
   if (rec) {
-    rec.value     = value
-    rec.updatedAt = ts
+    rec.value     = entry.value
+    rec.updatedAt = entry.ts
   }
-  // Prepend to log
-  state.log.unshift({ signalId, name, componentId, value, ts })
+  state.log.unshift(entry)
   if (state.log.length > 200) state.log.length = 200
 
-  if (state.activeTab === 'signals' && state.selected === componentId) renderSignalTable()
-  if (state.activeTab === 'log') prependLogRow({ signalId, name, componentId, value, ts })
+  if (state.activeTab === 'signals' && state.selected === entry.componentId) renderSignalTable()
+  if (state.activeTab === 'log') prependLogRow(entry)
   updateLogBadge()
+}
+
+function onRun(run) {
+  state.runs.unshift(run)
+  if (state.runs.length > 500) state.runs.length = 500
+  if (state.activeTab === 'runs') prependRow('panel-runs', runRowHTML(run))
+  updateRunsBadge()
 }
 
 // ── Render ───────────────────────────────────────────────────────────────────
@@ -251,6 +274,8 @@ function renderAll() {
   renderSidebar()
   renderSignals()
   if (state.activeTab === 'log') renderLog()
+  if (state.activeTab === 'runs') renderRuns()
+  updateRunsBadge()
   updateBadges()
 }
 
@@ -301,7 +326,12 @@ function renderSignalTable() {
     if (s.componentId === state.selected) sigs.push(s)
   }
 
-  if (sigs.length === 0) {
+  // An imported read nothing in this component watches renders once and never
+  // again (VISION RULE 44). The compiler found these; listing them beside the
+  // signals is the answer to *why does this value not move* (FJS-1340).
+  const statics = comp.statics ?? []
+
+  if (sigs.length === 0 && statics.length === 0) {
     panel.innerHTML = '<div class="no-selection">No signals registered for this component.</div>'
     return
   }
@@ -312,17 +342,30 @@ function renderSignalTable() {
       <td><span class="sig-name">${esc(s.name)}</span></td>
       <td><span class="sig-kind kind-${esc(s.kind)}">${esc(s.kind)}</span></td>
       <td><div class="sig-value">${renderValue(s.value)}</div></td>
+      <td><span class="sig-value">${esc((s.dependencies ?? []).join(', '))}</span></td>
+      <td><span class="sig-value">${s.dependents ?? 0}</span></td>
       <td><span class="sig-updated">${esc(ago)}</span></td>
     </tr>`
-  }).join('')
+  }).join('') + statics.map(r => `<tr class="static-row">
+      <td><span class="sig-name">${esc(r.path)}</span></td>
+      <td><span class="sig-kind kind-static">static</span></td>
+      <td colspan="4"><span class="static-note">${esc(staticNote(r))}</span></td>
+    </tr>`).join('')
 
   panel.innerHTML = `
     <table>
       <thead><tr>
-        <th>Name</th><th>Kind</th><th>Value</th><th>Updated</th>
+        <th>Name</th><th>Kind</th><th>Value</th><th>Reads</th><th>Read by</th><th>Updated</th>
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`
+}
+
+function staticNote({ path, where, watchedHere }) {
+  const at = where === 'template' ? 'Read in the template' : `Read by ${where}`
+  return watchedHere
+    ? `${at}. This component watches another path of the import, so it updates only when some component's watch covers it (RULE 47). Add $: ${path} to track it.`
+    : `${at}. Imported, and nothing in this component watches it, so it shows its first value. Add $: ${path} to track it.`
 }
 
 function renderLog() {
@@ -334,12 +377,23 @@ function renderLog() {
   panel.innerHTML = state.log.map(entry => logRowHTML(entry)).join('')
 }
 
+function renderRuns() {
+  const panel = document.getElementById('panel-runs')
+  panel.innerHTML = state.runs.length
+    ? state.runs.map(runRowHTML).join('')
+    : '<div class="log-empty">Nothing has re-run yet.</div>'
+}
+
 function prependLogRow(entry) {
-  const panel = document.getElementById('panel-log')
+  prependRow('panel-log', logRowHTML(entry))
+}
+
+function prependRow(panelId, html) {
+  const panel = document.getElementById(panelId)
   const empty = panel.querySelector('.log-empty')
   if (empty) empty.remove()
   const div = document.createElement('div')
-  div.innerHTML = logRowHTML(entry)
+  div.innerHTML = html
   const row = div.firstElementChild
   row.classList.add('flash')
   panel.prepend(row)
@@ -348,16 +402,43 @@ function prependLogRow(entry) {
 }
 
 function logRowHTML(entry) {
-  const comp = state.components.get(entry.componentId)
-  const compName = comp ? comp.name : `#${entry.componentId}`
-  const t = new Date(entry.ts)
-  const ts = `${t.getHours().toString().padStart(2,'0')}:${t.getMinutes().toString().padStart(2,'0')}:${t.getSeconds().toString().padStart(2,'0')}.${t.getMilliseconds().toString().padStart(3,'0')}`
+  const woke = (entry.woke ?? []).map(nodeLabel).join(', ')
+  const by   = entry.by ? `by ${nodeLabel(entry.by)} · ` : ''
   return `<div class="log-row">
-    <span class="log-ts">${ts}</span>
-    <span class="log-comp">${esc(compName)}</span>
+    <span class="log-ts">${clock(entry.ts)}</span>
+    <span class="log-comp">${esc(compName(entry.componentId))}</span>
     <span class="log-name">${esc(entry.name)}</span>
     <span class="log-val">${esc(flatValue(entry.value))}</span>
+    <span class="log-woke">${esc(by)}woke ${esc(woke || 'nothing')}</span>
   </div>`
+}
+
+// A run and what woke it, nearest cause first, ending at the write.
+function runRowHTML(run) {
+  const chain = (run.cause ?? []).map((c) => c.write
+    ? `<span class="write">${esc(c.name ?? '?')} = ${esc(flatValue(c.value))}</span>`
+    : esc(nodeLabel(c))
+  ).join(' ← ')
+  return `<div class="run-row">
+    <span class="log-ts">${clock(run.ts)}</span>
+    <span class="log-comp">${esc(compName(run.componentId))}</span>
+    <span class="run-node">${esc(nodeLabel(run))}</span>
+    <span class="run-cause">${chain || 'no recorded cause'}</span>
+  </div>`
+}
+
+function nodeLabel(n) {
+  return n.name ? `${n.kind} ${n.name}` : `${n.kind} #${n.nodeId}`
+}
+
+function compName(id) {
+  const comp = state.components.get(id)
+  return comp ? comp.name : id == null ? '' : `#${id}`
+}
+
+function clock(ts) {
+  const t = new Date(ts)
+  return `${t.getHours().toString().padStart(2,'0')}:${t.getMinutes().toString().padStart(2,'0')}:${t.getSeconds().toString().padStart(2,'0')}.${t.getMilliseconds().toString().padStart(3,'0')}`
 }
 
 // ── Value rendering ───────────────────────────────────────────────────────────
@@ -404,6 +485,11 @@ function updateLogBadge() {
   el.textContent = state.log.length ? ` (${state.log.length})` : ''
 }
 
+function updateRunsBadge() {
+  const el = document.getElementById('runs-badge')
+  el.textContent = state.runs.length ? ` (${state.runs.length})` : ''
+}
+
 // ── Tab switching ─────────────────────────────────────────────────────────────
 document.querySelectorAll('.tab').forEach(tab => {
   tab.addEventListener('click', () => {
@@ -411,15 +497,20 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === tab))
     document.getElementById('panel-signals').style.display = state.activeTab === 'signals' ? '' : 'none'
     document.getElementById('panel-log').style.display     = state.activeTab === 'log'     ? '' : 'none'
+    document.getElementById('panel-runs').style.display    = state.activeTab === 'runs'    ? '' : 'none'
     if (state.activeTab === 'log') renderLog()
+    if (state.activeTab === 'runs') renderRuns()
   })
 })
 
 // ── Clear log ─────────────────────────────────────────────────────────────────
 document.getElementById('clear-log').addEventListener('click', () => {
   state.log = []
+  state.runs = []
   document.getElementById('panel-log').innerHTML = '<div class="log-empty">Log cleared.</div>'
+  document.getElementById('panel-runs').innerHTML = '<div class="log-empty">Log cleared.</div>'
   updateLogBadge()
+  updateRunsBadge()
 })
 
 // ── Live value refresh (signals tab) ─────────────────────────────────────────

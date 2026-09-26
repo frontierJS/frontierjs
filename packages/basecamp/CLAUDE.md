@@ -15,6 +15,12 @@ bun run db:seed      # an example fleet
 bun run verify:screens # the Phase 13 and 14 screens + the audit window,
                        # in a browser, on a database it seeds in a temp directory
 bun run db:reset     # stops the servers, deletes the databases
+bun run dev:outpost  # after `dev`: this laptop enrolled as a fleet machine, a
+                     # real Outpost on 8180/8181, waits until it is ONLINE
+bun run verify:outpost # the launcher + API + Outpost as processes, no browser
+bun run verify:mcp     # /mcp at four roles over a real MCP client, no browser
+bun run cli servers status   # the app on a command line — login --api-key - first
+bun run verify:cli     # that program as a process against a real /mcp, no browser
 DEVTOOLS=1 bun run api   # …and junction's console on 8503 beside it
 bun run image        # build the container image from the WORKING TREE
 bun run image:up     # …and bring the stack up on 8020  · image:down stops it
@@ -101,7 +107,8 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           providers/ is who the app SPEAKS to — `index.ts` is the 10 (eight
           self-hosted appliances, plus `edge` and `cloudSpend`, which are
           somebody else's service reached with a token), executor.ts and
-          outpost.ts are the fleet's own. One folder, because FJS-D06 rules
+          outpost.ts are the fleet's own, and outpost-dev.ts is this laptop
+          enrolled as one of them (`bun run dev:outpost`). One folder, because FJS-D06 rules
           Provider to mean a party outside the app and Infisical is one in the
           sense Hetzner is. `hosted` on the portal entry is what separates the
           two kinds, and it is there because *unconfigured* means different
@@ -124,6 +131,9 @@ web/src/  App.mesa · main.js · session.js · notices.js (one leaf definition t
           `[id]/` screen ends in it. `error` is the banner over a page that
           still has its row; `loadError` is why this page has none (`FJS-968`)
 web/test/ verify.mjs · verify-build.mjs + preview.mjs (the built output)
+cli/      config/cli.config.js (name, tenant header, dev endpoint) · src/main.js ·
+          src/routes/<service>/<method>.js — the hand-written commands; every other
+          command is /mcp's tool list at the key's standing · test/verify-cli.mjs
 docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
           2026-08-30). Four of them are a screen with a skeleton where a third
           party's numbers go — what is owed there is adapters, not UI
@@ -278,7 +288,7 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   `ctx.params.headers`, every one `undefined`, so role checks silently
   passed for everyone; both are fixed now, and the idiom survives only in two
   comments (`app.ts`, `core/hooks.ts`) warning against it. Fixing an occurrence
-  means `ctx.auth.user` / `ctx.client.headers` / `ctx.route` — and `ctx.route`
+  means `ctx.auth.user` / `ctx.caller.headers` / `ctx.route` — and `ctx.route`
   is the answer on a raw route too, which is what changed: the word used to
   mean path captures there and nothing here, and that asymmetry is what kept
   the idiom arriving.
@@ -387,6 +397,9 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   answers.** `api/src/providers/executor.ts` is the one owner: a registered outpost,
   the named stub (`BASECAMP_STUB_OUTPOST=1`, refused under `NODE_ENV=production`,
   and it writes *no /deploy was issued* into every step it touches), or a refusal.
+  It picks the first online placement it can REACH, not the first online one —
+  a machine that has not heartbeated since the API restarted has no target yet,
+  and the seed's machines say `online` with no outpost at all.
   It is asked twice — `deployments.create` refuses where the person can see it,
   the job asks again when it runs, because a placement can be removed
   between the two. Never add a fourth branch that returns early and lets the

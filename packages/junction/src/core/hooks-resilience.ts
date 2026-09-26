@@ -98,7 +98,7 @@ export function circuitBreaker(opts: CircuitBreakerOptions = {}): AroundHook {
 
 // ─── Rate limiter ─────────────────────────────────────────────────────────
 // Before hook — operates inside the pipeline where the full ServiceContext
-// is available (ctx.auth.user, ctx.client.ip, ctx.service, ctx.method).
+// is available (ctx.auth.user, ctx.caller.ip, ctx.service, ctx.method).
 //
 // In-process memory store — correct for single-instance deployments.
 // For multi-instance, replace with a Redis-backed counter via the key option.
@@ -114,7 +114,7 @@ export function circuitBreaker(opts: CircuitBreakerOptions = {}): AroundHook {
 //   })
 //
 // Keyed by IP by default. Key by user for authenticated routes:
-//   rateLimitHook({ max: 100, window: '1 hour', key: (ctx) => ctx.auth.user?.userId ?? ctx.client.ip })
+//   rateLimitHook({ max: 100, window: '1 hour', key: (ctx) => ctx.auth.user?.userId ?? ctx.caller.ip })
 
 
 

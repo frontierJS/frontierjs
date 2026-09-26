@@ -28,10 +28,10 @@ flags:
     type: boolean
     description: Include packages marked private in package.json
     defaultValue: false
-  no-commit:
+  commit:
     type: boolean
     description: Bump package.json files but skip the git commit and tag
-    defaultValue: false
+    defaultValue: true
 ---
 
 <script>
@@ -98,7 +98,7 @@ for (const { dir, pkg, newVersion } of planned) {
   log.success(`${pkg.name}  ${pkg.version} → ${newVersion}`)
 }
 
-if (flag['no-commit']) {
+if (!flag.commit) {
   log.success(`Bumped ${planned.length} package(s) — nothing committed`)
   return
 }

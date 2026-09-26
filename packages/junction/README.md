@@ -245,8 +245,8 @@ is four typed fields instead, each with one propagation rule:
 
 ```typescript
 ctx.auth.user       // WHO is calling. Frozen. Propagates to internal calls.
-ctx.client.headers  // caller environment — ip, userAgent, headers. Read-only,
-ctx.client.ip       //   propagates. `{}` on internal calls.
+ctx.caller.headers  // caller environment — ip, userAgent, headers. Read-only,
+ctx.caller.ip       //   propagates. `{}` on internal calls.
 ctx.route.roomId    // path captures ({id}, {room}). Router-only; {} internal.
 ctx.locals.db       // per-call scratch. FRESH {} every call, does NOT propagate
                     //   — a sub-service cannot reach its caller's locals.
@@ -390,7 +390,7 @@ hooks: {
     create: [rateLimitHook({
       max:     100,
       window:  '1 hour',
-      key:     (ctx) => ctx.auth.user?.accountId ?? ctx.client.ip,
+      key:     (ctx) => ctx.auth.user?.accountId ?? ctx.caller.ip,
       message: 'Organization limit reached',
     })]
   }
@@ -1399,6 +1399,79 @@ pass rather than once per scrape.
 | `batch` | `50` | rows per pass |
 | `claimTimeoutMs` | `30000` | when a claim from a dead relay is retaken |
 | `retentionMs` | 7 days | how long a delivered row is kept; `0` keeps forever |
+
+### `commitments()` — the clock under `@@commitment`
+
+A schema says what the SYSTEM owes a row and when —
+`@@commitment(abandon, on: createdAt + 14d)` beside
+`abandon: pending -> cancelled @system` — and Litestone answers which rows are
+due (`db.order.due()`). Nothing in Litestone moves a row; this plugin does.
+
+```typescript
+import { commitments } from '@frontierjs/junction/commitments'
+
+app.configure(createCaravan({ jobsDir: './api/jobs' }))   // the sweep is a Caravan cron
+app.configure(commitments())
+```
+
+**One sweep over every declaration, not a job per declaration** (`FJS-D358`).
+A cron (`commitment-sweep`, every minute) asks `due()` of each declaring model
+for rows due within the lookahead and dispatches a `commitment-fire` per row
+with a delay to its time, so the cadence is not the precision. Under
+`tenancy { strategy database }` it walks every tenant cold, as the outbox relay
+does.
+
+- **The fire asks again before it moves.** A row that moved, was held by
+  `while:`, or had its anchor edited since the sweep is no longer due, and the
+  fire does nothing — counted as `lapsed`. Once-ness is the transition's own:
+  the from-state is in the UPDATE's WHERE.
+- **It moves the row `due()` names as the target.** That is the declaring row,
+  or the one a to-one relation reaches: `@@commitment(subscription.lapse, …)` on
+  an `Invoice` moves the invoice's subscription (`FJS-D362`). The target's
+  from-state is part of what `due()` asks, so with two unpaid invoices the older
+  one lapses the subscription and the later one's fire is `lapsed`, not failed.
+- **The move is made as the app, not through `asSystem()`.** `asSystem()`
+  bypasses `@@transitions` whole, from-state lock included, so the fire uses the
+  client a job gets — scoped to `createApp({ system })` — with
+  `{ system: true }`, which unlocks an `@system` move and nothing else. A gate
+  the app's principal does not clear FAILS the fire, loudly, and the queue
+  retries it.
+- **Never through a service method of the same name.** `example`'s
+  `subscriptions.cancel` sets `cancelAtPeriodEnd`; its `cancel` transition
+  cancels now. The move announces through the Litestone tap under the
+  transition's name either way.
+- **What a move owes beyond itself is a hook, run in the move's transaction**
+  (`FJS-D368`). `hooks: { 'SubscriptionPeriod.close': renewPeriod }` — keyed
+  `<Model>.<commitment>` — runs after the move inside one `$transaction` on the
+  fire's client, so a closed period and the invoice and next period it owes
+  commit together or not at all; a throw rolls both back and fails the fire.
+  The plugin still makes the move, so a hook cannot lose the from-state lock.
+  `afterCommit(fn)` carries what a rollback could not take back — a dispatch to
+  a queue in another file. **`enqueue(job, payload)` is the durable one**: an
+  outbox row on the move's transaction, for an effect whose loss the move would
+  lie about — a reminder's email, where `reminded` is set and a moved row is
+  never due again (`FJS-D370`). It refuses by name with no `outbox()`
+  installed. Only the fire runs a hook, and a key naming no declared
+  commitment is refused at start.
+- **`fireCommitment(client, payload, { hooks, outbox, tenant })` is the fire
+  itself**, exported for a drive with no app: the same re-derivation, move and
+  hook on a client the caller scopes. `outbox` is `app.outbox`, which
+  `enqueue` needs.
+- **A schema declaring `@@commitment` with no `commitments()` configured is
+  refused at start**, because every declared move would stay owed forever. Asked
+  of `app.db`, or of the registry's parsed schema under `createApp({ tenants })`,
+  which opens no tenant.
+
+`GET /metrics` answers `commitments: { due, fired, lapsed, failed, lastSweepAt }`.
+`app.commitments.sweep()` runs one sweep now.
+
+| option | default | |
+| --- | --- | --- |
+| `cron` | `'* * * * *'` | when the sweep runs |
+| `lookaheadMs` | 5 min | how far ahead a sweep dispatches; must exceed the sweep's interval |
+| `queue` | caravan's default | the queue both jobs run on |
+| `timeZone` | `'UTC'` | whose calendar a day-kind `on:` is read in — a zone, or `(tenant) => zone`, which may be async since a sweep reaches a tenant cold. The fire's delay is to the day's start THERE |
+| `hooks` | none | what a move owes beyond itself, keyed `<Model>.<commitment>` — **Hook tier**: runs in the move's transaction and a throw halts it. Handed `{ db, record, model, commitment, dueAt, timeZone, now, afterCommit, enqueue }` |
 
 ---
 

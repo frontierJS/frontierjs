@@ -24,7 +24,7 @@
  */
 
 import { db }         from '../../api/src/core/db.ts'
-import { prorate, changePlan, issueInvoice, periodLines } from '../../api/src/domain/billing'
+import { prorate, changePlan, issueInvoice, periodLines, startSubscription } from '../../api/src/domain/billing'
 import { allocate }   from '@frontierjs/toolbelt/units'
 import { plainDateIn, addToDate } from '@frontierjs/toolbelt/datetime'
 import { results, report } from './lib/report.mjs'
@@ -148,16 +148,14 @@ const TODAY       = plainDateIn(Date.now(), 'UTC')
 const periodStart = addToDate(TODAY, { days: -10 })
 const periodEnd   = addToDate(TODAY, { days: 20 })
 
-const sub = await sys.subscription.create({ data: {
+const sub = await startSubscription(sys, {
   reference:  `SUB-P${RUN}`,
   customerId: customer.id,
   planVersionId: cheap.id,
   status:     'active',
   quantity:   2,
-  currentPeriodStart: periodStart,
-  currentPeriodEnd:   periodEnd,
   userId:     customer.userId,
-} })
+}, { startsOn: periodStart, endsOn: periodEnd })
 
 // It needs a document to correct before a downgrade can credit anything.
 await issueInvoice(sys, {
@@ -244,16 +242,14 @@ const periodOf = async (id) => {
 const yearlyPlan = await sys.plan.findFirst({ where: { code: 'PROYEAR' } })
 const yearly     = await sys.planVersion.findFirst({ where: { planId: yearlyPlan.id } })
 
-const annual = await sys.subscription.create({ data: {
+const annual = await startSubscription(sys, {
   reference:  `SUB-P${RUN}Y`,
   customerId: customer.id,
   planVersionId: cheap.id,
   status:     'active',
   quantity:   2,
-  currentPeriodStart: periodStart,
-  currentPeriodEnd:   periodEnd,
   userId:     customer.userId,
-} })
+}, { startsOn: periodStart, endsOn: periodEnd })
 await issueInvoice(sys, {
   number:         `INV-P${RUN}Y`,
   customerId:     customer.id,
@@ -333,6 +329,7 @@ try {
       await sys.creditNote.deleteMany({ where: { invoiceId: b.id } })
       await sys.invoice.delete({ where: { id: b.id } })
     }
+    await sys.subscriptionPeriod.deleteMany({ where: { subscriptionId: s.id } })
     await sys.subscription.delete({ where: { id: s.id } })
   }
 } catch (e) {

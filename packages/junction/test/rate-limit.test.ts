@@ -17,7 +17,7 @@ import { rateLimit as rateLimitHook } from '../src/core/hooks-resilience.ts'
 import { rateLimit as rateLimitMw }   from '../src/transport/middleware.ts'
 
 const svcCtx = (ip: string, userId?: string) =>
-  ({ client: { ip }, auth: { user: userId ? { userId } : null } }) as never
+  ({ caller: { ip }, auth: { user: userId ? { userId } : null } }) as never
 const wireCtx = (ip: string) => ({ ip }) as never
 
 describe('one limiter under both tiers', () => {
@@ -75,7 +75,7 @@ describe('one limiter under both tiers', () => {
 
 describe('clientIp reads either context shape', () => {
   // The one-line gap that grew a third limiter: a TransportContext carries `ip`
-  // at the top level, a ServiceContext splits client facts into ctx.client.
+  // at the top level, a ServiceContext splits caller facts into ctx.caller.
   it('finds the address on a service context and a transport context alike', () => {
     expect(clientIp(svcCtx('1.1.1.1'))).toBe('1.1.1.1')
     expect(clientIp(wireCtx('2.2.2.2'))).toBe('2.2.2.2')

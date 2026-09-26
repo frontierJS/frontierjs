@@ -1,5 +1,50 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-25 — `/directives` states each value's schema
+
+Each row carries a `schema` beside `read`, and `DIRECTIVE_SCHEMAS` is the table
+by bare name — the half a DESCRIBER needs, where `read` is the parser's. The MCP
+projection types a `find` tool's directives from it, and a command line's flags
+would be written from the same rows. An `asIs` row (`orderBy`, `select`,
+`populate`) promises no shape, since only the query builder knows which are
+legal. Proof: `test/specs/directives.spec.js`, every row keyed and typed.
+
+## 2026-09-23 — `/datetime` answers when a `@@commitment` falls due
+
+`dueAt(commitment, row)` — an instant as ISO text, a day as `YYYY-MM-DD`, `null`
+where the anchor or the offset is null or unreadable. It moved here from
+litestone's `core/commitment.js`, because a screen now answers the same question
+off `x-commitments` with no database at all, and two copies would disagree
+first about a month added to the 31st, which this clamps and SQLite's modifier
+overflows. The kit reads `/units` for a duration's factor. Proof:
+`test/specs/datetime.spec.js`, two rows, under bun and node.
+
+## 2026-09-22 — `/predicate`'s lexer reads `+` and `-`
+
+`PLUS` and `MINUS` are tokens, for `@@commitment(abandon, on: createdAt + 14d)`.
+Before this a `+` anywhere in a `.lite` file died in the lexer as an unknown
+character. No expression grammar accepts either — the parser stops at one and
+leaves it for the caller — so arithmetic in a predicate is still refused, now by
+whoever was parsing. A `-` against a digit stays a negative `NUMBER`, so
+`createdAt -14d` and `createdAt - 14d` reach a reader as two token runs and
+litestone reads both.
+
+## 2026-09-22 — `/directives` learns a value
+
+`$asOf`, `$withExpired`, `$onlyExpired` — litestone's `@@expires` / `@@effective`, on the
+wire. Three rows in the one table, so both boundaries that read the `$`
+convention get them at once (Invariant 10).
+
+**`asOf` is the family's first member whose value is not a flag**, and that is
+why it went in with the window rather than after it: the four opt-back-in
+directives were all `asBool`, expiry alone needs a fifth boolean, and a value
+cannot be retrofitted onto a flag without the language carrying two directive
+families for one idea permanently. The flags are sugar over it.
+
+It is read as TEXT and graded nowhere here: whether a legal value is an instant
+or a `YYYY-MM-DD` day depends on the model, and this kit has no schema. The Data
+boundary refuses an unparseable one by name.
+
 ## 2026-09-22 — `/units` learns what a number counts
 
 `FJS-D348`. The measure table behind `.lite`'s `@unit`: one row per unit symbol,

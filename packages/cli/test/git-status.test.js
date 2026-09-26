@@ -139,3 +139,32 @@ test('with no reader every file reads null rather than 0', () => {
 test('an unclaimed path lands at the root rather than nowhere', () => {
   expect(zoneOf('stray.md')).toMatchObject({ zone: '(root)', prefix: '' })
 })
+
+test('an app checked out on its own groups by surface rather than into the root', () => {
+  const model = buildStatus({ porcelain: z([
+    ' M api/src/services/mailer/mailer.class.js',
+    ' M api/config/default.json',
+    ' M web/src/core/preload.js',
+    ' M db/schema.lite',
+    ' M package.json',
+  ]) })
+  expect(model.zones.map(z => z.zone).sort()).toEqual(['(root)', 'api', 'db', 'web'])
+  const api = model.zones.find(z => z.zone === 'api')
+  expect(api.group).toBe('surface')
+  expect(Object.fromEntries(api.files.map(f => [f.rel, f.role]))).toEqual({
+    'src/services/mailer/mailer.class.js': 'src',
+    'config/default.json':                 'config',
+  })
+})
+
+test('an app inside a workspace groups by its surfaces, a package stays whole', () => {
+  expect(zoneOf('example/web/src/app.js')).toMatchObject({ zone: 'example/web', prefix: 'example/web/' })
+  expect(zoneOf('example/CHANGES.md')).toMatchObject({ zone: 'example', prefix: 'example/' })
+  expect(zoneOf('packages/basecamp/web/src/x.mesa')).toMatchObject({ zone: 'basecamp', prefix: 'packages/basecamp/' })
+  expect(zoneOf('IDEAS/ontology.md')).toMatchObject({ zone: 'IDEAS', group: 'repo' })
+})
+
+test('an untracked directory keeps its name rather than becoming a nameless place', () => {
+  expect(zoneOf('web/')).toMatchObject({ zone: '(root)', prefix: '' })
+  expect(zoneOf('example/site/')).toMatchObject({ zone: 'example', prefix: 'example/' })
+})

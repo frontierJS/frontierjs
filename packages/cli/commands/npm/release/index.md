@@ -20,14 +20,14 @@ flags:
     type: string
     description: npm dist-tag (default is latest)
     defaultValue: latest
-  no-build:
+  build:
     type: boolean
     description: Skip the build step
-    defaultValue: false
-  no-test:
+    defaultValue: true
+  tests:
     type: boolean
     description: Skip the test step
-    defaultValue: false
+    defaultValue: true
   preid:
     type: string
     description: Prerelease identifier (e.g. beta, rc, alpha)
@@ -50,7 +50,7 @@ const getPkg = (root) => {
 
 Full release pipeline. Steps run in sequence:
 
-1. **test** — runs `npm test` (skippable with `--no-test`)
+1. **test** — runs `npm test` (skippable with `--no-tests`)
 2. **build** — runs `npm run build` if the script exists (skippable with `--no-build`)
 3. **version** — bumps `package.json` and creates a git commit + tag
 4. **publish** — publishes to npm with the specified tag
@@ -76,7 +76,7 @@ context.config.bump    = arg.bump
 context.config.tag     = flag.tag
 context.config.preid   = flag.preid
 context.config.otp     = flag.otp
-context.config.noBuild = flag['no-build']
-context.config.noTest  = flag['no-test']
+context.config.noBuild = !flag.build
+context.config.noTest  = !flag.tests
 context.config.startTime = Date.now()
 ```

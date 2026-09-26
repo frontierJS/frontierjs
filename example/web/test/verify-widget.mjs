@@ -7,7 +7,7 @@
  * ─── Four origins, and that is the point ──────────────────────────────────
  *
  *   :8110  the API              the shop's data, cross-origin to everything
- *   :8010  the shop's own site  where a basket is checked out
+ *   :7010  the shop's own site  where a basket is checked out
  *   :7310  the widget origin    static files, served by the module that deploys
  *   :7311  a host page          somebody's blog. Owns none of the above
  *
@@ -28,15 +28,23 @@
  * exactly once.
  */
 import { spawn, execFileSync } from 'node:child_process'
-import { createServer } from 'node:http'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { createServer } from 'node:http'
+import { tmpdir }        from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
-const API  = process.env.API_URL ?? 'http://localhost:8110'
-const UI   = process.env.UI_URL  ?? 'http://localhost:8010'
+// The dev server moves to the test tier, so this runs beside another project's
+// vite on 8010. The API does not move: its origin is written into rows that
+// outlive the process — a `File` ref stores the `publicBase` it was uploaded
+// against (`FJS-1271`). Both are env-overridable.
+const API_PORT = process.env.API_PORT ?? '8110'
+const UI_PORT  = process.env.UI_PORT  ?? '7010'
+const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
+const UI   = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
 
 // Test-env ports: 7 = test, 3 = widgetServe, 1 = example. Service 0 is the
 // widget origin and 1 is the host page — both are static origins in the embed
@@ -50,10 +58,13 @@ const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 // ─── Servers ───────────────────────────────────────────────────────────────
 
 const procs = []
-function start(cmd, args, name) {
+function start(cmd, args, name, env) {
   // detached, so stopAll can signal the GROUP: `npx vite` is a launcher and
-  // killing it leaves vite itself holding 8010 for the next drive.
-  const p = spawn(cmd, args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+  // killing it leaves vite itself holding the dev port for the next drive.
+  const p = spawn(cmd, args, {
+    cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
+    env: { ...process.env, ...env },
+  })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
   procs.push(p)
@@ -79,7 +90,7 @@ async function waitFor(url, label, tries = 160) {
   return false
 }
 
-for (const [port, what] of [[8110, 'the API'], [8010, 'the dev server'], [WIDGETS, 'the widget origin'], [HOST, 'the host page']]) {
+for (const [port, what] of [[API_PORT, 'the API'], [UI_PORT, 'the dev server'], [WIDGETS, 'the widget origin'], [HOST, 'the host page']]) {
   let busy = false
   try { await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(500) }); busy = true } catch {}
   if (busy) {
@@ -104,8 +115,9 @@ await new Promise((res, rej) => {
 // database costs one pass of existence checks.
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 
-start('bun', ['run', 'api/index.ts'], 'api')
-start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web')
+const PORT_ENV = { API_PORT, UI_PORT }
+start('bun', ['run', 'api/index.ts'], 'api', PORT_ENV)
+start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web', PORT_ENV)
 
 // The widget origin is SIERRA'S OWN server — the one `sierra widgets --serve`
 // runs and the one widgets/deploy/serve.js runs in a container. A second server
@@ -120,9 +132,14 @@ const hostPage = createServer(async (req, res) => {
   try {
     const file = await readFile(join(ROOT, 'widgets/test/fjs-buy-button.html'), 'utf8')
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    // One string, not a second copy of the page: the committed host page points
-    // at the DEV widget origin so it can be opened by hand.
-    res.end(file.replaceAll('http://localhost:8310', `http://localhost:${WIDGETS}`))
+    // Rewritten, not copied: the committed host page names the DEV origins so
+    // somebody can open it by hand, and this drive runs on neither of them —
+    // the widget origin is the test slot, and the shop is wherever UI_PORT put
+    // it. `data-shop` is what Checkout navigates to, so a stale one lands the
+    // browser on a dev server that is not this run's.
+    res.end(file
+      .replaceAll('http://localhost:8310', `http://localhost:${WIDGETS}`)
+      .replaceAll('http://localhost:8010', UI))
   } catch (e) {
     res.writeHead(500); res.end(String(e))
   }
@@ -218,16 +235,28 @@ check('and carries its own CSS rather than asking for a second file',
 
 console.log('\n  widget — on somebody else\'s page')
 
+// Chrome picks the debugging port and the profile is this run's own. A FIXED
+// port is answered by whichever browser bound it first, so a second drive
+// attaches to the first one's session and grades that browser's screen
+// (`FJS-740` one layer over, measured in `verify:stock`); and the default
+// profile carries the previous run's sign-in into this one.
+const profile = mkdtempSync(join(tmpdir(), 'fjs-widget-'))
 const chrome = start(CHROME, [
-  '--headless=new', '--remote-debugging-port=9222', '--disable-gpu',
-  '--no-sandbox', '--window-size=1400,1000', 'about:blank',
+  '--headless=new', '--remote-debugging-port=0', '--disable-gpu',
+  '--no-sandbox', '--window-size=1400,1000', `--user-data-dir=${profile}`,
+  'about:blank',
 ], 'chrome')
+process.on('exit', () => { try { rmSync(profile, { recursive: true, force: true }) } catch {} })
 
-let wsUrl = null
-for (let i = 0; i < 80 && !wsUrl; i++) {
-  try { wsUrl = (await (await fetch('http://localhost:9222/json/version')).json()).webSocketDebuggerUrl }
-  catch { await new Promise(r => setTimeout(r, 250)) }
-}
+const wsUrl = await new Promise((resolve) => {
+  let buf = ''
+  const t = setTimeout(() => resolve(null), 20000)
+  chrome.stderr.on('data', (d) => {
+    buf += d
+    const m = buf.match(/ws:\/\/[^\s]+/)
+    if (m) { clearTimeout(t); resolve(m[0]) }
+  })
+})
 if (!wsUrl) { console.error('chrome never came up'); stopAll(); process.exit(1) }
 
 const ws = new WebSocket(wsUrl)

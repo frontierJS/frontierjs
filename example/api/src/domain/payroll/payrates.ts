@@ -30,15 +30,13 @@
 //
 // ─── The interval is not re-spelled ───────────────────────────────────────
 //
-// `coveringAt` comes from `employment.ts`. This is its second consumer, and
-// that is the whole argument for exporting it: two tables with validity windows
-// in one application, and one definition of which window covers a day. A second
-// spelling here would be a tax band that changes on a different midnight from a
-// salary — and since `FJS-D288` there is no midnight to get wrong, because both
-// windows are dated in days.
+// `PayRate` declares the same `@@effective` window `PayWindow` does, so a band
+// and a salary are read by one definition of which window covers a day — the
+// schema's. A second spelling here would be a tax band that changes on a
+// different midnight from a salary, and since `FJS-D288` there is no midnight to
+// get wrong, because both windows are dated in days.
 
 import { roundMinor }             from '@frontierjs/toolbelt/units'
-import { coveringAt }             from './employment.ts'
 import type { PlainDate }         from './employment.ts'
 
 type Client = Record<string, any>
@@ -83,7 +81,8 @@ export async function ratesAsAt(
   client: Client, kind: RateKind, on: PlainDate,
 ): Promise<PayRateRow[]> {
   return await client.payRate.findMany({
-    where:   { kind, ...coveringAt(on) },
+    where:   { kind },
+    asOf:    on,
     orderBy: { fromAmount: 'asc' },
     limit:   50,
   }) as PayRateRow[]
@@ -102,7 +101,7 @@ export async function allRatesAsAt(
   client: Client, on: PlainDate,
 ): Promise<Record<RateKind, PayRateRow[]>> {
   const rows = await client.payRate.findMany({
-    where:   coveringAt(on),
+    asOf:    on,
     orderBy: { fromAmount: 'asc' },
     limit:   200,
   }) as PayRateRow[]
@@ -117,7 +116,7 @@ export async function allRatesAsAt(
  *
  * The slice a band catches is `[from, to)` intersected with `[0, annual]`, so
  * a salary landing exactly on a threshold falls in the band ABOVE it and in
- * nothing else — half-open at both ends, for `coveringAt`'s reason and with the
+ * nothing else — half-open at both ends, for the window's reason and with the
  * same consequence if two readers disagree.
  *
  * Returns the parts as well as the total because a payslip shows them, and

@@ -92,7 +92,11 @@ export function generateSessionToken(): string {
 }
 
 // ─── TTL helper ───────────────────────────────────────────────────────────
+//
+// `now` is the client's clock (`sys.$now()`), never `Date.now()`: the four
+// windowed models grade this deadline on the client's clock, so a deadline
+// minted from the host's lapses on a different clock from the one that reads it.
 
-export function expiresAt(ttl: string): string {
-  return new Date(Date.now() + parseTtl(ttl)).toISOString()
+export function expiresAt(ttl: string, now: Date): string {
+  return new Date(now.getTime() + parseTtl(ttl)).toISOString()
 }

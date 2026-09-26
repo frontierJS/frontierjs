@@ -11,7 +11,7 @@ import { createService, NotFound, BadRequest, $ } from '@frontierjs/junction'
 import { sessionScope, requireWorkspaceRole, internalOnly, workspaceChannel, getPagination, WORKSPACE_QUERY } from '../../core/hooks.ts'
 import { db, findScoped, getScoped, removeScoped, narrowPatch, changesNothing, ws }
   from '../../core/resource.ts'
-import { syncSchedule, unscheduleJob } from './job-schedule.ts'
+import { syncSchedule, unscheduleJob, nextRunAt } from './job-schedule.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import jobRun from '../../jobs/job-run.job.ts'
 import { announce } from '../../channels.ts'
@@ -50,6 +50,11 @@ export function createJobsService(app: BasecampApp) {
     return row as Record<string, any>
   }
 
+  /** A job as a reader sees it — the row plus when the clock next fires it,
+   *  which is the scheduler's to answer and so is never stored (`FJS-1241`). */
+  const withNextRun = <T extends { id: string }>(job: T) =>
+    ({ ...job, nextRunAt: nextRunAt(app, job.id) })
+
   /** The whole row, announced to the workspace the ROW names — `ws()` is the
    *  request's workspace and a cron fire has no request. */
   async function pushJob(jobId: string, workspaceId: string) {
@@ -87,7 +92,7 @@ export function createJobsService(app: BasecampApp) {
         orderBy: { startedAt: 'desc' },
         limit:   5,
       })
-      return { ...job, recent_runs }
+      return { ...withNextRun(job), recent_runs }
     },
 
     async create() {
@@ -102,11 +107,6 @@ export function createJobsService(app: BasecampApp) {
 
       if (data.appId) await assertAppInWorkspace(data.appId as string)
 
-      // A scheduled job's first run is a minute out, so the row is visible in
-      // the UI before the scheduler picks it up.
-      if (data.kind === 'scheduled')
-        data.nextRunAt = new Date(Date.now() + 60_000).toISOString()
-
       const job  = await db().job.create({ data })
       const wsId = ws()
 
@@ -115,7 +115,7 @@ export function createJobsService(app: BasecampApp) {
 
       syncSchedule(app, job)
 
-      return job
+      return withNextRun(job)
     },
 
     async patch() {
@@ -126,7 +126,7 @@ export function createJobsService(app: BasecampApp) {
         throw new BadRequest('Invalid cron expression')
 
       // kind, status, appId and the run bookkeeping belong to the job.
-      const patch = narrowPatch(data, ['kind', 'status', 'appId', 'retryCount', 'lastRunAt', 'lastRunStatus', 'nextRunAt'])
+      const patch = narrowPatch(data, ['kind', 'status', 'appId', 'retryCount', 'lastRunAt', 'lastRunStatus'])
       if (changesNothing(patch)) return getScoped('job', 'Job')
 
       const updated = await db().job.update({ where: { id: $.id as string }, data: patch })
@@ -134,7 +134,7 @@ export function createJobsService(app: BasecampApp) {
       // the ways a job's schedule changes, and the row is what the clock has to
       // agree with either way.
       syncSchedule(app, updated)
-      return updated
+      return withNextRun(updated)
     },
 
     async remove() {

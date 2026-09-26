@@ -103,17 +103,30 @@
     return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString()
   }
 
+  // A `@point` column is a `Json` document under the hood, so reaching the
+  // fallback would print `[object Object]`. The keys are the MODEL's —
+  // `@point(latitude, longitude)` is as ordinary as `@point(lat, lng)` — and
+  // arrive as `column.geo`; a value missing either half is not a place.
+  function point(v) {
+    const latKey = column?.geo?.lat ?? 'lat'
+    const lngKey = column?.geo?.lng ?? 'lng'
+    const lat = Number(v?.[latKey])
+    const lng = Number(v?.[lngKey])
+    if (v?.[latKey] == null || v?.[lngKey] == null || !Number.isFinite(lat) || !Number.isFinite(lng)) return EMPTY
+    return `${lat}, ${lng}`
+  }
+
   function fileLabel(v) {
     if (typeof v === 'string') return v.split('/').pop()
     return v?.name ?? v?.key?.split('/').pop() ?? 'file'
   }
 
-  // A registration wins, exactly as it does for a control.
   // A number reads as a column when its digits line up, which is a property of
   // the CELL rather than of any one renderer — money, a scaled integer and a
   // plain count all want it and a name does not.
   const numeric = column?.display === 'money' || column?.display === 'scale'
     || column?.display === 'number' || column?.display === 'time'
+    || column?.display === 'geo'
 
   // A registration wins, exactly as it does for a control.
   const entry = column?.display ? displayComponent(column.display) : null
@@ -146,6 +159,8 @@
     <Badge>{enumLabel(value)}</Badge>
   {:else if column?.display === 'time'}
     {time(value)}
+  {:else if column?.display === 'geo'}
+    {point(value)}
   {:else if column?.display === 'file'}
     {fileLabel(value)}
   {:else if column?.display === 'list'}
@@ -162,6 +177,11 @@
          nothing it has rather than pretending, and the reason rides the entry
          for whoever generated the table. -->
     <span class="muted" title={column?.reason ?? ''}>{EMPTY}</span>
+  {:else if typeof value === 'object'}
+    <!-- A display name this table has no branch for, holding a document.
+         `String()` of it is `[object Object]` in every row, which is how a
+         `@point` column shipped; the document viewer is at least the value. -->
+    <Json {value} expand={0} />
   {:else}
     {String(value)}
   {/if}

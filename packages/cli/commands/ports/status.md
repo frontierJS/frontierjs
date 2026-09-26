@@ -10,7 +10,7 @@ examples:
 flags:
   clean:
     type: boolean
-    description: Remove stale sessions from the lock file
+    description: Forget the slots of apps that are not running
     defaultValue: false
   json:
     type: boolean
@@ -37,9 +37,10 @@ session, as does any app somebody started by hand, so a status built on the
 broker alone answered *no active sessions* while a port was busy and sent people
 looking in the wrong place.
 
-**What the broker has handed out.** `~/.fli/sessions.lock` — projects that took
-a dynamic slot, their ports, and whether the process is still alive. `--clean`
-prunes entries left by a crashed one, and `--sessions` shows only this half.
+**Which slot `fli dev` gave each app.** `~/.fli/sessions.lock` — one entry per
+app directory, its ports, and whether its `fli dev` is running. An idle entry is
+not stale: it is how the app gets the same ports next time. `--clean` forgets
+the idle ones, and `--sessions` shows only this half.
 
 `fli kill <port>` is what to do about a port you want back; it names the process
 before it signals it, and reads the same `pidsOnPort` this does.
@@ -77,20 +78,21 @@ if (!flag.sessions) {
 }
 
 if (!sessions.length) {
-  log.info('No active sessions in ~/.fli/sessions.lock')
+  log.info('No app has a slot in ~/.fli/sessions.lock — `fli dev` gives one')
   return
 }
 
 const alive  = sessions.filter(s => s.alive)
-const stale  = sessions.filter(s => !s.alive)
+const idle   = sessions.filter(s => !s.alive)
 
 echo('')
-echo(`  broker sessions — ${alive.length} active  ·  ${stale.length} stale\n`)
+echo(`  dev slots — ${alive.length} running  ·  ${idle.length} idle\n`)
 
 for (const s of sessions) {
-  const status  = s.alive ? '↑' : '✗'
-  const color   = s.alive ? '' : ' (stale)'
-  echo(`  ${status}  ${s.name}  ·  pid ${s.pid}${color}  ·  ${s.env}  ·  project slot ${s.projectId}`)
+  const status  = s.alive ? '↑' : '·'
+  const state   = s.alive ? `pid ${s.pid}` : 'idle'
+  echo(`  ${status}  ${s.name}  ·  ${state}  ·  ${s.env}  ·  project ${s.projectId} slot ${s.slot ?? 0}`)
+  echo(`       ${s.root}`)
 
   for (const [cat, ps] of Object.entries(s.ports || {})) {
     const portList = Array.isArray(ps) ? ps : [ps]
@@ -100,16 +102,16 @@ for (const s of sessions) {
   }
 
   const uptime = s.startedAt
-    ? `started ${new Date(s.startedAt).toLocaleTimeString()}`
+    ? `last started ${new Date(s.startedAt).toLocaleString()}`
     : ''
   if (uptime) echo(`       ${uptime}`)
   echo('')
 }
 
-if (flag.clean && stale.length) {
-  for (const s of stale) {
-    releaseSession(s.name)
-    log.success(`Removed stale session: ${s.name}`)
+if (flag.clean && idle.length) {
+  for (const s of idle) {
+    releaseSession(s.root)
+    log.success(`Forgot the slot of ${s.name}`)
   }
 }
 ```

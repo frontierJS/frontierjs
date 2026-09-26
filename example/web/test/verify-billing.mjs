@@ -3,28 +3,29 @@
  * and the deadline.
  *
  * **bun, and no server.** Everything here is a fact about the Data boundary and
- * the two jobs that drive it, and both are reached the way the queue reaches
- * them — by calling the exported handler with a payload. Standing an API up
- * would add a transport to a drive that asserts nothing about one, and would
- * put this on the login limiter for no reason (`verify:tenants` runs under bun
- * for the same kind of reason: it imports the app's own registry).
+ * the commitments that drive it, reached the way the queue reaches them. A
+ * renewal is a period CLOSING (`FJS-D367`): `SubscriptionPeriod`'s
+ * `@@commitment(close, on: endsOn)` owes the move, and the hook in
+ * `api/src/core/commitments.ts` issues the invoice and opens the next period in
+ * the same transaction (`FJS-D368`). Standing an API up would add a transport
+ * to a drive that asserts nothing about one, and would put this on the login
+ * limiter for no reason (`verify:tenants` runs under bun for the same reason).
  *
  * ─── What it is actually asking ───────────────────────────────────────────
  *
  * A billing cycle is unobservable in a normal test run: the interesting instant
- * is a month away. So the clock is a PARAMETER — `sweepRenewals({ at })` and
- * `dunSubscriptions({ at })` take the instant to grade at, read as a day in the
- * calendar each call names (`UTC` throughout here), and the drive stands
- * at one. That is the same code path the cron fires, not a second one: the cron
- * passes no `at` and gets `now()`.
+ * is a month away. So the fixtures are STARTED in the past — a first period
+ * two hundred days back — and every renewal it asks for is already due on the
+ * real clock. Nothing here passes a fake instant, so there is no second path.
  *
  * ─── The one thing that is stubbed, and why ───────────────────────────────
  *
- * `sweepRenewals` dispatches into `app.jobs`, and there is no app here. Its
- * contract is *which ids get queued* — the id IS the idempotency, so that is
- * the whole of what the sweep decides — and the recorder below asserts exactly
- * that. The WORK is then run for real, against the real client, by calling
- * `renewSubscription` with the payload the sweep produced.
+ * A period is fired through junction's own `fireCommitment` — the plugin's
+ * path, re-derivation and transaction included — on a client scoped to the
+ * shop's `SYSTEM` principal, which is what `commitments()` hands it. The hook
+ * dispatches the collection after the commit into `app.jobs`, and there is no
+ * app here, so a recorder stands in for the queue and the collection itself is
+ * `verify:collect`'s, which runs the whole chain against a started app.
  *
  * Every fixture is minted under a per-run prefix (`FJS-530`, `FJS-546`): a
  * subscription reference and an invoice number are both `@unique`, and a drive
@@ -32,36 +33,34 @@
  */
 
 import { db }              from '../../api/src/core/db.ts'
-import { advancePeriod, settleInvoice, DUNNING_DAYS, GRACE_DAYS, TERMS_DAYS } from '../../api/src/domain/billing'
-import { sweepRenewals }   from '../../api/src/jobs/subscriptions-renew.job.ts'
-import { renewSubscription } from '../../api/src/jobs/subscription-renew.job.ts'
-import { dunSubscriptions }  from '../../api/src/jobs/subscriptions-dun.job.ts'
-import { occurrenceKey }   from '@frontierjs/toolbelt/history'
+import { SYSTEM }          from '../../api/src/core/gate.ts'
+import { commitmentHooks } from '../../api/src/core/commitments.ts'
+import { advancePeriod, settleInvoice, voidInvoice, startSubscription, DUNNING_DAYS, GRACE_DAYS, TERMS_DAYS } from '../../api/src/domain/billing'
+import { fireCommitment }  from '@frontierjs/junction'
 import { plainDateIn, addToDate, daysBetween, startOfDay } from '@frontierjs/toolbelt/datetime'
 import { results, report } from './lib/report.mjs'
 
 const sys = db.asSystem()
 const RUN = String(Date.now()).slice(-6)
-const DAY = 24 * 60 * 60 * 1000
 
 const { got, t } = results()
 
-/** The sweep's dispatcher, recording rather than queueing. See the header. */
-function recorder() {
-  const seen = []
-  return {
-    seen,
-    ctx: { app: { jobs: { dispatch: async (_job, payload, opts) => {
-      // A second dispatch under an id already taken is a no-op, which is what
-      // caravan's `dispatch({ id })` does with a taken primary key. Modeling
-      // that here is the difference between asserting the sweep is idempotent
-      // and asserting it merely runs.
-      if (seen.some(s => s.id === opts?.id)) return false
-      seen.push({ id: opts?.id, payload })
-      return true
-    } } } },
-  }
-}
+/** The queue the hook dispatches the collection into, recording. See the header. */
+const queued = []
+const hooks  = commitmentHooks(() => ({ dispatch: (_job, payload) => { queued.push(payload) } }))
+
+/** The shop's own principal, as `commitments()` scopes a fire. */
+const shop = db.$setAuth(SYSTEM)
+
+/** Fire one period's close, exactly as the plugin does. Answers 'fired' or
+ *  'lapsed' — or says there was no period, so a renewal that failed to open one
+ *  fails the assertions after it by name rather than crashing the report. */
+const fire = async (period) => !period ? 'no open period' : fireCommitment(shop, {
+  accessor: 'subscriptionPeriod', transition: 'close', id: period.id, dueAt: period.endsOn, timeZone: 'UTC',
+}, { hooks })
+
+const openPeriod = (subscriptionId) =>
+  sys.subscriptionPeriod.findFirst({ where: { subscriptionId, status: 'open' } })
 
 // ─── A subscription of this run's own ─────────────────────────────────────
 
@@ -69,51 +68,52 @@ const customer = await sys.customer.findFirst({ where: { email: 'robin@buyer.tes
 const plan     = await sys.plan.findFirst({ where: { code: 'PRO' } })
 const version  = await sys.planVersion.findFirst({ where: { planId: plan.id, effectiveTo: null } })
 
-// Its period ends in the past, so it is due the moment the sweep looks — which
-// is how a month is crossed in a test that takes a second. A period is DAYS in
-// the shop's calendar (`FJS-D143`), so the fixtures are plain dates and the
-// instants below are built from them rather than the other way round.
+// Its first period ended long ago, so it and the four after it are due the
+// moment anything looks — which is how months are crossed in a test that takes
+// a second. A period is DAYS in the shop's calendar (`FJS-D143`), so the
+// fixtures are plain dates and the instants below are built from them.
 const TODAY       = plainDateIn(Date.now(), 'UTC')
 const dayOf       = (date) => new Date(startOfDay(date, 'UTC')).toISOString()
-const periodStart = addToDate(TODAY, { days: -40 })
-const periodEnd   = addToDate(TODAY, { days: -10 })
+const periodStart = addToDate(TODAY, { days: -230 })
+const periodEnd   = addToDate(TODAY, { days: -200 })
 
-const sub = await sys.subscription.create({ data: {
+const sub = await startSubscription(sys, {
   reference:  `SUB-B${RUN}`,
   customerId: customer.id,
   planVersionId: version.id,
   status:     'trialing',
   quantity:   3,
-  currentPeriodStart: periodStart,
-  currentPeriodEnd:   periodEnd,
   userId:     customer.userId,
-} })
+}, { startsOn: periodStart, endsOn: periodEnd })
 
 const invoicesFor = () => sys.invoice.findMany({ where: { subscriptionId: sub.id }, orderBy: { id: 'asc' } })
 const reread      = () => sys.subscription.findFirst({ where: { id: sub.id } })
 
-// ─── 1. The sweep finds it, and the id is the occurrence key ──────────────
-
-{
-  const r = recorder()
-  const queued = await sweepRenewals({ ...r.ctx, data: { at: new Date().toISOString() } }, 'UTC')
-  const mine   = r.seen.find(s => s.payload?.subscriptionId === sub.id)
-  t('sweep.queuedMine', Boolean(mine))
-  t('sweep.idIsOccurrenceKey', mine?.id === occurrenceKey('renew', String(sub.id), periodEnd))
-  t('sweep.countedIt', queued >= 1)
-
-  // The same sweep again, same minute, same period. A cron fires in every
-  // replica and an operator re-runs a half-finished sweep; both land here.
-  const again = await sweepRenewals({ ...r.ctx, data: { at: new Date().toISOString() } }, 'UTC')
-  t('sweep.secondPassQueuesNothingNew', again === 0)
+// A refusal that cannot be shown to come from the rule it names proves nothing
+// (`FJS-351`), so the seal and constraint assertions below ask for the CLASS:
+// a foreign key, a gate and a typo in the payload all throw here too.
+const refusedBy = async (name, fn) => {
+  try { await fn(); return false } catch (e) { return e?.name === name || e?.data?.name === name }
 }
 
-// ─── 2. The renewal issues one document and moves the window ──────────────
+// ─── 1. The period is owed its close, at its end ──────────────────────────
+
+const first = await openPeriod(sub.id)
+{
+  const owed = await sys.subscriptionPeriod.due({ timeZone: 'UTC', where: { id: first.id } })
+  t('close.owedAtItsEnd', owed.length === 1 && owed[0].dueAt === periodEnd)
+
+  // The database, not the code that happens to write periods, says one open
+  // period per subscription — so a replay or a crash between two writes cannot
+  // leave a stretch of days billed twice.
+  t('period.oneOpenPerSubscription', await refusedBy('UniqueConflictError', () =>
+    sys.subscriptionPeriod.create({ data: { subscriptionId: sub.id, startsOn: periodEnd, endsOn: TODAY } })))
+}
+
+// ─── 2. Closing it issues one document and opens the next period ──────────
 
 const before = (await invoicesFor()).length
-const number = await renewSubscription({ data: {
-  subscriptionId: sub.id, periodEnd, at: new Date().toISOString(),
-} }, 'UTC')
+t('close.fired', await fire(first) === 'fired')
 const after = await invoicesFor()
 
 t('renew.issuedOne', after.length - before === 1)
@@ -129,6 +129,13 @@ t('renew.headerIdentity', invoice.total === invoice.subtotal + invoice.tax)
 // charged — which is the whole reason a price is a row with a window.
 t('renew.chargedTheSoldPrice', lines[0].unitAmount === version.price && lines[0].quantity === sub.quantity)
 t('renew.windowMoved', (await reread()).currentPeriodEnd === advancePeriod(periodEnd, plan.interval))
+{
+  const periods = await sys.subscriptionPeriod.findMany({ where: { subscriptionId: sub.id }, orderBy: { startsOn: 'asc' } })
+  t('renew.periodClosedAndNextOpened',
+    periods.length === 2 && periods[0].status === 'closed' && periods[1].status === 'open' && periods[1].startsOn === periodEnd)
+}
+// Presented AFTER the commit, as its own job — once.
+t('renew.collectionQueuedOnce', queued.filter(q => q.invoiceId === after[after.length - 1].id).length === 1)
 t('renew.dueDateFromTerms',
   daysBetween(plainDateIn(invoice.issuedAt, 'UTC'), invoice.dueOn) === TERMS_DAYS)
 // The period is a pair of DAYS, and the invoice charges for the one the
@@ -137,21 +144,17 @@ t('renew.dueDateFromTerms',
 t('renew.periodIsPlainDates',
   invoice.periodStart === periodEnd && invoice.periodEnd === advancePeriod(periodEnd, plan.interval))
 
-// Running the SAME period again — a queue retry after the transaction committed.
-const dup = await renewSubscription({ data: { subscriptionId: sub.id, periodEnd } }, 'UTC')
-t('renew.replayIssuesNothing', dup === null && (await invoicesFor()).length === after.length)
+// Firing the SAME period again — a queue retry after the transaction
+// committed. The period is `closed`, so it owes nothing: the state machine is
+// the once-ness, with no key.
+t('renew.replayIssuesNothing', await fire(first) === 'lapsed' && (await invoicesFor()).length === after.length)
 
 // ─── 3. The document does not move, for anybody ───────────────────────────
 
 const refused = async (fn) => { try { await fn(); return false } catch { return true } }
-// A refusal that cannot be shown to come from the rule it names proves nothing
-// (`FJS-351`). Every seal assertion below asks for the CLASS, because a foreign
-// key, a gate and a typo in the payload all throw here too — and two of the four
-// are operations that were legal until `FJS-D167`, so `refused()` alone would
-// have gone green against a version of this that changed nothing.
-const refusedBy = async (name, fn) => {
-  try { await fn(); return false } catch (e) { return e?.name === name || e?.data?.name === name }
-}
+// Two of the four seal refusals below are operations that were legal until
+// `FJS-D167`, so `refused()` alone would have gone green against a version of
+// this that changed nothing — they ask `refusedBy` for the class.
 t('document.systemCannotRestateTotal',
   await refused(() => sys.invoice.update({ where: { id: invoice.id }, data: { total: 1 } })))
 t('document.sameValueAlsoRefused',
@@ -188,36 +191,44 @@ t('document.linesStillSumAfterAllThat',
   (await sys.invoiceLine.findMany({ where: { invoiceId: invoice.id } }))
     .reduce((n, l) => n + l.amount, 0) === invoice.subtotal)
 
-// ─── 4. The deadline ──────────────────────────────────────────────────────
+// ─── 4. The deadline, and the way back ────────────────────────────────────
 //
-// Scoped to this run's own subscription. Without it the far-future instants
-// below grade the whole book, so the drive cancels the seeded subscription as
-// collateral and the shop's own screens change every time it runs. The
-// parameter is an operator's before it is a drive's — see the job.
+// The deadline is DECLARED — `@@commitment(subscription.lapse, …)` and
+// `subscription.cancel` on `Invoice` — and junction's `commitments()` makes the
+// move. That needs an app and a queue, so `verify:jobs` runs the sweep against
+// the live API. What is asked here is the half no clock is needed for: that the
+// terms are frozen onto the document, that `due()` answers the deadline from
+// them, and that a ledger coming clean brings a lapsed subscription back the
+// moment it clears (`FJS-D363`) — with nothing run afterwards.
 //
-// Every step stands at an instant measured from the invoice's OWN due date,
-// which is the only anchor dunning reads — no counter is kept anywhere, so
-// running the job twice at the same instant has to be the same answer.
+// Where a lapse or a cancel is needed to stand on, it is made the way the fire
+// makes it, `{ system: true }` on the move, and says so.
 
-const at = (days) => dayOf(addToDate(invoice.dueOn, { days }))
+const at   = (days) => dayOf(addToDate(invoice.dueOn, { days }))
+// The subscription's moves. The invoice's own `remind` is graded on its own.
+const owed = async (inv, by) =>
+  (await sys.invoice.due({ by, where: { id: inv.id } }))
+    .map(d => d.transition).filter(n => n !== 'remind').sort().join(',')
+const reminds = async (inv, by) =>
+  (await sys.invoice.due({ by, transition: 'remind', where: { id: inv.id } })).length === 1
+const lapse = () => sys.subscription.transition(sub.id, 'lapse', { system: true })
 
-{
-  const r1 = await dunSubscriptions({ data: { subscriptionId: sub.id, at: at(GRACE_DAYS - 1) } }, 'UTC')
-  t('dunning.insideGraceDoesNothing',
-    !r1.lapsed.includes(sub.reference) && (await reread()).status === 'active')
+t('dunning.termsFrozenOnTheDocument',
+  invoice.graceDays === GRACE_DAYS && invoice.dunningDays === DUNNING_DAYS)
+// The reminder, three days before the due date and not a day sooner.
+t('reminder.owedThreeDaysBefore', { before: await reminds(invoice, at(-4)), on: await reminds(invoice, at(-3)) })
+t('dunning.insideGraceOwesNothing', await owed(invoice, at(GRACE_DAYS - 1)) === '')
+t('dunning.pastGraceOwesTheLapse',  await owed(invoice, at(GRACE_DAYS + 1)) === 'subscription.lapse')
+t('dunning.pastDeadlineOwesTheCancel',
+  await owed(invoice, at(DUNNING_DAYS + 1)) === 'subscription.cancel,subscription.lapse')
 
-  const r2 = await dunSubscriptions({ data: { subscriptionId: sub.id, at: at(GRACE_DAYS + 1) } }, 'UTC')
-  t('dunning.pastGraceLapses', r2.lapsed.includes(sub.reference) && (await reread()).status === 'pastDue')
+// Once the subscription has moved, the same invoice owes it nothing — which is
+// what lets the later of two unpaid invoices meet a lapse already made.
+await lapse()
+t('dunning.aMoveMadeIsNotOwedAgain', await owed(invoice, at(GRACE_DAYS + 1)) === '')
 
-  // Twice at the same instant. A counter-based design gives a different answer
-  // here, and that is the whole reason there is no counter.
-  const r3 = await dunSubscriptions({ data: { subscriptionId: sub.id, at: at(GRACE_DAYS + 1) } }, 'UTC')
-  t('dunning.isIdempotent', r3.lapsed.length === 0 && (await reread()).status === 'pastDue')
-}
-
-// The money arrives. Nothing tells dunning — it reads the ledger.
-// Through `settleInvoice`, which is the one owner of the two writes a payment
-// makes: the transition, and the `@system` date beside it.
+// The money arrives. Through `settleInvoice`, the one owner of the two writes a
+// payment makes — and of what a clean ledger owes the subscription behind it.
 await settleInvoice(sys, invoice.id)
 {
   const paid = (await invoicesFor()).find(i => i.id === invoice.id)
@@ -225,35 +236,43 @@ await settleInvoice(sys, invoice.id)
   // the transition alone left every paid invoice in this app with no payment
   // date, in three separate copies of the same two lines.
   t('settle.stampsPaidAt', paid.status === 'paid' && Boolean(paid.paidAt))
-
-  const r = await dunSubscriptions({ data: { subscriptionId: sub.id, at: at(GRACE_DAYS + 2) } }, 'UTC')
-  t('dunning.recoversWhenLedgerIsClean',
-    r.recovered.includes(sub.reference) && (await reread()).status === 'active')
+  t('dunning.settleRecovers', (await reread()).status === 'active')
+  t('dunning.aPaidInvoiceOwesNothing', await owed(invoice, at(DUNNING_DAYS + 1)) === '')
 }
 
-// A second period goes unpaid, all the way past the deadline.
-const second = await renewSubscription({ data: {
-  subscriptionId: sub.id,
-  periodEnd: (await reread()).currentPeriodEnd,
-  at: new Date().toISOString(),
-} }, 'UTC')
+// Two periods go unpaid. *No issued invoice remains* is the rule, not *this
+// invoice was paid*: settling one of two leaves the subscription where it is,
+// and VOIDING the other clears the ledger as surely as a payment would.
+const renewNow = async () => {
+  await fire(await openPeriod(sub.id))
+  return (await invoicesFor()).at(-1)?.number
+}
 {
-  const unpaid = (await invoicesFor()).find(i => i.number === second)
-  const late   = dayOf(addToDate(unpaid.dueOn, { days: DUNNING_DAYS + 1 }))
-  const r = await dunSubscriptions({ data: { subscriptionId: sub.id, at: late } }, 'UTC')
-  t('dunning.pastDeadlineCancels', r.cancelled.includes(sub.reference) && (await reread()).status === 'cancelled')
+  const second = await renewNow()
+  const third  = await renewNow()
+  await lapse()
+  const byNumber = async (n) => (await invoicesFor()).find(i => i.number === n)
+
+  await settleInvoice(sys, (await byNumber(second)).id)
+  t('dunning.oneOfTwoPaidStaysPastDue', (await reread()).status === 'pastDue')
+
+  await voidInvoice(sys, (await byNumber(third)).id)
+  t('dunning.voidRecoversToo', (await reread()).status === 'active')
 }
 
 // A cancelled subscription still owes for the invoice already issued. The
 // arrangement stopping and the debt vanishing are different things.
+await renewNow()
+await sys.subscription.transition(sub.id, 'cancel', { system: true })
 t('dunning.cancellingLeavesTheDebt',
   (await invoicesFor()).some(i => i.status === 'issued'))
 
-// The sweep leaves a cancelled subscription alone.
+// A cancelled subscription's period still closes at its end — the days were
+// paid for — and nothing follows it.
 {
-  const r = recorder()
-  await sweepRenewals({ ...r.ctx, data: { at: new Date(Date.now() + 400 * DAY).toISOString() } }, 'UTC')
-  t('sweep.skipsCancelled', !r.seen.some(s => s.payload?.subscriptionId === sub.id))
+  const billed = (await invoicesFor()).length
+  t('close.cancelledEndsTheChain', await fire(await openPeriod(sub.id)) === 'fired'
+    && (await invoicesFor()).length === billed && !(await openPeriod(sub.id)))
 }
 
 // ─── 5. The boundary ──────────────────────────────────────────────────────
@@ -273,17 +292,15 @@ t('dunning.cancellingLeavesTheDebt',
 
 const boundaryPeriodEnd = addToDate(TODAY, { days: -5 })
 
-const mkSub = (suffix, cancelAtPeriodEnd) => sys.subscription.create({ data: {
+const mkSub = (suffix, cancelAtPeriodEnd) => startSubscription(sys, {
   reference:  `SUB-B${RUN}${suffix}`,
   customerId: customer.id,
   planVersionId: version.id,
   status:     'active',
   quantity:   1,
-  currentPeriodStart: addToDate(TODAY, { days: -35 }),
-  currentPeriodEnd:   boundaryPeriodEnd,
   userId:     customer.userId,
   cancelAtPeriodEnd,
-} })
+}, { startsOn: addToDate(TODAY, { days: -35 }), endsOn: boundaryPeriodEnd })
 
 {
   const stopping = await mkSub('K', true)
@@ -296,48 +313,41 @@ const mkSub = (suffix, cancelAtPeriodEnd) => sys.subscription.create({ data: {
   t('boundary.stoppingIsStillActiveUntilTheBoundary',
     stopping.status === 'active' && stopping.cancelAtPeriodEnd === true)
 
-  const stoppedNumber = await renewSubscription({ data: {
-    subscriptionId: stopping.id, periodEnd: boundaryPeriodEnd, at: new Date().toISOString(),
-  } }, 'UTC')
+  await fire(await openPeriod(stopping.id))
   const stoppedRow = await sys.subscription.findFirst({ where: { id: stopping.id } })
   t('boundary.flaggedEndsAtItsPeriodEnd', stoppedRow.status === 'cancelled')
 
   // And bills nothing on the way out. A cancellation that still issued the
   // document would be the same shape as no feature at all, one invoice later.
   const stoppedBills = await sys.invoice.findMany({ where: { subscriptionId: stopping.id }, limit: 5 })
-  t('boundary.flaggedIsNotInvoiced', stoppedNumber === null && stoppedBills.length === 0)
+  t('boundary.flaggedIsNotInvoiced', stoppedBills.length === 0 && !(await openPeriod(stopping.id)))
 
   // The control: same instant, same job, no flag.
-  const keptNumber = await renewSubscription({ data: {
-    subscriptionId: control.id, periodEnd: boundaryPeriodEnd, at: new Date().toISOString(),
-  } }, 'UTC')
-  const keptRow = await sys.subscription.findFirst({ where: { id: control.id } })
+  const controlFirst = await openPeriod(control.id)
+  await fire(controlFirst)
+  const keptRow   = await sys.subscription.findFirst({ where: { id: control.id } })
+  const keptBills = await sys.invoice.findMany({ where: { subscriptionId: control.id }, limit: 5 })
   t('boundary.unflaggedRenews',
-    typeof keptNumber === 'string'
+    keptBills.length === 1
     && keptRow.status === 'active'
     && keptRow.currentPeriodEnd > boundaryPeriodEnd)
 
   // ─── the guard ordering ───────────────────────────────────────────────
   //
-  // The flag is read AFTER the *already advanced* guard, and this is what that
-  // buys. The control has just renewed, so its window has moved; flag it and
-  // replay the STALE dispatch — a retry the queue delivers twice, or an
-  // operator re-running a half-finished sweep. Reading the flag first would
-  // cancel a subscription whose next period has already been issued, and
-  // possibly paid.
+  // The control has just renewed; flag it and replay the STALE fire — a retry
+  // the queue delivers twice. The flag is read only by a period that is still
+  // owed its close, and this one is closed, so a subscription whose next
+  // period has already been issued, and possibly paid, is not ended by it.
   await sys.subscription.update({ where: { id: control.id }, data: { cancelAtPeriodEnd: true } })
-  const replay = await renewSubscription({ data: {
-    subscriptionId: control.id, periodEnd: boundaryPeriodEnd, at: new Date().toISOString(),
-  } }, 'UTC')
+  const replay      = await fire(controlFirst)
   const afterReplay = await sys.subscription.findFirst({ where: { id: control.id } })
-  t('boundary.staleDispatchDoesNotEndIt', replay === null && afterReplay.status === 'active')
+  t('boundary.staleDispatchDoesNotEndIt', replay === 'lapsed' && afterReplay.status === 'active')
 
-  // The sweep will bring it back at the RIGHT boundary, which is the next one.
-  const r = recorder()
-  await sweepRenewals({ ...r.ctx, data: { at: dayOf(addToDate(afterReplay.currentPeriodEnd, { days: 1 })) } }, 'UTC')
-  const requeued = r.seen.find(x => x.payload?.subscriptionId === control.id)
-  t('boundary.itIsPickedUpAtTheNextOne',
-    requeued?.payload?.periodEnd === afterReplay.currentPeriodEnd)
+  // It comes back at the RIGHT boundary, which is the next one.
+  const next = await openPeriod(control.id)
+  const owed = await sys.subscriptionPeriod.due({
+    by: dayOf(addToDate(afterReplay.currentPeriodEnd, { days: 1 })), timeZone: 'UTC', where: { id: next?.id ?? -1 } })
+  t('boundary.itIsPickedUpAtTheNextOne', owed[0]?.dueAt === afterReplay.currentPeriodEnd)
 }
 
 // ─── Report ───────────────────────────────────────────────────────────────
@@ -367,6 +377,7 @@ try {
       await sys.creditNote.deleteMany({ where: { invoiceId: b.id } })
       await sys.invoice.delete({ where: { id: b.id } })
     }
+    await sys.subscriptionPeriod.deleteMany({ where: { subscriptionId: s.id } })
     await sys.subscription.delete({ where: { id: s.id } })
   }
 } catch (e) {
@@ -374,16 +385,17 @@ try {
 }
 
 const expected = {
-  'sweep.queuedMine': true,
-  'sweep.idIsOccurrenceKey': true,
-  'sweep.countedIt': true,
-  'sweep.secondPassQueuesNothingNew': true,
+  'close.owedAtItsEnd': true,
+  'period.oneOpenPerSubscription': true,
+  'close.fired': true,
   'renew.issuedOne': true,
   'renew.trialConverted': true,
   'renew.linesSumToSubtotal': true,
   'renew.headerIdentity': true,
   'renew.chargedTheSoldPrice': true,
   'renew.windowMoved': true,
+  'renew.periodClosedAndNextOpened': true,
+  'renew.collectionQueuedOnce': true,
   'renew.dueDateFromTerms': true,
   'renew.periodIsPlainDates': true,
   'renew.replayIssuesNothing': true,
@@ -394,14 +406,19 @@ const expected = {
   'document.noLineMayBeREMOVEDAfterTheSeal': true,
   'document.aPaymentStillReachesASealedInvoice': true,
   'document.linesStillSumAfterAllThat': true,
-  'dunning.insideGraceDoesNothing': true,
-  'dunning.pastGraceLapses': true,
-  'dunning.isIdempotent': true,
+  'dunning.termsFrozenOnTheDocument': true,
+  'reminder.owedThreeDaysBefore':     { before: false, on: true },
+  'dunning.insideGraceOwesNothing': true,
+  'dunning.pastGraceOwesTheLapse': true,
+  'dunning.pastDeadlineOwesTheCancel': true,
+  'dunning.aMoveMadeIsNotOwedAgain': true,
   'settle.stampsPaidAt': true,
-  'dunning.recoversWhenLedgerIsClean': true,
-  'dunning.pastDeadlineCancels': true,
+  'dunning.settleRecovers': true,
+  'dunning.aPaidInvoiceOwesNothing': true,
+  'dunning.oneOfTwoPaidStaysPastDue': true,
+  'dunning.voidRecoversToo': true,
   'dunning.cancellingLeavesTheDebt': true,
-  'sweep.skipsCancelled': true,
+  'close.cancelledEndsTheChain': true,
   'boundary.stoppingIsStillActiveUntilTheBoundary': true,
   'boundary.flaggedEndsAtItsPeriodEnd': true,
   'boundary.flaggedIsNotInvoiced': true,

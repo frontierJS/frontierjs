@@ -1,5 +1,154 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-25 — `ctx.client` is `ctx.caller`, and the `announce` startup phase is `log-listening` (`FJS-D392`, `FJS-D393`)
+
+**The machine end of a call — ip, user-agent, headers — is `ctx.caller`.**
+*Client* already named the browser client and Litestone's database client, and
+`ctx.client` was the one of the three that is not a client at all. The rename
+is the whole of it: `ServiceContext.caller`, `RequestMeta.caller`,
+`inheritedCaller()`, every transport that fills it, and `withTestMeta`. No
+alias; `fli check`'s `ctx-params` now reports a `ctx.client` read, since it
+reads undefined and a rate limit keyed on it puts every caller in one bucket.
+
+**The last startup phase is `log-listening`.** It printed the banner and was
+named `announce`, which is the verb for publishing an Event after a write.
+
+## 2026-09-24 — `createDatabase` sets `busy_timeout` before the WAL switch (`FJS-1331`)
+
+`PRODUCTION_PRAGMAS` ran `journal_mode = WAL` first and `busy_timeout` fourth,
+so opening a file not yet in WAL while another process wrote it threw
+`SQLITE_BUSY` in 0 ms. The timeout is first in the list now. Only the raw
+`config.database.url` path is affected; an app passing a Litestone client never
+reached it.
+
+## 2026-09-23 — a commitment's hook can `enqueue`
+
+`CommitmentHookContext.enqueue(job, payload, opts?)` writes an outbox row on the
+move's own transaction, through the same `enqueueOutbox` `ctx.enqueue` uses, so
+the effect commits with the move or rolls back with it. `afterCommit` was the
+only way out of a hook, and it is lost to a crash between the commit and the
+callback — for a reminder that means `reminded` set and no email, with the row
+never due again (`FJS-D370`). The actor defaults to `null`; with no `outbox()`
+installed the call is refused by name and the move rolls back. After the
+commit the plugin kicks the relay for the fire's own tenant, which Caravan's
+job context now hands the fire. `fireCommitment` takes `{ outbox, tenant }`
+beside `hooks`.
+
+Proof: `packages/caravan/test/commitments.test.ts`, three cases against a real
+outbox and queue. Dropping the kick turns one red; enqueueing on the outer
+client instead of the transaction's does not, because both are one connection.
+
+## 2026-09-23 — `commitments({ hooks })`: what a move owes, in its transaction
+
+A period closing owes an invoice and the next period, and the fire was a bare
+`transition()` with an announcement held until the commit — no place for either
+([`FJS-D368`](../../DECISIONS.md#fjs-d368)). `hooks`, keyed
+`<Model>.<commitment>`, runs after the move inside one `$transaction` on the
+fire's client; a throw rolls the move back and fails the fire, and
+`afterCommit(fn)` runs once the transaction has committed, for a dispatch into
+a queue in another file. The plugin still makes the move, so a hook cannot drop
+the from-state lock a fire's once-ness rests on. A key naming no declared
+commitment is refused at start, asked of `app.db` or the tenant registry's
+parsed schema as the plugin-absent refusal is.
+
+**`fireCommitment(client, payload, { hooks })`** is the fire, lifted out of the
+plugin and exported, so `example`'s `verify:billing` fires a period with no app
+through the plugin's own path rather than a copy. Proof:
+`packages/caravan/test/commitments.test.ts`, 22 — running the hook outside the
+transaction turns *a hook that throws takes the move back with it* red.
+
+## 2026-09-23 — `commitments()` moves the target, in the app's calendar
+
+The fire moves the row `due()` names as its `target` (the declaring row, or the
+one a to-one relation reaches, [`FJS-D362`](../../DECISIONS.md#fjs-d362)). It
+reads that target on the re-derivation rather than carrying it on the payload,
+so a subscription an older invoice already lapsed is answered as nothing due
+(`lapsed`) and not as a refused move and a failed job.
+
+**`timeZone`**, a zone or `(tenant) => zone` that may be async. A day-kind
+commitment (`on:` a `String @date`) is due on a DAY, and which day it is depends
+on the zone (`FJS-D143`). The sweep read it in UTC, and the fire's delay was
+measured to UTC midnight, which held an Auckland deadline thirteen hours past
+its day. The zone is read at the sweep and carried on the fire, and the delay is
+to the day's start in that zone. Absent is UTC, as `due()` states.
+
+## 2026-09-23 — a claim the schema reads off a row reaches the principal
+
+`claim siteId from Employee(userId).siteId` is read on every request inside
+`withLitestoneDb` and `withTenantDb`, before the app's own `principal:` resolver
+— which is handed a principal already carrying it ([`FJS-D359`](../../DECISIONS.md#fjs-d359)).
+No resolver is written for it. **Per request and never at sign-in**: a claim fixed
+on the session outlives the row it came from.
+
+The merge is `applyClaims` without its RESOLVED mark, split out as `mergeClaims`,
+so a request whose only claims came from the schema still gets the tenant
+guard's *this session carries no claim* rather than *you do not belong to the
+tenant this request names*. **A resolver answering a claim the schema reads off
+a row is refused by name** — two origins for one value, and the second to run
+would win in silence. `test/claim-source.test.ts`.
+
+## 2026-09-22 — `commitments()`: the clock under `@@commitment`
+
+**Step 2 of `IDEAS/ontology.md` § 6, ruled by `FJS-D358`.** A schema declaring
+`@@commitment` owes a transition at a time; Litestone answers which rows are due
+and has no clock, Caravan has the clock and reads no schema. `commitments()` is
+the seam: ONE Caravan cron (`commitment-sweep`) asks `due()` of every declaring
+model for rows due within a lookahead and dispatches a `commitment-fire` per
+row with a delay to its time. Under `strategy database` it walks every tenant
+cold.
+
+**The fire re-derives, and the queue key is `unique`, not `id`.** It asks
+`due()` of the one row again before moving it, so a row that moved, was held by
+`while:` or had its anchor edited is a quiet `lapsed`. A stated caravan id is
+idempotent for all time, and a row held and later released comes due at the
+SAME time — an id made its second fire a no-op forever, measured by swapping it
+in. Once-ness is the transition's own lock.
+
+**The move is not made through `asSystem()`, and that was found by building
+this.** `checkTransitions` returns null for a system client, so an `asSystem()`
+transition has no from-state in its WHERE — it would take a row paid a moment
+earlier straight to cancelled — and fires no `transition` event, so it
+announces as a plain update. The fire reads as system and moves on the client a
+job gets, scoped to `createApp({ system })`, with `{ system: true }`. A gate that
+principal does not clear FAILS the fire rather than lapsing it.
+
+**Never through a service method of the same name.** The paper leaned that way
+and the probe refused it: `example`'s `subscriptions.cancel` sets
+`cancelAtPeriodEnd` while its `cancel` transition cancels now.
+
+`check-authoring` refuses a start that declares `@@commitment` with no
+`commitments()` configured. It asks `app.db`, or the tenant registry's parsed
+schema under `createApp({ tenants })`, which opens no tenant. It first asked
+`app.db` alone, and `example`, the first app to use commitments, booted with
+the plugin removed. `forEachAppDatabase` is the outbox relay's cold
+tenant walk made generic, and both callers go through it. `/metrics` answers
+`commitments: { due, fired, lapsed, failed, lastSweepAt }`. `@frontierjs/junction/commitments`
+is the subpath. The end-to-end proof is `packages/caravan/test/commitments.test.ts`,
+against a real queue and a real client.
+
+## 2026-09-22 — the window on the wire
+
+`$asOf` / `$withExpired` / `$onlyExpired` reach `ctx.directives` and the
+generated model services, both transports. `QueryDirectives` names them and
+`parseQuery` passes `asOf` through untouched — grading it here would be a second
+answer to a question only the schema can settle.
+
+**The fan-out asks the Data boundary whether the row still counts.**
+`gradeRecipients` calls `db.$inWindow` BEFORE `$readGrading`, and that placement
+is the whole of it: a model with a window and no gate grades `open` and takes
+the early return, which is exactly the shape a catalog is. It is a separate
+question from `$readAs` — that one answers *may this principal see this row*,
+per cohort, and this answers *does this row still count*, once, for everybody.
+
+**A removal is sent anyway.** `REMOVAL_EVENTS` is derived from
+`AUTO_EVENT_MAP`, and a window may never suppress one: a subscriber holding the
+row has no other way to learn it is gone, so a suppressed removal strands it for
+ever — worse than never having graded.
+
+What this does not close is silent expiry, where the clock passes a row and no
+write happens, so no frame is ever built. That needs a store that re-grades on a
+tick.
+
 ## 2026-09-21 — the suite directory is `test/`
 
 **`tests/` is a surface, not a suite.** In an FJS app it sits beside `api/` and `web/` and holds

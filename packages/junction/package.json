@@ -28,6 +28,7 @@
     "./manifest": "./src/plugins/manifest/index.ts",
     "./outbox": "./src/plugins/outbox/index.ts",
     "./backfill": "./src/plugins/backfill/index.ts",
+    "./commitments": "./src/plugins/commitments/index.ts",
     "./devtools": "./src/plugins/devtools/index.ts",
     "./client": "./src/client/index.ts",
     "./email": "./src/plugins/email/index.ts",

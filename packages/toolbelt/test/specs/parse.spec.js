@@ -87,6 +87,28 @@ test('parse: a word where an operator belongs names the operators', function () 
   )
 })
 
+// ── the offset operators ─────────────────────────────────────────────────────
+//
+// `+` and `-` lex so `@@commitment(abandon, on: createdAt + 14d)` can be read;
+// no expression grammar accepts one. A `-` before a digit stays a negative
+// NUMBER, so `createdAt -14d` and `createdAt - 14d` reach the reader as two
+// different token runs and it has to take both.
+
+test('lex: + and - are tokens, and -digit is still a number', function () {
+  const types = (src) => tokenize(src).map((t) => t.type + (t.value == null ? '' : ':' + t.value))
+  assert.equal(types('createdAt + 14d').join(' '), 'IDENT:createdAt PLUS:+ NUMBER:14 IDENT:d EOF')
+  assert.equal(types('dueOn - graceDays').join(' '), 'IDENT:dueOn MINUS:- IDENT:graceDays EOF')
+  assert.equal(types('createdAt -14d').join(' '), 'IDENT:createdAt NUMBER:-14 IDENT:d EOF')
+  assert.equal(types('a -> b').join(' '), 'IDENT:a ARROW:-> IDENT:b EOF')
+})
+
+test('parse: the expression stops at +, leaving it for the caller', function () {
+  const p   = cursor(tokenize('qty + 1').slice(0, -1))
+  const ast = parseExpression(p)
+  assert.equal(ast.type, 'field')
+  assert.equal(p.peek().type, T.PLUS)
+})
+
 // ── the flow dialect ─────────────────────────────────────────────────────────
 //
 // Same grammar, same tokens, and the lexer is now in this kit too — so a spec

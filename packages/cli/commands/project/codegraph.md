@@ -6,18 +6,26 @@ examples:
   - fli project:codegraph --as=page
   - fli project:codegraph --as=page --theme dark --all
   - fli project:codegraph --as=badge --out docs/codegraph-badge.png
-  - fli project:codegraph --as=json --out codegraph.json
+  - fli project:codegraph --json --out codegraph.json
   - fli project:codegraph --scale 12
 flags:
   as:
     char: a
     type: string
-    description: "Which presentation — map (one tile per file, PNG, default), page (the map to explore, with the score, one HTML file), badge (the 8×8 summary, PNG), or json (the model)"
+    description: "Which picture — map (one tile per file, PNG, default), page (the map to explore, with the score, one HTML file) or badge (the 8×8 summary, PNG)"
+    choices:
+      - map
+      - page
+      - badge
     defaultValue: map
+  json:
+    type: boolean
+    description: The model instead of a picture — printed, or written to --out
+    defaultValue: false
   out:
     char: o
     type: string
-    description: Output path (default codegraph.png, codegraph.html or codegraph-badge.png at the project root; json prints)
+    description: Output path (default codegraph.png, codegraph.html or codegraph-badge.png at the project root; --json prints)
     defaultValue: ''
   all:
     type: boolean
@@ -37,20 +45,20 @@ flags:
 const { collectCodegraph, renderMap, renderBadge, codegraphJson, paletteFrom, themesIn, scoreOf, SCORE_WARN, SCORE_STEPS } = await import(resolve(global.fliRoot, 'core/codegraph.js'))
 const { renderPage } = await import(resolve(global.fliRoot, 'core/codegraph-page.js'))
 
-// One axis, so one flag (`FJS-D223`); a typo is refused by name rather than
-// quietly writing the map somebody did not ask for.
-const VIEWS = ['map', 'page', 'badge', 'json']
-const as    = String(flag.as ?? 'map')
-if (!VIEWS.includes(as)) {
-  log.error(`--as=${as} is not a presentation. One of: ${VIEWS.join(' · ')}`)
+// `--as` picks the picture a person reads and `--json` is the model a program
+// reads (`FJS-D401`), so the two together are two answers to one run.
+if (flag.json && flag.as !== 'map') {
+  log.error(`--json is the model; --as=${flag.as} draws a picture. Drop one of the two flags.`)
   process.exitCode = 1
   return
 }
+const as      = flag.json ? 'json' : flag.as
+const spelled = as === 'json' ? '--json' : `--as=${as}`
 
 // The badge counts source by definition and the JSON carries every file with
 // its kind, so --all has nothing to change on either.
 if (flag.all && (as === 'badge' || as === 'json')) {
-  log.error(`--all widens the map; --as=${as} ${as === 'json' ? 'already carries every file, each naming its kind' : 'counts source files by definition'}. Drop one of the two flags.`)
+  log.error(`--all widens the map; ${spelled} ${as === 'json' ? 'already carries every file, each naming its kind' : 'counts source files by definition'}. Drop one of the two flags.`)
   process.exitCode = 1
   return
 }
@@ -225,7 +233,7 @@ a hot untested file is worth the same look wherever it lives.
   else is a heuristic: a test file that names the file (an import or a path
   string) makes it tested, and a file that file imports is partly, counted as
   half covered. A test that reaches code over HTTP or by a job's name is
-  invisible to it. `--as=json` records `from` per file, and a report older than a
+  invisible to it. `--json` records `from` per file, and a report older than a
   commit to a file it covers is warned about.
 - **Complexity.** Each file's indent unit is its most common step, so tabs and
   two or four spaces compare fairly.
@@ -235,7 +243,7 @@ a hot untested file is worth the same look wherever it lives.
   directory), so `@frontierjs/junction` counts for the file it actually loads.
   Tests do not count as use. A file loaded by convention — a route, a job, a
   command — is named by nothing, and a module re-exported through an index lends
-  its count to the index. `--as=json` carries `usedBy` and `usedAcross` per
+  its count to the index. `--json` carries `usedBy` and `usedAcross` per
   source file.
 
 The kinds are `source`, `example`, `test`, `doc`, `config`, `generated` and

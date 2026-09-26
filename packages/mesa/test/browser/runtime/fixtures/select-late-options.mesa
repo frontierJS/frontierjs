@@ -1,0 +1,26 @@
+<script>
+  // A select whose value is known before its options are. The value is the
+  // row being edited; the options are a list fetched after mount, so they
+  // arrive in a LATER flush than the one that applied the value.
+  let v    = 'c'
+  let many = ['b', 'c']
+  let opts = []
+</script>
+
+<select id="bare" bind:value={v}>
+  {#each opts as o}<option value={o}>{o.toUpperCase()}</option>{/each}
+</select>
+
+<select id="placeholder" bind:value={v}>
+  <option value="" disabled>Pick one</option>
+  {#each opts as o}<option value={o}>{o.toUpperCase()}</option>{/each}
+</select>
+
+<select id="multi" multiple bind:value={many}>
+  {#each opts as o}<option value={o}>{o.toUpperCase()}</option>{/each}
+</select>
+
+<button type="button" id="load"  on:click={() => { opts = ['a', 'b', 'c'] }}>load</button>
+<button type="button" id="shift" on:click={() => { opts = ['c', 'a', 'b'] }}>shift</button>
+
+<output id="state">{v}</output>

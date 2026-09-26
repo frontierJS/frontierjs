@@ -68,7 +68,7 @@ export async function startLitestoneClient(context: vscode.ExtensionContext) {
     vscode.workspace.onWillSaveTextDocument(event => {
       if (event.document.languageId !== 'litestone') return
       const cfg = vscode.workspace.getConfiguration('litestone', event.document.uri)
-      if (!cfg.get<boolean>('formatOnSave', true)) return
+      if (!cfg.get<boolean>('formatOnSave', false)) return
       event.waitUntil(
         vscode.commands.executeCommand<vscode.TextEdit[]>(
           'vscode.executeFormatDocumentProvider',

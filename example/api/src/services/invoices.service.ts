@@ -1,20 +1,17 @@
 // The documents.
 //
 // `@@gate("1.8.4.8")` — read at 1, created and deleted by the system alone,
-// because an invoice is issued by the renewal job and by nothing else. Update
+// because an invoice is issued by billing and by nothing else. Update
 // is staff's, and reaches only the moves. There is no
 // `create` a person can reach, and that is the schema's statement rather than
 // this file's: `api/src/domain/billing` writes them through `asSystem()`, and it is
 // the only thing that does.
 //
 // What `asSystem()` does NOT get past is `@immutable`, which is the whole
-// reason that arrangement is safe. The renewal job runs with no session and
-// could otherwise restate a total it had already issued.
+// reason that arrangement is safe. A renewal runs with no session and could
+// otherwise restate a total it had already issued.
 import { createBaseService, NotFound, $ } from '@frontierjs/junction'
-import { settleInvoice }                  from '../domain/billing'
-
-type Invoices = { invoice: { transition(id: unknown, name: string): Promise<unknown> } }
-const invoices = () => $.db as unknown as Invoices
+import { settleInvoice, voidInvoice }     from '../domain/billing'
 
 /** The invoice this call names, read as the caller.
  *
@@ -85,8 +82,8 @@ export function createInvoicesService() {
      * grading who pressed the button — `asSystem()` here grades nobody, and a
      * custom method's gate floor is only a presence check (`FJS-1087`).
      *
-     * Dunning notices on its own — `subscriptions-dun` recovers a subscription
-     * whose ledger has come clean — so nothing here has to know that a
+     * A `pastDue` subscription whose ledger this clears goes back to `active`
+     * inside `settleInvoice` (`FJS-D363`), so nothing here has to know that a
      * subscription exists.
      */
     settle: async () => {
@@ -102,9 +99,10 @@ export function createInvoicesService() {
      * `@gate(5)` on the move: voiding is a manager's decision, where settling is
      * the shop recording money it received. It changes the status alone —
      * every figure on the row stays exactly as it was issued, because a voided
-     * invoice still has to be readable as the document it was.
+     * invoice still has to be readable as the document it was. It can clear a
+     * ledger as a settle can, so it recovers the subscription the same way.
      */
-    void: async () => invoices().invoice.transition((await readable()).id, 'void'),
+    void: async () => voidInvoice($.db as any, (await readable()).id),
 
     methods: ['find', 'get', 'settle', 'void'],
   })

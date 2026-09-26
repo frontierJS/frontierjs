@@ -48,13 +48,13 @@ function userOf(ctx: ServiceContext): Session | undefined {
  * ctx.locals, and a second copy of this precedence is a second thing to keep
  * in step.
  *
- * Headers live on ctx.client.headers — Junction splits the context into
+ * Headers live on ctx.caller.headers — Junction splits the context into
  * auth / client / route / locals. There is NO ctx.params: the previous version
  * read ctx.params.headers and wrote ctx.params.workspace_id, and both threw
  * "undefined is not an object" on the first call.
  */
 export function resolveWorkspaceId(ctx: ServiceContext): string | undefined {
-  return (ctx.client?.headers?.['x-workspace-id'] as string | undefined) ||
+  return (ctx.caller?.headers?.['x-workspace-id'] as string | undefined) ||
          (ctx.reserved?.workspace_id as string | undefined)              ||
          (userOf(ctx)?.workspaceId as string | undefined)
 }

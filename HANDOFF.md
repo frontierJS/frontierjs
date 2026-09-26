@@ -14,6 +14,58 @@ finished.
 
 ---
 
+# Handoff — 2026-09-22 (a commitment is a transition at a time)
+
+> **The session started from one sentence in the ontology paper — *is a
+> commitment ever a noun* — and ended with four rulings and a build order.** The
+> through-line: every consequence the three hand-written shapes produce is
+> already a declared `@@transitions` edge, so the noun costs one attribute and
+> inherits the gate, the audit trail, the announcement and `x-transitions`
+> rather than needing machinery of its own.
+
+**Nothing is built. Start at [`IDEAS/ontology.md`](IDEAS/ontology.md) § 6 *Build
+order***, which names the files each step touches, the template it copies
+(`@@expires` for step 1, the `outbox()` plugin for step 2), and the open
+question each later step waits on. Steps 1 → 2 → 3 are the critical path.
+
+**How it got there, in the order it moved.** A declaration naming a job
+(`run: 'subscription-renew'`) was the first draft and was refused: the Data
+realm would name an API-realm file it cannot resolve. Asking *where does the
+effect land* replaced it — inside the database the effect IS a transition,
+outside it is a hook on that transition riding the outbox. That made the
+from-state the guard and the optimistic lock the once-ness, so `occurrenceKey`
+leaves every case where the state changes. **Offsets** were settled by the
+owner's own proposal, better than the options offered: a literal, or a
+same-row `@immutable @unit(d)` column stamped when the terms are agreed — the
+tree's *a value at an instant is a copied column* leaf, and `FJS-D348`'s
+first consumer. **The word is *transition*, not *move***: the code types
+`transition` everywhere and *move* was prose's second name; `VOCABULARY.md`
+now says so.
+
+**Rulings:** [`FJS-D353`](DECISIONS.md#fjs-d353) (the noun),
+[`FJS-D354`](DECISIONS.md#fjs-d354) (`@@commitment`),
+[`FJS-D355`](DECISIONS.md#fjs-d355) (offsets),
+[`FJS-D356`](DECISIONS.md#fjs-d356) (model-level). **Still open** in the paper,
+each gating its step: the sweep's shape (2), a related-model target (4),
+renewal (6), reminders (7).
+
+**Three things measured that a cold reader would otherwise re-derive.**
+`@@transitions` refuses a self-transition, and `transition(id, name, opts)`
+carries no data — which is why renewal is not a transition and is argued as a
+row per period. Caravan already answers a cron's next run
+(`app.jobs.nextRuns()`), so [`FJS-1241`](ISSUES.md#fjs-1241) is a side fix and
+not evidence for the noun. And `FJS-D352` split the time words by their
+DEFAULT: `@@expires` is imposed (a dead row), `@@effective` is asked (history
+something still points at) — the test is *would a pointer to it break if it
+were hidden*.
+
+**Four words, one line between them:** `@@relator` is structure and has no
+clock; `@@expires` and `@@effective` are the clock changing what counts and
+write nothing; `@@commitment` is the clock causing a write. On one date the
+window is the truth for reads and the transition is the record that catches up.
+
+---
+
 # Handoff — 2026-09-22 (a word for what a number counts, and three time gaps that turned out to be one)
 
 > **The session was gap 04 of the `.lite` language survey and ended by settling
@@ -110,89 +162,3 @@ work.** `packages/litestone` has two pre-existing failures in
 alone. And the tree is dirty from a parallel session — conduit, junction, mesa
 and several litestone docs are not this work's, which is why `fli done` reports
 three `changes-entry` misses that should be left alone.
-
----
-
-# Handoff — 2026-09-12 (a list is one call, and a flake that was never the drawer)
-
-> **The session started as a review of somebody's list-controller proposal and
-> ended with every list page in the repo's generator on it.** The review turned
-> into a fresh record, `IDEAS/list-controller.md`, and the record said three seams
-> had to move before the controller could be honest: `<Table>` columns keyed
-> `name` rather than `key`, the `orderBy` pair read through
-> `@frontierjs/toolbelt/directives`, and the router owning the URL's round-trip
-> — `page.pathname` and `page.search`, borrowed from `window.location`, with
-> `page.path` retired because it was `pathname + search` under a name that reads
-> like the first. Only then `resource.list()`, eleven names where the proposal
-> guessed seven. Fixing the public-routes guard for the new names found
-> [`FJS-1083`](ISSUES.md#fjs-1083): an exact rule stopped matching the moment the
-> URL carried a query.
-
-> **Two findings are in the controller's design rather than its tests, and both
-> were measured before they were argued.** The router commits `query` BEFORE
-> `route`, so a list answering every change to `page.query` re-asked the server
-> with the NEXT page's filters on the way out. And `<FilterBar>` hands back its
-> whole bag and clears a value by leaving the key out, so `apply` has to REPLACE
-> each half — the first draft merged, and an emptied search box went on
-> searching. A killed process mid-mutation left a mutant in `list.js` once; a diff
-> against a scratch copy found it, which is the only reason to keep one.
-
-> **The user asked whether a resource file could say something about its
-> lists, and whether the old idea of a function taking page details belonged
-> there.** The answer split three ways and is in the record: static `listQuery`
-> and `columns:` in the file, `hooks.before.find` for scope computed from the
-> principal, and `list({ where })` for scope computed from the page. A function
-> of the page in the resource file was refused — the file is imported once and
-> runs before any page exists. Building `columns:` found that the default also
-> narrowed `summary()`, which would have dropped columns from detail screens with
-> nothing said; `rankColumns` is the split.
-
-> **[`FJS-1084`](ISSUES.md#fjs-1084) was filed with the wrong cause, by this
-> session.** The row blamed a drawer step, on the strength of *61/61 against 4/4*
-> — which compared two TIMINGS, not two drives. The old drive from `b7a412c`
-> failed too, and so did the new one with the drawer deleted. The cause is that
-> headless Chrome starts its component extensions about thirty seconds after
-> launch, the window blurs, and `el.focus()` then moves `activeElement` and
-> fires no `focus` event — so the failure landed on whichever step the drive had
-> reached at that second. `Emulation.setFocusEmulationEnabled` in both `verify`
-> and `verify:ui`: 5/5 failed without it, 63/63 twice with it.
-> [`FJS-1075`](ISSUES.md#fjs-1075), the *first run fails* picker flake, was the
-> same thing and closed with it. **The transferable part is the method**: a flake
-> that moves between steps is about wall-clock time, and a bisection over drive
-> versions cannot see that.
-
-> **Proving it was contaminated by the other session, which is
-> [`FJS-1086`](ISSUES.md#fjs-1086).** Every save under `sierra/src/router/` or
-> junction's client made Vite full-reload the page mid-drive, and the drive's
-> error named an unrelated screen. Runs were only trusted once `web.log` showed
-> no `page reload` line inside them. Two drive defects came out on the way:
-> `moves.user` read page one of an unfiltered orders list that grows by one per
-> run, so ORD-1001 fell off on the 21st, and residue from a CDP run
-> failed `combobox.filters` because the seed does not wipe products.
-
-> **Three adopters were chosen to disagree, and the third one stopped the
-> session for a ruling.** `example`'s invoices took URL state and moved its six
-> columns and `-issuedAt` into `Invoice.mesa`, with three `verify` rows that MOVE
-> the list (default order, a header click, Back). `basecamp`'s project page took
-> local state with a `where`. The generated CRUD page in `core/crud-templates.js`
-> became one `list()` and a *Load more* — the first generated page that can reach
-> row 21. Deployments could not adopt: its `find` includes the app and the
-> environment, a push carries the row alone, and the store's `upsert` replaces
-> what it held. The user chose **re-read over merge**, so `list({ composed:
-> true })` is `record(id, { composed: true })` for a list — rows held outside the
-> store, any announcement or reconnect a trigger, a burst one more read, the
-> window a limit. `verify` patches a release from the list page and asserts the
-> row moves while the app cell keeps the name; `composed: false` shows the raw
-> id there.
-
-> **An author who omits `composed` is told, in dev** — for `record()` too,
-> which had the gap first. The check is a declared relation key, or an object
-> under an undeclared key; a bare scalar is not flagged, because `createdAt` is
-> in no schema mode the build emits and would warn on every list. The gate was
-> graded in a real production bundle, since vitest runs with `DEV` true and
-> cannot see it. **Left open:** a bare-number count still passes unwarned, the
-> environments list's re-read after a create was never mutated, and
-> `scanner-plugin.test.js`'s *companion that throws on import* failed once in
-> four full runs, untouched by this session ([`FJS-1132`](ISSUES.md#fjs-1132)).
-
----

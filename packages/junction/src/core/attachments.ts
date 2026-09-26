@@ -3,7 +3,7 @@
 //
 // An n8n, a mail server, a search cluster. The app DECLARES what it needs; the
 // Environment BINDS it, as ordinary environment variables that `fli deploy`'s
-// binding set already supplies per target. A missing or mismatched binding is a
+// configuration set already supplies per target. A missing or mismatched value is a
 // refusal at startup, which is the whole product: without it the app boots,
 // answers health, and fails at 3am on the first request that reaches the
 // service — by which time the deploy is long finished and nothing connects the
@@ -11,7 +11,7 @@
 //
 // **We never manage the service.** Not install, not upgrade, not health-check,
 // not back up. Provisioning is easy and *de*-provisioning is where integrated
-// platforms die, so the boundary is drawn at the declaration and the binding.
+// platforms die, so the boundary is drawn at the declaration and the configuration.
 //
 // ─── why this is not just `defineEnv` ────────────────────────────────────────
 //
@@ -46,7 +46,7 @@ export interface Attachment {
   describe?: string
 
   /**
-   * Absent bindings are a warning rather than a refusal.
+   * Absent keys are a warning rather than a refusal.
    *
    * It forgives NOTHING BOUND, never something bound halfway: a half-bound
    * service is a mistake in every environment, and an app that declared the

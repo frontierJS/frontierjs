@@ -192,7 +192,7 @@ t('backdate.andItAnswersTheNewRate',                     nowAtMarch.rate === 4_2
 // answerable, and answering it means scanning an append-only log, decoding two
 // JSON strings and matching a stringified array of ids. It is a record, not a
 // dimension: no read of `PayWindow` can be asked to stand at a past moment of
-// KNOWLEDGE the way `coveringAt` stands at a past moment of validity.
+// KNOWLEDGE the way `asOf` stands at a past moment of validity.
 await new Promise(r => setTimeout(r, 50))   // the logger defers one tick
 const trail = await sys.auditLogs.findMany({
   where: { model: 'pay_window', operation: 'update' },

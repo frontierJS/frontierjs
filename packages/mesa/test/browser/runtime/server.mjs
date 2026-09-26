@@ -85,11 +85,12 @@ const PAGE = `<!doctype html>
  *  here is what runs in an app; extracting them would mean this harness places
  *  styles nothing else places, and a scoped-style bug would be invisible
  *  exactly where it lives (`css` is a destination, not a switch). */
-async function compileMesa(file) {
+async function compileMesa(file, dev) {
   const src = await readFile(file, 'utf8')
   const warnings = []
   const ctx = await compileSource(src, {
     filename: file,
+    dev,
     warning: (w) => warnings.push(w.message ?? String(w)),
   })
   // The compiler COLLECTS most diagnostics rather than throwing, so a module
@@ -108,7 +109,8 @@ function safeJoin(base, rel) {
 
 export function createMesaServer({ onWarning } = {}) {
   const server = createServer(async (req, res) => {
-    const path = new URL(req.url, 'http://localhost').pathname
+    const url  = new URL(req.url, 'http://localhost')
+    const path = url.pathname
 
     const send = (code, body, type = 'text/plain; charset=utf-8') => {
       res.writeHead(code, {
@@ -127,7 +129,9 @@ export function createMesaServer({ onWarning } = {}) {
       if (!file) return send(404, `no route for ${path}`)
 
       if (extname(file) === '.mesa') {
-        const { code, warnings } = await compileMesa(file)
+        // `?dev` compiles as a dev build — the one that registers with
+        // `__dev`. Only the requested module: a child it imports is not dev.
+        const { code, warnings } = await compileMesa(file, url.searchParams.has('dev'))
         for (const w of warnings) onWarning?.(file, w)
         return send(200, code, TYPES['.mesa'])
       }

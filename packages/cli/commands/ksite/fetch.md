@@ -51,9 +51,10 @@ flags:
   meta-only:
     type: boolean
     description: only output frontmatter, skip markdown
-  no-images:
+  images:
     type: boolean
     description: skip image download and transform
+    defaultValue: true
   open:
     type: boolean
     char: o
@@ -608,7 +609,7 @@ for (let i = 0; i < urls.length; i++) {
     } else {
       let md = htmlToMarkdown(scopedHtml)
 
-      if (!flag['no-images'] && config.image?.transform) {
+      if (flag.images && config.image?.transform) {
         const images = extractImages(scopeEl, url)
         md = await transformImagesInMarkdown(
           md, images, config.image.transform, mediaRoot, log, flag.dry, fetchOpts

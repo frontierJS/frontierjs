@@ -3394,8 +3394,6 @@ anything that changes at runtime.`,
     (p.last + ', ' + p.first).toLowerCase().includes(prefix.toLowerCase())
   )
 
-  const selected = people.find(p => p.id === selId) ?? null
-
   function select(id) {
     selId = id
     const p = people.find(p => p.id === id)

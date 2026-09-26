@@ -922,7 +922,6 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `status` | `JobStatus` = `"pending"` | — | — | — | — |
 | `command` | `string`? | — | — | — | — |
 | `cronExpression` | `string`? | — | — | — | — |
-| `nextRunAt` | `string`? | — | — | `format: "date-time"` | — |
 | `trigger` | `string` = `"manual"` | — | — | — | — |
 | `triggerConfig` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `timeoutSeconds` | `integer` = `300` | — | — | — | — |

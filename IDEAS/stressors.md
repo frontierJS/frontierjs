@@ -52,6 +52,8 @@ than started.
 | 9 | **Moodle** — course platform | i18n as a declaration; media; a long-lived attempt | `lexicon.md` · `accessibility.md` |
 | 10 | **Etsy with payouts** — marketplace | split money and a phone; geo is no longer one of its unknowns | `declared-semantics.md` · `FJS-D38` |
 | 11 | **A status page** — the cheap one | cron precision against a public prerendered surface | — |
+| 12 | **JazzHR** — applicant tracking | a record the law says to forget, beside a report that must outlive it; a stranger who owns an application; and a hire that crosses into another app | `compliance-from-the-seed.md` · `bearer-access.md` · `state-machines.md` |
+| 13 | **remnant** — a maid.tech fork with a scripture study corpus beside it | read-only reference data that belongs to no tenant and ships with the app; relations keyed on natural keys; search over Greek and Hebrew | `conversion-maid-tech.md` (the CRM half) · `lexicon.md` |
 
 ### 1. Calendly — the smallest product that forces a made ruling to get built
 
@@ -177,6 +179,125 @@ Cron precision (measured-correct and untested under DST), the `site/` prerendere
 surface, an incident as `@@transitions`, notification fan-out. Small enough to
 finish, and it exercises four realms with no new framework concept. The right
 exercise for someone with a week rather than a month.
+
+### 12. JazzHR — the one that has to forget
+
+*Added 2026-09-22, from the pricing page and a read of connectteam. Nothing is
+measured yet, and the rank is only where it was appended.*
+
+Jobs, candidates moving through stages, interviews with scorecards, an offer
+signed by somebody with no account. **It is not Connecteam's sequel.**
+connectteam's schema has no job, candidate, application or offer. The two
+products meet at one row: an accepted offer is the `Employee` that connectteam's
+HR adds by hand today.
+
+**Most of the product has been argued elsewhere, and that narrows it.** Per-job
+custom stages are `tenant-authored-workflows.md`, measured in the linear
+stressor. A recruiting team per job is `permission-sets.md`'s question, and that
+file is built. Knockout questions are `tenant-authored-queries.md`, and résumé
+upload is `untrusted-bytes.md`. The integrations (job boards, LinkedIn, résumé
+parsing, calendar sync, eSignature vendors) are what the product charges for,
+and they are integration work, not questions about this framework. The
+exclusion of *a CRM* below does not cover it, because the part left over is
+not a CRM question.
+
+**What it breaks first is forgetting.** An applicant who was not hired is
+personal data with a legal expiry date. A hiring product has to delete it and
+still answer *how many applied from LinkedIn last quarter, and how long did each
+stage take*, the source and timing reports it sells. `compliance-from-the-seed.md`
+says no `@pii` or `@retain` exists in the grammar, and its item 3 is *erasure
+that actually cascades*. The question nothing else on this list forces is **can
+a report outlive the rows it counts**: an aggregate kept as a declaration, a
+tombstone, or a row stripped to what the report needs. Every other stressor
+here only ever grows its data, so none of them reaches this.
+
+Two more, each with a record:
+
+- **The applicant is a stranger who owns a record.** They apply without an
+  account, check their status from an emailed link, and upload documents later.
+  That is the portal half of `bearer-access.md`, the half it says is not built.
+  `FJS-D344` (*graduating to an account is the app's act*) gets its first
+  real caller the day a candidate is hired.
+- **An offer is a process, not a field.** Drafted, approved, sent, signed by
+  someone holding no session, then the hire. That spans requests and people,
+  which is the remainder `state-machines.md` names as unbuilt. The signature is
+  connectteam's wall-tablet question again (*an act attested by somebody
+  holding no session*), but for a legal document instead of a clock-in.
+
+**The seam worth the most is the handoff.** Run it as its own app beside
+connectteam and let an accepted offer create the `User` and `Employee` there.
+Then the exercise asks what one FrontierJS app should call to create a principal
+in another. No record owns that question yet.
+
+### 13. remnant — the half of a real app that maid.tech does not have
+
+*Added 2026-09-23, from a read of `~/code/Z/remnant/remnant` (schema at
+`db/prisma/schema.prisma`) and its production backups. Nothing is built yet, and
+the rank is only where it was appended.*
+
+**Most of it is not a new exercise.** remnant is a mid-2024 fork of maid.tech on
+the old `@frontierjs/*` line: Feathers + Prisma + Svelte, with the same
+`Account`/`Client`/`Property`/`Board`/`List`/`Card`/`Action` core, the same
+`queue.js` action machine, the same stored-Prisma `Report`, the same lead-capture
+`embeds/` and the same git-backed `Site`/`Page` CMS. Twenty of its 29 models are
+maid.tech's. `conversion-maid-tech.md` has already assessed that core against
+this framework, and nothing in remnant changes those answers. Its newest
+production backup (2024-06-10) is the same shape at a smaller size: 56 accounts,
+21,978 clients (20,212 of them leads), 20,209 cards, 19,943 form responses and
+3,393 pages across 26 accounts. Porting the CRM half would re-derive a finished
+assessment.
+
+**The stressor is the other nine models.** They are a scripture study corpus:
+`Book`, `Verse`, `Word` (one row per original-language word, with
+transliteration, gloss and morphology code), `Lemma` (Strong's entries),
+`Morpha`, `Translation` (a verse's text in thirteen English versions, one column
+each) and `Father`/`FathersOnVerses` (the Ante-Nicene Fathers, cross-referenced
+to verses). A `/bible` route reads it with a reader, lemma panel, parallel
+translations, search and a history. **No migration creates any of these tables,
+and none of them exists in any production backup.** The corpus half was
+schema-only, so the questions it asks are unanswered in the original too.
+
+**What it breaks first is data that belongs to nobody.** Every corpus model
+carries a required `accountId`. That column is the old app's tenancy hook
+demanding a tenant for a row that has none: the Greek New Testament is identical
+for every account, read-only, and tens of megabytes. Here, `@@tenant(none)`
+spells *belongs to no tenant*. Nothing spells the other half, which is **a
+dataset that ships with the application**. It is not seeded like a fixture and
+not written by users. It is versioned with the release, and a correction to it is
+a data release rather than a migration. `FJS-D164` covers reference data that
+changes over time (a row with a validity window). It does not cover reference
+data that is published once and replaced whole. Three questions come with it:
+does a read-only corpus live in the app's database or beside it as a second
+attached file, what refuses a write to it at the Data boundary, and how does
+`fli deploy` ship a new version of it.
+
+Two more, both measurable on the first day:
+
+- **Relations keyed on natural keys.** `Word.verseId → Verse.verseId` (a
+  `@unique` column, not the id), `Word.strongsTag → Lemma.strongsTag`,
+  `FathersOnVerses.chapterRef → Father.chapterRef`. `litestone import --from
+  prisma` read all 29 models with no changes and no losses (15 `sti-candidate`
+  notes, all on `type` columns). It also passed a contradiction without a note:
+  `Morpha.strongsTag` is `@unique`, which makes the relation one-to-one, while
+  `Lemma.morphas Morpha[]` declares it one-to-many. Measure whether the parser or
+  the client refuses that shape, or whether it is a silent wrong answer.
+- **Search over another script.** A reader searches polytonic Greek and pointed
+  Hebrew, where a match has to ignore accents, breathings and vowel points, and
+  also searches transliteration and English gloss. `@@fts` offers `unicode61`,
+  `ascii`, `porter` and `trigram`, and no `remove_diacritics` or
+  `tokenchars` argument. Whether `unicode61` folds Greek and Hebrew combining
+  marks is unmeasured. Search that spans `Verse`, `Word` and `Lemma` is Linear's
+  leftover question (cross-model search) arriving with a second caller.
+
+`Translation`'s thirteen columns (one per version) are the one part that looks
+like `lexicon.md`'s territory and is not. They are parallel texts, not
+localizations of one string, so a locale mechanism is the wrong answer. Record
+that as a cleared suspicion rather than open a row for it.
+
+**Run it as a narrow exercise.** Import the schema, keep the CRM half as
+maid.tech's, and build only the corpus and the `/bible` reader. The data is
+public (the app has a `tagnt` service, which points at STEPBible's tagged Greek
+NT, and Strong's lexicon), so the stressor needs no production copy.
 
 ---
 
@@ -315,3 +436,68 @@ until the ratio is on the page. Budget for it, and treat *the author using their
 as a phase rather than as an accident. It is also the only phase that finds the
 failures that look like the product working: a page reporting *no times
 available* over an API it never reached.
+
+### What the second run learned
+
+*Folded back from the connectteam stressor, 2026-09-22 — thirty-three new ids,
+ten amended, seventeen suspicions cleared on measurement, and one design record
+(`FJS-D349`). Generic only; the product's own answers stay in that app's
+`PLAN.md`.*
+
+**The hour of ordinary use needs a brief, because it is the one phase a person
+runs.** The run ended its last agent phase with *an hour of ordinary use is
+what's left*, and the person who opened the app found no menu (the nav is
+hidden until sign-in), no account to sign in with, a tutorial for a home page,
+the app on 8001 where the README says 8000 (the port broker moves off a port
+another project holds), and a stale dev server from the morning still on 8010,
+pointed at an API that was not running. None of that is a finding and all of it
+cost the hour. Before handing over: the URL that is actually listening (`ss
+-ltnp`, not the README), the seeded accounts with passwords, a scripted fake
+week that names the moves, what to write down, and **the defects already filed
+that are visible on screen** — the first thing reported was `[object Object]`
+in the sites table, filed three phases earlier.
+
+**Make the home page the overview of what has been built, and grow it every
+phase.** Seven phases in, `/` was still the framework's tutorial, so the product
+had no place to start from, and a person opening it could not tell what the run
+had built. The first phase that ships a screen replaces the scaffold's page with
+a dashboard. Every phase after that which builds a feature adds a tile for it:
+a count of the thing it made, a link to its screen, and one line on what that
+screen does. It is the map the person uses in the hour of ordinary use, and it
+is also an instrument. The first time connectteam's was opened as an employee,
+it showed her colleagues' DRAFT shifts, a read nothing had asked about because
+no single screen put them side by side.
+
+**Drive the dev server as well as the build, and in the person's browser.**
+Phase 7's instrument drove the production build, which was right for its
+question, and the device database never opened under `bun run dev` once. That is
+because `--source local` places the framework's files outside Vite's root, and a
+file reached by URL rather than by `import` (a worker, via `new Worker(new
+URL(…))`) is refused with a 403 by `server.fs.allow`, while every imported
+module beside it loads. The person uses the dev server, and Firefox. Firefox
+named the failure on every click; Chrome, which every drive used, logged a
+warning nobody read.
+
+**A test that pins a defect goes red when the defect is fixed, so write it to
+say that.** Three tests asserting `FJS-1216` (*a scoped client has no `$lock`*)
+failed the gate when the framework tree gained the method, while `ISSUES.md`
+still said `open`. Read as a regression, that red costs a session. A pinning
+test's name or message should say *if this fails, re-measure `FJS-###` and amend
+the row*, because that red is news about the tracker, not about the app.
+
+**Change one thing per A/B.** `FJS-1281` was found only because a two-variable
+comparison (`composed: true` and `populate` removed together) blamed the wrong
+one, and the isolation run was what named `composed`. When an experiment moves
+two things, the finding attached to it is a guess.
+
+**Age a clock where it is kept, and never sleep through one.** Nobody can wait
+out an eight-hour shift. The instrument listed every store that holds a
+timestamp: the queue entry's `createdAt`, the list cache, the idempotency
+claim, the session. It then aged each one in its own store, and restarted the
+API to expire the claim held in memory. Mocking `Date` ages only the clocks
+that read it, and the one left un-aged is the finding you did not get.
+
+**The instrument is code, and it fails like code.** A drive that threw left a
+browser holding its debug port, and the next run attached to that stale browser
+and graded it. Kill by port rather than by pattern, close on every exit path,
+and refuse a port that already answers.

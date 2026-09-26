@@ -134,7 +134,10 @@ export function createVolumesService(app: BasecampApp) {
     // where an `after: { all: [...] }` hook broadcast every read to every browser
     // in the workspace (FJS-031). Declaring both is refused at construction.
     channel: workspaceChannel(app),
-    reservedQuery: WORKSPACE_QUERY,   // ?workspace_id= is not a filter — see core/hooks.ts
+    // ?workspace_id= is not a filter — see core/hooks.ts. Nor is ?search=,
+    // the list's name box: no column is called that, and it is not the
+    // full-text `$search` directive either, which needs @@fts (FJS-1284).
+    reservedQuery: [...WORKSPACE_QUERY, 'search'],
 
     // The whole surface, declared. Omitting a method does not remove it: with
     // `model:` set, Junction's Litestone base answers every CRUD verb for
@@ -152,7 +155,7 @@ export function createVolumesService(app: BasecampApp) {
     async find() {
       const { limit, offset } = getPagination({ limit: 50, max: 200 })
       const serverId = $.query.serverId as string | undefined
-      const search   = $.query.search   as string | undefined
+      const search   = $.reserved.search   as string | undefined
       // The wire carries strings and the column is a boolean; comparing them
       // raw matches nothing and reports an empty list rather than an error.
       const inUse    = $.query.inUse as string | boolean | undefined

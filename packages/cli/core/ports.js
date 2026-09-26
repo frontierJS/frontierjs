@@ -6,8 +6,8 @@
  *   ENV      7=test  8=dev  9=prod
  *   CATEGORY 0=fe  1=be  2=widgetDev  3=widgetServe  4=ext  5=tooling
  *            6=siteDev  7=siteServe  8=desktopDev
- *   PROJECT  0-9  (assigned dynamically by lock manager)
- *   SERVICE  0-9  (per-project slot within a category)
+ *   PROJECT  0-9  (assigned in PROJECTS below; every other app is 0)
+ *   SERVICE  0-9  (project 0's dev slot — one per app, see § Dev slots)
  *
  * A surface that is both WRITTEN against and SERVED as its own origin takes
  * two categories rather than two service slots. `widgets/` and `site/` are
@@ -31,10 +31,10 @@
  */
 
 import net from 'net'
-import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, openSync, writeSync, closeSync, unlinkSync } from 'fs'
+import { readFileSync, writeFileSync, renameSync, existsSync, mkdirSync, openSync, writeSync, closeSync, unlinkSync, readdirSync } from 'fs'
 import { execSync } from 'child_process'
 import { homedir } from 'os'
-import { basename, join } from 'path'
+import { basename, dirname, join } from 'path'
 
 // ─── Schema maps ──────────────────────────────────────────────────────────────
 
@@ -71,15 +71,17 @@ export const GLOBAL_RANGE = { first: 8500, last: 8509 }
 
 // ─── Static project ids ───────────────────────────────────────────────────────
 //
-// claimSession() hands out the lowest FREE id at runtime, which is right for an
-// app somebody scaffolded and wrong for the apps that live in this repo: a
-// vite.config.js and a test harness need the same number tomorrow that they had
-// today, and two of them wanting one port is exactly the failure this scheme
-// exists to stop (`example` and `basecamp` both asked for 5274, and vite hops
-// ports silently, so the second one's drive tested the first one's app).
+// The repo's own apps are ASSIGNED here: a vite.config.js and a test harness
+// need the same number tomorrow that they had today, and two of them wanting
+// one port is exactly the failure this scheme exists to stop (`example` and
+// `basecamp` both asked for 5274, and vite hops ports silently, so the second
+// one's drive tested the first one's app). A number is claimed forever.
 //
-// So the repo's own apps are ASSIGNED here and the dynamic allocator starts
-// above them. A number is claimed forever; adding an app takes the next one.
+// Every app this table does not name is project 0 — what `fli new` writes —
+// and the table has used all ten digits, so there is no project id left to
+// hand one at runtime. They share project 0 by SERVICE digit instead: `fli dev`
+// gives each app root a slot of its own (§ Dev slots), so a second scaffolded
+// app runs on 8001/8101 beside the first on 8000/8100.
 //
 //   port = ENV*1000 + CAT*100 + PROJECT*10 + SERVICE   →   dev fe = 80<id>0
 //
@@ -101,9 +103,6 @@ export const PROJECTS = {
   // siteDev 8690 and siteServe 8790, and its drive takes 7790.
   website:            9,
 }
-
-/** Lowest project id claimSession() may hand out. Below this is assigned above. */
-export const DYNAMIC_PROJECT_FLOOR = 10
 
 // ─── Formula ─────────────────────────────────────────────────────────────────
 
@@ -176,13 +175,18 @@ export function isReservedToolingPort(p) {
 // The refusal prints a script for the person to stop, so it has to name one
 // that exists — a message telling somebody to run `bun run api` in an app whose
 // script is `dev:api` is a message that wastes their next minute.
+//
+// `env` is the variable a surface's own config reads its port from, which is
+// what lets `fli dev` move it to another slot. The extension has none: its dev
+// port is compiled into the unpacked extension the browser has loaded, so it
+// stays where jetty.config.js says and is only checked.
 const SURFACE_PORTS = [
-  { dir: 'web',       category: 'fe',        scripts: ['web', 'dev:web'],             label: 'web' },
-  { dir: 'api',       category: 'be',        scripts: ['api', 'dev:api'],             label: 'API' },
-  { dir: 'widgets',   category: 'widgetDev', scripts: ['dev:widgets', 'widgets'],     label: 'widgets' },
-  { dir: 'site',      category: 'siteDev',   scripts: ['dev:site', 'site'],           label: 'site' },
-  { dir: 'extension', category: 'ext',       scripts: ['dev:extension', 'extension'], label: 'extension' },
-  { dir: 'desktop',   category: 'desktopDev', scripts: ['dev:desktop', 'desktop'],    label: 'desktop' },
+  { dir: 'web',       category: 'fe',         env: 'FLI_PORT_FE',      scripts: ['web', 'dev:web'],             label: 'web' },
+  { dir: 'api',       category: 'be',         env: 'FLI_PORT_BE',      scripts: ['api', 'dev:api'],             label: 'API' },
+  { dir: 'widgets',   category: 'widgetDev',  env: 'FLI_PORT_WIDGET',  scripts: ['dev:widgets', 'widgets'],     label: 'widgets' },
+  { dir: 'site',      category: 'siteDev',    env: 'FLI_PORT_SITE',    scripts: ['dev:site', 'site'],           label: 'site' },
+  { dir: 'extension', category: 'ext',        env: null,               scripts: ['dev:extension', 'extension'], label: 'extension' },
+  { dir: 'desktop',   category: 'desktopDev', env: 'FLI_PORT_DESKTOP', scripts: ['dev:desktop', 'desktop'],    label: 'desktop' },
 ]
 
 /**
@@ -204,26 +208,27 @@ export function projectIdFor(name, dirName) {
 /**
  * The dev ports this app's surfaces will bind.
  *
- * `FLI_PORT_FE` / `FLI_PORT_BE` win where the broker set them — a scaffolded
- * app reads those and the literal in its config is only the static default, so
- * a preflight that ignored them would probe a port nothing is about to use.
+ * A surface's variable wins where it is set — `fli dev` sets them for the
+ * servers it starts, and `tutor` for the app it runs — so a preflight that
+ * ignored them would probe a port nothing is about to use. Otherwise the port
+ * is the formula at `slot`, which for an app `PROJECTS` does not name is the
+ * slot `fli dev` last gave this root, and 0 for every other app.
  *
  * @param {string} appRoot
  * @param {{name?: string, scripts?: object, env?: 'test'|'dev'|'prod',
- *          exists?: (p: string) => boolean}} [opts]
- * @returns {{port: number, surface: string, label: string, script: string|null}[]}
+ *          exists?: (p: string) => boolean, slot?: number}} [opts]
+ * @returns {{port: number, surface: string, label: string, script: string|null,
+ *            category: string, env: string|null}[]}
  */
-export function appPorts(appRoot, { name, scripts, env = 'dev', exists } = {}) {
+export function appPorts(appRoot, { name, scripts, env = 'dev', exists, slot } = {}) {
   const here      = exists ?? ((p) => existsSync(p))
-  const dirName   = basename(appRoot)
-  const projectId = projectIdFor(name, dirName)
-
-  const override = { fe: process.env.FLI_PORT_FE, be: process.env.FLI_PORT_BE }
+  const projectId = projectIdFor(name, basename(appRoot))
+  const serviceId = projectId !== PROJECTS.scaffold ? 0 : (slot ?? slotFor(appRoot, { env }) ?? 0)
 
   const out = []
   for (const s of SURFACE_PORTS) {
     if (!here(join(appRoot, s.dir))) continue
-    const stated = override[s.category]
+    const stated = s.env ? process.env[s.env] : undefined
     // The first candidate the app actually declares; `null` where it declares
     // none, which is honest — the surface exists and nothing here starts it.
     const script = scripts
@@ -231,10 +236,12 @@ export function appPorts(appRoot, { name, scripts, env = 'dev', exists } = {}) {
       : s.scripts[0]
 
     out.push({
-      port:    stated ? Number(stated) : port(s.category, { env, projectId }),
-      surface: s.dir,
-      label:   s.label,
+      port:     stated ? Number(stated) : port(s.category, { env, projectId, serviceId: s.env ? serviceId : 0 }),
+      surface:  s.dir,
+      label:    s.label,
       script,
+      category: s.category,
+      env:      s.env,
     })
   }
   return out
@@ -462,40 +469,43 @@ export async function busyKnownPorts() {
     .sort((a, b) => a.port - b.port)
 }
 
-/**
- * Find the first free port in a category for a given env + project,
- * scanning service slots 0–9 in parallel for speed.
- */
-export async function findFreeServicePort(category, env, projectId) {
-  const ports = []
-  for (let serviceId = 0; serviceId <= 9; serviceId++) {
-    ports.push({ serviceId, p: port(category, { env, projectId, serviceId }) })
-  }
-  // Probe all slots concurrently — typically all are free or one early one is.
-  const results = await Promise.all(ports.map(async ({ serviceId, p }) => ({
-    serviceId, p, inUse: await isPortInUse(p),
-  })))
-  const free = results.find(r => !r.inUse)
-  return free ? free.p : null
-}
-
-// ─── Lock manager ─────────────────────────────────────────────────────────────
+// ─── Dev slots ────────────────────────────────────────────────────────────────
+//
+// Project 0 is every app `PROJECTS` does not name, so two of them derive one
+// number. `fli dev` gives each app ROOT a service digit of its own and passes
+// the ports to the servers it starts as `FLI_PORT_*`, which `fli new`'s configs
+// already read: the first app is 8000/8100, the next 8001/8101.
+//
+// A slot is REMEMBERED per root, not handed out per run. A URL somebody has
+// open, an OAuth redirect and a `WEB_URL` in an email all name the port, so an
+// app has to come back where it was. It is also what keeps the stale-server
+// refusal honest: an app whose own slot is busy is refused, and never quietly
+// moved beside the ghost that still holds its database open.
+//
+// A slot is only given to an app whose surfaces read their variable. One that
+// ignores it would be probed at 8001 and then bind 8000, so it stays at 0 and
+// the refusal names the port it will really take.
+//
+// The session's pid is the `fli dev` process, which lives exactly as long as
+// the servers it runs (`context.exec` is synchronous), so ALIVE needs no signal
+// handler. A dead session is an app not running now, and keeps its slot.
 
 const LOCK_DIR  = join(homedir(), '.fli')
 const LOCK_FILE = join(LOCK_DIR, 'sessions.lock')
 
-export function readLock() {
-  if (!existsSync(LOCK_FILE)) return {}
-  try   { return JSON.parse(readFileSync(LOCK_FILE, 'utf8')) }
+/** Every session, keyed by app root. */
+export function readLock(lockFile = LOCK_FILE) {
+  if (!existsSync(lockFile)) return {}
+  try   { return JSON.parse(readFileSync(lockFile, 'utf8')) }
   catch { return {} }
 }
 
-function writeLock(sessions) {
-  if (!existsSync(LOCK_DIR)) mkdirSync(LOCK_DIR, { recursive: true })
-  // Atomic-ish write: temp file + rename avoids partial-write corruption
-  const tmp = LOCK_FILE + '.tmp'
+function writeLock(sessions, lockFile) {
+  mkdirSync(dirname(lockFile), { recursive: true })
+  // temp + rename: a reader never sees half a file
+  const tmp = lockFile + '.tmp'
   writeFileSync(tmp, JSON.stringify(sessions, null, 2))
-  renameSync(tmp, LOCK_FILE)
+  renameSync(tmp, lockFile)
 }
 
 function isProcessAlive(pid) {
@@ -503,153 +513,169 @@ function isProcessAlive(pid) {
   catch { return false }
 }
 
-// ─── File-lock helper ─────────────────────────────────────────────────────────
-// Best-effort exclusive lock via O_EXCL on a sidecar file. Multiple fli
-// processes may compete for sessions.lock; this serializes the read-modify-write.
-const LOCK_GUARD = LOCK_FILE + '.guard'
-
-function acquireLock(timeoutMs = 5000) {
+// Two `fli dev` starting together would both read slot 1 as free.
+function acquireLock(lockFile, timeoutMs = 5000) {
+  const guard = lockFile + '.guard'
   const start = Date.now()
-  if (!existsSync(LOCK_DIR)) mkdirSync(LOCK_DIR, { recursive: true })
+  mkdirSync(dirname(lockFile), { recursive: true })
   while (true) {
     try {
-      // O_EXCL: fails if file exists. Atomic.
-      const fd = openSync(LOCK_GUARD, 'wx')
+      const fd = openSync(guard, 'wx')
       writeSync(fd, String(process.pid))
       closeSync(fd)
-      return
-    } catch (err) {
-      // If guard exists but the holder died, take it over
+      return guard
+    } catch {
+      // A holder that died mid-claim leaves the guard behind.
       try {
-        const heldBy = parseInt(readFileSync(LOCK_GUARD, 'utf8'))
-        if (heldBy && !isProcessAlive(heldBy)) {
-          unlinkSync(LOCK_GUARD)
-          continue
-        }
+        const heldBy = parseInt(readFileSync(guard, 'utf8'))
+        if (heldBy && !isProcessAlive(heldBy)) { unlinkSync(guard); continue }
       } catch {}
-      if (Date.now() - start > timeoutMs) {
-        throw new Error(`Could not acquire ${LOCK_GUARD} within ${timeoutMs}ms`)
-      }
-      // Brief sleep then retry
+      if (Date.now() - start > timeoutMs) throw new Error(`Could not acquire ${guard} within ${timeoutMs}ms`)
       try { execSync('sleep 0.05', { stdio: 'pipe' }) } catch {}
     }
   }
 }
 
-function releaseLock() {
-  try { unlinkSync(LOCK_GUARD) } catch {}
+/** The slot this root was last given, or null. Static apps have none. */
+export function slotFor(appRoot, { env = 'dev', lockFile = LOCK_FILE } = {}) {
+  const s = readLock(lockFile)[appRoot]
+  return s && s.env === env && Number.isInteger(s.slot) ? s.slot : null
 }
 
 /**
- * Claim a project session — assigns a projectId and ports for each
- * requested category. Categories can be a simple array ['fe','be'] or
- * an object with counts { fe: 2, be: 1 } for multiple service slots.
+ * Whether a surface's own source reads its port variable.
  *
- * @param {string} projectName
- * @param {'test'|'dev'|'prod'} env
- * @param {string[]|Record<string,number>} categories
- * @returns {Promise<{ projectId: number, ports: Record<string, number[]> }>}
+ * A text search over the surface directory, stopping at the first hit. It is
+ * the one fact available without running the app, and it answers the only
+ * question asked: would this surface follow a slot, or bind its literal.
  */
-export async function claimSession(projectName, env, categories) {
-  acquireLock()
+export function readsPortVar(appRoot, row, { limit = 2000 } = {}) {
+  if (!row.env) return true
+  const SKIP = new Set(['node_modules', 'dist', 'public', '.git', 'test', 'tests'])
+  const stack = [join(appRoot, row.surface)]
+  let seen = 0
+  while (stack.length && seen < limit) {
+    const dir = stack.pop()
+    let entries
+    try { entries = readdirSync(dir, { withFileTypes: true }) } catch { continue }
+    for (const e of entries) {
+      if (e.isDirectory()) { if (!SKIP.has(e.name)) stack.push(join(dir, e.name)); continue }
+      if (!/\.(m?[jt]s|cjs)$/.test(e.name)) continue
+      seen++
+      try { if (readFileSync(join(dir, e.name), 'utf8').includes(row.env)) return true } catch {}
+    }
+  }
+  return false
+}
+
+/**
+ * Take this app's dev slot and record it.
+ *
+ * `vars` is the `FLI_PORT_*` set for the servers `fli dev` starts, returned
+ * rather than assigned to `process.env`: under bun a child gets the environment
+ * the parent STARTED with, so the assignment reaches nothing. Pass it as `env:`.
+ *
+ * An app `PROJECTS` names is always slot 0 — its numbers are written into its
+ * configs and drives. So is an app whose surfaces ignore their variable.
+ * Otherwise: the slot this root had last time, or the lowest one no other app
+ * remembers and nothing is listening on, or — all ten remembered — the one
+ * whose app ran longest ago, if nothing is listening on it now.
+ *
+ * Returns the rows `fli dev` checks, at the slot taken. Whether they are FREE is
+ * the caller's question: a busy slot of this app's own is refused, not moved.
+ *
+ * @param {string} appRoot
+ * @param {{name?: string, scripts?: object, env?: 'test'|'dev'|'prod', entry?: string,
+ *          dry?: boolean, lockFile?: string, exists?: (p: string) => boolean,
+ *          movable?: (row: object) => boolean, busy?: (rows: object[]) => Promise<object[]>}} [opts]
+ */
+export async function claimSession(appRoot, opts = {}) {
+  const { name, env = 'dev', dry = false, lockFile = LOCK_FILE } = opts
+  const busy      = opts.busy ?? busyPorts
+  const movable   = opts.movable ?? ((row) => readsPortVar(appRoot, row))
+  const projectId = projectIdFor(name, basename(appRoot))
+  const rowsAt    = (slot) => devPorts(appRoot, { ...opts, env, slot })
+
+  const guard = acquireLock(lockFile)
   try {
-    const sessions = readLock()
+    const sessions = readLock(lockFile)
+    const mine     = sessions[appRoot]
 
-    // Evict stale sessions (PID no longer alive)
-    for (const [name, session] of Object.entries(sessions)) {
-      if (!isProcessAlive(session.pid)) delete sessions[name]
+    let slot = 0
+    if (projectId === PROJECTS.scaffold && rowsAt(0).every(movable)) {
+      slot = mine?.env === env && Number.isInteger(mine.slot)
+        ? mine.slot
+        : await freeSlot(sessions, appRoot, env, rowsAt, busy)
     }
 
-    // If this project is already registered, return existing session
-    if (sessions[projectName]) {
-      const s = sessions[projectName]
-      return { projectId: s.projectId, ports: s.ports }
-    }
+    const rows = rowsAt(slot)
+    const vars = {}
+    for (const r of rows) if (r.env) vars[r.env] = String(r.port)
+    if (dry) return { projectId, slot, rows, vars }
 
-    // Claim lowest unused project ID. Starts above the statically assigned
-    // block — a dynamic claim of 1 would land on `example`'s ports whether or
-    // not example is running, and the collision only shows up as a drive
-    // talking to the wrong app.
-    const usedIds  = new Set(Object.values(sessions).map(s => s.projectId))
-    let   projectId = PROJECTS[projectName] ?? DYNAMIC_PROJECT_FLOOR
-    while (usedIds.has(projectId)) projectId++
-    if (projectId > 9) throw new Error('Maximum concurrent projects (10) reached')
-
-    // Normalize categories to { category: count }
-    const catMap = Array.isArray(categories)
-      ? Object.fromEntries(categories.map(c => [c, 1]))
-      : categories
-
-    // Assign ports — fall back to next service slot if somehow in use
     const ports = {}
-    for (const [category, count] of Object.entries(catMap)) {
-      ports[category] = []
-      let serviceId = 0
-      for (let i = 0; i < count; i++) {
-        let assigned = null
-        while (serviceId <= 9) {
-          const p = port(category, { env, projectId, serviceId })
-          if (!(await isPortInUse(p))) { assigned = p; serviceId++; break }
-          serviceId++
-        }
-        if (assigned === null) {
-          throw new Error(
-            `No free service slot for category "${category}" ` +
-            `(env=${env}, projectId=${projectId}, requested=${count}, assigned=${ports[category].length})`
-          )
-        }
-        ports[category].push(assigned)
-      }
-    }
-
-    sessions[projectName] = {
+    for (const r of rows) (ports[r.category] ??= []).push(r.port)
+    sessions[appRoot] = {
+      name:      name ?? basename(appRoot),
+      root:      appRoot,
       projectId,
-      pid:       process.pid,
+      slot,
       env,
+      pid:       process.pid,
       ports,
       startedAt: new Date().toISOString(),
     }
-
-    writeLock(sessions)
-
-    // Inject into process.env so child processes inherit
-    for (const [category, ps] of Object.entries(ports)) {
-      if (ps.length === 1) {
-        process.env[`FLI_PORT_${category.toUpperCase()}`] = String(ps[0])
-      } else {
-        ps.forEach((p, i) =>
-          process.env[`FLI_PORT_${category.toUpperCase()}_${i}`] = String(p)
-        )
-      }
-    }
-
-    return { projectId, ports }
+    writeLock(sessions, lockFile)
+    return { projectId, slot, rows, vars }
   } finally {
-    releaseLock()
+    try { unlinkSync(guard) } catch {}
   }
 }
 
-export function releaseSession(projectName) {
-  const sessions = readLock()
-  delete sessions[projectName]
-  writeLock(sessions)
+async function freeSlot(sessions, appRoot, env, rowsAt, busy) {
+  const owners = new Map()
+  for (const [root, s] of Object.entries(sessions)) {
+    if (root === appRoot || s.env !== env || s.projectId !== PROJECTS.scaffold) continue
+    owners.set(s.slot, { root, ...s })
+  }
+
+  for (let slot = 0; slot <= 9; slot++) {
+    if (owners.has(slot)) continue
+    if (!(await busy(rowsAt(slot))).length) return slot
+  }
+
+  const idle = [...owners.values()]
+    .filter(s => !isProcessAlive(s.pid))
+    .sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)))
+  for (const s of idle) {
+    if ((await busy(rowsAt(s.slot))).length) continue
+    delete sessions[s.root]
+    return s.slot
+  }
+
+  throw new Error(
+    'All ten dev slots are taken by apps that are running or whose ports are held. ' +
+    'Stop one, or forget an idle one with `fli ports:status --clean`.'
+  )
 }
 
-export function autoRelease(projectName) {
-  const cleanup = () => releaseSession(projectName)
-  process.on('exit',   cleanup)
-  process.on('SIGINT',  () => { cleanup(); process.exit(130) })
-  process.on('SIGTERM', () => { cleanup(); process.exit(143) })
+/** Forget a root's slot. */
+export function releaseSession(appRoot, { lockFile = LOCK_FILE } = {}) {
+  const guard = acquireLock(lockFile)
+  try {
+    const sessions = readLock(lockFile)
+    delete sessions[appRoot]
+    writeLock(sessions, lockFile)
+  } finally {
+    try { unlinkSync(guard) } catch {}
+  }
 }
 
-/**
- * Get enriched status of all sessions — adds alive/stale flag.
- */
-export function getSessionStatus() {
-  const sessions = readLock()
-  return Object.entries(sessions).map(([name, s]) => ({
-    name,
+/** Every session with `alive`: whether its `fli dev` is still running. */
+export function getSessionStatus({ lockFile = LOCK_FILE } = {}) {
+  return Object.entries(readLock(lockFile)).map(([root, s]) => ({
     ...s,
+    root,
     alive: isProcessAlive(s.pid),
   }))
 }

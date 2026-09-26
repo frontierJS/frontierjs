@@ -40,7 +40,7 @@
  * A resumed transition replays rows an earlier version wrote, so a reader has to
  * be able to ask what wrote them before it parses any of them.
  */
-export const JOURNAL_FORMAT = 2
+export const JOURNAL_FORMAT = 3
 
 /**
  * The table names the DDL emits.
@@ -51,11 +51,11 @@ export const JOURNAL_FORMAT = 2
  * guessed table name is a runtime failure on a machine nobody is watching.
  */
 export const TABLE = {
-  journal:    'journal',
-  release:    'release',
-  bindings:   'binding_set',
-  transition: 'transition',
-  step:       'transition_step',
+  journal:       'journal',
+  release:       'release',
+  configuration: 'configuration_set',
+  transition:    'transition',
+  step:          'transition_step',
 }
 
 /**
@@ -185,9 +185,18 @@ const TRANSITION_AT_2 = `CREATE TABLE "transition__new" (
 /**
  * One format to the next. Keyed by the format it moves FROM.
  *
- * Each entry is the SQLite table-rebuild recipe: build beside, copy, drop,
- * rename, put the indexes back. `SELECT *` is correct here and only here —
- * format 2 changed a constraint and no column, which is what the oracle checks.
+ * A constraint change is the SQLite table-rebuild recipe: build beside, copy,
+ * drop, rename, put the indexes back. `SELECT *` is correct in step 1 and only
+ * there — format 2 changed a constraint and no column, which is what the oracle
+ * checks.
+ *
+ * A renamed TABLE cannot be `ALTER TABLE … RENAME`d here: the runner sends the
+ * current DDL before any statement, so by the time step 2 runs an empty
+ * `configuration_set` already exists and the rename collides with it. So the
+ * rows are copied into the table the DDL made and the old one dropped, which
+ * takes its index with it. A renamed COLUMN on a table the DDL leaves alone is
+ * an ordinary `RENAME COLUMN`. Step 2 names its tables as literals rather than
+ * through `TABLE`, because `TABLE` is what the journal is called NOW.
  */
 const MIGRATIONS = {
   1: () => [
@@ -202,6 +211,12 @@ const MIGRATIONS = {
     { name: 'idx1',    sql: `CREATE INDEX IF NOT EXISTS "idx_transition_app_environment_startedAt" ON "${TABLE.transition}" ("app", "environment", "startedAt")`, params: [] },
     { name: 'idx2',    sql: `CREATE INDEX IF NOT EXISTS "idx_transition_releaseId" ON "${TABLE.transition}" ("releaseId")`, params: [] },
     { name: 'idx3',    sql: `CREATE INDEX IF NOT EXISTS "idx_transition_status" ON "${TABLE.transition}" ("status")`, params: [] },
+  ],
+  2: () => [
+    { name: 'copy',   sql: `INSERT INTO "configuration_set" ("id","app","environment","generation","hash","values","secretRefs","createdAt","createdBy")
+                             SELECT "id","app","environment","generation","hash","values","secretRefs","createdAt","createdBy" FROM "binding_set"`, params: [] },
+    { name: 'drop',   sql: `DROP TABLE "binding_set"`, params: [] },
+    { name: 'column', sql: `ALTER TABLE "release" RENAME COLUMN "bindingsHash" TO "configurationHash"`, params: [] },
   ],
 }
 
@@ -243,7 +258,7 @@ export function readState({ app, environment }) {
   return [
     {
       name: 'serving',
-      sql: `SELECT t.*, r."schemaHash", r."pivot", r."bindingsHash"
+      sql: `SELECT t.*, r."schemaHash", r."pivot", r."configurationHash"
               FROM "${TABLE.transition}" t
               JOIN "${TABLE.release}" r ON r."id" = t."releaseId"
              WHERE t."app" = ? AND t."environment" = ? AND t."status" = 'succeeded'
@@ -253,7 +268,7 @@ export function readState({ app, environment }) {
     },
     {
       name: 'generation',
-      sql: `SELECT MAX("generation") AS "generation" FROM "${TABLE.bindings}"
+      sql: `SELECT MAX("generation") AS "generation" FROM "${TABLE.configuration}"
              WHERE "app" = ? AND "environment" = ?`,
       params: [app, environment],
     },
@@ -300,7 +315,7 @@ export function readLiveTransition({ kind = 'deploy', app, environment } = {}) {
   return [{
     name: 'live',
     sql: `SELECT t.*, r."digest" AS "r_digest", r."imageRef" AS "r_imageRef",
-                 r."bindingsHash" AS "r_bindingsHash", r."schemaHash" AS "r_schemaHash",
+                 r."configurationHash" AS "r_configurationHash", r."schemaHash" AS "r_schemaHash",
                  r."pivot" AS "r_pivot", r."pivotDeclared" AS "r_pivotDeclared",
                  r."audienceKey" AS "r_audienceKey", r."createdBy" AS "r_createdBy"
             FROM "${TABLE.transition}" t
@@ -341,14 +356,14 @@ export function recordRelease(release, { now } = {}) {
   return [{
     name: 'release',
     sql: `INSERT OR IGNORE INTO "${TABLE.release}"
-          ("id","app","environment","digest","imageRef","bindingsHash","generation",
+          ("id","app","environment","digest","imageRef","configurationHash","generation",
            "schemaHash","pivot","pivotDeclared","pivotFindings","retentionUntil",
            "audienceKey","createdAt","createdBy")
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     params: [
       release.id, release.app, release.environment,
       release.digest ?? null, release.imageRef ?? null,
-      release.bindingsHash, release.generation ?? 1,
+      release.configurationHash, release.generation ?? 1,
       // NOT NULL in the table. A Release minted with no release surface has no
       // data boundary in its id, which is a weaker claim and must not be stored
       // as though it were a hash.
@@ -360,11 +375,11 @@ export function recordRelease(release, { now } = {}) {
   }]
 }
 
-/** The bindings as they stood at one generation. Unique on (app, environment, generation). */
-export function recordBindings({ app, environment, generation, hash, values, secretRefs, createdBy, now } = {}) {
+/** The configuration as it stood at one generation. Unique on (app, environment, generation). */
+export function recordConfiguration({ app, environment, generation, hash, values, secretRefs, createdBy, now } = {}) {
   return [{
-    name: 'bindings',
-    sql: `INSERT OR IGNORE INTO "${TABLE.bindings}"
+    name: 'configuration',
+    sql: `INSERT OR IGNORE INTO "${TABLE.configuration}"
           ("app","environment","generation","hash","values","secretRefs","createdAt","createdBy")
           VALUES (?,?,?,?,?,?,?,?)`,
     params: [app, environment, generation, hash, json(values ?? {}), json(secretRefs ?? {}), stamp(now), createdBy ?? null],
@@ -494,7 +509,7 @@ export function settleTransition({ id, status, now } = {}) {
  * Did the world move between planning this and running it?
  *
  * Three terms, which is what `db/deploy.lite` declares a step records: the
- * Release serving, the binding generation, and the schema as at last applied.
+ * Release serving, the configuration generation, and the schema as at last applied.
  * **Nothing here reconciles** — drift refuses and names itself, because the two
  * answers were produced by two different intents and picking one is a guess
  * about which person was right.
@@ -513,7 +528,7 @@ export function preconditionVerdict(expected = {}, actual = {}) {
   cmp('serving', expected.serving, actual.serving,
     'another release was deployed after this one was planned')
   cmp('generation', expected.generation, actual.generation,
-    'the bindings moved to a new generation after this was planned')
+    'the configuration moved to a new generation after this was planned')
   cmp('schemaHash', expected.schemaHash, actual.schemaHash,
     'the release surface changed after this was planned')
 
@@ -574,11 +589,11 @@ export function readServingTransition({ app, environment, releaseId }) {
   }]
 }
 
-/** The binding set at one generation — what a revert compares today's against. */
-export function readBindingSet({ app, environment, generation }) {
+/** The configuration set at one generation — what a revert compares today's against. */
+export function readConfigurationSet({ app, environment, generation }) {
   return [{
-    name: 'bindings',
-    sql: `SELECT * FROM "${TABLE.bindings}"
+    name: 'configuration',
+    sql: `SELECT * FROM "${TABLE.configuration}"
            WHERE "app" = ? AND "environment" = ? AND "generation" = ?`,
     params: [app, environment, generation],
   }]
@@ -652,7 +667,7 @@ export function journalClient({ exec, db, ddl, now = null } = {}) {
       return { journal: { ...row, formatVersion: plan.to }, verdict, migrated: plan }
     },
 
-    /** What is serving, and at which binding generation. */
+    /** What is serving, and at which configuration generation. */
     async state({ app, environment }) {
       const r = await send(readState({ app, environment }))
       const serving = one(r, 'serving')
@@ -692,7 +707,7 @@ export function journalClient({ exec, db, ddl, now = null } = {}) {
         release: {
           id: row.releaseId, app: row.app, environment: row.environment,
           digest: row.r_digest ?? null, imageRef: row.r_imageRef ?? null,
-          bindingsHash: row.r_bindingsHash, generation: row.generation ?? 1,
+          configurationHash: row.r_configurationHash, generation: row.generation ?? 1,
           schemaHash: row.r_schemaHash ?? null, pivot: row.r_pivot ?? 'unknown',
           pivotDeclared: !!row.r_pivotDeclared, pivotFindings: [],
           audienceKey: row.r_audienceKey ?? 'everyone', createdBy: row.r_createdBy ?? null,
@@ -701,16 +716,16 @@ export function journalClient({ exec, db, ddl, now = null } = {}) {
     },
 
     /**
-     * Record the Release, its bindings and the transition, and read the steps back.
+     * Record the Release, its configuration and the transition, and read the steps back.
      *
      * `release` is null for a pause, which names the Release already serving and
      * mints none — writing one would put a second row in the table for the same
      * bytes and move `createdAt` on a Release nothing rebuilt.
      */
-    async begin({ release, bindings, transition, steps }) {
+    async begin({ release, configuration, transition, steps }) {
       const r = await send([
-        ...(release  ? recordRelease(release, { now }) : []),
-        ...(bindings ? recordBindings({ ...bindings, now }) : []),
+        ...(release       ? recordRelease(release, { now }) : []),
+        ...(configuration ? recordConfiguration({ ...configuration, now }) : []),
         ...openTransition({ transition, steps, now }),
       ])
       return { steps: r.steps?.rows ?? [], resumed: (r.transition?.changes ?? 0) === 0 }
@@ -744,9 +759,9 @@ export function journalClient({ exec, db, ddl, now = null } = {}) {
       return one(r, 'transition')
     },
 
-    async bindingSet(args) {
-      const r = await send(readBindingSet(args), { transaction: false })
-      return one(r, 'bindings')
+    async configurationSet(args) {
+      const r = await send(readConfigurationSet(args), { transaction: false })
+      return one(r, 'configuration')
     },
   }
 }

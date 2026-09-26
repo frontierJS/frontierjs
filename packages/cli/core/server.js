@@ -744,7 +744,7 @@ async function handlePortsClean(req, res) {
       req.on('end', () => { try { resolve(JSON.parse(d)) } catch { reject(new Error('Invalid JSON')) } })
     })
     const { releaseSession } = await import('./ports.js')
-    releaseSession(body.name)
+    releaseSession(body.root)
     json(res, 200, { ok: true })
   } catch (err) {
     json(res, 500, { error: err.message })

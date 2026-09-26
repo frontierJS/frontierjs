@@ -1,0 +1,52 @@
+<script>
+  // dnd.mesa — two lists of one type and a third of another.
+  //
+  // `todo` and `done` share the type `task`, so an item crosses between them;
+  // `other` is a different type, so dropping on it must change nothing. Each
+  // item carries a <button>, because a press on a control inside an item is a
+  // click on that control and must not start a drag. The last callback of each
+  // kind is published to `#log` so a spec can read the trigger, not only the
+  // lists.
+  import { dndzone } from '@frontierjs/ui/dnd'
+
+  let todo  = [{ id: 1, t: 'one' }, { id: 2, t: 'two' }, { id: 3, t: 'three' }, { id: 4, t: 'four' }]
+  let done  = [{ id: 5, t: 'five' }]
+  let other = [{ id: 9, t: 'nine' }]
+  let log   = []
+  let clicks = 0
+
+  const record = (list, which) => ({ items, info }) => {
+    log = [...log, `${list}:${which}:${info.trigger}`]
+    if (list === 'todo') todo = items
+    else if (list === 'done') done = items
+    else other = items
+  }
+</script>
+
+<div class="board">
+  <ul id="todo" {@attach dndzone(() => ({ items: todo, type: 'task', onconsider: record('todo', 'c'), onfinalize: record('todo', 'f') }))}>
+    {#each todo as it (it.id)}
+      <li data-id={it.id}>{it.t} <button class="poke" on:click={() => clicks++}>·</button></li>
+    {/each}
+  </ul>
+  <ul id="done" {@attach dndzone(() => ({ items: done, type: 'task', onconsider: record('done', 'c'), onfinalize: record('done', 'f') }))}>
+    {#each done as it (it.id)}
+      <li data-id={it.id}>{it.t}</li>
+    {/each}
+  </ul>
+  <ul id="other" {@attach dndzone(() => ({ items: other, type: 'note', onconsider: record('other', 'c'), onfinalize: record('other', 'f') }))}>
+    {#each other as it (it.id)}
+      <li data-id={it.id}>{it.t}</li>
+    {/each}
+  </ul>
+</div>
+
+<output id="state">{todo.map(i => i.id).join(',')}|{done.map(i => i.id).join(',')}|{other.map(i => i.id).join(',')}</output>
+<output id="log">{log.join(' ')}</output>
+<output id="clicks">{clicks}</output>
+
+<style>
+  .board { display: flex; gap: 2rem; align-items: flex-start; }
+  ul { list-style: none; margin: 0; padding: 0.5rem; width: 10rem; min-height: 3rem; }
+  li { height: 2rem; line-height: 2rem; margin: 0 0 0.25rem; padding: 0 0.5rem; border: 1px solid var(--rule); }
+</style>

@@ -18,9 +18,9 @@
   // …and the markup half is this model's DEFAULT form (repo Invariant 18).
   //
   // The cycle columns are absent from it and that is the schema's doing:
-  // `currentPeriodStart`, `currentPeriodEnd` and `cancelledAt` are `@system`,
-  // stamped by the renewal job, so they reach the browser `readOnly` and a
-  // generated form does not offer them. What is left is what a person actually
+  // `currentPeriodStart` and `currentPeriodEnd` are read off the periods and
+  // `cancelledAt` is `@system`, so they reach the browser `readOnly` and a
+  // generated form does not offer them. Saving opens the first period. What is left is what a person actually
   // decides — who, which price, how many, and when the trial ends.
   import Form   from '@frontierjs/ui/components/forms/Form.mesa'
   import Button from '@frontierjs/ui/components/forms/Button.mesa'

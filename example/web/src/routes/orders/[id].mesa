@@ -16,6 +16,7 @@ title: Order
   import { payments }      from '../../resources/Payment.mesa'
   import { paymentEvents } from '../../resources/PaymentEvent.mesa'
   import { session } from '@/session.js'
+  import { day } from '@/datetime.js'
   import { page, goto } from '@frontierjs/sierra/router'
 
   import Alert          from '@frontierjs/ui/components/feedback/Alert.mesa'
@@ -291,8 +292,19 @@ title: Order
   // The two halves the Actions menu groups by. Derived from the same
   // `isTerminal` the confirmation uses, so a move cannot be drawn as reversible
   // in one place and asked about in the other.
-  $: forward  = order ? orders.transitions(order, session.level).filter(m => !isTerminal(m)) : []
-  $: terminal = order ? orders.transitions(order, session.level).filter(isTerminal) : []
+  //
+  // A `@system` move is left out of both: `abandon` is made by the order's
+  // `@@commitment` and by nothing a person presses, so there is no level at
+  // which it becomes a button.
+  $: moves    = order ? orders.transitions(order, session.level).filter(m => !m.system) : []
+  $: forward  = moves.filter(m => !isTerminal(m))
+  $: terminal = moves.filter(isTerminal)
+
+  // …and it comes back here, as the date the commitment falls due. The date is
+  // derived off the row by the function the sweep's own `due()` answers with;
+  // the sentence is this screen's.
+  $: owed = order ? orders.commitments(order) : []
+  const OWED = { abandon: 'If it is still unpaid, it is abandoned on' }
 
   // The menu offers a move whether or not this session may take it, and says
   // why not — the same permissive contract as everywhere else. The server
@@ -363,6 +375,12 @@ title: Order
     at all — which is exactly what the schema says about it.
   -->
   <Steps steps={lifecycle} currentStep={order.status} label="Order lifecycle" />
+
+  {#each owed as c}
+    <Alert tone="warning" data-owed={c.name} data-due={c.dueAt}>
+      {OWED[c.name] ?? c.transition + ' on'} <strong>{day(c.dueAt)}</strong>.
+    </Alert>
+  {/each}
 
   <div class="tiles" style="--tile-min: 12rem">
     <StatCard label="Status" value={order.status} tone={order.status === 'cancelled' ? 'danger' : ''} />
@@ -476,14 +494,14 @@ title: Order
     </TabPanel>
 
     <TabPanel id="moves">
-      {#if !orders.transitions(order, session.level).length}
+      {#if !moves.length}
         <p class="text-sm text-muted">
           Nothing leaves <code>{order.status}</code>. That is the schema's
           answer, not this page's.
         </p>
       {:else}
         <ul class="stack">
-          {#each orders.transitions(order, session.level) as move}
+          {#each moves as move}
             <li class="cluster">
               <!-- A tooltip is the right home for "why is this disabled" —
                    it is on the control, not in a paragraph beside it. -->

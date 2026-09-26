@@ -362,7 +362,7 @@ function makeCtx(overrides: Partial<CtxSeed> = {}): ServiceContext {
     directives: {},
     data:      null,
     auth:      { user: null },
-    client:    { headers: {} },
+    caller:    { headers: {} },
     route:     {},
     locals:    {},
     transients: {},
@@ -1763,7 +1763,7 @@ describe('ChannelManager', () => {
     const ch = manager.channel('workspace:1')
     ch.join(conn)
 
-    const fakeCtx = { service: 'deployments', method: 'create', auth: { user: null }, client: { headers: {} }, route: {}, locals: {} } as any
+    const fakeCtx = { service: 'deployments', method: 'create', auth: { user: null }, caller: { headers: {} }, route: {}, locals: {} } as any
     await manager.publish('deployments created', { id: 'dep-1' }, fakeCtx, () => ch)
 
     expect(sent.length).toBe(2)  // 1 connection ack + 1 event
@@ -1810,6 +1810,36 @@ describe('createDatabase', () => {
     close()
     // Clean up
     try { require('node:fs').unlinkSync(path) } catch {}
+  })
+
+  it('opens a file another process is writing — the wait is set before the WAL switch', async () => {
+    // A file not yet in WAL, held EXCLUSIVE by a second process: the switch
+    // needs the lock, so with the timeout set after it the open throws
+    // SQLITE_BUSY in 0ms (`FJS-1331`). A second process because a lock held in
+    // this one blocks the event loop that would release it.
+    const path = `${tempDir('junction-wal-')}/held.db`
+    const { Database } = await import('bun:sqlite')
+    const init = new Database(path)
+    init.run('CREATE TABLE held (x)')
+    init.close()
+    const child = Bun.spawn(['bun', '-e', `
+      const { Database } = require('bun:sqlite')
+      const db = new Database(${JSON.stringify(path)})
+      db.run('BEGIN EXCLUSIVE'); db.run('INSERT INTO held VALUES (1)')
+      console.log('HELD')
+      setTimeout(() => { db.run('ROLLBACK'); db.close() }, 300)
+    `], { stdout: 'pipe' })
+    const reader = child.stdout.getReader()
+    let seen = ''
+    while (!seen.includes('HELD')) {
+      const { value, done } = await reader.read()
+      if (done) break
+      seen += new TextDecoder().decode(value)
+    }
+
+    const { db, close } = createDatabase(path)
+    expect((db.query('PRAGMA journal_mode').get() as { journal_mode: string }).journal_mode).toBe('wal')
+    close()
   })
 
   it('runs migrations from SQL strings via seed', async () => {
@@ -1989,7 +2019,7 @@ describe('request()', () => {
       services: [(_app) => createService({
         name: 'echo',
         find: async (ctx) => {
-          receivedToken = ctx.client.headers['authorization']
+          receivedToken = ctx.caller.headers['authorization']
           return []
         },
       })]
@@ -3027,7 +3057,7 @@ describe('rateLimit hook', () => {
     // while rateLimit happened to be the very first before hook.
     const ip = (addr: string) => {
       const c = testCtx('items', 'find')
-      c.client.ip = addr
+      c.caller.ip = addr
       return c
     }
 

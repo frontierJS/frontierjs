@@ -104,7 +104,7 @@ describe('controlFor — the one place a type becomes a control', () => {
   })
 
   test('an enum is a select carrying its members', () => {
-    expect(controlFor(rules().status)).toEqual({ control: 'select', options: ['pending', 'paid', 'shipped'] })
+    expect(controlFor(rules().status)).toEqual({ control: 'select', task: 'select', options: ['pending', 'paid', 'shipped'] })
   })
 
   test('a boolean is a checkbox', () => {
@@ -112,8 +112,8 @@ describe('controlFor — the one place a type becomes a control', () => {
   })
 
   test('a number states its step, because the schema does not say how finely to nudge', () => {
-    expect(controlFor(rules().total)).toEqual({ control: 'input', step: 'any' })
-    expect(controlFor({ type: 'integer' })).toEqual({ control: 'input', step: 1 })
+    expect(controlFor(rules().total)).toEqual({ control: 'input', task: 'quantify', step: 'any' })
+    expect(controlFor({ type: 'integer' })).toEqual({ control: 'input', task: 'quantify', step: 1 })
   })
 
   test('a @big column is a text box that a phone gives a numeric keypad', () => {
@@ -124,9 +124,9 @@ describe('controlFor — the one place a type becomes a control', () => {
     // through a JS number and would round the value back in the browser, which
     // is the defect the attribute exists to close arriving one layer out.
     expect(controlFor({ type: 'string', pattern: '^-?\\d+$', 'x-big': true }))
-      .toEqual({ control: 'input', type: 'text', inputMode: 'numeric', pattern: '^-?\\d+$' })
+      .toEqual({ control: 'input', task: 'quantify', type: 'text', inputMode: 'numeric', pattern: '^-?\\d+$' })
     // The control: the same string rule without it.
-    expect(controlFor({ type: 'string' })).toEqual({ control: 'input' })
+    expect(controlFor({ type: 'string' })).toEqual({ control: 'input', task: 'text' })
   })
 
   test('x-big survives buildFieldRules, or the row above never sees it', () => {
@@ -140,26 +140,26 @@ describe('controlFor — the one place a type becomes a control', () => {
   test('@markdown is a textarea — a declaration, not a guess about length', () => {
     expect(controlFor(rules().body).control).toBe('textarea')
     // An ordinary unbounded string is NOT promoted. Nothing declared it long.
-    expect(controlFor({ type: 'string' })).toEqual({ control: 'input' })
+    expect(controlFor({ type: 'string' })).toEqual({ control: 'input', task: 'text' })
   })
 
   test('a date round-trips in a date input; a date-time needs a control of its own', () => {
     // A date has no zone, so the element round-trips it and a type attribute
     // is the whole answer.
-    expect(controlFor(rules().dueOn)).toEqual({ control: 'input', type: 'date' })
+    expect(controlFor(rules().dueOn)).toEqual({ control: 'input', task: 'quantify', type: 'date' })
     // A date-time does have one and `datetime-local` has none, so the value has
     // to be converted at each edge — that is a control, and this row names it
     // rather than a type. `@frontierjs/ui` binds it to DateTimeInput.
-    expect(controlFor({ type: 'string', format: 'date-time' })).toEqual({ control: 'datetime' })
+    expect(controlFor({ type: 'string', format: 'date-time' })).toEqual({ control: 'datetime', task: 'quantify' })
   })
 
   test('a wall-clock time is a time input, and the seconds box is a step', () => {
     // The same argument as `date`: no zone, so the element round-trips it.
-    expect(controlFor(rules().opensAt)).toEqual({ control: 'input', type: 'time' })
+    expect(controlFor(rules().opensAt)).toEqual({ control: 'input', task: 'quantify', type: 'time' })
     // `<input type="time">` shows HH:MM unless the step is not a whole number
     // of minutes — so without this, a column that ACCEPTS seconds gives a
     // person no way to type them (`FJS-522`).
-    expect(controlFor(rules().shutsAt)).toEqual({ control: 'input', type: 'time', step: 1 })
+    expect(controlFor(rules().shutsAt)).toEqual({ control: 'input', task: 'quantify', type: 'time', step: 1 })
   })
 
   test('the pattern survives into the rule, so the browser checks what the server checks', () => {
@@ -536,12 +536,12 @@ describe('registerControl — the half of a contribution that names the control'
 
     expect(controlFor(rules().tags)).toMatchObject({ control: 'tag-input', by: 'tags' })
     // …and it did not claim anything else on the way past.
-    expect(controlFor(rules().total)).toEqual({ control: 'input', step: 'any' })
+    expect(controlFor(rules().total)).toEqual({ control: 'input', task: 'quantify', step: 'any' })
   })
 
   test('a descriptor travels whole — whatever the component needs rides along', () => {
     registerControl('stars', () => ({ control: 'stars', max: 5, allowHalf: true }))
-    expect(controlFor(rules().total)).toEqual({ control: 'stars', max: 5, allowHalf: true, by: 'stars' })
+    expect(controlFor(rules().total)).toEqual({ control: 'stars', max: 5, allowHalf: true, by: 'stars', task: 'quantify' })
   })
 
   test('answering null declines and the next entry — then the table — answers', () => {
@@ -626,7 +626,7 @@ describe('registerControl — the half of a contribution that names the control'
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     registerControl('broken', () => { throw new Error('boom') })
 
-    expect(controlFor(rules().total)).toEqual({ control: 'input', step: 'any' })
+    expect(controlFor(rules().total)).toEqual({ control: 'input', task: 'quantify', step: 'any' })
     expect(warn.mock.calls[0][0]).toMatch(/broken/)
     expect(warn.mock.calls[0][0]).toMatch(/boom/)
     warn.mockRestore()
@@ -657,7 +657,7 @@ describe('registerControl — the half of a contribution that names the control'
     })
 
     expect(controlFor(rules().total)).toMatchObject({ control: 'input', step: 0.01 })
-    expect(defaultControlFor(rules().total)).toEqual({ control: 'input', step: 'any' })
+    expect(defaultControlFor(rules().total)).toEqual({ control: 'input', task: 'quantify', step: 'any' })
   })
 })
 

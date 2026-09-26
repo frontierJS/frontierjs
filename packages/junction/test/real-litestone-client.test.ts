@@ -43,7 +43,7 @@ async function mkDb(): Promise<AnyClient> {
 function ctx(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
   return {
     service: 'posts', method: 'find', id: undefined, data: null,
-    params: {}, query: {}, auth: {}, client: {},
+    params: {}, query: {}, auth: {}, caller: {},
     locals: { db }, app: {},
     ...over,
   } as unknown as ServiceContext

@@ -13,7 +13,7 @@
 
 import { describe, test, expect, beforeAll } from 'vitest'
 
-let createSignal, createEffect, createRoot, flushSync, ifBlock, onCleanup, portal
+let createSignal, createEffect, createMemo, createRoot, flushSync, ifBlock, onCleanup, portal
 
 beforeAll(async () => {
   const { Window } = await import('happy-dom')
@@ -22,7 +22,7 @@ beforeAll(async () => {
     try { Object.defineProperty(globalThis, k, { value: win[k], configurable: true, writable: true }) } catch {}
   }
   globalThis.window = win
-  ;({ createSignal, createEffect, createRoot, flushSync, ifBlock, onCleanup, portal } =
+  ;({ createSignal, createEffect, createMemo, createRoot, flushSync, ifBlock, onCleanup, portal } =
     await import('../src/runtime.js'))
 })
 
@@ -50,6 +50,29 @@ describe('an effect prunes the effects it created itself', () => {
     flushSync()
     // Only the child the LAST outer run created is still subscribed.
     expect(innerRuns).toBe(1)
+  })
+
+  // A memo is built by the body that owns it just as an effect is, and was not
+  // marked so: fifty re-runs left fifty-one memos subscribed to `s` (`FJS-1327`).
+  test('a memo does not accumulate across re-runs', () => {
+    const [outer, setOuter] = createSignal(0)
+    const [s, setS] = createSignal(1)
+    const seen = []
+
+    createRoot(() => {
+      createEffect(() => {
+        outer()
+        const doubled = createMemo(() => s() * 2)
+        seen.push(doubled())
+      })
+    })
+    for (let i = 1; i <= 50; i++) { setOuter(i); flushSync() }
+
+    expect(s._src._subs.size).toBe(1)
+    seen.length = 0
+    setS(2)
+    flushSync()
+    expect(seen).toEqual([4])
   })
 
   test('a pruned child runs its cleanup', () => {

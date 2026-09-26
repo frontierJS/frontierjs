@@ -1327,7 +1327,7 @@ function rootDocSection(model) {
 }
 
 function footer() {
-  return `<footer>Regenerate with <code>fli ws:atlas --as=report</code> · check with <code>--check</code> · the model with <code>--as=json</code>. Nothing here is hand-maintained, so a wrong row is a bug in <code>packages/cli/core/repo-map.js</code>.</footer>`
+  return `<footer>Regenerate with <code>fli ws:atlas --as=report</code> · check with <code>--check</code> · the model with <code>--json</code>. Nothing here is hand-maintained, so a wrong row is a bug in <code>packages/cli/core/repo-map.js</code>.</footer>`
 }
 
 // ─── html helpers ─────────────────────────────────────────────────────────────

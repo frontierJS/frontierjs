@@ -1,0 +1,17 @@
+<script>
+  // devtools-cause.mesa — one write, and two ways to be woken by it.
+  //
+  // `count` is written by the click. `doubled` derives from it, and the text
+  // beside it renders the derivation — so that render is woken through a
+  // memo, not by the write directly. `$:` then writes `seen` from `doubled`,
+  // and the text rendering `seen` is woken by a write an EFFECT made, whose
+  // own cause is the click: the chain crosses a write in the middle.
+  let count = 0
+  let seen = 0
+  const doubled = count * 2
+  $: { if (doubled > 0) seen = doubled }
+</script>
+
+<output id="doubled">{doubled}</output>
+<output id="seen">{seen}</output>
+<button type="button" id="bump" on:click={() => count++}>bump</button>

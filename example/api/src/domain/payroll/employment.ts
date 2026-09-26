@@ -1,8 +1,10 @@
 // api/src/domain/payroll/employment.ts — who worked here, on what terms, on a given date.
 //
-// This file is the specification for a language feature that does not exist,
-// and it is written by hand on purpose (`IDEAS/payroll.md` phase 2). Read it as
-// evidence rather than as a pattern to copy.
+// `PayWindow` declares its window — `@@effective(from:, to:)`, asked rather than
+// imposed (`FJS-D352`) — so the interval is the schema's and every read here
+// states its day as `asOf`. What stays in this file is what a declaration
+// cannot say: WHICH day, and what a pay run does when it finds two windows
+// covering one.
 //
 // ─── The question ─────────────────────────────────────────────────────────
 //
@@ -35,8 +37,9 @@
 // whichever came back first, which is a wrong salary once per raise and never
 // reproducible.
 //
-// That is Invariant 4's shape applied to time, and it is the whole reason this
-// module exists rather than the where-clause being written at each call site.
+// That is Invariant 4's shape applied to time, and the owner is the schema:
+// `@@effective` compiles the predicate, so no read here spells the interval and
+// no caller that builds its own query can spell it a second way.
 //
 // ─── Where it gets ugly, which is the point ───────────────────────────────
 //
@@ -108,20 +111,6 @@ export function lastDayOf(period: { periodEnd: PlainDate }): PlainDate {
 }
 
 /**
- * The window covering `on`, as a `where` clause.
- *
- * The one place the half-open rule is written. Exported so a caller that must
- * build its own query — a count, a join, an aggregate — cannot spell the
- * interval a second way.
- */
-export function coveringAt(on: PlainDate) {
-  return {
-    effectiveFrom: { lte: on },
-    OR: [{ effectiveTo: null }, { effectiveTo: { gt: on } }],
-  }
-}
-
-/**
  * What one employee was on, on one day. `null` if nothing covers it — before
  * they were hired, or a gap somebody left.
  *
@@ -138,7 +127,8 @@ export async function payAsAt(
   client: Client, employeeId: number, on: PlainDate,
 ): Promise<PayWindowRow | null> {
   return await client.payWindow.findFirst({
-    where:   { employeeId, ...coveringAt(on) },
+    where:   { employeeId },
+    asOf:    on,
     orderBy: { effectiveFrom: 'desc' },
   }) as PayWindowRow | null
 }
@@ -166,7 +156,8 @@ export async function payAsAtMany(
   if (!employeeIds.length) return new Map()
 
   const rows = await client.payWindow.findMany({
-    where:   { employeeId: { in: employeeIds }, ...coveringAt(on) },
+    where:   { employeeId: { in: employeeIds } },
+    asOf:    on,
     orderBy: { effectiveFrom: 'desc' },
     limit:   employeeIds.length * 4,
   }) as PayWindowRow[]
@@ -196,8 +187,8 @@ export async function payAsAtMany(
  *
  * Somebody who left in February is not on March's payroll however many pay
  * windows they still have rows for, and somebody hired in April is not on
- * March's. Half-open at both ends, for `coveringAt`'s reason: the leaving date
- * is the first day they are NOT employed.
+ * March's. Half-open at both ends, for the pay window's reason: the leaving
+ * date is the first day they are NOT employed.
  */
 export async function employedAt(
   client: Client, on: PlainDate,

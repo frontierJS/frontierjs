@@ -149,7 +149,7 @@ describe('the server merges only what the app declared', () => {
     })
     app.services.register(createService({
       name: 'probe',
-      async find(ctx: ServiceContext) { seen = { ...ctx.client.headers }; return [] },
+      async find(ctx: ServiceContext) { seen = { ...ctx.caller.headers }; return [] },
     }))
     app.configure(channels(() => {}))
     await app.start()

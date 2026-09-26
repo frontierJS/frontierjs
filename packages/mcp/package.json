@@ -11,7 +11,8 @@
   "exports": {
     ".": "./index.ts",
     "./projection": "./src/projection.ts",
-    "./plugin": "./src/plugin.ts"
+    "./plugin": "./src/plugin.ts",
+    "./client": "./src/client/index.ts"
   },
   "keywords": [
     "frontierjs",
@@ -24,6 +25,7 @@
   },
   "dependencies": {
     "@frontierjs/toolbelt": "^0.1.0",
+    "@modelcontextprotocol/client": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0"
   },
   "devDependencies": {

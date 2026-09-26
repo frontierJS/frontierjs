@@ -2,6 +2,8 @@ import { describe, test, expect } from 'bun:test'
 import { extractFrontmatter, transformMarkdown, compileCli, extractSegments,
          stripFrontmatter, splitFrontmatter, compileCliWithMap } from '../core/compiler.js'
 import { registerShim, rewriteStackString, _clearShims } from '../core/stack.js'
+import { commandFiles } from '../core/command-parse.js'
+import { declarationProblem } from '../core/flags.js'
 import { readdirSync, statSync, readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
@@ -224,6 +226,22 @@ describe('a frame in a command names the .md line its author wrote', () => {
     expect(code).toContain('const h = 1')
   })
 
+  test('locate names the head too — the module\'s lines and the lifted <script>', () => {
+    // The offset is right for the body only. A <script> block moves to the top
+    // and the namespace module is pasted above it, so those lines are found by
+    // region: the module by its own line, the block by the .md line.
+    const mod = 'const M1 = 1\nconst M2 = 2'
+    const src = md('---', 'title: a:b', '---', '', 'Prose.', '',
+                   '<script>', '', '  const S1 = 1', 'const S2 = 2', '</script>', '',
+                   '```js', 'const B1 = 1', '```')
+    const { code, locate } = compileCliWithMap(src, mod, 'x.md')
+    expect(locate(genLine(code, 'const M2'))).toEqual({ in: 'module', line: 2 })
+    expect(locate(genLine(code, 'const S1'))).toEqual({ in: 'script', line: lineOf(src, 'const S1') })
+    expect(locate(genLine(code, 'const S2'))).toEqual({ in: 'script', line: lineOf(src, 'const S2') })
+    expect(locate(genLine(code, 'const B1'))).toEqual({ in: 'body',   line: lineOf(src, 'const B1') })
+    expect(locate(genLine(code, 'export const metadata'))).toBeNull()
+  })
+
   test('no sourceURL pragma is emitted at all any more', () => {
     // It is what produced the confident wrong location on Node.
     const src = md('---', 'title: a:b', '---', '', '```js', 'const x = 1', '```')
@@ -328,6 +346,30 @@ echo('hi')
     // frontmatter fields should NOT appear as commented lines
     expect(result).not.toContain('// title: hello:greet')
     expect(result).toContain("echo('hi')")
+  })
+
+  test('an indented block in prose is prose — only a fence runs', () => {
+    // Markdown's indented code block, and a list item's continuation, both used
+    // to compile as JavaScript: an example of a status line broke its command.
+    const result = transformMarkdown(`---
+title: t
+---
+
+The status line:
+
+    ● online  3 waiting
+
+- first
+
+  continued
+
+\`\`\`js
+echo(1)
+\`\`\`
+`)
+    expect(result).toContain('//     ● online  3 waiting')
+    expect(result).toContain('//   continued')
+    expect(result).toContain('echo(1)')
   })
 
   test('does NOT strip <script> blocks — that is compileCli job', () => {
@@ -603,6 +645,23 @@ log.info(helper())
     expect(out.segments).toHaveLength(2)
     expect(out.segments[0]).toEqual({ type: 'prose', content: 'This is the prose.' })
     expect(out.segments[1]).toEqual({ type: 'code', lang: 'js', content: 'log.info(helper())' })
+  })
+
+  test('an indented block is prose, as it is to the compiler', () => {
+    const out = extractSegments(`---
+title: t
+---
+
+The status line:
+
+    ● online
+
+\`\`\`js
+echo(1)
+\`\`\`
+`)
+    expect(out.segments.map(s => s.type)).toEqual(['prose', 'code'])
+    expect(out.segments[0].content).toContain('● online')
   })
 
   test('preserves order of interleaved prose/code (literate style)', () => {
@@ -884,24 +943,35 @@ log.success(tag + helper())
 // Repo invariant: a clean compile is not proof of valid JS, so this parses the
 // output rather than merely producing it.
 
+// Each is compiled WITH its namespace module, as the runtime loads it: the two
+// scripts share a scope, so a name declared in both only fails as a pair.
+// `core/command-parse.js` is the pairing, and `fli check` runs the same one.
+
 describe('all shipped commands', () => {
   const COMMANDS = join(dirname(fileURLToPath(import.meta.url)), '..', 'commands')
+  const entries  = commandFiles(COMMANDS)
 
-  const walk = (dir) => readdirSync(dir).flatMap((f) => {
-    const p = join(dir, f)
-    return statSync(p).isDirectory() ? walk(p) : (p.endsWith('.md') ? [p] : [])
+  test('there are commands to check, and modules paired with them', () => {
+    expect(entries.length).toBeGreaterThan(100)
+    // Discovery that stopped pairing would pass every parse below.
+    expect(entries.filter(e => e.module).length).toBeGreaterThan(50)
   })
 
-  const files = walk(COMMANDS)
-
-  test('there are commands to check', () => {
-    expect(files.length).toBeGreaterThan(100)
+  // `getConfig` refuses these on every run, so a broken one here is a command
+  // that cannot start — and one nobody runs would ship that way.
+  test('no shipped command declares a flag getConfig refuses', () => {
+    const broken = entries.flatMap(({ file, template }) =>
+      Object.entries(extractFrontmatter(template).flags || {})
+        .map(([name, def]) => declarationProblem(name, def))
+        .filter(Boolean)
+        .map(p => `${file.slice(COMMANDS.length + 1)}: ${p}`))
+    expect(broken).toEqual([])
   })
 
-  for (const file of files) {
+  for (const { file, template, module } of entries) {
     const rel = file.slice(COMMANDS.length + 1)
     test(`${rel} compiles to parseable JS`, () => {
-      const out = compileCli(readFileSync(file, 'utf8'), '', file)
+      const out = compileCli(template, module?.script || '', file)
       expect(() => parseEsm(out)).not.toThrow()
     })
   }

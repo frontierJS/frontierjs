@@ -94,6 +94,18 @@ model Session {
   @@db(main)
   @@gate("8")
   @@log(audit)
+
+  /// `expiresAt` is the window, so a lapsed session is not there to be read and
+  /// the five `expiresAt: { gt: new Date() }` clauses that used to say so are
+  /// gone. The filter reads the CLIENT's clock, which is what makes a lapse
+  /// testable at all — a `new Date()` in this package read the host's, so
+  /// `env.clock.advance()` moved nothing.
+  ///
+  /// `impersonationEndsAt` is a SECOND deadline and stays read by hand: one
+  /// model declares one window, and an episode lapsing does not put the session
+  /// out of force.
+  @@expires(expiresAt)
+
   @@index([userId])
   @@index([expiresAt])
 }
@@ -126,6 +138,12 @@ model Verification {
 
   @@db(main)
   @@gate("8")
+
+  /// A lapsed proof is not a proof. Declared rather than filtered, so the three
+  /// purposes cannot drift — the reset path and the verify path used to carry
+  /// the same clause and one of them could have lost it silently.
+  @@expires(expiresAt)
+
   @@index([purpose, identifier])
   @@index([expiresAt])
 }
@@ -162,6 +180,13 @@ model LoginChallenge {
 
   @@db(main)
   @@gate("8")
+
+  /// `completeLogin` is the one read here that deliberately does NOT filter and
+  /// now says so: it wants the lapsed row in hand, because *this ticket ran
+  /// out* and *no such ticket* are different lines in the audit trail and one
+  /// of them tells a person to sign in again.
+  @@expires(expiresAt)
+
   @@index([userId])
   @@index([expiresAt])
 }
@@ -198,5 +223,10 @@ model OauthFlow {
 
   @@db(main)
   @@gate("8")
+
+  /// Minutes rather than hours, and a flow that has run out is a flow nobody
+  /// may finish.
+  @@expires(expiresAt)
+
   @@index([expiresAt])
 }

@@ -440,7 +440,6 @@ CREATE TABLE IF NOT EXISTS "workspace_member" (
   FOREIGN KEY ("workspaceId") REFERENCES "workspace" ("id") ON DELETE CASCADE,
   FOREIGN KEY ("userId") REFERENCES "user" ("id") ON DELETE CASCADE
 ) STRICT;
-CREATE INDEX IF NOT EXISTS "idx_workspace_member_workspaceId_userId" ON "workspace_member" ("workspaceId", "userId");
 CREATE INDEX IF NOT EXISTS "idx_workspace_member_userId" ON "workspace_member" ("userId");
 
 CREATE TABLE IF NOT EXISTS "invitation" (
@@ -1019,7 +1018,6 @@ CREATE TABLE IF NOT EXISTS "job" (
   "status" TEXT NOT NULL DEFAULT 'pending',
   "command" TEXT,
   "cronExpression" TEXT,
-  "nextRunAt" TEXT,
   "trigger" TEXT NOT NULL DEFAULT 'manual',
   "triggerConfig" TEXT NOT NULL DEFAULT '{}',
   "timeoutSeconds" INTEGER NOT NULL DEFAULT 300,
@@ -1037,7 +1035,6 @@ CREATE TABLE IF NOT EXISTS "job" (
   FOREIGN KEY ("environmentId") REFERENCES "environment" ("id")
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_job_workspaceId" ON "job" ("workspaceId") WHERE "deletedAt" IS NULL;
-CREATE INDEX IF NOT EXISTS "idx_job_nextRunAt" ON "job" ("nextRunAt") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_job_appId" ON "job" ("appId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_job_environmentId" ON "job" ("environmentId") WHERE "deletedAt" IS NULL;
 CREATE INDEX IF NOT EXISTS "idx_job_deletedAt" ON "job" ("deletedAt") WHERE "deletedAt" IS NULL;

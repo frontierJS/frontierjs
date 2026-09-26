@@ -23,13 +23,13 @@
 // refusal names the flag that would override it, and the flags are separate so
 // that overriding one does not quietly override the rest.
 //
-// ─── why bindings are a refusal and not a fix ────────────────────────────────
+// ─── why configuration is a refusal and not a fix ───────────────────────────
 //
 // Serving state is the PAIR. `fli` writes no `.env` on a target — the operator
-// owns that file — so when the binding generation has moved, a revert genuinely
+// owns that file — so when the configuration generation has moved, a revert genuinely
 // cannot restore the pair; it can only put old code onto today's config. That is
 // the documented Fly failure this separation exists to refuse, so it is refused,
-// and `--onto-current-bindings` is the operator saying they have read which keys
+// and `--onto-current-configuration` is the operator saying they have read which keys
 // moved and want it anyway.
 
 import { MOVES_SERVING } from './journal.js'
@@ -58,7 +58,7 @@ export const REFUSALS = {
   'nothing-prior': 'there is no earlier release to go back to',
   'pivot':         'a deploy since then cannot be undone',
   'retention':     'the release stopped being a revert target',
-  'bindings':      'the configuration has moved since',
+  'configuration': 'the configuration has moved since',
   'no-image':      'nothing recorded which bytes that release ran',
   'in-flight':     'a transition is still open',
   'same-bytes':    'it would restore the bytes already running',
@@ -162,9 +162,9 @@ export function imageFromSteps(steps = []) {
  * @param serving      the transition currently serving
  * @param target       the Release row being restored
  * @param since        transitions between the target and now
- * @param generation   the binding generation in force now
+ * @param generation   the configuration generation in force now
  * @param image        the result of `imageFromSteps` for the target
- * @param force        { pivot, retention, bindings } — each explicitly given
+ * @param force        { pivot, retention, configuration } — each explicitly given
  */
 export function revertRefusals({
   serving, target, since = [], generation = null, image = null, servingImage = null,
@@ -203,10 +203,10 @@ export function revertRefusals({
   // The pair. `fli` writes no env file on a target, so this cannot be fixed here
   // and is not offered as one.
   if (generation != null && target.generation != null && target.generation !== generation)
-    add('bindings',
-      `release ${target.id} was bound at generation ${target.generation} and generation ${generation} is in force — ` +
+    add('configuration',
+      `release ${target.id} was minted at generation ${target.generation} and generation ${generation} is in force — ` +
       `reverting restores the code and NOT the configuration it ran with`,
-      '--onto-current-bindings')
+      '--onto-current-configuration')
 
   // Restoring what is already running is never what somebody means, so there is
   // no override. Two deploys CAN legitimately build identical bytes — a rebuild
@@ -253,7 +253,7 @@ export function formatRevertPlan({ app, environment, serving, target, since = []
     if (serving && target.id === serving.releaseId &&
         image?.image && servingImage?.image && image.image !== servingImage.image)
       row('', 'same Release id as what is serving — the bytes differ, the id cannot')
-    row('bindings', `generation ${target.generation}`)
+    row('configuration', `generation ${target.generation}`)
     row('deployed', target.createdAt ?? '—')
   }
   if (since.length) row('since then', `${since.length} transition(s)`)

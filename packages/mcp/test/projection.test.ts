@@ -400,6 +400,37 @@ describe('a tool says what to send, or says nothing', () => {
     expect(names.some(n => n.startsWith('$'))).toBe(false)
   })
 
+  test('the directives are typed off the kit, so a count is not a free-form value', () => {
+    const d = ((tool(1, 'orders_find')?.input.schema?.properties ?? {}) as Record<string, any>).directives.properties
+    expect(d.limit).toEqual({ type: 'integer' })
+    expect(d.withDeleted).toEqual({ type: 'boolean' })
+    expect(d.orderBy.type).toBeUndefined()
+  })
+
+  test('find names the model\'s columns as filters, each taking its type or an operator', () => {
+    const q = ((tool(1, 'orders_find')?.input.schema?.properties ?? {}) as Record<string, any>).query
+    expect(Object.keys(q.properties)).toEqual(expect.arrayContaining(['id', 'reference', 'status', 'total', 'note']))
+    // The operator half is what keeps the SDK's validator from refusing
+    // `{ status: { in: [...] } }`, which the Data boundary takes.
+    expect(q.properties.status.anyOf[0].enum).toContain('paid')
+    expect(q.properties.status.anyOf[1].type).toBe('object')
+    // `@length` says what may be written, and a filter is not a write.
+    expect(q.properties.reference.anyOf[0].minLength).toBeUndefined()
+    // Open: a relation path or AND/OR is still passable, and the boundary
+    // refuses an unknown key by name.
+    expect(q.additionalProperties).toBeUndefined()
+  })
+
+  test('a column the boundary will not filter on is not offered as a filter', () => {
+    // `x-filterable` is a REFUSAL — absent is permitted — so the control is the
+    // plain column beside the two refused ones.
+    const src    = `model Note {\n  id    Int    @id\n  title String\n  body  String @encrypted\n  slug  String @computed\n  @@gate("1.1.1.1")\n}`
+    const views  = schemaViews(parse(src).schema, generateJsonSchema as never)
+    const find   = projectTools([{ name: 'notes', model: 'Note', methods: ['find'] }], views, 8).tools[0]
+    const cols   = Object.keys(((find?.input.schema?.properties ?? {}) as Record<string, any>).query.properties)
+    expect(cols).toEqual(['id', 'title'])
+  })
+
   test('a custom method takes the id AND the declared type, because call() takes both', () => {
     // `ServiceCaller.call(name, id, data, opts)` is the one dispatch path for
     // every non-CRUD verb, so a tool describing only the payload describes a

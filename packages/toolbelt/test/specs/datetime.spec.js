@@ -21,7 +21,7 @@
 import { readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { partsIn, resolveWall, fromWall, format, relative, createDatetime, plainDateIn, addToDate, daysBetween, startOfDay } from '../../src/datetime/datetime.js'
+import { partsIn, resolveWall, fromWall, format, relative, createDatetime, plainDateIn, addToDate, daysBetween, startOfDay, dueAt } from '../../src/datetime/datetime.js'
 
 const here   = dirname(fileURLToPath(import.meta.url))
 const ORACLE = JSON.parse(readFileSync(join(here, '..', 'fixtures', 'datetime-oracle.json'), 'utf8'))
@@ -333,6 +333,26 @@ test('createDatetime: two instances share nothing', function () {
   assert.equal(b.format(JULY_4, 'hh:mm'), '21:35')
   assert.equal(a.format(JULY_4, 'hh:mm'), '16:05')
   assert.ok(Object.isFrozen(a))
+})
+
+test('dueAt: an x-commitments entry over one row, an instant or a day', function () {
+  const lit   = { on: 'createdAt', kind: 'instant', offset: { sign: 1, value: 14, unit: 'd' } }
+  const col   = { on: 'dueOn', kind: 'day', offset: { sign: 1, field: 'graceDays', unit: 'd' } }
+  const month = { on: 'dueOn', kind: 'day', offset: { sign: 1, value: 1, unit: 'mo' } }
+  assert.equal(dueAt(lit, { createdAt: '2026-09-21T10:00:00Z' }), '2026-10-05T10:00:00.000Z')
+  assert.equal(dueAt(lit, { createdAt: new Date('2026-09-21T10:00:00Z') }), '2026-10-05T10:00:00.000Z', 'a Date reads as itself')
+  assert.equal(dueAt({ on: 'at', kind: 'instant', offset: { sign: -1, value: 2, unit: 'h' } }, { at: '2026-09-21T10:00:00Z' }), '2026-09-21T08:00:00.000Z')
+  assert.equal(dueAt(col, { dueOn: '2026-01-09', graceDays: 3 }), '2026-01-12')
+  assert.equal(dueAt(month, { dueOn: '2026-01-31' }), '2026-02-28', 'a month clamps, where SQLite\'s modifier overflows into March')
+  assert.equal(dueAt({ on: 'dueOn', kind: 'day', offset: null }, { dueOn: '2026-01-09' }), '2026-01-09')
+})
+
+test('dueAt: a null anchor, a null offset column, or an unreadable instant is not owed yet', function () {
+  const col = { on: 'dueOn', kind: 'day', offset: { sign: 1, field: 'graceDays', unit: 'd' } }
+  assert.equal(dueAt(col, { dueOn: null, graceDays: 3 }), null)
+  assert.equal(dueAt(col, { dueOn: '2026-01-09', graceDays: null }), null)
+  assert.equal(dueAt(col, null), null)
+  assert.equal(dueAt({ on: 'at', kind: 'instant', offset: null }, { at: '2026-01-09 10:00:00' }), null, 'a time with no zone is not an instant')
 })
 
 test('createDatetime: today is the day the clock is on in the instance\'s zone', function () {

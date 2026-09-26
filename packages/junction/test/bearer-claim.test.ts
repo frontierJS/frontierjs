@@ -101,7 +101,7 @@ const holding = <T>(token: string | null, fn: () => Promise<T>): Promise<T> =>
   enterRequest({
     origin:  'http',
     headers: token ? { 'x-portal-link': token } : {},
-    client:  { headers: token ? { 'x-portal-link': token } : {} },
+    caller:  { headers: token ? { 'x-portal-link': token } : {} },
   } as never, fn)
 const rowsOf  = (r: unknown): any[] => (r as { data: any[] }).data ?? (r as any[])
 

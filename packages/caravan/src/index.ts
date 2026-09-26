@@ -804,6 +804,12 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       return (rt().stmts.getById.get({ id }) as JobRecord | null) ?? null
     },
 
+    // ── findByCorrelation ────────────────────────────────────────────────────
+
+    findByCorrelation(correlationId: string): JobRecord[] {
+      return rt().stmts.byCorrelation.all({ correlation_id: correlationId }) as JobRecord[]
+    },
+
     // ── schedule (cron) ───────────────────────────────────────────────────────
     //
     // Sugar over handle(), so a recurring job registered here and one declared

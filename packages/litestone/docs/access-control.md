@@ -117,7 +117,7 @@ It matters because a misspelling is not inert. An absent claim is `NULL`, and
 true` excluded **none** — so one typo was a lockout on read and an open door on
 create, and the side that refused read exactly like a policy doing its job.
 
-The set has four sources:
+The set has six sources:
 
 | | |
 | --- | --- |
@@ -125,11 +125,47 @@ The set has four sources:
 | **the `@@auth` model's columns** | whatever your app carries onto the session out of its own principal row — `isStaff`, `plan` |
 | **`tenancy { claim }`** | the tenant claim, named by the tenancy block |
 | **a top-level `claim`** | a claim resolved PER REQUEST — a cart token, an impersonation. It is on no row, so nothing can derive it: the schema names it, the app resolves the value |
+| **`claim … from <Model>(<subject>)`** | a claim on a row POINTING AT the caller — the employee record, the customer record. The schema names it and says where it is, and the value is read per request with nothing written in the app |
 | **`createClient({ claims: [...] })`** | the same statement made in code, for a claim an app adds to a schema it does not own |
 
 ```
 claim cartToken            // read by `@@allow('read', token == auth().cartToken)`
 ```
+
+### A claim that lives on another row
+
+```
+claim employeeId from Employee(userId)            // the row's primary key
+claim siteId     from Employee(userId).siteId     // another column of it
+
+model Shift {
+  …
+  @@allow('read', siteId == auth().siteId)
+}
+```
+
+A role a person holds is usually a ROW, not a column of `User` — an `Employee`, a
+`Customer`, a `Member` — and the fact a policy needs about the caller is on it.
+`from` says which row: the one whose `<subject>` is the caller's id. Junction
+reads it on every request, as the system, before the app's own `principal:`
+resolver runs, so that resolver sees it too. **Every request, never at sign-in**:
+a value fixed on the session goes on answering after the row moved, and a
+manager moved to another site keeps reading the old one with nothing said.
+
+Refused at parse, because each would resolve to the WRONG value rather than to
+none: a subject that is not a key to the `@@auth` model, a subject that is not
+unique (one caller, two rows), a subject unique only per tenant (that claim
+depends on which tenant the request names — `membershipClaim` is the resolver
+for it), a column that is not one stored value, and a protected column, since a
+claim is copied onto every principal. A name that is one of the framework's is
+refused when the client is built. **A caller with no such row holds `null`** —
+not refused, because a signed-in customer who is not an employee is a legitimate
+caller — and a null claim denies in both policy interpreters. A resolver that
+answers a claim the schema reads off a row is refused by name: one claim, one
+origin.
+
+`db.$claimsFor(principal)` is the read, on every flavor of client, for a tool
+or a test that holds a client and not an app.
 
 **Declare it in the schema rather than only at `createClient`.** A tool that has
 the file and not the app — `litestone studio`, `litestone tinker`, `fli auth:*` —

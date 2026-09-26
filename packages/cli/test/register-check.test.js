@@ -15,6 +15,9 @@ import { fileURLToPath } from 'url'
 
 import { runRegisterCheck, formatRegisterCheck, RULES } from '../core/register-check.js'
 
+// Every fixture declares the prefix its rows are written under.
+const DECLARED = JSON.stringify({ registers: { prefix: 'FJS' } })
+
 const REPO  = fileURLToPath(new URL('../../..', import.meta.url))
 const TODAY = new Date('2026-08-18T00:00:00Z')
 
@@ -25,6 +28,7 @@ const of    = (result, rule) => result.findings.filter(f => f.rule === rule)
 
 beforeAll(() => {
   ROOT = mkdtempSync(join(tmpdir(), 'fli-regcheck-'))
+  writeFileSync(join(ROOT, 'package.json'), DECLARED)
   mkdirSync(join(ROOT, 'IDEAS'))
   mkdirSync(join(ROOT, 'src'), { recursive: true })
   writeFileSync(join(ROOT, 'src', 'real.js'), '// a file that is really there\n')
@@ -292,6 +296,7 @@ describe('exemptions', () => {
   // ruling that should move up is named.
   test('a section out of date order is reported against the later ruling', () => {
     const root = mkdtempSync(join(tmpdir(), 'fli-order-'))
+    writeFileSync(join(root, 'package.json'), DECLARED)
     writeFileSync(join(root, 'DECISIONS.md'), [
       '# Decisions', '', '## Rulings', '',
       '### <a id="fjs-d01"></a>2026-08-10 · `FJS-D01` — the older one, on top.',
@@ -307,6 +312,7 @@ describe('exemptions', () => {
 
   test('newest first is not, and neither are two rulings of one date', () => {
     const root = mkdtempSync(join(tmpdir(), 'fli-order-ok-'))
+    writeFileSync(join(root, 'package.json'), DECLARED)
     writeFileSync(join(root, 'DECISIONS.md'), [
       '# Decisions', '', '## Rulings', '',
       '### <a id="fjs-d02"></a>2026-08-20 · `FJS-D02` — newest.', 'Body.', '',
@@ -321,6 +327,7 @@ describe('exemptions', () => {
   // of a later section sitting under an older one is not a finding.
   test('the order resets at a section boundary', () => {
     const root = mkdtempSync(join(tmpdir(), 'fli-order-sec-'))
+    writeFileSync(join(root, 'package.json'), DECLARED)
     writeFileSync(join(root, 'DECISIONS.md'), [
       '# Decisions', '',
       '## One', '',
@@ -336,6 +343,7 @@ describe('exemptions', () => {
   // What the reader needs is a citation they can follow, and an issue is one.
   test('a retirement may name an issue rather than a ruling', () => {
     const root = mkdtempSync(join(tmpdir(), 'fli-status-issue-'))
+    writeFileSync(join(root, 'package.json'), DECLARED)
     writeFileSync(join(root, 'ISSUES.md'), [
       '## Closed',
       '| Id | Pkg | Title | Status | Verified | Detail |',
@@ -355,6 +363,7 @@ describe('exemptions', () => {
 
   test('a status pointing at an id no register holds is a citation fault', () => {
     const root = mkdtempSync(join(tmpdir(), 'fli-status-ref-'))
+    writeFileSync(join(root, 'package.json'), DECLARED)
     writeFileSync(join(root, 'DECISIONS.md'), [
       '# Decisions', '', '## Rulings', '',
       '### <a id="fjs-d01"></a>2026-08-18 · `FJS-D01` — retired by a ghost.',
@@ -378,6 +387,7 @@ describe('exemptions', () => {
 
   test('a record citing its own id is a sentence, not a reference', () => {
     const root = mkdtempSync(join(tmpdir(), 'fli-self-'))
+    writeFileSync(join(root, 'package.json'), DECLARED)
     writeFileSync(join(root, 'ISSUES.md'), [
       '## S1 — blockers',
       '| <a id="fjs-001"></a>FJS-001 | cli | **FJS-001 is about itself.** | open | 2026-08-17 | — |',
@@ -392,6 +402,7 @@ describe('exemptions', () => {
 describe('the report', () => {
   test('a clean register says so and finds nothing', () => {
     const root = mkdtempSync(join(tmpdir(), 'fli-clean-'))
+    writeFileSync(join(root, 'package.json'), DECLARED)
     writeFileSync(join(root, 'ISSUES.md'), [
       '## S1 — blockers',
       '| <a id="fjs-001"></a>FJS-001 | cli | **Fine.** | open | 2026-08-17 | — |',
@@ -409,6 +420,7 @@ describe('the report', () => {
 
   test('a register a project does not keep is not a failure', () => {
     const root = mkdtempSync(join(tmpdir(), 'fli-thin-'))
+    writeFileSync(join(root, 'package.json'), DECLARED)
     writeFileSync(join(root, 'ISSUES.md'), [
       '## S1 — blockers',
       '| <a id="fjs-001"></a>FJS-001 | cli | **Fine.** | open | 2026-08-17 | — |',
@@ -424,6 +436,7 @@ describe('the report', () => {
 
   test('a root with no register at all is refused, not passed', () => {
     const root = mkdtempSync(join(tmpdir(), 'fli-none-'))
+    writeFileSync(join(root, 'package.json'), DECLARED)
     expect(() => runRegisterCheck({ root, today: TODAY })).toThrow(/no register at/)
     rmSync(root, { recursive: true, force: true })
   })
@@ -485,6 +498,7 @@ describe('unparsed-record', () => {
 
   const at = (files) => {
     dir = mkdtempSync(join(tmpdir(), 'fli-unparsed-'))
+    writeFileSync(join(dir, 'package.json'), DECLARED)
     for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body)
     return runRegisterCheck({ root: dir, staleDays: 0 })
   }
@@ -561,6 +575,7 @@ describe('an id filed under the wrong section', () => {
   let dir
   const fixture = (files) => {
     dir = mkdtempSync(join(tmpdir(), 'fli-idsection-'))
+    writeFileSync(join(dir, 'package.json'), DECLARED)
     for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body)
     return runRegisterCheck({ root: dir, staleDays: 0 })
   }

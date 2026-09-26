@@ -12,7 +12,8 @@
 // ─── Query directives ─────────────────────────────────────────────────────
 // The internal form of what arrives on the wire as $limit, $offset, $orderBy,
 // $select, $populate, $search, $withDeleted, $onlyDeleted, $withTemplates,
-// $onlyTemplates — the same names, in the same order, as the table in
+// $onlyTemplates, $asOf, $withExpired, $onlyExpired — the same names, in the
+// same order, as the table in
 // `@frontierjs/toolbelt/directives`, which is what the bridge reads them by.
 //
 // `$` is TRANSPORT SYNTAX. It is a way of saying "this key is a directive, not
@@ -48,6 +49,19 @@ export interface QueryDirectives {
   /** @@hasTemplates — the same pair one Data-realm feature over. */
   withTemplates?: boolean
   onlyTemplates?: boolean
+  /**
+   * `@@expires` / `@@effective` — the instant or day the window is read at, and
+   * the family's only value. Unstated is *now* on an `@@expires` model, which
+   * every read gets free, and *no filter* on an `@@effective` one (`FJS-D352`).
+   *
+   * It is a string here and is graded nowhere on this side: whether a legal
+   * value is an instant or a `YYYY-MM-DD` day depends on the model, and only
+   * the Data boundary holds the schema that says which. It refuses an
+   * unparseable one by name.
+   */
+  asOf?:          string
+  withExpired?:   boolean
+  onlyExpired?:   boolean
 }
 
 // ─── The page ─────────────────────────────────────────────────────────────

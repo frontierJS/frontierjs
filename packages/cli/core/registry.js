@@ -16,7 +16,7 @@ import { resolve, dirname, basename, join } from 'path'
 import { homedir } from 'os'
 import { createHash } from 'crypto'
 import { findFilesPlugin } from './utils.js'
-import { extractFrontmatter, splitFrontmatter } from './compiler.js'
+import { extractFrontmatter, splitFrontmatter, scriptBlockOf, stripScriptBlocks } from './compiler.js'
 import { getConfig } from './config.js'
 
 
@@ -76,19 +76,20 @@ export function getModule(namespace) {
   return _moduleRegistry.get(namespace) || null
 }
 
+/** The namespace a `_module.md` serves: `namespace:` if it says, else its folder. */
+export const moduleNamespace = (mod) => mod.meta.namespace || basename(dirname(mod.filePath))
+
 export function loadModuleFile(filePath) {
   try {
     const raw  = readFileSync(filePath, 'utf8')
     const { meta, body } = splitFrontmatter(raw)
-    // Extract prose (strip script + js blocks)
-    const prose = body
-      .replace(/<script[\s\S]*?<\/script>/g, '')
+    const prose = stripScriptBlocks(body)
       .replace(/```[\s\S]*?```/g, '')
       .trim()
-    // Extract script block helpers
-    const scriptMatch = body.match(/<script[^>]*>([\s\S]*?)<\/script>/)
-    const script = scriptMatch ? scriptMatch[1].trim() : ''
-    return { meta, prose, script, filePath }
+    // `scriptLine` is where the script starts in this file, which is what turns
+    // a line of a compiled command back into a line of the module.
+    const block = scriptBlockOf(raw)
+    return { meta, prose, script: block?.script ?? '', scriptLine: block?.line ?? null, filePath }
   } catch { return null }
 }
 
@@ -159,10 +160,7 @@ export function buildRegistry() {
         // _module.md — namespace module definition, not a command
         if (basename(filePath) === '_module.md') {
           const mod = loadModuleFile(filePath)
-          if (mod) {
-            const ns = mod.meta.namespace || basename(dirname(filePath))
-            _moduleRegistry.set(ns, mod)
-          }
+          if (mod) _moduleRegistry.set(moduleNamespace(mod), mod)
           continue
         }
 

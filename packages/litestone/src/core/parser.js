@@ -168,7 +168,7 @@ class Parser {
   // ── Top level ───────────────────────────────────────────────────────────────
 
   parseSchema() {
-    const schema = { imports: [], databases: [], models: [], views: [], enums: [], functions: [], traits: [], types: [], valuesets: [], extends: [], claims: [], tenancy: null }
+    const schema = { imports: [], databases: [], models: [], views: [], enums: [], functions: [], traits: [], types: [], valuesets: [], extends: [], claims: [], claimSources: {}, tenancy: null }
 
     while (!this.isEOF()) {
       const comments = this.docComments()
@@ -186,14 +186,17 @@ class Parser {
           throw new ParseError(`tenancy is declared twice — a schema has one tenancy block`, t)
         schema.tenancy = this.parseTenancy()
       } else if (t.type === TK.IDENT && t.value === 'claim') {
-        // A claim that is on no row. `@@auth User` names every claim that IS a
-        // column; this names the rest, so a tool holding only the schema can
-        // grade `auth().x` the same way the app does. The VALUE still comes
-        // from the app at request time — this is the name and nothing else.
+        // A claim that is not a column of the @@auth model. `@@auth User` names
+        // every claim that IS one; this names the rest, so a tool holding only
+        // the schema can grade `auth().x` the same way the app does. Bare, the
+        // app supplies the VALUE per request. With `from`, the value is read off
+        // a row that points at the caller — `claim employeeId from
+        // Employee(userId)` — and the app supplies nothing.
         const c = this.parseClaim()
-        if (schema.claims.includes(c))
-          throw new ParseError(`claim '${c}' is declared twice`, t)
-        schema.claims.push(c)
+        if (schema.claims.includes(c.name))
+          throw new ParseError(`claim '${c.name}' is declared twice`, t)
+        schema.claims.push(c.name)
+        if (c.source) schema.claimSources[c.name] = c.source
       } else if (t.type === TK.IDENT && t.value === 'extend') {
         schema.extends.push(this.parseExtend(comments))
       } else if (t.type === TK.IDENT && t.value === 'model') {
@@ -396,6 +399,17 @@ class Parser {
 
     if (!strategy)
       throw new ParseError(`tenancy must declare a 'strategy' — 'database' (a file per tenant) or 'row' (a tenant column)`, start)
+
+    // Nothing under strategy row reads `resolve` — the tenant registry is the
+    // one reader and exists only under strategy database — so a declared one
+    // would be a transport rule that looks enforced and routes nothing. Where a
+    // request names its tenant is the resolver's `tenantFrom`, a function.
+    if (strategy === 'row' && resolve)
+      throw new ParseError(
+        `tenancy: 'resolve' is not a property of strategy row. Under row tenancy the tenant is a claim on the ` +
+        `principal, and where a request names it is the resolver's to say — createApp({ principal: ` +
+        `membershipClaim({ tenantFrom, … }) })`, start,
+      )
 
     // Refused rather than ignored: a `column` under strategy database reads as
     // row tenancy that is quietly doing nothing, which is the failure this
@@ -613,9 +627,20 @@ class Parser {
   // has to spell some database, and only the importing app knows what its own
   // are called. See parseFile for how it composes with a nested import.
   // claim <name>
+  // claim <name> from <Model>(<subject>)            — the row's primary key
+  // claim <name> from <Model>(<subject>).<column>   — another column of it
   parseClaim() {
     this.eatIdent('claim')
-    return this.eat(TK.IDENT).value
+    const name = this.eat(TK.IDENT).value
+    if (!this.check(TK.IDENT, 'from')) return { name, source: null }
+    this.advance()
+    const model = this.eat(TK.IDENT).value
+    this.eat(TK.LPAREN)
+    const subject = this.eat(TK.IDENT).value
+    this.eat(TK.RPAREN)
+    let column = null
+    if (this.check(TK.DOT)) { this.advance(); column = this.eat(TK.IDENT).value }
+    return { name, source: { model, subject, column } }
   }
 
   parseImport() {
@@ -1996,6 +2021,40 @@ class Parser {
         this.eat(TK.RPAREN)
         return { kind: 'arc', fields, optional, message }
       }
+      // @@relator([workspaceId, userId], once)            — the pair happens at most once
+      // @@relator([appId, serverId], many: replicaIndex)  — many, told apart by a column
+      // @@relator([recipeId, serverId], many)             — many, told apart by nothing
+      //
+      // A relationship that is a row, existentially dependent on the things it
+      // relates. The argument that cannot be left off is REPEATABILITY, because
+      // it is the half no reader can derive: `once` and a bare `many` differ by
+      // an ABSENCE, so a default answers in silence the one question the word
+      // exists to ask. A bare list is a parse error naming the three choices.
+      case 'relator': {
+        this.eat(TK.LPAREN)
+        const fields = this.parseFieldList()
+        if (!this.maybeEat(TK.COMMA)) throw new ParseError(
+          `@@relator([${fields.join(', ')}]) does not say whether this relationship may happen twice. ` +
+          `Write 'once' if the relata identify the row, 'many: <column>' if a column tells two of them ` +
+          `apart, or 'many' if nothing does`, this.peek())
+        const at     = this.peek()
+        const repeat = this.eat(TK.IDENT).value
+        if (repeat !== 'once' && repeat !== 'many') throw new ParseError(
+          `@@relator: expected 'once' or 'many', got '${repeat}'`, at)
+        let discriminator = null
+        if (this.maybeEat(TK.COLON)) {
+          // `once: col` is refused rather than read as `many: col`. The two
+          // words are the whole declaration, and a form that accepts a column
+          // beside the one that says there is nothing to tell apart is a line
+          // whose meaning depends on which half the reader trusts.
+          if (repeat === 'once') throw new ParseError(
+            `@@relator(…, once: …) takes no column — 'once' says the relata identify the row on their ` +
+            `own. A column that tells two apart is 'many: <column>'`, at)
+          discriminator = this.eat(TK.IDENT).value
+        }
+        this.eat(TK.RPAREN)
+        return { kind: 'relator', fields, repeat, discriminator }
+      }
       case 'noStrict': return { kind: 'noStrict' }  // opt-out from default strict
       case 'fts': {
         // @@fts([field1, field2])                   — default tokenizer (unicode61)
@@ -2170,6 +2229,115 @@ class Parser {
         if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(field))
           throw new ParseError(`@@hasTemplates field name must be a valid identifier, got '${field}'`, this.peek())
         return { kind: 'hasTemplates', field }
+      }
+      case 'expires': {
+        // @@expires(expiresAt) — the row is DEAD from this moment on.
+        //
+        // IMPOSED: every read and write filters to the rows not yet expired, at
+        // the client's clock or a stated `asOf`, and `withExpired` /
+        // `onlyExpired` are the ways out. Nothing points at an expired row —
+        // a hold, a session, a reset token — so almost every read wants the
+        // filter, and a read that forgot it would hand out a dead credential.
+        //
+        // The sibling of `@@effective`, and the two share a predicate and not
+        // a default (`FJS-D352`). One column, because an expiry has no start.
+        this.eat(TK.LPAREN)
+        const column = this.eat(TK.IDENT).value
+        this.eat(TK.RPAREN)
+        return { kind: 'expires', column }
+      }
+      case 'effective': {
+        // @@effective(from: effectiveFrom, to: effectiveTo) — a validity window.
+        //
+        // ASKED: a read that states `asOf` gets the rows in force then, and a
+        // read that does not gets every row. A row out of its window is
+        // HISTORY here — the price a subscriber still pays, the terms a payslip
+        // was computed under — and it is pointed at and listed far more often
+        // than it is filtered. Imposed, those reads fail silently: a pointer
+        // answers null (`FJS-D352`).
+        //
+        // It does NOT imply the partial unique that makes *one open row*
+        // (`@@unique([…], where: to == null)` says that), nor the `@@check` that
+        // orders the pair, nor schedule anything — Caravan owns the clock.
+        this.eat(TK.LPAREN)
+        let from = null
+        let to   = null
+        while (!this.check(TK.RPAREN)) {
+          const at   = this.peek()
+          const name = this.eat(TK.IDENT).value
+          if (name !== 'from' && name !== 'to')
+            throw new ParseError(`@@effective takes 'from:' and 'to:' — got '${name}'`, at)
+          this.eat(TK.COLON)
+          const col = this.eat(TK.IDENT).value
+          if (name === 'from') from = col
+          else                 to   = col
+          if (!this.maybeEat(TK.COMMA)) break
+        }
+        this.eat(TK.RPAREN)
+        // `from:` is required. Without it the line reads as an expiry and
+        // would behave as a window nobody asks, so an expired session would be
+        // read back as live with nothing said — the one outcome worth a
+        // refusal at parse.
+        if (!from) throw new ParseError(
+          to
+            ? `@@effective(to: ${to}) has no 'from:'. A row that is dead after a moment is ` +
+              `@@expires(${to}), which filters every read. @@effective is a validity window — ` +
+              `'from: <column>' and an optional 'to: <column>' — and filters only a read that states asOf`
+            : `@@effective() names no column. Write 'from: <column>' and an optional 'to: <column>', ` +
+              `or @@expires(<column>) for a row that is dead after a moment`,
+          this.peek())
+        return { kind: 'effective', from, to }
+      }
+      case 'commitment': {
+        // @@commitment(abandon, on: createdAt + 14d)
+        // @@commitment(lapse,   on: dueOn + graceDays, while: status == issued)
+        //
+        // A transition the SYSTEM owes this row at a time (`FJS-D353`). The
+        // first argument names a transition on this model's @@transitions, so
+        // its from-state is the guard and the optimistic lock is the once-ness.
+        // The clock passing makes a WRITE here, where `@@expires` and
+        // `@@effective` change only what a read counts.
+        //
+        // `on:` is a time column of this row, optionally moved by a duration
+        // literal or by an `@immutable @unit` column of the same row
+        // (`FJS-D355`) — never a hop, so the read is one table. Nothing here
+        // schedules anything: Caravan owns the clock (`FJS-D36`).
+        //
+        // `subscription.lapse` names a transition on the model a TO-ONE
+        // relation of this row reaches (`FJS-D362`): the invoice owns the
+        // deadline and the subscription owns the move. Only the target of the
+        // move crosses the relation — `on:` and `while:` still read this row.
+        this.eat(TK.LPAREN)
+        const at   = this.peek()
+        let via        = null
+        let transition = this.eat(TK.IDENT).value
+        if (this.maybeEat(TK.DOT)) {
+          via        = transition
+          transition = this.eat(TK.IDENT).value
+        }
+        const name = via ? `${via}.${transition}` : transition
+        let on        = null
+        let predicate = null
+        while (this.maybeEat(TK.COMMA)) {
+          if (this.check(TK.RPAREN)) break
+          const argAt = this.peek()
+          const key   = this.eat(TK.IDENT).value
+          this.eat(TK.COLON)
+          if (key === 'on') {
+            if (on) throw new ParseError(`@@commitment(${name}): 'on:' stated twice`, argAt)
+            on = this.parseCommitmentOn(name)
+          } else if (key === 'while') {
+            if (predicate) throw new ParseError(`@@commitment(${name}): 'while:' stated twice`, argAt)
+            predicate = this.parsePolicyExpr()
+          } else {
+            throw new ParseError(`@@commitment takes 'on:' and 'while:' — got '${key}'`, argAt)
+          }
+        }
+        this.eat(TK.RPAREN)
+        if (!on) throw new ParseError(
+          `@@commitment(${name}) has no 'on:'. Say when the transition is owed — ` +
+          `on: createdAt + 14d, or on: dueOn + graceDays`, at)
+        return { kind: 'commitment', name, via, transition, on, while: predicate }
       }
       // ── Authorship ───────────────────────────────────────────────────────────
       // @@createdBy         — adds `createdById` + a `createdBy` relation to the
@@ -2496,6 +2664,41 @@ class Parser {
     const symbol = this.check(TK.STRING) ? this.eat(TK.STRING).value : this.eat(TK.IDENT).value
     this.eat(TK.RPAREN)
     return { kind: 'unit', symbol: String(symbol) }
+  }
+
+  // ── @@commitment's `on:` ────────────────────────────────────────────────────
+  //
+  //   createdAt                 the column itself
+  //   createdAt + 14d           moved by a literal
+  //   dueOn + graceDays         moved by a column of the same row
+  //
+  // `+` and `-` are the lexer's; a `-` against a digit arrives as a negative
+  // NUMBER, so `createdAt -14d` is read here too. Whether the unit fits the
+  // column's kind, and whether the offset column is a frozen duration, needs
+  // the whole model and is validate()'s.
+  parseCommitmentOn(transition) {
+    const field = this.eat(TK.IDENT).value
+    let sign = 0
+    if (this.maybeEat(TK.PLUS))       sign = 1
+    else if (this.maybeEat(TK.MINUS)) sign = -1
+    else if (this.check(TK.NUMBER) && this.peek().value < 0) sign = -1
+    if (!sign) return { field, offset: null }
+
+    if (this.check(TK.IDENT)) return { field, offset: { sign, field: this.eat(TK.IDENT).value } }
+
+    const numAt = this.peek()
+    if (!this.check(TK.NUMBER)) throw new ParseError(
+      `@@commitment(${transition}): '${sign > 0 ? '+' : '-'}' takes a duration — 14d, 2h — or a column of this row`, numAt)
+    const value = Math.abs(this.eat(TK.NUMBER).value)
+    if (!Number.isInteger(value)) throw new ParseError(
+      `@@commitment(${transition}): an offset is a whole number of a unit — write 90min, not 1.5h`, numAt)
+    const unitAt = this.peek()
+    const unit   = this.check(TK.IDENT) ? this.eat(TK.IDENT).value : null
+    if (!unit || unitInfo(unit)?.dimension !== 'duration') throw new ParseError(
+      `@@commitment(${transition}): '${value}${unit ?? ''}' is not a duration. ` +
+      `Write the number and a unit together: ${MEASURE_UNITS.duration.map(u => `${value}${u}`).join(', ')}`,
+      unitAt)
+    return { field, offset: { sign, value, unit } }
   }
 
   // ── @check / @@check argument parser ────────────────────────────────────────
@@ -3003,16 +3206,22 @@ export const TRAIT_FORBIDDEN_MODEL_ATTRS = new Set(['id', 'map', 'db', 'fts'])
 // How an attribute's ANSWER reads in a refusal. Single-valued attributes carry
 // their argument under several key names, so this prefers whichever is there
 // and falls back to naming the attribute alone where it takes no argument.
-function attrAnswer(attr, at = '@@') {
+function attrAnswer(attr, at = '@@', ordinal = 'the first') {
   // A value arrives under whichever key its own parse arm chose, and `@default`
   // wraps its own in `{ kind, value }`. Anything still not a scalar after that
   // is an argument with no short spelling — a field list, a policy expression —
-  // and saying "the first" beats printing a structure into a sentence.
+  // and naming its POSITION beats printing a structure into a sentence.
+  //
+  // The ordinal is a parameter and not a constant because both halves of the
+  // sentence call this: with it fixed at "the first", an attribute whose
+  // argument has no short spelling produced *the first @@relator is the one in
+  // force; the first @@relator is ignored* — one name for two attributes, which
+  // is the reading failure the caller exists to prevent.
   const raw = attr.value ?? attr.policy ?? attr.name ?? attr.text ?? attr.format ?? attr.field
   const v   = raw && typeof raw === 'object' && 'value' in raw ? raw.value : raw
   const tag = `${at}${typedAttr(attr.kind)}`
   return v === undefined || v === null || typeof v === 'object'
-    ? `the first ${tag}`
+    ? `${ordinal} ${tag}`
     : `${tag}(${JSON.stringify(v)})`
 }
 
@@ -3023,6 +3232,13 @@ function attrAnswer(attr, at = '@@') {
 // in the suite parses each of these twice and fails on a kind no parse emits.
 export const REPEATABLE_MODEL_ATTRS = new Set([
   'allow', 'deny', 'index', 'uniqueIndex', 'check', 'scope', 'trait',
+  // One per MOVE owed, and a second for the same move is refused by name in
+  // @@commitment's own check — an invoice owes both a lapse and a cancel.
+  'commitment',
+  // One per FIELD — an invoice's `status` and its `reminded` are two machines,
+  // and the runtime keys moves by field. The same field twice, and one move
+  // name on two machines, are @@transitions' own refusals.
+  'transitions',
 ])
 
 // Field attributes a field may legitimately carry more than one of. No field in
@@ -4125,6 +4341,203 @@ function expandExtensible(schema) {
       // pivot-table designs this pool replaces.
       if (order.length)
         model.attributes.push({ kind: 'index', fields: order.map(([s]) => s), sorts: null, where: null, generated: 'extensible' })
+    }
+  }
+
+  return errors
+}
+
+// ─── @@relator expansion ─────────────────────────────────────────────
+//
+// The declaration is the origin and every constraint derives from it here, so
+// the DDL emitter, the migrator and `advise` are untouched by the word — they
+// go on reading `uniqueIndex` and `index` nodes, which is what keeps this from
+// being a label that drifts from what the table actually holds.
+//
+// TWO facts come out of the word and only one of them is the unique.
+// `FJS-413` found ten unindexed foreign keys in basecamp, four on cascading
+// join tables, and the workaround was identical every time: a composite that
+// leads with the other side leaves this side with no index to use. @@unique
+// cannot know that both ends of the pair are read from. A relator, by
+// definition, does — so the reverse index is emitted rather than remembered.
+//
+// Which relata need one falls out of prefix matching: `once` and `many: col`
+// both emit a unique LEADING with the first relatum, so only the trailing ones
+// are uncovered. A bare `many` emits no unique at all, so every relatum is.
+function expandRelator(schema) {
+  const errors = []
+  const same   = (x, y) => x.length === y.length && x.every((v, i) => v === y[i])
+
+  for (const model of schema.models) {
+    const declared = model.attributes.filter(a => a.kind === 'relator')
+    if (!declared.length) continue
+
+    // A second @@relator is reported by the generic non-repeatable-attribute
+    // check, which owns that sentence for every attribute. The first is the one
+    // in force there, so it is the one expanded here.
+    const a    = declared[0]
+    const shown = `@@relator([${a.fields.join(', ')}], ${a.repeat}${a.discriminator ? `: ${a.discriminator}` : ''})`
+    const fieldNamed = (n) => model.fields.find(f => f.name === n)
+
+    // The relation attribute that OWNS a column, which is what makes the column
+    // a relatum rather than an ordinary Int beside one.
+    const relationOf = (col) => {
+      for (const f of model.fields) {
+        const rel = f.attributes.find(at => at.kind === 'relation' && Array.isArray(at.fields) && at.fields.includes(col))
+        if (rel) return { field: f, rel }
+      }
+      return null
+    }
+
+    if (a.fields.length < 2) {
+      errors.push(
+        `Model '${model.name}': ${shown} names ${a.fields.length === 1 ? 'one relatum' : 'none'} — a relator ` +
+        `mediates at least two things. With one there is no relationship, only a foreign key`)
+      continue
+    }
+
+    const seen  = new Set()
+    const dupes = a.fields.filter(n => seen.size === seen.add(n).size)
+    if (dupes.length) {
+      errors.push(
+        `Model '${model.name}': ${shown} names ${[...new Set(dupes)].map(n => `'${n}'`).join(', ')} more than once`)
+      continue
+    }
+
+    // An unknown member is already reported by the generic model-attribute
+    // field-ref check, which covers every @@attr carrying a `fields` array.
+    // Skip rather than restate it — and skip so the tests below do not also
+    // report a column that is not there.
+    if (a.fields.some(n => !fieldNamed(n))) continue
+
+    // Every relatum is a foreign key column, and they cover at least two
+    // DISTINCT relations. The count is over relations and not over columns
+    // because a composite foreign key is two columns naming ONE thing, and a
+    // row that mediates one thing is not mediating.
+    const notForeign = a.fields.filter(n => !relationOf(n))
+    if (notForeign.length) {
+      errors.push(
+        `Model '${model.name}': ${shown} names ${notForeign.map(n => `'${n}'`).join(', ')}, which ` +
+        `${notForeign.length > 1 ? 'are not foreign key columns' : 'is not a foreign key column'} — a relatum is ` +
+        `something this row relates, so it is named by a @relation. A column that tells two of these apart is ` +
+        `'many: <column>'`)
+      continue
+    }
+
+    const relata = new Set(a.fields.map(n => relationOf(n).field.name))
+    if (relata.size < 2) {
+      errors.push(
+        `Model '${model.name}': ${shown} names ${a.fields.length} columns but they all belong to one relation ` +
+        `('${[...relata][0]}') — a composite foreign key is two columns naming one thing. A relator mediates two`)
+      continue
+    }
+
+    // A relator is existentially dependent on its relata, so a missing one
+    // makes the row incoherent rather than partial. Cascade and Restrict both
+    // pass: they honor the dependence and differ only on who wins when a
+    // relatum leaves. SetNull denies it outright.
+    for (const n of a.fields) {
+      const { field, rel } = relationOf(n)
+      // SetNull REQUIRES a nullable column, so the two tests are one mistake
+      // seen from two sides. Report the cause and stay quiet about the symptom.
+      if (rel.onDelete === 'SetNull') {
+        errors.push(
+          `Model '${model.name}': ${shown} names '${n}', whose relation '${field.name}' is onDelete: SetNull — ` +
+          `that says the row outlives the thing it relates, which a relator cannot. Cascade ends it with the ` +
+          `relatum; Restrict keeps the relatum while it lives`)
+        continue
+      }
+      if (fieldNamed(n).type.optional)
+        errors.push(
+          `Model '${model.name}': ${shown} names '${n}', which is optional — a relator with a missing relatum ` +
+          `is not a relationship that lost a participant, it is a row that never meant anything. Make it required, ` +
+          `or this model is a reference wearing the silhouette`)
+    }
+
+    if (a.discriminator) {
+      const d = fieldNamed(a.discriminator)
+      if (!d)
+        errors.push(
+          `Model '${model.name}': ${shown} — '${a.discriminator}' is not a column on this model`)
+      else if (a.fields.includes(a.discriminator))
+        errors.push(
+          `Model '${model.name}': ${shown} — '${a.discriminator}' is already a relatum, so it cannot also be ` +
+          `what tells two of these apart`)
+      else if (d.type.optional)
+        errors.push(
+          `Model '${model.name}': ${shown} — '${a.discriminator}' is optional, and two NULLs never compare ` +
+          `equal, so the rows that leave it unset would be unconstrained. Make it required`)
+      else if (d.attributes.some(at => ['computed', 'from', 'derived', 'transient', 'edge', 'relation'].includes(at.kind)))
+        errors.push(
+          `Model '${model.name}': ${shown} — '${a.discriminator}' has no column, so nothing can be told apart by it`)
+    }
+
+    if (errors.length && errors[errors.length - 1].startsWith(`Model '${model.name}': ${shown}`)) continue
+
+    // ── emit ──
+    const keyed = a.repeat === 'once' || Boolean(a.discriminator)
+    const cols  = a.discriminator ? [...a.fields, a.discriminator] : a.fields
+
+    // A composite primary key over exactly these columns already IS the key, and
+    // it is the stronger statement. This is what `litestone edge eject` writes:
+    // a side table keys its two dimensions with `@id` on each, which makes an
+    // edge class-1 by construction. Emitting a UNIQUE beside it would be a
+    // second b-tree over the primary key. The reverse index below still lands,
+    // because a composite key is prefix-matched and an ejected model has never
+    // had one on its trailing dimension.
+    const pkCols = model.attributes.find(at => at.kind === 'id')?.fields
+      ?? model.fields.filter(f => f.attributes.some(at => at.kind === 'id')).map(f => f.name)
+    const keyIsPrimary = pkCols.length > 1 && same(pkCols, cols)
+
+    if (keyed && !keyIsPrimary) {
+      const clash = model.attributes.find(
+        at => (at.kind === 'uniqueIndex' || at.kind === 'partialUnique') && same(at.fields, cols))
+      if (clash)
+        errors.push(
+          `Model '${model.name}': ${shown} and @@unique([${cols.join(', ')}]) are the same constraint written ` +
+          `twice — delete the @@unique, the relator emits it`)
+      else
+        model.attributes.push({ kind: 'uniqueIndex', fields: cols, nullsDistinct: false, global: false, generated: 'relator' })
+    }
+
+    const uncovered = keyed ? a.fields.slice(1) : a.fields
+    for (const col of uncovered) {
+      // An index this model declares that LEADS with the column is already the
+      // reverse index and is doing more besides — `@@index([variantId,
+      // expiresAt])` answers the availability sum AND the cascade walk, and an
+      // index is prefix-matched. Emitting `([variantId])` beside it would be a
+      // dead b-tree written on every row, which is the cost this word exists to
+      // stop paying, arriving from the other direction.
+      const covered = model.attributes.some(
+        at => at.kind === 'index' && !at.where && at.generated !== 'relator' &&
+              at.fields.length > 1 && at.fields[0] === col)
+      if (covered) continue
+
+      // An EXACT copy is different: it is the hand-written version of what the
+      // declaration emits, and leaving both is the drift the word is here to
+      // prevent.
+      const clash = model.attributes.find(
+        at => at.kind === 'index' && !at.where && !at.sorts && same(at.fields, [col]))
+      if (clash)
+        errors.push(
+          `Model '${model.name}': ${shown} already indexes '${col}' — both ends of a relator are entrances, so ` +
+          `the reverse index is emitted rather than written by hand (\`FJS-413\`). Delete the @@index([${col}])`)
+      else
+        model.attributes.push({ kind: 'index', fields: [col], sorts: null, where: null, generated: 'relator' })
+    }
+
+    // An @@index that a generated unique already answers. SQLite prefix-matches
+    // an index, so @@index([workspaceId, userId]) beside UNIQUE(workspaceId,
+    // userId) is a second b-tree maintained on every write and read by nothing.
+    if (keyed) {
+      for (const at of model.attributes) {
+        if (at.kind !== 'index' || at.where || at.sorts || at.generated === 'relator') continue
+        if (at.fields.length > cols.length) continue
+        if (!at.fields.every((f, i) => f === cols[i])) continue
+        errors.push(
+          `Model '${model.name}': ${shown} emits UNIQUE(${cols.join(', ')}), and an index is prefix-matched, so ` +
+          `@@index([${at.fields.join(', ')}]) is a second b-tree written on every row and read by nothing. Delete it`)
+      }
     }
   }
 
@@ -6517,12 +6930,24 @@ function validate(schema) {
   // field is an enum field by construction. Only hand-written ones land here.
   for (const model of schema.models) {
     const seenFields = new Set()
+    const seenMoves  = new Map()
     for (const attr of model.attributes) {
       if (attr.kind !== 'transitions') continue
 
       if (seenFields.has(attr.field))
         errors.push(`Model '${model.name}': two @@transitions declared for field '${attr.field}' — merge them into one`)
       seenFields.add(attr.field)
+
+      // transition(id, name) takes the first machine that declares the name,
+      // so the second would be a move nothing can make.
+      for (const name of Object.keys(attr.transitions ?? {})) {
+        const other = seenMoves.get(name)
+        if (other !== undefined && other !== attr.field)
+          errors.push(`Model '${model.name}': the move '${name}' is declared on @@transitions(${other}) and ` +
+                      `@@transitions(${attr.field}) — transition(id, '${name}') would make the first and never ` +
+                      `the second. Name one of them differently.`)
+        else seenMoves.set(name, attr.field)
+      }
 
       if (attr.fromEnum) continue
 
@@ -6641,7 +7066,7 @@ function validate(schema) {
       if (first === undefined) { seenModel.set(attr.kind, attr); continue }
       errors.push(
         `Model '${model.name}': @@${typedAttr(attr.kind)} is declared twice and it takes one answer. ` +
-        `${attrAnswer(first)} is the one in force; ${attrAnswer(attr)} is ignored. Keep one.`)
+        `${attrAnswer(first)} is the one in force; ${attrAnswer(attr, '@@', 'the second')} is ignored. Keep one.`)
     }
 
     for (const field of model.fields ?? []) {
@@ -6652,7 +7077,7 @@ function validate(schema) {
         if (first === undefined) { seenField.set(attr.kind, attr); continue }
         errors.push(
           `Model '${model.name}', field '${field.name}': @${typedAttr(attr.kind)} is declared twice and ` +
-          `it takes one answer. ${attrAnswer(first, '@')} is the one in force; ${attrAnswer(attr, '@')} is ` +
+          `it takes one answer. ${attrAnswer(first, '@')} is the one in force; ${attrAnswer(attr, '@', 'the second')} is ` +
           `ignored. Keep one.`)
       }
     }
@@ -7025,7 +7450,326 @@ function validate(schema) {
     }
   }
 
+  // ── @@expires / @@effective window shape ──────────────────────────────────
+  // The declaration names columns rather than injecting them, so every way it
+  // can be wrong is a mismatch with what the model already says.
+  //
+  // The KIND check is the one that is not obvious. A window is over instants
+  // (`DateTime`) or over days (`String @date`) and the live schemas in this
+  // repo carry both — a price changes at a moment, a salary changes on a day
+  // (`FJS-D143`). Which one a model is decides what `asOf` may carry, so a pair
+  // that disagrees has no answer to give a caller and is refused here rather
+  // than compared at runtime, where `'2026-06-01' <= '2026-06-01T09:00:00Z'` is
+  // true and means nothing.
+  for (const model of schema.models) {
+    const exp = model.attributes.find(a => a.kind === 'expires')
+    const eff = model.attributes.find(a => a.kind === 'effective')
+    if (exp && eff) {
+      errors.push(
+        `Model '${model.name}': declares both @@expires and @@effective. A row out of its window is ` +
+        `either dead or history, and the two answer a read with no asOf in opposite ways`)
+      continue
+    }
+    const word  = exp ? '@@expires' : '@@effective'
+    const edges = exp ? [[null, exp.column]] : eff ? [['from', eff.from], ['to', eff.to]] : []
+    const kinds = []
+    for (const [arg, name] of edges) {
+      if (!name) continue
+      const label = arg ? `${word}(${arg}: ${name})` : `${word}(${name})`
+      const field = model.fields.find(f => f.name === name)
+      if (!field) {
+        errors.push(`Model '${model.name}': ${label} names no field of this model`)
+        continue
+      }
+      const t        = field.type
+      const typeName = typeof t === 'object' ? t.name : t
+      const isArray  = (typeof t === 'object' && t.array) || field.array || false
+      const isDate   = field.attributes?.some(a => a.kind === 'date') ?? false
+      if (isArray) {
+        errors.push(`Model '${model.name}': ${label} must be a single value, not a list`)
+        continue
+      }
+      if (typeName === 'DateTime')                kinds.push(['instant', arg, name])
+      else if (typeName === 'String' && isDate)   kinds.push(['day', arg, name])
+      else errors.push(
+        `Model '${model.name}': ${label} must be a DateTime or a String @date ` +
+        `— a window's edge is a time (got ${typeName}${isDate ? ' @date' : ''})`)
+    }
+    if (kinds.length === 2 && kinds[0][0] !== kinds[1][0]) errors.push(
+      `Model '${model.name}': @@effective mixes kinds — '${kinds[0][2]}' is ${kinds[0][0] === 'day' ? 'a day' : 'an instant'} ` +
+      `and '${kinds[1][2]}' is ${kinds[1][0] === 'day' ? 'a day' : 'an instant'}. Both edges of one window are read at ` +
+      `the same moment, so they must be the same kind`)
+  }
+
+  // ── @from over an @@expires model ─────────────────────────────────────────
+  // Refused, because the honest alternatives are both worse.
+  //
+  // A `@from` is a correlated subquery compiled ONCE at startup into a SQL
+  // string with no binds, so it cannot read the client's injected clock —
+  // `now()` in a `@from(where:)` expands to SQLite's own `strftime(…,'now')`.
+  // Filtering it that way would give one model two clocks: `findMany` answers
+  // at the client's and the `@from` beside it at the wall, which agree in
+  // production and disagree under exactly the frozen clock a test uses to stage
+  // expiry. Not filtering at all is the other way to be silently wrong, and it
+  // is the one `@from`'s own contract rules out — it reads the target the way
+  // the target is read, `@@softDelete` and `@@hasTemplates` included.
+  //
+  // So the caller states it. An `@@effective` target is not refused: nothing
+  // filters it without a stated `asOf`, so a `@from` reading every row IS
+  // reading it the way it is read.
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      const from = field.attributes?.find(a => a.kind === 'from')
+      if (!from?.target || from.where) continue
+      const target = schema.models.find(m => m.name === from.target)
+      const exp    = target?.attributes.find(a => a.kind === 'expires')
+      if (!exp) continue
+      errors.push(
+        `Model '${model.name}': @from(${from.target}, …) on '${field.name}' reads a model declaring ` +
+        `@@expires, and a @from is compiled once at startup — it cannot read the clock every other ` +
+        `read of ${from.target} is filtered by. State it yourself: where: "${exp.column} > now()", ` +
+        `or where: "1=1" to count every row, expired or not`)
+    }
+  }
+
+  // ── @@commitment ──────────────────────────────────────────────────────────
+  // Every way the declaration can be wrong is a mismatch with what the model
+  // already says, and each one is silent at runtime: a transition that is not
+  // declared owes nothing, a time column of the wrong kind compares a day with
+  // an instant, and an offset column somebody may edit moves a deadline that
+  // was agreed (`FJS-D355`).
+  //
+  // The KIND decides which units an offset may carry. On an instant a month
+  // needs a zone the expression does not have, so `mo`/`yr` are refused there;
+  // on a day an hour is not a day, so the sub-day units are.
+  const DAY_UNITS     = new Set(['d', 'wk', 'mo', 'yr'])
+  const INSTANT_UNITS = new Set(['ms', 's', 'min', 'h', 'd', 'wk'])
+  for (const model of schema.models) {
+    const commitments = model.attributes.filter(a => a.kind === 'commitment')
+    if (!commitments.length) continue
+    const movesOf = (m) => {
+      const moves = new Map()
+      for (const t of m.attributes.filter(a => a.kind === 'transitions'))
+        for (const [name, spec] of Object.entries(t.transitions)) moves.set(name, spec)
+      return moves
+    }
+    const seen = new Set()
+    for (const c of commitments) {
+      const label = `@@commitment(${c.name}, …)`
+      // The hop. To-ONE only: from an invoice, *its subscription* is one row,
+      // and from a customer *its invoices* has no answer to which of them moves.
+      let target = model
+      if (c.via) {
+        const rel = model.fields.find(f => f.name === c.via)
+        if (!rel || rel.type?.kind !== 'relation') {
+          errors.push(
+            `Model '${model.name}': ${label} '${c.via}' names no relation of this model — ` +
+            `a commitment on another model's transition reaches it through a to-one relation`)
+          continue
+        }
+        if (rel.type.array) {
+          errors.push(
+            `Model '${model.name}': ${label} '${c.via}' is a to-many relation, and a commitment moves ONE row. ` +
+            `Declare it on ${rel.type.name}, reaching back to ${model.name} through its to-one side`)
+          continue
+        }
+        target = schema.models.find(m => m.name === rel.type.name)
+        if (!target) continue
+      }
+      const moves = movesOf(target)
+      if (!moves.has(c.transition)) {
+        errors.push(
+          `Model '${model.name}': ${label} names no transition of ${c.via ? target.name : 'this model'}` +
+          (moves.size ? ` — declared: ${[...moves.keys()].join(', ')}` : `. Declare it on @@transitions first`))
+        continue
+      }
+      if (seen.has(c.name)) errors.push(
+        `Model '${model.name}': ${label} is declared twice — a transition is owed at one time. ` +
+        `Two deadlines for one outcome are the earlier one`)
+      seen.add(c.name)
+
+      const field = model.fields.find(f => f.name === c.on.field)
+      let kind = null
+      if (!field) {
+        errors.push(`Model '${model.name}': ${label} on: '${c.on.field}' names no field of this model`)
+      } else {
+        const typeName = typeof field.type === 'object' ? field.type.name : field.type
+        const isArray  = (typeof field.type === 'object' && field.type.array) || field.array || false
+        const isDate   = field.attributes?.some(a => a.kind === 'date') ?? false
+        if (!isArray && typeName === 'DateTime')                 kind = 'instant'
+        else if (!isArray && typeName === 'String' && isDate)    kind = 'day'
+        else errors.push(
+          `Model '${model.name}': ${label} on: '${c.on.field}' must be a DateTime or a String @date ` +
+          `— a commitment is owed at a time (got ${typeName}${isDate ? ' @date' : ''}${isArray ? '[]' : ''})`)
+      }
+
+      const off = c.on.offset
+      const unitFits = (unit, where) => {
+        if (!kind) return
+        const ok = kind === 'day' ? DAY_UNITS : INSTANT_UNITS
+        if (ok.has(unit)) return
+        errors.push(kind === 'instant'
+          ? `Model '${model.name}': ${label} ${where} is in '${unit}', and '${c.on.field}' is an instant. ` +
+            `A month has no fixed length, so adding one to an instant needs a zone the schema does not ` +
+            `have — use d or wk, or make '${c.on.field}' a String @date`
+          : `Model '${model.name}': ${label} ${where} is in '${unit}', and '${c.on.field}' is a day. ` +
+            `A day moved by part of a day is not a day — use d, wk, mo or yr`)
+      }
+      if (off?.unit) unitFits(off.unit, `offset ${off.value}${off.unit}`)
+      if (off?.field) {
+        const col   = model.fields.find(f => f.name === off.field)
+        const where = `offset '${off.field}'`
+        if (!col) {
+          errors.push(`Model '${model.name}': ${label} ${where} names no field of this model`)
+        } else {
+          const typeName = typeof col.type === 'object' ? col.type.name : col.type
+          const unit     = col.attributes?.find(a => a.kind === 'unit')
+          if (typeName !== 'Int' || col.optional || col.type?.optional)
+            errors.push(
+              `Model '${model.name}': ${label} ${where} must be a required Int — a missing offset would ` +
+              `make the transition owed never, with nothing said`)
+          if (!unit || unitInfo(unit.symbol)?.dimension !== 'duration')
+            errors.push(
+              `Model '${model.name}': ${label} ${where} must declare a duration @unit — ` +
+              `${off.field} Int @unit(d) @immutable — or the number counts nothing`)
+          else unitFits(unit.symbol, `${where}`)
+          if (!col.attributes?.some(a => a.kind === 'immutable'))
+            errors.push(
+              `Model '${model.name}': ${label} ${where} must be @immutable. The offset is the term agreed ` +
+              `when the row was written, and an editable one moves a deadline somebody was promised`)
+        }
+      }
+
+      // `while:` reads this row and nothing else. A commitment is the
+      // system's, so there is no caller for `auth()` to name; the time is
+      // `on:`'s job, so a `now()` here would be read at the moment of asking
+      // rather than at the moment owed; and a hop would make the read a join.
+      const walk = (n) => {
+        if (!n || typeof n !== 'object') return
+        if (Array.isArray(n)) return n.forEach(walk)
+        if (n.type === 'auth') errors.push(
+          `Model '${model.name}': ${label} while: reads auth(), and a commitment has no caller — the system owes it`)
+        else if (n.type === 'now') errors.push(
+          `Model '${model.name}': ${label} while: reads now(). When it is owed is on:'s to say`)
+        else if (n.type === 'path' || n.type === 'check') errors.push(
+          `Model '${model.name}': ${label} while: crosses a relation. It reads this row and nothing else — ` +
+          `copy the value onto the row when the terms are agreed`)
+        else if (n.type === 'field' && !model.fields.some(f => f.name === n.name)) {
+          const member = schema.enums?.some(e => e.values?.some(v => v.name === n.name))
+          errors.push(
+            `Model '${model.name}': ${label} while: '${n.name}' names no field of this model` +
+            (member ? ` — an enum member is written quoted: '${n.name}'` : ''))
+        }
+        for (const k of ['left', 'right', 'expr', 'cond', 'then', 'else', 'items']) walk(n[k])
+      }
+      walk(c.while)
+    }
+  }
+
+  validateClaimSources(schema, errors)
+
   return { valid: errors.length === 0, errors, warnings }
+}
+
+// ─── claim … from ────────────────────────────────────────────────────────────
+//
+// A claim read off a row that points at the caller. Every refusal here is a
+// claim that would resolve to the WRONG value rather than to none: a subject
+// that is not unique answers whichever row SQLite returns first, a subject
+// that is not a key to the @@auth model compares a caller's id against
+// something that is not one, and a protected column would be copied onto every
+// principal in plain text.
+function validateClaimSources(schema, errors) {
+  const sources = Object.entries(schema.claimSources ?? {})
+  if (!sources.length) return
+
+  const authModel = schema.models.find(m => m.attributes.some(a => a.kind === 'auth'))
+  const PROTECTED = new Set(['guarded', 'encrypted', 'hashed', 'secret'])
+  const VIRTUAL   = new Set(['computed', 'transient', 'derived', 'from'])
+
+  for (const [name, { model: modelName, subject, column }] of sources) {
+    const at = `claim ${name} from ${modelName}(${subject})${column ? '.' + column : ''}`
+
+    if (!authModel) {
+      errors.push(`${at}: reads the row that points at the caller, and no model is @@auth — there is no caller's id to look it up by`)
+      continue
+    }
+    if (authModel.fields.some(f => f.name === name)) {
+      errors.push(`${at}: '${name}' is already a claim — a column of @@auth ${authModel.name}. One claim, one value`)
+      continue
+    }
+    if (schema.tenancy?.claim === name || (schema.tenancy?.strategy === 'row' && !schema.tenancy?.claim && schema.tenancy?.column === name)) {
+      errors.push(`${at}: '${name}' is the tenancy claim, which the tenancy block resolves`)
+      continue
+    }
+
+    const model = schema.models.find(m => m.name === modelName)
+    if (!model) {
+      errors.push(`${at}: names no model '${modelName}'`)
+      continue
+    }
+
+    const subj = model.fields.find(f => f.name === subject)
+    if (!subj) {
+      errors.push(`${at}: '${subject}' is not a field of ${modelName}`)
+      continue
+    }
+    const pointsAtCaller = model.fields.some(f =>
+      f.type.name === authModel.name && !f.type.array &&
+      f.attributes.some(a => a.kind === 'relation' && a.fields?.length === 1 && a.fields[0] === subject))
+    if (!pointsAtCaller) {
+      errors.push(
+        `${at}: '${subject}' is not a key to @@auth ${authModel.name} — the lookup compares it with the caller's id, ` +
+        `so it must be the column of a @relation(fields: [${subject}]) to ${authModel.name}`)
+      continue
+    }
+    // `@@id([a, b])` stamps @id on every member, so @id identifies a row
+    // alone only where the model has exactly one.
+    const idFields = model.fields.filter(f => f.attributes.some(a => a.kind === 'id'))
+    const unique =
+      subj.attributes.some(a => a.kind === 'unique') ||
+      (idFields.length === 1 && idFields[0] === subj) ||
+      model.attributes.some(a => a.kind === 'uniqueIndex' && a.fields?.length === 1 &&
+        (a.fields[0]?.name ?? a.fields[0]) === subject)
+    // Under row tenancy a scoped model's @unique is lifted to one per TENANT,
+    // so a caller who is in two tenants matches two rows. That is the
+    // membership shape, and it is resolved per request with the tenant as key.
+    const tenantCol = schema.tenancy?.strategy === 'row' ? schema.tenancy.column : null
+    const perTenant = tenantCol && model.attributes.some(a => a.kind === 'uniqueIndex' && a.fields?.length === 2 &&
+      a.fields.map(f => f?.name ?? f).includes(subject) && a.fields.map(f => f?.name ?? f).includes(tenantCol))
+    if (!unique && perTenant) {
+      errors.push(
+        `${at}: '${subject}' is unique per tenant, so a caller in two tenants matches two rows. That claim depends on ` +
+        `which tenant the request names — resolve it with createApp({ principal: membershipClaim(…) }), or declare ` +
+        `'${subject}' @unique(global) if one person is one ${modelName} across the whole installation`)
+      continue
+    }
+    if (!unique) {
+      errors.push(
+        `${at}: '${subject}' is not unique on ${modelName}, so one caller could match two rows and the claim would hold ` +
+        `whichever SQLite returned first. Declare '${subject}' @unique`)
+      continue
+    }
+
+    if (column == null) {
+      if (idFields.length !== 1)
+        errors.push(`${at}: ${modelName} has no single-column primary key to read — name the column: from ${modelName}(${subject}).<column>`)
+      continue
+    }
+
+    const col = model.fields.find(f => f.name === column)
+    if (!col) {
+      errors.push(`${at}: '${column}' is not a field of ${modelName}`)
+      continue
+    }
+    const modelNames = new Set(schema.models.map(m => m.name))
+    if (col.type.array || modelNames.has(col.type.name) || col.attributes.some(a => VIRTUAL.has(a.kind))) {
+      errors.push(`${at}: '${column}' is not a stored scalar column — a claim is one value`)
+      continue
+    }
+    if (col.attributes.some(a => PROTECTED.has(a.kind)))
+      errors.push(`${at}: '${column}' is protected, and a claim is copied onto every principal in plain text`)
+  }
 }
 
 
@@ -7284,6 +8028,7 @@ export function parseFile(filePath) {
     const importedValuesets = []
     const importedExtends   = []
     const importedClaims    = []
+    const importedSources   = {}
     let   importedTenancy   = null
 
     for (const imp of schema.imports) {
@@ -7326,6 +8071,15 @@ export function parseFile(filePath) {
         importedValuesets.push(...(child.valuesets ?? []))
         importedExtends.push(...(child.extends ?? []))
         importedClaims.push(...(child.claims ?? []))
+        // One claim, one row it is read from. Two files naming the same claim
+        // are the union above; two files naming it from two different rows
+        // have said two things, and only one could be read.
+        for (const [n, src] of Object.entries(child.claimSources ?? {})) {
+          const prior = importedSources[n] ?? schema.claimSources?.[n]
+          if (prior && JSON.stringify(prior) !== JSON.stringify(src))
+            allErrors.push(`claim '${n}' is read from two different rows across ${currentPath} and a file it imports`)
+          importedSources[n] = src
+        }
       }
     }
 
@@ -7356,6 +8110,7 @@ export function parseFile(filePath) {
       // claim have said one thing, and a package fragment declaring the claim
       // its own policies read is how an app gets it without restating it.
       claims:    [...new Set([...importedClaims, ...(schema.claims ?? [])])],
+      claimSources: { ...importedSources, ...(schema.claimSources ?? {}) },
     }
   }
 
@@ -7375,6 +8130,7 @@ export function parseFile(filePath) {
     valuesets: merged.valuesets ?? [],
     extends:   merged.extends ?? [],
     claims:    merged.claims ?? [],
+    claimSources: merged.claimSources ?? {},
   }
 
   // Resolve traits before validation. resolveTraits mutates schema.models,
@@ -7397,6 +8153,7 @@ export function parseFile(filePath) {
   allErrors.push(...expandAuthorshipAttributes(schema))
   allErrors.push(...expandEdgeAttributes(schema))
   allErrors.push(...expandExtensible(schema))
+  allErrors.push(...expandRelator(schema))
   const tenancy = expandTenancy(schema)
   allErrors.push(...tenancy.errors)
   allWarnings.push(...tenancy.warnings)
@@ -7446,10 +8203,11 @@ export function parse(src) {
   const authorshipErrors = expandAuthorshipAttributes(schema)
   const edgeErrors = expandEdgeAttributes(schema)
   const extErrors  = expandExtensible(schema)
+  const relatorErrors = expandRelator(schema)
   const tenancy = expandTenancy(schema)
   resolveTransitions(schema)
   const capabilityErrors = expandCapabilityType(schema)
   const { valid, errors, warnings } = validate(schema)
-  const merged = [...compositeIdErrors, ...authorshipErrors, ...edgeErrors, ...extErrors, ...tenancy.errors, ...capabilityErrors, ...errors]
+  const merged = [...compositeIdErrors, ...authorshipErrors, ...edgeErrors, ...extErrors, ...relatorErrors, ...tenancy.errors, ...capabilityErrors, ...errors]
   return { schema, valid: merged.length === 0, errors: merged, warnings: [...tenancy.warnings, ...warnings] }
 }

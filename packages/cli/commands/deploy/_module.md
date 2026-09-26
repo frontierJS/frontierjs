@@ -207,14 +207,14 @@ const deployPlan = async (context, flag, { target, deployConf, doApi, doWeb, dig
   const core = (name) => import(new URL('file://' + global.fliRoot + '/core/' + name))
   const { readdirSync, readFileSync } = await import('fs')
 
-  const { bindingSet, schemaSurfaceHash, mintRelease, BindingError } = await core('release.js')
+  const { configurationSet, schemaSurfaceHash, mintRelease, ConfigurationError } = await core('release.js')
   const { stepFilesIn, stepNameOf, planSteps, planTransition, formatPlan } = await core('plan.js')
   const { extractFrontmatter } = await core('compiler.js')
 
-  let bindings
-  try { bindings = bindingSet(deployConf, target) }
+  let configuration
+  try { configuration = configurationSet(deployConf, target) }
   catch (e) {
-    if (!(e instanceof BindingError)) throw e
+    if (!(e instanceof ConfigurationError)) throw e
     return { error: e.message }
   }
 
@@ -246,7 +246,7 @@ const deployPlan = async (context, flag, { target, deployConf, doApi, doWeb, dig
     // id it prints is provisional and says so; the deploy passes what step 04
     // produced, which is what makes the Release name an artefact at all (2.3f).
     digest:        digest ?? flag.digest ?? null,
-    bindingsHash:  bindings.hash,
+    configurationHash: configuration.hash,
     schemaHash:    schema.hash,
     pivot,
     pivotFindings: findings,
@@ -272,7 +272,7 @@ const deployPlan = async (context, flag, { target, deployConf, doApi, doWeb, dig
   })
 
   const plan = planTransition({ release, steps, actor: release.createdBy })
-  return { ...plan, release, bindings, findings, schema, text: formatPlan({ ...plan, release, bindings, findings }) }
+  return { ...plan, release, configuration, findings, schema, text: formatPlan({ ...plan, release, configuration, findings }) }
 }
 
 // ─── the deploy lock ──────────────────────────────────────────────────────────
@@ -541,8 +541,8 @@ exit 1`
 
   // ── The container's own last words ──────────────────────────────────────────
   //
-  // An app that REFUSED to start says why, clearly, in its own output — a
-  // missing attachment binding, a bad encryption key, a port already taken —
+  // An app that REFUSED to start says why, clearly, in its own output — an
+  // attachment nobody configured, a bad encryption key, a port already taken —
   // and until this the operator saw none of it. All they got was "health check
   // failed", a rollback, and a message about apiPrefix that is wrong whenever
   // the app never came up at all. The refusal was sitting in `docker logs`,
@@ -722,10 +722,10 @@ const openDeployJournal = async (context, flag, opts) => {
 
     const begun = await j.begin({
       release,
-      bindings: {
+      configuration: {
         app: release.app, environment: release.environment,
-        generation: intent.generation, hash: release.bindingsHash,
-        values: plan.bindings.values, secretRefs: plan.bindings.secretRefs,
+        generation: intent.generation, hash: release.configurationHash,
+        values: plan.configuration.values, secretRefs: plan.configuration.secretRefs,
         createdBy: release.createdBy,
       },
       transition: real.transition,
@@ -810,7 +810,7 @@ const openDeployJournal = async (context, flag, opts) => {
 // is — and it is much smaller than a deploy's, because it mints nothing.
 //
 // A pause names the Release ALREADY SERVING. There are no bytes to build, no
-// bindings to record and no pivot to classify: what moves is whether the bound
+// configuration to record and no pivot to classify: what moves is whether the bound
 // Release is answering, which is the kind on the row and never a column. So
 // `begin` is handed a null release and `crossesPivot` is stated false rather
 // than derived, or an `unknown` pivot on the serving Release would record a
@@ -883,7 +883,7 @@ const openPauseJournal = async (context, flag, opts) => {
       actor:         context.git.user?.() ?? null,
     })
 
-    const begun = await j.begin({ release: null, bindings: null, transition: real.transition, steps: real.steps })
+    const begun = await j.begin({ release: null, configuration: null, transition: real.transition, steps: real.steps })
     const byName = new Map(begun.steps.map(r => [r.name, r]))
     const idFor  = (name) => occurrenceKey(kind, real.transition.id, name)
 

@@ -54,6 +54,17 @@ afterEach(() => {
   for (const p of paths.splice(0)) for (const f of [p, `${p}-wal`, `${p}-shm`]) rmSync(f, { force: true })
 })
 
+describe('the jobs one request dispatched', () => {
+  it('are a seek on jobs_correlation, with no scan and no sort', () => {
+    const db = open(); seed(db, 5_000)
+    const p = plan(db, PLANNED.byCorrelation)
+    expect(p).toContain('jobs_correlation')
+    expect(p).not.toContain('SCAN')
+    expect(p).not.toContain('TEMP B-TREE')
+    db.close()
+  })
+})
+
 describe('the aggregate behind /metrics', () => {
   it('groups from an index, with no temp b-tree', () => {
     const db = open(); seed(db, 5_000)

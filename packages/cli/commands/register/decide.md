@@ -29,7 +29,11 @@ flags:
 const { decide }          = await import(resolve(global.fliRoot, 'core/decide.js'))
 const { rulingSections }  = await import(resolve(global.fliRoot, 'core/decisions.js'))
 
-const root = (await context.wsRoot?.()) ?? context.paths.root
+const { findRegisterRoot } = await import(resolve(global.fliRoot, 'core/registers.js'))
+
+// The nearest package.json declaring `registers`, so a run from inside a
+// package or a surface means the project's registers.
+const root = findRegisterRoot(process.cwd()) ?? context.paths.root
 
 if (!flag.section) {
   echo('')

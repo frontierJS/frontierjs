@@ -1,5 +1,96 @@
 # Changes
 
+## 2026-09-25 — five `const`s nothing read are deleted
+
+[`FJS-1062`](../../ISSUES.md#fjs-1062). Mesa now warns about a derived `const` that calls something and
+is read nowhere, and five kit components carried one into every app they compile in: `DatePicker`'s
+`prev` and `next` month grids, `MultiSelect`'s `selectedItems` with the `$:` that existed to recompute it,
+`Slider`'s `displayError` and `Thresholds`' `resolvedLabel` — `Field` resolves both itself. The imports
+they alone used went with them.
+
+## 2026-09-24 — `Avatar` takes its tone table's size in a `var`
+
+[`FJS-1340`](../../ISSUES.md#fjs-1340). Mesa now grades a top-level `const` for imported reads no `$:`
+watches, and `autoTone` read `TONES.length` — a fixed table, so correct, and reported to every app a
+Sierra build compiles the kit into. The size is a `var`, which says it is a snapshot; the tone still
+follows `name`.
+
+## 2026-09-24 — a `<Select>` whose options arrive late shows its value
+
+[`FJS-1320`](../../ISSUES.md#fjs-1320), fixed in mesa's `bindInput`; no component changed. The kit's
+browser drive now covers both ways a list reaches a `<Select>` after its value — options the caller
+passes once it has them, and options a `<Form>` fetches — in `test/browser/specs/select-late-options`,
+red against the runtime without the fix. The other half of the report, a refused change the control
+goes on showing, is [`FJS-1336`](../../ISSUES.md#fjs-1336), ruled [`FJS-D380`](../../DECISIONS.md#fjs-d380): the
+caller keeps a draft through `bind:value` and puts it back. The README gives the pattern under § Forms,
+and the same spec runs it — a refusal twice, an accepted pick, and the row moving from elsewhere.
+
+## 2026-09-22 — `CodeInput`, a textarea that shows its source highlighted
+
+A real `<textarea>` with transparent text over glow's output in a `<pre class="code">`, the
+two sharing one grid cell, so caret, selection, undo and IME stay the browser's and the colors
+are `@frontierjs/css`'s code theme. Ported from maid.tech's `TextareaAdvanced.svelte`, which
+had the idea right and the overlay misaligned in five places: glow ran with its line passes on
+(a leading `+`, `>` or `\` and every `•` left the paint and not the box), the textarea wrapped
+while the `<pre>` did not, the two layers read different padding variables, the `<pre>` had a
+border the textarea lacked, and the line-number inset was a guessed `70px` against an 84px
+gutter. Its twelve literal palettes are not carried over (Invariant 13).
+
+`code-input.spec.mjs` measures what only a browser can: the two layers' computed metrics, the
+first painted glyph against the textarea's content box, the gutter inset, a trailing newline,
+scrollbar parity and the sideways scroll. Each guard was broken in turn and the spec went red
+on each.
+
+`JsonInput` now renders through `CodeInput`, so a `Json` column's box is highlighted too. The
+parse, `reportInvalid` and the reformat on blur are unchanged, and `json.spec.mjs` passes as it
+stood.
+
+## 2026-09-22 — `dndzone`, drag and drop between flow lists
+
+Taken from the Elite Lawn Care app's `web/src/core/dndzone.js`, a Svelte action written to
+replace `svelte-dnd-action`, and ported to an `{@attach}`. It measures every zone once when a drag
+starts and finds the insertion index each frame by arithmetic. It is proved by `dnd.spec.mjs`:
+twenty assertions over a real pointer through CDP, covering a reorder, a move across lists, a
+drop on a list of another type, Escape, and a button inside an item.
+
+Three changes were forced by Mesa rather than chosen. The argument is a getter, because
+`{@attach}` re-runs its expression on any change it read and a re-run tears the zone down, which
+ended every drag on its first `onconsider`. `consider` and `finalize` are callbacks rather than
+events, because Mesa delegates `on:` to the mount root and a non-bubbling CustomEvent never
+reaches it. And `configure` runs as a USER effect, which drains after the host's `{#each}` has
+rebuilt the rows it searches for the placeholder.
+
+Four defects came over with the source, and the spec was red on the first before it was fixed:
+
+- **A cancel lost the dragged item.** Escape, or any drop in the same tick as a `consider`, built
+  the final list from what the host had written SO FAR, one flush behind. The item was in no
+  list. It is now built from the list last handed over.
+- **One zone's teardown orphaned another zone's press.** `destroy` cleared the page-wide arm
+  whoever owned it, which left that zone's window listeners attached with nothing to remove them.
+- **A release outside the window blocked the next press.** The arm was never cleared, so the
+  next press was refused.
+- **The ghost cloned every `id` under the item**, so `getElementById` and `label[for]` answered
+  the copy.
+
+Two options were cut. `dropTargetStyle` and `dropTargetClasses` are replaced by a
+`data-dnd-target` attribute the app styles, because the default was a literal yellow outline
+(Invariant 13). `flipDurationMs` and `dropAnimationDisabled` become `dropAnimationMs`, since Mesa
+has no flip for the first to time and `0` already means off. `centreDraggedOnCursor` is now
+`centerOnCursor`, and an unknown option is refused by name.
+
+## 2026-09-22 — a `@point` in a table (`FJS-1263`)
+
+`<Cell>` had no `geo` branch, so a `Json @point(lat, lng)` column — which Sierra's `displayFor`
+already answered as `geo`, keys and all — fell through to `String(value)` and printed `[object
+Object]` in every row of a generated list, while the form control one surface along round-tripped
+the same value. The cell now renders `lat, lng` under the keys the MODEL declared, so
+`@point(latitude, longitude)` is not a second case, and half a coordinate is the dash.
+
+The fallback moved too: a display name the cell has no branch for, holding an object, renders
+through `<Json>` rather than `String()`. That is the half nothing caught — the next name
+`displayFor` grows reaches this component before anyone writes it a branch. Four assertions in
+`cell.spec.mjs`, all four red against the old component.
+
 ## 2026-09-20 — `Thresholds`, a banded scale tuned against its own distribution
 
 N cut points over a histogram of the values they cut: the bars are colored by the band they fall

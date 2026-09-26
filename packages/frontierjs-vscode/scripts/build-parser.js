@@ -99,8 +99,18 @@ async function build() {
     console.log(`[build-parser] ✓  ${CATALOG_OUT} (${(fs.statSync(CATALOG_OUT).size / 1024).toFixed(1)} KB)`)
   }
 
+  // The lexer rides along from the module the parser itself imports it from,
+  // so the formatter's guard reads the tokens the parser reads. A parser that
+  // predates toolbelt's lexer gets a bundle without it; the formatter then
+  // falls back to its whitespace-stripped comparison alone.
+  const lexer = fs.readFileSync(parserEntry, 'utf8').includes('@frontierjs/toolbelt/predicate')
   const options = {
-    entryPoints: [parserEntry],
+    stdin: {
+      contents:   `export * from ${JSON.stringify(parserEntry)}\n` +
+                  (lexer ? `export { tokenize } from '@frontierjs/toolbelt/predicate'\n` : ''),
+      resolveDir: path.dirname(parserEntry),
+      loader:     'js',
+    },
     bundle:      true,
     platform:    'node',
     format:      'cjs',

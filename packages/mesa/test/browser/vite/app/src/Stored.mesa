@@ -1,0 +1,10 @@
+<script>
+  // Stored.mesa — reads an imported object and watches nothing on it, so both
+  // reads render once and never again (VISION RULE 44). The compiler lists them
+  // and a dev build hands the list to the devtools panel, which is what the
+  // devtools spec asserts arrives.
+  import { shelf } from './store.js'
+  const doubled = shelf.count * 2
+</script>
+
+<output id="stored">{shelf.count} {doubled}</output>

@@ -89,6 +89,13 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS jobs_queue_created
     ON jobs(queue, created_at DESC);
 
+  -- The jobs one request dispatched, by the correlation id stamped at dispatch.
+  -- It is how a caller that holds a request open — the MCP surface's await,
+  -- FJS-D406 — finds the work it started without anything declaring it. Partial,
+  -- so work dispatched outside any request adds nothing to it.
+  CREATE INDEX IF NOT EXISTS jobs_correlation
+    ON jobs(correlation_id, created_at) WHERE correlation_id IS NOT NULL;
+
   -- Recency, for the unfiltered admin list — the default view. Without it the
   -- ORDER BY is a full scan plus a temp b-tree: 680ms over 1M rows for a page
   -- of 50, on a screen somebody opens because something is already wrong.
@@ -453,6 +460,11 @@ export const PLANNED = {
   listStatus: `SELECT * FROM jobs WHERE status = $status ORDER BY created_at DESC LIMIT $limit OFFSET $offset`,
   listBoth:   `SELECT * FROM jobs WHERE queue = $queue AND status = $status ORDER BY created_at DESC LIMIT $limit OFFSET $offset`,
 
+  // Every job one request dispatched, oldest first. Capped, because a request
+  // that fans out is not a reason to read a table: the caller waiting on these
+  // wants to know they finished, and a hundred is past what one call starts.
+  byCorrelation: `SELECT * FROM jobs WHERE correlation_id = $correlation_id ORDER BY created_at LIMIT 100`,
+
   // One BATCH of the sweep, not the whole of it. The statement this replaced
   // deleted every expired row in one transaction, holding the write lock for
   // 11.5s over 1M rows while every dispatch and every claim in every process
@@ -782,6 +794,9 @@ export function buildStatements(db: Database) {
   const listStatus = wrap<JobRecord, { status: string; limit: number; offset: number }>(db.prepare(PLANNED.listStatus))
   const listBoth   = wrap<JobRecord, { queue: string; status: string; limit: number; offset: number }>(db.prepare(PLANNED.listBoth))
 
+  // Text and reasoning: PLANNED.byCorrelation.
+  const byCorrelation = wrap<JobRecord, { correlation_id: string }>(db.prepare(PLANNED.byCorrelation))
+
   const listJobs = {
     all(p: { queue: string | null; status: string | null; limit: number; offset: number }): JobRecord[] {
       const { queue, status, limit, offset } = p
@@ -865,6 +880,7 @@ export function buildStatements(db: Database) {
     getById,
     findByUniqueKey,
     listJobs,
+    byCorrelation,
     cleanup,
     heartbeat,
     dropOwner,

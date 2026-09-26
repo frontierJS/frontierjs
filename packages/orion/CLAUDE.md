@@ -17,7 +17,7 @@ the plan, module by module, and the rulings it rests on are
 | `src/services.ts` | `flows`, `runs` and `flowCredentials`: the verbs a row write cannot say, and the one test of who may act on a flow |
 | `src/models.ts` | the app's models for the model nodes: the author-time catalog off the JSON Schema, and the writes through the actor |
 | `src/outbound.ts` | `http.request` over conduit, and conduit's credential resolver over `FlowCredential` |
-| `src/kv.ts` | the `store` node's port over `KvEntry` |
+| `src/kv.ts` | the `store` node's port over `KvEntry`, whose deadline is `@@expires(expiresAt)` minted from the client's clock |
 | `src/engine/types/` | the primitives — `Flow`, `NodeDefinition`, `Edge`, `Expression`, `PipeStep`, `ExecutionPlan` |
 | `src/engine/compiler/` | a flow → an `ExecutionPlan`: stages, an O(1) routing table, and every author-time refusal |
 | `src/engine/expression/` | the flow expression language: `index.ts` is the evaluator and its function table, `text.ts` parses the text form with `@frontierjs/toolbelt/predicate` and compiles it |
@@ -37,6 +37,7 @@ the plan, module by module, and the rulings it rests on are
 | `test/plugin.test.ts` | `orion()` in a real Junction app: the owner through `runAs`, the model trigger, both routes, conduit, AI, an app job and a real notification |
 | `test/tenancy.test.ts` | orion under `strategy database` and `strategy row`, through the plugin, every landing paired with the other tenant |
 | `test/services.test.ts` | the services over HTTP with real principals, and `verifyTransportParity` over all three — phase 5's done-when |
+| `test/kv.test.ts` | the `store` node's port on a moved clock: a ttl lapsing with nothing written, `set` and `delete` over a lapsed key, and the sweep |
 | `test/outbound.test.ts` | a flow's outside call on the wire, against a local server |
 | `test/fixtures/` | `host.ts` — the schema, a node registry and test nodes that leave evidence on disk; `app.ts` — an app with two gated models, notifications' model and orion's catalog; `notifications/` — the one notification a flow sends; `worker.ts` — the process the crash test kills |
 | `bench/checkpoint.ts` | what one checkpoint costs at 10, 100 and 1,000 nodes; `bun run bench` |

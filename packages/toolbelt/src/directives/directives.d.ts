@@ -22,10 +22,17 @@ export interface Directives {
   onlyDeleted?:   boolean
   withTemplates?: boolean
   onlyTemplates?: boolean
+  /** `@@expires` / `@@effective` — the instant or day the window is read at. Unstated is *now* on an `@@expires` model and *no filter* on an `@@effective` one. */
+  asOf?:          string
+  withExpired?:   boolean
+  onlyExpired?:   boolean
 }
 
 /** Every `$` name that has a structured form. */
 export const DIRECTIVE_PARAMS: readonly string[]
+
+/** Each directive's value schema, by its bare name — `{}`-shaped where the table fixes no shape. */
+export const DIRECTIVE_SCHEMAS: Readonly<Record<keyof Directives, Readonly<Record<string, unknown>>>>
 
 /** Transport-only `$` names: they shape the answer, not the question. */
 export const TRANSPORT_PARAMS: readonly string[]

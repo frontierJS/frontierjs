@@ -6,7 +6,7 @@
 //   Statement cache:   compiled statements reused across calls via wrapDb()
 
 import { openDatabase, currentEngine } from './engine.js'
-import { applyBusyTimeout, busyTimeoutFor, validateBusyTimeout } from './pragmas.js'
+import { applyBusyTimeout, applyWal, busyTimeoutFor, validateBusyTimeout } from './pragmas.js'
 import { resolve, join, dirname, extname, tmpdir, pathToFileURL,
          existsSync, mkdirSync, mkdtempSync, statSync } from '#host'
 import { resolveAnchor, noteMintedDirectory } from './db-path.js'
@@ -34,7 +34,7 @@ import { PluginRunner, AccessDeniedError } from './plugin.js'
 import { GatePlugin, FrontierGateGetLevel, levelPasses } from '../plugins/gate.js'
 import { CapabilityPlugin, requireCapability, requireGrantSubset } from '../plugins/capability.js'
 import { capabilityDeclarations, capabilityNames } from './capabilities.js'
-import { buildPolicyMap, buildScopeMap, compileScope, policyExprToString, buildPolicyFilter, checkCreatePolicy, checkPostUpdatePolicy, policyVerdict, evalJs, compileFieldPredicate, referencesRow, delegationProblems, buildClaimSet, checkFieldPolicies, authClaimsUsed } from './policy.js'
+import { buildPolicyMap, buildScopeMap, compileScope, compileStatic, policyExprToString, buildPolicyFilter, checkCreatePolicy, checkPostUpdatePolicy, policyVerdict, evalJs, compileFieldPredicate, referencesRow, delegationProblems, buildClaimSet, checkFieldPolicies, authClaimsUsed } from './policy.js'
 import {
   encryptField, decryptField, encryptDeterministic, hashField,
   normalizeKey, comparisonEncoderFor, parseEnvelope, verifiesAs, makeKeyring, keyId, legacyForm,
@@ -42,7 +42,7 @@ import {
 import { backupSqliteTo } from './backup.js'
 import { resolveTenancy } from './tenancy.js'
 import { makeJsonlTable } from '../drivers/jsonl.js'
-import { isServerAssignedId } from './ids.js'
+import { isServerAssignedId, isServerFilled } from './ids.js'
 import { runSqliteRetention, compactJsonl } from '../tools/retention.js'
 import { ensureEventsTable, makeEventRecorder, createEventWatcher } from './cross-process.js'
 import {
@@ -56,6 +56,8 @@ import {
   ClientClosedError,
 } from './errors.js'
 import { threeWay } from './three-way.js'
+import { buildCommitmentMap, dueSql, readBy } from './commitment.js'
+import { dueAt } from '@frontierjs/toolbelt/datetime'
 import {
   buildAutoIdMap, buildGeneratedDefaultMap, buildAuthDefaultMap, buildSelfRelationMap,
   buildFieldRefDefaultMap, buildUpdatedByMap, buildVersionMap, buildCreatedByMap, buildSyncMap,
@@ -64,7 +66,7 @@ import {
   buildAffinityMap,
   buildFilterKindMap, buildTransitionMap, buildEnumMap, buildSoftDeleteCascadeMap,
   getCascadeTargets, buildRelationMap, buildFieldReadMap, buildGuardedMap,
-  buildSoftDeleteMap, buildHasTemplatesMap, buildCoFkMap, buildFtsMap, nowISO,
+  buildSoftDeleteMap, buildHasTemplatesMap, buildEffectiveMap, buildCoFkMap, buildFtsMap, nowISO,
 } from './schema-maps.js'
 // buildRelationMap is part of this module's published surface — junction and the
 // tools import it from here.
@@ -1385,6 +1387,46 @@ const ARG_WRITE_METHODS = [
   'update', 'updateMany', 'remove', 'removeMany', 'delete', 'deleteMany', 'restore', 'upsert',
 ]
 
+// ─── the argument names each verb reads ───────────────────────────────────
+//
+// A closed set per verb, because a key the verb does not read is DROPPED, and
+// the key most often misspelled is the one that narrows: `deleteMany({ wher })`
+// deleted every row the caller could reach and answered the count as success,
+// and `findMany({ search })` answered every row as the hits (`FJS-1310`). Each
+// list is what the method body destructures or reads; a verb growing an option
+// adds it here or the option is refused by name on its first call.
+const VIEW_FLAGS = ['withDeleted', 'onlyDeleted', 'withTemplates', 'onlyTemplates', 'withExpired', 'onlyExpired', 'asOf']
+const FIND_ARGS  = ['where', 'include', 'select', 'orderBy', 'scopedBy', ...VIEW_FLAGS]
+const PAGE_ARGS  = [...FIND_ARGS, 'limit', 'offset', 'distinct']
+const AGG_ARGS   = ['where', '_count', '_sum', '_avg', '_min', '_max', '_stringAgg', ...VIEW_FLAGS]
+const REMOVE_ARGS = ['where', ...VIEW_FLAGS]
+const ARG_NAMES = {
+  findMany:          new Set([...PAGE_ARGS, 'recursive', 'window']),
+  findFirst:         new Set(FIND_ARGS),
+  findFirstOrThrow:  new Set(FIND_ARGS),
+  findUnique:        new Set(FIND_ARGS),
+  findUniqueOrThrow: new Set(FIND_ARGS),
+  // `count(args)` over a page's own arguments is how a page learns its total,
+  // and `findManyAndCount` hands one object to both halves. A page argument is
+  // therefore known to count, and means nothing there.
+  count:             new Set([...PAGE_ARGS, 'window']),
+  exists:            new Set(['where', ...VIEW_FLAGS]),
+  findManyAndCount:  new Set([...PAGE_ARGS, 'window']),
+  aggregate:         new Set(AGG_ARGS),
+  groupBy:           new Set([...AGG_ARGS, 'by', 'having', 'orderBy', 'limit', 'offset', 'fillGaps', 'interval']),
+  findManyCursor:    new Set(['cursor', 'limit', 'where', 'select', 'include', 'orderBy', 'withDeleted', 'onlyDeleted']),
+  search:            new Set(['limit', 'offset', 'where', 'orderBy', 'select', 'include', 'highlight', 'snippet', 'withRank', ...VIEW_FLAGS]),
+  create:            new Set(['data', 'include', 'select', 'scopedBy', 'system']),
+  update:            new Set(['where', 'data', 'include', 'select', 'scopedBy', 'system', '_bypassVersion', '_move', 'base', ...VIEW_FLAGS]),
+  updateMany:        new Set(['where', 'data', 'system', 'announce', ...VIEW_FLAGS]),
+  upsert:            new Set(['where', 'create', 'update', 'include', 'select', 'system', ...VIEW_FLAGS]),
+  remove:            new Set(REMOVE_ARGS),
+  removeMany:        new Set([...REMOVE_ARGS, 'announce']),
+  delete:            new Set(REMOVE_ARGS),
+  deleteMany:        new Set([...REMOVE_ARGS, 'announce']),
+  restore:           new Set(['where']),
+}
+
 /**
  * What a `view` refuses. Everything else `makeTable` offers is forwarded.
  *
@@ -1620,6 +1662,28 @@ function withArgValidation(table, model, ctx) {
     }
   }
 
+  // The argument object's own keys, before anything inside them. A named
+  // aggregate (`_revenue: { sum: 'total' }`) is a key the caller coins, so it
+  // is graded by shape rather than by name.
+  const checkArgNames = (args, method) => {
+    const known = ARG_NAMES[method]
+    if (!known || !args || typeof args !== 'object') return
+    const aggs = method === 'aggregate' || method === 'groupBy'
+    for (const [k, v] of Object.entries(args)) {
+      if (known.has(k) || (aggs && isNamedAgg(k, v))) continue
+      // Every read but findMany refuses it by its own check, which says why.
+      if (k === 'recursive' && ARG_READ_METHODS.includes(method)) continue
+      const hint = k === 'search' || k === '$search'
+        ? `. A full-text search is its own verb: ${modelName}.search(query, { where, limit })`
+        : suggestKey(k, known) ? `. Did you mean: ${suggestKey(k, known)}?` : ''
+      throw new ValidationError([{
+        path:    [k],
+        message: `Unknown argument '${k}' to ${modelName}.${method} — it would have been ignored` +
+                 hint + `. ${method} reads: ${[...known].join(', ')}`,
+      }])
+    }
+  }
+
   // ─── the guards a call's OPTIONS get, in one sequence ──────────────────────
   //
   // Every place a caller can name a column — `where`, `orderBy`, `select`,
@@ -1634,6 +1698,7 @@ function withArgValidation(table, model, ctx) {
   // Answers the args, because the field-read narrowing REWRITES them.
   const guardArgs = (args, method, isWrite) => {
     checkTakeSkip(args, method)
+    checkArgNames(args, method)
     // Before the key checks: an unknown key on a read only warns, and a
     // guarded one is spelled right.
     if (checkGuarded()) {
@@ -1669,6 +1734,7 @@ function withArgValidation(table, model, ctx) {
   if (typeof table.create === 'function') {
     const fn = table.create
     out.create = async (args = {}) => {
+      checkArgNames(args, 'create')
       checkSelect(args, 'create', true)
       return fn.call(table, args)
     }
@@ -2111,6 +2177,50 @@ function injectHasTemplatesFilter(where, mode, field = 'isTemplate') {
   return { AND: [filter, where] }
 }
 
+// ─── @@expires / @@effective WHERE injection ──────────────────────────────────
+// The window. Third of the three exclusions and the only one whose edge is a
+// VALUE rather than a column being null or false — which is why `asOf` exists
+// at all: `expiresAt > now` is the one-sided case of
+// `from <= asOf AND (to IS NULL OR to > asOf)`, so a boolean-only spelling
+// would have been a flag where a value belongs. One predicate for both words;
+// whether a read that states nothing reaches it is `effMode`'s question.
+//
+// The interval is half-open — `[from, to)` — which is the interval this repo
+// already reads a billing and a pay period by (`FJS-D143`), so a row opening on
+// the instant another closes belongs to exactly one of them.
+//
+// A nullable `to` means *still in force*, and a nullable `from` means *always
+// has been*. Both are expressed as an OR against NULL rather than a COALESCE,
+// because an index on the column is usable by the first and not by the second.
+
+function injectEffectiveFilter(where, mode, cols, asOf) {
+  // mode: 'inForce' (default) | 'withExpired' | 'onlyExpired'
+  if (mode === 'withExpired') return where
+
+  const { from, to } = cols
+  const started = from ? { OR: [{ [from]: null }, { [from]: { lte: asOf } }] } : null
+  const ended   = to   ? { OR: [{ [to]:   null }, { [to]:   { gt:  asOf } }] } : null
+
+  let filter
+  if (mode === 'onlyExpired') {
+    // The complement, and it is a complement rather than a second predicate:
+    // NOT in force is *not started yet* OR *already over*. Spelling it as
+    // `to <= asOf` alone would silently drop every row whose window has not
+    // opened, which on a two-sided declaration is most of what a caller asking
+    // for the excluded rows is looking for.
+    const notStarted = from ? { [from]: { gt:  asOf } } : null
+    const over       = to   ? { [to]:   { lte: asOf } } : null
+    const parts = [notStarted, over].filter(Boolean)
+    filter = parts.length === 1 ? parts[0] : { OR: parts }
+  } else {
+    const parts = [started, ended].filter(Boolean)
+    filter = parts.length === 1 ? parts[0] : { AND: parts }
+  }
+
+  if (!where) return filter
+  return { AND: [filter, where] }
+}
+
 // ─── Field policy ─────────────────────────────────────────────────────────────
 // Strip and decrypt fields according to @omit/@guarded/@encrypted/@allow rules.
 //
@@ -2425,6 +2535,17 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
         // soft-delete: no withDeleted on _count either).
         const targetHt = ctx.hasTemplatesMap?.[rel.targetModel] ?? null
         const htExtra  = targetHt ? ` AND "${targetHt}" = 0` : ''
+        // The window, same terms: no flag is surfaced here, so it is always
+        // read at `now`. Bound rather than inlined — the two above are literals
+        // because a column name and a constant are all they need.
+        const cntWin   = ctx.effectiveMap?.[rel.targetModel] ?? null
+        const cntBinds = []
+        let   effExtra = ''
+        if (cntWin?.imposed) {
+          const at = cntWin.kind === 'day' ? nowISO(ctx.now).slice(0, 10) : nowISO(ctx.now)
+          if (cntWin.from) { effExtra += ` AND ("${cntWin.from}" IS NULL OR "${cntWin.from}" <= ?)`; cntBinds.push(at) }
+          if (cntWin.to)   { effExtra += ` AND ("${cntWin.to}" IS NULL OR "${cntWin.to}" > ?)`;      cntBinds.push(at) }
+        }
         // Build optional where filter using buildWhere
         let whereExtra = ''
         const whereParams = []
@@ -2433,9 +2554,9 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
           if (ws) whereExtra = ` AND (${ws})`
         }
         const polExtra = countPolicy ? ` AND (${countPolicy.sql})` : ''
-        sql = `SELECT "${rel.foreignKey}" as __pk, COUNT(*) as __n FROM "${modelToTable(rel.targetModel)}" WHERE "${rel.foreignKey}" IN (${ph})${sdExtra}${htExtra}${whereExtra}${polExtra} GROUP BY "${rel.foreignKey}"`
+        sql = `SELECT "${rel.foreignKey}" as __pk, COUNT(*) as __n FROM "${modelToTable(rel.targetModel)}" WHERE "${rel.foreignKey}" IN (${ph})${sdExtra}${htExtra}${effExtra}${whereExtra}${polExtra} GROUP BY "${rel.foreignKey}"`
         results = runInclude(readDb, rel.targetModel, 'include:count', sql,
-          [...pkValues, ...whereParams, ...(countPolicy?.params ?? [])])
+          [...pkValues, ...cntBinds, ...whereParams, ...(countPolicy?.params ?? [])])
       }
 
       const counts = new Map(results.map(r => [r.__pk, r.__n]))
@@ -2541,6 +2662,13 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
     const nestedHtMode  = typeof relInclude === 'object' && relInclude !== true
       ? relInclude.withTemplates ? 'withTemplates' : relInclude.onlyTemplates ? 'onlyTemplates' : 'instances'
       : 'instances'
+    // The window's mode for the related table — the third of the same shape. `asOf`
+    // is deliberately NOT surfaced per include: one read is read at one moment,
+    // and a parent read at now holding children read at a different instant is
+    // a row nobody could explain.
+    const nestedEffMode = typeof relInclude === 'object' && relInclude !== true
+      ? relInclude.withExpired ? 'withExpired' : relInclude.onlyExpired ? 'onlyExpired' : 'inForce'
+      : 'inForce'
 
     // An include takes the same flags as a read, so it owes the same refusal:
     // `onlyDeleted` against a target that declares no @@softDelete answers that
@@ -2553,6 +2681,14 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
     if (nestedHtMode === 'onlyTemplates' && (ctx.hasTemplatesMap?.[rel.targetModel] ?? null) === null)
       throw new CapabilityNotDeclaredError(rel.targetModel, 'onlyTemplates', '@@hasTemplates',
         'This model has no template rows, so there is no template-only view to include.')
+    if (nestedEffMode === 'onlyExpired' && (ctx.effectiveMap?.[rel.targetModel] ?? null) === null)
+      throw new CapabilityNotDeclaredError(rel.targetModel, 'onlyExpired', '@@expires or @@effective',
+        'Every row here counts at every instant, so there is no out-of-window view to include.')
+    if (nestedEffMode === 'onlyExpired' && !ctx.effectiveMap[rel.targetModel].imposed)
+      throw new ValidationError([{ path: ['include', relName, 'onlyExpired'], message:
+        `onlyExpired on an include of ${rel.targetModel} has no moment to be out of force at — its ` +
+        `@@effective window is asked rather than imposed, and an include takes no asOf. Read ` +
+        `${rel.targetModel} with asOf instead` }])
 
     const targetJsonFields  = jsonMap[rel.targetModel]      ?? new Set()
     // The target's @from fields. These paths build their own SQL, so nothing
@@ -2573,6 +2709,34 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
           ? `"${targetHtField}" = 1`
           : `"${targetHtField}" = 0`)
       : null
+
+    // The @@effective window for the target table, as SQL plus its binds.
+    //
+    // It is BOUND rather than inlined, where `htClause` is a literal: the edge
+    // is a value and a value in a SQL string is how a window starts answering a
+    // caller's text. A relation read under an expired parent is the shape this
+    // closes — `cart.findMany({ include: { reservations: true } })` returned
+    // dead holds while `stockReservation.findMany()` did not, which is one
+    // model answering two ways.
+    //
+    // Only an IMPOSED window reaches here. An `@@effective` target is history
+    // that this row points at — `subscription.planVersion` is the price still
+    // being charged — and filtering it would answer the pointer with null.
+    const targetWin = ctx.effectiveMap?.[rel.targetModel] ?? null
+    const effWhere  = (() => {
+      if (!targetWin?.imposed || nestedEffMode === 'withExpired') return null
+      const at = targetWin.kind === 'day' ? nowISO(ctx.now).slice(0, 10) : nowISO(ctx.now)
+      const parts = []
+      const binds = []
+      if (nestedEffMode === 'onlyExpired') {
+        if (targetWin.from) { parts.push(`"${tcol(targetWin.from)}" > ?`);  binds.push(at) }
+        if (targetWin.to)   { parts.push(`"${tcol(targetWin.to)}" <= ?`);   binds.push(at) }
+        return { sql: `(${parts.join(' OR ')})`, params: binds }
+      }
+      if (targetWin.from) { parts.push(`("${tcol(targetWin.from)}" IS NULL OR "${tcol(targetWin.from)}" <= ?)`); binds.push(at) }
+      if (targetWin.to)   { parts.push(`("${tcol(targetWin.to)}" IS NULL OR "${tcol(targetWin.to)}" > ?)`);      binds.push(at) }
+      return { sql: parts.join(' AND '), params: binds }
+    })()
 
     if (rel.kind === 'belongsTo') {
       const fkValues = [...new Set(rows.map(r => r[rel.foreignKey]).filter(v => v != null))]
@@ -2608,6 +2772,7 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
       }
       // Append @@hasTemplates filter — composes onto whatever sdWhere produced.
       if (htClause) sdWhere = `${sdWhere} AND ${htClause}`
+      if (effWhere) { sdWhere = `${sdWhere} AND ${effWhere.sql}`; sdParams.push(...effWhere.params) }
       // Per-include where filter (belongsTo: filters the parent → nulls if excluded)
       const rw = relWhereSql(null)
 
@@ -2725,12 +2890,14 @@ function resolveIncludes(readDb, rows, include, modelName, ctx) {
         sdWhere = `"${tcol(rel.foreignKey)}" IN (${ph})`
       }
       if (htClause) sdWhere = `${sdWhere} AND ${htClause}`
+      const effBinds = []
+      if (effWhere) { sdWhere = `${sdWhere} AND ${effWhere.sql}`; effBinds.push(...effWhere.params) }
       const rwH = relWhereSql(null)
 
       const related = finishRelated(
         runInclude(relDb, rel.targetModel, 'include',
           `SELECT ${sqlCols} FROM "${modelToTable(rel.targetModel)}" WHERE ${sdWhere}${rwH.clause}${policyClause}`,
-          [...pkValues, ...rwH.params, ...policyParams]),
+          [...pkValues, ...effBinds, ...rwH.params, ...policyParams]),
         parsedNested
           ? { mode: 'select', selectedFields: parsedNested.requestedFields }
           : { mode: 'list' },
@@ -3327,6 +3494,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   const hasTemplatesField = ctx.hasTemplatesMap?.[modelName] ?? null
   const hasTemplates      = hasTemplatesField !== null
+
+  // The window, or null if this model declares none. `{ from, to, kind, imposed }`
+  // — `from` is null on an `@@expires` model, `kind` is 'instant' or 'day'
+  // depending on whether the columns are `DateTime` or `String @date`, and
+  // `imposed` is which of the two words declared it.
+  const effective = ctx.effectiveMap?.[modelName] ?? null
 
   // Pre-build allowed write keys for this model. Used by writeData to detect
   // typos before SQL — a typo would otherwise surface as the cryptic SQLite
@@ -4295,7 +4468,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // Emit field-level and model-level log entries for a completed operation.
   // Called once per operation — extracts ids once, shared by both helpers.
   // operation: 'read' | 'write' | 'create' | 'update' | 'delete'
-  function emitLogs(operation, rows, { before: beforeMap, after: afterMap } = {}) {
+  function emitLogs(operation, rows, { before: beforeMap, after: afterMap, transition = null } = {}) {
     if (!tableHasAnyLog) return          // ← fast exit for unlogged tables
     const ids = extractIds(rows)         // extract once, shared below
 
@@ -4312,6 +4485,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
             operation,
             model:   tableName,
             field,
+            transition,
             records: ids,
             before:  beforeMap ? redactValue(field, beforeMap[field] ?? null) : null,
             after:   afterMap  ? redactValue(field, afterMap[field]  ?? null) : null,
@@ -4331,6 +4505,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
           operation,
           model:   tableName,
           field:   null,
+          transition,
           records: ids,
           before:  beforeMap ? redactSnapshot(beforeMap) : null,
           after:   afterMap  ? redactSnapshot(afterMap)  : null,
@@ -4934,14 +5109,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // null state — see ddl.js), so they are never required.
       if (f.type.optional || f.type.array || f.type.kind === 'relation' || f.type.kind === 'implicitM2M') continue
       const attrs = f.attributes ?? []
-      if (attrs.some(a =>
-        a.kind === 'default'  || a.kind === 'updatedAt' || a.kind === 'sequence' ||
-        a.kind === 'computed' || a.kind === 'generated' || a.kind === 'funcCall' ||
-        a.kind === 'from'     || a.kind === 'edge'      || a.kind === 'derived' ||
-        // A required @transient field is required OF THE CALLER, on the wire,
-        // where the API validates it. It is lifted off the payload before the
-        // write, so demanding it here would refuse every write that obeyed it.
-        a.kind === 'transient')) continue
+      if (isServerFilled(f)) continue
+      // A required @transient field is required OF THE CALLER, on the wire,
+      // where the API validates it. It is lifted off the payload before the
+      // write, so demanding it here would refuse every write that obeyed it.
+      if (attrs.some(a => a.kind === 'transient')) continue
       // An `@id` the SERVER assigns — an autoincrementing rowid alias, or a
       // declared default. One owner with the create-mode JSON Schema, because
       // the two answered it separately and disagreed: this tested the TYPE and
@@ -6001,10 +6173,11 @@ function makeTable(readDb, writeDb, shape, ctx) {
     ? new Set(_fromEntries.filter(([,{isBool}]) => isBool).map(([n]) => n))
     : null
   // Pre-compute the ultra-common case: findMany({}) on a soft-delete table with no policy/filter
-  // Disabled for @@hasTemplates models — they need an additional column predicate
-  // (`isTemplate = 0`) on every read, which combinatorially expands fast-path
-  // SQL variants. The slow build-SQL path handles them correctly.
-  const _fastFindManySql = (softDelete && !hasTemplates && !ctx.hasPolicies && !_staticGlobalFilter && !_dynamicGlobalFilter && !plugins?.hasPlugins)
+  // Disabled for @@hasTemplates and windowed models — both need an
+  // additional predicate on every read (`isTemplate = 0`, and a window against
+  // a value that changes between two calls), which combinatorially expands
+  // fast-path SQL variants. The slow build-SQL path handles them correctly.
+  const _fastFindManySql = (softDelete && !hasTemplates && !effective && !ctx.hasPolicies && !_staticGlobalFilter && !_dynamicGlobalFilter && !plugins?.hasPlugins)
     ? `${_baseSqlWithFrom} WHERE "${col('deletedAt')}" IS NULL`
     : null
 
@@ -6037,7 +6210,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     !plugins?.hasPlugins &&
     Object.keys(fieldPolicy).length === 0 &&
     !_hasFrom &&
-    !hasTemplates
+    !hasTemplates &&
+    !effective
   )
   const _fastFindUniqueSql = _canFastFindUnique
     ? (softDelete
@@ -6053,7 +6227,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     catch { _fastFindUniqueStmt = null }
   }
 
-  function buildSQL({ where, orderBy, limit, offset, parsedSelect, sdMode = 'live', htMode = 'instances', distinct = false, windowSpec = null, withVectors = false } = {}) {
+  function buildSQL({ where, orderBy, limit, offset, parsedSelect, sdMode = 'live', htMode = 'instances', effMode = 'inForce', asOf = null, distinct = false, windowSpec = null, withVectors = false } = {}) {
     const params   = []
 
     // ── Ultra-fast path: no where, no order, no limit, live mode, no policy/filters ──
@@ -6078,7 +6252,8 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const sdWhere = softDelete
       ? injectSoftDeleteFilter(mergedWhere, sdMode)
       : mergedWhere
-    let effectiveWhere = applyHtFilter(sdWhere, htMode)
+    let exclWhere = applyHtFilter(sdWhere, htMode)
+    if (effective) exclWhere = injectEffectiveFilter(exclWhere, effMode, effective, asOf)
 
     // A similarity ordering carries its own guard. The extension throws on a
     // null operand rather than ranking the row last, so an un-embedded row
@@ -6088,9 +6263,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // filter rather than being appended to finished SQL.
     const _vecPlan = vectorOrderPlan(orderBy, _vectorMap)
     if (_vecPlan) {
-      effectiveWhere = {
+      exclWhere = {
         AND: [
-          ...(effectiveWhere ? [effectiveWhere] : []),
+          ...(exclWhere ? [exclWhere] : []),
           { [_vecPlan.field]: { not: null } },
         ],
       }
@@ -6135,7 +6310,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       _distTail = `, ${_vecSqlFn}(${needsAlias ? 't.' : ''}"${col(_vecPlan.field)}", ?) AS "${DISTANCE_FIELD}"`
     }
 
-    const whereSql  = buildWhereWithEncryption(effectiveWhere, params, whereAlias, needsAlias)
+    const whereSql  = buildWhereWithEncryption(exclWhere, params, whereAlias, needsAlias)
     // When JOINs exist, buildRelationOrderBy returns the full ordered list
     // (flat + relation, flat prefixed with `t.`). Don't double-emit flat parts.
     const flatOrderSql = hasJoins ? '' : buildOrderBy(orderBy, _flatOrderParams, columnMap, _pointMap, _vectorMap, _vectorFn(readDb))
@@ -6275,6 +6450,85 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return 'instances'
   }
 
+  // The window's mode from args. Same shape as the two above, same asymmetry —
+  // and `asOf` sits on the WIDENING side of it with `withExpired`, deliberately.
+  // It re-points a window rather than asking for rows a model does not have, so
+  // on a model that declares none the full row set already IS every row in
+  // force at every instant; refusing it would break exactly the generic caller
+  // the asymmetry exists to protect — a row browser with an *as at* control,
+  // which cannot know which of twenty models has a window.
+  //
+  // An ASKED window (`@@effective`) filters only when `asOf` is stated — with
+  // nothing stated every row comes back, which is the pointer and the history
+  // read working (`FJS-D352`). `onlyExpired` on one still needs a moment to be
+  // out of force AT, and it has none of its own to supply.
+  function effMode(args) {
+    if (!effective) {
+      if (args?.onlyExpired) throw new CapabilityNotDeclaredError(modelName, 'onlyExpired', '@@expires or @@effective',
+        'Every row here counts at every instant, so there is no out-of-window view to ask for.')
+      return 'inForce'
+    }
+    if (args?.withExpired) return 'withExpired'
+    if (!effective.imposed && args?.asOf == null) {
+      if (args?.onlyExpired) throw new ValidationError([{ path: ['onlyExpired'], message:
+        `onlyExpired on ${modelName} needs asOf — its @@effective window is asked rather than imposed, ` +
+        `so there is no moment to be out of force at until the read states one` }])
+      return 'withExpired'
+    }
+    if (args?.onlyExpired) return 'onlyExpired'
+    return 'inForce'
+  }
+
+  // What the window is read AT. Unstated is the client's own clock, which is
+  // what makes expiry testable at all: `createTestEnv`'s `clock.advance()`
+  // moves this, where a `new Date()` written into a service moves nothing.
+  //
+  // A day window reads a DAY, and the reading is UTC. That is the honest
+  // default rather than the right one — *today* is a day derived from an
+  // instant and therefore owes a zone (`FJS-D143`), which this declaration does
+  // not yet carry. Only an `@@expires` over days reaches the default at all: an
+  // `@@effective` window with nothing stated is not filtered.
+  const DAY = /^\d{4}-\d{2}-\d{2}$/
+  function effAsOf(args) {
+    const stated = args?.asOf
+    if (stated == null) {
+      const iso = nowISO(ctx.now)
+      return effective?.kind === 'day' ? iso.slice(0, 10) : iso
+    }
+    // A write does not take a window to read at. `withExpired` is how a write
+    // reaches a row outside the window — the same escape `update({ withDeleted:
+    // true })` already is — while a write made *as the world stood* at a past
+    // instant is bitemporality, which this declaration does not carry and must
+    // not ship by accident as a directive default.
+    const value = stated instanceof Date ? stated.toISOString() : String(stated)
+    if (effective?.kind === 'day') {
+      if (!DAY.test(value)) throw new ValidationError([{ path: ['asOf'], message:
+        `asOf must be a plain date (YYYY-MM-DD) on ${modelName} — its window is over days, not instants. Got '${value}'` }])
+      return value
+    }
+    if (Number.isNaN(Date.parse(value))) throw new ValidationError([{ path: ['asOf'], message:
+      `asOf must be an instant on ${modelName} — an ISO date-time. Got '${value}'` }])
+    return value
+  }
+
+  // The window's half of the compose. Asked on EVERY read for `applySdFilter`'s
+  // reason: guarding the call with `effective ? … : where` is what lets a flag
+  // this model cannot honor through without a word.
+  function applyEffFilter(where, args) {
+    const mode = effMode(args)
+    if (!effective) return where
+    return injectEffectiveFilter(where, mode, effective, effAsOf(args))
+  }
+
+  // The same step where the modes were resolved earlier and `args` is no longer
+  // the thing in hand. Both exist for `applySdFilter`'s reason — the call is
+  // made on every read, including on models that declare no window, so a flag
+  // this model cannot honor is refused rather than passing through in silence.
+  function applyEff(where, mode, asOf) {
+    if (!effective) return where
+    return injectEffectiveFilter(where, mode, effective, asOf)
+  }
+
   // Compose: apply hasTemplates filter on top of soft-delete-filtered where.
   // Both filters AND together at the WHERE level — orthogonal concerns.
   // `recursive` is a findMany shape. A method that cannot walk a tree has to
@@ -6347,10 +6601,22 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // { cost: { lt: 5 } } })` destroying template rows that no read of the model
   // can see is data loss the caller has no way to anticipate (FJS-176). Opt in
   // with `withTemplates` / `onlyTemplates`, the same words the reads take.
-  function _hardDeleteWhere({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates }) {
+  //
+  // The window: an `@@expires` filter applies, with templates rather than with
+  // soft delete. **There is no verb pair to honor** — soft delete's bypass is
+  // the contract of `delete` AGAINST `remove`, and `@@expires` declares no
+  // verb, so a bypass here would mean nothing in particular. A sweep that wants
+  // the dead rows says `onlyExpired`, which is the intent it was spelling by
+  // hand with a cutoff anyway. An `@@effective` window reaches a delete the way
+  // it reaches a read: only when `asOf` is stated.
+  function _hardDeleteWhere({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }) {
     const sdFlagMode = sdMode({ withDeleted, onlyDeleted })
     const sdW = sdFlagMode === 'live' ? where : injectSoftDeleteFilter(where, sdFlagMode)
-    return applyHtFilter(sdW, htMode({ withTemplates, onlyTemplates }))
+    const htW = applyHtFilter(sdW, htMode({ withTemplates, onlyTemplates }))
+    // `asOf` rides with the flags, or a sweep that states an instant deletes at
+    // `now` instead and matches nothing — which is silent, because a delete
+    // that removed no rows answers a count rather than an error.
+    return applyEffFilter(htW, { withExpired, onlyExpired, asOf })
   }
 
   // ── Nested writes ──────────────────────────────────────────────────────────
@@ -6593,12 +6859,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
         const multiRel = relsToUse.length > 1
         const mode     = sdMode(args)
         const htm      = htMode(args)
+        const em       = effMode(args)
+        const asOf     = effective ? effAsOf(args) : null
         const maxDepth = rec.maxDepth ?? 1000
 
         // Built once, bound at every level it appears in: the anchor SELECT and
         // each step of the walk.
         const visParams = []
-        const visWhere  = applyHtFilter(softDelete ? injectSoftDeleteFilter(null, mode) : null, htm)
+        const visWhere  = applyEff(applyHtFilter(softDelete ? injectSoftDeleteFilter(null, mode) : null, htm), em, asOf)
         let   visSql    = visWhere ? buildWhereWithEncryption(visWhere, visParams) : null
         const readPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
         if (readPolicy) {
@@ -6732,6 +7000,8 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const windowSpec      = args.window ?? null
       const mode            = sdMode(args)
       const htm             = htMode(args)
+      const em              = effMode(args)
+      const asOf            = effective ? effAsOf(args) : null
       const ps              = parseArgs(select, include)
 
       // ── the similarity ordering's two halves (`FJS-D331`) ────────────────
@@ -6772,7 +7042,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
 
         ;({ sql, params } = buildSQL({
           where: scanWhere, orderBy: orderByAfterVector(orderBy, _jsVec.field),
-          parsedSelect: psScan, sdMode: mode, htMode: htm, distinct: distinct === true, windowSpec,
+          parsedSelect: psScan, sdMode: mode, htMode: htm, effMode: em, asOf, distinct: distinct === true, windowSpec,
           withVectors: true,
         }))
         rawRows = scoreByDistance(readDb.query(sql).all(...params), _jsVec.near, {
@@ -6781,7 +7051,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
           skip: offset == null ? 0        : Number(offset),
         })
       } else {
-        ;({ sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: ps, sdMode: mode, htMode: htm, distinct: distinct === true, windowSpec }))
+        ;({ sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: ps, sdMode: mode, htMode: htm, effMode: em, asOf, distinct: distinct === true, windowSpec }))
         rawRows = readDb.query(sql).all(...params)
       }
 
@@ -6818,8 +7088,10 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       _scopedByForBuild = scopedBy ?? null
       const mode            = sdMode(args)
       const htm             = htMode(args)
+      const em              = effMode(args)
+      const asOf            = effective ? effAsOf(args) : null
       const ps              = parseArgs(select, include)
-      const { sql, params } = buildSQL({ where, orderBy, limit: 1, parsedSelect: ps, sdMode: mode, htMode: htm })
+      const { sql, params } = buildSQL({ where, orderBy, limit: 1, parsedSelect: ps, sdMode: mode, htMode: htm, effMode: em, asOf })
       const _nt = needsTiming()
       const _ffT0 = _nt ? performance.now() : 0
       const _raw            = readDb.query(sql).get(...params)
@@ -6874,8 +7146,10 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       _scopedByForBuild = scopedBy ?? null
       const mode            = sdMode(args)
       const htm             = htMode(args)
+      const em              = effMode(args)
+      const asOf            = effective ? effAsOf(args) : null
       const ps              = parseArgs(select, include)
-      const { sql, params } = buildSQL({ where, limit: 2, parsedSelect: ps, sdMode: mode, htMode: htm })
+      const { sql, params } = buildSQL({ where, limit: 2, parsedSelect: ps, sdMode: mode, htMode: htm, effMode: em, asOf })
       const _nt = needsTiming()
       const _fuT0 = _nt ? performance.now() : 0
       const rows            = readAll(readDb.query(sql).all(...params), { mode: 'single', selectedFields: ps?.requestedFields })
@@ -6933,6 +7207,8 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       _scopedByForBuild = scopedBy ?? null
       const mode      = sdMode(args)
       const htm       = htMode(args)
+      const em        = effMode(args)
+      const asOf      = effective ? effAsOf(args) : null
       const params    = []
       // Merge global filter + plugin read filters + policy filter (same as buildSQL does)
       const globalFilter = resolveGlobalFilter()
@@ -6942,8 +7218,8 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
         : where
       const sdWhere       = softDelete ? injectSoftDeleteFilter(mergedWhere, mode) : mergedWhere
-      const effectiveWhere = applyHtFilter(sdWhere, htm)
-      const whereSql  = buildWhereWithEncryption(effectiveWhere, params)
+      const exclWhere = applyEff(applyHtFilter(sdWhere, htm), em, asOf)
+      const whereSql  = buildWhereWithEncryption(exclWhere, params)
       // Policy filter for count
       const countPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       let   sql       = `SELECT COUNT(*) as n FROM "${tableName}"`
@@ -6971,6 +7247,8 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const { where } = args
       const mode      = sdMode(args)
       const htm       = htMode(args)
+      const em        = effMode(args)
+      const asOf      = effective ? effAsOf(args) : null
       const params    = []
       const globalFilter = resolveGlobalFilter()
       const pluginFilters = plugins?.hasPlugins ? plugins.getReadFilters(modelName, ctx) : []
@@ -6979,8 +7257,8 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
         : where
       const sdWhere       = softDelete ? injectSoftDeleteFilter(mergedWhere, mode) : mergedWhere
-      const effectiveWhere = applyHtFilter(sdWhere, htm)
-      const whereSql  = buildWhereWithEncryption(effectiveWhere, params)
+      const exclWhere = applyEff(applyHtFilter(sdWhere, htm), em, asOf)
+      const whereSql  = buildWhereWithEncryption(exclWhere, params)
       const existsPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       let   sql       = `SELECT 1 as _e FROM "${tableName}"`
       if (whereSql && existsPolicy) sql += ` WHERE (${whereSql}) AND (${existsPolicy.sql})`
@@ -7016,10 +7294,12 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const { where, include, orderBy, limit, offset, select, distinct } = args
       const mode = sdMode(args)
       const htm  = htMode(args)
+      const em   = effMode(args)
+      const asOf = effective ? effAsOf(args) : null
       const ps   = parseArgs(select, include)
 
       // ── rows query (with limit/offset) ──────────────────────────────────
-      const { sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: ps, sdMode: mode, htMode: htm, distinct: distinct === true })
+      const { sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: ps, sdMode: mode, htMode: htm, effMode: em, asOf, distinct: distinct === true })
       const _nt = needsTiming()
       const _t0 = _nt ? performance.now() : 0
       const rawRows = readDb.query(sql).all(...params)
@@ -7039,8 +7319,8 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
         : where
       const sdMergedWhere = softDelete ? injectSoftDeleteFilter(mergedWhere, mode) : mergedWhere
-      const effectiveWhere = applyHtFilter(sdMergedWhere, htm)
-      const whereSql = buildWhereWithEncryption(effectiveWhere, countParams)
+      const exclWhere = applyEff(applyHtFilter(sdMergedWhere, htm), em, asOf)
+      const whereSql = buildWhereWithEncryption(exclWhere, countParams)
       const policyResult = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       let countSql = `SELECT COUNT(*) as n FROM "${tableName}"`
       if (whereSql && policyResult) countSql += ` WHERE (${whereSql}) AND (${policyResult.sql})`
@@ -7121,9 +7401,9 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       // and `onlyTemplates` counted the instances — the opposite answer to the
       // question asked, from the method whose whole output is one number
       // nothing can cross-check (FJS-263).
-      const sdEffective = applySdFilter(mergedWhere, args)
-      const effectiveWhere = applyHtFilter(sdEffective, htMode(args))
-      const whereSql = buildWhereWithEncryption(effectiveWhere, params)
+      const sdWhereR = applySdFilter(mergedWhere, args)
+      const exclWhere = applyEffFilter(applyHtFilter(sdWhereR, htMode(args)), args)
+      const whereSql = buildWhereWithEncryption(exclWhere, params)
       const policyResult = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
 
       // Build SELECT columns
@@ -7358,9 +7638,9 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         ? (where ? { AND: [...allFilters, where] } : allFilters.length === 1 ? allFilters[0] : { AND: allFilters })
         : where
       // Same as aggregate: the flags, not a hardcoded mode (FJS-263).
-      const sdEffective = applySdFilter(mergedWhere, args)
-      const effectiveWhere = applyHtFilter(sdEffective, htMode(args))
-      const whereSql = buildWhereWithEncryption(effectiveWhere, params)
+      const sdWhereR = applySdFilter(mergedWhere, args)
+      const exclWhere = applyEffFilter(applyHtFilter(sdWhereR, htMode(args)), args)
+      const whereSql = buildWhereWithEncryption(exclWhere, params)
       const policyResult = ctx.hasPolicies ? buildPolicyFilter(modelName, 'read', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
 
       // ── SELECT columns ───────────────────────────────────────────────────
@@ -7933,7 +8213,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // Callers that need to distinguish can check count() before/after,
     // or enable policyDebug to see which policy blocked.
     async update({ where, data, include, select, scopedBy, system, _bypassVersion, _move, base,
-                   withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
+                   withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
       await enforceValueSets(modelName, [data], ctx, { where })
       if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data, include, select }, ctx)
       const stamped = new Set()
@@ -8018,10 +8298,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         data = { ..._scalarNoEdge, ...extraFKs }
 
         const whereParams = []
-        const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates }
+        const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }
         const sdWhereW = applySdFilter(where, _flags)
-        const effectiveWhere = applyHtFilter(sdWhereW, htMode(_flags))
-        const whereSql = buildWhereWithEncryption(effectiveWhere, whereParams)
+        const exclWhere = applyEffFilter(applyHtFilter(sdWhereW, htMode(_flags)), _flags)
+        const whereSql = buildWhereWithEncryption(exclWhere, whereParams)
         if (!whereSql) throw new Error(`update on "${tableName}" requires a where clause`)
 
         // ── @@sync(field) — merge, or name the columns two people contend over ─
@@ -8301,13 +8581,18 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         emitTransitionEvent(_transResult, updated)
         if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'update', finalRow, ctx)
         // ── Logging: emit after ─────────────────────────────────────────────
-        if (tableHasAnyLog && updated) emitLogs('update', [updated], { before: beforeRow, after: updated })
+        // The move by name, and not only for an announced one: an abandon and a
+        // cancel write the same before and after, so a SYSTEM-scoped move that
+        // is not announced is exactly the one the trail must still tell apart.
+        if (tableHasAnyLog && updated) emitLogs('update', [updated], {
+          before: beforeRow, after: updated, transition: _transResult?.transitionName ?? null,
+        })
       }
       return finalRow
     },
 
     // ── updateMany ──────────────────────────────────────────────────────────
-    async updateMany({ where, data, system, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
+    async updateMany({ where, data, system, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
       const _umMove = _bulkTransitionField(data, 'updateMany')
       if (_umMove) throw new BulkTransitionError(modelName, _umMove, 'updateMany')
       const { mode: _umMode, wantRows: _umWantRows } = announceFor(announce)
@@ -8338,10 +8623,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         ...(_umVersion ? [`"${col(_umVersion)}" = "${col(_umVersion)}" + 1`] : []),
       ].join(', ')
       const whereParams = []
-      const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates }
+      const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }
       const sdWhereW = applySdFilter(where, _flags)
-      const effectiveWhere = applyHtFilter(sdWhereW, htMode(_flags))
-      const whereSql = buildWhereWithEncryption(effectiveWhere, whereParams)
+      const exclWhere = applyEffFilter(applyHtFilter(sdWhereW, htMode(_flags)), _flags)
+      const whereSql = buildWhereWithEncryption(exclWhere, whereParams)
       const updateManyPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'update', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       if (updateManyPolicy) whereParams.push(...updateManyPolicy.params)
       const finalWhere0 = whereSql && updateManyPolicy ? `(${whereSql}) AND (${updateManyPolicy.sql})`
@@ -8400,7 +8685,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
     // ── upsert ──────────────────────────────────────────────────────────────
     async upsert({ where, create: createData, update: updateData, include, select, system,
-                   withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
+                   withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
       // An operator is refused here rather than passed to the update half. This
       // method has a single-statement fast path whose SET clause reads from
       // `excluded`, and a slow path that calls update() — one would apply the
@@ -8408,6 +8693,44 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // to prevent.
       extractWriteOps(createData, { where: 'upsert' })
       extractWriteOps(updateData, { where: 'upsert' })
+      // ── an upsert addressed by a relator's relata ──────────────────────
+      //
+      // Refused rather than answered, because the answer would be a wrong one
+      // that compiles. The fast path below needs ONE unique column, so a pair
+      // never reaches it and every relator upsert falls to the slow path —
+      // findFirst, then update what it found. On a repeatable relationship
+      // `{recipeId, serverId}` matches every run there has ever been, so the
+      // call silently overwrites the oldest instead of recording a new one.
+      //
+      // The declaration is what gives this the authority to be sure. A relator
+      // states how its rows are identified, so an upsert addressing them any
+      // other way is provably not the write the caller meant — which is not
+      // something litestone can say about an ordinary non-unique `where`.
+      const _relator = ctx.models[modelName]?.attributes?.find(a => a.kind === 'relator')
+      if (_relator && where) {
+        const given = new Set(Object.keys(where))
+        if (_relator.fields.some(f => given.has(f))) {
+          const keyed = _relator.repeat === 'once' ? _relator.fields
+                      : _relator.discriminator     ? [..._relator.fields, _relator.discriminator]
+                      : null
+          const missing = keyed?.filter(c => !given.has(c)) ?? null
+          if (!keyed) throw new ValidationError([{
+            path: ['where'],
+            message:
+              `${modelName} declares @@relator([${_relator.fields.join(', ')}], many), so the same pair may ` +
+              `happen any number of times and there is no row for these columns to name. An upsert here would ` +
+              `overwrite an earlier one. Use create(), or address the row by its id.`,
+          }])
+          if (missing.length) throw new ValidationError([{
+            path: ['where'],
+            message:
+              `${modelName} declares @@relator([${_relator.fields.join(', ')}], many: ${_relator.discriminator}), ` +
+              `so what identifies a row is ${keyed.join(' + ')} — and this where names ` +
+              `${missing.join(', ')} nowhere. Without it these columns match every occurrence, and the upsert ` +
+              `would overwrite one of them. Name ${missing.join(' and ')}, or address the row by its id.`,
+          }])
+        }
+      }
       // Both halves, because either may be the one that lands — and they are two
       // calls rather than one array: a create-shaped payload IS the row, while
       // the update half is about a row that already exists, so a dependent
@@ -8417,11 +8740,11 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // Threaded through to both halves: the lookup has to SEE the row the
       // update would write, or an upsert against an excluded row reads as
       // absent and tries to INSERT one that is already there.
-      const _upFlags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates }
+      const _upFlags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }
       // ── Single-statement fast path ─────────────────────────────────────────
       // When no hooks / plugins / policies / events / logs / transitions /
-      // soft-delete / global filters / field policies / sequences / nested
-      // writes are in play and `where` targets exactly one unique column,
+      // soft-delete / window / global filters / field policies / sequences /
+      // nested writes are in play and `where` targets exactly one unique column,
       // compile to one cached `INSERT ... ON CONFLICT(col) DO UPDATE ...
       // RETURNING *` — one round trip instead of findFirst + update/create
       // (measured ~6x). Any feature that needs the split path falls through
@@ -8429,7 +8752,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       fastPath: if (
         !plugins?.hasPlugins && !emitter && !ctx._eventListeners.size &&
         !ctx.hasPolicies && !tableHasAnyLog && !_tableTransitions &&
-        !softDelete && !hasTemplates && !hasFieldPolicy && !_rawFilter &&
+        !softDelete && !hasTemplates && !effective && !hasFieldPolicy && !_rawFilter &&
         !ctx.sequenceMap?.[modelName]?.length &&
         !ctx.updatedByMap?.[modelName]?.length &&
         !ctx.versionMap?.[modelName] &&
@@ -8818,13 +9141,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     //   soft-delete tables  → sets deletedAt = now() (+ cascades under @@softDelete(cascade))
     //   hard-delete tables  → real DELETE FROM
     // Use delete() only when you explicitly need to bypass soft delete.
-    async remove({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
+    async remove({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
-      const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates }
+      const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }
       const sdWhereW = applySdFilter(where, _flags)
-      const effectiveWhere = applyHtFilter(sdWhereW, htMode(_flags))
-      const whereSql = buildWhereWithEncryption(effectiveWhere, params)
+      const exclWhere = applyEffFilter(applyHtFilter(sdWhereW, htMode(_flags)), _flags)
+      const whereSql = buildWhereWithEncryption(exclWhere, params)
       if (!whereSql) throw new Error(`remove on "${tableName}" requires a where clause`)
       const removePolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       const removeFinalSql0    = removePolicy ? `(${whereSql}) AND (${removePolicy.sql})` : whereSql
@@ -8914,15 +9237,15 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // ── removeMany ─────────────────────────────────────────────────────────
     // Bulk version of remove() — same semantics: soft delete on soft-delete tables,
     // real DELETE FROM on hard-delete tables.
-    async removeMany({ where, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
+    async removeMany({ where, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
       const { mode: _rmMode, wantRows: _rmWantRows } = announceFor(announce)
       const _rmNeedRows = tableHasAnyLog || _rmWantRows
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
-      const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates }
+      const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }
       const sdWhereW = applySdFilter(where, _flags)
-      const effectiveWhere = applyHtFilter(sdWhereW, htMode(_flags))
-      const whereSql = buildWhereWithEncryption(effectiveWhere, params)
+      const exclWhere = applyEffFilter(applyHtFilter(sdWhereW, htMode(_flags)), _flags)
+      const whereSql = buildWhereWithEncryption(exclWhere, params)
       const removeManyPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       if (removeManyPolicy) params.push(...removeManyPolicy.params)
       const rmFinalSql0 = whereSql && removeManyPolicy ? `(${whereSql}) AND (${removeManyPolicy.sql})`
@@ -8946,9 +9269,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (softDeleteCascade) {
           const cascadeTargets = _cascadeTargets()
           if (cascadeTargets.length > 0) {
-            const effectiveWhere2 = injectSoftDeleteFilter(where, 'live')
+            const exclWhere2 = injectSoftDeleteFilter(where, 'live')
             const params2 = []
-            const whereSql2 = buildWhereWithEncryption(effectiveWhere2, params2)
+            const whereSql2 = buildWhereWithEncryption(exclWhere2, params2)
             const liveRows = readDb.query(`SELECT * FROM "${tableName}"${whereSql2 ? ` WHERE ${whereSql2}` : ''}`).all(...params2)
             // Seed affected PKs with root table values
             const firstTarget = cascadeTargets[0]
@@ -9049,8 +9372,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (plugins?.hasPlugins) await plugins.beforeUpdate(modelName, { where, data: { deletedAt: null } }, ctx)
       const params   = []
       // Restore targets deleted rows
-      const effectiveWhere = injectSoftDeleteFilter(where, 'onlyDeleted')
-      const baseWhereSql = buildWhereWithEncryption(effectiveWhere, params)
+      const exclWhere = injectSoftDeleteFilter(where, 'onlyDeleted')
+      const baseWhereSql = buildWhereWithEncryption(exclWhere, params)
       if (!baseWhereSql) throw new Error(`restore on "${tableName}" requires a where clause`)
       const restorePolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'update', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       const whereSql = restorePolicy ? `(${baseWhereSql}) AND (${restorePolicy.sql})` : baseWhereSql
@@ -9240,7 +9563,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         : null
 
       const sdWhere   = softDelete ? injectSoftDeleteFilter(mergedWhere, mode) : mergedWhere
-      const htWhere   = applyHtFilter(sdWhere, htMode(args))
+      const htWhere   = applyEffFilter(applyHtFilter(sdWhere, htMode(args)), args)
       const baseWhere = buildWhereWithEncryption(htWhere, params)
 
       const cursorClause = cursorValues
@@ -9391,6 +9714,9 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       onlyDeleted = false,
       withTemplates = false,
       onlyTemplates = false,
+      withExpired = false,
+      onlyExpired = false,
+      asOf,
     } = {}) {
       if (!ftsFields) {
         throw new CapabilityNotDeclaredError(modelName, 'search()', '@@fts',
@@ -9402,6 +9728,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const ftsTable = `${tableName}_fts`
       const mode     = sdMode({ withDeleted, onlyDeleted })
       const htm      = htMode({ withTemplates, onlyTemplates })
+      const em       = effMode({ withExpired, onlyExpired, asOf })
+      const asOfAt   = effective ? effAsOf({ asOf }) : null
 
       // ── Step 1: query FTS table for matching rowids + rank ─────────────────
       // FTS5 rank column is BM25 — lower (more negative) = better match.
@@ -9463,7 +9791,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const filterParams = []
       const preFilter    = withFilters(where) ?? {}
       let   filterSql    = buildWhereWithEncryption(
-        applyHtFilter(softDelete ? injectSoftDeleteFilter(preFilter, mode) : preFilter, htm),
+        applyEff(applyHtFilter(softDelete ? injectSoftDeleteFilter(preFilter, mode) : preFilter, htm), em, asOfAt),
         filterParams
       )
       if (searchPolicy) {
@@ -9508,12 +9836,12 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       const baseParams   = []
       const idFilter     = { id: { in: rowids } }
       const merged       = withFilters(where ? { AND: [idFilter, where] } : idFilter)
-      const effectiveWhere = applyHtFilter(
-        softDelete ? injectSoftDeleteFilter(merged, mode) : merged,
-        htm
+      const exclWhere = applyEff(
+        applyHtFilter(softDelete ? injectSoftDeleteFilter(merged, mode) : merged, htm),
+        em, asOfAt
       )
 
-      let whereSql = buildWhereWithEncryption(effectiveWhere, baseParams)
+      let whereSql = buildWhereWithEncryption(exclWhere, baseParams)
       // The pre-filter above already narrowed the rowids, so this is belt and
       // braces — and it is the half that must not be dropped: step 2 is what
       // returns the rows, and a future edit that skips the pre-filter for a
@@ -9603,7 +9931,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // ── delete ──────────────────────────────────────────────────────────────
     // Always a real DELETE FROM — bypasses soft delete on all tables.
     // Requires a where clause to prevent accidental mass deletion.
-    async delete({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
+    async delete({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
       // The guard reads the CALLER's where. The filters below add clauses of
@@ -9617,7 +9945,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // nothing — and a DELETE that matches nothing reports a plausible zero
       // (FJS-600). Scope expansion, `@from` and typed JSON ride the same call.
       const whereSql = buildWhereWithEncryption(
-        _hardDeleteWhere({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates }), params)
+        _hardDeleteWhere({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }), params)
       const delPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       const delFinalSql0    = delPolicy ? `(${whereSql}) AND (${delPolicy.sql})` : whereSql
       const delFinalParams0 = delPolicy ? [...params, ...delPolicy.params] : params
@@ -9657,13 +9985,13 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
     // ── deleteMany ──────────────────────────────────────────────────────────
     // Real DELETE FROM — bypasses soft delete. where is optional (deletes all if omitted).
-    async deleteMany({ where, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates } = {}) {
+    async deleteMany({ where, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
       const { mode: _dmMode, wantRows: _dmWantRows } = announceFor(announce)
       const _dmNeedRows = tableHasAnyLog || _dmWantRows
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
       const whereSql = buildWhereWithEncryption(
-        _hardDeleteWhere({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates }), params)
+        _hardDeleteWhere({ where, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }), params)
       const delManyPolicy = ctx.hasPolicies ? buildPolicyFilter(modelName, 'delete', ctx, ctx.policyMap, ctx.schema, ctx.relationMap) : null
       if (delManyPolicy) params.push(...delManyPolicy.params)
       const dmFinalSql0 = whereSql && delManyPolicy ? `(${whereSql}) AND (${delManyPolicy.sql})`
@@ -9742,6 +10070,64 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         _move: transitionName,
         ...(system ? { system: [targetField] } : {}),
       })
+    },
+
+    // ── due ─────────────────────────────────────────────────────────────────
+    // Which rows owe a declared `@@commitment` transition by `by` — the
+    // client's clock unless stated — and when each one fell due. One query per
+    // declaration: the transition's from-state and `while:` in the WHERE, and
+    // the due time as an expression over the row, so an edited anchor moves the
+    // answer with no queue entry to go stale.
+    //
+    // It is a READ through `findMany`, so the caller's gate, row policy,
+    // soft-delete and window all apply; the sweep that fires commitments asks
+    // it of a system client. Making the transition is not this method's — a
+    // row it returns may have moved by the time anybody acts, which is why the
+    // fire asks again with `where` naming the row.
+    async due({ by, timeZone, transition, where } = {}) {
+      const decls = ctx.commitmentMap?.[modelName]
+      if (!decls) throw new CapabilityNotDeclaredError(modelName, 'due()', '@@commitment',
+        'Nothing on this model is owed at a time, so no row can be due.')
+      const chosen = transition == null ? decls : decls.filter(d => d.name === transition)
+      if (!chosen.length) throw new ValidationError([{ path: ['transition'], message:
+        `${modelName} owes no commitment named '${transition}' — declared: ${decls.map(d => d.name).join(', ')}` }])
+
+      const at = by ?? nowISO(ctx.now)
+      const out = []
+      for (const d of chosen) {
+        const limit = readBy(d.kind, at, timeZone)
+        if (limit == null) throw new ValidationError([{ path: ['by'], message:
+          `by must be an instant — a Date or an ISO date-time. Got '${by}'` }])
+        // The from-state is the TARGET's. Across a relation it is a relation
+        // filter, so a subscription an older invoice already lapsed leaves
+        // every later invoice owing nothing — rather than each one firing into
+        // a refused move on every sweep for as long as it stays unpaid — and a
+        // null relation matches no row at all (`FJS-D362`).
+        const from = { [d.field]: { in: d.from } }
+        const due  = dueSql(d)
+        const cond = [d.via ? { [d.via]: { is: from } } : from,
+                      { $raw: rawClause(`${due.sql} <= ?`, [...due.params, limit]) }]
+        if (d.while) {
+          const w = compileStatic(d.while, modelName, ctx.schema, relationMap)
+          cond.push({ $raw: rawClause(w.sql, w.params) })
+        }
+        if (where) cond.push(where)
+        const targetId = d.via
+          ? ctx.models[d.target]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+          : idField
+        const keep = [idField, d.on, ...(d.offset?.field ? [d.offset.field] : [])]
+        const select = Object.fromEntries(keep.map(k => [k, true]))
+        if (d.via) select[d.via] = { select: { [targetId]: true } }
+        const rows = await this.findMany({ where: { AND: cond }, select })
+        for (const row of rows) out.push({
+          transition: d.name,
+          id:         row[idField],
+          dueAt:      dueAt(d, row),
+          target:     { model: d.target, accessor: modelToAccessor(d.target), transition: d.transition,
+                        id: d.via ? row[d.via][targetId] : row[idField] },
+        })
+      }
+      return out
     },
 
     // ── transitions ─────────────────────────────────────────────────────────
@@ -9923,11 +10309,10 @@ function openSqliteConnections(absPath, busyTimeout) {
   // The busy timeout goes FIRST, before any pragma that can contend for a
   // lock. `journal_mode = WAL` takes a brief exclusive lock and runs WAL
   // recovery, so two processes opening one file at the same moment race here —
-  // and with the timeout applied six lines later the loser had nothing to wait
-  // on and threw `SQLITE_BUSY_RECOVERY` out of `createClient`, before a line of
-  // the app had run. Measured at 1 in 10 simultaneous boots (`FJS-642`).
-  applyBusyTimeout(rawWriteDb, busyTimeout)
-  rawWriteDb.run('PRAGMA journal_mode = WAL')
+  // and with the timeout applied after it the loser had nothing to wait on and
+  // threw `SQLITE_BUSY_RECOVERY` out of `createClient`, before a line of the
+  // app had run. Measured at 1 in 10 simultaneous boots (`FJS-655`).
+  applyWal(rawWriteDb, busyTimeout)
   rawWriteDb.run('PRAGMA foreign_keys = ON')
   rawWriteDb.run('PRAGMA page_size = 8192')
   rawWriteDb.run('PRAGMA synchronous = NORMAL')
@@ -10145,6 +10530,11 @@ function makeLoggerAutoModel(dbName) {
       f('operation',  'String'),
       f('model',      'String'),
       f('field',      'String',     true),
+      // WHICH named move an update was, where it was one. `operation` stays
+      // `update` because the row is one; two moves between the same states
+      // write identical before and after snapshots, and only this separates
+      // an order abandoned by its commitment from one a person cancelled.
+      f('transition', 'String',     true),
       f('records',    'Json'),
       f('before',     'Json',     true),
       f('after',      'Json',     true),
@@ -10254,7 +10644,7 @@ function actorTypeOf(ctx) {
 // Build the log entry object from the standard fields + onLog.
 // ctx is the request context (has ctx.auth).
 // onLog is the user-supplied function from createClient options.
-function buildLogEntry({ operation, model, field, records, before, after }, ctx, onLog) {
+function buildLogEntry({ operation, model, field, transition, records, before, after }, ctx, onLog) {
   // WHERE the write came from. Supplied by whoever owns the request — junction
   // installs a closure over its own request store — because this package sits
   // BELOW the one that has a request (Invariant 1) and must not learn about it.
@@ -10273,6 +10663,7 @@ function buildLogEntry({ operation, model, field, records, before, after }, ctx,
     operation,
     model,
     field:     field    ?? null,
+    transition: transition ?? null,
     records:   JSON.stringify(records ?? []),
     before:    before   != null ? JSON.stringify(before)  : null,
     after:     after    != null ? JSON.stringify(after)   : null,
@@ -10661,9 +11052,38 @@ export async function createClient({
 //   try { ... } finally { await lock.release() }
 //
 // Default TTL: 30s. Use heartbeat() for long-running operations.
-// SYSTEM auth bypasses lock enforcement (for migrations, data repair, seeding).
+//
+// One primitive for every flavor of the client. A lock is a fact about the
+// connection rather than an access check, so `asSystem()` does not bypass it:
+// a system caller that asks for a lock is asking for exclusion, and a no-op
+// there landed 10 of 10 concurrent writers on one range (`FJS-1216`).
 
-function makeLockPrimitive(rawWriteDb, getIsSystem) {
+// A key acquire() does not read is refused rather than dropped. A dropped wait
+// budget is `wait = 0`, which turns a queue into try-once and surfaces as an
+// ordinary 409 with `retryable: true` — contention, to anyone reading it
+// (FJS-1217). The index.d.ts typed `timeout` while this read `wait`.
+const LOCK_OPTIONS = ['ttl', 'wait', 'retryEvery', 'owner']
+
+const LOCK_OPTION_ANSWERS = {
+  timeout: 'is not an option — `wait` is the milliseconds to keep retrying before refusing, and `ttl` is how long the lock lives once held',
+}
+
+function assertLockOptions(rest) {
+  const unknown = Object.keys(rest)
+  if (!unknown.length) return
+  const lines = unknown.map(k => {
+    if (LOCK_OPTION_ANSWERS[k]) return `  ${k} ${LOCK_OPTION_ANSWERS[k]}`
+    const near = suggestKey(k, LOCK_OPTIONS)
+    return `  ${k}${near ? ` — did you mean \`${near}\`?` : ''}`
+  })
+  throw new Error(
+    `$lock(): unknown option${unknown.length > 1 ? 's' : ''}\n\n` +
+    `${lines.join('\n')}\n\n` +
+    `  Options: ${LOCK_OPTIONS.join(', ')}`
+  )
+}
+
+function makeLockPrimitive(rawWriteDb) {
   const LOCKS_TABLE = '_locks'
   let _ensured = false
 
@@ -10719,7 +11139,9 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       wait       = 0,
       retryEvery = 100,
       owner      = defaultOwner(),
+      ...rest
     } = opts
+    assertLockOptions(rest)
 
     const deadline = Date.now() + wait
 
@@ -10805,9 +11227,6 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // ── $lock(key, fn, opts) — main convenience API ──────────────────────────
 
   async function $lock(key, fn, opts = {}) {
-    // SYSTEM bypass — skip lock entirely for migrations, data repair, seeding
-    if (getIsSystem?.()) return fn()
-
     const lock = await acquire(key, opts)
     try {
       return await fn()
@@ -10888,8 +11307,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const computedFns   = normalizeComputed(await loadComputedFields(computedInput), schema)
 
   // ── Lock primitive — auto-creates _locks in main db on first use ──────────
-  let _isSystemCtx = false
-  const lockPrimitive = makeLockPrimitive(rawWriteDb, () => _isSystemCtx)
+  const lockPrimitive = makeLockPrimitive(rawWriteDb)
 
   // ── Build log map ──────────────────────────────────────────────────────────
   // Scans schema for @log/@@@log attributes — used by makeTable to fire entries.
@@ -10989,6 +11407,8 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const softDeleteMap        = buildSoftDeleteMap(schema)
   const softDeleteCascadeMap = buildSoftDeleteCascadeMap(schema)
   const hasTemplatesMap      = buildHasTemplatesMap(schema)
+  const effectiveMap         = buildEffectiveMap(schema)
+  const commitmentMap        = buildCommitmentMap(schema)
   const boolMap        = buildBoolMap(schema)
   const affinityMap    = buildAffinityMap(schema)
   const bigMap         = buildBigMap(schema)
@@ -11067,6 +11487,11 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // `now` is optional and absent means the wall clock, the same reading
   // `atOneInstant` makes — so a frozen clock in a test reaches the recorded
   // announcement's timestamp, and therefore reaches retention.
+  //
+  // It is also `db.$now()`, because a deadline a caller MINTS has to come off
+  // the clock `@@expires` grades it on. A session written at `Date.now() + ttl`
+  // and read at an injected clock agree only while the two are the same clock,
+  // which is everywhere but the test that means to move one.
   const nowDate = () => {
     const raw = typeof now === 'function' ? now() : new Date()
     return raw instanceof Date ? raw : new Date(raw)
@@ -11417,7 +11842,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   const ctx = {
     now,
     relationMap, jsonMap, edgeMap, computedSets, fromMap,
-    softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, ftsMap, boolMap, bigMap, enumMap, filterKindMap, affinityMap, autoIdMap, generatedDefaultMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap, versionMap, syncMap, selfRelationMap, sequenceMap, computedFns, tx,
+    softDeleteMap, softDeleteCascadeMap, hasTemplatesMap, effectiveMap, commitmentMap, ftsMap, boolMap, bigMap, enumMap, filterKindMap, affinityMap, autoIdMap, generatedDefaultMap, authDefaultMap, fieldRefDefaultMap, updatedByMap, createdByMap, versionMap, syncMap, selfRelationMap, sequenceMap, computedFns, tx,
     coFkMap,
     // model → its field → column, for the resolvers that answer for a model
     // that is not the one they were built for: an include, a relation filter
@@ -12437,6 +12862,60 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // Answered from the SCHEMA rather than guessed at by the caller, so a policy
   // added to a model that had none turns its channel from open to graded with
   // nothing to remember.
+  // ─── $inWindow ──────────────────────────────────────────────────────────
+  //
+  // $inWindow(accessor, row, asOf?) → is this row in force.
+  //
+  // **A broadcast is not a read, and a window is not an access rule** — which
+  // is why this is its own seam rather than a fourth question inside `$readAs`.
+  // `$readAs` answers *may this principal see this row*; the window answers
+  // *does this row count right now*, which is true or false for everybody.
+  // Folding it in would also put it behind `$readGrading`'s `open` fast path,
+  // where a catalog-shaped model with a window and no gate skips grading
+  // entirely.
+  //
+  // It exists because the two existing exclusions do not need it and this one
+  // does. `@@softDelete`'s transition is a WRITE, so it announces itself and a
+  // subscriber's store corrects; a window's transition is the CLOCK, and
+  // nothing announces. What this closes is the frame that is emitted AFTER the
+  // row fell out of the window — a create or an update on a row already dead,
+  // and a `withExpired` read that then wrote. What it cannot close is silent
+  // expiry, where no write ever happens: that needs a store that re-grades on a
+  // tick, which is a different feature (`@frontierjs/toolbelt/match` is where
+  // the client half would go).
+  //
+  // **The caller decides what to do with a `false`, and for `deleted` the
+  // answer is send it anyway** — suppressing a removal for a row a subscriber
+  // already holds strands it there for ever, which is worse than never having
+  // graded at all. Junction's fan-out holds the event name; this does not.
+  //
+  // The predicate is the same rule `injectEffectiveFilter` compiles into SQL,
+  // evaluated here against the row in hand — `policyVerdict`'s shape exactly,
+  // and for its reason: there is no query to filter through. Both read
+  // `effectiveMap`, so the rule has one origin and two evaluators. A string
+  // compare is sound for both kinds: an ISO instant and a `YYYY-MM-DD` day both
+  // order lexicographically the way they order in time.
+  function $inWindow(accessor, row, asOf) {
+    const model = modelForAccessor(accessor)
+    const win   = model?.name ? effectiveMap[model.name] : null
+    if (!win || !row) return true
+    // A frame with no stated moment grades an `@@effective` row the way a read
+    // with none does: every row is there, the history a store holds included.
+    if (!win.imposed && asOf == null) return true
+
+    const at = asOf != null
+      ? (asOf instanceof Date ? asOf.toISOString() : String(asOf))
+      : (win.kind === 'day' ? nowISO(now).slice(0, 10) : nowISO(now))
+
+    // A null edge is an open end — `from` null is *always has been*, `to` null
+    // is *still in force* — which is the same reading the SQL injects.
+    const from = win.from ? row[win.from] : null
+    const to   = win.to   ? row[win.to]   : null
+    if (from != null && String(from) >  at) return false
+    if (to   != null && String(to)   <= at) return false
+    return true
+  }
+
   function $readGrading(accessor) {
     const model = modelForAccessor(accessor)
     if (!model?.name) return 'graded'          // unknown: fail closed
@@ -12542,6 +13021,46 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     return { held, unknown, byModel }
   }
 
+  // ─── $claimsFor ─────────────────────────────────────────────────────────
+  //
+  // $claimsFor(principal) → { <claim>: value | null }
+  //
+  // The claims the schema reads off a row pointing at the caller —
+  // `claim employeeId from Employee(userId)`. The subject as an ARGUMENT, like
+  // $capabilitiesFor, so every flavor answers the same for the same caller.
+  //
+  // Read as the SYSTEM: the row decides this caller's access, so it cannot be
+  // read through a client already scoped by that access. asSystem() lifts no
+  // exclusion, so a soft-deleted or expired role row resolves to nothing — the
+  // model's own declaration answers that, and no rule here restates it.
+  //
+  // A caller with no id gets `{}`: there is nothing to look a row up by. A
+  // caller with no row gets null for each claim, which is the statement *holds
+  // none*, and reads the same in both policy interpreters (`FJS-668`). One read
+  // per (model, subject), however many claims come off that row.
+  async function $claimsFor(principal) {
+    const sources = Object.entries(schema.claimSources ?? {})
+    const id      = principal?.id ?? null
+    if (id == null || !sources.length) return {}
+
+    const reads = new Map()
+    for (const [name, src] of sources) {
+      const key = `${src.model}\0${src.subject}`
+      if (!reads.has(key)) reads.set(key, { model: src.model, subject: src.subject, claims: [] })
+      const column = src.column ?? $primaryKey(modelToAccessor(src.model))[0]
+      reads.get(key).claims.push({ name, column })
+    }
+
+    const sys = asSystem()
+    const out = {}
+    for (const { model, subject, claims } of reads.values()) {
+      const select = Object.fromEntries(claims.map(c => [c.column, true]))
+      const row    = await sys[modelToAccessor(model)].findFirst({ where: { [subject]: id }, select })
+      for (const c of claims) out[c.name] = row?.[c.column] ?? null
+    }
+    return out
+  }
+
   // ─── $softDelete ────────────────────────────────────────────────────────
   //
   // $softDelete → { ModelName: boolean }
@@ -12558,6 +13077,18 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
   // unknown-property error instead of answering a question about the schema.
   function softDeleteInfo() {
     return { ...softDeleteMap }
+  }
+
+  // ─── $commitments ───────────────────────────────────────────────────────
+  //
+  // Every declared `@@commitment`, one row each: the model, its accessor, and
+  // the transition it owes. What a sweep walks — it asks `due()` of each
+  // accessor it names — so the sweep derives its set from the schema rather
+  // than from a list an app keeps beside it. A fresh array per read and on
+  // every flavor, for the reason `$softDelete` gives.
+  function commitmentsInfo() {
+    return Object.entries(commitmentMap).flatMap(([model, decls]) =>
+      (decls ?? []).map(d => ({ model, accessor: modelToAccessor(model), transition: d.name })))
   }
 
   // ─── $audit ─────────────────────────────────────────────────────────────
@@ -13057,13 +13588,6 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     async function sysSql(strings, ...values) {
       return _runRawSql(strings, values)
     }
-    const sys$lock = async (key, fn, opts = {}) => fn()
-    sys$lock.acquire   = lockPrimitive.acquire ?? lockPrimitive.$locks?.acquire
-    sys$lock.release   = lockPrimitive.release ?? lockPrimitive.$locks?.release
-    sys$lock.heartbeat = lockPrimitive.heartbeat ?? lockPrimitive.$locks?.heartbeat
-    sys$lock.isHeld    = lockPrimitive.isHeld ?? lockPrimitive.$locks?.isHeld
-    sys$lock.list      = lockPrimitive.list ?? lockPrimitive.$locks?.list
-    sys$lock.$locks    = lockPrimitive.$locks
 
     // System-scoped multi-model query — uses sysTables so each batched query
     // bypasses gate/policies/guarded fields, matching this proxy's contract.
@@ -13087,8 +13611,8 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       })
     }
 
-    const sysOwnProps = ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$readAs', '$readGrading', '$levelOf', '$softDelete', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
-    const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: sys$lock, $locks: lockPrimitive.$locks }, {
+    const sysOwnProps = ['asSystem', '$close', '$schema', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const proxy = _systemProxies.get(baseCtx) ?? new Proxy({ sql: sysSql, query: sysQuery, $transaction: (fn) => $transaction(fn, proxy), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -13108,10 +13632,14 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$protectedFields') return $protectedFields
         if (prop === '$primaryKey') return $primaryKey
       if (prop === '$capabilitiesFor') return $capabilitiesFor
+      if (prop === '$claimsFor')       return $claimsFor
       if (prop === '$readAs')          return $readAs
       if (prop === '$levelOf')         return $levelOfAs(sysCtx)
+      if (prop === '$inWindow')        return $inWindow
+      if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
         if (prop === '$softDelete') return softDeleteInfo()
+        if (prop === '$commitments') return commitmentsInfo()
         if (prop === '$scopes') return $scopes
         if (prop === '$checkOrderBy') return $checkOrderBy
         // A system context names no principal, so an actor has to be STATED —
@@ -13216,8 +13744,8 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       })
     }
 
-    const authOwnProps = ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$readAs', '$readGrading', '$levelOf', '$softDelete', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
-    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
+    const authOwnProps = ['$close', '$schema', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$audit', '$cacheSize', '$enums', '$plugins', '$tenancy', '$retain']
+    const authProxy = new Proxy({ sql: authSql, query: authQuery, $transaction: (fn) => $transaction(fn, _authProxyRef), $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, $lock: lockPrimitive, $locks: lockPrimitive.$locks, asSystem: authAsSystem, $setAuth, $scopedBy: (b) => _makeScopedProxy({ scopedBy: b, auth: user }) }, {
       get(target, prop) {
         if (typeof prop === 'symbol') return undefined
         if (prop === 'then' || prop === 'catch' || prop === 'finally' || prop === 'toJSON') return undefined
@@ -13234,10 +13762,14 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$protectedFields') return $protectedFields
         if (prop === '$primaryKey') return $primaryKey
       if (prop === '$capabilitiesFor') return $capabilitiesFor
+      if (prop === '$claimsFor')       return $claimsFor
       if (prop === '$readAs')          return $readAs
       if (prop === '$levelOf')         return $levelOfAs(authCtx)
+      if (prop === '$inWindow')        return $inWindow
+      if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
         if (prop === '$softDelete')     return softDeleteInfo()
+        if (prop === '$commitments')    return commitmentsInfo()
         if (prop === '$scopes')         return $scopes
         if (prop === '$checkOrderBy')   return $checkOrderBy
         if (prop === '$audit')          return (entry, opts) => auditWith(user, entry, opts)
@@ -13285,7 +13817,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     scopedFlavor.tables = rawTables
     sCtx.tables = rawTables
     const tables = installScopesLazy(rawTables, () => sCtx)
-    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$readAs', '$readGrading', '$levelOf', '$softDelete', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
+    const scopedOwnProps = ['$close', '$schema', '$scope', '$auth', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$inWindow', '$now', '$levelOf', '$softDelete', '$commitments', '$scopes', '$audit', '$enums', '$plugins', '$tenancy', '$retain']
     const target = {
       $scopedBy: (b) => _makeScopedProxy({ ...overrides, scopedBy: { ...(overrides.scopedBy ?? {}), ...(b ?? {}) } }),
       $setAuth:  (u) => _makeScopedProxy({ ...overrides, auth: u }),
@@ -13293,6 +13825,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       // it are what the body was asking for. See $transaction.
       $transaction: (fn) => $transaction(fn, scopedProxy),
       asSystem, $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb,
+      $lock: lockPrimitive, $locks: lockPrimitive.$locks,
     }
     const scopedProxy = new Proxy(target, {
       get(t, prop) {
@@ -13310,10 +13843,14 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
         if (prop === '$protectedFields') return $protectedFields
         if (prop === '$primaryKey') return $primaryKey
       if (prop === '$capabilitiesFor') return $capabilitiesFor
+      if (prop === '$claimsFor')       return $claimsFor
       if (prop === '$readAs')          return $readAs
       if (prop === '$levelOf')         return $levelOfAs(sCtx)
+      if (prop === '$inWindow')        return $inWindow
+      if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
         if (prop === '$softDelete') return softDeleteInfo()
+        if (prop === '$commitments') return commitmentsInfo()
         if (prop === '$scopes') return $scopes
         if (prop === '$checkOrderBy') return $checkOrderBy
         if (prop === '$audit')  return (entry, opts) => auditWith(overrides.auth ?? null, entry, opts)
@@ -13497,7 +14034,7 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
     return result
   }
 
-  const rootOwnProps = ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$readAs', '$readGrading', '$levelOf', '$scopes', '$audit', '$softDelete', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
+  const rootOwnProps = ['$close', '$attached', '$schema', '$relations', '$checkWhere', '$checkOrderBy', '$protectedFields', '$primaryKey', '$capabilitiesFor', '$claimsFor', '$readAs', '$readGrading', '$inWindow', '$now', '$levelOf', '$scopes', '$audit', '$softDelete', '$commitments', '$cacheSize', '$config', '$databases', '$rawDbs', '$tapQuery', '$tapEvents', '$logContext', '$logStats', '$enums', '$plugins', '$tenancy', '$setAuth', '$scopedBy', '$lock', '$locks', '$db', '$retain', '$inTransaction']
   clientProxy = new Proxy({ sql, query, $transaction, $backup, $walStatus, $rotateKey, $attach, $detach, $db: rawWriteDb, asSystem, $setAuth }, {
     get(target, prop) {
       if (typeof prop === 'symbol')   return undefined
@@ -13531,13 +14068,17 @@ function makeLockPrimitive(rawWriteDb, getIsSystem) {
       if (prop === '$protectedFields') return $protectedFields
       if (prop === '$primaryKey')      return $primaryKey
       if (prop === '$capabilitiesFor') return $capabilitiesFor
+      if (prop === '$claimsFor')       return $claimsFor
       if (prop === '$readAs')          return $readAs
       if (prop === '$levelOf')         return $levelOfAs(ctx)
+      if (prop === '$inWindow')        return $inWindow
+      if (prop === '$now')             return nowDate
       if (prop === '$readGrading')     return $readGrading
       if (prop === '$scopes')         return $scopes
       if (prop === '$checkOrderBy')   return $checkOrderBy
       if (prop === '$audit')          return (entry, opts) => auditWith(ctx.auth ?? null, entry, opts)
       if (prop === '$softDelete')     return softDeleteInfo()
+      if (prop === '$commitments')    return commitmentsInfo()
       if (prop === '$cacheSize')      return _cacheSize()
       if (prop === '$config') {
         const absSchema = schemaFilePath ? resolve(schemaFilePath) : null

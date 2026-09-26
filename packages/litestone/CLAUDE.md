@@ -46,6 +46,13 @@ src/
                      commit — where `flushPending` already fires, because a
                      minimum is not true at the statement that creates the
                      parent and SQLite has no deferred constraint (`FJS-D347`)
+    commitment.js  — `@@commitment`: which rows owe a transition by T, and
+                     when. The due time is computed TWICE — SQL for the filter,
+                     and `@frontierjs/toolbelt/datetime`'s `dueAt` for the value
+                     returned, which a screen calls too — and
+                     `test/commitment.test.ts` grades them against each other,
+                     because SQLite's `+1 months` overflows a month end that
+                     `addToDate` clamps
     query.js       — buildWhere, buildOrderBy, boolean/date coercion
     plugin.js      — Plugin base class, PluginRunner, AccessDeniedError
     policy.js      — buildPolicyMap(), buildPolicyFilter(), checkCreatePolicy()
@@ -265,7 +272,7 @@ tenancy {
   key      env("TENANT_KEY")        // database only — a value, never a path
   column   workspaceId              // row only, required
   claim    workspaceId              // row only; default: the column's own name
-  resolve  subdomain | header("X-Tenant-Id") | claim(workspaceId)
+  resolve  subdomain | header("X-Tenant-Id") | claim(workspaceId)   // database only
 }
 ```
 
@@ -817,6 +824,9 @@ db.$softDelete             // { ModelName: boolean } — which models hide a rem
                            // row rather than destroying it. A COPY, and on every
                            // flavor of client: the live map is what every read
                            // filters against, and junction holds a $setAuth one
+db.$commitments            // [{ model, accessor, transition }] — every declared
+                           // @@commitment; what junction's commitments() sweep
+                           // walks. A fresh array, on every flavor
 db.$schema                 // parsed schema object
 db.$plugins                // installed plugin names, in run order — every client
                            // flavor. A gated schema auto-installs GatePlugin, so
@@ -975,7 +985,7 @@ through `emitTransitionEvent` and a bulk write reaches none.
 
 ## What `auth().x` may name
 
-Refused at client build unless the claim is one of four things (`FJS-666`, ruled
+Refused at client build unless the claim is one of five things (`FJS-666`, ruled
 `FJS-D181`):
 
   the framework's nine    `id` · `capabilities` · the six `FrontierGateGetLevel`
@@ -983,8 +993,13 @@ Refused at client build unless the claim is one of four things (`FJS-666`, ruled
                           `verifiedAt` `activatedAt` — and `level`, the grade
                           itself. A standing is not a column
   the `@@auth` model      its own field names, which is what `sessionFields` carries
-  `tenancy { claim }`     the one claim the schema declares
-  `createClient({ claims })`  a claim resolved PER REQUEST — on no row, in no schema
+  `tenancy { claim }`     the tenant claim
+  a top-level `claim`     a name the app resolves per request — `claim cartToken`;
+                          with `from`, a value read per request off the row
+                          pointing at the caller — `claim siteId from
+                          Employee(userId).siteId` — so a role held on another
+                          model needs no resolver. `db.$claimsFor(p)` is the read
+  `createClient({ claims })`  the same names, stated in code
 
 **It grades only when there is a set.** No `@@auth` and no `claims:` means
 nothing to compare against, and that silence is announced once per distinct set

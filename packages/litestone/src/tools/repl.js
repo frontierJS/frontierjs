@@ -218,7 +218,7 @@ const METHODS = [
   'findMany', 'findFirst', 'findUnique', 'findFirstOrThrow', 'findUniqueOrThrow',
   'findManyAndCount', 'findManyCursor', 'count', 'exists', 'aggregate', 'groupBy',
   'search', 'query', 'create', 'createMany', 'update', 'updateMany', 'upsert',
-  'remove', 'removeMany', 'delete', 'deleteMany', 'restore', 'transitions',
+  'remove', 'removeMany', 'delete', 'deleteMany', 'restore', 'transitions', 'due',
 ]
 
 function completerFor(accessors, commandNames = []) {

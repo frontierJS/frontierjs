@@ -40,12 +40,14 @@ export interface MigrationResult {
 // without blocking writes, critical when many Outposts heartbeat simultaneously.
 
 const PRODUCTION_PRAGMAS = [
+  'PRAGMA busy_timeout = 5000',    // wait 5s for another PROCESS's write lock rather than
+                                   // failing; `pragmas: ['PRAGMA busy_timeout = N']` overrides it,
+                                   // since these run first (`FJS-569`). FIRST in this list: the
+                                   // WAL switch below needs the lock, and with no wait set yet a
+                                   // second process booting throws SQLITE_BUSY in 0ms (`FJS-1331`)
   'PRAGMA journal_mode = WAL',     // concurrent reads + no write blocking
   'PRAGMA synchronous  = NORMAL',  // safe with WAL, much faster than FULL
   'PRAGMA foreign_keys = ON',      // enforce referential integrity
-  'PRAGMA busy_timeout = 5000',    // wait 5s for another PROCESS's write lock rather than
-                                   // failing; `pragmas: ['PRAGMA busy_timeout = N']` overrides it,
-                                   // since these run first (`FJS-569`)
   'PRAGMA cache_size   = -32000',  // 32 MB page cache (negative = KB)
   'PRAGMA temp_store   = MEMORY',  // temp tables in RAM
 ]

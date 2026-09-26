@@ -164,7 +164,7 @@ export function planTransition({
     ordinal:      s.ordinal,
     status:       s.status,
     // Every step carries the same three-part check, which is what the model
-    // declares: the Release serving, the binding generation, and the schema as
+    // declares: the Release serving, the configuration generation, and the schema as
     // at last applied. Drift refuses and names itself; nothing reconciles.
     precondition,
     output:       null,
@@ -209,7 +209,7 @@ const pad = (s, n) => String(s ?? '').padEnd(n)
  * two facts that decide whether to run it at all; the steps after, because they
  * are what it will do.
  */
-export function formatPlan({ transition, steps, release, bindings, findings = [] } = {}) {
+export function formatPlan({ transition, steps, release, configuration, findings = [] } = {}) {
   const out = []
   const row = (k, v) => out.push(`  ${pad(k, 14)}${v}`)
 
@@ -224,8 +224,8 @@ export function formatPlan({ transition, steps, release, bindings, findings = []
   // A tag is not an identity, so an absent digest says so rather than showing
   // one as though it were.
   row('bytes', release.digest ? `${short(release.digest)}  (${release.imageRef ?? 'digest'})` : '— not built')
-  row('bindings', `${short(release.bindingsHash)}  · generation ${transition.generation}` +
-    (bindings ? `  · ${bindings.count} binding(s), ${Object.keys(bindings.secretRefs ?? {}).length} secret ref(s)` : ''))
+  row('configuration', `${short(release.configurationHash)}  · generation ${transition.generation}` +
+    (configuration ? `  · ${configuration.count} key(s), ${Object.keys(configuration.secretRefs ?? {}).length} secret ref(s)` : ''))
   row('schema', release.schemaHash ? short(release.schemaHash) : '— none')
   row('serving', transition.fromReleaseId ?? '— nothing recorded (no journal on the target yet)')
   out.push('')

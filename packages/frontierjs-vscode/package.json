@@ -123,8 +123,8 @@
         "litestone.formatOnSave": {
           "scope": "resource",
           "type": "boolean",
-          "default": true,
-          "description": "Format .lite files on save"
+          "default": false,
+          "description": "Format .lite files on save. Off by default: it re-aligns every model's columns, which rewrites a hand-aligned schema on its first save"
         },
         "litestone.parserPath": {
           "scope": "machine",

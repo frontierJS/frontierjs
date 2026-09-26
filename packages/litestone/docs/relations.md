@@ -87,6 +87,107 @@ something other than `id` is referenced by its real name. Naming:
 `_<label>` with columns `"A"` / `"B"` when the relation is labeled with
 `@relation("name")` — the labeled layout is Prisma's, byte for byte.
 
+## @@relator — can this relationship happen twice
+
+A membership, a placement, a subscription: a relationship that is a ROW. It is
+**existentially dependent** on the things it relates, so it cannot outlive one
+of them — and the one thing about it a reader cannot derive is whether the same
+pair may appear again.
+
+```
+model WorkspaceMember {
+  id          String    @id @default(uuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@relator([workspaceId, userId], once)
+}
+```
+
+**The repeatability argument is required.** `@@relator([workspaceId, userId])`
+is a parse error naming the three choices, because `once` and a bare `many` are
+distinguished by an absence — a default would answer in silence the one question
+the word exists to ask.
+
+| form | means | emits |
+| --- | --- | --- |
+| `once` | the relata identify the row | `UNIQUE(relata)` |
+| `many: <column>` | the column tells two apart | `UNIQUE(relata + column)` |
+| `many` | nothing tells two apart | no key |
+
+**Plus an index on every relatum the emitted key does not already cover.** A
+key is prefix-matched, so `once` and `many: <column>` leave only the trailing
+relata uncovered; a bare `many` emits no key, so it indexes all of them. This is
+the half `@@unique` cannot do on its own: both ends of a relator are entrances,
+and a composite leading with one side leaves the other with nothing to use —
+which is a foreign key scan on every cascade, once per deleted parent.
+
+Nothing is emitted where the model already answers it. An `@@index` that LEADS
+with a relatum is already the reverse index and is doing more besides, and a
+composite primary key over exactly the relata already IS the key — which is what
+a side table promoted by `litestone edge eject` has, since an edge keys both
+dimensions and is therefore `once` by construction.
+
+**`many` with no discriminator usually means the row is not a relator at all.**
+Something that happens rather than a standing fact — a run, a movement, a
+reading — and the tell is that such a row COPIES what it read: the script as
+run, the price as charged, the period as calculated. A relator carries no copies,
+because it does not outlive its relata and so has nothing to preserve them
+against.
+
+### What it refuses
+
+- **An optional relatum, or one whose relation is `onDelete: SetNull`.** A
+  relator with a missing relatum is not a relationship that lost a participant;
+  it is a row that never meant anything. `Cascade` and `Restrict` both pass —
+  they honor the dependence and differ only on who wins.
+- **Fewer than two distinct relations.** Counted over relations rather than
+  columns: a composite foreign key is two columns naming one thing.
+- **A `@@unique` or an `@@index` over columns it already emits.** One origin, or
+  the two drift.
+- **A discriminator that is optional, is already a relatum, or has no column.**
+
+What it cannot refuse is a `@@relator` on a row whose foreign keys are
+OWNERSHIP rather than mediation — an API key belonging to a workspace and a
+user is not a relationship between them. That is a modeling judgment and the
+parser has no access to it.
+
+### What reads it
+
+**`upsert` refuses to be addressed by a repeatable pair.** `upsert`'s
+single-statement path needs one unique column, so a pair never reaches it and
+the call falls to find-then-update — which on a `many` relator matches every
+occurrence there has ever been and overwrites the oldest instead of recording a
+new one. The declaration is what makes that refusable: a relator states how its
+rows are identified, so an upsert addressing them any other way is provably not
+the write the caller meant.
+
+```js
+// @@relator([recipeId, serverId], many)
+await db.recipeRun.upsert({ where: { recipeId: 1, serverId: 2 }, create, update })
+// ValidationError: …the same pair may happen any number of times and there is
+// no row for these columns to name. Use create(), or address the row by its id.
+
+// @@relator([appId, serverId], many: replicaIndex)
+await db.appServer.upsert({ where: { appId: 1, serverId: 2 }, create, update })
+// ValidationError: …what identifies a row is appId + serverId + replicaIndex,
+// and this where names replicaIndex nowhere.
+```
+
+`once` is unaffected — the relata ARE the conflict target — and so is any upsert
+addressed by the row's own id.
+
+**`verifyConstraints` grades the answer, and `litestone mutate` grades the
+check.** The derived suite writes a row, writes the same tuple again, and
+compares what happened against what the word says: `once` must refuse it, `many`
+must take it, and `many: <column>` must refuse the identical tuple while
+accepting the same pair under a different value. That second case is the one
+worth having — without it, tightening `many: replicaIndex` to `once` looks
+correct from the outside, which is precisely the change that costs an app the
+ability to run two replicas of one thing on one machine.
+
 ## Include (eager loading)
 
 ```js

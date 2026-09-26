@@ -40,7 +40,17 @@ export interface Harness {
   cleanup:     () => void
 }
 
-export async function makeAuth(opts: LitestoneAuthOptions = {}): Promise<Harness> {
+/**
+ * `clock` is what makes expiry testable at all. Four models here declare
+ * `@@expires(expiresAt)`, so the filter reads the CLIENT's clock rather
+ * than the host's — move it and a session lapses with nothing written and
+ * nothing swept. While the predicate was a hand-rolled `new Date()`, no test
+ * could stage that at all: it read the wall clock, so a lapse cost real time.
+ */
+export async function makeAuth(
+  opts:  LitestoneAuthOptions = {},
+  clock?: { now: () => Date },
+): Promise<Harness> {
   const dir = tempDir('fjs-auth-')
   const dbPath = join(dir, 'auth.db')
 
@@ -61,7 +71,7 @@ database audit { path "${dir}/audit/"; driver logger; retention 90d }
   process.env.MAIN_DB_PATH = dbPath
   process.env.AUDIT_PATH   = `${dir}/audit/`
 
-  const db = await createClient({ parsed, encryptionKey: TEST_KEY })
+  const db = await createClient({ parsed, encryptionKey: TEST_KEY, ...(clock ? { now: clock.now } : {}) })
 
   let resetToken = '', verifyToken = ''
   const auth = createLitestoneAuth(db, {

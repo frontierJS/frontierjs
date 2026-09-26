@@ -112,6 +112,7 @@ interface LitestoneClientApi {
   $tapQuery(fn: (event: LitestoneQueryEvent) => void): () => void
   $transaction?: <T>(fn: (tx: LitestoneClient) => Promise<T>) => Promise<T>
   $schema?: unknown
+  $claimsFor?: (principal: unknown) => Promise<Record<string, unknown>>
   $rawDbs?: Record<string, unknown>
   $close?: () => void
 }
@@ -187,6 +188,9 @@ export interface ParsedQuery {
   onlyDeleted?:    boolean   // $onlyDeleted — show only soft-deleted rows
   withTemplates?:  boolean   // $withTemplates — include @@hasTemplates rows
   onlyTemplates?:  boolean   // $onlyTemplates — show only @@hasTemplates rows
+  asOf?:           string    // $asOf — the instant/day a window is read at
+  withExpired?:    boolean   // $withExpired — no window filter at all
+  onlyExpired?:    boolean   // $onlyExpired — only the rows NOT in force
 }
 
 /**
@@ -209,7 +213,8 @@ export function parseQuery(
 ): ParsedQuery {
   const { $limit, $offset, $after, $orderBy, $select, $populate,
           $search, $withDeleted, $onlyDeleted,
-          $withTemplates, $onlyTemplates, ...where } = query
+          $withTemplates, $onlyTemplates,
+          $asOf, $withExpired, $onlyExpired, ...where } = query
 
   const limitRaw   = directives.limit       ?? $limit
   const offsetRaw  = directives.offset      ?? $offset
@@ -222,6 +227,9 @@ export function parseQuery(
   const onlyDel    = directives.onlyDeleted ?? $onlyDeleted
   const withTmpl   = directives.withTemplates ?? $withTemplates
   const onlyTmpl   = directives.onlyTemplates ?? $onlyTemplates
+  const asOfRaw    = directives.asOf          ?? $asOf
+  const withExp    = directives.withExpired   ?? $withExpired
+  const onlyExp    = directives.onlyExpired   ?? $onlyExpired
 
   // What a limit and an offset mean is `clampPage`'s answer, not this
   // function's — the `paginate()` hook needs the same one and had its own.
@@ -243,6 +251,12 @@ export function parseQuery(
     onlyDeleted:   onlyDel  === true || onlyDel  === 'true' || undefined,
     withTemplates: withTmpl === true || withTmpl === 'true' || undefined,
     onlyTemplates: onlyTmpl === true || onlyTmpl === 'true' || undefined,
+    // Passed through as it arrived. Grading it here would be a second answer
+    // to a question only the schema can settle — a window is over instants or
+    // over days per model — and this side has no schema.
+    asOf:          typeof asOfRaw === 'string' && asOfRaw !== '' ? asOfRaw : undefined,
+    withExpired:   withExp  === true || withExp  === 'true' || undefined,
+    onlyExpired:   onlyExp  === true || onlyExp  === 'true' || undefined,
   }
 }
 
@@ -999,6 +1013,9 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         if (q.onlyDeleted)   args.onlyDeleted   = true
         if (q.withTemplates) args.withTemplates = true
         if (q.onlyTemplates) args.onlyTemplates = true
+        if (q.withExpired)   args.withExpired   = true
+        if (q.onlyExpired)   args.onlyExpired   = true
+        if (q.asOf)          args.asOf          = q.asOf
 
         const rows  = await table.search(q.search, args)
         const total = (!q.offset && rows.length < q.limit)
@@ -1023,6 +1040,9 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       if (q.onlyDeleted)   args.onlyDeleted   = true
       if (q.withTemplates) args.withTemplates = true
       if (q.onlyTemplates) args.onlyTemplates = true
+      if (q.withExpired)   args.withExpired   = true
+      if (q.onlyExpired)   args.onlyExpired   = true
+      if (q.asOf)          args.asOf          = q.asOf
 
       // The window (`FJS-D145`) — a caller asking `$after` is growing a
       // window rather than stepping to a page. Both paths are `findWindow`'s,
@@ -1083,6 +1103,9 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         if (q.onlyDeleted)   args.onlyDeleted   = true
         if (q.withTemplates) args.withTemplates = true
         if (q.onlyTemplates) args.onlyTemplates = true
+        if (q.withExpired)   args.withExpired   = true
+        if (q.onlyExpired)   args.onlyExpired   = true
+        if (q.asOf)          args.asOf          = q.asOf
 
         const record = await table.findUnique(args)
         if (!record) throw new NotFound(`${modelLabel(ctx)} with ${idField}=${ctx.id} not found`)
@@ -1099,6 +1122,9 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       if (q.onlyDeleted)   args.onlyDeleted   = true
       if (q.withTemplates) args.withTemplates = true
       if (q.onlyTemplates) args.onlyTemplates = true
+      if (q.withExpired)   args.withExpired   = true
+      if (q.onlyExpired)   args.onlyExpired   = true
+      if (q.asOf)          args.asOf          = q.asOf
 
       const record = await table.findFirst(args)
       if (!record) throw new NotFound(`${modelLabel(ctx)} not found`)
@@ -1192,6 +1218,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
       if (q.select)      args.select      = q.select
       if (q.include)     args.include     = q.include
       if (q.withDeleted) args.withDeleted = true
+      if (q.withExpired) args.withExpired = true
       const sys = systemFields(ctx)
       if (sys) args.system = sys
       const updated = await table.update(args)
@@ -1218,6 +1245,7 @@ export function createLitestoneBase(opts: LitestoneServiceOptions) {
         if (q.select)      args.select      = q.select
         if (q.include)     args.include     = q.include
         if (q.withDeleted) args.withDeleted = true
+        if (q.withExpired) args.withExpired = true
         // The row the writer READ, for `@@sync(field)`'s per-column merge
         // (`FJS-D334`). Passed through untouched: it is untrusted input to a
         // comparison the Data boundary makes, never authority, and litestone
@@ -2617,7 +2645,17 @@ export function gateAuthAround(
     const method = ctx.method as string
     const op     = OP_FOR_METHOD[method]
 
-    if (op) {
+    // A CRUD verb takes a declared gate only where no model can grade it
+    // (`FJS-D408`). Over a model the verb is `@@gate`'s, and a second number
+    // beside it would be a declaration that decides nothing — refused rather
+    // than ignored, since ignoring it is the silent open this rule closes.
+    const crudDeclared = op !== undefined && declared[method] !== undefined
+    if (crudDeclared && accessorIfModel(ctx.locals.db, accessor ?? ctx.service))
+      throw new Error(
+        `[Junction] '${ctx.service}.${method}' declares gate ${declared[method]}, but ${method} on a ` +
+        `service over a model is graded by the model's @@gate. Move the level into @@gate, or drop it from methods:.`)
+
+    if (op && !crudDeclared) {
       let check = checks.get(op)
       if (!check) { check = make(accessor, op); checks.set(op, check) }
       check(ctx)
@@ -2885,8 +2923,6 @@ export function applyClaims(
   db:     unknown,
   claims: PrincipalClaims,
 ): void {
-  const user = ctx.auth?.user
-
   // Refused by name rather than stripped in silence. A resolver answering
   // `{ userId: someoneElse }` is not a claim about what this caller holds, it
   // is a different caller — and a framework that quietly dropped the key would
@@ -2899,7 +2935,15 @@ export function applyClaims(
   )
 
   ctx.locals[RESOLVED] = true
+  mergeClaims(ctx, db, claims)
+}
 
+// The half of applyClaims that does not say a RESOLVER ran. Claims the schema
+// reads off a row go through here alone, so a request whose only claims came
+// from the schema still gets the tenant guard's *this session carries no
+// claim* rather than *you do not belong to the tenant this request names*.
+function mergeClaims(ctx: ServiceContext, db: unknown, claims: PrincipalClaims): void {
+  const user   = ctx.auth?.user
   const client = db as LitestoneClient
 
   liftRowTenant(ctx, client, claims)
@@ -2954,6 +2998,38 @@ async function warmTenantConfig(ctx: ServiceContext): Promise<void> {
   await app.loadTenantConfig?.(String(id))
 }
 
+// ─── Claims the schema reads off a row ──────────────────────────────────────
+//
+// `claim employeeId from Employee(userId)` — the value is on a row pointing at
+// the caller, and the schema says which. Read per request, before the app's
+// own resolver, so that resolver sees them on the principal it is handed.
+//
+// Per request and never at sign-in: a claim fixed on the session goes on
+// answering for the life of the session after the row moved, and a manager
+// moved to another site keeps reading the old one with nothing said.
+//
+// A resolver answering a claim the schema reads off a row is refused by name.
+// Two origins for one value, and whichever ran second would win in silence.
+async function applySchemaClaims(ctx: ServiceContext, db: unknown): Promise<void> {
+  const user   = ctx.auth?.user
+  const client = db as LitestoneClient
+  if (!user || typeof client?.$claimsFor !== 'function') return
+  const claims = await client.$claimsFor(toDataPrincipal(user))
+  if (Object.keys(claims).length) mergeClaims(ctx, db, claims)
+}
+
+async function resolveAppClaims(ctx: ServiceContext, db: unknown, principal: PrincipalResolver): Promise<PrincipalClaims> {
+  const claims  = await principal(ctx, ctx.auth?.user ?? null)
+  const sources = ((db as LitestoneClient)?.$schema as { claimSources?: Record<string, { model: string }> } | undefined)?.claimSources ?? {}
+  const clash   = Object.keys(claims ?? {}).filter(k => k in sources)
+  if (clash.length) throw new Error(
+    `The principal resolver answered ${clash.map(k => `'${k}'`).join(', ')}, which the schema reads off ` +
+    `${clash.map(k => sources[k].model).join(', ')} (claim … from). One claim, one origin — ` +
+    `drop it from the resolver, or drop the 'from' and let the resolver own it.`,
+  )
+  return claims
+}
+
 export function withLitestoneDb(db: unknown, principal?: PrincipalResolver): import('./hooks.ts').AroundHook {
   return async (ctx, next) => {
     // Scope to the caller here, not in the service.
@@ -2989,8 +3065,9 @@ export function withLitestoneDb(db: unknown, principal?: PrincipalResolver): imp
     // most is exactly the one with no `auth().id`. A resolver written before
     // this is now called with `null`, which is why `membershipClaim` refuses by
     // name rather than reading `userId` off nothing.
+    await applySchemaClaims(ctx, db)
     if (principal)
-      applyClaims(ctx, db, await principal(ctx, ctx.auth?.user ?? null))
+      applyClaims(ctx, db, await resolveAppClaims(ctx, db, principal))
 
     // After the claims, because under `strategy row` the tenant IS a claim and
     // is not known until they are merged.
@@ -3219,7 +3296,7 @@ export type BearerSource = (ctx: ServiceContext) => string | null
 /**
  * Every place a request's headers can be, in the order they are authoritative.
  *
- * `ctx.headers` on a TransportContext and `ctx.client.headers` on a
+ * `ctx.headers` on a TransportContext and `ctx.caller.headers` on a
  * ServiceContext are the same fact in two shapes, and a resolver runs against
  * whichever one made the call. The request STORE is the third and it is not a
  * fallback for the other two failing: an in-process call carries no client at
@@ -3228,11 +3305,11 @@ export type BearerSource = (ctx: ServiceContext) => string | null
  * tenant down the same two steps and for the same reason.
  */
 function requestHeaders(ctx: ServiceContext): Record<string, string> {
-  const meta = requestMeta() as { headers?: Record<string, string>; client?: { headers?: Record<string, string> } } | null
+  const meta = requestMeta() as { headers?: Record<string, string>; caller?: { headers?: Record<string, string> } } | null
   return (ctx as { headers?: Record<string, string> }).headers
-      ?? ctx.client?.headers
+      ?? ctx.caller?.headers
       ?? meta?.headers
-      ?? meta?.client?.headers
+      ?? meta?.caller?.headers
       ?? {}
 }
 
@@ -3253,7 +3330,7 @@ export function header(name: string): BearerSource {
 export function cookie(name: string): BearerSource {
   return (ctx) => {
     const direct = (ctx as { cookies?: Record<string, string> }).cookies?.[name]
-                ?? (ctx.client as { cookies?: Record<string, string> } | undefined)?.cookies?.[name]
+                ?? (ctx.caller as { cookies?: Record<string, string> } | undefined)?.cookies?.[name]
     if (typeof direct === 'string' && direct) return direct
 
     // Parsed here rather than reached for on the context, because a raw route
@@ -3648,8 +3725,8 @@ export function installLogContext(db: unknown): (() => void) | null {
       correlationId: meta?.correlationId ?? null,
       source:        call?.service ? `${call.service}.${call.method ?? '?'}` : null,
       origin:        meta?.origin ?? null,
-      ip:            meta?.client?.ip ?? null,
-      userAgent:     meta?.client?.userAgent ?? null,
+      ip:            meta?.caller?.ip ?? null,
+      userAgent:     meta?.caller?.userAgent ?? null,
       // The call's resolved tenant first: `withTenantDb` puts it on locals, and
       // that is the one the rows were actually written under. `meta.tenant` is
       // the other direction — work that STATED its tenant with no request.
@@ -4116,7 +4193,7 @@ function tapTenantWrites(app: unknown, client: unknown, tenantId: string): void 
 export function withTenantDb(registry: TenantRegistryLike, principal?: PrincipalResolver): import('./hooks.ts').AroundHook {
   return async function withTenantDb(ctx, next) {
     const dataPrincipal = ctx.auth?.user ? toDataPrincipal(ctx.auth.user) : null
-    const headers   = (ctx.client?.headers ?? {}) as Record<string, unknown>
+    const headers   = (ctx.caller?.headers ?? {}) as Record<string, unknown>
     const host      = (headers.host ?? headers.Host ?? null) as string | null
 
     // A caller may STATE the tenant — `app.service('x').find({ locals: { tenantId } })`
@@ -4187,8 +4264,9 @@ export function withTenantDb(registry: TenantRegistryLike, principal?: Principal
       // `example` that is a shopper with no account — the cart token is a claim
       // and nothing else can carry it — so every basket call answered 404 under
       // `strategy database` and only under it (`FJS-490`).
+      await applySchemaClaims(ctx, client)
       if (principal)
-        applyClaims(ctx, client, await principal(ctx, ctx.auth?.user ?? null))
+        applyClaims(ctx, client, await resolveAppClaims(ctx, client, principal))
 
       await warmTenantConfig(ctx)
 

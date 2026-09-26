@@ -17,13 +17,44 @@
  * is what keeps the module's own relative imports resolving, and keeps THOSE
  * cached: a companion importing the app's Litestone client must not rebuild it
  * on every page view.
+ *
+ * A process killed mid-import never reaches its `finally`, so its copies stay
+ * in the app's source tree. The first import into a directory sweeps copies
+ * whose writing process is gone. Only a DEAD pid is swept: two dev servers or
+ * a drive beside one share a routes directory, and deleting a live process's
+ * copy before its import resolves fails that import.
  */
 
-import { copyFile, rm } from 'fs/promises'
+import { copyFile, readdir, rm } from 'fs/promises'
 import { dirname, join, basename, extname } from 'path'
 import { pathToFileURL } from 'url'
 
+const SIDECAR = /^\.sierra-fresh-(\d+)-/
+
 let counter = 0
+const swept = new Set()
+
+function isAlive(pid) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (err) {
+    // EPERM is a live process owned by someone else.
+    return err.code === 'EPERM'
+  }
+}
+
+async function sweep(dir) {
+  if (swept.has(dir)) return
+  swept.add(dir)
+  let names
+  try { names = await readdir(dir) } catch { return }
+  await Promise.all(names.map(name => {
+    const pid = Number(SIDECAR.exec(name)?.[1])
+    if (!pid || pid === process.pid || isAlive(pid)) return
+    return rm(join(dir, name), { force: true }).catch(() => {})
+  }))
+}
 
 /**
  * @param {string} abs — absolute path to the module
@@ -31,6 +62,7 @@ let counter = 0
  */
 export async function importFresh(abs) {
   const ext = extname(abs) || '.js'
+  await sweep(dirname(abs))
   const sidecar = join(
     dirname(abs),
     `.sierra-fresh-${process.pid}-${counter++}-${basename(abs, ext)}${ext}`

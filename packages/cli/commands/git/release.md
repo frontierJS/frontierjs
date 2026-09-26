@@ -13,14 +13,14 @@ args:
     description: Tag name (e.g. v1.2.0) — defaults to version in package.json
     defaultValue: ''
 flags:
-  no-changelog:
+  changelog:
     type: boolean
     description: Skip changelog generation
-    defaultValue: false
-  no-push:
+    defaultValue: true
+  push:
     type: boolean
     description: Create tag locally without pushing
-    defaultValue: false
+    defaultValue: true
   message:
     char: m
     type: string
@@ -62,7 +62,7 @@ const message = flag.message || tagName
 log.info(`Creating release: ${tagName}`)
 
 // ─── Changelog ───────────────────────────────────────────────────────────────
-if (!flag['no-changelog']) {
+if (flag.changelog) {
   if (flag.dry) {
     log.dry('Would run: git:changelog')
   } else {
@@ -82,7 +82,7 @@ log.info(`Tagging: ${tagCmd}`)
 
 if (flag.dry) {
   log.dry(`Would run: ${tagCmd}`)
-  if (!flag['no-push']) log.dry(`Would run: git push origin HEAD --tags`)
+  if (flag.push) log.dry(`Would run: git push origin HEAD --tags`)
   return
 }
 
@@ -90,7 +90,7 @@ execSync(tagCmd, { cwd: root, stdio: 'inherit' })
 log.success(`Created tag ${tagName}`)
 
 // ─── Push ────────────────────────────────────────────────────────────────────
-if (!flag['no-push']) {
+if (flag.push) {
   // Branch and tags together: two pushes run a pre-push hook twice.
   execSync('git push origin HEAD --tags', { cwd: root, stdio: 'inherit' })
   log.success(`Pushed ${tagName} to remote`)

@@ -34,7 +34,11 @@ flags:
 const { runRegisterCheck, formatRegisterCheck, RULES } =
   await import(resolve(global.fliRoot, 'core/register-check.js'))
 
-const root = context.paths.root
+const { findRegisterRoot } = await import(resolve(global.fliRoot, 'core/registers.js'))
+
+// The nearest package.json declaring `registers`, so a run from inside a
+// package or a surface means the project's registers.
+const root = findRegisterRoot(process.cwd()) ?? context.paths.root
 
 if (flag.rules) {
   echo('')
@@ -87,21 +91,29 @@ if (result.errors.length) {
 
 ## What it reads
 
-Nothing is configured. The registers are found where a project keeps them —
-`ISSUES.md` and `ISSUES_ARCHIVE.md` at the root, `DECISIONS.md` beside them,
+**The project's `package.json` declares where the registers are and what their
+ids look like**, and the nearest one above the working directory that does is
+the project graded:
+
+```json
+"registers": { "prefix": "FJS" }                     // files at the root
+"registers": { "prefix": "ELA", "dir": ".project" }  // files in a folder
+```
+
+Inside `dir`: `ISSUES.md` and `ISSUES_ARCHIVE.md`, `DECISIONS.md` beside them,
 `IDEAS/*.md` in a directory. A register a project does not have is absent from
 the report rather than a failure: an app with no `IDEAS/` has not done anything
 wrong. The report names the ones it read, so a small count is legible as a
 small register.
 
-**A root holding NONE of them is refused**, and the exit code is 1. The two
-cases are not the same claim: a project with two registers is being graded on
-two, while a directory with none is one this command cannot answer for, and
-`0 open · 0 rulings · ✓ every register agrees with itself` is a pass over a
-question nobody asked. It is also the likely way to arrive — `fli` walks up to
-the nearest package root, so a run from inside `packages/<pkg>` grades that
-package's own directory, which is what the root `CLAUDE.md` tells everyone to
-do before running anything else.
+**An undeclared prefix is refused** once an issue or decision file exists: ids
+are read by the prefix, so without one every row is unparsed and the report
+would be the whole file.
+
+**A root holding NONE of the registers is refused**, and the exit code is 1. A
+project with two registers is being graded on two, while a directory with none
+is one this command cannot answer for, and `0 open · 0 rulings · ✓ every
+register agrees with itself` is a pass over a question nobody asked.
 
 ## Errors and warnings are two different claims
 
@@ -115,7 +127,7 @@ true on purpose:
 - **`unknown-ref`** — a record cites an id no register holds. Either the id was
   renamed, or the record it points at was never written.
 - **`dead-link`** — a linked path is in neither the file's own directory nor the
-  workspace root. Closed records are exempt: their links describe the code as it
+  project root. Closed records are exempt: their links describe the code as it
   was, and a file renamed by the fix is the fix working.
 - **`unknown-status`**, **`unknown-severity`**, **`malformed-date`** — a value
   outside the vocabulary the register declares in its own conventions table.

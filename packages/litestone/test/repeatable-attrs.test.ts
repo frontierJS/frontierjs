@@ -56,6 +56,14 @@ const MODEL_FIXTURES: Record<string, string> = {
   allow:       "@@allow('read', a > 0)\n  @@allow('read', b > 0)",
   deny:        "@@deny('read', a > 0)\n  @@deny('read', b > 0)",
   trait:       '@@trait(T1)\n  @@trait(T2)',
+  // One per move owed — the same deadline twice is @@commitment's own refusal.
+  // One per FIELD — two machines on one row, as an invoice's status and its
+  // reminder are. The same field twice is @@transitions' own refusal.
+  transitions: 's S @default(open)\n  r Boolean @default(false)\n' +
+               '  @@transitions(s, close: open -> closed)\n  @@transitions(r, remind: false -> true)',
+  commitment:  's S @default(open)\n  at DateTime\n' +
+               '  @@transitions(s, close: open -> closed @system, drop: open -> dropped @system)\n' +
+               '  @@commitment(close, on: at + 1d)\n  @@commitment(drop, on: at + 2d)',
 }
 
 const FIELD_FIXTURES: Record<string, string> = {
@@ -70,7 +78,7 @@ describe('every listed kind is a kind the parser actually emits', () => {
 
   for (const [kind, attrs] of Object.entries(MODEL_FIXTURES))
     it(`@@${kind} may be written twice`, () => {
-      const src = `trait T1 {\n  t1 Int\n}\ntrait T2 {\n  t2 Int\n}\nmodel M {\n  id Int @id\n  a Int\n  b Int\n  ${attrs}\n}`
+      const src = `enum S { open closed dropped }\ntrait T1 {\n  t1 Int\n}\ntrait T2 {\n  t2 Int\n}\nmodel M {\n  id Int @id\n  a Int\n  b Int\n  ${attrs}\n}`
       expect(refusal(src)).toBe(null)
     })
 

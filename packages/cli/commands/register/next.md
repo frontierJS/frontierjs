@@ -27,9 +27,11 @@ flags:
 ```js
 const { rankNext } = await import(resolve(global.fliRoot, 'core/next.js'))
 
-// The registers are at the workspace root; `fli` walks up to the nearest
-// package root otherwise.
-const root = (await context.wsRoot?.()) ?? context.paths.root
+const { findRegisterRoot } = await import(resolve(global.fliRoot, 'core/registers.js'))
+
+// The nearest package.json declaring `registers`, so a run from inside a
+// package or a surface means the project's registers.
+const root = findRegisterRoot(process.cwd()) ?? context.paths.root
 const out  = rankNext(root, { pkg: flag.pkg || null })
 
 if (flag.json) {

@@ -73,6 +73,12 @@ export function ejectEdge(schema, target, { pluralize = false } = {}) {
     const f = hostModel.fields.find(fl => fl.name === d.field)
     lines.push(`  ${d.field} ${renderType(f.type)}${renderDefault(f?.attributes.find(a => a.kind === 'default'))}`)
   }
+  // An edge is class-1 by construction — its side table keys both dimensions —
+  // so the promotion already knows the answer that a model, once ejected, can no
+  // longer be asked. Written `once` rather than left off: the composite key
+  // above is prefix-matched, so the trailing dimension has no index until the
+  // word emits one, which is `FJS-413` arriving through the promotion.
+  lines.push(`  @@relator([${keyCols.map(k => k.col).join(', ')}], once)`)
   lines.push('}')
 
   const rewire = storage === 'decorate'

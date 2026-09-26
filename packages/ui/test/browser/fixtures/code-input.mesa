@@ -1,0 +1,32 @@
+<script>
+  // code-input.mesa — the fixture for CodeInput.
+  //
+  // `source` opens with the four characters glow drops when its line passes
+  // are on — `+`, `>` and `\` at the start of a line, `•` anywhere — so a
+  // paint that loses any of them is a textContent that no longer matches the
+  // box. The long line is what makes the box scroll sideways.
+  import CodeInput from '../../../components/forms/CodeInput.mesa'
+
+  const source = [
+    '+ added = true',
+    '> quoted',
+    '\\escaped',
+    'const mark = "•m•"',
+    '\tindented()',
+    'const long = "' + 'x'.repeat(240) + '"',
+  ].join('\n')
+
+  window.__value = undefined
+</script>
+
+<div style="inline-size: 480px">
+  <CodeInput id="plain" language="js" value={source} oninput={e => window.__value = e.target.value} />
+
+  <CodeInput id="numbered" language="js" numbered value={'let a = 1\nlet b = 2'} />
+
+  <CodeInput id="trailing" value={'one\ntwo\n'} rows={1} />
+
+  <CodeInput id="hostile" language="js" value={'x // <img src=x onerror="window.__xss = 1">'} />
+
+  <CodeInput name="body" label="Body" language="md" value="# Title" />
+</div>

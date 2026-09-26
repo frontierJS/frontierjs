@@ -34,8 +34,7 @@ export interface SweepOptions {
    *  by a test standing at an instant; the sweep itself reads the setting. */
   graceMs?: number
   /** One machine rather than the fleet, for an operator asking about a row in
-   *  front of them. The same shape `dunSubscriptions` takes and for the same
-   *  reason: a sweep worth running is worth running against one subject. */
+   *  front of them: a sweep worth running is worth running against one subject. */
   serverId?: string
 }
 

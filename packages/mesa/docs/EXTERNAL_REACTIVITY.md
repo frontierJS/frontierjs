@@ -195,6 +195,34 @@ had to grow a second tier and Sierra had to opt into its strict setting. A
 migration that had stopped at "the map is empty" would have shipped a quieter
 bug than the one it set out to fix.
 
+**What the path tier grades** (`FJS-1340`). Two sites, and every `$:` form as the
+watch:
+
+- **The template, and every top-level `const`.** `const d = store.n * 2` with no
+  watch beside it is the same silence as `{store.n}` — the template reads `d`, a
+  local, so a template-only check saw nothing. A `const` holding a function is not
+  graded, since it reads when it is called, and `var` is the stated snapshot.
+- **A handler's deps count as watches.** `$: store.n, () => f()` registers the same
+  proxy the bare `$: store.n` does, and the check read the bare lines alone, so a
+  covered read was reported as uncovered. It now reads the list the emitter
+  registers from.
+
+**Every uncovered read is also RECORDED**, on `analysis.staticReads`, whatever the
+confidence level: `{ path, where, from, watchedHere }`. A dev build passes it to
+`push_component`, and the devtools panel lists each one under the component as
+*static*, with the watch that would track it — the answer to *why does this value
+not move* from the screen where the question is asked. `watchedHere` separates a
+component that watches nothing on the import (the value is fixed) from one that
+watches another path of it (it updates when some component's watch covers it —
+VISION RULE 47).
+
+Measured over 341 components in this repo — `example`, `basecamp`, the kit, orion,
+the website and sierra's own — plus linear's 40: **three** uncovered reads, all in a
+`const`, none in a template. The kit's `Avatar` sized a fixed tone table in a
+`const` and now takes the size in a `var`. linear's two issue and user pages read
+`const id = page.params.id` with no watch, and Sierra keeps a route's component
+across a change of parameter, so that `id` is the first one visited.
+
 2, 3 and 4 stay written down because a package outside this repo can still export
 a signal, and `externalSignals` is still the answer for it.
 
@@ -216,12 +244,13 @@ object and exporting the proxy both work — `watchProxy` is idempotent and
 object fires nothing, silently; the failure is confined to the one module that
 owns the writes.
 
-**A watch declared anywhere applies to everyone** (RULE 47). The registry is keyed
-by the watched object, so one component's `$: page` covers every other
-component's reads of `page.*`, and they re-render on any write to it. It is
-fail-safe — an extra render, never a stale one — and it cuts against *reactivity
-is visible at the use site*. Scoping the registry per component instance is the
-fix if over-rendering ever shows up.
+**A watch reaches only a component that reads through the proxy** (RULE 47,
+`FJS-D381`). A component with no `$:` on the import reads the raw object and is
+never updated, whoever else watches it. One that watches another path of the same
+import reads through the proxy, so a watch another component registered covers it
+— if that watch existed when it mounted, and after that component is destroyed,
+since a registered watch is never removed. `$:` is how a component guarantees a
+value moves, and `var` how it guarantees one does not.
 
 **Path watching is a no-op on the server.** `watchProxy` returns the object
 unchanged when not in a browser (RULE 19).

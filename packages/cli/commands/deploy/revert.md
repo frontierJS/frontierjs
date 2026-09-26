@@ -6,7 +6,7 @@ examples:
   - fli deploy:revert --plan
   - fli deploy:revert
   - fli deploy:revert --production --to a1b2c3d4e5f6
-  - fli deploy:revert --onto-current-bindings
+  - fli deploy:revert --onto-current-configuration
 flags:
   production:
     type: boolean
@@ -33,7 +33,7 @@ flags:
     type: boolean
     description: Revert to a release whose retention has expired
     defaultValue: false
-  onto-current-bindings:
+  onto-current-configuration:
     type: boolean
     description: Restore the code onto today's configuration rather than the pair
     defaultValue: false
@@ -72,9 +72,9 @@ context.config.doApi      = true
 context.config.doWeb      = false
 context.config.startTime  = Date.now()
 context.config.force      = {
-  pivot:     flag['past-pivot'],
-  retention: flag['past-retention'],
-  bindings:  flag['onto-current-bindings'],
+  pivot:         flag['past-pivot'],
+  retention:     flag['past-retention'],
+  configuration: flag['onto-current-configuration'],
 }
 
 log.info(`Reverting ${context.config.appId} on ${target}`)
@@ -103,10 +103,10 @@ tool ships, and it is wrong in exactly the situations somebody reaches for it.
     1 deploy(s) since a1b2c3d4e5f6 crossed the pivot — release a1b2c3d4e5f6
     cannot serve this database. Recovery past a pivot is forward, not back
     override with --past-pivot
-  ✗ bindings
-    release a1b2c3d4e5f6 was bound at generation 2 and generation 3 is in force —
+  ✗ configuration
+    release a1b2c3d4e5f6 was minted at generation 2 and generation 3 is in force —
     reverting restores the code and NOT the configuration it ran with
-    override with --onto-current-bindings
+    override with --onto-current-configuration
 ```
 
 **All of them are printed, never just the first.** An operator deciding whether
@@ -117,14 +117,14 @@ Two carry **no override at all**, because neither is a judgement call: a
 transition still open (a deploy is running, or one died without settling), and a
 release whose bytes nothing recorded — there is no image to start.
 
-## Why bindings are refused rather than fixed
+## Why configuration is refused rather than fixed
 
 Serving state is the pair. `fli` writes no `.env` on a target — the operator owns
-that file — so once the binding generation has moved, a revert genuinely cannot
+that file — so once the configuration generation has moved, a revert genuinely cannot
 restore the pair. It can only put old code onto today's configuration, which is
 the documented Fly failure this separation exists to refuse.
 
-`--onto-current-bindings` is the operator saying they have read which keys moved
+`--onto-current-configuration` is the operator saying they have read which keys moved
 and want it anyway. It is a different sentence from *restore the pair*, and the
 journal records which one happened.
 

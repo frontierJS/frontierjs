@@ -154,6 +154,22 @@ mount(anchor, App, { root })
 <RouterView />
 ```
 
+**A route that throws while it renders is replaced, not left half-drawn.** Every
+layout and page renders inside a `<mesa:boundary>`, so the nearest level shows a
+failed state and the layouts above it stay standing (`FJS-D376`). The default is a
+plain message and a *Try again* button; an app supplies its own through `failed`:
+
+```html
+{#snippet failed(error, reset)}
+  <p>This page could not be shown.</p>
+  <button onclick={reset}>Try again</button>
+{/snippet}
+
+<RouterView {failed} />
+```
+
+A prerendered route does not get this: a throw there fails the build (`FJS-D377`).
+
 Then `vite -c config/vite.config.js` for dev and `vite build -c config/vite.config.js`
 for production.
 

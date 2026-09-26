@@ -171,7 +171,7 @@ set is worth reading beside ours:
 | — | `field` | **ours alone** |
 
 The four missing ones all answer *from where*, and all four are already on
-`ctx.client` and `RequestMeta`. They are a wiring problem and the same wiring as
+`ctx.caller` and `RequestMeta`. They are a wiring problem and the same wiring as
 the log line, which is why phase 1 does both at once.
 
 **On destination, the twelve-factor position won and it is the one to adopt

@@ -12,9 +12,11 @@
 
 export {
   // the cycle
-  dueForRenewal, advancePeriod, changePlan, prorate, periodLines,
+  startSubscription, openFirstPeriod, renewPeriod, advancePeriod, changePlan, prorate, periodLines,
   // the documents
-  issueInvoice, nextInvoiceNumber, unpaidInvoices, settleInvoice,
+  issueInvoice, nextInvoiceNumber, unpaidInvoices, settleInvoice, voidInvoice,
+  // what a clean ledger owes the subscription behind it
+  recoverIfClear,
   // taking the money, and what the provider's answer means
   chargeInvoice, declineKind,
   // the deadlines a subscription is graded against

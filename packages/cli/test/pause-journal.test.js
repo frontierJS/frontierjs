@@ -61,7 +61,7 @@ const deployed = async () => {
   const j = await journal()
   await j.open({ app: APP, host: HOST })
   await j.begin({
-    release: { id: 'r1', app: APP, environment: ENV, bindingsHash: 'bh', generation: 1, schemaHash: 'sh', pivot: 'expand' },
+    release: { id: 'r1', app: APP, environment: ENV, configurationHash: 'bh', generation: 1, schemaHash: 'sh', pivot: 'expand' },
     transition: { id: 't-deploy', kind: 'deploy', app: APP, environment: ENV, releaseId: 'r1',
                   fromReleaseId: null, generation: 1, plan: {}, actor: 'tester' },
     steps: [],
@@ -119,7 +119,7 @@ describe('a pause through the journal', () => {
   test('a revert reading that history is not moved by it', async () => {
     const j = await deployed()
     await j.begin({
-      release: { id: 'r2', app: APP, environment: ENV, bindingsHash: 'bh', generation: 1, schemaHash: 'sh', pivot: 'expand' },
+      release: { id: 'r2', app: APP, environment: ENV, configurationHash: 'bh', generation: 1, schemaHash: 'sh', pivot: 'expand' },
       transition: { id: 't-deploy-2', kind: 'deploy', app: APP, environment: ENV, releaseId: 'r2',
                     fromReleaseId: 'r1', generation: 1, plan: {}, actor: 'tester' },
       steps: [],
@@ -188,7 +188,7 @@ describe('what a pause refuses, against a real journal', () => {
   test('a deploy still open', async () => {
     const j = await deployed()
     await j.begin({
-      release: { id: 'r3', app: APP, environment: ENV, bindingsHash: 'bh', generation: 1, schemaHash: 'sh', pivot: 'expand' },
+      release: { id: 'r3', app: APP, environment: ENV, configurationHash: 'bh', generation: 1, schemaHash: 'sh', pivot: 'expand' },
       transition: { id: 't-open', kind: 'deploy', app: APP, environment: ENV, releaseId: 'r3',
                     fromReleaseId: 'r1', generation: 1, plan: {}, actor: 'tester' },
       steps: [],

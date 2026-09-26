@@ -872,11 +872,11 @@ describe('compile() output shape', () => {
     })
     it('emits watchPath for specific path', async () => {
       const out = await cx(`<script>import { user } from './s.js'; $: user.name</script><p>{user.name}</p>`)
-      expect(out).toContain("watchPath(user, 'name')")
+      expect(out).toContain("watchPath(user, 'name', 'user')")
     })
     it('emits watchPath with empty string for whole-object watch', async () => {
       const out = await cx(`<script>import { user } from './s.js'; $: user</script><p>hi</p>`)
-      expect(out).toContain("watchPath(user, '')")
+      expect(out).toContain("watchPath(user, '', 'user')")
     })
     it('template reads go through proxy', async () => {
       const out = await cx(`<script>import { user } from './s.js'; $: user.name</script><p>{user.name}</p>`)
@@ -2800,8 +2800,9 @@ const data = await fetchData()
     expect(out).toContain('$$snippet_pending')
     expect(out).toContain('$$snippet_failed')
     expect(out).toContain('(__anchor) => $$snippet_pending(__anchor)')
-    // The error is handed over as a getter, like every other snippet argument.
-    expect(out).toContain('(__anchor, $$err) => $$snippet_failed(__anchor, () => $$err)')
+    // The error and `reset` are handed over as getters, like every other
+    // snippet argument (`FJS-D375`).
+    expect(out).toContain('(__anchor, $$err, $$reset) => $$snippet_failed(__anchor, () => $$err, () => $$reset)')
   })
 
   it('uses global snippets when no co-located snippets', async () => {
@@ -2837,11 +2838,23 @@ const data = await fetchIt()
     expect(fn).toBeTruthy()
   })
 
-  it('emits warning when no async vars present', async () => {
+  it('warns when a boundary neither waits nor catches', async () => {
     const ctx = await compile(`
 <script>let x = 1</script>
 <mesa:boundary><p>{x}</p></mesa:boundary>`, { css: false })
-    expect(ctx.analysis.warnings.join(' ')).toContain('no async-derived variables')
+    expect(ctx.analysis.warnings.join(' ')).toContain('neither waits nor catches')
+  })
+
+  // A boundary with a `failed` and nothing to wait on is an error boundary,
+  // which is a whole use and not a mistake (`FJS-D372`).
+  it('does not warn for a boundary that only catches', async () => {
+    const ctx = await compile(`
+<script>let x = 1</script>
+<mesa:boundary>
+  <p>{x}</p>
+  {#snippet failed(error, reset)}<button onclick={reset}>retry</button>{/snippet}
+</mesa:boundary>`, { css: false })
+    expect(ctx.analysis.warnings.join(' ')).not.toContain('<mesa:boundary>')
   })
 
   // ── The watch set ───────────────────────────────────────────────────────
@@ -2890,10 +2903,22 @@ const reports = await getReports()
     expect(out).not.toContain('([$$async_cities])')
   })
 
-  it('keeps the whole-component union when the body reads no async value', async () => {
+  // A body that reads no async value waits on nothing, so a boundary written
+  // to catch a throw is not also a loading gate (`FJS-D378`).
+  it('waits on nothing when the body reads no async value', async () => {
     const out = await cx(`${TWO_ASYNC}
-<mesa:boundary><p>gate this region on everything</p></mesa:boundary>`)
-    expect(out).toContain('([$$async_cities, $$async_reports])')
+<mesa:boundary><p>a region that only catches</p></mesa:boundary>`)
+    expect(out).toContain('boundaryBlock($$el0, () => ([])')
+  })
+
+  it('waits on nothing when the one async value in the component goes unread', async () => {
+    const out = await cx(`
+<script>
+const reports = await getReports()
+</script>
+<mesa:boundary><p>unrelated</p></mesa:boundary>
+<p>{reports.length}</p>`)
+    expect(out).toMatch(/boundaryBlock\(\$\$el\d+, \(\) => \(\[\]\)/)
   })
 
   it('keeps the union when the body renders a snippet defined elsewhere', async () => {

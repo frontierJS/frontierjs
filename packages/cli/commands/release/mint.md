@@ -35,7 +35,7 @@ flags:
 const core = (name) => import(new URL('file://' + global.fliRoot + '/core/' + name))
 
 const { loadFrontierConfig } = await core('utils.js')
-const { bindingSet, schemaSurfaceHash, mintRelease, formatRelease, BindingError } =
+const { configurationSet, schemaSurfaceHash, mintRelease, formatRelease, ConfigurationError } =
   await core('release.js')
 
 // ─── target ──────────────────────────────────────────────────────────────────
@@ -51,17 +51,17 @@ const frontierConfig = await loadFrontierConfig(context.paths.root)
 const deployConf     = frontierConfig?.deploy
 
 if (!deployConf) {
-  log.error('No deploy block in frontier.config.js — there is no Environment to bind against')
+  log.error('No deploy block in frontier.config.js — there is no Environment to mint against')
   log.info('Run `fli make:deploy` to write one')
   return
 }
 
 // ─── the four terms ──────────────────────────────────────────────────────────
-let bindings
+let configuration
 try {
-  bindings = bindingSet(deployConf, target)
+  configuration = configurationSet(deployConf, target)
 } catch (e) {
-  if (!(e instanceof BindingError)) throw e
+  if (!(e instanceof ConfigurationError)) throw e
   log.error(e.message)
   return
 }
@@ -104,7 +104,7 @@ const release = mintRelease({
   app:           deployConf.app_id ?? deployConf.appId,
   environment:   target,
   digest:        flag.digest || null,
-  bindingsHash:  bindings.hash,
+  configurationHash: configuration.hash,
   schemaHash:    schema.hash,
   pivot,
   pivotFindings: findings,
@@ -112,12 +112,12 @@ const release = mintRelease({
 })
 
 if (flag.json) {
-  console.log(JSON.stringify({ ...release, bindings: { values: bindings.values, secretRefs: bindings.secretRefs } }, null, 2))
+  console.log(JSON.stringify({ ...release, configuration: { values: configuration.values, secretRefs: configuration.secretRefs } }, null, 2))
   return
 }
 
 console.log()
-console.log(formatRelease(release, { bindings }))
+console.log(formatRelease(release, { configuration }))
 console.log()
 ```
 
@@ -127,7 +127,7 @@ It **computes** a Release and prints it. It writes no journal, starts nothing
 and deploys nothing.
 
 That is not a stub. A Release id is the hash of its own terms, so minting is a
-pure function of the tree and the bindings — the same tree mints the same id on
+pure function of the tree and the configuration — the same tree mints the same id on
 a laptop, in CI and on the target. *Build once, promote a digest* is only a
 sentence you can say if the thing being promoted has a name that does not depend
 on who computed it, and this is that name.
@@ -142,17 +142,17 @@ normal case, not an edge one.
 | Term | What it is | Where it comes from |
 | --- | --- | --- |
 | `digest` | the bytes | `--digest`, or absent |
-| `bindingsHash` | the configuration **as declared** | `deploy.bindings` + `deploy.secrets` |
+| `configurationHash` | the configuration **as declared** | `deploy.configuration` + `deploy.secrets` |
 | `schemaHash` | the data boundary | `db/release.snapshot.md`, hashed |
 | `pivot` | can N-1 still serve | `litestone release --json` |
 
 **The environment is not in the id.** One artefact promotes from staging to
-production unchanged and only its bindings differ, so the environment is on the
-row and the bindings are in the hash.
+production unchanged and only its configuration differs, so the environment is on
+the row and the configuration is in the hash.
 
-**`bindingsHash` covers a DECLARATION and not the running configuration.** `fli`
+**`configurationHash` covers a DECLARATION and not the running configuration.** `fli`
 writes no `.env` on a target — the operator owns that file, and the container is
-started with `--env-file` against it — so nothing under `deploy.bindings` is
+started with `--env-file` against it — so nothing under `deploy.configuration` is
 applied by a deploy. What the hash and the generation are for is the question a
 revert asks: *has the configuration been changed since the release I am going
 back to*, which is why `fli deploy:revert` refuses rather than putting old code
@@ -172,15 +172,15 @@ A Release with no digest says *not built* rather than showing a tag as though it
 were an identity: two servers at one commit hold two images with the same name
 and different bytes.
 
-## Bindings
+## Configuration
 
 ```json5
 deploy: {
-  bindings: { LOG_LEVEL: 'info' },          // values, committed
-  secrets:  { DB_KEY: 'shop-db-key@3' },    // references, pinned
+  configuration: { LOG_LEVEL: 'info' },     // values, committed
+  secrets:       { DB_KEY: 'shop-db-key@3' }, // references, pinned
 
   production: {
-    bindings: { LOG_LEVEL: 'warn' },        // per-target beats app-wide
+    configuration: { LOG_LEVEL: 'warn' },   // per-target beats app-wide
   },
 }
 ```
@@ -193,9 +193,9 @@ is not.
 **A reference must name a version, and `latest` is refused.** A secret is
 resolved when a process starts, so `latest` means two instances of one immutable
 Release hold two different values — the Release is immutable in name only, and
-Cloud Run's own documentation says to pin. A rotation moves the binding to a new
+Cloud Run's own documentation says to pin. A rotation moves the configuration to a new
 pinned version, which is a new generation, which is exactly what a generation is
 for.
 
-An app that binds nothing has an empty binding set. That is a set, and it hashes
+An app that declares nothing has an empty configuration set. That is a set, and it hashes
 like any other.

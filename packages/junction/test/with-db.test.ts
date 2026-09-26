@@ -40,6 +40,32 @@ describe('app.withDb with no tenancy', () => {
     const created = await app.runAs('u2', () => app.withDb((scoped: any) => scoped.note.create({ data: { body: 'stamped' } })))
     expect(created.ownerId).toBe('u2')
   })
+
+  test('the leased client takes a lock, and the work inside it is still graded as the principal', async () => {
+    // It threw `"$lock" is not a table in this schema`, so an engine had to
+    // reach past this seam for the root client and write as the system (FJS-1216).
+    const db: any = await createClient({ db: ':memory:', schema: `
+      model Note {
+        id      Int    @id @default(autoincrement())
+        ownerId String @default(auth().id)
+        body    String
+        @@allow('read', ownerId == auth().id)
+      }` })
+    await db.asSystem().note.create({ data: { ownerId: 'u2', body: 'theirs' } })
+    const app = createApp({ db, auth: USERS })
+    await app._startForTest()
+
+    const held = await db.$locks.acquire('person:u1')
+    await expect(app.runAs('u1', () => app.withDb((scoped: any) => scoped.$lock('person:u1', async () => 'ran', { wait: 0 }))))
+      .rejects.toThrow(/lock/i)
+    await held.release()
+
+    const seen = await app.runAs('u1', () => app.withDb((scoped: any) => scoped.$lock('person:u1', async () => {
+      await scoped.note.create({ data: { body: 'mine' } })
+      return scoped.note.findMany({})
+    })))
+    expect(seen.map((n: any) => n.body)).toEqual(['mine'])
+  })
 })
 
 describe('app.withDb under strategy database', () => {

@@ -65,6 +65,21 @@ export function unscheduleJob(app: BasecampApp, jobId: string): void {
 }
 
 /**
+ * When the clock will next fire a job, asked of the clock itself.
+ *
+ * Not a column: nothing but the scheduler knows the answer, so a stored copy is
+ * a second answer that goes stale — the one this app had was written once on
+ * create as *a minute from now* and shown to an operator for ever after
+ * (`FJS-1241`). `null` is a job the clock does not hold, which is every job
+ * `syncSchedule` took off it.
+ */
+export function nextRunAt(app: BasecampApp, jobId: string): string | null {
+  const name = scheduleName(jobId)
+  const next = app.jobs.nextRuns().find(r => r.name === name)?.nextRun
+  return next ? next.toISOString() : null
+}
+
+/**
  * Make the clock agree with the row — the whole rule, in one place.
  *
  * A job is on the clock when it is `scheduled`, carries an expression, and has

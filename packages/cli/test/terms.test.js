@@ -17,7 +17,7 @@ import { join }          from 'path'
 import { tmpdir }        from 'os'
 import { fileURLToPath } from 'url'
 
-import { collectTerms, architectVocabulary, authoredVocabulary, packageVocabularies, renderPage } from '../core/terms.js'
+import { collectTerms, architectVocabulary, authoredVocabulary, packageVocabularies, placed, renderPage } from '../core/terms.js'
 
 const REPO = fileURLToPath(new URL('../../..', import.meta.url))
 
@@ -729,10 +729,44 @@ describe('over this repo', () => {
   })
 
   test('the words that prompted this are named by css rather than reading unnamed', () => {
-    for (const term of ['Treatment', 'Surface']) {
-      const row = model.concepts.find(r => r.term === term)
-      expect(row?.status).toBe('blessed')
-      expect(row?.label?.owner).toBe('css')
-    }
+    const row = model.concepts.find(r => r.term === 'Treatment')
+    expect(row?.status).toBe('blessed')
+    expect(row?.label?.owner).toBe('css')
+  })
+
+  // Surface is spelled by both registers. The root row names the app's
+  // directory, and outranks css's block shape, so the css sense cannot
+  // silently become the framework's.
+  test('a word both registers name is the root file\'s', () => {
+    const row = model.concepts.find(r => r.term === 'Surface')
+    expect(row?.status).toBe('blessed')
+    expect(row?.label?.owner).toBeUndefined()
+    expect(row?.label?.home).toBe('Framework')
+    expect(row?.label?.under).toBe('')
+  })
+
+  // The container half of the UI tree is css's tiers. A root row that leaves
+  // Under blank takes css's; one that states an Under keeps it, and a row in
+  // another Home is another sense and takes nothing.
+  test('a UI row with no Under of its own is placed by css\'s tier', () => {
+    const card = model.concepts.find(r => r.term === 'Card')
+    expect(card?.label?.under).toBe('Block tier')
+    expect(card?.label?.underFrom).toBe('css')
+  })
+})
+
+describe('placed', () => {
+  const css = { home: 'UI', under: 'Inline tier', owner: 'css' }
+
+  test('an authored Under outranks the tier', () => {
+    expect(placed({ home: 'UI', under: 'Select task' }, css).under).toBe('Select task')
+  })
+
+  test('a row in another Home is another sense', () => {
+    expect(placed({ home: 'Data', under: '' }, css).under).toBe('')
+  })
+
+  test('a word only css names is css\'s row, tier and all', () => {
+    expect(placed(undefined, css)).toBe(css)
   })
 })

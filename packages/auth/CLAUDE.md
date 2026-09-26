@@ -153,7 +153,11 @@ index.ts     public API
   override what an app asked for. **Do not tell an app to wrap `verifySession`
   and re-read the user** — that is a third query on the hottest path in that
   app, forever, for a row `toContext()` already holds, and it is the thing this
-  option exists to remove.
+  option exists to remove. **`sessionFields` is synchronous and a promise from
+  it is refused by name**: an async one spread to nothing and took `isAdmin` with
+  it (`FJS-1251`). A value on ANOTHER row — the caller's `Employee` — is the
+  schema's, `claim siteId from Employee(userId).siteId`, read per request by
+  junction.
 - **`onCredentialChanged` is the one OBSERVER, and it is written through one
   helper.** `credentialChanged()` in `auth.ts` writes the audit entry and tells
   the app, so a new credential write that calls `audit()` directly records the
@@ -242,13 +246,35 @@ index.ts     public API
   `Credential.id`: `connections()` hands it to the browser and `removeConnection`
   takes it back, so a sequential integer is enumerable and publishes how many
   credentials the whole installation holds.
+- **Four models declare a window, so a DELETE has to say what it means.**
+  `Session`, `Verification`, `LoginChallenge` and `OauthFlow` carry
+  `@@expires(expiresAt)`, and the window filters writes as well as reads
+  (`FJS-D351`). A delete keyed on a person or a purpose therefore means the rows
+  IN FORCE: *sign out everywhere* would leave the lapsed ones behind, and
+  `revokeSession` on a session that lapsed while its owner read the screen would
+  answer `No session with id …`. Every such delete spreads the `PURGE` const —
+  one name, fourteen call sites — and a delete of a row just read as in force
+  stays bare. **`completeLogin` is the one READ that states `withExpired`**,
+  because *this ticket ran out* and *no such ticket* are different lines in the
+  trail. A new delete that narrows by anything other than a row just read is a
+  purge and takes the const.
+- **Auth reads ONE clock, the client's: `sys.$now()`, never `new Date()`.**
+  `crypto.ts`'s `expiresAt(ttl, now)` takes it, the TOTP step reads it, and the
+  support episode and API-key expiry compare against it — because the four
+  windows grade on it, and a deadline minted from the host's clock lapses on a
+  different clock from the one that reads it. `test/expiry.test.ts` starts its
+  clock in 2031 so a `Date.now()` mint is born lapsed and reds three rows. The
+  one wall-clock read left is the challenge cookie's `maxAge` in `plugin.ts`,
+  which is a duration a BROWSER counts down.
 - **`cleanup.ts`'s predicate is named, and `sweepNow()` is why.** A scheduled
   body lives in a closure the scheduler exposes no way to reach, so an inline
   `deleteMany` in a timer can only be graded by a test restating it — and a test
   holding its own copy of a rule agrees with the copy, including once the
   shipped rule has moved. `sweepNow()` runs the same two functions the timers
-  call, so the tests grade the shipped predicate: measured, dropping the `where`
-  or reading `createdAt` instead of `expiresAt` reds both sweep rows. It is also
+  call, so the tests grade the shipped predicate: measured, dropping the word
+  or reading `createdAt` instead reds both sweep rows. The predicate is
+  `{ onlyExpired: true }` — written as a hand-rolled `expiresAt < now` it would
+  be ANDed with the window and match nothing, silently. It is also
   what an operator draining these tables ahead of the hour wants.
 - **`start()` restarts rather than refuses, and says so.** Assigning over a live
   `JobHandle` orphans it — nothing holds the old timer, so `stop()` halts only

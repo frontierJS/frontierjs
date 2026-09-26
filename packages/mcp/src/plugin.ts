@@ -43,6 +43,8 @@
 import { McpServer, WebStandardStreamableHTTPServerTransport, fromJsonSchema } from '@modelcontextprotocol/server'
 import { CALL_OPTIONS_AT, principalGateLevel, toDataPrincipal, toFrameworkError } from '@frontierjs/junction'
 import type { App, Plugin } from '@frontierjs/junction'
+import { AWAIT_META, JOBS_META, awaitJobs, describeOutcome, type JobsReader } from './await.ts'
+import { BREADCRUMBS_META, answersOneRow, breadcrumbsFor, describeBreadcrumbs } from './breadcrumbs.ts'
 
 import { projectTools, schemaViews, CRUD } from './projection.ts'
 import type { Projection, SchemaViews, ServiceShape, Tool } from './projection.ts'
@@ -61,9 +63,16 @@ export interface McpOptions {
    * dies before its first keep-alive, every time.
    */
   keepAliveMs?: number
+  /**
+   * The longest a `_meta: { 'frontierjs/await': true }` call is held for its
+   * jobs (`FJS-D406`). Past it the call answers with where each job had got to.
+   */
+  awaitMs?: number
 }
 
 const DEFAULT_KEEP_ALIVE_MS = 5_000
+const DEFAULT_AWAIT_MS      = 10 * 60_000
+const AWAIT_POLL_MS         = 500
 
 export function mcpPlugin(opts: McpOptions = {}): Plugin {
   const path = opts.path ?? '/mcp'
@@ -170,7 +179,12 @@ async function answer(
   opts:   McpOptions,
 ): Promise<Response> {
   const user  = ctx.user ?? null
-  const level = standingOf(app, user)
+  const level = await standingOf(app, user)
+  // Read HERE, in the route, where the request scope is certainly the one the
+  // tool call's service calls run in — it is what Caravan stamped on every job
+  // they dispatched, and what `--await` looks the jobs up by (`FJS-D406`).
+  const correlationId = (app as { correlationId?: () => string | null }).correlationId?.() ?? null
+  const awaiting      = asksToAwait(ctx)
 
   const tools = dispatchable(projectTools(shapes, views, level)).tools
 
@@ -179,14 +193,19 @@ async function answer(
     version: opts.version ?? '0.0.0',
   })
 
-  for (const tool of tools) register(server, app, tool, user)
+  const call = { correlationId, awaitMs: opts.awaitMs ?? DEFAULT_AWAIT_MS, offered: tools, defs: views.full }
+  for (const tool of tools) register(server, app, tool, user, call)
 
   const transport = new WebStandardStreamableHTTPServerTransport({
     // Stateless: the standing is re-read on every request, so there is nothing
     // worth keeping between two of them. A session here would be a second
     // lifetime beside the app's own, outliving a sign-out.
     sessionIdGenerator: undefined,
-    enableJsonResponse: true,
+    // An awaited call is held open for as long as its jobs run, which is past
+    // Bun's idle timeout — so it is answered as a stream, whose keep-alive
+    // frames and progress notifications keep the socket alive. Every other
+    // call is one JSON answer, as before.
+    enableJsonResponse: !awaiting,
     keepAliveMs:        opts.keepAliveMs ?? DEFAULT_KEEP_ALIVE_MS,
   })
   await server.connect(transport)
@@ -227,10 +246,18 @@ function replayBody(ctx: RouteCtx<App>): Request {
  * tenant-per-database and declares its own mapping. Named in `PROJECT_STATE.md`
  * rather than papered over: opening a tenant client here to grade a tool LIST
  * would make listing tools create a database file.
+ *
+ * **The principal is the one the app's resolver answers, not the session.**
+ * Under `strategy row` with `createApp({ principal })` the standing is a claim
+ * the resolver adds per call — basecamp's `memberRole` — and the session carries
+ * none, so every member graded as the same bare sign-in and an owner, an admin
+ * and a viewer were offered one identical list. `withDb` runs that resolver.
  */
-function standingOf(app: App, user: unknown): number {
+async function standingOf(app: App, user: unknown): Promise<number> {
   const db = (app as { db?: unknown }).db
-  return principalGateLevel(db, undefined, toDataPrincipal(user as never), user)
+  if (!db) return principalGateLevel(db, undefined, toDataPrincipal(user as never), user)
+  return app.withDb((scoped, resolved) =>
+    principalGateLevel(scoped, undefined, toDataPrincipal((resolved ?? user) as never), resolved ?? user))
 }
 
 /**
@@ -254,7 +281,23 @@ function dispatchable(p: Projection): { tools: Tool[]; undispatchable: string[] 
 
 // ─── one tool ─────────────────────────────────────────────────────────────────
 
-function register(server: McpServer, app: App, tool: Tool, user: unknown): void {
+interface CallScope {
+  correlationId: string | null
+  awaitMs:       number
+  /** This caller's tool list, which every breadcrumb must name a tool from. */
+  offered:       Tool[]
+  defs:          SchemaViews['full']
+}
+
+/** Whether this request is a `tools/call` asking to be held until its jobs finish. */
+function asksToAwait(ctx: RouteCtx<App>): boolean {
+  try {
+    const body = JSON.parse(ctx.rawBody ?? '') as { method?: string; params?: { _meta?: Record<string, unknown> } }
+    return body.method === 'tools/call' && body.params?._meta?.[AWAIT_META] === true
+  } catch { return false }
+}
+
+function register(server: McpServer, app: App, tool: Tool, user: unknown, call: CallScope): void {
   server.registerTool(
     tool.name,
     {
@@ -269,7 +312,7 @@ function register(server: McpServer, app: App, tool: Tool, user: unknown): void 
       // the one-owner answer and is an open question, not an oversight.
       ...(tool.input.schema ? { inputSchema: fromJsonSchema(tool.input.schema as never) } : {}),
     },
-    async (args: unknown) => run(app, tool, args, user),
+    async (args: unknown, ctx: HandlerCtx) => run(app, tool, args, user, call, ctx),
   )
 }
 
@@ -309,14 +352,24 @@ const VERB: Record<string, string> = {
  * index for the method — absent, the call INHERITS whatever principal is in
  * scope, which in a plugin route is the app's own.
  */
-async function run(app: App, tool: Tool, args: unknown, user: unknown): Promise<CallResult> {
+async function run(app: App, tool: Tool, args: unknown, user: unknown, call: CallScope, ctx?: HandlerCtx): Promise<CallResult> {
   const caller = app.service(tool.service) as Record<string, (...a: unknown[]) => Promise<unknown>>
   const a      = (args ?? {}) as Record<string, unknown>
   const opts   = { auth: { user } } as Record<string, unknown>
+  const since  = Date.now()
 
   try {
     const result = await invoke(caller, tool, a, opts)
-    return { content: [{ type: 'text', text: JSON.stringify(result ?? null) }] }
+    const answer: CallResult = { content: [{ type: 'text', text: JSON.stringify(result ?? null) }] }
+    if (answersOneRow(tool)) {
+      // Read off the row the CALLER was answered, so a foreign key their read
+      // withheld names nothing (`FJS-D398`).
+      const crumbs = breadcrumbsFor(tool, result, a, call.offered, call.defs as never)
+      if (crumbs.length) answer.content.push({ type: 'text', text: describeBreadcrumbs(crumbs) })
+      answer._meta = { [BREADCRUMBS_META]: crumbs }
+    }
+    if (ctx?.mcpReq?._meta?.[AWAIT_META] !== true) return answer
+    return await held(app, call, since, ctx, answer)
   } catch (err) {
     const fe = toFrameworkError(err)
     // A 4xx is the caller's own mistake and the message is written for them —
@@ -333,6 +386,47 @@ async function run(app: App, tool: Tool, args: unknown, user: unknown): Promise<
 interface CallResult {
   content: Array<{ type: 'text'; text: string }>
   isError?: boolean
+  _meta?:   Record<string, unknown>
+}
+
+/** The slice of the SDK's handler context this file reads. */
+interface HandlerCtx {
+  mcpReq?: {
+    _meta?:  Record<string, unknown> & { progressToken?: string | number }
+    signal?: AbortSignal
+    notify?: (n: { method: string; params: Record<string, unknown> }) => Promise<void>
+  }
+}
+
+/**
+ * The call has answered; now wait on the jobs it started, telling the client
+ * as each one moves, and answer with where each ended up. A job that FAILED is
+ * reported, not raised: the method did what it was asked, and the second text
+ * block is what an agent reading only text is told.
+ */
+async function held(app: App, call: CallScope, since: number, ctx: HandlerCtx, answer: CallResult): Promise<CallResult> {
+  const jobs = (app as { jobs?: Partial<JobsReader> }).jobs
+  if (!call.correlationId || typeof jobs?.findByCorrelation !== 'function') {
+    answer.content.push({ type: 'text', text: 'Nothing to wait on: this app has no job queue this surface can read.' })
+    answer._meta = { ...answer._meta, [JOBS_META]: [] }
+    return answer
+  }
+
+  const token  = ctx.mcpReq?._meta?.progressToken
+  const notify = ctx.mcpReq?.notify
+  const outcome = await awaitJobs(jobs as JobsReader, call.correlationId, since, {
+    timeoutMs: call.awaitMs, pollMs: AWAIT_POLL_MS, signal: ctx.mcpReq?.signal,
+    onProgress: token === undefined || !notify ? undefined : (done, total, list) => {
+      const moving = list.find(j => j.status !== 'done' && j.status !== 'failed' && j.status !== 'cancelled')
+      void notify({ method: 'notifications/progress', params: {
+        progressToken: token, progress: done, total,
+        message: moving ? `${moving.name}: ${moving.status}` : 'finished',
+      } }).catch(() => {})
+    },
+  })
+  answer.content.push({ type: 'text', text: describeOutcome(outcome) })
+  answer._meta = { ...answer._meta, [JOBS_META]: outcome.jobs, 'frontierjs/settled': outcome.settled }
+  return answer
 }
 
 function invoke(

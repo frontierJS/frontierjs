@@ -36,6 +36,7 @@ import { parse } from './core/parser.js'
 // is used, and one that does not parse is a kill the parser made.
 
 const GATE_RE = /@@gate\(\s*"([^"]+)"\s*\)/
+const RELATOR_RE = /@@relator\(\s*\[([^\]]*)\]\s*,\s*(once|many)(?:\s*:\s*(\w+))?\s*\)/
 
 const MUTATIONS = [
   {
@@ -111,6 +112,47 @@ const MUTATIONS = [
         for (const m of _dropToken(line, `@${rule}`)) out.push({ ...m, meta: { rule } })
       }
       return out
+    },
+  },
+  {
+    // The two directions a relator can be wrong, and they fail differently.
+    //
+    // TIGHTEN is the one the word was built for. `@@relator([appId, serverId],
+    // many: replicaIndex)` against `once` collapses the key onto the pair, so
+    // the SECOND replica of an app on a machine is refused — the app quietly
+    // loses the ability to scale, and before the word existed no suite in this
+    // repo could see it.
+    //
+    // There is no `relator-drop`. Removing the line takes the unique AND the
+    // reverse indexes, and an index is invisible to behavior, so a drop mutant
+    // carries exactly the information `relator-loosen` already carries and
+    // nothing else — two mutants grading one hole reads as two holes.
+    kind: 'relator-tighten',
+    describe: (m) => `@@relator ${m.from} tightened to once — the pair may now happen only once`,
+    apply(line) {
+      const hit = line.match(RELATOR_RE)
+      if (!hit || hit[2] === 'once') return []
+      const from = hit[3] ? `many: ${hit[3]}` : 'many'
+      return [{
+        line: line.replace(RELATOR_RE, `@@relator([${hit[1]}], once)`),
+        meta: { from },
+      }]
+    },
+  },
+  {
+    // LOOSEN drops the key: the same pair may now be written twice. A
+    // membership added a second time, a basket showing one variant on two
+    // lines, a hold that no longer mirrors the line it stands for.
+    kind: 'relator-loosen',
+    describe: (m) => `@@relator ${m.from} loosened to many — the pair may now repeat`,
+    apply(line) {
+      const hit = line.match(RELATOR_RE)
+      if (!hit || (hit[2] === 'many' && !hit[3])) return []
+      const from = hit[2] === 'once' ? 'once' : `many: ${hit[3]}`
+      return [{
+        line: line.replace(RELATOR_RE, `@@relator([${hit[1]}], many)`),
+        meta: { from },
+      }]
     },
   },
   {

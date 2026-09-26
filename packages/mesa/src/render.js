@@ -297,16 +297,18 @@ export async function renderToHTML(ComponentFactory, props = {}, options = {}) {
   let html = ''
   try {
     createRoot((dispose) => {
+      // Settle the graph before serializing. Derivations and render effects run
+      // eagerly on creation, but anything a block queued during setup is still
+      // pending, and an unflushed queue would also outlive the dispose below.
+      // Inside the try: a throw under a `<mesa:boundary>` leaves the flush
+      // rather than rendering `failed` into the page (`FJS-D377`).
       try {
         ComponentFactory(anchor, props ?? {}, null)
+        flushSync()
       } catch (e) {
         dispose()
         throw renderFailure(e, options.label)
       }
-      // Settle the graph before serializing. Derivations and render effects run
-      // eagerly on creation, but anything a block queued during setup is still
-      // pending, and an unflushed queue would also outlive the dispose below.
-      flushSync()
       html = options.keepAnchors ? container.innerHTML : _serializeWithoutAnchors(container)
       dispose()
     })

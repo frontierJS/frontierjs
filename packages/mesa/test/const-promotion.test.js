@@ -231,3 +231,123 @@ d2('a const whose initializer calls a local binding', () => {
     e2(js).toMatch(/const out = base \+ '\/orders'/)
   })
 })
+
+// ─── a derived const nothing runs ────────────────────────────────────────────
+
+describe('a derived const read only in teardown (FJS-1062)', () => {
+  const warnings = async (src) =>
+    (await compile(src, { debug: false, css: false, warning: () => {} })).analysis.warnings
+      .filter((w) => /never runs/.test(w))
+
+  it('warns for the subscription read only in onDestroy', async () => {
+    const w = await warnings(`<script>
+  import { notes } from './x.js'
+  export let id
+  let record = null
+  const row = notes.record(id)
+  const unwatch = row.subscribe(v => record = v)
+  $.onDestroy(() => unwatch())
+</script>
+<p>{record ? record.title : 'loading'}</p>`)
+    expect(w).toHaveLength(1)
+    expect(w[0]).toMatch(/'unwatch' is read only in teardown/)
+    expect(w[0]).toMatch(/var unwatch = /)
+  })
+
+  it('warns for one read nowhere, and says so', async () => {
+    const w = await warnings(`<script>
+  import { subscribe } from './x.js'
+  export let channel
+  const handle = subscribe(channel)
+</script>
+<p>{channel}</p>`)
+    expect(w).toHaveLength(1)
+    expect(w[0]).toMatch(/nothing reads 'handle'/)
+  })
+
+  it('is quiet where a read runs it, and where lazy is right', async () => {
+    const reads = [
+      '<p>{total}</p>',
+      '<p style:width="{total}%"></p>',
+      '<Box {...total} />',
+      '<script>$.onMount(() => console.log(total))</script>',
+      '<script>function save() { return total }</script><button on:click={save}>s</button>',
+      '<script>$: total, () => {}</script>',
+    ]
+    for (const r of reads) {
+      const [extraScript, markup] = r.startsWith('<script>')
+        ? [r.slice(8, r.indexOf('</script>')), r.slice(r.indexOf('</script>') + 9)] : ['', r]
+      const w = await warnings(`<script>
+  import { sum } from './x.js'
+  export let items
+  const total = sum(items)
+  ${extraScript}
+</script>
+${markup}`)
+      expect(w, r).toEqual([])
+    }
+  })
+
+  it('the var it points at runs at mount, and its callback writes a let', async () => {
+    let listener = null
+    const svc = { on: (cb) => { listener = cb; return () => {} } }
+    const c = await mount(`<script>
+  import { svc } from './x.js'
+  let hits = 0
+  var off = svc.on(() => { hits = hits + 1 })
+  $.onDestroy(() => off())
+</script>
+<p>{hits}</p>`, { svc })
+    expect(listener).toBeTypeOf('function')
+    listener(); runtime.flushSync()
+    expect(c.text()).toBe('1')
+  })
+})
+
+// ─── a const that names itself ───────────────────────────────────────────────
+
+describe('a const reached from its own initializer (FJS-1064)', () => {
+  it('a call on its own name does not promote it', async () => {
+    const out = await cx(`<script>
+  import { make } from './x.js'
+  const auto = make({ onsaved: (row) => { auto.adopt(row) } })
+</script>
+<p>{auto.state}</p>`)
+    expect(out).toMatch(/const auto = make\(/)
+    expect(out).not.toMatch(/trackDerived/)
+  })
+
+  it('a callback reaches the value, not the memo, when it is derived for another reason', async () => {
+    let fire = null
+    const made = { value: 'v1', adopted: 0, adopt() { this.adopted++ } }
+    const make = (seed, cb) => { fire = cb; return { ...made, value: seed, adopt: made.adopt.bind(made) } }
+    const c = await mount(`<script>
+  import { make } from './x.js'
+  export let seed = 'a'
+  const auto = make(seed, () => auto.adopt())
+</script>
+<p>{auto.value}</p>`, { make }, { seed: 'a' })
+    expect(c.text()).toBe('a')
+    expect(() => fire()).not.toThrow()
+    expect(made.adopted).toBe(1)
+  })
+
+  it('leaves a parameter that shadows the name alone', async () => {
+    const out = await cx(`<script>
+  import { make } from './x.js'
+  export let seed
+  const auto = make(seed, (auto) => auto.x)
+</script>
+<p>{auto}</p>`)
+    expect(out).toMatch(/\(auto\) => auto\.x/)
+  })
+
+  it('refuses a read before it has a value', async () => {
+    const ctx = await compile(`<script>
+  export let n
+  const a = a.b + n
+</script>
+<p>{a}</p>`, { debug: false, css: false })
+    expect(ctx.analysis.errors.join('\n')).toMatch(/'a' reads itself in its own initializer/)
+  })
+})

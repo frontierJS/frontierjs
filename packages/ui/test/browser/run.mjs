@@ -80,6 +80,35 @@ if (serveOnly) {
        *  screen goes on answering in the zone it was mounted in. The teardown
        *  clears it, so a spec cannot leak a zone into the next one. */
       timezone: (id) => browser.cmd('Emulation.setTimezoneOverride', { timezoneId: id ?? '' }),
+      /** Press at `from`, move in `steps` to `to`, and release unless
+       *  `release: false` — both a selector (its center) or `{x, y}`.
+       *
+       *  Through the input pipeline, because a dispatched PointerEvent is not
+       *  trusted and takes no pointer capture. Each step waits a frame in the
+       *  page: a drag that reads the pointer once per frame, stepped faster
+       *  than frames arrive, sees only the last position and never crosses
+       *  the slots in between. */
+      drag: async (from, to, { steps = 12, release = true } = {}) => {
+        const at = async (p) => typeof p !== 'string' ? p : browser.evaluate(`
+          const r = document.querySelector(${JSON.stringify(p)})?.getBoundingClientRect();
+          if (!r) throw new Error('drag: no element for ' + ${JSON.stringify(p)});
+          return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        `)
+        const a = await at(from), b = await at(to)
+        const mouse = (type, { x, y }, buttons) => browser.cmd('Input.dispatchMouseEvent', {
+          type, x, y, button: 'left', buttons, clickCount: type === 'mouseMoved' ? 0 : 1,
+        })
+        const frame = () => browser.evaluate('await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))); return true;')
+        await mouse('mousePressed', a, 1)
+        for (let i = 1; i <= steps; i++) {
+          await mouse('mouseMoved', { x: a.x + (b.x - a.x) * i / steps, y: a.y + (b.y - a.y) * i / steps }, 1)
+          await frame()
+        }
+        if (release) {
+          await mouse('mouseReleased', b, 0)
+          await frame()
+        }
+      },
     }),
     teardown: async (browser) => {
       await browser.cmd('Emulation.setTimezoneOverride', { timezoneId: '' })

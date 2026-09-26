@@ -112,6 +112,7 @@ Covered: **18 of 19**.
 
 | Kind | What | Covers |
 | --- | --- | --- |
+| `fli check` | `command-parses` | every project command compiles, with its namespace module, to JavaScript that parses |
 | test | `packages/cli/test/compiler.test.js` | every shipped command file compiles AND the output is parsed |
 | test | `packages/mesa/test/emission.test.js` | the compiler's own output is parsed rather than matched |
 

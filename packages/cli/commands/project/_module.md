@@ -555,5 +555,5 @@ const serveProjectMap = async (context, initialMap, { port = 8501, open = true, 
 ```
 fli project:map            — the terminal report
 fli project:map --as=serve — FJSChain in a browser (does not exit)
-fli project:map --as=json  — the model, for tooling
+fli project:map --json     — the model, for tooling
 ```

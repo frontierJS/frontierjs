@@ -19,14 +19,14 @@ flags:
     type: string
     description: "Space-separated field specs: name:type (string text email url phone secret slug int float boolean date json)"
     defaultValue: ''
-  no-routes:
+  routes:
     type: boolean
     description: Skip route generation — schema + service + resource only
-    defaultValue: false
-  no-resource:
+    defaultValue: true
+  resource:
     type: boolean
     description: Skip resource and routes — schema + service only
-    defaultValue: false
+    defaultValue: true
   skip-schema:
     type: boolean
     description: Skip schema.lite stanza generation — useful when the model already exists (e.g. from auth:install)
@@ -278,7 +278,7 @@ extend in `schema.lite`.
 const modelName  = arg.model.charAt(0).toUpperCase() + arg.model.slice(1)
 const lower      = modelName.charAt(0).toLowerCase() + modelName.slice(1)
 const fields     = parseFields(flag.fields)
-const skipRoutes = flag['no-routes'] || flag['no-resource']
+const skipRoutes = !flag.routes || !flag.resource
 const editor     = process.env.EDITOR || 'vi'
 const created    = []
 
@@ -349,7 +349,7 @@ write(
 
 // ─── 3. Resource ──────────────────────────────────────────────────────────────
 
-if (!flag['no-resource']) {
+if (flag.resource) {
   // Invariant 19: a resource file is named for its noun — PascalCase, singular —
   // exactly the split the Data realm already makes between `model Note` and
   // `db.note`. The filename is the MODEL; the export inside stays the lowercase

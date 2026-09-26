@@ -89,8 +89,17 @@ describe('tenancy block — parsing', () => {
     expect(r.errors[0]).toContain('declared twice')
   })
 
+  it('refuses resolve under strategy row, where nothing reads it', () => {
+    const r = parse(`tenancy { strategy row column w resolve header("X-Tenant") } model A { id Int @id w Int }`)
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toContain("'resolve' is not a property of strategy row")
+    expect(r.errors.join(' ')).toContain('tenantFrom')
+    // The control: the same line under strategy database is the registry's.
+    expect(parse(`tenancy { strategy database  resolve header("X-Tenant") } model A { id Int @id }`).valid).toBe(true)
+  })
+
   it('names an unknown resolve form', () => {
-    const r = parse(`tenancy { strategy row column w resolve cookie("t") } model A { id Int @id w Int }`)
+    const r = parse(`tenancy { strategy database  resolve cookie("t") } model A { id Int @id }`)
     expect(r.valid).toBe(false)
     expect(r.errors[0]).toContain('subdomain, header("X-Name") or claim(fieldName)')
   })
@@ -249,8 +258,9 @@ describe('tenancy { strategy row } — a real client', () => {
     for (const flavor of [db, db.asSystem(), db.$setAuth({ id: 1 })]) {
       expect(flavor.$tenancy.strategy).toBe('row')
       expect(flavor.$tenancy.column).toBe('workspaceId')
-      // A row app already knows which tenant a caller is in — it is the claim.
-      expect(flavor.$tenancy.resolve).toEqual({ kind: 'claim', name: 'workspaceId' })
+      // No `resolve` under row: the resolver says where a request names its
+      // tenant, and a declared one would be read by nothing (FJS-D360).
+      expect('resolve' in flavor.$tenancy).toBe(false)
     }
     db.$close()
   })

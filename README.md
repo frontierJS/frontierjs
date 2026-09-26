@@ -256,7 +256,8 @@ schema because the UI sits one level down in `web/`.
 Three directories at the app root, one per realm, all orbiting the shared schema —
 and beside them a surface for each of the other shapes a UI takes: `site/` for a
 public prerendered site, `widgets/` for embeddable scripts, `extension/` for a
-browser extension, `desktop/` for a native app with its screens bundled in:
+browser extension, `desktop/` for a native app with its screens bundled in, and
+`cli/` for the app on a command line:
 
 ```
 my-app/
@@ -345,11 +346,20 @@ my-app/
     deploy/build.mjs         ← builds the screens, then the shell
     dist/                    ← the bundled screens, compiled into the binary
 
+  cli/                       ← the app on a command line (optional) — FJS-D397
+    config/
+      cli.config.js          ← the program's name, its tenant header, the default endpoint
+    src/
+      main.js                ← main(config) from @frontierjs/mcp/client
+      routes/                ← hand-written commands, <service>/<method>.js; every
+                               other command is /mcp's tool list at the key's standing
+    test/                    ← the program as a process, against a running API
+
   deploy/                    ← everything about shipping — Dockerfile, deploy steps
 ```
 
 **The database lives at the root** — shared by all sub-projects, owned by none of them.
-`api/`, `web/`, `site/`, `widgets/`, `extension/` and `desktop/` are peers; none contains another,
+`api/`, `web/`, `site/`, `widgets/`, `extension/`, `desktop/` and `cli/` are peers; none contains another,
 and none contains `db/`.
 
 **Which surfaces an app has is the app's business.** `fli new --template api-only`
@@ -362,15 +372,15 @@ inherits the SPA's build, its port and its release, and the first symptom is it
 shipping when the app does.
 
 A surface is its own sub-project when its **config**, its **tests** and its **release**
-are a different set of answers from the SPA's. The four optional ones are:
+are a different set of answers from the SPA's. The five optional ones are:
 
-| | `site/` | `widgets/` | `extension/` | `desktop/` |
-| --- | --- | --- | --- | --- |
-| Config | `target: 'static'` — the bundle, then one prerendered file per route | `target: 'widget'` — N self-contained IIFEs, not one app | `jetty.config.js` — emits a *manifest*; one source, two browsers | `desktop.config.js` — which screens, and the API origin the bundle inlines |
-| Tests | the BUILD's files, and the islands that come alive in them | a host page it does not own, with hostile CSS | loaded unpacked into a browser profile; no URL to point at | a probe inside the shell's webview, which speaks no CDP |
-| Release | a bucket and a CDN, with no application server behind it | static files on an origin a stranger's page links to | signed upload to two web stores, review in days | a native binary; installers and signing are not built yet |
-| Ports | 8600 dev · 8700 served | 8200 dev · 8300 served | 8400 dev (the reload channel; nothing is served) | 8800 dev when it owns its screens; the shell's page is `tauri://localhost` |
-| Create it | `fli make:site` | `fli make:widget <Name>` | `fli make:extension` | `fli make:desktop` · `--wraps web` |
+| | `site/` | `widgets/` | `extension/` | `desktop/` | `cli/` |
+| --- | --- | --- | --- | --- | --- |
+| Config | `target: 'static'` — the bundle, then one prerendered file per route | `target: 'widget'` — N self-contained IIFEs, not one app | `jetty.config.js` — emits a *manifest*; one source, two browsers | `desktop.config.js` — which screens, and the API origin the bundle inlines | `cli.config.js` — the program's name and the header its tenant travels in; the commands are derived |
+| Tests | the BUILD's files, and the islands that come alive in them | a host page it does not own, with hostile CSS | loaded unpacked into a browser profile; no URL to point at | a probe inside the shell's webview, which speaks no CDP | the program as a process, each command paired with the tool call it stands for |
+| Release | a bucket and a CDN, with no application server behind it | static files on an origin a stranger's page links to | signed upload to two web stores, review in days | a native binary; installers and signing are not built yet | a compiled binary (`bun build --compile`) the app's own users install; not built yet |
+| Ports | 8600 dev · 8700 served | 8200 dev · 8300 served | 8400 dev (the reload channel; nothing is served) | 8800 dev when it owns its screens; the shell's page is `tauri://localhost` | none — it is a client of `api/`'s `/mcp` |
+| Create it | `fli make:site` | `fli make:widget <Name>` | `fli make:extension` | `fli make:desktop` · `--wraps web` | by hand for now — no generator writes one yet |
 
 **`desktop/` is the one surface that may borrow another's screens** (`FJS-D263`).
 `wraps: 'web'` builds `web/src` with `web/`'s own Vite config into `desktop/dist`, so a

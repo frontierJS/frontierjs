@@ -17,8 +17,8 @@ starts its server and stays up, for looking at a component in a real browser.
 components/
   forms/      Form · Field · Fieldset · Label · Input · Textarea · Select ·
               Checkbox · RadioGroup · Switch · Slider · Thresholds · NumberInput · Combobox ·
-              MultiSelect · DatePicker · DateTimeInput · JsonInput · FileUpload ·
-              FileField · GeoField · Button
+              MultiSelect · DatePicker · DateTimeInput · JsonInput · CodeInput ·
+              FileUpload · FileField · GeoField · Button
   display/    Table · Badge · Pill · Tag · Stat · StatCard · Steps · Pagination ·
               Breadcrumbs · Callout · EmptyState · Avatar(+Group) · Sparkline ·
               Json · …
@@ -29,6 +29,7 @@ components/
   feedback/   Alert(+Provider) · Toast(+er) · Progress · Spinner · Skeleton
 stores/       alertStore · toastStore · commandPaletteStore
 controls.js   control name → component; where an app contributes one
+dnd.js        dndzone — drag and drop between flow lists, an {@attach}
 utils.js      shared helpers
 tokens.css    the kit's own tokens, on top of @frontierjs/css
 test/         compile-all.mjs · render.mjs · attributes.mjs · form.mjs
@@ -352,6 +353,14 @@ test/browser/ the kit drive — run.mjs (the kit half: server, fixture path,
     still in the box and only the control that raised it can retract it. Guard
     a `reportInvalid` on no-change: it rebuilds `$context.form`, which
     re-derives the control that called it.
+- **`CodeInput` is a transparent `<textarea>` over glow's paint in one grid
+  cell, and every way it breaks is a caret beside its character.** One rule,
+  `.fjs-code-input-layer`, sets the metrics for both layers; glow runs with
+  `prefix: false, mark: false` or it paints fewer characters than the box
+  holds; a trailing newline is painted as a space or the `<pre>` draws one line
+  fewer. `JsonInput` is a `CodeInput` with `language="json"` and its own parse.
+  `code-input.spec.mjs` measures the glyph origin against the textarea's
+  content box — a presence check passes against every one of those failures.
 - **A component file may export the verbs that belong to its noun** (`FJS-D116`).
   `import FileUpload, { formatBytes, isImage } from '.../FileUpload.mesa'` — a
   `<script module>` export compiles to a plain top-level ESM export beside the

@@ -25,6 +25,8 @@
  * method, graded against its polyfill in `test/fixtures/datetime-oracle.json`.
  */
 
+import { unitInfo } from '../units/units.js'
+
 const MINUTE = 60_000
 const HOUR   = 3_600_000
 const DAY    = 86_400_000
@@ -326,6 +328,45 @@ export function daysBetween(from, to) {
  */
 export function startOfDay(date, timeZone) {
   return fromWall(readDate(date), timeZone, { disambiguation: 'compatible' })
+}
+
+// ─── commitments ──────────────────────────────────────────────────────────
+
+/**
+ * When a `.lite` `@@commitment` falls due on one row — an instant as ISO text,
+ * a day as 'YYYY-MM-DD', or `null` where the anchor or the offset is null or
+ * unreadable, which is *not owed yet*.
+ *
+ * `commitment` is the shape `x-commitments` carries — `{ on, kind, offset }`,
+ * where `offset` is `null`, `{ sign, value, unit }` or `{ sign, field, unit }`
+ * and `unit` is a duration `@unit` symbol. Here because both ends compute it:
+ * litestone answers it beside the SQL that selects due rows, and a screen
+ * answers it off the row it is showing with no database at all. Two copies
+ * would disagree first about a month added to the 31st, which this clamps
+ * (`addToDate`) and SQLite's modifier overflows; litestone's
+ * `test/commitment.test.ts` grades its SQL against this.
+ *
+ *   dueAt({ on: 'createdAt', kind: 'instant', offset: { sign: 1, value: 14, unit: 'd' } }, order)
+ */
+export function dueAt(commitment, row) {
+  const anchor = row?.[commitment.on]
+  if (anchor == null) return null
+  const off = commitment.offset
+  const n   = !off ? 0 : off.field ? row[off.field] : off.value
+  if (n == null) return null
+  if (commitment.kind === 'instant') {
+    let ms
+    try { ms = toEpoch(anchor, commitment.on) } catch { return null }
+    return new Date(ms + (off ? off.sign * n * unitInfo(off.unit).factor * 1000 : 0)).toISOString()
+  }
+  const date = String(anchor).slice(0, 10)
+  if (!off) return date
+  const k = off.sign * n
+  return addToDate(date,
+      off.unit === 'd'  ? { days: k }
+    : off.unit === 'wk' ? { weeks: k }
+    : off.unit === 'mo' ? { months: k }
+    :                     { years: k })
 }
 
 // ─── format ───────────────────────────────────────────────────────────────

@@ -19,6 +19,9 @@
   import ChainRenderer from './ChainRenderer.mesa'
 
   export let loading = null
+  // `failed(error, reset)`: what a route that threw while rendering shows in
+  // its place. Without one, a plain message and a Try again button (FJS-D376).
+  export let failed = null
 </script>
 
 {#if page.pending && loading}
@@ -29,5 +32,6 @@
   <ChainRenderer
     chain={resolveChain(page.route)}
     depth={0}
+    appFailed={failed}
   />
 {/if}

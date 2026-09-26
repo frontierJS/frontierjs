@@ -73,7 +73,7 @@ if (!refuses(findings)) {
 // downstream can detect and which `fli release:mint` would then record as fact.
 log.error(`Build check: ${summarize(findings)} — refusing to build`)
 log.info('')
-log.info('  A Release promotes one artefact between environments and changes only its bindings.')
+log.info('  A Release promotes one artefact between environments and changes only its configuration.')
 log.info('  Set deploy.api.buildCheck = false in frontier.config.js to deploy anyway.')
 context.config.abort = true
 ```

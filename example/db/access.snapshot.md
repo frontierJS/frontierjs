@@ -10,8 +10,8 @@ and read the diff: it names exactly which access moved. A line that changed
 without a schema change you meant to make is a shipped security bug.
 
 ```
-55 models · 1 view · 56 gated · 0 unrestricted
-18 with row policies · 25 with protected fields · 25 declared moves · 8 @system · 1 @seals
+56 models · 1 view · 57 gated · 0 unrestricted
+19 with row policies · 26 with protected fields · 28 declared moves · 11 @system · 1 @seals
 ```
 
 ## Gates
@@ -73,6 +73,7 @@ Minimum level per operation. `SYSTEM` is reachable only through `asSystem()`;
 | `StocktakeCount` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 9 LOCKED |
 | `StocktakeSheet` | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 9 LOCKED |
 | `Subscription` | 1 VISITOR | 4 USER | 4 USER | 5 ADMINISTRATOR |
+| `SubscriptionPeriod` | 1 VISITOR | 8 SYSTEM | 7 SYSADMIN | 8 SYSTEM |
 | `TaxRate` | 0 STRANGER | 5 ADMINISTRATOR | 5 ADMINISTRATOR | 5 ADMINISTRATOR |
 | `User` | 4 USER | 4 USER | 4 USER | 5 ADMINISTRATOR |
 | `Verification` | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM | 8 SYSTEM |
@@ -191,6 +192,12 @@ An operation with no `@@allow` is unrestricted at this layer.
 - allow **update** — `auth().isStaff`
 - allow **update** — `userId == auth().id`
 
+### `SubscriptionPeriod`
+
+- allow **read** — `auth().isStaff`
+- allow **read** — `userId == auth().id`
+- allow **update** — `auth().isStaff`
+
 ### `User`
 
 - allow **read** — `id == auth().id || auth().isStaff`
@@ -226,6 +233,7 @@ rather than refusing the row.
 | `Invoice` | `tax` | `@system` |
 | `Invoice` | `total` | `@system` |
 | `Invoice` | `paidAt` | `@system` |
+| `Invoice` | `reminded` | `@system` |
 | `Invoice` | `userId` | `@system` |
 | `InvoiceLine` | `userId` | `@system` |
 | `JournalEntry` | `postedAt` | `@system` |
@@ -259,11 +267,11 @@ rather than refusing the row.
 | `Payslip` | `sentAt` | `@system` |
 | `Run` | `context` | `@encrypted` |
 | `Session` | `token` | `@guarded` |
-| `Subscription` | `currentPeriodStart` | `@system` |
-| `Subscription` | `currentPeriodEnd` | `@system` |
 | `Subscription` | `cancelledAt` | `@system` |
 | `Subscription` | `cancelAtPeriodEnd` | `@system` |
 | `Subscription` | `userId` | `@system` |
+| `SubscriptionPeriod` | `endsOn` | `@system` |
+| `SubscriptionPeriod` | `userId` | `@system` |
 | `User` | `emailVerified` | `@allow('write', auth().isAdmin)` |
 | `User` | `role` | `@allow('write', auth().isAdmin)` |
 | `User` | `isStaff` | `@allow('write', auth().isAdmin)` |
@@ -303,10 +311,12 @@ caller at once. Everything reachable from the target seals with it.
 | `Invoice` | `status` | `issue` | draft → issued | **application** | — | **yes** |
 | `Invoice` | `status` | `settle` | issued → paid | **application** | — | — |
 | `Invoice` | `status` | `void` | issued → void | caller | 5 ADMINISTRATOR | — |
+| `Invoice` | `reminded` | `remind` | false → true | **application** | — | — |
 | `Order` | `status` | `pay` | pending → paid | caller | — | — |
 | `Order` | `status` | `ship` | paid → shipped | caller | — | — |
 | `Order` | `status` | `refund` | paid → refunded | caller | 5 ADMINISTRATOR | — |
 | `Order` | `status` | `cancel` | pending, paid → cancelled | caller | — | — |
+| `Order` | `status` | `abandon` | pending → cancelled | **application** | — | — |
 | `PayRun` | `status` | `calculate` | draft → calculated | **application** | — | — |
 | `PayRun` | `status` | `revert` | calculated → draft | caller | — | — |
 | `PayRun` | `status` | `approve` | calculated → approved | caller | 5 ADMINISTRATOR | — |
@@ -321,6 +331,7 @@ caller at once. Everything reachable from the target seals with it.
 | `Subscription` | `status` | `lapse` | active → pastDue | **application** | — | — |
 | `Subscription` | `status` | `recover` | pastDue → active | **application** | — | — |
 | `Subscription` | `status` | `cancel` | trialing, active, pastDue → cancelled | **application** | — | — |
+| `SubscriptionPeriod` | `status` | `close` | open → closed | **application** | — | — |
 
 `@sealed` names the children a document is MADE of — the other half of `@seals`,
 and explicit rather than inferred, because a sealing model routinely has children

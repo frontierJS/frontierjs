@@ -52,7 +52,7 @@ README's *Verified* section — not a claim.
   has no subscribers and an older one still does. An `Invoice` is a DOCUMENT —
   every figure, the number and both dates frozen at the moment it is issued —
   and the correction is a `CreditNote` beside it, which is what lets the
-  renewal job run as the system without being able to restate a total. **The
+  renewal run as the system without being able to restate a total. **The
   moment is now DECLARED** (`FJS-D167`): `issue: draft -> issued @seals` says
   when, `lines InvoiceLine[] @sealed` says which children go with it, and
   `issueInvoice` writes a header, adds its lines and then seals. `draft` had
@@ -287,7 +287,7 @@ example/
 │       ├── core/db.ts      ← client + GatePlugin + autoMigrate; appends auth's
 │       │                     schema fragments rather than pasting a copy
 │       ├── core/gate.ts    ← the ONE place a session becomes a number
-│       ├── jobs/           ← courier-book, payment-announce, abandoned-orders-sweep (its own cron) — all autoloaded
+│       ├── jobs/           ← courier-book, payment-announce, holds-release (its own cron) — all autoloaded
 │       ├── providers/mail/mailer.ts      ← IMail over app.conduit.send() — the provider is a TARGET
 │       ├── providers/mail/sink.ts   ← the dev mail catcher on :8111, provider-shaped
 │       │                          plus the inbox it serves at /

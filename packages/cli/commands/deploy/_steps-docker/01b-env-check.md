@@ -2,7 +2,7 @@
 title: 01b-env-check
 description: Validate that the server's .env.production has all required keys from .env.example
 optional: true
-skip: "!context.config.doApi || (!context.config.deployConf.api?.envCheck && !context.config.deployConf.api?.env_check && !Object.keys({ ...context.config.deployConf?.bindings, ...context.config.deployConf?.secrets, ...context.config.deployConf?.[context.config.target]?.bindings, ...context.config.deployConf?.[context.config.target]?.secrets }).length)"
+skip: "!context.config.doApi || (!context.config.deployConf.api?.envCheck && !context.config.deployConf.api?.env_check && !Object.keys({ ...context.config.deployConf?.configuration, ...context.config.deployConf?.secrets, ...context.config.deployConf?.[context.config.target]?.configuration, ...context.config.deployConf?.[context.config.target]?.secrets }).length)"
 ---
 
 ```js
@@ -24,7 +24,7 @@ for (const name of candidates) {
 
 // ─── The DECLARED keys ────────────────────────────────────────────────────────
 //
-// `deploy.bindings` and `deploy.secrets` are the second source, and folding them
+// `deploy.configuration` and `deploy.secrets` are the second source, and folding them
 // in here is what stops them being vacuous. Their VALUES are not applied by any
 // step — `fli` writes no `.env` on a target, the operator owns that file, and
 // the container is started with `--env-file` against it — so a block that only
@@ -35,25 +35,25 @@ for (const name of candidates) {
 // to carry, per target, in a file that is reviewed. So they are checked for
 // PRESENCE exactly as `.env.example`'s are, and the values stay the operator's.
 //
-// `bindingSet` is asked rather than the two objects merged here, because
+// `configurationSet` is asked rather than the two objects merged here, because
 // per-target-beats-app-wide is its rule and a second merge is a second answer.
-const { bindingSet, BindingError } = await import(new URL('file://' + global.fliRoot + '/core/release.js'))
+const { configurationSet, ConfigurationError } = await import(new URL('file://' + global.fliRoot + '/core/release.js'))
 
 let declaredKeys = []
 try {
-  const set = bindingSet(deployConf, target)
+  const set = configurationSet(deployConf, target)
   declaredKeys = [...Object.keys(set.values), ...Object.keys(set.secretRefs)]
 } catch (err) {
-  // A malformed binding set is the mint's refusal to make, not this step's — it
+  // A malformed configuration set is the mint's refusal to make, not this step's — it
   // runs later and says it better. Nothing is checked from a set that would not
   // resolve, and the deploy is not stopped here.
-  if (!(err instanceof BindingError)) throw err
-  log.warn(`Env check: the binding set does not resolve (${err.message}) — checking .env.example only`)
+  if (!(err instanceof ConfigurationError)) throw err
+  log.warn(`Env check: the configuration set does not resolve (${err.message}) — checking .env.example only`)
 }
 
 if (!refFile && !declaredKeys.length) {
   log.info('Env check: no .env.example or .env.keys found, and no keys declared — skipping')
-  log.info('  Create one, or declare deploy.bindings / deploy.secrets, to enable pre-deploy env validation')
+  log.info('  Create one, or declare deploy.configuration / deploy.secrets, to enable pre-deploy env validation')
   return
 }
 

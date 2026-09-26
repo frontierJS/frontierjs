@@ -21,7 +21,26 @@ fli.
 ```
 bin/       fli.js (the entry) · server.js · diagnose.js
 core/
-  compiler.js   .md command → JavaScript
+  compiler.js   .md command → JavaScript. Only a fence runs; an indented block
+                is prose. `locate` maps a generated line to the module, the
+                lifted <script> or the body — the offset alone covers the body
+  flags.js      what a declared flag permits and how it is written — the
+                `--no-push` spelling of a boolean that defaults on, `choices`
+                and `min`/`max`, and the declarations refused on every run. A
+                leaf: `fli list`, `--help` and completion read it on the startup
+                path, and `getConfig` is the one place a value is graded
+  effects.js    `effects` and `confirm: human` — graded where flags are, and
+                enforced in `Command()` before the body runs. `fli gui` runs a
+                command in process, so a run with `emit` is never a terminal
+  tty.js        `context.tty` — single-key prompts, a footer line, the screen
+                lent to an editor, onExit. It patches stdout and stderr while it
+                holds the terminal, and the runtime's SIGINT/SIGTERM handlers
+                await `settleTtys()` before exiting. The terminal is put back
+                on every path; onExit runs on every one but a bare `process.exit`
+  command-parse.js  does every command in a routes tree parse — each compiled
+                with the module the runtime pairs it with, checked by `node
+                --check`, reported at the `.md` line. The `command-parses` rule
+                and the shipped-command sweep both call it
   runtime.js    executes a compiled command
   registry.js   command discovery and resolution
   prose.js      the markdown side
@@ -121,6 +140,16 @@ core/
                 APP's litestone and this package still depends on none. It
                 refuses a candidate carrying an identifier, and words matching
                 two things resolve to nothing — `IDEAS/intent-recognizer.md`
+  wireframe.js  a screen written in @frontierjs/css terms (a WIREFRAME, JSON)
+                read into components, .mesa, a draft schema and a terminal
+                drawing — behind `make:wireframe`. `analyze` is the one owner
+                of what a component is and what its props are; every output
+                reads it, because the prototype decided one badge in two places
+                and got two answers. Pure: the vocabulary and the kit come in,
+                strings go out, and the command grades them with the APP's mesa
+                and litestone. `TONE_TAKERS` and `KIT_PROPS` are copies, and
+                `test/wireframe.test.js` fails when either source moves —
+                `IDEAS/wireframe.md`
   server.js     also the control surface's own endpoints — `/api/runnables`,
                 `/api/state`, `/api/proves`, `/api/health/:id`, `/api/page/:id`
                 (a committed page, served because a `file://` link from an http
@@ -270,7 +299,7 @@ core/
                 pipeline that has moved
   release.js    what a Release IS — the four terms and the content-addressed id.
                 Minting writes nothing: the id is a pure function of the tree and
-                the bindings, which is what makes a digest promotable
+                the configuration, which is what makes a digest promotable
   vendor.js     pack the workspace into an app's build context
   health-target.js  where an app answers health and whether anything serves it —
                 the plugin call in the API source, `plugins: { health: true }` in
@@ -393,8 +422,17 @@ test/     one file per module under core/, plus the deploy pipeline's own
   (`core/snapshots.js` resolves bin → package → workspace member now).
 - **A clean compile is not proof of valid JS** (Invariant 15). Compiling every
   command file and *parsing* the output found fourteen producing broken
-  JavaScript that the compiler reported as fine. Every command file now has a parse test —
-  a new command needs one too.
+  JavaScript that the compiler reported as fine. `core/command-parse.js` is the
+  sweep: each file compiled WITH its namespace module, because the two scripts
+  share one scope. `test/compiler.test.js` runs it over `commands/` (a new
+  command is covered with no edit), `fli check`'s `command-parses` over an app's
+  routes with `node --check` and a `.md` line per finding.
+- **A parse is not a run.** A free identifier parses clean and throws on the
+  first call: `completion/_module.md` used `join` and three more with no import,
+  so **Tab completion had never worked** (`FJS-167`), and `fli check` itself had
+  never executed over a missing `resolve` (`FJS-269`) — green because CI's
+  `structure` phase imports `core/checks.js` and never runs the door. The sweep
+  catches a name declared twice, not one declared nowhere. Run the command.
 - **`commands/auth/install.md` reads `@frontierjs/auth`'s schema; it no longer
   carries a copy of it.** The copy drifted three times, and two walls had kept it
   there: `fli` is global, so the package is not beside it — and **`fli` runs on
@@ -416,12 +454,6 @@ test/     one file per module under core/, plus the deploy pipeline's own
 - **A fenced block in a `_module.md` renders as an empty heading.** Module prose
   has every ``` block stripped, because in a command file a fence IS the body.
   Namespace overviews are written as plain lists.
-- **The parse sweep compiles each command with NO module script**, so a command
-  using a `_module.md` helper parses whether or not the module defines it. Run
-  the command. This is not theoretical: `completion/_module.md` used `join`,
-  `homedir`, `existsSync` and `statSync` without importing any of them, so all
-  five completion commands threw `join is not defined` and **Tab completion had
-  never worked**, while every suite stayed green (`FJS-167`).
 - **Nothing on the read-only path may import zx.** zx is ~85ms of what was a
   ~200ms invocation, and `fli list`, `help`, `?` and completion wanted one thing
   from it — chalk, which is now `core/color.js`. The same rule is why
@@ -442,8 +474,9 @@ test/     one file per module under core/, plus the deploy pipeline's own
   why the read-only fallback symlinks `node_modules` beside the shim. The
   workspace copy is always writable, so nothing here can see the install shape
   that is not (`FJS-166`).
-- `core/ports.js` is the scheme itself — the formula, the category map and the
-  `PROJECTS` registry. `packages/jetty/src/dev/fjs-ports.js` owns only the
+- `core/ports.js` is the scheme itself — the formula, the category map, the
+  `PROJECTS` registry, and the dev slots `fli dev` gives every app the registry
+  does not name (§ Dev slots). `packages/jetty/src/dev/fjs-ports.js` owns only the
   extension slice within it (8400–8499 dev, 7400–7499 test).
 - **`ws:exports` writes the published-surface snapshot, and it asks the packer.**
   `bun pm pack --dry-run` per publishable package, then every `exports` subpath,
@@ -688,7 +721,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   first makes them discover the rest one flag at a time, mid-incident. `no-image`
   (nothing recorded which bytes that release ran), `in-flight` and
   `nothing-prior` have no flag, and the line says so — *not a judgement call*.
-  **`bindings` is a refusal rather than a fix**: `fli` writes no `.env` on a
+  **`configuration` is a refusal rather than a fix**: `fli` writes no `.env` on a
   target, so once the generation has moved a revert genuinely cannot restore the
   pair, only put old code onto today's config.
 - **A pause is a transition and the file is only the mechanism.** `deploy:pause`
@@ -939,7 +972,12 @@ test/     one file per module under core/, plus the deploy pipeline's own
   five surfaces and starts two, so the catalog refused on a storefront's
   8610 that `bun run dev` would never have bound. A `dev` that runs no other
   script cannot be narrowed and is not — that is a one-surface app whose `dev`
-  IS the surface command. **An app's own `dev`
+  IS the surface command. **The slot is claimed BEFORE the check**, because it
+  decides which ports are checked: an unassigned app is project 0, and each
+  root keeps a service digit in `~/.fli/sessions.lock` for good — a new root
+  skips a digit something is listening on, an old one is refused on its own
+  rather than moved beside its ghost. The ports travel as `env:` on the exec,
+  per the hazard above. **An app's own `dev`
   cannot be `fli dev`** — this runs `bun run dev`, so that is a loop; `dev` runs
   the surfaces and `fli dev` is the checked door in front of it.
 - **`core/db-preflight.js` is why `fli dev` mentions an empty database.** An app
@@ -947,9 +985,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   It resolves the path from the schema's `database` declaration — NOT from
   `resolveDb`, whose `development.db` / `test.db` convention describes a file
   many apps have never had — honors `env("VAR", default)` when the variable is
-  set, and does not count litestone's `_migrations` table as data. Two callers,
-  `utils:dev` and `ports:claim`, because a person claiming ports is about to
-  start the servers it warns about. `node:sqlite` or `bun:sqlite`, whichever the
+  set, and does not count litestone's `_migrations` table as data. `node:sqlite` or `bun:sqlite`, whichever the
   host has; neither, and it degrades to silence rather than a guess.
 - **Two commands claiming one alias is a bug, and the registry warns.** The
   winner is whichever loads LAST, and `find()` sorts its walk so that is at
@@ -958,8 +994,8 @@ test/     one file per module under core/, plus the deploy pipeline's own
   meaningful, though: nothing about `utils` sorting after `ports` says which
   command should own `dev`. Four aliases were contested and all four were
   resolved by renaming the less-typed side — `make:command` → `mkcmd`,
-  `site:audit` → `site:setup` (it is setup, not an audit), `ports:dev` →
-  `ports:claim` (it claims a session and starts nothing), and `deploy:doctor`
+  `site:audit` → `site:setup` (it is setup, not an audit), `ports:dev` was
+  renamed away from `fli dev` (and has since been removed), and `deploy:doctor`
   has no short alias, so `doctor` means `fli:doctor`. There are none left; a new
   one is answered by renaming, not by leaving it to the alphabet.
 - **A project command overrides a core one in SILENCE, and `make:shortcut` is
@@ -1015,13 +1051,6 @@ test/     one file per module under core/, plus the deploy pipeline's own
   `fli typecheck` is one caller and `scripts/typecheck.mjs` is the other, which
   keeps only the baseline ratchet of Invariant 14. Zero dependencies, plain ESM:
   that script runs on node.
-- **A command using a free identifier parses clean and throws on the first run.**
-  `fli check` had never once executed — `resolve` with no import and no
-  `fli/_module.md` to supply it — and nothing caught it for two reasons worth
-  holding together: the parse sweep compiles a command WITHOUT its namespace
-  module, and CI's `structure` phase imports `core/checks.js` directly, so the
-  engine was green while the door was broken (`FJS-269`). A command whose only
-  proof is the sweep has not been run.
 - **`core/doc-commands.js` grades the prose against the registry, and the
   registers are exempt on purpose.** Every `` `fli <command>` `` in a README, a
   CLAUDE.md or a command file must resolve; `IDEAS/` names commands that
@@ -1075,7 +1104,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   they are usable.** `raw-route-param`, `ctx-params`, `set-auth-discarded`,
   `call-header-declared`, `service-model`, `resource-model-miss`,
   `service-module-db`, `scheduler-dispatch`, `gate-unreachable`,
-  `transition-methods`, `static-publish-db` and `static-publishes-0` match text — so they match the
+  `transition-methods`, `commitment-swept`, `static-publish-db` and `static-publishes-0` match text — so they match the
   paragraphs that DESCRIBE those hazards too, and this repo's own `api/` files
   are full of them. Comments are blanked (to spaces, so every line number
   survives) before a rule sees a byte. **A statement is judged, never a

@@ -60,6 +60,18 @@ const asBool = (v) => (v === undefined ? undefined : truthy(v))
 const asCsv = (v) => (Array.isArray(v) ? v.join(',') : v)
 
 /*
+ * What each reader promises about a value, as a JSON Schema — the half a
+ * DESCRIBER needs, where `read` is the half a parser needs. An agent's tool
+ * schema and a command line's flags are both written from it. `asIs` rows promise
+ * nothing, for `asIs`'s reason: only the query builder knows which shapes are
+ * legal, so their schema is empty and says so rather than guessing.
+ */
+const COUNT  = Object.freeze({ type: 'integer' })
+const TEXT   = Object.freeze({ type: 'string' })
+const FLAG   = Object.freeze({ type: 'boolean' })
+const OPAQUE = Object.freeze({ description: 'Any shape the query builder reads; this table does not fix one.' })
+
+/*
  * The directives proper — each has a structured form on the other side, and
  * this is the ONE place the pairing is written down.
  *
@@ -68,27 +80,41 @@ const asCsv = (v) => (Array.isArray(v) ? v.join(',') : v)
  * this was a table the wire name, the parse and the reserved-key set were three
  * hand-written lists, and `@@hasTemplates` had all three empty — an app
  * declaring it had a template screen it could not build over HTTP (FJS-306).
- * A new directive is one row.
+ * A new directive is one row, and its schema is in the row.
  */
 const DIRECTIVES = Object.freeze([
-  { param: '$limit',         name: 'limit',         read: asNumber },
-  { param: '$offset',        name: 'offset',        read: asNumber },
+  { param: '$limit',         name: 'limit',         read: asNumber, schema: COUNT  },
+  { param: '$offset',        name: 'offset',        read: asNumber, schema: COUNT  },
   // The window's far edge, opaque. A cursor is minted by the server and handed
   // back verbatim — `asText` and never `asNumber`, because the token is base64
   // and a numeric-looking one must not be read as a number (`FJS-D145`).
-  { param: '$after',         name: 'after',         read: asText  },
-  { param: '$orderBy',       name: 'orderBy',       read: asIs    },
-  { param: '$select',        name: 'select',        read: asIs,   write: asCsv },
-  { param: '$populate',      name: 'populate',      read: asIs,   write: asCsv },
-  { param: '$search',        name: 'search',        read: asText  },
-  { param: '$withDeleted',   name: 'withDeleted',   read: asBool  },
-  { param: '$onlyDeleted',   name: 'onlyDeleted',   read: asBool  },
-  { param: '$withTemplates', name: 'withTemplates', read: asBool  },
-  { param: '$onlyTemplates', name: 'onlyTemplates', read: asBool  },
+  { param: '$after',         name: 'after',         read: asText,  schema: TEXT   },
+  { param: '$orderBy',       name: 'orderBy',       read: asIs,    schema: OPAQUE },
+  { param: '$select',        name: 'select',        read: asIs,    schema: OPAQUE, write: asCsv },
+  { param: '$populate',      name: 'populate',      read: asIs,    schema: OPAQUE, write: asCsv },
+  { param: '$search',        name: 'search',        read: asText,  schema: TEXT   },
+  { param: '$withDeleted',   name: 'withDeleted',   read: asBool,  schema: FLAG   },
+  { param: '$onlyDeleted',   name: 'onlyDeleted',   read: asBool,  schema: FLAG   },
+  { param: '$withTemplates', name: 'withTemplates', read: asBool,  schema: FLAG   },
+  { param: '$onlyTemplates', name: 'onlyTemplates', read: asBool,  schema: FLAG   },
+  // `@@expires` / `@@effective` — the window, and the one member of this family
+  // whose value is not a flag. `asOf` is read as TEXT and validated nowhere here: what a
+  // legal instant is depends on the model, whose window is over instants or
+  // over days, and this kit has no schema to ask. The Data boundary refuses an
+  // unparseable one by name, which is the only place that question has an
+  // answer. `withExpired` / `onlyExpired` are the flags, and they are sugar
+  // over `asOf` rather than the other way round — a boolean-only spelling here
+  // is what would have committed the family to a flag permanently.
+  { param: '$asOf',          name: 'asOf',          read: asText,  schema: TEXT   },
+  { param: '$withExpired',   name: 'withExpired',   read: asBool,  schema: FLAG   },
+  { param: '$onlyExpired',   name: 'onlyExpired',   read: asBool,  schema: FLAG   },
 ].map(Object.freeze))
 
 /** Every `$` name that has a structured form. Derived — never restated. */
 export const DIRECTIVE_PARAMS = Object.freeze(DIRECTIVES.map((d) => d.param))
+
+/** Each directive's value schema, by its bare name. Derived — never restated. */
+export const DIRECTIVE_SCHEMAS = Object.freeze(Object.fromEntries(DIRECTIVES.map((d) => [d.name, d.schema])))
 
 /*
  * Transport-only, with no structured form: they change how the answer is
@@ -131,7 +157,8 @@ export function unknownDirectives(params) {
  * @returns {{ limit?: number, offset?: number, after?: string, orderBy?: unknown, select?: unknown,
  *             populate?: unknown, search?: string,
  *             withDeleted?: boolean, onlyDeleted?: boolean,
- *             withTemplates?: boolean, onlyTemplates?: boolean }}
+ *             withTemplates?: boolean, onlyTemplates?: boolean,
+ *             asOf?: string, withExpired?: boolean, onlyExpired?: boolean }}
  */
 export function parseDirectives(params) {
   const d = {}

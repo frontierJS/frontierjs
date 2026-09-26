@@ -161,7 +161,7 @@ export default defineConfig({
   server: {
     ...base.server,
     // dev / desktopDev / this app's project id. See packages/cli/core/ports.js.
-    port:       parseInt(process.env.DESKTOP_PORT ?? '${devPort}', 10),
+    port:       parseInt(process.env.DESKTOP_PORT ?? process.env.FLI_PORT_DESKTOP ?? '${devPort}', 10),
     // Vite hops to the next free port without a word.
     strictPort: true,${proxy}
   },

@@ -234,7 +234,7 @@ describe('probeState', () => {
   test('a claimed port that answers nothing is its own state', async () => {
     const claimed = {
       busyPorts:        async () => [],
-      getSessionStatus: () => [{ ports: { fe: [65535] } }],
+      getSessionStatus: () => [{ alive: true, ports: { fe: [65535] } }],
     }
     const state = await probeState(rows, { ports: claimed })
     expect(state.a.state).toBe('claimed-dead')

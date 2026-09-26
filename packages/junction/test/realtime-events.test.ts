@@ -40,7 +40,7 @@ async function emit(method: string, capture: ReturnType<typeof captureNames>) {
 
   const ctx = {
     service: 'posts', method, data: {}, id: 1,
-    params: {}, query: {}, auth: {}, client: {},
+    params: {}, query: {}, auth: {}, caller: {},
     locals: { __channels: capture.manager }, app: {},
   } as unknown as ServiceContext
 
@@ -77,7 +77,7 @@ describe('publish() event names match what the client listens for', () => {
     } as never)
     await callService(svc, {
       service: 'posts', method: 'create', data: {}, params: {}, query: {},
-      auth: {}, client: {}, app: {},
+      auth: {}, caller: {}, app: {},
       locals: { __channels: { publish: async (e: string) => { seen.push(e) } } },
     } as unknown as ServiceContext)
     expect(seen).toEqual(['post:published'])

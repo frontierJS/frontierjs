@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**106 words** — 12 declarations · 66 field attributes · 28 model attributes.
+**110 words** — 12 declarations · 66 field attributes · 32 model attributes.
 
 ## Index
 
@@ -40,7 +40,7 @@ and shows you the diff first.
 **Model attributes**
 
 - *Identify a row* — [`@@id`](#id-model)
-- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model)
+- *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@relator`](#relator-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model) · [`@@expires`](#expires-model) · [`@@effective`](#effective-model) · [`@@commitment`](#commitment-model)
 - *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@export`](#export-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
 - *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@log`](#log-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
@@ -92,12 +92,22 @@ tenancy {
 - **Deeper** — [multi-tenancy.md](multi-tenancy.md)
 - **See also** — [`@@tenant`](#tenant-model)
 
-### `claim` `<name>` <a id="claim-declaration"></a>
+### `claim` `<name> [from <Model>(<subject>)[.<column>]]` <a id="claim-declaration"></a>
 
-A claim the principal carries that is on no row. `@@auth <Model>` already names every claim that IS a column; this names the rest — a cart token, a device id — so `auth().<name>` is graded rather than compiling to NULL. Names only: the app resolves the value per request. A tool that has the schema and not the app (studio, tinker) reads this and nothing else.
+A claim the principal carries that is not a column of the `@@auth` model, so `auth().<name>` is graded rather than compiling to NULL. Bare, it is a name and the app resolves the value per request — a cart token, a device id. With `from`, the value is read per request off the one row whose `<subject>` points at the caller — the row's primary key, or `<column>` — so a role held on another model (an Employee, a Customer) needs no resolver. The subject must be a key to the `@@auth` model and unique; a caller with no row holds null.
 
 ```lite
+model User { id Int @id  @@auth }
+model Employee {
+  id     Int  @id
+  userId Int  @unique
+  user   User @relation(fields: [userId], references: [id])
+  siteId Int
+}
+
 claim cartToken
+claim employeeId from Employee(userId)
+claim siteId     from Employee(userId).siteId
 ```
 
 - **Note** — Declared and never used in a policy is reported by `litestone advise`; used and never declared is a parse-time refusal.
@@ -1358,6 +1368,29 @@ model Example {
 - **Deeper** — [schema.md](schema.md)
 - **See also** — [`@check`](#check-field) · [`@relation`](#relation-field)
 
+#### `@@relator` `([field, …], once | many | many: <column>)` <a id="relator-model"></a>
+
+Whether a relationship may happen TWICE. A relator is a relationship that is a row — a membership, a placement, a subscription — existentially dependent on the things it relates, so a relatum may be neither optional nor `onDelete: SetNull` and there must be at least two distinct ones. `Cascade` and `Restrict` both pass: they honor the dependence and differ only on who wins. The repeatability argument is REQUIRED and a bare list is a parse error naming the three choices, because `once` and a bare `many` differ by an ABSENCE and a default answers in silence the one question the word exists to ask. `once` emits UNIQUE over the relata; `many: <column>` emits UNIQUE over the relata plus that column, which is what makes two of them different; `many` emits no unique at all — a relationship told apart by nothing is something that HAPPENED, and the row usually proves it by copying what it read. Every relatum an emitted unique does not already cover by prefix gets an index, because both ends of a relator are entrances and `@@unique` cannot know that ([`FJS-413`](ISSUES.md#fjs-413) was ten unindexed foreign keys, four of them on cascading join tables, fixed by hand four times). A `@@unique` or an `@@index` beside it over columns it already emits is refused rather than tolerated — one origin, or the two drift. What no rule reaches is the modeling judgment: a credential row with two owners satisfies every refusal here and is not a relationship.
+
+```lite
+model Workspace { id Int @id
+  members Example[] }
+model User { id Int @id
+  members Example[] }
+
+model Example {
+  id Int @id
+  workspaceId Int
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId Int
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@relator([workspaceId, userId], once)
+}
+```
+
+- **Deeper** — [relations.md](relations.md)
+- **See also** — [`@unique`](#unique-field) · [`@@index`](#index-model) · [`@@arc`](#arc-model) · [`@relation`](#relation-field)
+
 #### `@@map` `("table_name")` <a id="map-model"></a>
 
 The table name in SQL, where it differs from the model name.
@@ -1490,6 +1523,59 @@ model Example {
 ```
 
 - **Deeper** — [schema.md](schema.md)
+
+#### `@@expires` `(<field>)` <a id="expires-model"></a>
+
+This row is dead from a moment on, and every read and write filters to the rows not yet expired — `asOf` says at what moment, defaulting to the client's own clock, so expiry moves when the clock does and `advance()` in a test stages it. IMPOSED because nothing points at an expired row: a hold, a session, a reset token, where the read that forgot the filter would hand out a dead credential. `withExpired` drops the filter, `onlyExpired` inverts it — a sweep is `deleteMany({ onlyExpired: true })` — and `onlyExpired` on a model declaring no window is refused by name. A hard delete APPLIES it, where soft delete bypasses its own, so a delete keyed on a person means the unexpired rows and a purge says `withExpired`. The column is a `DateTime` or a `String @date`. Nothing here schedules anything — Caravan owns the clock. A row that is HISTORY rather than dead is `@@effective`.
+
+```lite
+model Example {
+  id Int @id
+  expiresAt DateTime
+  @@expires(expiresAt)
+}
+```
+
+- **Also typed** — `ttl` · `deadline`
+- **Deeper** — [schema.md](schema.md)
+- **See also** — [`@@effective`](#effective-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model)
+
+#### `@@effective` `(from: <field>, to: <field>)` <a id="effective-model"></a>
+
+This row is in force inside a window and HISTORY outside it — the price a subscriber is still paying, the terms a payslip was computed under — so the window is ASKED: a read stating `asOf` gets the rows in force at that moment, and a read stating nothing gets every row, which is what a pointer to an old price and a list of past terms both need. `from:` is required and `to:` is optional, a null `to` being *still in force*; the interval is half-open. Both edges are the same KIND — a `DateTime` window is read at an instant and a `String @date` window at a plain date — and a pair that disagrees is refused at parse. Because nothing is filtered without a stated moment, a window over days never spends a zone. `@@effective(to: …)` with no `from:` is refused and names `@@expires`, which is the IMPOSED sibling for a row that is dead after a moment. It implies nothing else: *at most one open row* is still `@@unique([...], where: to == null)` and ordering the pair is still `@@check`.
+
+```lite
+model Example {
+  id Int @id
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  @@effective(from: effectiveFrom, to: effectiveTo)
+}
+```
+
+- **Also typed** — `valid time` · `validity` · `as of` · `effectivity`
+- **Deeper** — [schema.md](schema.md)
+- **See also** — [`@@expires`](#expires-model) · [`@unique`](#unique-field) · [`@check`](#check-field)
+
+#### `@@commitment` `([<relation>.]<transition>, on: <field> [+|- <n><unit> | <field>] [, while: <expr>])` <a id="commitment-model"></a>
+
+A transition the SYSTEM owes this row at a time — the order abandoned fourteen days after it was placed, the subscription lapsed when the grace on an unpaid invoice runs out. The first argument names a transition on this model's `@@transitions`, or on the model a TO-ONE relation reaches (`subscription.lapse` on an invoice) — a to-many relation is refused, since it names no one row to move, and a null relation owes nothing. The target's from-state is the guard and the optimistic lock is the once-ness: a row that has already moved owes nothing. `on:` is a time column of this row — a `DateTime` or a `String @date` — optionally moved by a duration literal or by a required `Int @unit(<duration>) @immutable` column of the SAME row, which is how terms agreed when the row was written travel with it; never a hop. `mo`/`yr` are refused on an instant (a month needs a zone the expression does not have) and the sub-day units on a day. `while:` narrows over this row's own columns, and `auth()`, `now()` and a relation are each refused by name. `due({ by })` answers which rows are owed by an instant — the client's clock unless stated — and when each fell due; a day kind reads `by` in `timeZone`, UTC unless stated. The clock passing makes a WRITE here, where `@@expires` and `@@effective` change only what a read counts, and nothing in the schema names a job: the sweep that fires it is the API realm's, and Caravan owns the clock. Reaches the client as `x-commitments`, keyed by transition.
+
+```lite
+enum OrderStatus { pending paid cancelled }
+
+model Example {
+  id Int @id
+  status    OrderStatus @default(pending)
+  createdAt DateTime    @default(now())
+  @@transitions(status, abandon: pending -> cancelled @system)
+  @@commitment(abandon, on: createdAt + 14d)
+}
+```
+
+- **Also typed** — `obligation` · `timeout` · `auto-cancel` · `dunning` · `scheduled transition`
+- **Deeper** — [schema.md](schema.md)
+- **See also** — [`@@transitions`](#transitions-model) · [`@@expires`](#expires-model) · [`@unit`](#unit-field) · [`@immutable`](#immutable-field)
 
 ### Decide who may
 

@@ -311,12 +311,12 @@ describe('retention', () => {
   })
 })
 
-describe('the bindings — the pair, not the code', () => {
+describe('the configuration — the pair, not the code', () => {
   // The documented Fly failure this separation exists to refuse: reverting a
   // Release onto today's configuration.
   test('a moved generation refuses and says what it can and cannot restore', () => {
     const r = check({ target: RELEASE('r1', { generation: 2 }), generation: 3 })
-    expect(kinds(r)).toEqual(['bindings'])
+    expect(kinds(r)).toEqual(['configuration'])
     expect(r[0].message).toContain('generation 2')
     expect(r[0].message).toContain('generation 3')
     expect(r[0].message).toContain('NOT the configuration')
@@ -326,15 +326,15 @@ describe('the bindings — the pair, not the code', () => {
     expect(check({ target: RELEASE('r1', { generation: 2 }), generation: 2 })).toEqual([])
   })
 
-  // A journal with no binding set recorded cannot answer the question, and a
+  // A journal with no configuration set recorded cannot answer the question, and a
   // guess either way is wrong: silence, rather than a refusal or a pass.
   test('an unknown current generation is not graded', () => {
     expect(check({ target: RELEASE('r1', { generation: 2 }), generation: null })).toEqual([])
   })
 
-  test('--onto-current-bindings is a different sentence, and it overrides', () => {
-    const r = check({ target: RELEASE('r1', { generation: 2 }), generation: 3, force: { bindings: true } })
-    expect(r[0].override).toBe('--onto-current-bindings')
+  test('--onto-current-configuration is a different sentence, and it overrides', () => {
+    const r = check({ target: RELEASE('r1', { generation: 2 }), generation: 3, force: { configuration: true } })
+    expect(r[0].override).toBe('--onto-current-configuration')
     expect(blocking(r)).toEqual([])
   })
 })
@@ -354,7 +354,7 @@ describe('the two that are not judgement calls', () => {
   })
 
   test('forcing does not clear a refusal that carries no override', () => {
-    const r = check({ image: { image: null }, force: { pivot: true, retention: true, bindings: true } })
+    const r = check({ image: { image: null }, force: { pivot: true, retention: true, configuration: true } })
     expect(blocking(r)).toHaveLength(1)
   })
 
@@ -386,7 +386,7 @@ describe('the whole picture', () => {
       now:        '2026-08-26T00:00:00.000Z',
       image:      { image: null },
     })
-    expect(kinds(r).sort()).toEqual(['bindings', 'no-image', 'pivot', 'retention'])
+    expect(kinds(r).sort()).toEqual(['configuration', 'no-image', 'pivot', 'retention'])
   })
 
   test('forcing three of four still blocks on the fourth', () => {
@@ -394,7 +394,7 @@ describe('the whole picture', () => {
       since:      [t('t2', 'r2', 'succeeded', { crossesPivot: 1 })],
       target:     RELEASE('r1', { generation: 2, retentionUntil: '2026-01-01T00:00:00.000Z' }),
       generation: 3, now: '2026-08-26T00:00:00.000Z', image: { image: null },
-      force:      { pivot: true, retention: true, bindings: true },
+      force:      { pivot: true, retention: true, configuration: true },
     })
     expect(kinds(blocking(r))).toEqual(['no-image'])
   })

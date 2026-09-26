@@ -4,7 +4,7 @@
 // nothing: it computes an object and answers it. That is not a limitation of
 // this step, it is the property the whole design rests on — a Release id is
 // content-addressed, so minting is a pure function of the tree and the
-// bindings, and the same tree mints the same id on a laptop, in CI and on the
+// configuration, and the same tree mints the same id on a laptop, in CI and on the
 // target. *Build once, promote a digest* is only sayable if the thing being
 // promoted has a name that does not depend on who computed it.
 //
@@ -15,10 +15,10 @@
 //
 // Four terms, and each is a fact about a different realm:
 //
-//   digest       the bytes            — Deployment. Null until 2.3f builds once
-//   bindingsHash the configuration    — Deployment, per Environment
-//   schemaHash   the data boundary    — Data, off the committed release surface
-//   pivot        can N-1 still serve  — the verdict litestone already computes
+//   digest             the bytes            — Deployment. Null until 2.3f builds once
+//   configurationHash  the configuration    — Deployment, per Environment
+//   schemaHash         the data boundary    — Data, off the committed release surface
+//   pivot              can N-1 still serve  — the verdict litestone already computes
 
 import { createHash }              from 'crypto'
 import { existsSync, readFileSync } from 'fs'
@@ -41,7 +41,7 @@ const short = (hex) => hex.slice(0, 12)
 // Hashing an object means choosing a serialization, and the choice has to be
 // stable across every machine that mints. Sorted keys, no whitespace, and a
 // value coerced to a string — so `{a:1}` and `{a:'1'}` hash the same, which is
-// what an environment variable already means: everything in a binding set
+// what an environment variable already means: everything in a configuration set
 // reaches a process as text.
 
 function canonical(obj) {
@@ -49,7 +49,7 @@ function canonical(obj) {
     Object.keys(obj ?? {}).sort().map(k => [k, String(obj[k])]))
 }
 
-// ─── the bindings ────────────────────────────────────────────────────────────
+// ─── the configuration ───────────────────────────────────────────────────────
 //
 // An Environment provides values, and *references* to secrets — never secret
 // values (invariant 2). The two are separate keys rather than one bag because
@@ -61,21 +61,21 @@ function canonical(obj) {
 // started with `--env-file` against it — so nothing here is applied by a deploy.
 // What the hash and the generation are for is the pair a revert compares:
 // *has the configuration been changed since the release I am going back to*.
-// Reading it as *what the process is running on* is `FJS-585`, and the two
-// places that invite it are the `values` recorded beside the hash and the word
-// "configuration" in `release:mint`'s own table.
+// Reading it as *what the process is running on* is `FJS-585`, and the place
+// that invites it is the `values` recorded beside the hash — and the word
+// itself, which is why every surface that prints the hash says *declared*.
 //
 // A reference is pinned, and `latest` is refused by name. Cloud Run resolves a
 // secret reference at instance startup, so `latest` means two instances of one
 // immutable Release hold two different values and the Release is immutable in
 // name only — its own documentation says to pin the version. A rotation moves
-// the binding to a new pinned version, which is a new generation, which is
+// the configuration to a new pinned version, which is a new generation, which is
 // exactly the event a generation is for.
 
-export class BindingError extends Error {
+export class ConfigurationError extends Error {
   constructor(message, key) {
     super(message)
-    this.name = 'BindingError'
+    this.name = 'ConfigurationError'
     this.key  = key
   }
 }
@@ -83,22 +83,22 @@ export class BindingError extends Error {
 const UNPINNED = /(^|[@:])latest$/i
 
 /**
- * Resolve the binding set for one target.
+ * Resolve the configuration set for one target.
  *
  * Per-target beats app-wide, because that is what an override is for. The
- * absence of both is an empty set and NOT an error: an app that binds nothing
- * has a binding set, and it hashes to a stable value like any other.
+ * absence of both is an empty set and NOT an error: an app that declares nothing
+ * has a configuration set, and it hashes to a stable value like any other.
  */
-export function bindingSet(deployConf, target) {
+export function configurationSet(deployConf, target) {
   const at      = deployConf?.[target] ?? {}
-  const values  = { ...(deployConf?.bindings ?? {}), ...(at.bindings ?? {}) }
+  const values  = { ...(deployConf?.configuration ?? {}), ...(at.configuration ?? {}) }
   const refs    = { ...(deployConf?.secrets  ?? {}), ...(at.secrets  ?? {}) }
 
   for (const [key, ref] of Object.entries(refs)) {
     if (typeof ref !== 'string' || !ref.trim())
-      throw new BindingError(`secret ${key} must be a reference like "name@3", got ${JSON.stringify(ref)}`, key)
+      throw new ConfigurationError(`secret ${key} must be a reference like "name@3", got ${JSON.stringify(ref)}`, key)
     if (UNPINNED.test(ref.trim()))
-      throw new BindingError(
+      throw new ConfigurationError(
         `secret ${key} names "${ref}" — a reference must be pinned. ` +
         `A secret is resolved when a process starts, so "latest" makes two instances of one ` +
         `Release hold two different values. Name the version: "${ref.replace(UNPINNED, '@<version>')}".`,
@@ -107,10 +107,10 @@ export function bindingSet(deployConf, target) {
     // visible, and it is worth one guess: a reference is short and has no
     // newlines, so anything long is almost certainly the secret itself.
     if (ref.length > 200 || ref.includes('\n'))
-      throw new BindingError(`secret ${key} looks like a VALUE, not a reference — a Release records references only`, key)
+      throw new ConfigurationError(`secret ${key} looks like a VALUE, not a reference — a Release records references only`, key)
   }
 
-  const hash = sha(`bindings\n${canonical(values)}\n${canonical(refs)}`)
+  const hash = sha(`configuration\n${canonical(values)}\n${canonical(refs)}`)
   return { values, secretRefs: refs, hash, count: Object.keys(values).length + Object.keys(refs).length }
 }
 
@@ -137,20 +137,20 @@ export function schemaSurfaceHash(dbDir) {
  *
  * The id is the hash of the terms and of nothing else — not the time, not the
  * operator, not the branch. Two builds of an unchanged tree against unchanged
- * bindings mint the same id, which is what makes a redeploy a no-op rather than
+ * configuration mint the same id, which is what makes a redeploy a no-op rather than
  * a second Release, and what lets a digest be promoted between environments
  * instead of rebuilt.
  *
  * `environment` is NOT in the id, deliberately. One artefact promotes from
- * staging to production unchanged and only its bindings differ (invariant 1) —
- * so the environment is on the row and the bindings are in the hash.
+ * staging to production unchanged and only its configuration differs (invariant 1) —
+ * so the environment is on the row and the configuration is in the hash.
  */
 export function mintRelease({
   app,
   environment,
   digest       = null,
   imageRef     = null,
-  bindingsHash,
+  configurationHash,
   generation   = 1,
   schemaHash   = null,
   pivot        = 'unknown',
@@ -159,8 +159,8 @@ export function mintRelease({
   audienceKey  = 'everyone',
   createdBy    = null,
 } = {}) {
-  if (!app)          throw new BindingError('a Release needs an app id — set deploy.app_id in frontier.config.js', 'app_id')
-  if (!bindingsHash) throw new BindingError('a Release needs a bindings hash', 'bindings')
+  if (!app)               throw new ConfigurationError('a Release needs an app id — set deploy.app_id in frontier.config.js', 'app_id')
+  if (!configurationHash) throw new ConfigurationError('a Release needs a configuration hash', 'configuration')
 
   // litestone's ladder has a fourth rung this journal does not store. `pivot`
   // answers one question — can Release N-1 still serve this database — and
@@ -178,7 +178,7 @@ export function mintRelease({
     `format=${RELEASE_FORMAT}`,
     `app=${app}`,
     `digest=${digest ?? ''}`,
-    `bindings=${bindingsHash}`,
+    `configuration=${configurationHash}`,
     `schema=${schemaHash ?? ''}`,
     `pivot=${pivot}`,
   ].join('\n')))
@@ -186,7 +186,7 @@ export function mintRelease({
   return {
     id, app, environment,
     digest, imageRef,
-    bindingsHash, generation,
+    configurationHash, generation,
     schemaHash,
     pivot, pivotDeclared, pivotFindings,
     audienceKey,
@@ -196,7 +196,7 @@ export function mintRelease({
 }
 
 /** What a Release says about itself, for a person rather than for a diff. */
-export function formatRelease(rel, { bindings } = {}) {
+export function formatRelease(rel, { configuration } = {}) {
   const lines = []
   const row = (k, v) => lines.push(`  ${k.padEnd(14)}${v}`)
 
@@ -212,8 +212,8 @@ export function formatRelease(rel, { bindings } = {}) {
   // applied by any step — the container reads the target's own env file, which
   // `fli` does not write (`FJS-585`). A reader who takes this as the running
   // configuration is reading a fact about the repository.
-  row('bindings',   `${short(rel.bindingsHash)}  · generation ${rel.generation}  (declared)` +
-                    (bindings ? `  · ${bindings.count} binding(s), ${Object.keys(bindings.secretRefs).length} secret ref(s)` : ''))
+  row('configuration', `${short(rel.configurationHash)}  · generation ${rel.generation}  (declared)` +
+                       (configuration ? `  · ${configuration.count} key(s), ${Object.keys(configuration.secretRefs).length} secret ref(s)` : ''))
   row('schema',     rel.schemaHash ? short(rel.schemaHash) : '— no release.snapshot.md (run fli release:check)')
   row('pivot',      rel.pivot + (rel.pivotDeclared ? '  (declared)' : ''))
   if (rel.pivot === 'contract')

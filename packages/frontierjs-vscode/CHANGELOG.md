@@ -5,6 +5,17 @@ The user-facing history of the FrontierJS VS Code extension. Engineering detail
 
 ## 0.1.3 — unreleased
 
+### Litestone (`.lite`)
+
+- **Formatting no longer damages a schema.** A multi-line `@@transitions`
+  body or an attribute message wrapped onto a second line was rewritten, and
+  could leave a string open to the end of the file. The formatter now changes
+  whitespace only, and declines to format a file rather than change anything
+  else.
+- **Format on save is off by default.** `litestone.formatOnSave` re-aligns
+  every model's columns, which rewrites a hand-aligned schema; turn it on if
+  you want that. Format Document still works on demand.
+
 ### Mesa (`.mesa`)
 
 - **Frontmatter is highlighted as YAML.** A `---` block at the top of a

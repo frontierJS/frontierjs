@@ -318,8 +318,8 @@ function layout() {
 // names it: orion/mockup/api-engine reads orion, where its last folder would
 // have been mockup or api-engine and said nothing. Laid a square each, every
 // region is named, by its whole path under packages/: a square with no name is
-// a package nobody can find, and mesa/mesa-bench is a square of its own there,
-// where the first folder alone would name two squares mesa.
+// a package nobody can find, and oracle/mockup is a square of its own there,
+// where the first folder alone would name two squares oracle.
 const LABEL_ROOT = 'packages/'
 function labelsFor(list, cells, w, at, everyRegion) {
   const groups = new Map(), totals = new Map()

@@ -211,6 +211,31 @@ console.log('\na tool call goes through the service, as the caller')
         [shopperOrders > 0, shopperOrders < staffOrders], [true, true])
 }
 
+console.log('\nfind describes its filters, and the SDK\'s validator still takes an operator')
+{
+  const find = (await staff.listTools()).tools.find(t => t.name === 'orders_find')
+  const q    = find?.inputSchema?.properties?.query
+  check('orders_find names status as a filter, with its values',
+        q?.properties?.status?.anyOf?.[0]?.enum?.includes('paid'), true)
+
+  // The SDK validates before dispatch. A filter typed as its value alone would
+  // refuse this call here, while the Data boundary takes it; the pair is the
+  // plain value beside it.
+  const call = async (query) => {
+    const res = await staff.callTool({ name: 'orders_find', arguments: { query, directives: { limit: 200 } } })
+    return { error: res.isError ?? false, rows: res.isError ? 0 : (JSON.parse(res.content[0].text).data ?? []).length }
+  }
+  const plain = await call({ status: 'paid' })
+  const op    = await call({ status: { in: ['paid', 'shipped'] } })
+  check('a plain filter is taken', [plain.error, plain.rows > 0], [false, true])
+  check('an operator filter is taken, and answers at least as many', [op.error, op.rows >= plain.rows], [false, true])
+
+  const typed = await staff.callTool({ name: 'orders_find', arguments: { query: {}, directives: { limit: 'twenty' } } })
+    .catch(err => ({ isError: true, content: [{ text: String(err?.message ?? err) }] }))
+  check('a directive of the wrong type is refused, naming the field',
+        [typed.isError ?? false, /limit/.test(typed.content?.[0]?.text ?? '')], [true, true])
+}
+
 console.log('\nthe affordance is not the boundary')
 {
   // A withheld tool is not registered for that caller, so the refusal is the
@@ -259,9 +284,21 @@ console.log('\nno credential column reaches a tool schema')
   // vacuously, which looks identical to a surface that leaked everything.
   check('the shop declares protected columns at all', guarded.length, n => n > 0)
 
-  const everything = JSON.stringify((await admin.listTools()).tools)
-  const leaked = [...new Set(guarded)].filter(key => everything.includes(`"${key}"`))
+  // A name protected on one model can be an ordinary column on another —
+  // `providerRef` is @guarded on PaymentMethod and a labelled column on
+  // Payment — and a tool on the wire does not say which model it is over, so
+  // those names are graded by the pair below rather than by the search.
+  const openSomewhere = new Set(Object.values(client).flatMap(d => Object.keys(d.properties ?? {})))
+  const tools      = (await admin.listTools()).tools
+  const everything = JSON.stringify(tools)
+  const leaked = [...new Set(guarded)].filter(key => !openSomewhere.has(key) && everything.includes(`"${key}"`))
   check('and none of them appears in any tool an administrator is offered', leaked, [])
+
+  const filters = (name) => Object.keys(tools.find(t => t.name === name)?.inputSchema?.properties?.query?.properties ?? {})
+  check('a name guarded on one model is not a filter there, and is one where it is open',
+        [filters('paymentMethods_find').length > 0, filters('paymentMethods_find').includes('providerRef'),
+         filters('payments_find').includes('providerRef')],
+        [true, false, true])
 }
 
 // ─── Result ────────────────────────────────────────────────────────────────

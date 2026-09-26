@@ -8,9 +8,10 @@
   "author": "FrontierJS",
   "scripts": {
     "dev": "bun run api & bun run web & wait",
+    "dev:outpost": "bun api/src/providers/outpost-dev.ts",
     "api": "bun --watch api/index.ts",
     "web": "vite -c web/config/vite.config.js",
-    "stop": "pkill -f 'bun.*api/inde[x].ts'; pkill -f 'vite.*web/config/vite.confi[g].js'; true",
+    "stop": "for p in $(pgrep -f 'bun.*api/inde[x].ts|vite.*web/config/vite.confi[g].js|providers/outpost-de[v].ts'); do [ \"$(lsof -a -p $p -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')\" = \"$(pwd -P)\" ] && kill $p; done; true",
     "start": "bun api/index.ts",
     "preview": "vite preview -c web/config/vite.config.js",
     "build": "bun run build:db && bun run build:web",
@@ -28,9 +29,13 @@
     "db:types": "bunx litestone types --schema db/schema.lite --audience=system --out db/schema.d.ts",
     "db:seed": "bun db/seed.js",
     "db:tables": "sqlite3 db/basecamp.db '.schema'",
-    "db:reset": "bun run stop; rm -rf db/basecamp.db db/basecamp.db-shm db/basecamp.db-wal db/basecamp-jobs.db db/basecamp-jobs.db-shm db/basecamp-jobs.db-wal db/audit",
+    "db:reset": "bun run stop; rm -rf db/basecamp.db db/basecamp.db-shm db/basecamp.db-wal db/basecamp-jobs.db db/basecamp-jobs.db-shm db/basecamp-jobs.db-wal db/audit .outpost",
     "verify:screens": "bun web/test/verify-screens.mjs",
-    "verify:provision": "bun web/test/verify-provision.mjs"
+    "verify:provision": "bun web/test/verify-provision.mjs",
+    "verify:outpost": "bun api/test/verify-outpost.mjs",
+    "verify:mcp": "bun api/test/verify-mcp.mjs",
+    "verify:cli": "bun cli/test/verify-cli.mjs",
+    "cli": "bun cli/src/main.js"
   },
   "dependencies": {
     "@frontierjs/auth": "workspace:*",
@@ -39,6 +44,7 @@
     "@frontierjs/css": "workspace:*",
     "@frontierjs/junction": "workspace:*",
     "@frontierjs/litestone": "workspace:*",
+    "@frontierjs/mcp": "workspace:*",
     "@frontierjs/mesa": "workspace:*",
     "@frontierjs/notifications": "workspace:*",
     "@frontierjs/orion": "workspace:*",
@@ -49,6 +55,7 @@
   "devDependencies": {
     "@frontierjs/outpost": "workspace:*",
     "@frontierjs/testing": "workspace:*",
+    "@modelcontextprotocol/client": "^2.0.0",
     "@types/bun": "^1.3.14",
     "vite": "^8.0.3"
   },

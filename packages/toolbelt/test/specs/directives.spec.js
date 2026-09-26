@@ -9,7 +9,7 @@
  */
 
 import {
-  DIRECTIVE_PARAMS, TRANSPORT_PARAMS, RESERVED_PARAMS,
+  DIRECTIVE_PARAMS, DIRECTIVE_SCHEMAS, TRANSPORT_PARAMS, RESERVED_PARAMS,
   parseDirectives, directiveParams, splitParams, unknownDirectives,
   orderByPair, orderByValue,
 } from '../../src/directives/directives.js'
@@ -27,6 +27,19 @@ test('directives: reserved is both kinds, and nothing else', function () {
 test('directives: every reserved key starts with $', function () {
   // The `$` IS the rule. A reserved key without one would strip a real column.
   for (const k of RESERVED_PARAMS) assert.equal(k[0], '$')
+})
+
+test('directives: every directive carries a value schema, keyed by its bare name', function () {
+  // A describer — an agent's tool schema, a command line's flags — reads this
+  // rather than the parser, so a row without one arrives untyped and nothing
+  // downstream can tell an omission from a directive that takes anything.
+  assert.deepEqual(Object.keys(DIRECTIVE_SCHEMAS), DIRECTIVE_PARAMS.map(p => p.slice(1)))
+  for (const [name, schema] of Object.entries(DIRECTIVE_SCHEMAS)) {
+    assert.ok(schema && typeof schema === 'object', name + ' has a schema')
+  }
+  assert.equal(DIRECTIVE_SCHEMAS.limit.type, 'integer')
+  assert.equal(DIRECTIVE_SCHEMAS.withDeleted.type, 'boolean')
+  assert.equal(DIRECTIVE_SCHEMAS.after.type, 'string')
 })
 
 /* ── Reading ───────────────────────────────────────────────────────── */
@@ -190,6 +203,7 @@ test('directives: every name written is a name this table strips', function () {
     select: ['a', 'b'], populate: ['c'], search: 'wid',
     withDeleted: true, onlyDeleted: false,
     withTemplates: true, onlyTemplates: false,
+    asOf: '2026-06-01T00:00:00.000Z', withExpired: true, onlyExpired: false,
   }
   const params = directiveParams(every)
 
@@ -218,6 +232,32 @@ test('directives: the two rows that do not travel as themselves', function () {
   assert.equal(p.$select, 'id,name')
   assert.equal(p.$populate, 'lines')
   assert.equal(p.$search, 'a,b', 'a comma in a VALUE is not a list')
+})
+
+test('directives: the window is a VALUE, and the flags are sugar over it', function () {
+  // The one member of the opt-back-in family whose value is not a flag. Four
+  // booleans came before it and a fifth would have been the cheap read of
+  // expiry; a value cannot be retrofitted onto a flag afterwards, so
+  // `asOf` is what the family is built around and `withExpired` is sugar.
+  const d = parseDirectives({ $asOf: '2026-06-01T00:00:00.000Z', $withExpired: 'true' })
+  assert.equal(d.asOf, '2026-06-01T00:00:00.000Z')
+  assert.equal(d.withExpired, true)
+  assert.ok(typeof d.asOf === 'string', 'read as text, never coerced to a flag')
+
+  // A day is as legal as an instant, and this kit does not choose between them:
+  // a window is over instants or over days per MODEL, and the kit has no schema
+  // to ask. The Data boundary refuses an unparseable one by name.
+  assert.equal(parseDirectives({ $asOf: '2026-06-01' }).asOf, '2026-06-01')
+  assert.equal(parseDirectives({ $asOf: 'not-a-time' }).asOf, 'not-a-time',
+    'passed through — grading it here would be a second answer with no schema behind it')
+
+  // Absent stays absent, so an unstated window is *now* at the boundary rather
+  // than an explicit ask for it.
+  assert.equal(parseDirectives({ $limit: '5' }).asOf, undefined)
+  assert.equal(parseDirectives({ $asOf: '' }).asOf, undefined)
+
+  // And it round-trips, which is the property the family is one table for.
+  assert.deepEqual(directiveParams(d), { $asOf: '2026-06-01T00:00:00.000Z', $withExpired: true })
 })
 
 test('directives: absent stays absent, on the way out too', function () {

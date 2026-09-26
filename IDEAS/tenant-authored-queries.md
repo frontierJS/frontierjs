@@ -162,6 +162,43 @@ reader. Together they may be.
 
 ---
 
+## Measured — a product whose views ARE stored filters (linear, 2026-09-22)
+
+The query-object axis above, driven by a product rather than argued: the
+linear stressor's Q5 (`fjs-prototypes/linear/web/test/verify-views.mjs`,
+in-process, over HTTP). A Linear view is *my started bugs, priority ≥ high*,
+shared with a team and subscribed to. That is the thing
+[`FJS-D71`](../DECISIONS.md#fjs-d71) refuses.
+
+| Measured | Result |
+| --- | --- |
+| The view's four terms, carried by a declared kind | 1–2: `assignee = me`, and `started` only because the kind `active` hard-codes it. Priority, label and a custom field (`severity`, Q6) are a filter somebody clicked together |
+| The stored filter, sent by the READER's browser with the kind's read for them | graded as the reader: a DES issue assigned to Ana stays hidden; Léa opening the same shared view sees Léa's work, not Ana's |
+| The same filter, decided for a SUBSCRIBER when somebody else files an issue, through `app.runAs(subscriber, { tenant })` and a read of the `issues` service | graded as the subscriber: a DES issue in a shared project told Ana nothing |
+| The same stored read decided under `asSystem()` | would have told Ana about the DES issue. D71's danger is real, and it is this spelling |
+| Cost of one create, 55 subscribers | 280 queries (≈5 each: the principal re-resolved, then the read), all on the creating request: 71 ms against ≈15 ms |
+| A match decided at create | misses a label (a second write) and any `started` view (every create enters Backlog or Todo). A view is ENTERED by updates |
+| A stored filter naming a label | by id only (`FJS-1314`), and it matches nothing, silently, once that label is merged into another |
+
+So compileSegment's argument holds with a product behind it: **a stored
+filter is safe exactly when it is executed through the reader's own read.**
+What D71 got right is *never as its author, never as the system*. What it got
+wrong, for this product, is *never stored*.
+
+---
+
+## Open questions
+
+- **Q1 — does `FJS-D71` hold for a product whose views ARE stored filters? (`FJS-D369`)**
+  Measured in linear Phase 5 (table above): a declared kind carries one or two of
+  a real view's four terms; a stored filter in the list's own query grammar,
+  executed only as its reader or as each subscriber, leaked nothing; the same
+  filter under `asSystem()` would have.
+  - **A** — D71 stands as written. A view is a kind; a clicked-together filter lives only in the URL (a bookmark), and there is no shared filtered view and no subscription on a filter
+  - **B** — Amend D71 to its reason: a view MAY store a filter, in the list's own query-string grammar, and it is only ever executed as the person it is for (the reader's own read, or each subscriber through `app.runAs` and a service read), never as its author and never as the system. The framework ships the ruling and the recipe, nothing new
+  - **C** — B, plus a framework-owned subscription (`service.watch(filter)`): durable, decided as each subscriber off the request in a job, and on update as well as create, so an issue that ENTERS a view is matched
+  - **Recommend B** — the read half needs nothing the framework lacks, and the subscription half is `runAs` plus one service read, both already shipped and measured leak-free. C is the right shape once a second app needs a subscription, but its hard part (entered/left on every update, per subscriber) is a matcher design of its own (FJS-011's live matcher is the precedent, and `$search` is already undecidable there). A holds a ruling against the product it was meant to protect, and leaves Linear's views unbuildable
+
 ## The nine questions
 
 Answered before writing, on the record rather than on the build.

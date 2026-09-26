@@ -68,7 +68,9 @@ the package has no root entry.
 | a stepper with its own formatting · a range | `@frontierjs/ui/components/forms/NumberInput.mesa` · `@frontierjs/ui/components/forms/Slider.mesa` |
 | the cut points of a banded scale — a heat ramp, alert levels, price tiers — tuned against the distribution they cut | `@frontierjs/ui/components/forms/Thresholds.mesa`. The band of a value is `bandIndex()` from `@frontierjs/ui/utils`, which is what the plot colors itself by, so the picture and whatever it is tuning cannot disagree |
 | a `Json` column | `@frontierjs/ui/components/forms/JsonInput.mesa` |
+| source text edited in its own syntax — a template, a query, a snippet | `@frontierjs/ui/components/forms/CodeInput.mesa` — `language` is glow's, `numbered` draws a gutter. It is a real `<textarea>` over a highlighted `<pre>`, so style the box through `@frontierjs/css`'s `--code-*` variables and never by restating the text metrics on one layer |
 | a `File` column · a free-standing dropzone | `@frontierjs/ui/components/forms/FileField.mesa` · `@frontierjs/ui/components/forms/FileUpload.mesa` |
+| a list reordered by dragging, or items dragged between lists — a board, a queue | `dndzone` from `@frontierjs/ui/dnd`, an attachment rather than a component: `<ul {@attach dndzone(() => ({ items, type, onconsider, onfinalize }))}>`. Pass a GETTER — an object literal rebuilds the zone on every write and ends the drag. Every element child of the zone is one item in `items` order, so an empty-state row goes outside it. Persist from `onfinalize` only |
 | a label, hint and error around a control of your own | `@frontierjs/ui/components/forms/Field.mesa`, or `@frontierjs/ui/components/forms/Label.mesa` alone |
 | a group that disables as one | `@frontierjs/ui/components/forms/Fieldset.mesa` |
 | any button or button-styled link | `@frontierjs/ui/components/forms/Button.mesa` |
@@ -154,7 +156,7 @@ The callbacks disagree:
 
 | Component | Callback | Receives |
 |---|---|---|
-| `Input` · `Textarea` · `Select` | `oninput` (`onchange` on commit) | the DOM **event** |
+| `Input` · `Textarea` · `CodeInput` · `Select` | `oninput` (`onchange` on commit) | the DOM **event** |
 | `Checkbox` · `Switch` | `onchange` | `checked` |
 | `RadioGroup` · `Combobox` · `MultiSelect` | `onchange` | the value (an array for `multiple`) |
 | `NumberInput` · `Slider` | `onchange` | `{ value }`, or `{ start, end }` for a range |

@@ -14,7 +14,7 @@ model. Doc comments (`description`) are omitted: they are prose, they are long,
 and no reader branches on them.
 
 ```
-92 definitions · 55 models · 1 view · 12 types · 24 enums · 0 other
+94 definitions · 56 models · 1 view · 12 types · 25 enums · 0 other
 ```
 
 ## Definitions
@@ -60,6 +60,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `Plan` | model |
 | `PlanVersion` | model |
 | `Subscription` | model |
+| `SubscriptionPeriod` | model |
 | `Invoice` | model |
 | `InvoiceLine` | model |
 | `CreditNote` | model |
@@ -95,6 +96,7 @@ disappears from here is a reference that resolves to nothing in a browser.
 | `PaymentStatus` | enum |
 | `PlanInterval` | enum |
 | `SubscriptionStatus` | enum |
+| `PeriodStatus` | enum |
 | `InvoiceStatus` | enum |
 | `CartStatus` | enum |
 | `StockMovementKind` | enum |
@@ -137,6 +139,7 @@ validates, and a select that silently drops an option.
 - `PaymentStatus` — `pending`, `requiresAction`, `succeeded`, `failed`, `refunded`
 - `PlanInterval` — `monthly`, `yearly`
 - `SubscriptionStatus` — `trialing`, `active`, `pastDue`, `cancelled`
+- `PeriodStatus` — `open`, `closed`
 - `InvoiceStatus` — `draft`, `issued`, `paid`, `void`
 - `CartStatus` — `open`, `ordered`, `abandoned`
 - `StockMovementKind` — `received`, `sold`, `returned`, `adjusted`, `damaged`
@@ -642,7 +645,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `customer` — belongsTo `Customer` via `customerId` · on delete Cascade
 - relation `lines` — hasMany `OrderLine`
 - relation `journals` — hasMany `JournalEntry`
-- transitions on `status` — `pay`: pending → paid · `ship`: paid → shipped · `refund`: paid → refunded @5 · `cancel`: pending|paid → cancelled
+- transitions on `status` — `pay`: pending → paid · `ship`: paid → shipped · `refund`: paid → refunded @5 · `cancel`: pending|paid → cancelled · `abandon`: pending → cancelled @system
+- commitment `abandon` — on `createdAt` + 14d (instant) · moves `Order.status` from pending
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -782,6 +786,7 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `customer` — belongsTo `Customer` via `customerId` · on delete Restrict
 - relation `planVersion` — belongsTo `PlanVersion` via `planVersionId` · on delete Restrict
 - relation `invoices` — hasMany `Invoice`
+- relation `periods` — hasMany `SubscriptionPeriod`
 - transitions on `status` — `activate`: trialing → active @system · `lapse`: active → pastDue @system · `recover`: pastDue → active @system · `cancel`: trialing|active|pastDue → cancelled @system
 
 | Field | Type | Required | Label | Rules | Messages |
@@ -792,14 +797,32 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `planVersionId` | `integer` | yes | — | — | — |
 | `status` | `SubscriptionStatus` = `"trialing"` | — | — | — | — |
 | `quantity` | `integer` = `1` | — | Quantity | `minimum: 1` | — |
-| `currentPeriodStart` | `string` | — | — | `format: "date"` `x-litestone-kind` | — |
-| `currentPeriodEnd` | `string` | — | — | `format: "date"` `x-litestone-kind` | — |
+| `currentPeriodStart` | `string`? | — | — | `x-aggregatable` `x-litestone-from` `x-litestone-kind` | — |
+| `currentPeriodEnd` | `string`? | — | — | `x-aggregatable` `x-litestone-from` `x-litestone-kind` | — |
 | `trialEndsAt` | `string`? | — | — | `format: "date-time"` | — |
 | `cancelledAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
 | `cancelAtPeriodEnd` | `boolean` = `false` | — | Cancels at period end | `x-litestone-kind` | — |
 | `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `reference`, `customerId`, `planVersionId` · not accepted — `id`
+**On create**: required — `reference`, `customerId`, `planVersionId` · not accepted — `id`, `currentPeriodStart`, `currentPeriodEnd`
+
+### `SubscriptionPeriod`
+
+- gate `read:1 create:8 update:7 delete:8` · closed (`additionalProperties: false`)
+- relation `subscription` — belongsTo `Subscription` via `subscriptionId` · on delete Restrict
+- transitions on `status` — `close`: open → closed @system
+- commitment `close` — on `endsOn` (day) · moves `SubscriptionPeriod.status` from open
+
+| Field | Type | Required | Label | Rules | Messages |
+| --- | --- | --- | --- | --- | --- |
+| `id` | `integer` | — | — | — | — |
+| `subscriptionId` | `integer` | yes | — | — | — |
+| `startsOn` | `string` | yes | — | `format: "date"` | — |
+| `endsOn` | `string` | — | — | `format: "date"` `x-litestone-kind` | — |
+| `status` | `PeriodStatus` = `"open"` | — | — | — | — |
+| `userId` | `string`? | — | — | `x-litestone-kind` | — |
+
+**On create**: required — `subscriptionId`, `startsOn` · not accepted — `id`
 
 ### `Invoice`
 
@@ -810,6 +833,10 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 - relation `creditNotes` — hasMany `CreditNote`
 - relation `payments` — hasMany `Payment`
 - transitions on `status` — `issue`: draft → issued @system · `settle`: issued → paid @system · `void`: issued → void @5
+- transitions on `reminded` — `remind`: false → true @system
+- commitment `subscription.lapse` — on `dueOn` + `graceDays` d (day) · moves `Subscription.status` from active · while `status == 'issued'`
+- commitment `subscription.cancel` — on `dueOn` + `dunningDays` d (day) · moves `Subscription.status` from trialing|active|pastDue · while `status == 'issued'`
+- commitment `remind` — on `dueOn` - 3d (day) · moves `Invoice.reminded` from false · while `status == 'issued'`
 
 | Field | Type | Required | Label | Rules | Messages |
 | --- | --- | --- | --- | --- | --- |
@@ -825,10 +852,13 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `periodEnd` | `string` | yes | — | `format: "date"` | — |
 | `issuedAt` | `string` | — | — | `format: "date-time"` | — |
 | `dueOn` | `string` | yes | — | `format: "date"` | — |
+| `graceDays` | `integer` | yes | — | `x-unit` | — |
+| `dunningDays` | `integer` | yes | — | `x-unit` | — |
 | `paidAt` | `string`? | — | — | `format: "date-time"` `x-litestone-kind` | — |
+| `reminded` | `boolean` = `false` | — | — | `x-litestone-kind` | — |
 | `userId` | `string`? | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `number`, `customerId`, `periodStart`, `periodEnd`, `dueOn` · not accepted — `id`
+**On create**: required — `number`, `customerId`, `periodStart`, `periodEnd`, `dueOn`, `graceDays`, `dunningDays` · not accepted — `id`
 
 ### `InvoiceLine`
 

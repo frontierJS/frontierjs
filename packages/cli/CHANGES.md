@@ -1,5 +1,397 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-25 — `cli/` is a surface to the two lists that name them
+
+Basecamp grew the first `cli/` (`FJS-D397`, Invariant 3). `core/git-status.js`'s
+`SURFACES` groups a change under `packages/basecamp/cli/` as that app's CLI surface
+rather than as repo files, and `core/doc-audit.js`'s `AMBIGUOUS` stops grading a
+prose path like `cli/src/routes/` as a file this repository must have — it names the
+app being built, the way `web/src/` does. `packages/cli/` is unaffected: `packages/`
+is held whole before either list is read.
+
+## 2026-09-25 — `context.tty`: a command that holds the terminal, and gives it back
+
+**A command that stays open — a keypress menu, a status line, the screen lent
+to an editor — no longer writes raw mode, escape codes and signal handling by
+hand.** `core/tty.js` is `context.tty`, destructured in the compiled body the way
+`log` is: `keys(question, { y: 'yes', … })` takes one keypress (Enter picks the
+first choice, shown `[Y]es`; Esc only when a choice is named `esc`; a `null`
+question listens without taking the footer), `live(render)` pins a footer
+whose array parts drop from the right to fit, `aside(fn)` lends the screen to
+`$EDITOR` and holds this process's output until it returns, `onExit(fn)` runs on
+a return, a throw, Ctrl-C and SIGTERM under a 3s cap, and `title`, `wrap` and
+`width` cover the rest. **Output prints above the footer with nothing routed
+through `tty`**: `process.stdout`, `process.stderr` and `console` are patched
+while it holds the terminal, and `console` separately, because Bun's writes to
+the fd without calling `process.stdout.write`, which a first run under a
+pseudo-terminal showed as `log` lines landing on the footer's line. **The
+terminal is put back on every path**: `Command()`'s returned functions close the
+tty in a `finally`, the runtime's SIGINT/SIGTERM handlers await `settleTtys()`
+before exiting, only a second SIGNAL skips onExit, and a bare `process.exit`
+still restores raw mode and the title on the `exit` event. `context.stream`'s
+own signal branch goes through the same stop, since a child killed by the Ctrl-C
+reached `process.exit` first and cut onExit off, and inside `aside` it rejects
+instead, because that Ctrl-C was the child's. `context.exec` cannot yet — it is
+synchronous, so the handler never runs first (`FJS-1350`). With no terminal, or
+under `fli gui`, `tty.interactive` is false, `live`, `title` and `aside` add
+nothing, and `keys` refuses by name or, given `--yes`, answers its first choice.
+
+**zx's `chalk`, the one a command body gets, now follows `NO_COLOR`.** It
+colored a terminal with `NO_COLOR=1` set, where fli's own `core/color.js` did
+not; `runtime.js` sets `chalk.level = 0` wherever `colorEnabled` is false.
+`workspace:publish` kept its own `context.config.tty` boolean for *is there a
+terminal*, which now collides with the destructured name and is
+`tty.interactive`, which is also false under `fli gui`, where the old boolean
+was not. `test/tty.test.js` is the fakes-level half and three runs under
+`script`: Ctrl-C at a keys prompt, during `context.stream`, and inside `aside`,
+each mutation-checked red.
+
+*Decision rules* (answered late: the proposal priced every piece and was
+approved before these were written). Origin: one — the terminal state lives in
+the tty, and `interactive` replaces a boolean the publish command computed for
+itself. Concept: one noun, `tty`, chosen over `ui`, which already names a realm
+and a package. Complexity: the problem's — raw mode, a redrawn line and signal
+ordering are what the terminal is; the badge, rail, sparkline and bar helpers
+were cut until a second app wants one. Predictability: `keys` answers `yes` the
+way `prompt.js` does and marks the Enter choice upper-case, as `confirm`'s
+`(Y/n)` does. Derived: `interactive` is computed once from `emit` and both
+streams' `isTTY`. Owner: `prompt.js` still owns line prompts, and `tty.js` owns
+keypresses, the footer and exit; the signal path stays the runtime's `_stop`,
+which the tty feeds rather than replaces. Boundary: named on `context`, and an
+author's own `tty` variable fails to compile at its `.md` line through
+`command-parses`. Failure: `keys` with nobody to answer refuses, since a hang is
+the worst outcome, while `live` without a terminal is silent, since a missing
+status line destroys nothing. Silence: a terminal left in raw mode must be put
+back on every exit, and `tty.test.js`'s pseudo-terminal runs fail when it is
+not; the `exec` path is `FJS-1350`. No § IV row is in tension beyond
+*preservation vs. evolution*, which renamed publish's `config.tty` without an
+alias. Tier: Map (README § The context, package `CLAUDE.md` layout) and
+Register (this entry, `FJS-1350`).
+
+## 2026-09-25 — the registers read any project: a declared prefix and a declared folder
+
+**A project that is not this one can keep `ISSUES.md`, `DECISIONS.md` and
+`IDEAS/` and have every `register:*` command read them.** The root
+`package.json` declares `"registers": { "prefix": "ELA", "dir": ".project" }`
+(`dir` defaults to the root), and `registerLayout()` in `core/registers.js`
+turns it into every id pattern the readers use — the issue row, the ruling
+heading, the prose lead, the trailing id, `supersededBy` and the citation scan
+— so `FJS-` is no longer written into a regex anywhere in the register path.
+`decide` mints `<PREFIX>-D<n>` into the declared folder and links the paper
+from there; `next`'s `blocked by` reads any prefix and keeps the ones naming an
+open row. A record's `file` is relative to the project root, so `dead-link`'s
+two readings — from the record's file, and from the root — hold unchanged for a
+register in a folder. The four `register:*` commands find the project with
+`findRegisterRoot`, the nearest `package.json` declaring `registers`, so a run
+from inside a package or a surface reads the project's registers rather than
+refusing. This repo declares `FJS`; the reader's output over it is byte-identical
+to the hardcoded one (6.2 MB of records compared). `test/register-layout.test.js`
+is an `ELA` project in `.project/` through the reader, the check, `next` and
+`decide`.
+
+*Decision rules.* Origin: `package.json`, not `.fli.json` — that file is
+`findProjectRoot`'s marker, and one at a monorepo's root would claim every
+nested app beneath it. Concept: no new noun; *register* and *prefix* were
+already the words. Derived: the patterns are built from the one declaration.
+Failure: an undeclared or malformed prefix is refused by `register:check` and by
+`decide` with the key named, never defaulted to `FJS` — a default is how an
+`ACME-` register graded clean (`FJS-916`). Silence: a row under another prefix
+is still counted as unparsed. Not done: the file-per-record migration
+(`IDEAS/registers.md`), which would remove the prefix patterns entirely.
+
+## 2026-09-25 — `effects` and `confirm: human`: a command says what it does, and who must say yes
+
+**A command that reaches past this machine can say so, and one that must not run
+unattended is refused.** `effects: sends a message to a customer` is printed by
+`--help`, the namespace listing and the GUI form, and arrives in `fli list --json`
+with the rest of the frontmatter. `confirm: human` adds enforcement in `Command()`,
+before the body: at a terminal the run goes ahead, and anywhere else — an agent's
+shell, a pipe, `fli gui` — it is refused unless `--approved` is passed, a flag fli
+adds to that command rather than one it declares. `fli list` marks the command
+*a person confirms*; the GUI asks on Run and sends `approved` on a yes. `--dry`
+does not skip it, since a dry run's harmlessness is the command's promise. The GUI
+runs a command in process, whose stdin is whatever terminal `fli gui` was started
+from, so a run with `emit` is never counted as a terminal. `core/effects.js` holds
+the rules; `confirm` has one value, `human`, and any other, a `confirm` without
+`effects`, or an `approved` the command declares itself is refused on every run.
+
+*Decision rules.* Origin: the frontmatter; every listing reads it. Concept: two
+keys, `effects` and `confirm` — `effects` alone is useful for any command with
+consequences, and `confirm` says who approves. Complexity: the problem's — a
+message to a customer cannot be unsent, and the rule lived only in an agent
+skill's prose. Predictability: a pre-run refusal beside `requires` and required
+arguments, and `approved` is fli's the way `dry` is. Derived: `--approved`
+comes from `confirm` and is never declared. Owner: `Command()`, which already
+owns the refusals before a body runs. Boundary: the gate precedes `run`, so no
+body can forget it. Failure: a refusal, since the mistake is irreversible (§ IV
+*ergonomics vs. strictness*). Silence: a `confirm: human` run without a terminal
+or `--approved` fails `test/effects.test.js` and
+`test/browser/specs/command-confirm.spec.mjs`; an agent passing `--approved`
+itself, and a command with consequences that declares none, are `none` — the
+first is the agent host's permission rule to hold.
+
+## 2026-09-25 — JSON is `--json` on every command (`FJS-D401`)
+
+**Five commands offered the model as `--as=json` and 32 as `--json`.** The five
+move: `ws:atlas`, `ws:terms`, `project:map` and `project:codegraph` keep `--as`
+for the pages a person reads, now declared with `choices`, and gain a `json`
+boolean; `app:atlas` had one page, so its `--as` is gone. `--json` beside a
+non-default `--as` is refused, since the two are different answers to one run.
+`project:map --as=Serve` used to be lowercased and is now refused — the
+`choices` compare is exact — and its unknown-value refusal set no exit code,
+which the runtime's refusal does.
+
+**`flags.js` refuses an `as` offering `json`**, and `--as=json` against a
+command with `--json` ends its refusal with *the model is `--json`*. The
+repo-report footer names `--json`.
+
+## 2026-09-25 — a flag is named for what it does, and declares its bounds
+
+**`no-push` is no longer a declaration.** Minimist reads `--no-push` as
+`{ push: false }`, so a flag declared `no-push` needed `getConfig` to translate
+the negation back, and one thing had two spellings. The translation is gone and
+the eleven declarations are positive booleans with `defaultValue: true`:
+`push` (`git:release`, `ws:pub`), `changelog`, `commit`, `check`, `build`,
+`git`, `images`, `routes`, `resource`, and `tests` for `npm:release` — not
+`test`, which is the built-in NODE_ENV switch and hidden from help. What is
+typed is unchanged, apart from `npm:release --no-test`, which is `--no-tests`
+now. A `no-*` declaration is refused on every run, naming the flag it should
+have been. `--help`, the namespace listing and Tab completion print a boolean
+that defaults on as `--no-push`, and its description says what that spelling
+does.
+
+**`choices`, `min` and `max` replace `options`.** `options` mapped each allowed
+value to a replacement, had one user — the built-in `--test`, whose every reader
+checks it for truthiness only, so `flag.test` is `true` now rather than
+`'NODE_ENV=test'` — and refused any value mapping to `''`. `choices` is a list,
+`min`/`max` bound a `number`, both ends inclusive. A value outside them is
+refused with a message written from the declaration, each value of a `multiple`
+flag is graded, and help prints the bound beside the type (`(number 5–90)`,
+`(string table|json)`). A broken declaration is refused on every run, not only
+on the one that passes the flag. `core/flags.js` is the leaf that owns all of it,
+and the shipped sweep asserts no command declares a flag `getConfig` refuses.
+
+**The GUI could not turn a default-on switch off.** An unchecked box sent
+nothing, so the default came back. A switch now sends its state when it differs
+from the default and the previewed command line says `--no-push`;
+`test/browser/specs/command-form.spec.mjs` drives it. `choices` draws a select
+and a range is the number input's own `min`/`max`.
+
+`decision-rules`, before the first edit. **Origin** — the allowed values stay in
+the declaration, and help, completion and the GUI derive from it. **Concept** —
+`options` out, `choices`/`min`/`max` in, the second spelling of a boolean gone.
+**Complexity** — the problem's: ELA checked a 5–90 range by hand. **Predictability**
+— every boolean reads the same way, and `--no-x` means one thing everywhere.
+**Derived** — the error text and the help text are both written from the
+declaration. **Owner** — `getConfig` already graded types, and grades these;
+`flags.js` is the one spelling for the three listings. **Boundary** — a broken
+declaration is refused by name. **Failure** — refuse, as a wrong type already
+does: a value outside a declared range is a mistake, not a preference.
+**Silence** — must stay true: a declared bound is enforced and shown; fails
+when it stops: `test/runtime.test.js`, `test/flags.test.js`, the shipped sweep,
+and the form spec. Adjudication: *preservation vs. evolution* — no alias for
+`no-push`, `options` or `--no-test`. Tier: map (`README.md` § Frontmatter).
+
+## 2026-09-25 — `ctx-params` reports `ctx.client`, and `ws:terms` excludes Battery, Create and WebSocket
+
+**`fli check`'s `ctx-params` flags `ctx.client` as well as `ctx.params`.** The
+field is `ctx.caller` (`FJS-D392`), so an app still reading `ctx.client.ip`
+reads undefined, which is the same fail-open the rule exists for.
+
+**`terms.js` classifies Battery and Create as common English and WebSocket as
+external** (`FJS-D394`). Their open rows in `VOCABULARY.md` are gone, since an
+exclusion here is how a word is said not to be a term.
+
+## 2026-09-25 — only a fence runs, and `fli check` parses an app's commands
+
+**An indented block in a command's prose is prose.** The compiler took
+markdown's indented code block as code, so an example indented in a paragraph —
+what a status line looks like — compiled as JavaScript and broke its command; a
+list item's indented continuation did the same. A command written in the ELA app
+had to wrap its examples in ` ```text ` fences to load. The state is gone from
+`transformMarkdown` and from `extractSegments`, which kept its own copy, and no
+command anywhere depended on it: the 372 files under `commands/`, `example/cli`
+and the ELA app's twelve were scanned before it went.
+
+**`command-parses` is a `fli check` rule** (Invariant 15). It compiles every
+command and step file under the app's routes directory the way the runtime does,
+WITH its namespace module, runs `node --check` over each, and reports the `.md`
+line: the command's, or its `_module.md`'s when the broken line came from there.
+A name declared in both scripts is a SyntaxError only the pair shows, and the
+finding says the module shares the scope. `compileCliWithMap` answers `locate`
+for this, because its offset maps the body only — a `<script>` block moves to
+the head and the module is pasted above it. An unclosed bracket is reported by
+V8 at the compiler's next line, so the rule walks back to the last line an
+author wrote. `core/command-parse.js` holds the pairing, and the shipped sweep in
+`test/compiler.test.js` now uses it too, so all 372 shipped files are parsed
+with their modules for the first time; none failed.
+
+**One reader of a script block.** `_module.md`'s script was taken with a
+non-greedy regex of its own while commands used first-open-to-last-close, so a
+module that wrote a closing script tag lost everything after it. `scriptBlockOf`
+is the one reader now, and `loadModuleFile` records `scriptLine`. Every module
+in the tree, `example` and ELA extracts byte-identically under it.
+
+## 2026-09-25 — a Release's configuration is called configuration
+
+*Binding* now means a Mesa template binding, so the Deployment realm gave the
+word up. `deploy.bindings` in `frontier.config.js` is `deploy.configuration`,
+per target as well; `bindingSet()` and `BindingError` are `configurationSet()`
+and `ConfigurationError`; the Release's `bindingsHash` is `configurationHash`;
+the revert refusal `bindings` is `configuration`, overridden by
+`--onto-current-configuration`; and the plan, the mint and the revert print a
+`configuration` row. No old spelling is accepted, so an app that declared
+`bindings:` now declares nothing until it is renamed.
+
+It cost two things. **Every Release id moved**, because the configuration hash
+is seeded with the word and the id carries that term, so an unchanged tree mints
+a new id once and a redeploy after this is not a no-op. **The journal went from
+format 2 to 3**: `binding_set` is `configuration_set` and `release.bindingsHash`
+is `release.configurationHash`. The table is not renamed in place. The runner
+sends the current DDL before any migration, so an empty `configuration_set`
+already exists and a rename collides with it. The rows are copied across and
+the old table dropped, and the column is an ordinary `RENAME COLUMN`. The oracle
+in `test/journal-migration.test.js` now compares indexes as well as tables,
+because a table rename leaves its index under the old name and a comparison of
+tables cannot see that. A row held in the old table is asserted to survive.
+
+## 2026-09-25 — bash completion completes past a colon
+
+`fli env:<Tab>` offered nothing. Bash splits `env:g` into `env`, `:` and `g`, and
+the script filtered the full names against `g`. It now takes the word from the
+raw line and strips the part up to the last colon from each reply, because
+readline replaces only the text after it. Pinned by `test/completion.test.js`,
+which runs the generated script in a real bash. A shell that installed the old
+script picks this up on its next start through the `eval` line.
+
+## 2026-09-25 — css's tier is a UI row's `Under`
+
+The css register now carries each term's tier as `under` (`Block tier`) with
+`home: 'UI'`. `placed()` merges it into a root row only when that row's Home is
+also UI and its own Under is blank. So `Table` (Data) and `Surface` (Framework)
+keep their own sense, and `Switch` keeps `Select task`. Fifteen hand-written
+tier cells were removed from `VOCABULARY.md`, and `Base tier` and `Layout tier`
+were added so every css tier has a row. A label placed this way carries
+`underFrom: 'css'`.
+
+## 2026-09-24 — `VOCABULARY.md` is read by column name
+
+`authoredVocabulary` matched exactly four cells, so the file's new `Home` and
+`Under` columns would have made every row unreadable. It now reads the header
+row and finds each column by name, and a row carries `home` and `under`. Nothing
+consumes those two yet.
+
+## 2026-09-23 — `fli gs` groups an app by its surfaces
+
+`git:status` knew this workspace's folders by name, so in an app checked out on
+its own every path fell into `(root)`: `api/`, `web/` and `db/` were one row
+with the surface repeated on every line. Zones are now read off Invariant 3's
+layout. A path whose first segment is a surface (`db api web site widgets
+extension desktop tests`) is that surface. A path whose second segment is one
+(`example/web`) is `<app>/<surface>`. `packages/<pkg>` stays whole. Any other
+top folder is its own place, which replaces the list of `website`, `scripts`,
+`IDEAS` and the rest. The workspace's own rows are unchanged. An untracked
+directory (`web/`) stays at the level above rather than becoming a place with
+no file name.
+
+## 2026-09-23 — `commitment-swept`: a job still making a move a commitment owes
+
+Once a model declares `@@commitment`, junction's `commitments()` makes that
+transition at each row's due time. A job left making the same move is a second
+owner, and nothing said so: the from-state lock turns whichever runs second into
+a no-op, so both look like they work while the job's cron decides when rows move.
+The new app rule reports a `*.job.*` file under `api/` that names the model (by
+accessor, or a service resolving to it) and makes the move — by its name, by
+another move of the same model from a shared state into the same state, or by
+that state. The second spelling is the one that mattered: the sweep
+`@@commitment(abandon)` replaced made `cancel`, because `abandon` was declared
+after it. `declaredMoves` now records each move's from-states. A warning, since
+a job can make the move for a reason that is not the clock.
+
+`transition-methods` reads the same declarations: a move a `@@commitment` owes
+is driven by `commitments()`, which no file under `api/` names, so it is no
+longer reported as a move nothing reaches. Found by `example`'s
+`Invoice.remind`, whose only caller is the commitment.
+
+Proof: `test/checks.test.js`, six cases on real shapes — the deleted
+abandoned-orders sweep, a relation target (`subscription.lapse` declared on
+`Invoice`), and four silences each paired against the sweep; the clean tree
+declares a commitment and a job, so the rule runs there. Dropping the
+same-state spelling, the model check, the relation resolution or comment
+blanking each turns one red. Over `example` with the three jobs steps 3, 4 and
+6 of `IDEAS/ontology.md` deleted put back, it reports three of them;
+`subscriptions-renew` swept `Subscription`, a model the commitment that
+replaced it does not move, and no rule reading the schema can connect the two.
+
+## 2026-09-22 — `fli make:wireframe` turns a screen into components
+
+A **wireframe** is a screen written in `@frontierjs/css`'s vocabulary — a JSON
+tree whose every node is a term, with the text the screen showed. What repeats
+is a component, and what differs between its copies is its props: the command
+writes one `.mesa` per component (kit components where the app has them, class
+markup where it does not), the page with the screenshot's data lifted into
+those props, and `tones.js` where a tone followed a value. Beside the wireframe
+it writes `<Screen>.draft.lite` — models, enums and relations read off the
+components, every field saying on a `///` line what on screen it came from, and
+every gate marked as a placeholder. Nothing loads the draft.
+
+**It grades what it writes** with the app's own mesa (compiled, then parsed)
+and litestone, and exits non-zero on either. An unknown term or an unknown key
+in the wireframe is refused by name. It refuses to write over an existing
+output directory. `core/wireframe.js` is pure; `test/wireframe.test.js` drives
+it over a real screen with the names invented, and holds its two copied lists
+— the terms that take a tone, the props passed to kit components — against
+their sources. `IDEAS/wireframe.md` is the design and what is not built,
+starting with the step that writes a wireframe from a screenshot.
+
+## 2026-09-22 — `fli proves` reads a script with an argument
+
+A `DRIVES.md` row naming `` `test:browser geofield` `` looked the whole string up
+as a script name, found nothing, and graded it `unknown` — the same answer a
+drive renamed away gets — which failed the suite's real-table check
+([`FJS-1273`](../../ISSUES.md#fjs-1273)). The script is looked up alone now and
+the argument rides on the offered command.
+
+## 2026-09-22 — `fli dev` gives every app its own ports
+
+Every app `fli new` writes is project 0, so two of them derived the same
+8000/8100 and the second `fli dev` refused, naming the first app's server. The
+broker meant to separate them had never handed out a port that survived
+([`FJS-1148`](../../ISSUES.md#fjs-1148)): a dynamic claim asked for project id 10
+where the formula has one digit and the table has used all ten, and `fli claim`
+released its session the moment it returned.
+
+**An unnamed app takes a SERVICE digit.** `fli dev` claims a slot per app root
+before its port check — 8000/8100, then 8001/8101 — and hands the ports to the
+dev script as `FLI_PORT_FE`, `FLI_PORT_BE`, `FLI_PORT_WIDGET`, `FLI_PORT_SITE`
+and `FLI_PORT_DESKTOP`, as `env:` on the exec, since a child under bun does not
+see an assignment to `process.env`. The desktop template reads
+`FLI_PORT_DESKTOP` now; the others already read theirs.
+
+**The slot is remembered.** A new root skips a digit something is listening on;
+a root that has run before gets its digit back, and when that digit is busy it
+is refused rather than moved, because the usual holder is its own stale server
+with the database still open. An app whose configs ignore the variables stays
+at 0, since the probe would move and the server would not.
+
+`fli claim` is gone, and `DYNAMIC_PROJECT_FLOOR` with it. `fli ps` and the GUI's
+ports panel list the slots keyed by app root, *running* or *idle*, and
+`--clean` forgets the idle ones.
+
+## 2026-09-22 — `fli check` refuses a drive that pins Chrome's debugging port
+
+`drive-cdp-port`, an error rule beside `vite-strict-port`, which is the same
+hazard at the server end. It reads every file under an app's `test/` and names a
+nonzero `--remote-debugging-port`, because only the first browser binds one:
+every later drive is answered by the browser already there and asserts against a
+page it did not open. Seven of `example`'s drives carried it and nothing
+reported them — a drive on the wrong browser is green whenever the two runs
+happen to agree ([`FJS-1265`](../../ISSUES.md#fjs-1265)).
+
+CI's `structure` phase runs the same engine, so the next drive written cannot
+reintroduce it quietly. The rule does not reach `packages/*` — those browser
+harnesses are not apps.
+
 ## 2026-09-21 — the vocabulary corpus is four file kinds, and any of them can be switched off
 
 `ws:terms` read `.md` and nothing else, so *which concepts does this framework

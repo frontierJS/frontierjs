@@ -1,12 +1,13 @@
 // api/jobs/invoice-collect.job.ts — present one invoice to the provider.
 //
-// A separate job from `subscription-renew` on purpose. Issuing a document and
+// A separate job from the renewal on purpose. Issuing a document and
 // taking money are two different failures with two different answers: an
 // invoice that was issued and not paid is the ordinary state of every business,
 // and a renewal that rolled back because a card was declined would leave a
 // customer un-billed for a month they used.
 //
-// So the renewal commits, and this is dispatched after it. A provider outage
+// So the renewal commits — a period closing, `api/src/core/commitments.ts` —
+// and this is dispatched after it. A provider outage
 // costs a retry here and nothing upstream.
 
 import { defineJob }       from '@frontierjs/caravan'

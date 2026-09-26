@@ -197,6 +197,17 @@ title: Subscription
 
   $: moves = sub ? subscriptions.transitions(sub, session.level).filter(m => m.allowed) : []
 
+  // …and what comes back instead is the DATE. The four moves are made by the
+  // clock, and two of them are declared on `Invoice` rather than here
+  // (`FJS-D362`): each unpaid invoice owes this subscription a lapse and a
+  // cancel on its own terms. So the dates are read off the invoices, graded
+  // against this row — a pastDue subscription owes no lapse — and the soonest
+  // of each is the one that will happen.
+  $: owed = !sub ? [] : Object.values(bills
+    .flatMap(inv => invoices.commitments(inv, { target: sub }))
+    .reduce((first, c) => (first[c.name] && first[c.name].dueAt <= c.dueAt ? first : { ...first, [c.name]: c }), {}))
+  const OWED = { 'subscription.lapse': 'Lapses', 'subscription.cancel': 'Cancelled' }
+
   /** Whether this caller may stop or restart the renewal. Both methods write one
    *  `@system` column through the model's own `update` policy, so one answer
    *  covers both — and a row that has already ended is out either way, which the
@@ -316,6 +327,10 @@ title: Subscription
     <StatCard label={sub.cancelAtPeriodEnd ? 'Ends' : 'Renews'}
               value={day(sub.currentPeriodEnd)}
               tone={sub.cancelAtPeriodEnd ? 'warning' : ''} id="sd-renews" />
+    {#each owed as c}
+      <StatCard label={OWED[c.name] ?? c.transition} value={day(c.dueAt)} tone="warning"
+                data-owed={c.name} data-due={c.dueAt} />
+    {/each}
   </div>
 
   <!--

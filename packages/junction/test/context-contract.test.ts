@@ -41,7 +41,7 @@ function harness() {
     find(ctx: any) {
       seen[ctx.query.tag ?? 'default'] = {
         user:   ctx.auth?.user?.userId ?? null,
-        client: ctx.client,
+        caller: ctx.caller,
         route:  ctx.route,
         locals: ctx.locals,
         transients: ctx.transients,
@@ -152,7 +152,7 @@ describe('client — propagates, and is information rather than authority', () =
     // No request here, so there is nothing to inherit — the shape is still the
     // shape, which is what stops every reader testing for it.
     await app.service('root').find({})
-    expect(seen.c.client).toEqual({ headers: {} })
+    expect(seen.c.caller).toEqual({ headers: {} })
   })
 })
 

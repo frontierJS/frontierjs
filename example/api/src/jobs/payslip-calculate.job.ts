@@ -29,8 +29,8 @@ export type CalculatePayslipPayload = { runId: number, employeeId: number }
  * The work, exported so a drive can run it and read the answer.
  *
  * `JobHandler` returns void by contract, so the handler below awaits this and
- * discards — the same split `subscriptions-dun` makes, and for the same reason:
- * what the job DID is a fact worth asserting and the queue has no use for it.
+ * discards: what the job DID is a fact worth asserting and the queue has no use
+ * for it.
  */
 export async function calculatePayslipJob(
   ctx: JobContext<CalculatePayslipPayload>,

@@ -2,7 +2,7 @@ import { describe, test, expect } from 'bun:test'
 import { getConfig } from '../core/runtime.js'
 
 // getConfig(metadata, rawArgs[], rawFlags{}) → config
-// Tests cover: arg mapping, flag validation, defaults, short char, variadic, options
+// Tests cover: arg mapping, flag validation, defaults, short char, variadic, constraints
 
 const base = (overrides = {}) => ({
   title: 'test:cmd',
@@ -82,26 +82,46 @@ describe('getConfig — flags', () => {
     expect(flag.s).toBeUndefined()
   })
 
-  test('resolves options enum to mapped value', () => {
-    const meta = base({
-      flags: {
-        env: {
-          options: {
-            production: 'NODE_ENV=production',
-            test:       'NODE_ENV=test',
-          }
-        }
-      }
-    })
-    const { flag } = getConfig(meta, [], { env: 'production' })
-    expect(flag.env).toBe('NODE_ENV=production')
+  test('a value outside `choices` is refused, and one inside passes through unchanged', () => {
+    const meta = base({ flags: { format: { type: 'string', choices: ['table', 'json'] } } })
+    expect(getConfig(meta, [], { format: 'json' }).flag.format).toBe('json')
+    expect(() => getConfig(meta, [], { format: 'csv' })).toThrow()
   })
 
-  test('throws on invalid options value', () => {
-    const meta = base({
-      flags: { env: { options: { production: 'NODE_ENV=production' } } }
-    })
-    expect(() => getConfig(meta, [], { env: 'staging' })).toThrow()
+  test('`min` and `max` bound a number, both ends inclusive', () => {
+    const meta = base({ flags: { every: { type: 'number', min: 5, max: 90 } } })
+    expect(getConfig(meta, [], { every: 5 }).flag.every).toBe(5)
+    expect(getConfig(meta, [], { every: '90' }).flag.every).toBe(90)
+    expect(() => getConfig(meta, [], { every: 4 })).toThrow()
+    expect(() => getConfig(meta, [], { every: 91 })).toThrow()
+  })
+
+  test('a repeatable flag has every value graded', () => {
+    const meta = base({ flags: { tag: { type: 'string', multiple: true, choices: ['a', 'b'] } } })
+    expect(getConfig(meta, [], { tag: ['a', 'b'] }).flag.tag).toEqual(['a', 'b'])
+    expect(() => getConfig(meta, [], { tag: ['a', 'z'] })).toThrow()
+  })
+
+  // A broken declaration fails every run, not only the run that passes the
+  // flag — otherwise the check is as silent as the constraint it was for.
+  test('a broken declaration is refused whether or not the flag is given', () => {
+    for (const def of [
+      { type: 'string', min: 1 },
+      { type: 'number', max: 'ten' },
+      { type: 'string', choices: '[a, b]' },
+      { type: 'string', options: { a: 'A' } },
+    ]) {
+      expect(() => getConfig(base({ flags: { x: def } }), [], {})).toThrow()
+    }
+  })
+
+  test('a flag is named for what it does: `no-x` is refused, and `--no-x` turns `x` off', () => {
+    expect(() => getConfig(base({ flags: { 'no-push': { type: 'boolean' } } }), [], {})).toThrow()
+
+    const meta = base({ flags: { push: { type: 'boolean', defaultValue: true } } })
+    expect(getConfig(meta, [], {}).flag.push).toBe(true)
+    // minimist's reading of `--no-push`.
+    expect(getConfig(meta, [], { push: false }).flag.push).toBe(false)
   })
 
   test('throws on wrong type', () => {

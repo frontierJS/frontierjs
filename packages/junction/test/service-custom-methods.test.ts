@@ -25,7 +25,7 @@ const noop = async () => ({ ok: true })
 function ctx(over: Record<string, unknown> = {}): ServiceContext {
   return {
     service: 'things', method: 'find', id: undefined, data: null,
-    params: {}, query: {}, auth: {}, client: {}, locals: {}, app: {}, result: null,
+    params: {}, query: {}, auth: {}, caller: {}, locals: {}, app: {}, result: null,
     ...over,
   } as unknown as ServiceContext
 }

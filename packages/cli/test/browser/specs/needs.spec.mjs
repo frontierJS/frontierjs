@@ -8,10 +8,10 @@
  *
  * ── Why nothing here spawns a step ─────────────────────────────────────────
  *
- * The steps are real rows on a developer's real machine. `example`'s `stop` is
- * `pkill -f 'bun.*api/index.ts'` and `db:seed` rewrites a database somebody may
- * be looking at, so a spec that presses one to watch it succeed is a spec that
- * takes the machine away from its owner.
+ * The steps are real rows on a developer's real machine. `example`'s `stop`
+ * kills the servers that app is running and `db:seed` rewrites a database
+ * somebody may be looking at, so a spec that presses one to watch it succeed
+ * is a spec that takes the machine away from its owner.
  *
  * So the success path is driven through the branch that matters most and costs
  * nothing: a step that is ALREADY ANSWERING is skipped, which is what makes this

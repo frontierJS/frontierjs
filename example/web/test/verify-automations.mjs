@@ -50,8 +50,13 @@ import { fileURLToPath } from 'node:url'
 
 const HERE   = dirname(fileURLToPath(import.meta.url))
 const ROOT   = join(HERE, '../..')
-const UI     = process.env.UI_URL  ?? 'http://localhost:8010'
-const API    = process.env.API_URL ?? 'http://localhost:8110'
+// The dev server is on the test tier, so this runs beside another project's
+// vite on 8010; the API stays, because a stored `File` ref names its origin
+// (`FJS-1271`).
+const API_PORT = process.env.API_PORT ?? '8110'
+const UI_PORT  = process.env.UI_PORT  ?? '7010'
+const UI     = process.env.UI_URL  ?? `http://localhost:${UI_PORT}`
+const API    = process.env.API_URL ?? `http://localhost:${API_PORT}`
 const CHROME = process.env.FJS_CHROME ?? 'google-chrome'
 
 // Every flow this drive writes carries it, which is how the next run finds the
@@ -66,10 +71,10 @@ const NOTE   = 'Welcomed by an automation'
 // ─── servers ──────────────────────────────────────────────────────────────
 
 const procs = []
-function start(cmd, args, name) {
+function start(cmd, args, name, env = process.env) {
   // `detached`, so stopAll can signal the GROUP — `npx vite` is a launcher and
   // SIGTERM to the handle here leaves vite itself holding the port.
-  const p = spawn(cmd, args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true })
+  const p = spawn(cmd, args, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true, env })
   p.stdout.on('data', () => {})
   p.stderr.on('data', d => { if (process.env.DEBUG) process.stderr.write(`[${name}] ${d}`) })
   procs.push(p)
@@ -83,7 +88,7 @@ const stopAll = () => {
 process.on('exit', stopAll)
 process.on('SIGINT', () => { stopAll(); process.exit(130) })
 
-for (const [port, what] of [[8110, 'the API'], [8010, 'the dev server']]) {
+for (const [port, what] of [[API_PORT, 'the API'], [UI_PORT, 'the dev server']]) {
   let busy = false
   try { await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(500) }); busy = true } catch {}
   if (busy) {
@@ -95,8 +100,9 @@ for (const [port, what] of [[8110, 'the API'], [8010, 'the dev server']]) {
 
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 
-start('bun', ['run', 'api/index.ts'], 'api')
-start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web')
+const PORT_ENV = { ...process.env, API_PORT, UI_PORT }
+start('bun', ['run', 'api/index.ts'], 'api', PORT_ENV)
+start('npx', ['vite', '-c', 'web/config/vite.config.js'], 'web', PORT_ENV)
 
 async function waitForServer(url, label, tries = 160) {
   for (let i = 0; i < tries; i++) {

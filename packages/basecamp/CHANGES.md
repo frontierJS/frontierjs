@@ -1,5 +1,158 @@
 # Changes — Basecamp
 
+## 2026-09-25 — `verify:cli`: breadcrumbs, paired and followed
+
+Six rows for `FJS-D398`. `servers get` names the moves the row's state allows among the
+caller's tools, paired with Litestone's own `transitions(row)` on the app's own client —
+the owner's set, and the viewer's, which is smaller. The printed relation commands are
+then RUN: `workspaces get` reads the server's workspace, and `volumes find --serverId`
+lists exactly the server's volumes by the database. A find carries none. No service
+code changed. A plugin that ignored the row's state reds the pairing row.
+
+## 2026-09-25 — `cli/`: basecamp on a command line
+
+The first `cli/` surface (`FJS-D397`): `cli/config/cli.config.js` names the program,
+the `x-workspace-id` header and the dev endpoint; `cli/src/main.js` is one call to
+`@frontierjs/mcp/client`'s `main()`; and `cli/src/routes/servers/status.js` is the first
+hand-written command — `servers status`, how many machines are in each state and which
+are `unreachable`, as a way of READING `servers_find` rather than a second method to
+grade. `bun run cli <service> <method>` runs it. **Its drive is `bun run verify:cli`**
+(`cli/test/`, because a surface owns its tests): the CLI rows that were in
+`verify:mcp` moved there and now run the app's own entry, plus five for routes — none
+stale against the owner's list, listed in `--help`, `servers status` counted against
+`servers_find` itself, its `--role` narrowing, and an unknown role exiting 2. 20/20.
+`verify:mcp` is back to the agent surface alone, 12/12.
+
+**`--await`** (`FJS-D406`): `jobs trigger <id> --await` holds until the `job:run` it dispatched is terminal and answers with that job — the same row, id and status, Caravan's own `-jobs.db` holds — progress on stderr and the exit code the job's. Nothing in `jobs.service.ts` changed to make it so. 25/25.
+
+## 2026-09-25 — `/mcp` is mounted
+
+`mcpPlugin()` in `api/src/app.ts`, so an MCP client reaches the same services at
+the caller's own standing. **The workspace travels as `x-workspace-id`**, as it does
+from the browser; a client that sends none holds no role and is offered the few
+tools a bare sign-in reads. Measured over the seed at owner · admin · developer ·
+viewer: 286 · 278 · 208 · 152 tools, which needed a fix in `@frontierjs/mcp` to be
+four numbers rather than two. The five services with no model are offered at every
+standing and refused by their hooks — [`FJS-1342`](../../ISSUES.md#fjs-1342).
+`surface.snapshot.md` regenerated, which is what adds `/mcp` to the dev proxy.
+
+**`bun run verify:mcp` drives it** — a real `@modelcontextprotocol/client` at the seed's four roles, the ladder asked as pairs a named tool apart, a call's rows held to the named workspace, and the hub refusal. 12/12; grading the session again reds six.
+
+**§ the app CLI** spawns `@frontierjs/mcp/client`'s bin per command: `servers find` against the tool call it stands for, a filter flag, a command not offered (exit 2), a mistyped `--limit` (exit 2), `--help --agent`, `--workspace` switching Kim between both seeded workspaces, and **an API-key sign-in** (`FJS-D402`) — the owner mints the bot a `servers:read` key through `api-keys create`, the key alone reads the fleet, and `servers reboot` is refused *needs the 'servers:write' scope* with exit 1. **The key signs in for real**: `login --api-key -` reads it off stdin, a mistyped key is refused with nothing saved, the profile lands 0600 under the scratch `XDG_CONFIG_HOME`, every later command runs with no endpoint or key in its environment, and `logout` leaves nothing signed in. **The API states a build** (`FJS_BUILD`) so the CLI's cache is exercised: the first run lists live at that build, the next answers from the cache with the same rows. 27/27.
+
+## 2026-09-25 — `resolveWorkspaceId` reads `ctx.caller.headers` (`FJS-D392`)
+
+Junction renamed `ctx.client` to `ctx.caller`; this follows it.
+
+## 2026-09-25 — the recipes and app screens hear their live events
+
+[`FJS-1062`](../../ISSUES.md#fjs-1062). Both registered a service listener as `const off =
+svc.on('*', …)` read only in `$.onDestroy`, and a `const` whose initializer reaches reactive state is a
+lazy derivation — so the listener was registered at teardown. A fleet run did not fill in machine by
+machine on `/recipes/`, and a hostname written elsewhere did not appear on the open app screen. Both are
+`var`. `verify:screens` adds *the open app screen shows it without a reload*; it has not run yet, since
+the drive currently stops at the graph screen before reaching it.
+
+## 2026-09-22 — the servers search box answers, and `stop` stops only this app
+
+**The search box on `/servers/` answered 400 on every use** ([`FJS-1284`](../../ISSUES.md#fjs-1284)).
+`servers.find` read `?search=` and built `name contains` from it, but no model has a `search` column,
+so autoFilter refused the key before the method ran and the screen drew the refusal over an empty
+list. `recipes` and `volumes` read the same key and answered the same 400. All three now reserve it
+(`reservedQuery: [...WORKSPACE_QUERY, 'search']`) and read `$.reserved.search`. It is not the
+`$search` directive, which is full-text over `@@fts`; a substring of a name is a different question.
+Four cases in `services.test.ts` and a `verify:screens` check that types a seeded name and reads the
+narrowed rows, which fails on the exact refusal with the servers service put back.
+
+**`bun run stop` killed every `bun … api/index.ts` on the machine** ([`FJS-1285`](../../ISSUES.md#fjs-1285))
+— another app's dev API, another session's drive — and `db:reset` runs it first. It now kills a
+matching process only if its working directory is this app's root, read with `lsof` so it answers on
+macOS as well as Linux. Driven with a bystander: another project's `bun --watch run api/index.ts` was
+running beside basecamp's API and web, `stop` closed both of basecamp's ports and left it alive.
+
+## 2026-09-22 — `bun run dev:outpost`: this laptop, as a machine in the fleet
+
+A dev API had two executors — the stub, which answers every route and does nothing, and a refusal —
+so an `inline` app could be deployed in development and served by nobody. Standing a real Outpost up
+by hand was five calls and a secret copied between terminals. **`bun run dev:outpost`** is those
+five calls: sign in (the seed's owner by default), find or make a `dev-outpost` Server row, issue an
+enrollment and exchange it, start the REAL Outpost with the secret, and wait until the heartbeat has
+brought the row ONLINE — which is what makes a release possible, where the process printing a banner
+only says it started. It lives beside the other dev stand-ins at `api/src/providers/outpost-dev.ts`.
+
+**The identity is remembered in `.outpost/machine.json`**, so a restart is the same Server row rather
+than one more per run, and a lost file finds the row it left behind by slug. Both ports are REFUSED
+if held — the heartbeat registers whichever process answers, so a shared port sends every release to
+a machine this did not start. `db:reset` removes `.outpost/`, and `stop` stops the launcher, which
+takes its Outpost with it.
+
+**Building it found two defects, both fixed here.**
+
+*A machine could never enroll twice.* `issueEnrollment` may be run again by design — a person who
+lost the command needs another — but the exchange minted a second `outpost:<slug>` Secret beside the
+first and hit the `[workspaceId, name]` unique, so a reinstalled machine, or one that lost its key,
+was refused forever. The exchange now ROTATES the key it had: the same row, a new value, and the old
+key stops verifying on the spot (`api/test/compute.test.ts`, which fails against the old route).
+
+*The executor refused a release a second replica could carry.* It took the first ONLINE placement and
+refused when that one had no outpost registered — so an app placed on a machine that had not
+heartbeated since the API restarted, beside one that had, was undeployable, and the sentence named the
+machine that could not take it. It now takes the first online placement it can REACH. This is also the
+path anybody takes placing a seeded app on their laptop: the seed's machines say `online` and have no
+outpost.
+
+**`bun run verify:outpost` is the proof** (`api/test/verify-outpost.mjs`), and it needs no browser:
+the API, the launcher and the Outpost as three processes on the API's TEST port with a database of
+their own, so a dev server or another session's drive keeps both its port and its data. Seventeen
+checks — online not merely started, a second launcher refused, a release through a decoy replica
+placed first, the page read back off the disk, a SIGTERM to the launcher freeing both ports, a
+restart as the same row, and a lost identity re-enrolling under a rotated key that the next release
+still reaches. Run against the old executor it fails three.
+
+Two found and filed rather than fixed: the servers screen's search box answers 400 on every use
+([`FJS-1284`](../../ISSUES.md#fjs-1284)), and `bun run stop` kills every `bun … api/index.ts` on the
+machine rather than this app's ([`FJS-1285`](../../ISSUES.md#fjs-1285)).
+
+## 2026-09-22 — a job's next run is asked of the clock
+
+`Job.nextRunAt` was written once, on create, as *a minute from now*, and never
+again — so a job on `0 9 * * 1` showed a time a minute after it was made, to an
+operator deciding whether to step in ([`FJS-1241`](../../ISSUES.md#fjs-1241)).
+It is no longer a column. `nextRunAt(app, jobId)` in `job-schedule.ts` reads
+caravan's `nextRuns()` under the job's schedule name, and `get`, `create` and
+`patch` answer it on the row, so the screen reads the same key it always did.
+A job off the clock answers `null`.
+
+The column's protection went with it: `nextRunAt` was kept out of a member's
+patch by `narrowPatch`'s list, one service verb deep, and a value nobody stores
+needs no one to guard it. `@@index([nextRunAt])` was read by nothing; the DDL
+change is those two lines deleted.
+
+Reading the clock on every `get` is what exposed caravan's next-fire search as
+seconds per call ([`FJS-1283`](../../ISSUES.md#fjs-1283)); the job screen
+timed out until that was fixed. `verify` now opens a weekly job and reads *Next
+run* off the screen.
+
+## 2026-09-22 — seven relationships say whether they repeat
+
+`@@relator` (`FJS-D350`) replaces four `@@unique` lines, four hand-written
+reverse indexes and their `FJS-413` comments. `WorkspaceMember`, `ServerNetwork`,
+`AppNetwork`, `FlagOverride` and `AlertRuleChannel` read `once`; `AppServer`
+reads `many: replicaIndex`, which is the whole of what makes two placements of
+one app on one machine different; `RecipeRun` reads `many`, because running a
+recipe on a server is something that HAPPENS rather than a standing fact — which
+is what its `script` column is copied for.
+
+`AppServer` and `AppNetwork` sat eighteen lines apart with identical relata and
+opposite answers, and no reader could tell deliberate from forgotten. Both now
+say which they are.
+
+**The only DDL change is one DELETED line.** `WorkspaceMember` carried
+`@@unique([workspaceId, userId])` and `@@index([workspaceId, userId])` — the
+same columns in the same order. An index is prefix-matched, so the second was a
+b-tree written on every membership row and read by nothing. Everything else in
+`ddl.snapshot.sql` is byte-identical.
+
 ## 2026-09-20 — paste a page, press one button, it is running
 
 The prototyping door, and the thing a fleet console is missing next to Forge or CapRover: an app

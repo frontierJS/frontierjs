@@ -77,10 +77,12 @@ describe('distinct is a boolean', () => {
     expect(err.message).not.toMatch(/Unknown field/)
   })
 
-  it('applies on findManyCursor too — the second reader of the same arg', async () => {
+  it('findManyCursor reads no distinct at all, so any spelling of it is refused', async () => {
     const db = await seeded()
     await expect(db.post.findManyCursor({ distinct: ['title'], limit: 2 } as any))
-      .rejects.toThrow(/'distinct' on Post\.findManyCursor is a boolean/)
+      .rejects.toThrow(/Unknown argument 'distinct' to Post\.findManyCursor/)
+    await expect(db.post.findManyCursor({ distinct: true, limit: 2 } as any))
+      .rejects.toThrow(/Unknown argument 'distinct' to Post\.findManyCursor/)
   })
 
   it('refuses distinct inside an include, true included, and leaves the include alone', async () => {

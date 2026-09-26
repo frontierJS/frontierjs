@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**106 words** — 12 declarations · 66 field attributes · 28 model attributes.
+**110 words** — 12 declarations · 66 field attributes · 32 model attributes.
 
 ## Declarations
 
@@ -19,7 +19,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `import` | "path" [into <database>] |  |
 | `database` | <name> { path · driver · replication · retention · maxSize · model } | driver: sqlite · jsonl · logger |
 | `tenancy` | { strategy database \| row, … } | strategy: database · row |
-| `claim` | <name> |  |
+| `claim` | <name> [from <Model>(<subject>)[.<column>]] |  |
 | `model` | <PascalCaseSingular> { … } |  |
 | `view` | <name> { fields… @@sql(…) [@@materialized] [@@refreshOn([…])] [@@db(…)] [@@gate(…)] [@@allow(…)] [@@deny(…)] [@@tenant(…)] } |  |
 | `enum` | <Name> { values… } |  |
@@ -109,6 +109,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@unique` | Shape the table | ([field, …][, nullsDistinct: true \| where: <expr>]) |  |  | parses as `uniqueIndex` |
 | `@@check` | Shape the table | ("<sql>"[, "<message>"]) |  |  |  |
 | `@@arc` | Shape the table | ([field, …][, optional: true]) |  |  |  |
+| `@@relator` | Shape the table | ([field, …], once \| many \| many: <column>) |  |  |  |
 | `@@map` | Shape the table | ("table_name") | in a model |  |  |
 | `@@label` | Shape the table | (<field>) |  |  | parses as `labelField` |
 | `@@external` | Shape the table |  |  |  |  |
@@ -119,6 +120,9 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@extensible` | Shape the table | (column, declaredBy: Model[, max: { kind: N }]) |  |  |  |
 | `@@softDelete` | Shape the table | [(cascade)] |  | mode: cascade |  |
 | `@@hasTemplates` | Shape the table | [(<field>)] |  |  |  |
+| `@@expires` | Shape the table | (<field>) |  |  |  |
+| `@@effective` | Shape the table | (from: <field>, to: <field>) |  |  |  |
+| `@@commitment` | Shape the table | ([<relation>.]<transition>, on: <field> [+\|- <n><unit> \| <field>] [, while: <expr>]) |  |  |  |
 | `@@gate` | Decide who may | ("<read>.<create>.<update>.<delete>" \| "<n>") |  |  |  |
 | `@@export` | Decide who may | (ndjson \| csv [, since: <column>]) |  |  |  |
 | `@@allow` | Decide who may | ('read'\|'create'\|'update'\|'delete'\|'all', <expression>[, message]) |  |  |  |

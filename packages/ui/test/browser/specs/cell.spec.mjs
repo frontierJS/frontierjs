@@ -90,6 +90,26 @@ export async function run(t) {
   t.ok(inst && inst !== '2026-01-02T03:04:05Z',
     'an instant IS localized, so it is not the string it arrived as')
 
+  /* ── a point ──────────────────────────────────────────────────────────── */
+  //
+  // `@point` is a `Json` column underneath, so a cell with no `geo` branch fell
+  // through to `String()` and printed `[object Object]` in every row of a
+  // generated list while the form one surface along round-tripped it
+  // (`FJS-1263`). The keys are the model's, so the second spelling is a row.
+
+  t.is(await t.evaluate(`return ${text('geo')}`), '37.7749, -122.4194',
+    'a @point renders as its coordinates')
+  t.is(await t.evaluate(`return ${text('geolong')}`), '51.5, 0',
+    'under the keys the model declared, and a zero longitude is a coordinate')
+  t.is(await t.evaluate(`return ${text('geohalf')}`), '—',
+    'half a coordinate is not a place')
+
+  // The fallback is where the next display name lands before anyone writes it
+  // a branch, so it may not stringify a document either.
+  const unknown = await t.evaluate(`return ${text('unknown')}`)
+  t.ok(unknown && !unknown.includes('[object Object]'),
+    'a display with no branch, holding a document, does not print [object Object]')
+
   /* ── a column the table could not place ───────────────────────────────── */
   //
   // `displayFor` answers `display: null` WITH a reason rather than dropping the

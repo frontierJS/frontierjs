@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-38 services · 36 routes · 15 plugins · prefix (none)
+38 services · 39 routes · 16 plugins · prefix (none)
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -1056,6 +1056,9 @@ once; everything else was registered by hand or by a plugin.
 | GET | `/health/live` | raw |
 | GET | `/health/ready` | raw |
 | GET | `/install.sh` | raw |
+| DELETE | `/mcp` | raw |
+| GET | `/mcp` | raw |
+| POST | `/mcp` | raw |
 | GET | `/metrics` | raw |
 | POST | `/orion/hooks/{path}` | raw |
 | POST | `/orion/wait/{key}` | raw |
@@ -1074,12 +1077,13 @@ In configure order, which is what `requires:` is checked against.
 4. `notifications`
 5. `health`
 6. `metrics-store`
-7. `channels`
-8. `@frontierjs/auth`
-9. `setupRoutes`
-10. `enrollmentRoutes`
-11. `installRoute`
-12. `staticRoutes`
-13. `basecamp-cloud-accounts`
-14. `basecamp-cleanup`
-15. `corsPlugin`
+7. `mcp`
+8. `channels`
+9. `@frontierjs/auth`
+10. `setupRoutes`
+11. `enrollmentRoutes`
+12. `installRoute`
+13. `staticRoutes`
+14. `basecamp-cloud-accounts`
+15. `basecamp-cleanup`
+16. `corsPlugin`

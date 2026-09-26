@@ -30,7 +30,7 @@ import { initSession, _onUnauthorized, session, ready as sessionReady } from './
 export {
   createResource, createStore, createMakeFromSchema,
   buildFieldRules, buildRelations, buildGate, canAtLevel,
-  buildTransitions, transitionsAt, buildVersion,
+  buildTransitions, transitionsAt, buildCommitments, commitmentsAt, buildVersion,
   validateAgainstFields, normalizeBlanks, coerceToSchema, ResourceValidationError, ResourceHookError,
   // A thrown value → per-field messages, and the two questions a 409 raises.
   // `resource.fieldErrors(err)` is the same function reached through a
@@ -44,7 +44,7 @@ export {
   // control a column gets. The other half of a contribution is the component,
   // which is the kit's to bind (`@frontierjs/ui/controls`).
   controlFor, defaultControlFor, formFieldList, labelFieldFor, labelFieldInfo,
-  registerControl, unregisterControl, registeredControls,
+  registerControl, unregisterControl, registeredControls, INTERACTION_TASKS,
   // The mirror of the three above, for READING (`FJS-D242`). It is the same
   // shape and the same reason, and it is here because a registry an app cannot
   // reach is not a registry: the control half was exported and the display half

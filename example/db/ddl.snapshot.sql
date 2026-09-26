@@ -8,7 +8,7 @@
 -- binds to exactly these names and nothing else in an app can see one move.
 -- Fragments an app merges at runtime are not in this file.
 --
--- 55 models · 2 databases
+-- 56 models · 2 databases
 
 -- ─── database main · sqlite ──────────────────────────────────────────────
 PRAGMA foreign_keys = ON;
@@ -1084,8 +1084,6 @@ CREATE TABLE IF NOT EXISTS "subscription" (
   "planVersionId" INTEGER NOT NULL,
   "status" TEXT NOT NULL DEFAULT 'trialing',
   "quantity" INTEGER NOT NULL DEFAULT 1,
-  "currentPeriodStart" TEXT NOT NULL,
-  "currentPeriodEnd" TEXT NOT NULL,
   "trialEndsAt" TEXT,
   "cancelledAt" TEXT,
   "cancelAtPeriodEnd" INTEGER NOT NULL DEFAULT 0,
@@ -1190,6 +1188,35 @@ CREATE TABLE IF NOT EXISTS "journal_line" (
 ) STRICT;
 CREATE INDEX IF NOT EXISTS "idx_journal_line_entryId" ON "journal_line" ("entryId");
 
+-- One cycle of a subscription — the days it has been charged for.
+-- 
+-- **Renewal is this row closing** (`FJS-D367`). A subscription stays `active`
+-- across a renewal, so there is no move on `Subscription` to make one, and
+-- `@@transitions` refuses a self-loop; a period is a thing with a start, an
+-- end and a state, so the move is here. `close` is owed at `endsOn`, and
+-- junction's `commitments()` makes it; `renewPeriod` in `api/src/domain/billing`
+-- is the hook that runs in the same transaction — it issues the next invoice
+-- and opens the next period, or ends the arrangement when the subscription
+-- was asked to stop or already has.
+-- 
+-- The state machine is the once-ness: a second fire for one period meets a
+-- row already `closed`, and the constraint below refuses a second open period
+-- whatever path tries to write one.
+CREATE TABLE IF NOT EXISTS "subscription_period" (
+  "id" INTEGER NOT NULL PRIMARY KEY,
+  "subscriptionId" INTEGER NOT NULL,
+  "startsOn" TEXT NOT NULL,
+  "endsOn" TEXT NOT NULL,
+  "status" TEXT NOT NULL DEFAULT 'open',
+  "userId" TEXT,
+  "createdAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ("status" IN ('open', 'closed')),
+  CHECK (startsOn < endsOn),
+  FOREIGN KEY ("subscriptionId") REFERENCES "subscription" ("id") ON DELETE RESTRICT
+) STRICT;
+CREATE INDEX IF NOT EXISTS "idx_subscription_period_subscriptionId_startsOn" ON "subscription_period" ("subscriptionId", "startsOn");
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_subscription_period_subscriptionId" ON "subscription_period" ("subscriptionId") WHERE "status" = 'open';
+
 -- A DOCUMENT.
 -- 
 -- Every money column here is `@immutable` and so is the number and the instant
@@ -1197,7 +1224,7 @@ CREATE INDEX IF NOT EXISTS "idx_journal_line_entryId" ON "journal_line" ("entryI
 -- moment, and the only honest correction is a `CreditNote` beside it. The
 -- freeze holds against `asSystem()`, which matters here more than anywhere
 -- else in this schema, because the caller that writes invoices IS the system:
--- the renewal job has no session.
+-- a renewal has no session.
 -- 
 -- **`draft` exists again, and `@seals` is why** (`FJS-D167`). It was removed
 -- because `@immutable` froze a column at CREATE, so a row assembled over
@@ -1231,7 +1258,10 @@ CREATE TABLE IF NOT EXISTS "invoice" (
   "periodEnd" TEXT NOT NULL,
   "issuedAt" TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   "dueOn" TEXT NOT NULL,
+  "graceDays" INTEGER NOT NULL,
+  "dunningDays" INTEGER NOT NULL,
   "paidAt" TEXT,
+  "reminded" INTEGER NOT NULL DEFAULT 0,
   "userId" TEXT,
   CHECK ("status" IN ('draft', 'issued', 'paid', 'void')),
   CHECK (total = subtotal + tax),

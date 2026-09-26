@@ -24,13 +24,25 @@
 // Declared: id, status, dates, severity, package. Those cannot be read out of
 // prose without guessing, which is what frontmatter is for.
 //
-// Derived: `refs` (every `FJS-###` and `[[id]]` the body cites) and `files`
+// Derived: `refs` (every `<PREFIX>-###` and `[[id]]` the body cites) and `files`
 // (every repo-relative markdown link). A record does not restate them, because
 // a declared list and the prose that already names them drift, and the prose is
 // the half somebody reads.
+//
+// ── Where they are, and whose ids they hold ──────────────────────────────────
+//
+// `package.json` at the project root declares both:
+//
+//     "registers": { "prefix": "FJS" }                    // files at the root
+//     "registers": { "prefix": "ELA", "dir": ".project" }
+//
+// Not `.fli.json`, which is also `findProjectRoot`'s marker: one at a
+// monorepo's root would claim every nested app beneath it. An undeclared
+// prefix reads every issue row and ruling as unparsed, which `register:check`
+// refuses by name, rather than guessing one.
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
-import { join, relative }                        from 'node:path'
+import { dirname, join, relative, resolve }      from 'node:path'
 
 import { splitFrontmatter } from './compiler.js'
 
@@ -87,6 +99,67 @@ export const IDEA_STATUS = [
   'index'
 ]
 
+// ─── layout ───────────────────────────────────────────────────────────────────
+
+const PREFIX_SHAPE = /^[A-Z][A-Z0-9]*$/
+
+/**
+ * Where `root`'s registers live and the id prefix they are written under.
+ * `dir` is absolute; `prefix` is null when undeclared or malformed, and
+ * `declared` keeps what was written so a refusal can quote it.
+ */
+export function registerLayout(root) {
+  const declared = declaredRegisters(root) ?? {}
+  const prefix   = typeof declared.prefix === 'string' && PREFIX_SHAPE.test(declared.prefix) ? declared.prefix : null
+  return {
+    root,
+    dir:      resolve(root, typeof declared.dir === 'string' ? declared.dir : '.'),
+    prefix,
+    declared: declared.prefix ?? null,
+    ids:      idPatterns(prefix),
+  }
+}
+
+/**
+ * The nearest directory at or above `start` whose `package.json` declares
+ * `registers`. A command run from `packages/cli` or `api/` means the project's
+ * registers, not the package's.
+ */
+export function findRegisterRoot(start) {
+  let dir = resolve(start)
+  while (true) {
+    if (declaredRegisters(dir)) return dir
+    const parent = dirname(dir)
+    if (parent === dir) return null
+    dir = parent
+  }
+}
+
+function declaredRegisters(root) {
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
+    return pkg.registers && typeof pkg.registers === 'object' ? pkg.registers : null
+  } catch { return null }
+}
+
+/**
+ * Every id-shaped pattern, built from one prefix. `any` is an issue or a
+ * ruling id, `ruling` a ruling id alone. With no prefix both match nothing,
+ * so the shape counters in `unparsedRecords` report every record.
+ */
+export function idPatterns(prefix) {
+  const any    = prefix ? `${prefix}-D?\\d+` : '(?!)'
+  const ruling = prefix ? `${prefix}-D\\d+`  : '(?!)'
+  return {
+    any, ruling,
+    anyRe:      new RegExp(`^${any}$`, 'i'),
+    rulingRe:   new RegExp(`^${ruling}$`, 'i'),
+    issueRow:   new RegExp(`^\\|\\s*(<a\\s[^>]*>\\s*<\\/a>\\s*)?\`?${prefix ?? '(?!)'}-`),
+    heading:    new RegExp(`^###\\s+(?:<a\\s+id="[^"]*"><\\/a>)?\\s*(\\d{4}-\\d{2}-\\d{2})\\s*·\\s*\`?(${ruling})\`?\\s*[—–-]\\s*(.*)$`),
+    ruledLead:  new RegExp(`^\\*\\*(\\d{4}-\\d{2}-\\d{2})\\s*·\\s*(?:\`?(${ruling})\`?\\s*[—–-]\\s*)?`),
+  }
+}
+
 // ─── the document ─────────────────────────────────────────────────────────────
 
 /**
@@ -100,19 +173,23 @@ export const IDEA_STATUS = [
  * records reports a clean sheet for a wrong directory.
  */
 export function readRegisters(root) {
-  const issues    = readIssues(root)
-  const decisions = readDecisions(root)
-  const ideas     = readIdeas(root)
+  const layout    = registerLayout(root)
+  const issues    = readIssues(layout)
+  const decisions = readDecisions(layout)
+  const ideas     = readIdeas(layout)
 
   return {
     version: REGISTERS_VERSION,
     root,
+    dir:     layout.dir,
+    prefix:  layout.prefix,
+    declaredPrefix: layout.declared,
     sources: registerSources(root),
     issues,
     decisions,
     ideas,
     ids: indexById([...issues, ...decisions, ...ideas]),
-    unparsed: unparsedRecords(root, [...issues, ...decisions]),
+    unparsed: unparsedRecords(layout, [...issues, ...decisions]),
   }
 }
 
@@ -130,12 +207,12 @@ export function readRegisters(root) {
  * `IDEAS/` is not scanned: it is file-per-record and reads its id out of
  * frontmatter, so it carries no prefix to be keyed to.
  */
-export function unparsedRecords(root, records) {
+export function unparsedRecords({ root, dir }, records) {
   const parsed = new Set(records.map(r => `${r.file}:${r.line}`))
   const out    = []
 
   const scan = (name, shape) => {
-    const file = join(root, name)
+    const file = join(dir, name)
     if (!existsSync(file)) return
 
     const rel = relative(root, file)
@@ -170,7 +247,8 @@ export function unparsedRecords(root, records) {
 export const REGISTER_FILES = Object.freeze(['ISSUES.md', 'ISSUES_ARCHIVE.md', 'DECISIONS.md', 'IDEAS'])
 
 export function registerSources(root) {
-  return REGISTER_FILES.filter(name => existsSync(join(root, name)))
+  const { dir } = registerLayout(root)
+  return REGISTER_FILES.filter(name => existsSync(join(dir, name)))
 }
 
 /**
@@ -220,7 +298,7 @@ function indexById(records) {
  * An unrecognized word is KEPT and reported by `register:check`, never coerced:
  * mapping it onto a known one silently is how a register starts lying.
  */
-function declaredStatus(bodyLines) {
+function declaredStatus(bodyLines, ids) {
   for (const line of bodyLines.slice(0, 4)) {
     const m = line.match(/^\s*\*\*Status:\*\*\s*(\S+)(.*)$/)
     if (!m) continue
@@ -234,7 +312,7 @@ function declaredStatus(bodyLines) {
       // ceremony. What the reader needs is a citation they can follow, and both
       // are that. Graded as a citation like any other, so a status pointing at
       // an id no register holds is `unknown-ref`.
-      supersededBy: (rest.match(/FJS-D?\d+/) ?? [null])[0],
+      supersededBy: (rest.match(new RegExp(ids.any)) ?? [null])[0],
     }
   }
   return {}
@@ -257,20 +335,18 @@ function place(r) {
 // the question a check asks, and it cannot be answered from a file that stops
 // at the first closed row.
 
-const ISSUE_ROW = /^\|\s*(<a\s[^>]*>\s*<\/a>\s*)?`?FJS-/
-
-// The same row with the PREFIX taken out of it. Nothing is read off this — it
+// `idPatterns().issueRow` with the PREFIX taken out of it. Nothing is read off this — it
 // is what `unparsedRecords` counts against the strict one, so a register
 // written under another prefix reads as unparsed rather than as empty. A pass
 // over a register the reader could not see is the one answer this must not
 // give, and it was the answer: an `ACME-1` table graded `0 open · ✓`.
 const ISSUE_ROW_SHAPE = /^\|\s*(?:<a\s[^>]*>\s*<\/a>\s*)?`?[A-Z][A-Z0-9]*-D?\d+/
 
-function readIssues(root) {
+function readIssues({ root, dir, ids }) {
   const out = []
 
   for (const name of ['ISSUES.md', 'ISSUES_ARCHIVE.md']) {
-    const file = join(root, name)
+    const file = join(dir, name)
     if (!existsSync(file)) continue
 
     const src     = readFileSync(file, 'utf8')
@@ -308,7 +384,7 @@ function readIssues(root) {
         continue
       }
 
-      if (!ISSUE_ROW.test(line)) continue
+      if (!ids.issueRow.test(line)) continue
 
       const cells = splitRow(line)
       if (cells.length < 4) continue
@@ -327,12 +403,12 @@ function readIssues(root) {
       // two*. The first is the record's id and the rest are ALIASES for it, so
       // a comment citing either still resolves and neither becomes a dangling
       // reference to a record that was never split out.
-      const ids = splitPkg(cells[0].replace(/<a\s[^>]*>\s*<\/a>/g, '').replace(/`/g, ''))
+      const rowIds = splitPkg(cells[0].replace(/<a\s[^>]*>\s*<\/a>/g, '').replace(/`/g, ''))
 
       out.push({
         kind:     'issue',
-        id:       ids[0] ?? '',
-        aliases:  ids.slice(1),
+        id:       rowIds[0] ?? '',
+        aliases:  rowIds.slice(1),
         pkg:      splitPkg(plain(cells[1])),
         title:    firstClaim(live.trim() ? live : cells[2]),
         status:   closed ? 'closed' : wide ? plain(cells[3]) : ruled ? 'ruled' : 'needs a ruling',
@@ -340,7 +416,7 @@ function readIssues(root) {
         verified: wide ? plain(cells[4]) : '',
         closed,
         body:     plain(body),
-        refs:     refsIn(body),
+        refs:     refsIn(body, ids),
         files:    linkedFiles(cells[cells.length - 1]),
         form:     'table',
         file:     relative(root, file),
@@ -380,15 +456,13 @@ function readIssues(root) {
 // `id: null` and a slug for an anchor rather than skipped, because reporting
 // the gap is the parser's job and minting an id is a decision.
 
-const HEADING = /^###\s+(?:<a\s+id="[^"]*"><\/a>)?\s*(\d{4}-\d{2}-\d{2})\s*·\s*`?(FJS-D\d+)`?\s*[—–-]\s*(.*)$/
 // The heading with the id taken out of it; `ISSUE_ROW_SHAPE`'s counterpart and
 // read by nothing but `unparsedRecords`. The prose form carries no prefix and
 // already parses under any, so only the migrated form needs one.
 const HEADING_SHAPE = /^###\s+(?:<a\s+id="[^"]*"><\/a>)?\s*\d{4}-\d{2}-\d{2}\s*·/
-const RULING  = /^\*\*(\d{4}-\d{2}-\d{2})\s*·\s*(?:`?(FJS-D\d+)`?\s*[—–-]\s*)?/
 
-function readDecisions(root) {
-  const file = join(root, 'DECISIONS.md')
+function readDecisions({ root, dir, ids }) {
+  const file = join(dir, 'DECISIONS.md')
   if (!existsSync(file)) return []
 
   const lines = readFileSync(file, 'utf8').split('\n')
@@ -402,9 +476,9 @@ function readDecisions(root) {
     const bodyLines = lines.slice(open.line + 1, endLine)
     const body = lines.slice(open.line, endLine).join('\n')
     open.record.body  = plain(body).trim()
-    open.record.refs  = refsIn(body)
+    open.record.refs  = refsIn(body, ids)
     open.record.files = linkedFiles(body)
-    Object.assign(open.record, declaredStatus(bodyLines))
+    Object.assign(open.record, declaredStatus(bodyLines, ids))
     out.push(open.record)
     open = null
   }
@@ -418,7 +492,7 @@ function readDecisions(root) {
     const heading = line.match(/^##\s+(.+?)\s*$/)
     if (heading) { close(i); section = heading[1]; return }
 
-    const ruled = line.match(HEADING)
+    const ruled = line.match(ids.heading)
     if (ruled) {
       close(i)
       const [, date, id, claim] = ruled
@@ -437,7 +511,7 @@ function readDecisions(root) {
       return
     }
 
-    const ruling = line.match(RULING)
+    const ruling = line.match(ids.ruledLead)
     if (!ruling) return
     close(i)
 
@@ -447,7 +521,7 @@ function readDecisions(root) {
     // its opening clause.
     const opening = lines.slice(i, i + 8).join(' ')
     const title   = firstClaim(`**${opening.slice(ruling[0].length)}`)
-    const id = inlineId ?? trailingId(opening)
+    const id = inlineId ?? trailingId(opening, ids)
 
     open = {
       line: i,
@@ -484,10 +558,10 @@ function readDecisions(root) {
  * closes. `Closes` names a decision-QUESTION filed in `ISSUES.md`, and the
  * question and the ruling that answers it share an id by design.
  */
-function trailingId(opening) {
+function trailingId(opening, ids) {
   const after = opening.match(/\*\*\s*(?:\(|Closes\b)[^*]{0,80}/)
   if (!after) return null
-  return (after[0].match(/`?(FJS-D\d+)`?/) || [])[1] ?? null
+  return (after[0].match(new RegExp(`(${ids.ruling})`)) || [])[1] ?? null
 }
 
 // ─── ideas ────────────────────────────────────────────────────────────────────
@@ -502,8 +576,8 @@ function trailingId(opening) {
 // and dates left empty. Migration is therefore additive, and a paper somebody
 // drops in without frontmatter appears in the register rather than vanishing.
 
-function readIdeas(root) {
-  const dir = join(root, 'IDEAS')
+function readIdeas({ root, dir: registerDir, ids }) {
+  const dir = join(registerDir, 'IDEAS')
   if (!existsSync(dir)) return []
 
   const ranks = ideaRanks(dir)
@@ -525,10 +599,10 @@ function readIdeas(root) {
       // itself declared derived, so a paper it has never heard of is normal.
       rank:    ranks.get(name) ?? null,
       body:    plain(body),
-      refs:    refsIn(body),
+      refs:    refsIn(body, ids),
       files:   linkedFiles(body),
       form:    Object.keys(meta).length ? 'frontmatter' : 'heading',
-      file:    join('IDEAS', name),
+      file:    join(relative(root, dir), name),
       line:    1,
       anchor:  id,
     })
@@ -593,14 +667,14 @@ function firstClaim(text = '') {
 }
 
 /**
- * Every register id a body cites, `[[FJS-011]]` and bare `FJS-011` alike. The
+ * Every register id a body cites, `[[FJS-011]]` and bare `FJS-011` alike —
+ * the word boundary finds both. The
  * graph is derived from where the prose actually names an id, so there is no
  * declared list to keep in sync with the sentence that already says it.
  */
-function refsIn(text = '') {
+function refsIn(text = '', ids) {
   const out = new Set()
-  for (const [, id] of text.matchAll(/\[\[\s*(FJS-D?\d+)\s*\]\]/gi)) out.add(id.toUpperCase())
-  for (const [, id] of text.matchAll(/\b(FJS-D?\d+)\b/gi))          out.add(id.toUpperCase())
+  for (const [, id] of text.matchAll(new RegExp(`\\b(${ids.any})\\b`, 'gi'))) out.add(id.toUpperCase())
   return [...out].sort()
 }
 

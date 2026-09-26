@@ -75,7 +75,7 @@ describe('a scaled integer has no built-in control', () => {
   test('an ordinary integer still gets the spinner', () => {
     // The negative control on the refusal: an answer of null for every integer
     // would satisfy the two tests above and would empty every generated form.
-    expect(defaultControlFor(fields.qty)).toEqual({ control: 'input', step: 1 })
+    expect(defaultControlFor(fields.qty)).toEqual({ control: 'input', task: 'quantify', step: 1 })
     expect(controlFor(fields.note).control).toBe('input')
   })
 })
@@ -86,7 +86,7 @@ describe('an app that has answered still wins', () => {
     // refused every money column would take that app's order form down.
     registerControl('money', (rule) => (rule?.['x-money'] ? 'money' : null))
     expect(controlFor(fields.total, { field: 'total', model: 'Order' }))
-      .toEqual({ control: 'money', by: 'money' })
+      .toEqual({ control: 'money', by: 'money', task: 'quantify' })
 
     // …and it does not claim the one it declined.
     expect(controlFor(fields.discount).control).toBeNull()
@@ -94,7 +94,7 @@ describe('an app that has answered still wins', () => {
 
   test('a registered control may claim @scale on its own terms', () => {
     registerControl('scale', (rule) => (rule?.['x-scale'] ? { control: 'scaled', places: rule['x-scale'] } : null))
-    expect(controlFor(fields.discount)).toEqual({ control: 'scaled', places: 2, by: 'scale' })
+    expect(controlFor(fields.discount)).toEqual({ control: 'scaled', places: 2, by: 'scale', task: 'quantify' })
   })
 
   test('defaultControlFor is the table alone, registry ignored', () => {

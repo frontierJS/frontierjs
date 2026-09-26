@@ -189,7 +189,7 @@ async function mkDb(schema: string): Promise<Client> {
 function ctx(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
   return {
     service: 'orders', method: 'patch', id: undefined, data: null,
-    query: {}, directives: {}, auth: {}, client: {},
+    query: {}, directives: {}, auth: {}, caller: {},
     locals: { db }, app: {},
     ...over,
   } as unknown as ServiceContext

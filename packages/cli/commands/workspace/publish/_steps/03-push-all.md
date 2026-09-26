@@ -12,7 +12,7 @@ import { execSync } from 'child_process'
 const { released, repo, startTime, interactive, prompts } = context.config
 if (!released?.length) return
 
-if (interactive && !flag['no-push']) {
+if (interactive && flag.push) {
   echo('')
   if (!await prompts.confirm('  Push the release commit and tags?', { default: true })) {
     prompts.close()
@@ -25,7 +25,7 @@ if (interactive && !flag['no-push']) {
 // --no-push is handled HERE rather than as a `skip:` predicate so the run still
 // reports what it did, and says what is left to do. A skipped step prints one
 // line about itself and nothing about the release.
-if (flag['no-push']) {
+if (!flag.push) {
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1)
   log.success(`Published ${released.length} package(s) in ${elapsed}s`)
   log.info('  --no-push: the release commit and tags are local. Push with:')

@@ -1,5 +1,244 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-25 — a call to an imported function follows the component's watches
+
+[`FJS-D404`](../../DECISIONS.md#fjs-d404), VISION RULE 64, closing [`FJS-1343`](../../ISSUES.md#fjs-1343).
+`{money(v)}` under `$: prefs.currency` subscribed to nothing, because `money` reads `prefs` in another file,
+and moved only when another binding in the same `render()` named `prefs`. A call with arguments was also
+classed static and written once. In a component that watches an import, a call to an imported function,
+or to a local function whose body reaches one, is emitted as `$$watches(money)(v)`, which reads every
+import watch before the call. It applies in a template binding, a prop and a derived `const`, and not in a
+handler, a callback that runs later, `{#await}` or an async `const`. `rewriteExpr` carries it as
+`WATCHED_CALLS` on the accessor map, and `_isReactive` treats the wrapper as a read.
+
+## 2026-09-25 — `o = o` notifies from a template handler, not only from a script function
+
+[`FJS-1111`](../../ISSUES.md#fjs-1111). The self-assignment idiom compiled to a forced write in a
+`<script>` function and to an ordinary setter call everywhere `rewriteExpr` rewrites — an inline handler,
+one inside `{#each}`, a `$:` watch handler — where the equality guard skipped it. On a watched import the
+inline form was left as a raw assignment. `isSelfAssignment` and `selfAssignmentWrite` are the one
+definition both rewriters call; `rewriteExpr` takes the proxy fire map, and `rewriteFragmentAssignments`,
+the pre-pass that fed the watch handlers that map, is removed.
+
+## 2026-09-25 — a `var` in the template is the declared snapshot, and nothing warns
+
+[`FJS-1074`](../../ISSUES.md#fjs-1074). VISION RULE 13 promised a warning for a `var` read in a template.
+The check that made that promise sat behind `warnVarTemplate`, which nothing documented, and it fired on
+`export var` props that §3.3 blesses. RULE 13 and §6 now match [`FJS-D381`](../../DECISIONS.md#fjs-d381):
+writing `var` asks for the value as it was, and `_checkExternalReactivity` owns the question of which reads
+nothing watches. `warnVarTemplate` is removed.
+
+## 2026-09-25 — an optional chain in a watch dependency compiles
+
+[`FJS-1025`](../../ISSUES.md#fjs-1025). `$: (server?.status, () => …)` and the group form were refused as a
+compiler bug: the handler and group sites sliced the dependency before reading `?.` as `.`, and named
+`$$watch_server__status` where the declarations had `$$watch_server_status`. `splitWatchPath` and
+`watchSigName` are now the one place a watch path is split and its signal named, called from all six
+sites that spelled it by hand, and `watchRootsOf` reads its root from the same split.
+
+## 2026-09-25 — the flush named in build-system terms
+
+`docs/VISION.md` § 4.7 describes the flush using the vocabulary of *Build
+Systems à la Carte*. The rebuilder is a dirty bit with early cutoff by `equals`.
+The scheduler is a restarting one keyed on DOM depth, and a read of a dirty memo
+suspends to recompute it. The paper has no term for the part Mesa adds, a task
+disposed by another task in the same flush (`IDEAS/ui-ontology.md` § 7 step 5).
+Documentation only; no runtime code changed.
+
+## 2026-09-25 — a derived `const` read only in teardown warns, and one that names itself gets its value
+
+[`FJS-1062`](../../ISSUES.md#fjs-1062) and [`FJS-1064`](../../ISSUES.md#fjs-1064). **`_checkUnreadDerived`**
+warns about a derived `const` whose initializer calls something and which is read nowhere, or only in a
+function handed to `onDestroy`/`onCleanup` — the disposer shape, whose initializer ran at teardown if at
+all — and prints `var name = …`. Any other read silences it, a function's included, since lazy is right
+for a value a handler reads. It matches against the markup as text because the collected template
+expressions miss `style:x="{v}%"` and `{@const}`, so `ctx.source` now carries the component source.
+**A `var` initializer runs `rewriteAssignments`**, as the derived branch already did: `var tick =
+setInterval(() => { now = … })` compiled to an assignment to a getter call and the module did not parse.
+**A call on a binding's own name no longer promotes it** (`callsLocal`), a derived `const` reads its own
+name through the memo inside its initializer, and a read of it outside a callback there is a compile error.
+`readsName` is the one walker for *is this name read, and does a function count*. The REPL's CRUD example
+lost a `const` nothing read. No runtime byte moved.
+
+## 2026-09-24 — an import read nothing watches is listed, graded in a `const`, and shown in devtools
+
+[`FJS-1340`](../../ISSUES.md#fjs-1340) and [`FJS-1339`](../../ISSUES.md#fjs-1339), ruled
+[`FJS-D381`](../../DECISIONS.md#fjs-d381). **`$: store, () => f()`** — a whole imported object as a
+handler's dep, and the list form `$: (a, b), …` — registered no watch and the handler never ran again;
+`dottedWatchDeps` now counts a bare dep that names an import. **`_checkExternalReactivity`** grades a
+top-level `const` as well as the template, counts a handler's deps as watches (it read the bare `$:`
+lines alone, so a covered read was reported), and records every uncovered read on
+`analysis.staticReads` as `{ path, where, from, watchedHere }` whatever the confidence level. A dev
+build passes that list as `push_component`'s third argument; the runtime keeps it on the component
+record, and the devtools panel lists each read as *static* with the watch that would track it.
+**VISION RULES 44 and 47** say what was measured: a component with no `$:` on an import is never
+updated by another component's watch, and the cover RULE 47 describes reaches only a component that
+watches another path, depends on mount order, and outlives the watcher. `test/import-watch.test.js`,
+and the vite drive's devtools spec over a new `Stored` component. **`bun run bench` baseline adopted**
+at `bytes.floor` 5615 and `bytes.rows` 10539: +14 / +15, all of it the dev field `push_component` now
+carries — the tree without it measured the previous baseline exactly.
+
+## 2026-09-24 — an imported primitive is a constant, and a watch over one says so
+
+VISION RULE 44 said an imported binding is inert until a `$:` says otherwise, which read as though
+a `$:` could say so for any import. It now states that an imported primitive is a constant no watch
+can name — `const d = count * 2` over an imported `count` is static, a reassigned `export let`
+included — and that state which moves is a field on an exported object.
+
+[`FJS-1338`](../../ISSUES.md#fjs-1338). A `$:` over one threw `WeakMap keys must be objects` at
+mount, naming nothing. `watchPath` now warns once, naming the watch and the kind of value, and
+returns an inert tuple — `null` and `undefined` included — the way a watch on a getter already did.
+**The compiler passes the watched root as a third argument to every `watchPath` it emits**, since
+the runtime holds only the value; four string assertions moved with it. `test/watch-proxy-writes.test.js`
+§ *a watch over a primitive*, three rows red without the guard.
+
+## 2026-09-24 — a watch over a frozen object reads through it
+
+[`FJS-1337`](../../ISSUES.md#fjs-1337). A Proxy's get trap must return a non-writable,
+non-configurable property's own value, and the watch proxy wrapped every object it read, so
+`$: config` over a frozen config threw a `TypeError` at the first nested read. The get trap now
+hands a locked property's value back unwrapped (`_isLocked`), and warns once when that value is
+itself mutable, since a write inside it reaches the raw object and fires nothing. A deep-frozen
+value is silent. `test/watch-proxy-writes.test.js` § *a read through a frozen parent*, five rows red
+without the check and a control. Bench not run: the check sits on an object-valued read through a
+watched proxy, which no bench fixture makes.
+
+## 2026-09-24 — a bound select shows its value when the options arrive second
+
+[`FJS-1320`](../../ISSUES.md#fjs-1320). `bind:value` on a `<select>` applied the value when the value
+changed and never when the options did, so options loaded after mount — every list fetched from a
+server — left the browser selecting the first one. The select branch of `bindInput` now keeps a
+`MutationObserver` on its element, over the option list and each option's `value` attribute, and
+re-applies the bound value on either; it disconnects with the binding. The attribute matters because
+an unkeyed `{#each}` reorder rewrites values in place and adds nothing.
+`test/browser/runtime/specs/select-late-options.spec.mjs` and `test/select-late-options.test.js`, red
+without the observer, without the attribute watch, and (the second vitest row) without the disconnect.
+Bench unchanged: no bench fixture binds a select.
+
+## 2026-09-24 — a flush started inside a flush joins it, and the cycle guard sees through a component
+
+[`FJS-1329`](../../ISSUES.md#fjs-1329). `batch()` and `flushSync()` called from a node the flush was
+running started a second drain underneath it, with a new generation, so every node's run count began
+again at zero. Every event handler and every prop push is a `batch`, and a parent pushes its child's
+props from inside its own render — a child whose `$:` wrote back to its parent overflowed the stack
+with no cycle reported. `_flush` now returns at once when one is running, and the running loop drains
+what was queued. **User effects now wait for DOM work the DOM tier queued**: without that, a parent's
+`$:` ran before the child it had just pushed props to re-rendered, since the child's render now lands
+one pass later. The same wait covers nodes deferred behind a pending owner, which user effects used to
+run ahead of. `test/flush-join.test.js`, red without the join and, for the DOM-order row, without the
+wait. **`bun run bench` baseline adopted** at `bytes.floor` 5601 and `bytes.rows` 10524: +42 / +63, all
+of it this change — the tree without it measured the previous baseline exactly.
+
+## 2026-09-24 — a template binding that throws no longer freezes the bindings beside it
+
+[`FJS-1330`](../../ISSUES.md#fjs-1330), ruled [`FJS-D379`](../../DECISIONS.md#fjs-d379). The `render()`
+grouping emits a `try` per binding, and the catch calls the new runtime export `contain(e, last)`: the
+throw goes to the nearest `<mesa:boundary>` or the console, the binding keeps the value it last showed,
+and the bindings after it still run. The first run still throws. When a boundary takes its content
+mid-run, `contain` drops the listener so the reads after the throw do not subscribe the disposed node.
+`test/render-binding-contain.test.js`, red without the `try` and without the listener drop.
+**`bun run bench` baseline adopted** at `bytes.floor` 5559 and `bytes.rows` 10461. Of the rise from
+5454 / 10153, this change is +52 / +48, measured against the same tree with the old emission. The rest,
++53 / +260, was already on the tree: `FJS-1332`'s primitive, which that entry left unadopted, plus the
++31 B floor raise that entry could not account for, which has grown since.
+
+## 2026-09-24 — `onMount` skips a component destroyed before it mounted
+
+[`FJS-1335`](../../ISSUES.md#fjs-1335). Mount callbacks run a microtask after the component is built,
+and ran even when it had been destroyed in between — an `{#if}` opened and closed in one flush — so the
+teardown each returned went onto a disposed root and never ran. Both mount paths now call `_runMounts`,
+which skips a disposed root's callbacks and calls at once a teardown returned by a callback that
+destroyed its own component; `makeComponent` skips the parent's attachments with them.
+`test/onmount-disposed.test.js`, red with the check removed.
+
+## 2026-09-24 — a comparison against the row wakes two rows, not all of them
+
+[`FJS-1332`](../../ISSUES.md#fjs-1332). **`createKeyedEquals(source)`** is a new runtime export:
+`is(key)` answers `key === source()` and subscribes the reader to that key, so a write wakes the
+readers of the old value and the new one. A reader subscribes to a per-key bucket that is an
+ordinary `{ _subs }` source, so every existing unsubscribe path reaches it, and the bucket leaves the
+map with its last reader. **The compiler** rewrites `outer === rowExpr` and `!==` inside an
+`{#each}` row to a call on one of these, emitted beside the block and shared by every binding in the
+row that compares the same thing. The lifted side may read only what a row cannot shadow — a `let`,
+a prop, or a derived `const` no header in the row names, and members of those — and the frame rides
+on the accessor map as a non-enumerable key, re-attached after a nested block restores its copy.
+`bun run bench`: `select` 10.3 ms → 1.13 ms against the floor's 0.38 ms, one DOM write either way.
+`bytes.rows` rises by ~194 B gzip for the primitive, which `floor` tree-shakes; **the baseline is not
+adopted here**, because the same run carries another change's raise to `bytes.floor` (+31 B) that
+this entry cannot give the reason for. `test/keyed-equals.test.js`, including the VISION §9.2
+example mounted and counted.
+
+## 2026-09-24 — an effect's re-run prunes its memos, and a late async teardown still runs
+
+[`FJS-1327`](../../ISSUES.md#fjs-1327): `createMemo`'s node is `_selfOwned`, so an effect that builds
+a memo in its body disposes the previous run's on the next one, as `FJS-852` already did for nested
+effects. Fifty re-runs left fifty-one memos subscribed to the source; now one. Compiled memos are built
+under inert owners that never re-run, so their lifetimes do not change. [`FJS-1328`](../../ISSUES.md#fjs-1328):
+`_run` numbers each run, and a teardown an async effect returns after its run is over — the node
+disposed, or run again — is called when it arrives instead of being stored on a node that will never
+call it, or will call it one run late. `test/effect-async-teardown.test.js` and a row in
+`test/effect-child-prune.test.js`, each red with its fix removed.
+
+## 2026-09-24 — `bench/`: bytes, DOM mutations and time for a keyed table, against a floor
+
+`mesa-bench/` was a js-framework-benchmark entry run by hand, with its own `package.json` pinning
+vite 5.4.11 and a config whose compiler and runtime paths no longer resolved, so it had not built
+for as long as nothing ran it. It is now `bench/`, a directory of this package, and `bun run bench`
+runs it: Vite builds three fixtures — `rows` (the 1k-row keyed table), `vanilla` (the same table by
+hand, the floor) and `floor` (the smallest interactive component) — and Chrome drives sixteen
+operations, js-framework-benchmark's nine plus seven keyed reorders, both tables running one seeded
+workload from `fixtures/shared/data.js`. **Gated, in `bench/baseline.json`**: gzip bytes per fixture
+and MutationObserver records per operation, which ratchet down (`--update`) and rise only by
+`--adopt`. **Reported**: milliseconds as a median and as a ratio to the floor, interleaved, never
+committed, from a page served cross-origin isolated so the clock is not rounded to 100µs — a page
+that is not isolated fails the run. **Recorded**: heap. Before a number is believed, both tables must render the same rows and
+every surviving keyed row must be the same node, so a fast wrong answer fails. First read: the keyed
+reconciler makes exactly the floor's DOM mutations on all sixteen, the minimum-move shuffle included;
+`select` is the outlier (`FJS-1332`), and so is heap per row (`FJS-1333`). Its nested-package
+allowance is gone from `scripts/ci-allowances.json`.
+
+## 2026-09-24 — `<mesa:boundary>` catches a throw during a flush
+
+[`FJS-1326`](../../ISSUES.md#fjs-1326), under `FJS-D372`–`FJS-D378`. `_runNode` sent every throw to the
+console and the boundary read only the `.error` of its `$async` states, so a render that threw left a
+half-drawn region still subscribed to what it read. A boundary with a `failed` snippet now sets
+`_catch` on the owner of its content, and `_runNode` walks `_owner` from the node that threw to the
+nearest one; the content is disposed and `failed(error, reset)` renders, `reset` rebuilds it, and the
+error is still logged. The content's own first build is caught by the boundary's effect, since that
+throw never passes through `_runNode`. **A derivation's throw is routed to the boundaries around its
+READERS** (`_raiseToReaders`): a memo is owned where it is declared, usually the script, outside every
+boundary in its own template, and the region it leaves half-built is the reader's. Readers are not
+woken to pull it, because one that re-runs without reading the memo again drops it. In a server render
+a boundary rethrows, and `renderToHTML` now runs its `flushSync` inside the try that names the failure,
+so a throw there fails the page rather than rendering `failed` into it. **The compiler:** `failed` is
+passed `reset`; a body that reads no async value waits on nothing, including the one-async-value case
+the old early return kept on the union; and the warning fires only for a boundary that neither waits
+nor catches. `test/boundary-catch.test.js`, `test/render-ssr.test.js` § FJS-D377.
+
+## 2026-09-24 — a derivation that threw recovers
+
+[`FJS-1325`](../../ISSUES.md#fjs-1325). A memo whose `fn()` threw kept `dirty` set, and `_notify`
+reads a set `dirty` as *already queued*, so it was never queued again and every consumer kept the
+last good value — a derived `const` reading `items[0].name` while a list was briefly empty froze
+for good. `createMemo` now holds the error it threw until a dependency moves: a failed memo is
+queued by the next write to a dependency, a read in between throws the held error rather than
+running `fn` again, and its first success counts as moved whatever `eq` says, since a reader that
+pulled the throw holds an error rather than the old value. `test/memo-error-recovery.test.js`.
+
+## 2026-09-23 — devtools answer *why did this update*
+
+[`FJS-1324`](../../ISSUES.md#fjs-1324). `__dev` read nothing but its own log of writes, so a render
+that fired showed up as nothing and a write showed up with no list of what it woke. It now reads
+the live graph: a signal's reader carries its node (`read._src`), `__dev.graph(id)` answers
+dependencies off `_deps` and dependents off `_subs`, and the one fact an edge cannot hold — what
+DID wake a node — is stamped on it by `_notify` as `_cause`, which `_runNode` snapshots into
+`__dev._runs` as a chain back to the write, through any memo or effect in between. `set()` takes
+the dev path only once a dev build has registered something, and a write that moved nothing is
+no longer logged. The panel has a Runs tab. An unmounting component now unregisters its
+signals; it deleted its record before reading it, so it never had. The runtime drive's
+`devtools-cause` spec reads the chain back, and the fixture harness compiles a fixture as a dev
+build with `t.mount(name, props, { dev: true })`.
+
 ## 2026-09-21 — the `mesa:` namespace is a declaration, not a string inside an error
 
 `MESA_ELEMENTS` names all eight elements once and the typo error prints it, where the list used to

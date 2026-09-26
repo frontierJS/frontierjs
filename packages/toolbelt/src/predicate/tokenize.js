@@ -43,6 +43,12 @@ export const TK = {
   GT:   'GT',   // >
   LTE:  'LTE',  // <=
   GTE:  'GTE',  // >=
+  // ── Offset operators ────────────────────────────────────────────────────
+  // `@@commitment(abandon, on: createdAt + 14d)` — a time moved by a duration.
+  // No expression grammar reads them, so arithmetic in a predicate is still
+  // `Expected …, got '+'` from the parser rather than a value.
+  PLUS:  'PLUS',  // +
+  MINUS: 'MINUS', // -  (a `-` before a digit is a negative NUMBER instead)
 }
 
 export function tokenize(src) {
@@ -123,6 +129,8 @@ export function tokenize(src) {
     if (src[i] === '<') { tokens.push({ type: TK.LT,   value: '<',  ...pos }); advance(); continue }
     if (src[i] === '>') { tokens.push({ type: TK.GT,   value: '>',  ...pos }); advance(); continue }
     if (src[i] === '!') { tokens.push({ type: TK.BANG, value: '!',  ...pos }); advance(); continue }
+    if (src[i] === '+') { tokens.push({ type: TK.PLUS, value: '+',  ...pos }); advance(); continue }
+    if (src[i] === '-' && !/[0-9]/.test(src[i + 1])) { tokens.push({ type: TK.MINUS, value: '-', ...pos }); advance(); continue }
 
     // Semicolon — field separator in compact inline schemas, treated as whitespace
     if (src[i] === ';') { advance(); continue }

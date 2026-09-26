@@ -1,12 +1,15 @@
 <script>
   // App.mesa — the shell. Two components, so an edit to one can be asked
   // whether it disturbed the other: the whole claim of HMR over a reload is
-  // that everything AROUND the edited component survives.
+  // that everything AROUND the edited component survives. `Stored` is there
+  // for the devtools panel, which marks its reads static.
   import Counter from './Counter.mesa'
   import Sibling from './Sibling.mesa'
+  import Stored from './Stored.mesa'
 </script>
 
 <main>
   <Counter />
   <Sibling />
+  <Stored />
 </main>

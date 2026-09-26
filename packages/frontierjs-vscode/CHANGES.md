@@ -1,5 +1,34 @@
 # Changes — frontierjs-vscode
 
+## 2026-09-25 — the formatter changes whitespace and nothing else (FJS-1341)
+
+`0.1.3`. `npm test` 123 pass, typecheck clean.
+
+**One save of `example/db/schema.lite` for a two-line comment edit rewrote 427
+lines and broke the file.** `formatModelBlock` read every line inside a model as
+`name type @attrs` and rebuilt it from those three, so `pay: pending -> paid,`
+became `pay: pending`, a wrapped `@check` message became `"A            product`
+with its quote left open, and the model ended at the first `}` — the closing
+brace of a nested `@@transitions(field) {` body. The open quote swallowed the
+rest of the file, and it ran on every save by default.
+
+**The formatter is `src/litestone/format.ts` now, in two layers.** The aligner
+touches only a line that OPENS a field at the model body's brace depth, outside
+any string, comment or bracket — asked of the line's start, so a field whose
+attribute wraps is still aligned and its continuation is not. Behind it,
+`formatLite` returns the source unchanged unless its output matches with all
+whitespace stripped and token for token through litestone's own lexer, which
+`scripts/build-parser.js` now exports from `parser-bundle.js` beside `parse`.
+
+**`litestone.formatOnSave` defaults to `false`.** Safe is not the same as
+wanted: the aligner puts a model on one column set, the house aligns by hand
+and not uniformly, and 580 lines of `example`'s schema would move on first save.
+
+**The test is the contract**: every `.lite` in the workspace, formatted by the
+aligner alone with the guard off, lexes to the same tokens and is idempotent,
+plus the FJS-1341 shapes over real LSP. Dropping the string and depth checks
+reds 5.
+
 ## 2026-09-09 — frontmatter is YAML, and the grammar says so
 
 `0.1.3`. `npm test` 112 pass, `verify:package` green.

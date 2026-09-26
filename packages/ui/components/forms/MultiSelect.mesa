@@ -202,16 +202,6 @@
     for (const v of vals) selectedValues.add(coerce(v))
   }
 
-  // Selected option objects in order of selection
-  const selectedItems = [...selectedValues]
-    .map(v => optionsMap[v])
-    .filter(Boolean)
-
-  // Re-derive selected items when selectedValues changes
-  $: selectedValues, () => {
-    // Trigger re-render — selectedItems is recomputed reactively
-  }
-
   // Ranked rather than filtered. What was here scored by `indexOf` with a bonus
   // for a prefix, so "ace" ranked `Lovelace` and `Ace Ltd` the same and the
   // order was whatever the options map happened to hold.

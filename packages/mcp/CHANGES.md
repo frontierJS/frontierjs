@@ -1,5 +1,161 @@
 # Changes — @frontierjs/mcp
 
+## 2026-09-25 — breadcrumbs: what a one-row answer offers next
+
+`FJS-D398`. A call answering one row — `get`, `create`, `patch`, `update`, `restore`, or
+a move — carries `_meta['frontierjs/breadcrumbs']` and, when it is not empty, a second
+text block for an agent reading only text: the moves the row's state allows, a `get` for
+each foreign key it carries, and a `find` over the one foreign key pointing back at it.
+**`src/breadcrumbs.ts` grades nothing**: each breadcrumb is a tool in the caller's own
+projected list, narrowed by the row, so a move is offered at `max(model update, move
+gate)` exactly as `tools/list` offers it — not off sierra's `transitionsAt()`, which is
+out of reach and compares the weaker number. A second foreign key back to the same model
+is ambiguous and left out; a row policy is not graded, the tool list's own limit. The CLI
+prints each as the command line that runs it, on stderr so stdout stays the data (`servers
+drain <id>`, `volumes find --serverId <id>`, `--query` for a column with no flag), and
+under `--json` as `breadcrumbs` in the envelope. `test/fixtures/shop.lite` gained
+`Customer` for the relation case. Proof: `test/breadcrumbs.test.ts` (mutation-checked:
+the from-state filter, the offered filter, the ambiguity rule), the plugin rows over
+real HTTP, and basecamp's `verify:cli`.
+
+## 2026-09-25 — `--await`: a tool call held until the jobs it started finish
+
+`FJS-D400` as amended by `FJS-D406`. A `tools/call` carrying `_meta:
+{ 'frontierjs/await': true }` — the protocol's own extension slot, so no input schema
+changes and a caller that never asks is answered as before — is held after the method
+returns until every job the call dispatched is `done`, `failed` or `cancelled`. **The jobs
+are FOUND, not declared**: the route reads the request's correlation id, which Caravan
+stamped on each job at dispatch, and `src/await.ts` polls `app.jobs.findByCorrelation`,
+keeping only jobs created during this call (a client may reuse an `x-request-id`). A
+held call is answered as an SSE stream, since a hold outlives Bun's idle timeout and
+the keep-alive frames are what keep it; each status that MOVES is sent as a
+`notifications/progress` when the caller gave a progress token. The answer adds a second
+text block naming each job and where it ended — what an agent reading only text is
+told — and `_meta['frontierjs/jobs']`. `awaitMs` (default ten minutes) is the longest
+hold. **Not seen, and said**: a job queued through the outbox (`ctx.enqueue`) and one
+dispatched from inside a job carry no reliable correlation id. The CLI's `--await` sends
+the key, prints progress on stderr, and exits 1 when a job did not finish `done`.
+Proof: `test/await.test.ts` for the wait itself, and basecamp's `verify:cli`, where
+`jobs trigger --await` answers with the very `job:run` Caravan's own table holds, already
+terminal, after progress arrived; a wrong correlation id reds three rows.
+
+## 2026-09-25 — an app's own commands: `cli/src/routes/` and `main(config)`
+
+`src/client/routes.ts`: a file at `cli/src/routes/<service>/<method>.{js,ts}` is the
+command `<service> <method>`, adding one the tool list does not carry or replacing the
+derived one of its name (`FJS-D396`). A route declares the tools it `uses` and may call
+no others; its flags are a JSON Schema `input` read by `argv.ts`, so `--help` and every
+refusal read as a derived command's do. **`FJS-D396`'s start-up refusal is split in
+two, because a client cannot tell a tool that is GONE from one this standing is not
+offered**: at run time a route whose tools are not all in the caller's list is simply
+not offered, and `checkRoutes(routes, tools)` — run against the app's top standing,
+in the app's own drive — names a route whose tool no longer exists. `main(config)` is
+an app's whole entry (`cli/src/main.js`): its name, its tenant header and the endpoint
+a first `login` defaults to, with the environment still overriding per run; `bin.ts` is
+the same call for an app with no `cli/`. Proof: `test/run.test.ts` § routes — a route
+adding, replacing, not offered, a call outside `uses` refused, an app refusal exiting
+1, `checkRoutes`, and `loadRoutes` refusing a file at the top of `routes/` — and
+basecamp's `verify:cli`.
+
+## 2026-09-25 — the app CLI keeps its command tree per build
+
+`src/client/cache.ts`: `tools/list` — a quarter of a megabyte at basecamp's owner — is
+kept under `$XDG_CACHE_HOME/<app>/tools/`, 0600, keyed by the endpoint, a DIGEST of
+the key and the tenant, and answered only while the app states the build it was
+listed at. The build comes off `initialize`'s own response (`x-fjs-build`,
+`FJS-D160`, read through the transport's `fetch`), so a hit costs no second request.
+**No build, no cache**: an app nobody deployed states none and is always listed live,
+the build protocol's own rule. A standing that moved without a deploy is the one
+thing the key cannot see, so a command missing from a cached tree is looked up live
+before it is called *not offered*; a demotion leaves a command the app then refuses.
+`FJS_CLI_TRACE=1` says on stderr where the tree came from. Proof: `test/run.test.ts`
+§ the cache — one listing per build, a new build replacing it, none without a build,
+another key missing, a promotion found live, and the file holding no key — and
+basecamp's `verify:mcp`, whose API now states a build: live, then cache, same rows.
+A cache that never hits reds that row.
+
+## 2026-09-25 — the app CLI signs in: profiles and `login --api-key`
+
+`src/client/profiles.ts` keeps one file per app under `$XDG_CONFIG_HOME/<app>/`,
+written 0600 and replaced by a rename, one entry per profile — the endpoint, the key
+and the current tenant. Four commands are the program's own and win over a service of
+the same name: `login --api-key <key|-> --url <mcp>`, `logout`, `profiles` (the key
+masked) and `use <tenant>`; `--profile` picks one, and the environment still
+overrides a profile for one run. **A mistyped key would have signed in**: junction
+reads a Bearer it cannot verify as NOBODY rather than refusing it, so `login`
+compares the tool list with the key against the list with nothing, and refuses a key
+the app reads as nobody without saving it. Proof: `test/run.test.ts` § profiles, and
+basecamp's `verify:mcp`, which signs in with a key on stdin and then runs with no
+endpoint or key in its environment; skipping the comparison reds the mistyped-key row.
+**`use <tenant>` is not the spelling `FJS-D399` wrote** (`workspaces use <id>`):
+`workspaces` is basecamp's noun, and a generic program cannot know an app's —
+reconciled in `IDEAS/app-cli.md` § Open questions.
+
+## 2026-09-25 — the app CLI runs: `run()` and `bin.ts`
+
+`run(argv, opts)` connects to an app's `/mcp`, reads `tools/list` at the caller's
+standing as the command tree, and runs one command; `src/client/bin.ts` is it as a
+process, configured from `FJS_MCP_URL` · `FJS_TOKEN` · `FJS_TENANT_HEADER` ·
+`FJS_TENANT` until profiles exist. A command not in the list is *not offered at your
+standing, or does not exist* — the two cannot be told apart from the client.
+`--json` is `{ ok, data }` / `{ ok: false, error }`, `--quiet` the rows alone, and the
+default a table. `--help`, `<service> --help`, `<service> <method> --help`, and
+`--help --agent` printing the tool's input schema verbatim. `--workspace <id>` sends
+the tenant on the CONNECTION, since the list itself is graded at the role that
+tenant's membership gives (`FJS-D399`); after the command it is still the tenant
+unless the command has a `workspace` column, which is refused by name rather than
+guessed. Exit codes: 0 ok · 1 refused by the app · 2 usage · 3 unreachable. Adds
+`@modelcontextprotocol/client` as a dependency. Proof: `test/run.test.ts` for the
+globals and exit codes, and basecamp's `verify:mcp` § the app CLI, which spawns the
+bin — `servers find` matches the tool call, a filter matches, `--workspace` switches
+tenants, and a bot key minted through `api-keys create` signs the CLI in and is
+refused a write outside its scope. Sending no tenant header reds eight of its nine.
+
+## 2026-09-25 — `@frontierjs/mcp/client`: a tool's schema read as a command line
+
+The first piece of the app CLI (`IDEAS/app-cli.md`, `FJS-D396`–`FJS-D403`), held
+here until its package is named. `commandFor(tool)` turns one `tools/list` entry into
+`<service> <method>` with its flags; `parseArgs(command, argv)` turns a command line
+back into the tool's arguments. **The schema types each value** — `--reference 0012`
+stays text, `--limit 12a` is refused by name — and only an untyped value
+(`--orderBy`) falls back to `@frontierjs/toolbelt/query`'s reading. Structure is the
+wire's bracket notation (`--total[gte] 5`, `--status[in][] paid`); nested input is
+JSON, `@file` or `-`. A read-only column is refused as a flag, and a column named
+like the whole-payload flag (`Secret.data`) keeps it. Proof: `test/argv.test.ts`
+over 526 tools captured from `example` and `basecamp` — every tool reads as a
+command, every top-level argument is reachable, and every flag of every tool set at
+once parses into arguments the server's own `fromJsonSchema` validator accepts;
+returning an integer as text reds three rows. By kind: example 110 flags · 5 flags
+plus JSON · 83 id only · 42 `--data` only; basecamp 77 · 6 · 80 · 123.
+
+## 2026-09-25 — the tool list is graded at the standing the principal resolver answers
+
+Under `strategy row` with `createApp({ principal: membershipClaim(…) })` the
+standing is a claim the resolver adds per call, and the session carries none of it.
+The plugin graded the session, so every member graded as a bare sign-in:
+**measured on basecamp, the owner saw 286 tools and an admin, a developer and a
+viewer 109 each, the same 109.** `standingOf` now asks through `app.withDb`, which
+runs the app's resolver; with it the four answer 286 · 278 · 208 · 152. An app
+with no `app.db` (`strategy database`) keeps the old path. Proof:
+`test/principal-standing.test.ts`, a membership app over a real Litestone client —
+admin and viewer of one workspace a role apart, and the admin naming no workspace
+offered nothing; reverting `standingOf` reds two of its three.
+
+## 2026-09-25 — `find` says what it filters on
+
+A `find` tool's `query` was an untyped object and every directive was `{}`, so an
+agent reading `orders_find` could not see that `status` is a filter or that
+`limit` is a number — measured over `example`, 38 of 240 admin tools
+(`IDEAS/app-cli.md` § Measured). `query` now lists the model's scalar columns,
+minus any carrying `x-filterable`, each as its type OR an operator object, and
+stays open for relation paths and `AND`/`OR`. The operator half is load-bearing:
+the SDK validates before dispatch, and a column typed as its value alone would
+refuse `{ status: { in: [...] } }`, which the Data boundary takes. Directive
+types come off `@frontierjs/toolbelt/directives`' new `DIRECTIVE_SCHEMAS`.
+Proof: three rows in `test/projection.test.ts` — the `x-filterable` one goes red
+with the skip removed — and `verify:mcp`, where a real client sends a plain
+filter, an operator filter and a mistyped `limit`.
+
 ## 2026-09-21 — the `FJS-976` notes name Litestone Studio
 
 `README.md` and `PROJECT_STATE.md` cite the table dump that shipped `@secret`

@@ -11,7 +11,7 @@ an option key and a method look identical, `apiPrefix` moves every route, and
 a plugin mounts paths nobody wrote. Regenerate after a change and read the diff.
 
 ```
-45 services · 49 routes · 14 plugins · prefix /api
+45 services · 49 routes · 15 plugins · prefix /api
 ```
 
 ## Custom methods whose caller's standing is not graded
@@ -23,7 +23,7 @@ in, whatever the row policies say, because the Data boundary never sees who
 asked. Each row below is either meant — a read-shaped method, a scoped write —
 or wants `methods: [{ method, gate }]`.
 
-### Nothing in front of the body but the floor (20)
+### Nothing in front of the body but the floor (17)
 
 The list to read first: only the method body stands between a signed-in caller
 and what it does.
@@ -47,11 +47,8 @@ and what it does.
 | `paymentMethods.startSetup` | **any signed-in caller** — floor, read gate 1; standing not graded |
 | `sessions.revokeOthers` | **any signed-in caller** — floor, read gate 8; standing not graded |
 | `shopfront.settings` | **nothing at the API boundary** — the model declares no `@@gate` |
-| `subscriptions.cancel` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `subscriptions.resume` | **any signed-in caller** — floor, read gate 1; standing not graded |
-| `subscriptions.changePlan` | **any signed-in caller** — floor, read gate 1; standing not graded |
 
-### A service hook runs in front of the body (18)
+### A service hook runs in front of the body (21)
 
 Whether a hook grades the caller is in its source, which this file does not
 read. A named hook says what it is; `anonymous` is a function the app did not
@@ -77,6 +74,9 @@ name, and is as unread as the body.
 | `payRuns.revert` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
 | `payRuns.pay` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
 | `stocktakeSheets.close` | **any signed-in caller** — floor, read gate 5; standing not graded | `transactionScope` |
+| `subscriptions.cancel` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
+| `subscriptions.resume` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
+| `subscriptions.changePlan` | **any signed-in caller** — floor, read gate 1; standing not graded | `transactionScope` |
 
 ## App hooks
 
@@ -884,14 +884,15 @@ name when it declares none.
 - **custom methods** — `cancel`, `resume`, `changePlan`
 - **input** — `changePlan` takes `PlanChange`
 - **who may call** —
-  - `cancel` — **any signed-in caller** — floor, read gate 1; standing not graded
-  - `resume` — **any signed-in caller** — floor, read gate 1; standing not graded
-  - `changePlan` — **any signed-in caller** — floor, read gate 1; standing not graded
+  - `cancel` — **any signed-in caller** — floor, read gate 1; standing not graded; then `transactionScope`
+  - `resume` — **any signed-in caller** — floor, read gate 1; standing not graded; then `transactionScope`
+  - `changePlan` — **any signed-in caller** — floor, read gate 1; standing not graded; then `transactionScope`
 - **broadcasts on** — `subscriptions`
+- **transactional** — `create`
 
 | Phase | Method | Chain |
 | --- | --- | --- |
-| around | `all` | `gateAuth` |
+| around | `all` | `gateAuth` → `transactionScope` |
 | before | `find` | `autoFilter` → `autoSort` |
 | before | `get` | `autoFilter` |
 | before | `aggregate` | `autoFilter` |
@@ -899,6 +900,7 @@ name when it declares none.
 | before | `patch` | `autoValidate` |
 | before | `update` | `autoValidate` |
 | before | `changePlan` | `validateInput` |
+| after | `create` | `openPeriodOf` |
 
 ### `taxRates` · model `TaxRate`
 
@@ -1002,11 +1004,12 @@ In configure order, which is what `requires:` is checked against.
 4. `@frontierjs/auth`
 5. `caravan`
 6. `outbox`
-7. `orion`
-8. `conduit`
-9. `mailer`
-10. `notifications`
-11. `manifest`
-12. `channels`
-13. `corsPlugin`
-14. `health`
+7. `commitments`
+8. `orion`
+9. `conduit`
+10. `mailer`
+11. `notifications`
+12. `manifest`
+13. `channels`
+14. `corsPlugin`
+15. `health`

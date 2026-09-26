@@ -64,7 +64,7 @@ title: Basket
   // open, and a countdown that only moves when something else re-renders is
   // worse than no countdown at all. One timer, cleared on destroy.
   let now = Date.now()
-  const tick = setInterval(() => { now = Date.now() }, 1_000)
+  var tick = setInterval(() => { now = Date.now() }, 1_000)
   $.onDestroy(() => clearInterval(tick))
 
   $: holdLeftMs = cart.heldUntil ? Date.parse(cart.heldUntil) - now : 0

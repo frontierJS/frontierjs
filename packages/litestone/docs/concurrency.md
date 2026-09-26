@@ -241,10 +241,32 @@ one writer at a time, and that is the lock everything above is about.
 Litestone also uses `BEGIN IMMEDIATE` rather than a deferred `BEGIN`, so a
 transaction takes the write lock up front. A deferred begin upgrades to a write
 lock partway through, which surfaces as `SQLITE_BUSY` on a statement in the
-middle of a transaction that had already done work.
+middle of a transaction that had already done work. **`busy_timeout` does not
+cover that failure.** A deferred transaction that has READ holds a snapshot, and
+if another writer committed since, no amount of waiting makes the snapshot
+current, so SQLite answers `SQLITE_BUSY_SNAPSHOT` at once. `$transaction` and
+migrations take the lock up front. Raw code you write does not unless you ask:
+`BEGIN` through `$raw`, and `bun:sqlite`'s `db.transaction(fn)` (use
+`.immediate(...)`), are both deferred.
 
 Two things reach across the WAL guarantee, which is why the read connection is
-given the timeout too: a checkpoint, and recovery after a writer crashed.
+given the timeout too: a checkpoint, and recovery after a writer crashed. The
+switch INTO WAL is a third: on a file not yet in WAL that another process is
+writing, it needs the lock, so every connection litestone opens sets the
+timeout first (`applyWal` in `src/core/pragmas.js`, `FJS-655`, `FJS-1331`).
+
+### Durability: `synchronous = NORMAL`
+
+Main runs WAL with `synchronous = NORMAL`, which fsyncs at a checkpoint rather
+than at every commit. **A process crash loses nothing.** A committed
+transaction is in the WAL, and the next open replays it. **A power loss or
+kernel panic can lose the last transactions committed before it**, and they are
+lost whole, never half-written. The file is never corrupted by this. That is the
+trade every SQLite-in-production setup makes, and it is fixed here rather than
+per database: caravan measured `FULL` at 43× slower for the same inserts
+(`FJS-695`). A deployment that cannot lose an acknowledged write to a power cut
+wants replication (`replication.md`), which bounds the loss by time rather than
+by fsync.
 
 ---
 
@@ -254,6 +276,7 @@ given the timeout too: a checkpoint, and recovery after a writer crashed.
 | --- | --- | --- |
 | `SQLITE_BUSY` in ~1ms | a connection with no timeout | it should be one litestone opened — file it |
 | `SQLITE_BUSY` after exactly the timeout, from one process | two clients on one file in one process | one client per file |
+| `SQLITE_BUSY` instantly inside a transaction, timeout set | a deferred `BEGIN` in raw code read, then tried to write | `BEGIN IMMEDIATE`, or `db.transaction(fn).immediate()` |
 | Requests stall in bursts | a long transaction, probably awaiting something | `ctx.afterCommit` / `ctx.enqueue` |
 | Requests stall while a job runs | a worker in the API's process | run the worker separately |
 | A migration loses to a live app | the CLI's default wait | `LITESTONE_BUSY_TIMEOUT=30000` |

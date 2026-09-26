@@ -45,6 +45,13 @@ interface LitestoneClient {
   $databases?: Record<string, { driver?: string } | undefined>
 }
 
+// Four models here declare `@@expires(expiresAt)`, so the window filters
+// WRITES as well as reads: a delete keyed on a person or a purpose means the
+// rows in force and not the lapsed ones, which would be left behind for the
+// sweep. A purge says so. Deletes of a row just read as in force are bare,
+// because there is nothing for them to miss (`FJS-D351`).
+const PURGE = { withExpired: true } as const
+
 export function createLitestoneAuth(
   db:   LitestoneClient,
   opts: LitestoneAuthOptions = {}
@@ -151,7 +158,7 @@ export function createLitestoneAuth(
         userId:  String(userId),
         email:   user.email,
         actorId: String(entry.actorId ?? userId),
-        at:      new Date().toISOString(),
+        at:      sys.$now().toISOString(),
         meta:    (entry.meta ?? {}) as Record<string, unknown>,
       })
     } catch (err) {
@@ -190,8 +197,22 @@ export function createLitestoneAuth(
       // Last: an app that states a field wins. Spreading it first would mean
       // adding any key above here silently overrides what the app asked for,
       // which is a breaking change nobody would see.
-      ...(sessionFields ? sessionFields(user) : {}),
+      ...appSessionFields(user),
     }
+  }
+
+  // A promise has no own enumerable keys, so an async sessionFields spread to
+  // nothing — and took every standing it returned with it, so an administrator
+  // graded USER(4) with no error anywhere. A value on another row is the
+  // schema's to read, per request: `claim x from Model(userId)`.
+  function appSessionFields(user: Record<string, any>): Record<string, unknown> {
+    if (!sessionFields) return {}
+    const fields = sessionFields(user) as unknown
+    if (fields && typeof (fields as { then?: unknown }).then === 'function')
+      throw new Error(
+        'sessionFields returned a promise. It is called with the user row in hand and must answer synchronously — ' +
+        'a value that lives on another row is declared in the schema instead: claim <name> from <Model>(<userIdColumn>)')
+    return fields as Record<string, unknown>
   }
 
   // The tail every proven identity shares: the app's veto, a token, the session
@@ -228,7 +249,7 @@ export function createLitestoneAuth(
       data: {
         userId:    user.id,
         token,
-        expiresAt: expiresAt(sessionTtl),
+        expiresAt: expiresAt(sessionTtl, sys.$now()),
       }
     })
 
@@ -369,7 +390,7 @@ export function createLitestoneAuth(
     if (!cred) return null
 
     // Check credential-level expiry if set
-    if (cred.tokenExpiresAt && new Date(cred.tokenExpiresAt) < new Date()) return null
+    if (cred.tokenExpiresAt && new Date(cred.tokenExpiresAt) < sys.$now()) return null
 
     const user = await sys.user.findUnique({ where: { id: cred.userId } })
     if (!user) return null
@@ -398,7 +419,7 @@ export function createLitestoneAuth(
   function liveEpisode(session: { impersonatingUserId?: unknown; impersonationEndsAt?: unknown }): boolean {
     return Boolean(session.impersonatingUserId)
       && session.impersonationEndsAt != null
-      && new Date(session.impersonationEndsAt as string) > new Date()
+      && new Date(session.impersonationEndsAt as string) > sys.$now()
   }
 
   // ─── IAuth ────────────────────────────────────────────────────────────────
@@ -423,12 +444,7 @@ export function createLitestoneAuth(
       // ours (crypto.ts), so it routes without costing a session lookup.
       if (token.startsWith(API_KEY_PREFIX)) return verifyApiKeyImpl(token)
 
-      const session = await sys.session.findFirst({
-        where: {
-          token,
-          expiresAt: { gt: new Date() },
-        }
-      })
+      const session = await sys.session.findFirst({ where: { token } })
       if (session) {
         // ── Support mode ────────────────────────────────────────────────
         //
@@ -525,7 +541,7 @@ export function createLitestoneAuth(
       ttl?:    string,
     ): Promise<{ endsAt: string }> {
       const session = await sys.session.findFirst({
-        where: { token, expiresAt: { gt: new Date() } }
+        where: { token }
       })
       if (!session) throw new InvalidTokenError('No live session for this token')
 
@@ -553,8 +569,8 @@ export function createLitestoneAuth(
 
       // The app may ask for less than the ceiling and never for more. A
       // requested ttl is a preference; the cap is the rule.
-      const cap  = new Date(expiresAt(supportTtl))
-      const want = ttl ? new Date(expiresAt(ttl)) : cap
+      const cap  = new Date(expiresAt(supportTtl, sys.$now()))
+      const want = ttl ? new Date(expiresAt(ttl, sys.$now())) : cap
       const endsAt = (want < cap ? want : cap).toISOString()
 
       await sys.session.update({
@@ -663,11 +679,11 @@ export function createLitestoneAuth(
       // One live ticket per person. A second password login supersedes the first
       // rather than adding to it: two open tickets are two independent attempt
       // budgets, so the ceiling below could be walked around by logging in again.
-      await sys.loginChallenge.deleteMany({ where: { userId: user.id } })
+      await sys.loginChallenge.deleteMany({ where: { userId: user.id }, ...PURGE })
 
       const value = generateToken()
       const row   = await sys.loginChallenge.create({
-        data: { userId: user.id, value, expiresAt: expiresAt(loginChallengeTtl) }
+        data: { userId: user.id, value, expiresAt: expiresAt(loginChallengeTtl, sys.$now()) }
       })
 
       // Recorded, because a password that was accepted and never finished is the
@@ -717,13 +733,19 @@ export function createLitestoneAuth(
         return new InvalidSecondFactorError(undefined, retryable)
       }
 
-      const row = await sys.loginChallenge.findFirst({ where: { value: challenge } })
+      // `withExpired` because this read WANTS the lapsed row: *this ticket ran
+      // out* and *no such ticket* are different lines in the trail and only one
+      // of them tells a person to sign in again. Every other read of a windowed
+      // model here takes the filter the schema declares.
+      const row = await sys.loginChallenge.findFirst({
+        where: { value: challenge }, withExpired: true,
+      })
       if (!row) throw await spend('no-such-challenge', null, false)
 
       // Read at resolution, so a lapsed ticket stops working the instant it
       // lapses whether or not the sweep has been anywhere near it.
-      if (new Date(row.expiresAt) <= new Date()) {
-        await sys.loginChallenge.deleteMany({ where: { id: row.id } })
+      if (!sys.$inWindow('loginChallenge', row)) {
+        await sys.loginChallenge.deleteMany({ where: { id: row.id }, ...PURGE })
         throw await spend('challenge-expired', row, false)
       }
 
@@ -737,7 +759,7 @@ export function createLitestoneAuth(
         throw await spend(user ? 'factor-removed' : 'no-such-user', row, false)
       }
 
-      const at   = new Date()
+      const at   = sys.$now()
       const step = verifyTotpCode(cred.value, code, at, totpDrift)
 
       if (step !== null) {
@@ -809,7 +831,7 @@ export function createLitestoneAuth(
       const pending = await sys.credential.findFirst({ where: { userId, type: TOTP_PENDING } })
       if (!pending) throw new NotFoundError('No enrollment in progress — call setupTotp first')
 
-      const step = verifyTotpCode(pending.value, code, new Date(), totpDrift)
+      const step = verifyTotpCode(pending.value, code, sys.$now(), totpDrift)
       if (step === null) throw new ReauthenticationFailedError('Invalid code')
 
       // Promoted rather than copied: the row keeps its id and the `totpPending`
@@ -847,7 +869,7 @@ export function createLitestoneAuth(
       await sys.credential.deleteMany({ where: { userId, type: TOTP_LIVE } })
       await sys.credential.deleteMany({ where: { userId, type: TOTP_PENDING } })
       await sys.credential.deleteMany({ where: { userId, type: RECOVERY } })
-      await sys.loginChallenge.deleteMany({ where: { userId } })
+      await sys.loginChallenge.deleteMany({ where: { userId }, ...PURGE })
 
       await credentialChanged('totp.disabled', userId, {
         model: 'Credential', records: [String(cred.id)],
@@ -895,8 +917,8 @@ export function createLitestoneAuth(
       await sys.credential.deleteMany({ where: { userId, type: TOTP_LIVE } })
       await sys.credential.deleteMany({ where: { userId, type: TOTP_PENDING } })
       await sys.credential.deleteMany({ where: { userId, type: RECOVERY } })
-      await sys.loginChallenge.deleteMany({ where: { userId } })
-      const { count } = await sys.session.deleteMany({ where: { userId } })
+      await sys.loginChallenge.deleteMany({ where: { userId }, ...PURGE })
+      const { count } = await sys.session.deleteMany({ where: { userId }, ...PURGE })
 
       await credentialChanged('totp.reset', userId, {
         model: 'Credential', records: [String(cred.id)],
@@ -929,7 +951,7 @@ export function createLitestoneAuth(
     async verifyTotp(userId: string, code: string): Promise<boolean> {
       const cred = await liveTotp(userId)
       if (!cred) return false
-      return verifyTotpCode(cred.value, code, new Date(), totpDrift) !== null
+      return verifyTotpCode(cred.value, code, sys.$now(), totpDrift) !== null
     },
 
     // ── OAuth: which providers is this app configured for? ───────────────
@@ -981,7 +1003,7 @@ export function createLitestoneAuth(
           provider:  providerName,
           verifier,
           returnTo,
-          expiresAt: expiresAt(oauthFlowTtl),
+          expiresAt: expiresAt(oauthFlowTtl, sys.$now()),
         }
       })
 
@@ -1009,12 +1031,7 @@ export function createLitestoneAuth(
         throw new OAuthError('OAuth state did not match')
       }
 
-      const flow = await sys.oauthFlow.findFirst({
-        where: {
-          state:     args.state,
-          expiresAt: { gt: new Date() },
-        }
-      })
+      const flow = await sys.oauthFlow.findFirst({ where: { state: args.state } })
       if (!flow) {
         await audit('oauth.refused', { meta: { provider: providerName, reason: 'no-flow' } })
         throw new OAuthError('OAuth flow has expired or was already used')
@@ -1145,7 +1162,7 @@ export function createLitestoneAuth(
         })
         // One pending invitation per address: a fresh attempt replaces the last
         // rather than leaving a drawer of live tokens behind it.
-        await sys.verification.deleteMany({ where: { purpose: 'oauthLink', identifier: email } })
+        await sys.verification.deleteMany({ where: { purpose: 'oauthLink', identifier: email }, ...PURGE })
 
         const token = generateToken()
         await sys.verification.create({
@@ -1155,7 +1172,7 @@ export function createLitestoneAuth(
             value:      token,
             provider:   providerName,
             subject:    identity.providerId,
-            expiresAt:  expiresAt(oauthLinkTtl),
+            expiresAt:  expiresAt(oauthLinkTtl, sys.$now()),
           }
         })
 
@@ -1195,9 +1212,8 @@ export function createLitestoneAuth(
     async confirmOAuthLink(token: string): Promise<{ token: string; user: SessionContext }> {
       const pending = await sys.verification.findFirst({
         where: {
-          purpose:   'oauthLink',
-          value:     token,
-          expiresAt: { gt: new Date() },
+          purpose: 'oauthLink',
+          value:   token,
         }
       })
       if (!pending) throw new InvalidTokenError('Invalid or expired link token')
@@ -1212,7 +1228,7 @@ export function createLitestoneAuth(
 
       if (wasUnverified) {
         await sys.credential.deleteMany({ where: { userId: user.id } })
-        await sys.session.deleteMany({ where: { userId: user.id } })
+        await sys.session.deleteMany({ where: { userId: user.id }, ...PURGE })
       }
 
       await sys.credential.create({
@@ -1313,7 +1329,7 @@ export function createLitestoneAuth(
       // destroyed the session it refused to destroy is not a refusal.
       if (onLogout) await onLogout({ userId: session?.userId ?? null, sessionId: session?.id ?? null })
 
-      await sys.session.deleteMany({ where: { token } })
+      await sys.session.deleteMany({ where: { token }, ...PURGE })
 
       await audit('logout', {
         model:   'Session',
@@ -1366,7 +1382,7 @@ export function createLitestoneAuth(
       const user = await sys.user.findUnique({ where: { id: userId } })
 
       await sys.credential.deleteMany({ where: { userId } })
-      await sys.session.deleteMany({ where: { userId } })
+      await sys.session.deleteMany({ where: { userId }, ...PURGE })
 
       // Clean up any pending password-reset / email-verify tokens for this
       // address. An exact match now the identifier IS the address — it used to
@@ -1374,7 +1390,7 @@ export function createLitestoneAuth(
       // is the parsing FJS-476 retired.
       if (user?.email) {
         await sys.verification.deleteMany({
-          where: { identifier: user.email }
+          where: { identifier: user.email }, ...PURGE,
         })
       }
 
@@ -1389,7 +1405,7 @@ export function createLitestoneAuth(
       if (!user) return   // silent — don't reveal email existence
 
       await sys.verification.deleteMany({
-        where: { purpose: 'passwordReset', identifier: email }
+        where: { purpose: 'passwordReset', identifier: email }, ...PURGE,
       })
 
       const token = generateToken()
@@ -1399,7 +1415,7 @@ export function createLitestoneAuth(
           purpose:    'passwordReset',
           identifier: email,
           value:      token,
-          expiresAt:  expiresAt(passwordResetTtl),
+          expiresAt:  expiresAt(passwordResetTtl, sys.$now()),
         }
       })
 
@@ -1415,9 +1431,8 @@ export function createLitestoneAuth(
       // (FJS-476).
       const verification = await sys.verification.findFirst({
         where: {
-          purpose:   'passwordReset',
-          value:     token,
-          expiresAt: { gt: new Date() },
+          purpose: 'passwordReset',
+          value:   token,
         }
       })
       if (!verification) throw new InvalidTokenError('Invalid or expired reset token')
@@ -1464,7 +1479,7 @@ export function createLitestoneAuth(
       await sys.verification.delete({ where: { id: verification.id } })
 
       // Revoke all sessions — force re-login after password change
-      const { count } = await sys.session.deleteMany({ where: { userId: user.id } })
+      const { count } = await sys.session.deleteMany({ where: { userId: user.id }, ...PURGE })
 
       // The change a person most needs to hear about and the one that recorded
       // nothing: whoever holds the inbox holds the account, and a reset nobody
@@ -1483,7 +1498,7 @@ export function createLitestoneAuth(
       if (user.emailVerified) return   // already verified — no-op
 
       await sys.verification.deleteMany({
-        where: { purpose: 'emailVerify', identifier: user.email }
+        where: { purpose: 'emailVerify', identifier: user.email }, ...PURGE,
       })
 
       const token = generateToken()
@@ -1493,7 +1508,7 @@ export function createLitestoneAuth(
           purpose:    'emailVerify',
           identifier: user.email,
           value:      token,
-          expiresAt:  expiresAt(emailVerificationTtl),
+          expiresAt:  expiresAt(emailVerificationTtl, sys.$now()),
         }
       })
 
@@ -1508,9 +1523,8 @@ export function createLitestoneAuth(
       // without the purpose filter (FJS-476).
       const verification = await sys.verification.findFirst({
         where: {
-          purpose:   'emailVerify',
-          value:     token,
-          expiresAt: { gt: new Date() },
+          purpose: 'emailVerify',
+          value:   token,
         }
       })
       if (!verification) throw new InvalidTokenError('Invalid or expired verification token')
@@ -1647,7 +1661,7 @@ export function createLitestoneAuth(
 
     async listSessions(userId: string): Promise<AuthSessionInfo[]> {
       const rows = await sys.session.findMany({
-        where:   { userId, expiresAt: { gt: new Date() } },
+        where:   { userId },
         orderBy: { createdAt: 'desc' },
       })
       // `current` is decided by the caller — this layer is not told which token
@@ -1666,7 +1680,7 @@ export function createLitestoneAuth(
       // userId in the where, not checked after the read: a delete keyed on the
       // id alone ends anyone's session whose id is guessable, and the id is
       // what a UI hands back from listSessions.
-      const { count } = await sys.session.deleteMany({ where: { id: sessionId, userId } })
+      const { count } = await sys.session.deleteMany({ where: { id: sessionId, userId }, ...PURGE })
       if (!count) throw new InvalidTokenError(`No session with id ${sessionId}`)
 
       await audit('session.revoked', {
@@ -1680,7 +1694,7 @@ export function createLitestoneAuth(
       const where: Record<string, unknown> = { userId }
       if (opts?.exceptSessionId) where.id = { not: opts.exceptSessionId }
 
-      const { count } = await sys.session.deleteMany({ where })
+      const { count } = await sys.session.deleteMany({ where, ...PURGE })
 
       await audit('session.revoked', {
         model: 'Session', records: [], actorId: userId, actorType: 'user',

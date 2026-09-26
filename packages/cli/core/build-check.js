@@ -4,7 +4,7 @@
 // started. `core/image.js` made a deploy able to SAY which bytes it ran. That is
 // only worth having if the same bytes can serve more than one environment —
 // invariant 1: one artefact promotes from staging to production unchanged, and
-// only its bindings differ. A build that bakes configuration into the image
+// only its configuration differs. A build that bakes configuration into the image
 // breaks that silently: the result still builds, still starts, still answers
 // health, and still reports a digest. It is simply a DIFFERENT digest per
 // environment, and nothing says so.

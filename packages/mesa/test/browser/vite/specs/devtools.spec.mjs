@@ -71,6 +71,57 @@ export async function run(t) {
     t.ok(seen.rows.length > 0, `and the app's components reached it (${seen.rows.length})`)
     t.ok(seen.rows.join(' ').includes('Counter') || seen.rows.join(' ').includes('App'),
       `naming what the app mounted — ${JSON.stringify(seen.rows.slice(0, 4))}`)
+
+    // ── a cause, across the same channel ──────────────────────────────
+    //
+    // A click in the app re-runs the render reading the value it wrote; the
+    // panel's Runs tab has to name that write as the cause (FJS-1324). The
+    // runtime drive's devtools-cause spec grades the chain itself; this one
+    // grades that the panel is fed it.
+    await t.clickAt('#sibling')
+    await t.eventually(`document.querySelector('#sibling-count').textContent`, '1', 'the app re-rendered')
+
+    const cause = await panel.evaluate(`
+      document.querySelector('.tab[data-tab="runs"]').click();
+      const t0 = Date.now();
+      let rows = [];
+      for (;;) {
+        rows = [...document.querySelectorAll('#panel-runs .run-row')].map(el => el.textContent.replace(/\\s+/g, ' ').trim());
+        if (rows.some(r => r.includes('n = 1')) || Date.now() - t0 > 8000) break;
+        await new Promise(r => setTimeout(r, 100));
+      }
+      return rows;
+    `)
+    t.ok(cause.some((r) => r.includes('Sibling') && r.includes('n = 1')),
+      `the Runs tab names the write that woke Sibling's render — ${JSON.stringify(cause.slice(0, 3))}`)
+
+    // ── a read nothing watches, marked static ─────────────────────────
+    //
+    // Stored reads an imported object with no $: beside it, in the template
+    // and in a const. Both render once and never again (VISION RULE 44), and
+    // the panel is where somebody asks why: the compiler's list has to reach
+    // the component's table (FJS-1340).
+    const statics = await panel.evaluate(`
+      document.querySelector('.tab[data-tab="signals"]').click();
+      const item = [...document.querySelectorAll('#comp-list > *')].find(el => el.textContent.includes('Stored'));
+      if (!item) return null;
+      item.click();
+      const t0 = Date.now();
+      let rows = [];
+      for (;;) {
+        rows = [...document.querySelectorAll('#panel-signals .static-row')].map(el => el.textContent.replace(/\\s+/g, ' ').trim());
+        if (rows.length || Date.now() - t0 > 4000) break;
+        await new Promise(r => setTimeout(r, 100));
+      }
+      return rows;
+    `)
+    t.ok(statics !== null, 'the component reading the store is listed')
+    t.ok((statics ?? []).some((r) => r.includes('shelf.count') && r.includes('template')),
+      `its template read is marked static — ${JSON.stringify(statics)}`)
+    t.ok((statics ?? []).some((r) => r.includes('const doubled')),
+      'and so is the const built from it, which the template reads as a local')
+    t.ok((statics ?? []).length > 0 && statics.every((r) => r.includes('$: shelf.count')),
+      'each row names the watch that would track it')
   } finally {
     await panel.close()
   }

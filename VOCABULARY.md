@@ -36,102 +36,164 @@ because most of them are one spelling over two realms — a Table is a `<table>`
 in css and a database table in litestone — and what is owed is which sense this
 file is naming, not a copy of the other one.
 
+## Placement
+
+**Home** is where a term lives. A machinery word takes its domain from
+`ARCHITECT.md` § 4, by name — `Developer`, `Config`, `Integrations`,
+`Automation`, `Auth`, `Operations`. The application domain contains the realms,
+so a word there takes its realm instead — `API`, `UI`, `Deployment`, `Testing` —
+and `Data` is both the realm and the database domain, since Litestone owns
+both. `Shared` is a word with no
+single owner, not one used widely; `Framework` is a word about the framework
+itself. A blank Home is unplaced, which is a question and not a bucket.
+
+**Under** names the umbrella a term only makes sense inside — the test is
+whether it can be defined without naming the parent. One parent, and a word
+merely contrasted with another (Signal and Event, Channel and Transport) is not
+under it.
+
+A UI row that leaves **Under** blank takes its tier from
+`packages/css/vocabulary.json`, which `fli ws:terms` reads, so `Card` is under
+`Block tier` without this file saying so. State one here only where it differs
+from css's, as Switch does by sitting under its task.
+
 ## Terms
 
 Seeded from `fli ws:terms` at spread ≥ 4 — a term used in four or more
 packages. Ordered by spread, which is how much of the tree you have to read
 before you meet it.
 
-| Term | Status | Means | Note |
-| --- | --- | --- | --- |
-| Resource | blessed |  |  |
-| Observer | blessed |  |  |
-| Release | blessed |  |  |
-| Hook | blessed |  |  |
-| Service | blessed |  |  |
-| Plugin | blessed |  |  |
-| Provider | blessed |  |  |
-| Event | blessed |  |  |
-| Channel | blessed |  |  |
-| Job | blessed |  |  |
-| Component | open |  |  |
-| Data realm | open |  | the first of the three — where `data` alone is too generic to be a term |
-| Writable derived | open |  | mesa `$: name = expr` — `Writable` alone means nothing |
-| Empty state | open |  | the condition a screen is in with nothing to show; `EmptyState` is the component that renders it |
-| Data boundary | open |  | where access is enforced; the widest phrase in the tree |
-| Invariant | open |  |  |
-| WebSocket | open |  |  |
-| State | open |  |  |
-| PascalCase | open |  |  |
-| Phase | open |  |  |
-| User | open |  |  |
-| Table | open |  |  |
-| File | open |  |  |
-| Step | open |  |  |
-| Card | open |  |  |
-| Bearer | open |  |  |
-| Web | open |  |  |
-| Litestone Studio | blessed | The browser UI `litestone studio` serves — the Data realm read and edited by hand | |
-| Studio | alias | `Litestone Studio`. The bare word is shorthand once a page has named it in full |  |
-| Popover | open |  |  |
-| Tab | open |  |  |
-| Homestead | open |  |  |
-| Field | open |  |  |
-| Host | open |  |  |
-| Pill | open |  |  |
-| ServiceContext | open |  |  |
-| Cancel | open |  |  |
-| App | open |  |  |
-| Deployment | open |  |  |
-| Item | open |  |  |
-| Group | open |  |  |
-| Int | open |  |  |
-| GatePlugin | open |  |  |
-| DateTime | open |  |  |
-| Pane | open |  |  |
-| Badge | open |  |  |
-| Drawer | open |  |  |
-| Window | open |  |  |
-| Alert | open |  |  |
-| Structure | open |  |  |
-| Switch | open |  |  |
-| Combobox | open |  |  |
-| Customer | open |  |  |
-| Prose | open |  |  |
-| DropdownMenu | open |  |  |
-| Hub | open |  |  |
-| Product | open |  |  |
-| Tooltip | open |  |  |
-| Order | open |  |  |
-| Button | open |  |  |
-| Code | open |  |  |
-| Access | open |  |  |
-| Page | open |  |  |
-| Row | open |  |  |
-| Block | open |  |  |
-| Question | open |  |  |
-| Domain | open |  |  |
-| Home | open |  |  |
-| Lead | open |  |  |
-| Rule | open |  |  |
-| Suite | open |  |  |
-| Float | open |  |  |
-| Modal | open |  |  |
-| Sidebar | open |  |  |
-| Text | open |  |  |
-| Tier | open |  |  |
-| Account | open |  |  |
-| DatePicker | open |  |  |
-| Input | open |  |  |
-| Progress | open |  |  |
-| Create | open |  |  |
-| Layout | open |  |  |
-| Select | open |  |  |
-| Server | open |  |  |
-| CommandPalette | open |  |  |
-| Pagination | open |  |  |
-| RadioGroup | open |  |  |
-| Save | open |  |  |
-| Cloud | open |  |  |
-| Form | open |  |  |
-| Search | open |  |  |
+| Term | Status | Home | Under | Means | Note |
+| --- | --- | --- | --- | --- | --- |
+| Resource | blessed | UI | | | |
+| Relator | blessed | Data | Model | a relationship that is a ROW — existentially dependent on the two or more things it relates, so it cannot outlive one of them | `.lite`'s `@@relator`, [`FJS-D350`](DECISIONS.md#fjs-d350). Exact and from ontology work (UFO, Guizzardi 2005); *join table* half-fits and implies the absence of identity, which is the one thing being denied. A row whose foreign keys are OWNERSHIP rather than mediation is not one — `ApiKey` |
+| Commitment | blessed | Data | Transition | a transition the system owes a row at a time derived from that row — the clock causing a WRITE, where a window is the clock changing what counts | `.lite`'s `@@commitment`, [`FJS-D353`](DECISIONS.md#fjs-d353) / [`FJS-D354`](DECISIONS.md#fjs-d354). REA's word (McCarthy 1982), whose commitment is fulfilled by an event; here it is fulfilled by a transition |
+| Transition | blessed | Data | Model | a named edge of a `@@transitions` state machine — what `db.x.transition(id, name)` makes | The word the code types; see *Move* |
+| Move | alias | Data | Transition | Transition | Prose's second name for a transition, folded by [`FJS-D353`](DECISIONS.md#fjs-d353) |
+| Observer | blessed | Shared | Hook | | |
+| Release | blessed | Deployment | | | |
+| Hook | blessed | Shared | | | |
+| Service | blessed | API | | | |
+| Plugin | blessed | API | | | |
+| Provider | blessed | Integrations | | | |
+| Event | blessed | API | | what Junction announces — after a write, or by `publish()` — carried on a Channel to whoever may read it | `FJS-D44`, `FJS-D393`. *Announce* is its verb, and it has no second noun: *Announcement* and *Mutation* are not terms, and *a write* is the plain phrase |
+| Channel | blessed | API | | | |
+| Job | blessed | Automation | | | |
+| Component | blessed | UI | | a `.mesa` file — a page, a layout and a Button alike; what kind is said by its parent | `FJS-D382` |
+| Data realm | open | Framework | Realm | | the first of the three — where `data` alone is too generic to be a term |
+| Writable derived | blessed | UI | Signal | a derived Signal that may also be written, the write passing back to its sources | mesa `$: name = expr` — `Writable` alone means nothing. The prior-art name is a lens (Foster et al. 2007), cited and not used. `FJS-D384` |
+| Empty state | open | UI | Block tier | | the condition a screen is in with nothing to show; `EmptyState` is the component that renders it |
+| Data boundary | open | Data | Boundary | | where access is enforced; the widest phrase in the tree |
+| Invariant | blessed | Framework | | a rule the framework does not break without a ruling — numbered in `CLAUDE.md` § Invariants and graded by `fli ws:invariants` | a CONTRIBUTOR word: cited by number in comments and registers, where the reader has the list. An app developer does not have it, so nothing an app sees cites one by number ([`FJS-1282`](ISSUES.md#fjs-1282)) — it states the rule |
+| State | open | Data | Transition | | |
+| PascalCase | open | | | | |
+| Phase | blessed | Shared | | a named step of an ordered list something runs — qualified at every use, *startup phase* or *CI phase*, never bare | `FJS-D395`. Junction's startup phases are one list both entry points run (Invariant 4); CI's are `scripts/ci.mjs`'s table. A Plugin's `register`/`boot`/`ready`/`shutdown` are not phases — `boot-plugins` and `ready-hooks` are the phases that call them |
+| User | open | Auth | | | |
+| Table | open | Data | Model | | |
+| File | open | Data | Field | | |
+| Step | open | Automation | Run | | |
+| Card | open | UI | | | |
+| Bearer | open | Auth | | | |
+| Web | open | Framework | Surface | | |
+| Litestone Studio | blessed | Data | | The browser UI `litestone studio` serves — the Data realm read and edited by hand | |
+| Studio | alias | Data | Litestone Studio | `Litestone Studio`. The bare word is shorthand once a page has named it in full | |
+| Popover | open | UI | | | |
+| Tab | open | UI | | | |
+| Homestead | open | | | | |
+| Field | open | Data | Model | | |
+| Host | open | Operations | | | |
+| Pill | open | UI | | | |
+| ServiceContext | alias | API | Context | Context — a Call's | `FJS-D391`. The type's name; in prose it is the Call's Context |
+| Cancel | open | | | | |
+| App | open | Framework | | | |
+| Deployment | open | Deployment | Release | | |
+| Item | open | | | | |
+| Group | open | | | | |
+| Int | open | Data | Field | | |
+| GatePlugin | open | Data | Gate | | litestone's export, not Junction's |
+| DateTime | open | Data | Field | | |
+| Pane | open | UI | | | |
+| Badge | open | UI | | | |
+| Drawer | open | UI | | | |
+| Window | open | Data | Model | | |
+| Alert | open | UI | | | |
+| Structure | open | Developer | | | |
+| Switch | open | UI | Select task | | |
+| Combobox | open | UI | Select task | | |
+| Customer | open | | | | |
+| Prose | open | UI | | | |
+| DropdownMenu | open | UI | Overlay tier | | |
+| Hub | open | Operations | | | |
+| Product | open | | | | |
+| Tooltip | open | UI | | | |
+| Order | open | | | | |
+| Button | open | UI | | | |
+| Code | open | | | | |
+| Access | open | Data | Gate | | |
+| Page | open | UI | | | |
+| Row | open | Data | Model | | |
+| Block | open | | | | |
+| Question | open | | | | |
+| Domain | open | Framework | | | |
+| Home | open | | | | |
+| Lead | open | | | | |
+| Rule | open | Developer | | | |
+| Suite | open | Testing | | | |
+| Float | open | Data | Field | | |
+| Modal | open | UI | Overlay tier | | |
+| Sidebar | open | UI | | | |
+| Text | open | UI | | | |
+| Tier | open | Shared | Hook | | |
+| Account | open | Auth | | | |
+| DatePicker | open | UI | Quantify task | | |
+| Input | open | UI | Text task | | |
+| Progress | open | UI | | | |
+| Layout | open | UI | | | |
+| Select | open | UI | Select task | | |
+| Server | open | Operations | | | |
+| CommandPalette | open | UI | Overlay tier | | |
+| Pagination | open | UI | | | |
+| RadioGroup | open | UI | Select task | | |
+| Save | open | UI | Resource | | |
+| Cloud | open | Operations | | | |
+| Form | open | UI | Resource | | |
+| Search | open | | | | |
+| Model | blessed | Data | | what exists and what rules govern it — the Data realm's noun | ARCHITECT.md § 1 |
+| Gate | blessed | Data | | the ordinal per-operation level check, `@@gate` | ARCHITECT.md § 2 |
+| Gate ladder | blessed | Data | Gate | the 0–9 scale, STRANGER…LOCKED | `@frontierjs/toolbelt/gate` |
+| Policy | blessed | Data | Gate | `@@allow`/`@@deny` row and field predicates — never the gate | `FJS-D45` |
+| Signal | blessed | UI | | Mesa's reactive cell — never crosses a Boundary | `FJS-D44` |
+| Binding | blessed | UI | | a place in the compiled output that re-runs when a Signal it reads changes; `bind:` is the two-way case | `FJS-D383`. Deployment's sense is *configuration*; litestone's `@values` binding is unruled |
+| Gesture | blessed | UI | | what a person does on the screen — a click, a key, a drop — named for the person and not the DOM | `FJS-D385`. *Event* is Junction's (`FJS-D44`) and *Action* is orion's |
+| Effect | blessed | UI | Signal | `$: deps, handler` — work that runs when a Signal it names changes and returns nothing anyone reads | `FJS-D386`. RULE 61 runs effects last, after derivations and DOM building |
+| Guard | blessed | Shared | Hook | a hook tier that only answers allow/deny | `FJS-D06` |
+| Boundary | blessed | Shared | | qualified at every use — the Data boundary, the app↔world boundary | `FJS-D06` |
+| Context | blessed | Shared | | plural by realm; each package documents its own by lifetime | `FJS-D03` |
+| Chain of Responsibility | blessed | API | Hook | the hook pipeline | ARCHITECT.md § 2 |
+| Queue | blessed | Automation | Job | what a Job runs on | `FJS-D198` |
+| Run | open | Automation | Job | bounded work that finishes and can be resumed — a backfill, a pay run, a deploy | ARCHITECT.md § 2 *Not yet named* |
+| Target | blessed | Integrations | Provider | a Conduit declaration of a third party | ARCHITECT.md § 2 |
+| Transport | blessed | API | Channel | the delivery medium — not the broadcast set | `FJS-D06` |
+| Pivot | blessed | Deployment | Release | the transition at which N-1 compatibility ends | `FJS-D06` |
+| Realm | blessed | Framework | | Data, API, UI, Deployment, Testing | ARCHITECT.md § 1 |
+| Surface | blessed | Framework | | a directory beside `db/` with its own config, tests and release — `api/`, `web/`, `site/`, `widgets/`, `extension/`, `desktop/` | CLAUDE.md Invariant 3. `@frontierjs/css` spells its base block shape the same way (`.surface`, the lineage of Card, Alert and Dialog); that sense is the css register's and is written `.surface` where the two could meet |
+| Slice | open | Framework | | a package that crosses every realm on purpose — auth, notifications | `FJS-D06` § 7 |
+| Method | blessed | API | Service | a custom service method — never an Action | `FJS-D02` |
+| Call | blessed | API | Service | one run of a service method through the pipeline — what `$` is inside, from the first hook to the announcement | `FJS-D391`. Not a Request: one request can make several Calls, and a Job makes one with none |
+| Envelope | blessed | API | Call | the result shape `{ kind, object, data, errors, total?, limit?, offset? }` a Call answers in | `FJS-D391`. One owner, `junction/src/core/envelope.ts` (Invariant 4) |
+| Directive | blessed | API | Call | a per-call instruction about the answer rather than a filter on it — `limit`, `offset`, `orderBy`, `select`, read into `ctx.directives` | `FJS-D391`. `$limit` is how one travels, and the `$` is transport syntax only (Invariant 10). The table is `@frontierjs/toolbelt/directives` |
+| Route | blessed | API | | an HTTP handler registered with `app.get`/`app.post`/…, outside the pipeline — no hooks, no gate, no Envelope | `FJS-D391`. A Route establishes a session and everything after is a Service (`FJS-D20`) |
+| Interaction task | blessed | UI | | what a control is FOR — a control is a technique for one task, and one task has many techniques | Foley, Wallace & Chan 1984: select · position · orient · path · quantify · text. `controlFor` answers four of them as `task` (sierra `INTERACTION_TASKS`), plus `bytes`, which is not Foley's and which a `File` column answers; path and orient have no column. `FJS-D384`, `FJS-D387` |
+| Select task | open | UI | Interaction task | choose among values the field already knows — an enum, `x-values`, a relation, a boolean | Placement from `IDEAS/ui-ontology.md` |
+| Quantify task | open | UI | Interaction task | enter an amount on a scale — a number, a date, `@money`, `@scale` | `@money` and `@scale` have no built-in technique. Placement from `IDEAS/ui-ontology.md` |
+| Text task | open | UI | Interaction task | enter a string the field does not enumerate | Placement from `IDEAS/ui-ontology.md` |
+| Position task | open | UI | Interaction task | place a point — `x-geo` | Placement from `IDEAS/ui-ontology.md` |
+| Container tier | blessed | UI | | where a thing sits in `@frontierjs/css`'s containment ladder | The Under of a css term comes from `packages/css/vocabulary.json`'s tier, read by `fli ws:terms`; a root row states one only where it differs. `FJS-D384` |
+| Frame tier | open | UI | Container tier | the application shell, persistent across navigation — App, Topbar, Sidebar, Shell | Placement from `IDEAS/ui-ontology.md` |
+| Page tier | open | UI | Container tier | one screen and its panes — Screen, Pane, View, Tabs | Placement from `IDEAS/ui-ontology.md` |
+| Region tier | open | UI | Container tier | a section of a page — Section, Prose, Toolbar, Nav, Pagination | Placement from `IDEAS/ui-ontology.md` |
+| Block tier | open | UI | Container tier | a self-contained unit — Card, Alert, Table, Empty | Placement from `IDEAS/ui-ontology.md` |
+| Inline tier | open | UI | Container tier | runs in a line of text — Button, Pill, Badge, Text, Progress | Placement from `IDEAS/ui-ontology.md` |
+| Overlay tier | open | UI | Container tier | floats above the page, beside the ladder — Dialog, Drawer, Popover, Tooltip, Toast | Placement from `IDEAS/ui-ontology.md` |
+| Base tier | open | UI | | the two shapes every Block and Inline term is built from — Chip, Surface. css says it is not a containment tier | Read from `packages/css/vocabulary.json` |
+| Layout tier | open | UI | | one arrangement each and no skin, composable onto any tier — Stack, Cluster, Center, Split, Container | Read from `packages/css/vocabulary.json`; across the ladder, not on it |

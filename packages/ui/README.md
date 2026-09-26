@@ -97,7 +97,7 @@ The old six-value `variant` conflated the two, which is why `outline` and
 
 **forms** — `Form` `Button` `Field` `Fieldset` `Label` `Input` `Textarea`
 `Select` `Checkbox` `Switch` `RadioGroup` `NumberInput` `Slider` `Thresholds` `Combobox`
-`MultiSelect` `DatePicker` `DateTimeInput` `JsonInput` `FileUpload`
+`MultiSelect` `DatePicker` `DateTimeInput` `JsonInput` `CodeInput` `FileUpload`
 
 **display** — `Badge` `Pill` `Tag` `Dot` `Kbd` `Mono` `Divider` `Breadcrumbs`
 `Pagination` `Steps` `SectionHeader` `Callout` `EmptyState` `CopyButton` `Code`
@@ -201,6 +201,31 @@ get the wall clock, which is the one thing that must never reach the column. A
 `bind:` is not used there on purpose: a component binding takes a writable
 top-level `let` in the caller, so a field of a record is written back through
 the callback.
+
+**A one-way `value` is where a control starts, not what it must show** — the
+same as a native `value` (`FJS-D380`). A pick changes what is on screen whether
+or not the app keeps it, so a screen whose writes can be REFUSED — a workflow
+that allows some moves and not others, a server that says no — keeps a draft
+and puts it back:
+
+```svelte
+<script>
+  let draft = issue.stateId
+  $: issue.stateId, () => { draft = issue.stateId }   // the row moved elsewhere
+
+  async function move(to) {
+    try { await issues.patch(issue.id, { stateId: to }) }
+    catch { draft = issue.stateId }                    // refused: show the truth
+  }
+</script>
+
+<Select name="state" {options} bind:value={draft} onchange={(e) => move(e.target.value)} />
+```
+
+With `value={issue.stateId}` instead, a refused pick stays on screen over a row
+that never moved, and nothing says so. The kit does not snap back on its own:
+a control that returned to its prop after every change would undo every pick a
+caller only reads through the form.
 
 **A `type="password"` field draws its own show/hide toggle.** A password box
 with no way to read back what was typed is the commonest cause of a sign-in

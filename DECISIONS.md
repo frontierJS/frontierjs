@@ -27,6 +27,106 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d405"></a>2026-09-25 · `FJS-D405` — How is the tenant switch spelled — `use <tenant>`, the program's own verb, one spelling in every app.
+
+Asked in [`IDEAS/app-cli.md`](IDEAS/app-cli.md) § Open questions. **A** was picked over **B** (`cli/config/` names the noun (`tenant: { header, noun: 'workspaces' }`) and the command is `<noun> use <id>`, beside that service's own methods).
+
+The paper's recommendation, taken as written: B puts a program verb inside an app's service namespace, where a `use` method on the service would be hidden, and costs a config key to say what `--workspace` already says; A amends `FJS-D399`'s example and nothing else.
+
+### <a id="fjs-d403"></a>2026-09-25 · `FJS-D403` — Are commands spelled as the service names, or kebab-cased — Verbatim, the MCP tool name.
+
+Asked in [`IDEAS/app-cli.md`](IDEAS/app-cli.md) § Open questions. **A** was picked over **B** (kebab-case, derived one way by `@frontierjs/toolbelt/inflect`).
+
+The paper's recommendation, taken as written: the agent and the human then type one name, and the derivation in B is a translation with no owner yet.
+
+### <a id="fjs-d395"></a>2026-09-25 · `FJS-D395` — What is a Phase — Blessed and qualified at every use, the way Boundary is (`FJS-D06`): *a named step of an ordered list something runs*. *Startup phase* and *CI phase*, never bare.
+
+Asked in [`IDEAS/api-ontology.md`](IDEAS/api-ontology.md) § Open questions. **A** was picked over **B** (ordinary English, excluded in `terms.js`).
+
+The paper's recommendation, taken as written: both lists are owners that tests and docs name by phase, and the Boundary precedent already rules the shape for a word that is right in two places.
+
+### <a id="fjs-d394"></a>2026-09-25 · `FJS-D394` — Is *Battery* a term — Ordinary English, excluded in `packages/cli/core/terms.js`. The unit is Plugin, and *batteries included* stays a phrase.
+
+Asked in [`IDEAS/api-ontology.md`](IDEAS/api-ontology.md) § Open questions. **A** was picked over **B** (blessed as *a Plugin Junction ships*, under Plugin).
+
+The paper's recommendation, taken as written: nothing checks what makes a Plugin a battery, and a Plugin already answers *what attaches a capability* (`FJS-D06`).
+
+### <a id="fjs-d393"></a>2026-09-25 · `FJS-D393` — Is there a noun for a write's announcement — *announce* is the verb for publishing an Event after a write, and Event is the only noun. *Announcement* and *Mutation* are not terms — *a write* is the plain phrase. The startup phase is renamed `log-listening`.
+
+Asked in [`IDEAS/api-ontology.md`](IDEAS/api-ontology.md) § Open questions. **A** was picked over **B** (*Announcement* is blessed as the kind of Event a write publishes, under Event).
+
+The paper's recommendation, taken as written: a second noun for one Event is the thing § 2 exists to stop, and the phase rename frees the verb for its one sense.
+
+### <a id="fjs-d392"></a>2026-09-25 · `FJS-D392` — What does `ctx.client` become — `ctx.caller`. The field's own comment already says *caller environment*, and it reads as `ctx.caller.ip`.
+
+Asked in [`IDEAS/api-ontology.md`](IDEAS/api-ontology.md) § Open questions. **A** was picked over **B** (`ctx.peer`. The network word: exact for the ip, loose for the headers), **C** (keep `ctx.client`, and qualify *client* in prose every time).
+
+The paper's recommendation, taken as written: the comment already chose the word, and a rename touches 14 sites and no persisted value. `ctx.user` stays the principal, so *caller* names the machine end and not the person.
+
+### <a id="fjs-d391"></a>2026-09-25 · `FJS-D391` — Call, Envelope, Directive and Route are blessed as `VOCABULARY.md` defines them.
+
+Asked in [`IDEAS/api-ontology.md`](IDEAS/api-ontology.md) § 2, where all four were words Junction's code already spelled and no register defined: `$`, `enterCall` and `currentCall` name the **Call**; `core/envelope.ts` names the **Envelope**, which closes the entry `ARCHITECT.md` § 2 *Not yet named* held open since `FJS-D06` §3; `ctx.directives` and `@frontierjs/toolbelt/directives` name the **Directive** Invariant 10 is about; and `app.get`/`app.post` register the **Route** `FJS-D20` rests on. Blessing them names what exists and changes no code. **A Call is not a Request** — one request can make several calls and a job makes one with none — so `ServiceContext` is the Call's Context, the per-realm reading `FJS-D03` asks for, and needs no row of its own.
+
+### <a id="fjs-d390"></a>2026-09-25 · `FJS-D390` — Does screen-local state want `@@transitions`' shape — Not yet. Stay open until a screen's booleans cause a defect.
+
+Asked in [`IDEAS/ui-ontology.md`](IDEAS/ui-ontology.md) § Open questions. **A** was picked over **B** (yes, a `<script>`-level `transitions` declaration read the way `x-transitions` is).
+
+The paper's recommendation, taken as written: the largest item here and the least evidenced.
+
+### <a id="fjs-d389"></a>2026-09-25 · `FJS-D389` — Is the commit point one concept or three — Three spellings, and *Commit point* is only the word the paper uses to say they are one question - **Recommend B until a diff says otherwise** — `now` inside a `<Form>` has no case yet, and A renames `autosave` to buy a symmetry nobody has reached for. Show A as code before choosing it.
+
+Asked in [`IDEAS/ui-ontology.md`](IDEAS/ui-ontology.md) § Open questions. **B** was picked over **A** (one prop: `<Form commit="submit|idle|now">`, replacing `autosave`. One question with three answers, spelled once).
+
+a now-commit inside a <Form> has no case yet, and one prop would rename autosave for a symmetry nobody has reached for.
+
+### <a id="fjs-d388"></a>2026-09-25 · `FJS-D388` — A noun for the interactor pair, or none — None. `controlFor` and `displayFor` stay two names and the sentence stays a sentence.
+
+Asked in [`IDEAS/ui-ontology.md`](IDEAS/ui-ontology.md) § Open questions. **A** was picked over **B** (*Interactor*, CAMELEON's word, blessed for the union).
+
+The paper's recommendation, taken as written: no code asks the union question today, and a noun no call site spells is the concept budget § 6 capped at three.
+
+### <a id="fjs-d387"></a>2026-09-25 · `FJS-D387` — Is `bytes` a seventh task — Yes, `bytes` joins `INTERACTION_TASKS` and `File` columns answer it. `FileField` and `FileUpload` are its techniques, and a camera capture or a paste target would be the next.
+
+Asked in [`IDEAS/ui-ontology.md`](IDEAS/ui-ontology.md) § Open questions. **A** was picked over **B** (no, a file is *select*. Four tasks stay four).
+
+The paper's recommendation, taken as written: the payload is what a technique must handle (size, type, progress), and a select control handles none of it. § 3's tree already draws the leaf.
+
+### <a id="fjs-d386"></a>2026-09-25 · `FJS-D386` — Is Effect the word for `$: deps, handler` — *Effect*, blessed: what every signal library calls it, and RULE 61 already orders user effects as a tier.
+
+Asked in [`IDEAS/ui-ontology.md`](IDEAS/ui-ontology.md) § Open questions. **A** was picked over **B** (*Reaction*: MobX's word, which avoids the React sense of effect).
+
+The paper's recommendation, taken as written: the word is already in Mesa's docs and runtime, and VOCABULARY holds none that competes with it.
+
+### <a id="fjs-d385"></a>2026-09-25 · `FJS-D385` — Which word for a UI event — *Gesture*: what the person did, named for the person rather than the DOM. Collides with nothing in the tree.
+
+Asked in [`IDEAS/ui-ontology.md`](IDEAS/ui-ontology.md) § Open questions. **A** was picked over **B** (*DOM event*: the qualified word. Familiar, and it names the mechanism rather than the act, so a component event is left out), **C** (*Action*: IFML's word. Collides with orion's actions and with a form's `action`).
+
+The paper's recommendation, taken as written: it sits on the TAKES branch where § 3 needs it, and both other words are already spent.
+
+### <a id="fjs-d384"></a>2026-09-25 · `FJS-D384` — Interaction task, Container tier and Writable derived are blessed as `VOCABULARY.md` defines them.
+
+Asked in [`IDEAS/ui-ontology.md`](IDEAS/ui-ontology.md) § 4, where all three were candidates the code already spelled: `controlFor` answers a `task` from `INTERACTION_TASKS`, `fli ws:terms` reads a css term's Under off its tier, and Mesa's `$: name = expr` is written back through. Blessing them names what exists and changes no code. **Writable derived is the word, and *lens* is cited as its prior art rather than used**, so one thing keeps one name.
+
+### <a id="fjs-d383"></a>2026-09-25 · `FJS-D383` — What does Binding name — Mesa's: a template binding is a place in the output that re-runs when a signal it reads changes, and `bind:` is the two-way case. § 3.7's last hop is this sense, since a pushed row reaches the screen through one. The abstract → concrete step needs no noun, because `registerControl` and `registerFormControl` already name both of its halves.
+
+Asked in [`IDEAS/ui-ontology.md`](IDEAS/ui-ontology.md) § Open questions. **A** was picked over **B** (the UI realm's seam between Resource and Component, as § 2 first meant it. This coins a meaning no code spells, and it would sit next to Mesa's sense), **C** (no ruled word. Strike it from § 2 *Not yet named* and let Mesa keep its own sense unruled).
+
+The paper's recommendation, taken as written: two of the five senses are already the same thing (the template binding and § 3.7's last hop), and a third (`bind:`) is a case of it. Deployment's `bindings` is renamed to *configuration*, the word `bindingsHash` was already commented with. Litestone's `@values` binding (how strictly a column holds to a value set) is a sixth sense, found while ruling, and it stays unruled for now.
+
+### <a id="fjs-d382"></a>2026-09-25 · `FJS-D382` — Does Component name the concrete level only, or every `.mesa` file — Every `.mesa` file. That is what the code already says: Mesa compiles components, `mount(label, Component)`, and Invariant 18 calls a resource file with no `<script module>` *a component in the wrong folder*. The concrete level gets no noun of its own, and a Component is placed by the umbrella it sits under instead: a Container tier for what holds things, an Interaction task for what edits a value.
+
+Asked in [`IDEAS/ui-ontology.md`](IDEAS/ui-ontology.md) § Open questions. **B** was picked over **A** (the concrete level only: Button, Combobox, Card, the things a control or a css term names. A page, a layout and a resource file are `.mesa` files and not Components. The tree gets its word, and the code has to find another one for *any `.mesa` file*).
+
+The paper's recommendation, taken as written: steps 1–3 already answer *which level* by placement, so a second meaning for Component would name a distinction the tree already draws. B keeps the word every other framework uses for the file, and it is the only option that needs no code or doc to change.
+
+### <a id="fjs-d354"></a>2026-09-22 · `FJS-D354` — What is the word — `@@commitment`.
+
+`@@commitment`. REA's, and business people say it. The objection was REA's reciprocal duality; under [`FJS-D353`](#fjs-d353) the word fits better than it did, because REA's commitment is FULFILLED BY AN EVENT and here it is fulfilled by a transition — an invoice's commitment to pay is discharged by `settle`, and breached into `subscription.lapse`. The reminder email is the case the word still strains.
+
+Asked in [`IDEAS/ontology.md`](IDEAS/ontology.md) § Open questions. **B** was picked over **A** (`@@due`. Small and neutral, imports nothing), **C** (`@@obligation`. The deontic word; reads legal on a five-minute hold).
+
+The paper's recommendation, taken as written: the owner's preference, and with the transition as its first argument the REA meaning arrives mostly true rather than mostly borrowed.
+
 ### <a id="fjs-d286"></a>2026-09-14 · `FJS-D286` — Map, filter and reduce in a flow expression take arrow lambdas as call arguments: `map($.items, i => mul(i.price, i.qty))`.
 
 Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (JSON only in the first version).
@@ -893,6 +993,30 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d360"></a>2026-09-23 · `FJS-D360` — Where does a request name its tenant under `strategy row` — The app resolver's `tenantFrom`, a function; `tenancy { resolve }` belongs to `strategy database` and is refused under row.
+
+Asked while tracing whether `membershipClaim` can be derived from the schema ([`IDEAS/membership-from-schema.md`](IDEAS/membership-from-schema.md)). **B** was picked over **A** (`resolve` owns it everywhere and grows a query-key kind and an ordered fallback).
+
+**Two answers existed and only one was read.** `tenancy { resolve subdomain | header(…) | claim(…) }` parsed under both strategies, and the one thing that acts on it — `registry.tenantFor()` — exists only under `strategy database`. Under row, `membershipClaim({ tenantFrom })` decides, and a declared `resolve` was printed by `describe()` and routed nothing: a transport rule that looked enforced. `junction/tools/principal-snapshot.ts` already said so in a comment, which is the one place it was written down. **A could not say what the only row app does**: basecamp names its workspace by a header, then a query key, then the session's own claim, in that order — a list with a fallback, and one of its kinds (a query key) the declaration has no word for. `membershipClaim`'s own contract names the reason it is a function: where a tenant arrives is transport convention, and two transports carry it differently (Invariant 10).
+
+**So the refusal is the ruling's other half.** `resolve` under `strategy row` is a parse error naming `tenantFrom`, and `resolveTenancy` stops handing row a default `{ kind: 'claim' }` that no reader acted on. Under `strategy database` nothing changes: there the registry is the reader and the declaration is the only place a tool holding the schema — the CLI, Studio — can learn it.
+
+**Adjudication in tension** (§ IV): *coherence vs. convention*. One spelling for *where is my tenant* would be more coherent on paper; the measured convention is a function per app, and the declaration that tried to be the one spelling was the half nobody executed. **What this does NOT rule**: whether the rest of `membershipClaim` — the model, the subject, the standing — can be read off the schema, which waits on [`FJS-D361`](ISSUES.md#fjs-d361) and on a second app of that shape.
+
+### <a id="fjs-d359"></a>2026-09-23 · `FJS-D359` — Where does a claim's VALUE come from when it lives on another row — The schema says: `claim <name> from <Model>(<subject>)[.<column>]`, read per request inside junction's principal seam. Gap 06 of the `.lite` surface survey closes here without a `Role` word.
+
+Gap 06 asked for *role against kind* — one human, two capacities. [`FJS-D350`](#fjs-d350) set the test a kind-word must pass: it lands only if it generates or refuses something, and a `@@role` that labelled would not. **What was missing was never the label, it was the VALUE.** A role row is a relator whose one relatum is the signed-in user (`WorkspaceMember` already declares `@@relator([workspaceId, userId], once)`), and the fact a policy needs about the caller is on it. The schema could name the claim (`claim employeeId`) and could not say where it was, so three apps gave three answers: `example` copies `userId` onto every row a customer owns, basecamp resolves `WorkspaceMember` in JS through `membershipClaim`, and the connectteam stressor declared `claim employeeId` and `claim siteId`, spent them in eight policies, and resolved them nowhere — an async `sessionFields` spread to nothing and took `isAdmin` with it ([`FJS-1251`](ISSUES.md#fjs-1251)).
+
+**A claim is needed exactly where the fact is about the CALLER rather than the row.** *My own rows* already works with no claim, through a one-hop policy (`employee.userId == auth().id`). *Rows at my site* does not: nothing on the row reaches the caller's site, so it has to be read from the caller's side and brought into the request.
+
+**Per request, never at sign-in, and that is the answer to the objection `FJS-1251` raised** — a query on the hottest path for a value that changes rarely. Measured: an indexed unique lookup in `bun:sqlite` is 1.5 µs, which basecamp already pays through `membershipClaim`. A value fixed on the session is wrong for the rest of the session once the row moves, and nothing reports it: a manager moved to another site keeps reading the old one.
+
+**Refused at parse, because each would resolve to the WRONG value rather than to none**: a subject that is not a key to the `@@auth` model, a subject that is not unique, a subject unique only per TENANT (that claim depends on which tenant a request names, which is `membershipClaim`'s shape and stays its), a column that is not one stored value, a protected column (a claim is copied onto every principal), a name the `@@auth` model or the tenancy block already answers, and two files reading one claim off two rows. A name among the framework's own is refused when the client is built, since a row may not decide who the caller is or how they are graded. **A caller with no such row holds `null` and is not refused**; a null claim denies in both policy interpreters ([`FJS-668`](ISSUES_ARCHIVE.md)).
+
+**One owner each, both existing.** Litestone's parser owns the declaration and `db.$claimsFor(principal)` owns the read — as the system, because the row decides access, and with the model's own exclusions intact, so a soft-deleted or expired role row resolves to nothing without a rule restating it. Junction's principal seam ([`FJS-D113`](#fjs-d113)) is the only route onto the principal and the read happens inside it, before the app's `principal:` resolver, which is handed a principal already carrying it. **A resolver answering a claim the schema reads off a row is refused by name**: one claim, one origin. The other half of the pair is in auth — `sessionFields` returning a promise is refused, naming this spelling.
+
+**Adjudication in tension** (§ IV): *paved road vs. the workaround*. The same hand-written resolver in the same place, three times, is a measurement of the road, and the road changes. **What this does NOT rule**: the tenant-keyed shape (one row per tenant per person) stays with `membershipClaim`, and whether it can be derived from a `@@relator(once)` over the tenant and the subject is the next question rather than this one. `FJS-D181`'s heading, *a claim is a client option rather than a `.lite` keyword*, was overtaken by `FJS-772`'s top-level `claim` before this; the keyword is where the name lives, and now where the source does. Prior record: [`FJS-1288`](ISSUES.md#fjs-1288) is the build.
+
 ### <a id="fjs-d349"></a>2026-09-22 · `FJS-D349` — Can a write be anonymous, when every write has an actor — Yes, and it has to be a DECLARATION on the model, because the absence that protects it is not on the model it protects.
 
 Asked in [`IDEAS/field-workforce.md`](IDEAS/field-workforce.md) § Open questions and driven by the connectteam stressor, [`PLAN.md`](../fjs-prototypes/connectteam/PLAN.md) § Q3. **A** was picked over **B** (the application's problem: write no actor, log nothing, and let a reviewer hold the line), **C** (a field-grain word — `@anonymous` on a column rather than `@@anonymous` on a model).
@@ -1509,6 +1633,8 @@ been the one silent bypass of the two.
 `FJS-671` · closes `F16` of the foundation audit
 
 ### <a id="fjs-d181"></a>2026-09-02 · `FJS-D181` — a claim is DECLARED, and the declaration is a client option rather than a `.lite` keyword. The eight names this package itself reads are the framework's and no app spells them.
+
+**Status:** amended-by [`FJS-D359`](#fjs-d359) — the clause *rather than a `.lite` keyword*. `FJS-772` added the top-level `claim`, so the schema names a claim, and `claim … from` now says where its value is. That a claim is DECLARED and graded at startup is unchanged.
 
 Every identifier on the ROW side of a policy is refused by name at startup —
 `@@allow('read', ownerIdd == 1)` names the model, the expression and the columns
@@ -2630,6 +2756,132 @@ fail-open security default — verified live before the fix.
 tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
+
+### <a id="fjs-d370"></a>2026-09-23 · `FJS-D370` — Is a reminder a transition — A transition on a Boolean column: `remind: false -> true` on `reminded`, a second `@@transitions` beside the status one (one machine per field), with `@@commitment(remind, on: startsAt - 24h)` and a hook that ENQUEUES the mail on the move's transaction — never `afterCommit`, since a crash between the commit and the send would leave the column saying the mail went, and a moved row is never due again. Once-ness from the column.
+
+Asked in [`IDEAS/ontology.md`](IDEAS/ontology.md) § Open questions. **A** was picked over **B** (a status state (`booked -> reminded`). Wrong: a reminder is not a stage the booking passes through, and it multiplies the enum), **C** (not a commitment; notifications grow their own schedule. A second clock, which `FJS-D36` refuses).
+
+The paper's recommendation, taken as written: it keeps *every commitment is a transition* true for the case the word fits least, and the Boolean is the record that the mail went.
+
+**Taking it found a regression, which is now fixed** ([`FJS-1315`](ISSUES.md#fjs-1315)): the runtime has always kept one machine per FIELD, and `FJS-1174`'s refusal of any model attribute declared twice had made a second `@@transitions` unparseable. It is repeatable again, per field, and one move name on two machines is refused, since `transition(id, name)` makes the first. **The hook enqueues** — `CommitmentHookContext.enqueue`, an outbox row on the move's transaction — because a moved row is never due again, so an `afterCommit` send lost to a crash would leave `reminded` true with no mail. `example`'s caller is `Invoice.remind`, three days before `dueOn` while the invoice is `issued`. **Adjudication in tension** (§ IV): none. **§ V's ninth question**: *one reminder per invoice, and none for a paid one* — `verify:jobs`'s `reminder.*`, against the real mail sink, red with the hook removed; the row-and-move-roll-back-together case in `packages/caravan/test/commitments.test.ts`.
+
+### <a id="fjs-d367"></a>2026-09-23 · `FJS-D367` — Renewal is not a transition — what is it — A row per period: `SubscriptionPeriod` with `close: open -> closed @system` and `@@commitment(close, on: endsOn)`; a hook on `close` issues the invoice and opens the next period. The state machine is the once-ness with no key, and *next renewal* is a row a person can see. The cost is reshaping `example`'s billing.
+
+Asked in [`IDEAS/ontology.md`](IDEAS/ontology.md) § Open questions. **A** was picked over **B** (lift the self-transition refusal. A self-loop has no from-state to lock on, so it also needs a key, and transitions would need to carry data — two language changes for one case), **C** (renewal stays a job that CLAIMS the commitment (`defineJob(…, { commitment: 'Subscription.renew' })`), beside `cron:`. The direction is right (API names Data), and it reintroduces a second kind of effect the transition frame had removed).
+
+The paper's recommendation, taken as written: the only exit where every commitment is a transition with nothing left over, and it is the relator reading of a subscription taken one step further: a period is a thing with a start, an end and a state.
+
+**`Subscription.currentPeriodStart`/`End` are read off the periods, not kept** — `@from(SubscriptionPeriod, max: …)` — so the window has one origin and no writer can move one without the other. What the hook runs is [`FJS-D368`](#fjs-d368). **Adjudication in tension** (§ IV): none. **§ V's ninth question**: *one open period per subscription, and one invoice per closed one* — `@@unique([subscriptionId], where: status == 'open')` at the database, and `verify:billing`'s replay assertions, which fire the same period twice through the plugin's own `fireCommitment`.
+
+### <a id="fjs-d362"></a>2026-09-23 · `FJS-D362` — May a commitment make a transition on a RELATED model — Yes, through a to-one relation; a null relation (`subscriptionId` is optional) is a quiet skip. The target's own from-state still guards it.
+
+Asked in [`IDEAS/ontology.md`](IDEAS/ontology.md) § Open questions. **A** was picked over **B** (own-model transitions only; `Invoice` grows its own state (`overdue`) and the subscription reacts to it. A transition triggered by a transition is a reaction, which is `orion`'s territory, and the recovery transition (`pastDue -> active` on `settle`) is already that shape).
+
+The paper's recommendation, taken as written: without it shape 2 needs an aggregate on `Subscription` (*the oldest unpaid invoice*); with it, the oldest invoice fires first and the later ones meet a transition already made.
+
+**A target already past the from-state is NOTHING DUE, not a failure.** Every later unpaid invoice under one subscription meets `lapse` already made, so the executor reads the target's state as part of the re-derivation [`FJS-D358`](#fjs-d358) already owes and does nothing, rather than letting the transition refuse and the job fail. The hop is to-ONE only: a to-many relation, an unknown relation or an unknown transition on the target is refused at parse, because *which of the children* has no answer. **Adjudication in tension** (§ IV): none. **§ V's ninth question**: *the oldest invoice fires the move and the later ones do nothing* — `packages/caravan/test/commitments.test.ts` (*the oldest invoice lapses the subscription and the later one is nothing due*), `packages/litestone/test/commitment.test.ts` for the parse refusals, and `verify:jobs`' `dunning.commitmentMovesTheSubscription`; each goes red with the target's from-state taken out of `due()`.
+
+### <a id="fjs-d357"></a>2026-09-22 · `FJS-D357` — Does *type against instance* get a word in `.lite` — No. The split is already written in words that execute, and `@@hasTemplates` stays.
+
+Gap 02 of the `.lite` surface survey, closed as not a language gap. **Measured across 1,626 models** — the eight imported corpus schemas plus `example`, `basecamp` and orion — the two-model split appears under five suffixes (`XType` 15, `XTemplate` 16, `XVersion` 6, `XCategory` 5, `XVariant` 2), and every one is written with what exists: a relation with `onDelete: Restrict`, `@immutable` on the key an instance may not re-point, a `@@gate` of its own for who edits the type, and `valueset { source <Model> }` where the type is a category. `PlanVersion` is the whole shape in one model.
+
+**A word here would only label, which is the test [`FJS-D350`](#fjs-d350) set for every kind-word**: it lands if it generates or refuses something. Nothing a type-against-instance attribute could generate is not already one of those words, so it would be a second origin for what the relation already says, and the one that goes stale is the one nothing executes.
+
+**The fork that matters is how an instance holds its type's facts, and both answers are already in the tree.** It COPIES at the instant — `OrderLine.unitPrice`, stamped in `carts.service.ts` — or it NAMES a frozen version, as `Subscription` names a `PlanVersion` because it is charged again next month. A copy is usually a calculation (a discount, a tax), so a copy-from default would promise what pricing code decides. That fork belongs to elicitation — `discovery`, `oracle`, the tree in [`IDEAS/ontology.md`](IDEAS/ontology.md) — and not to the language.
+
+**`@@hasTemplates` stays, and zero declarations is not the evidence it looks like.** The corpus is imported from ORMs that have no such word, so the count that means anything is the hand-rolled flag: one (`erpnext`'s `Item.isTemplate`), which `opportunities.js` already names the attribute for. It is also the shape other rulings measure against: [`FJS-D351`](#fjs-d351) reads a row before its `from` as *`@@hasTemplates`' shape*, and `IDEAS/overview.md` 4.26 tests a general variant form by whether it can express this one and `@@softDelete`.
+
+**Adjudication in tension** (§ IV): *preservation vs. evolution*, over keeping a word nothing in the tree declares. That row forbids keeping it BECAUSE it exists; it is kept because it is a working precedent the named rulings lean on, and removing it would take that precedent with it. **The ninth answers `none`**: an app that conflates a type with its instances is wrong without anything saying so, and the only catch is asking the question during discovery.
+
+### <a id="fjs-d356"></a>2026-09-22 · `FJS-D356` — Model-level `@@commitment`, or a modifier inside `@@transitions` — Model-level: `@@commitment(transition, on:, while:)`. Can target a related model's transition, and `@@transitions` stays a plain graph.
+
+Asked in [`IDEAS/ontology.md`](IDEAS/ontology.md) § Open questions. **A** was picked over **B** (a modifier on the edge: `abandon: pending -> cancelled @system @after(createdAt + 14d)`. Reads beside the transition it times, and cannot reach another model).
+
+The paper's recommendation, taken as written: B cannot express the dunning case at all.
+
+### <a id="fjs-d355"></a>2026-09-22 · `FJS-D355` — Where do the offsets live — A literal, or an `@unit` duration column of the same row stamped `@immutable` when the terms are agreed — never a hop.
+
+A literal OR a column of the SAME row: `@@commitment(subscription.lapse, on: dueOn + graceDays, while: status == issued)`, where `graceDays Int @unit(d) @immutable` is stamped when the invoice is issued, from wherever the terms come from — the plan, the tenant's config, a negotiated contract. The issuing code already stamps `dueOn` from `TERMS_DAYS` in the same place (`billing.ts`), so this is one more column on a path that exists. It is the tree's own leaf — *a value at an instant is a copied column, never a join* — and the order total's rule: the terms are a receipt. The expression never reads outside its row, so the sweep is one table and the offset is visible to a client as a field. It refuses an offset column without a duration `@unit` (`FJS-D348` gets its first consumer) and one that is not `@immutable`. `mo` and `yr` are legal on a day kind, where a month is calendar arithmetic, and refused on an instant, where it would need a zone the expression does not have.
+
+Asked in [`IDEAS/ontology.md`](IDEAS/ontology.md) § Open questions. **B** was picked over **A** (a literal only: `@@commitment(abandon, on: createdAt + 14d)`. The constant moves into the schema beside the transition it drives, and `generateJsonSchema` can carry it to a client), **C** (a relation hop: `on: dueOn + subscription.planVersion.graceDays`. Terms read LIVE, so editing a plan moves every open invoice's deadline, and the sweep compiles a join per declaration), **D** (the tenant's config: `on: dueOn + config.graceDays`. Per-shop, no join, read live, and the schema names a key the config file must supply).
+
+The paper's recommendation, taken as written: every source C and D reach is reached by the stamp instead, at the one moment the terms were agreed. A is B with the column never used. Live terms are the wrong default for anything issued.
+
+### <a id="fjs-d353"></a>2026-09-22 · `FJS-D353` — What kind of noun is a deferred obligation — A transition the system owes at a time, `@@commitment(<transition>, on:, while:)`, and no framework table and no job name in the schema.
+
+**a commitment is a TRANSITION at a TIME** — the word the code already types (`@@transitions`, `db.x.transition(id, name)`, `x-transitions`), rather than *move*, which is prose's second name for it. The first argument names a transition on `@@transitions`; the model declares when the system owes it: `@@commitment(abandon, on: createdAt + 14d)` beside `abandon: pending -> cancelled @system`. The from-state is the guard, so most `while:` clauses vanish. The optimistic lock is the once-ness, so `occurrenceKey` is not needed wherever the state changes. A transition is a write, so firing ANNOUNCES — the silent-expiry gap (`FJS-1274`) does not exist for it — and the audit trail records the transition by name, which is why `abandon` is its own transition and not `cancel` with a `while:`. `x-transitions` already reaches the browser, so *will be abandoned on 5 Oct* beside the Cancel button is shape 4 read off the schema. An effect OUTSIDE the database stays a hook on the transition, as `IDEAS/state-machines.md` settled (*side effects stayed hooks; the machine runs no jobs*), and a hook's `ctx.enqueue` rides the transition's own transaction through the outbox, so it happens once per transition. The schema names no job. A transition fired by a commitment whose from-state no longer holds is a quiet no-op, since that is the once-ness working; a caller's transition from the wrong state stays an error.
+
+Asked in [`IDEAS/ontology.md`](IDEAS/ontology.md) § Open questions. **A** was picked over **B** (a framework-shipped `Commitment { subject, kind, dueAt, state, key }` table. Closest to REA; the gate, the audit trail and the visible row come free. It fails *derived, not restated* — `dueAt` is a copy of a row's time, which is `FJS-1241` made framework-wide — and it is a second owner beside Caravan's `jobs.run_at`), **C** (a declaration naming a JOB (`run: 'subscription-renew'`). The Data realm then names an API-realm file, which Litestone cannot resolve, and a rename breaks it silently; it is also a second place a job's trigger is written, beside the `cron:` option the job file already owns), **D** (no noun. The shapes become a section of `data-hazards` and a `fli check` rule over job files. Cheapest, and shape 4 stays inexpressible).
+
+The paper's recommendation, taken as written: every consequence in the measured shapes is already a declared transition, so the noun costs one attribute and no new machinery at the Data boundary, and everything a transition already gets — gate, audit, announce, `x-transitions` — the commitment inherits. § V: one origin (the model owning the time), one noun for an empty cell, derived by construction, Data owns *when* and Caravan owns *run*, and the ninth becomes gradeable. Tension is *batteries vs. smallness*, bounded by the executor being an ordinary Caravan job. Renewal is where it strains, and that is its own question below.
+
+### <a id="fjs-d352"></a>2026-09-22 · `FJS-D352` — Is a validity window imposed like an expiry, or asked — Two words for one predicate: `@@expires(col)` is imposed, `@@effective(from:, to:)` is asked.
+
+Asked in [`IDEAS/effective-time.md`](IDEAS/effective-time.md) § Open questions, found adopting phase 2. **C1** was picked over **A** (impose it, and opt out at every read that is not the window's question), **C2** (one word, an argument choosing the default) and **D** (impose it, and let a pointer bypass it). It amends [`FJS-D351`](#fjs-d351)'s *one word at two arities*, on evidence that ruling did not have.
+
+**The two arities share a PREDICATE and not a DEFAULT.** Every phase 1 model was an expiry — a hold, a session, a reset token: a row out of its window is dead, nothing points at it, and nine reads in ten want the filter. Every phase 2 candidate is a history — a row out of its window is the price a subscriber is still paying, the terms a payslip was computed under, the band a line applied — and it is POINTED AT. Counted across `PlanVersion`, `PayWindow` and `PayRate` in `example`: six reads ask the window's question, four follow a pointer (`subscription-renew`, billing's two proration reads, `planVersions.record(id)` on the subscription screen), four read the whole history, and two want the open row whenever it opens. Imposed, ten of sixteen opt out — and forgetting one is silent, because a pointer to a filtered row answers null: renewal stops finding the price for every subscriber on an old one, and `setPay` loses the history it checks overlaps against. A fails § V's ninth question and D fails it too, since history and open-row reads are not pointers.
+
+**So the author says which, because only the author knows whether a row out of its window is dead or history.** `@@expires(expiresAt)` is IMPOSED and is exactly what phase 1 shipped: every read and write filters to the rows not yet expired, at the client's clock or a stated `asOf`, a hard delete applies it, and `withExpired`/`onlyExpired` are the ways out. `@@effective(from:, to:)` is ASKED: a read that states `asOf` gets the rows in force then; a read that states nothing gets every row, and so does a write, an include, a `_count`, and `$inWindow` at the fan-out. `onlyExpired` on it needs `asOf` and is refused without one — there is no moment to be out of force at — and an include cannot ask it, since an include takes no `asOf`.
+
+**Two words and not one word with an argument (C2)**, because the argument would change what an unstated read MEANS, which is the thing a reader of the line most needs to see and least expects to find in a flag. *A second name for one thing* was `FJS-D351`'s reason to refuse `@@expires`, and the measurement is what answers it: they are two things sharing a predicate. `@@effective` REQUIRES `from:` for the same reason — `@@effective(to: expiresAt)` reads as an expiry and would behave as a window nobody asks, an expired session read back as live, so it is refused at parse and names `@@expires`. A model declares one of the two.
+
+**What the asked default also settles: phase 3 has nothing to do on a validity window.** A zone is owed only by a default that derives *today* from an instant. An `@@effective` window has no default, so a day window never spends one — which is what `example`'s own `employment.ts` already ruled for itself, *`on` is required and there is no default; a default would be a clock in this module*, after [`FJS-D288`](#fjs-d288) took that clock out of billing. The one default left that owes a zone is an `@@expires` over days, and none is declared.
+
+**`Discount` is not adopted and that is measured, not deferred.** Both of its reads want the out-of-window row, because *not valid yet* and *has expired* are sentences a filter cannot produce; `discountProblem` keeps them.
+
+**The `@from` refusal narrows to `@@expires`.** A `@from` cannot read the injected clock; an asked window has no clock to read, so a `@from` over every row reads an `@@effective` model the way it is read.
+
+**Adjudication in tension** (§ IV): *doctrine vs. discovery*. `FJS-D351` said one mechanism at two arities; building the second arity found that the mechanism is one and the default is two, and the hearing this is resolved the divergence in writing rather than in the code. **§ V's ninth question**, both halves: *no read of an `@@effective` model hides a row unless it stated a moment* — `litestone/test/effective.test.ts` § *a pointer is a fact*, which asserts a subscriber on a closed price reads it by include and by id, and `verify-employment.mjs`'s `interval.aReadStatingNoDayIsTheHistory`; and *`@@effective(to:)` alone cannot be written* — the parse refusal, asserted in the same file.
+
+### <a id="fjs-d351"></a>2026-09-22 · `FJS-D351` — How does a row stop counting — `@@effective(from:, to:)`, one word at two arities, filtered at `asOf` and never scheduled.
+
+**Amended by [`FJS-D352`](#fjs-d352)**: the one-sided case is `@@expires(col)` and is imposed as ruled below; `@@effective(from:, to:)` is ASKED. Everything below about the imposed case stands.
+
+Asked in [`IDEAS/effective-time.md`](IDEAS/effective-time.md). It settles four of that paper's five open questions; the fifth (does the deferred-obligation shape ever get a NOUN) stays with [`IDEAS/ontology.md`](IDEAS/ontology.md).
+
+**Three gaps of the `.lite` surface survey were one design and shipping any of them alone would have committed the language.** 07 *a thing that must happen later*, 03 *valid time* and 08 *zoned wall clock*: `expiresAt > now` IS the one-sided case of `from <= asOf AND (to IS NULL OR to > asOf)`, so 03 and 07 are one mechanism at two arities, and 08 supplies a value the other two consume. **The load-bearing argument is the DIRECTIVE and not the filter.** The four opt-back-in directives in [`@frontierjs/toolbelt/directives`](packages/toolbelt/src/directives/directives.js) are all `asBool`; expiry alone needs a fifth boolean and valid time needs a VALUE, and `withDeleted` is the precedent for how immovable a flag becomes once an app writes it into a URL. So `asOf: <instant>` went in first and `withExpired` / `onlyExpired` are sugar over it.
+
+**Measured before it was designed.** Six instances of the idea across `example` and `basecamp` and zero declarations: five hand-filtered deadline columns (`StockReservation` · `Invitation` · `ApiKey` · orion's `KvEntry` · `Job.nextRunAt`), three models hand-rolling an identical four-part window, one carrying a comment saying the idiom *was met here*, and `Discount.startsAt`/`endsAt` as a fifth implementation in JS producing sentences. **A lint was rejected against the same measurement**: of five reads of `StockReservation`, three filtered, one deliberately inverted and one omitted correctly, so *every read must filter* finds nothing and fires twice wrongly. An automatic filter turns both omissions into a stated `withExpired`, which is what removed them from being invisible.
+
+**The largest risk is what it must never sweep up, and it is why the declaration is opt-in per model.** `Invoice`, `InvoiceLine`, `PayRun` and `Payslip` carry `periodStart`/`periodEnd`, spelled almost identically and emphatically NOT windows — `@immutable` facts copied onto a document, describing the period the document covers. Auto-filtering those makes a payslip vanish from a read because its period ended. So it is named for *the row stops counting*, never for *these two columns are dates*, and nothing may grow a rule that guesses it from a naming convention.
+
+**Both edges are the same KIND and a mixed pair is refused at parse.** The live schemas disagree inside one file — `PlanVersion.effectiveFrom` is a `DateTime`, `PayWindow.effectiveFrom` is a `String @date`, which is [`FJS-D143`](#fjs-d143)'s own conversion: a price changes at a moment, a salary changes on a day. So `asOf` carries the column's kind, and **no zone is spent**, because the caller is already on the side the column is on. **That is what makes gap 08 a parameter rather than a redesign**: only the DEFAULT on a day window derives a day from an instant, which is D143's one crossing, and it reads UTC until somebody says whose midnight it is.
+
+**A hard `delete` APPLIES the filter — the one place this parts company with `@@softDelete`.** Two arguments and neither is the analogy. **There is no verb pair to honor**: soft delete's bypass is the contract of `delete` AGAINST `remove`, and `@@effective` declares no verb, so a bypass would mean nothing in particular. **And a bypass would split the arities**: a row past its `to` is an end state, which is soft delete's shape, but a row before its `from` is a live row in a parallel category, which is `@@hasTemplates`' shape and [`FJS-176`](ISSUES_ARCHIVE.md)'s words exactly — *destroying rows no read returns is data loss the caller has no way to anticipate*. One word cannot mean both. The cost is named: `releaseExpired` in `example` becomes `onlyExpired: true`, which is the intent it was already spelling with a cutoff.
+
+**`asOf` is reads-only.** The window still filters a write, or `update()` silently resurrects a row no read returns, and `withExpired` reaches a write exactly as `update({ withDeleted: true })` already does. What is withheld is the VALUE on a write, and that is not a smaller version of this feature — it is bitemporality ([`IDEAS/declared-semantics.md`](IDEAS/declared-semantics.md) § 3), which must not ship by accident as a directive default.
+
+**A broadcast asks `db.$inWindow`, and a removal is sent anyway.** `$readAs` grades neither `@@softDelete` nor `@@hasTemplates`, so the standing answer is *a data exclusion is invisible to a fan-out* — and it is invisible safely there for a reason this does not have: **soft delete's transition is a WRITE, so it announces; a window's transition is the CLOCK, and nothing announces.** So the window is asked at the fan-out, BEFORE `$readGrading`, because a model with a window and no gate grades `open` and takes that early return. It is its own seam rather than a fourth question inside `$readAs`: that one answers *may this principal see this row*, per cohort, and this answers *does this row still count*, once, for everybody. **A `removed` frame is exempt** — suppressing it strands the row in every store already holding it, which is worse than never having graded. What stays open and is written down rather than discovered: **silent expiry**, where the clock passes a row and no write happens, so no frame is ever built. Closing it needs a store that re-grades on a tick, which is a clock in a store and belongs with live queries ([`FJS-D111`](#fjs-d111) keeps it out of toolbelt).
+
+**A `@from` over a windowed model is REFUSED unless it states its own `where:`.** A `@from` compiles once at startup into a SQL string with no binds and cannot read the injected clock — `now()` there expands to SQLite's own `strftime`. Filtering it that way gives one model two clocks that agree in production and disagree under exactly the frozen clock a test stages expiry with; not filtering at all breaks `@from`'s own contract, which is that it reads the target the way the target is read. So the caller states it, which is the escape the declaration always promised and what the three hand-rolled windows already write.
+
+**It implies nothing else, and each is deliberate.** *At most one open row per parent* stays `@@unique([...], where: to == null)`; ordering the pair stays `@@check`; nothing here schedules anything, because [`FJS-D36`](#fjs-d36) gives Caravan the clock; and it is not an access rule, so `asSystem()` does not lift it — the line `@@softDelete` and `@@hasTemplates` already sit on. **No column is injected**, so the DDL across both apps is byte-identical.
+
+**The second prize is the clock and it may be the larger one.** Every deadline filter in the repo read a `new Date()` written into a service, so `env.clock.advance()` moved nothing and shape 1's whole correctness condition — *a hold is dead the instant it passes, whether or not the job ran* — was untested and untestable; `verify-stock.mjs` staged expiry by moving the CUTOFF to 2099, which proves the sweep deletes rows and never touches the read. The filter reads the injected `now`, and `packages/litestone/test/effective.test.ts` stages a dead hold with `advance('10m')`.
+
+**Adjudication in tension** (§ IV): *familiarity vs. precision* over `asOf`, which is SQL:2011's own word (`FOR BUSINESS_TIME AS OF`, kept by SQL Server and MariaDB) and arrives with SQL:2011's meaning — the `timestamptz` risk [`FJS-522`](ISSUES.md#fjs-522) named, checked rather than assumed, and here the meanings agree. Over the attribute's name, the same row the other way: *effective* reads faintly legal for a five-minute stock hold where a developer would have typed *expires*, and `@@expires` is refused anyway, because two names for one mechanism is a cost paid forever by everyone who then reads both. *Batteries vs. smallness* bounds the growth: this stays a read filter and a declaration, or Caravan stops owning the clock.
+
+### <a id="fjs-d350"></a>2026-09-22 · `FJS-D350` — What does a schema owe a relationship that is a ROW — One question, `@@relator([…], once | many | many: <column>)`, and repeatability is required rather than defaulted.
+
+Asked in [`IDEAS/relators.md`](IDEAS/relators.md) § Open questions. **A** was picked over **B** (`@@mediates`, UFO's own word for the link), **C** (`@@link`).
+
+**The gap was filed as a missing LABEL and the correction is the ruling.** The `.lite` surface audit's gap 05 asked for a word saying *this model is a join table*, which would have been the first attribute in the language whose only job is to be read — unexecuted, therefore ungradeable, therefore wrong forever the first time a schema moved under it. Relator-ness is also DERIVABLE: two or more required relations with a unique across them was tested against both apps and missed nothing. What is not derivable is **can this relationship happen twice**, because `once` and a bare `many` are distinguished by an ABSENCE. Measured across `example` and `basecamp` on 2026-09-22: eleven models answer it, in four spellings, and state it zero times. [`AppServer`](packages/basecamp/db/schema.lite) and `AppNetwork` sit eighteen lines apart with identical relata and opposite answers.
+
+**Repeatability is never defaulted, and a bare `@@relator([a, b])` is a parse error naming the three choices.** That is the flaw in the first draft, which had the attribute generate a `@@unique` from a bare list: it answers `once` by default and leaves the other three classes unspellable. A default here is the silence the word exists to end.
+
+**It generates rather than describes, which is the boundary that keeps the rest of the OntoUML stereotype set out** — gap 06's `Role`, `Phase` and `Kind` included. A kind-word lands in `.lite` only if it generates or refuses something. `@@relator` does both: `once` emits `UNIQUE(relata)`, `many: col` emits `UNIQUE(relata + col)`, `many` emits no key at all, and **every relatum an emitted key does not already cover by prefix gets an index**. That second half was measured before it was designed — [`FJS-413`](ISSUES.md#fjs-413) found ten unindexed foreign keys in basecamp, four on cascading join tables, and four models carried the reverse index by hand with the defect id in the comment, because `@@unique` cannot know that both ends of a relator are entrances and a relator by definition does.
+
+**The emission table in the paper was wrong about `many` and building it is what found that.** `once` and `many: col` emit a unique LEADING with the first relatum, so only the trailing relata are uncovered; a bare `many` emits no unique, so the leading relatum is as unindexed as the trailing one. `many` indexes every relatum. `Subscription` would otherwise have lost an index it has today.
+
+**Two coverage rules keep the word from adding dead b-trees**, which is the failure mode of a feature whose selling point is removing them. An index this model declares that LEADS with the column is already the reverse index and is doing more besides, so nothing is emitted beside it — `StockReservation`'s `@@index([variantId, expiresAt])` is that case. A composite primary key over exactly the relata already IS the key, so no unique is emitted — which is what `litestone edge eject` writes, since a side table keys both dimensions and an edge is therefore class-1 by construction. The reverse index still lands there, and an ejected model has never had one on its trailing dimension.
+
+**The refusals are what make it not a tag.** A relatum may be neither optional nor `onDelete: SetNull` — a relator with a missing relatum is not a relationship that lost a participant, it is a row that never meant anything. `Cascade` and `Restrict` both pass: they honor the dependence and differ only on who wins, which is why `Subscription` and `Payslip`, held by `Restrict` for the ledger's sake, are not refused. There must be at least two DISTINCT relations, counted over relations and not over columns, because a composite foreign key is two columns naming one thing. And a `@@unique` or an `@@index` beside it over columns it already emits is refused rather than tolerated — one origin, or the two drift. **What no rule reaches is a `@@relator` on a credential row**: `ApiKey` satisfies every refusal above and is not a relationship. That is a modeling judgment and the parser has no access to it.
+
+**Net, measured:** basecamp's four hand-written reverse indexes and their `FJS-413` comments collapse into declarations, and the ONLY DDL change across both apps is one deleted line — `idx_workspace_member_workspaceId_userId`, a second b-tree over the primary key's own columns that was written on every row and read by nothing. `example`'s emitted SQL is byte-identical.
+
+**Adjudication in tension** (§ IV): *familiarity vs. precision*, over the name. `Relator` is exact, traceable to fifty years of ontology argument, and unknown outside it; *join table* half-fits and implies the absence of identity, which is the one thing being denied. `@@mediates` is the better English and loses on predictability — every model attribute in the language is a noun (`@@gate`, `@@arc`, `@@scope`, `@@tenant`, `@@transitions`), and `@@arc([col, col])` is the structural sibling this copies.
+
+**What is deliberately not here.** A `max:` argument was in the first draft and is withdrawn: `@minItems`/`@maxItems` on a relation already owns a bound. Valid time on a repeating relator waits on [`IDEAS/effective-time.md`](IDEAS/effective-time.md) — `Subscription` reads `many` today and gains a window later without its declaration changing. And the seven consumer seams the paper names — a structural conflict target for `upsert`, whether a create needs `claimIdempotency`, picker against ledger in `controlFor` — are left for later by the paper's own § Scope: this is index work, in the owner that already emits `@@unique` and `@@arc`.
 
 ### <a id="fjs-d348"></a>2026-09-22 · `FJS-D348` — Can a schema say what a number COUNTS — Yes, `@unit(<symbol>)` from a closed table, and it declares the unit without ever converting the value
 
@@ -5489,6 +5741,64 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d402"></a>2026-09-25 · `FJS-D402` — How does a person sign in — `login --api-key`: the key is issued from the app's own screens. Works today for every account, OAuth-only ones included.
+
+Asked in [`IDEAS/app-cli.md`](IDEAS/app-cli.md) § Open questions. **A** was picked over **B** (`login` with email and password, answering a Bearer session. Works today for accounts with a password; a TOTP challenge needs a prompt), **C** (a device flow (RFC 8628): a code shown in the terminal, approved on a screen. A new auth surface — a model, `/auth/device/*`, a page — so its own proposal and a ruling).
+
+The paper's recommendation, taken as written: it needs nothing server-side and covers every account; B follows for the same reason, and C waits for an app whose users have no password and cannot be asked to handle a key.
+
+### <a id="fjs-d406"></a>2026-09-25 · `FJS-D406` — The jobs a call started are FOUND by its correlation id, not declared on the method — amends `FJS-D400`'s mechanism, keeps its owner
+
+`FJS-D400` put a `job:` key on the method's `methods:` entry and had the result carry the handle. Neither is needed: Caravan already stamps every dispatched job with the `correlation_id` of the request that dispatched it (`caravan/src/index.ts`, from `host.correlationId()`), so `packages/mcp` finds *the jobs this call started* by asking for that id, and waits until each is terminal. Nothing is declared, so nothing can be forgotten — the silent case the ruling left unenforced was a method that dispatched without declaring, and `--await` returning at once in green. basecamp's `servers.provision` works unchanged.
+
+**What stays is the owner**: `packages/mcp` holds the call open and the CLI's `--await` is a flag over it, for `FJS-D400`'s own reason — an agent needs *wait until done* as much as a person does. **What this cannot see**, named rather than hidden: a job queued through the transactional outbox (`ctx.enqueue`) is dispatched by the relay after commit and does not reliably carry the caller's correlation id; and a job dispatched from INSIDE a job gets a fresh one (`app.runAs` opens a new request scope). Both are the correlation id's gaps, and fixing them fixes `--await` with no change here.
+
+Graded on § V: one origin (Caravan's own row), no new concept, derived rather than restated, one owner. Picked by the owner in session.
+
+### <a id="fjs-d400"></a>2026-09-25 · `FJS-D400` — Who knows that a call started a job, and how to wait for it — The method: its `methods:` entry declares the job it dispatches, the result carries the handle, and `packages/mcp` holds the call open, reporting progress through MCP progress notifications, until the job is terminal. `--await` is the CLI's flag over that and nothing more.
+
+Asked in [`IDEAS/app-cli.md`](IDEAS/app-cli.md) § Open questions. **B** was picked over **A** (the CLI: it spots a job id in the result and polls the jobs service).
+
+The paper's recommendation, taken as written: A puts an app's conventions into a client and serves no agent; an agent calling `servers.provision` needs *wait until done* exactly as a human does, which is the breadcrumbs question's argument about the same owner.
+
+**Amended by [`FJS-D406`](#fjs-d406)**: the jobs are found by the call's correlation id rather than declared on the method.
+
+### <a id="fjs-d399"></a>2026-09-25 · `FJS-D399` — Which tenant does a call act in — `cli/config/` names how the tenant travels (`tenant: { header: 'x-workspace-id' }`); a profile holds the current one, `--workspace <id>` overrides a single call, and `workspaces use <id>` switches it.
+
+Asked in [`IDEAS/app-cli.md`](IDEAS/app-cli.md) § Open questions. **A** was picked over **B** (a key bound to one tenant picks it, and a person holds a key per workspace).
+
+The paper's recommendation, taken as written: it needs the `cli/` config to exist, which the surface question gives it, and it costs one key per person rather than one per workspace. B arrives for free wherever an app's keys are tenant-scoped already.
+
+### <a id="fjs-d398"></a>2026-09-25 · `FJS-D398` — Do breadcrumbs belong to the MCP result — Yes: `packages/mcp` computes them off `transitionsAt()` and `buildRelations()` at the caller's standing, and the CLI renders them.
+
+Asked in [`IDEAS/app-cli.md`](IDEAS/app-cli.md) § Open questions. **A** was picked over **B** (no: the CLI computes them, which needs the model's `$def` beside each tool, and the tool list does not carry it).
+
+The paper's recommendation, taken as written: `projectTools` already owns *what may this standing call*, and *what may it call next* is the same question asked of one row; B puts a second projection in a client.
+
+**Built 2026-09-25, and not off `transitionsAt()`.** That is sierra's, so `packages/mcp` cannot import it (Invariant 1), and a copy would be a second grader weaker than the first: it compares a move's own `@gate`, where the projection grades `max(model update, move gate)`. So `src/breadcrumbs.ts` narrows the caller's OWN projected tool list by the row — a move whose `from` holds the row's value, a `get` for each foreign key it carries, a `find` over the one foreign key pointing back — and grades nothing itself. A one-row answer (`get`, `create`, `patch`, `update`, `restore`, a move) carries them in `_meta['frontierjs/breadcrumbs']` and as a second text block; the CLI prints each as its own command line on stderr and under `--json` in the envelope. A row policy is not graded, which is the tool list's own limit. **Adjudication in tension** (§ IV): none. **§ V's ninth question**: *every breadcrumb is a tool the caller holds, and a move is one the row's state allows* — `packages/mcp/test/breadcrumbs.test.ts`, and basecamp's `verify:cli`, which pairs the moves with Litestone's own `transitions(row)` and runs each printed relation command.
+
+### <a id="fjs-d363"></a>2026-09-23 · `FJS-D363` — Where does `recover` live — The domain owns it: `recoverIfClear(client, subscriptionId)` beside `unpaidInvoices`, called from `settleInvoice` and from a `voidInvoice` that `void` grows, on the same client inside the same call. Recovery the moment the ledger clears, and one function a reader finds next to the two moves.
+
+Asked in [`IDEAS/ontology.md`](IDEAS/ontology.md) § Open questions. **A** was picked over **B** (a junction `after` hook on the `invoices` service's `settle` and `void`. Misses every settle that does not go through the service — the payment webhook calls `settleInvoice` on the system client), **C** (an `orion` flow on `Invoice` reaching `paid` or `void`. The reaction's proper territory by *B* of `FJS-D362`'s question, and a dependency on a port still in progress for one line of logic), **D** (keep a small `subscriptions-recover` sweep. The polling shape this paper exists to remove, with a day of latency on the customer who paid).
+
+The paper's recommendation, taken as written: both exits already have or can have one owner, the check is one query, and it needs no word the schema lacks. If a second app wants the same reaction, that is the evidence for C.
+
+**The condition it carries: a payment never fails because of a subscription.** The staff button settles on the CALLER's client, so recovery runs on it too, and a `Subscription` update policy that refuses that member would refuse the settle. Step 4 drove it: a staff settle over HTTP recovered through `Subscription`'s existing `@@allow('update', auth().isStaff)`, so nothing was widened. **Adjudication in tension** (§ IV): none. **§ V's ninth question**: *a customer who has paid is not left `pastDue`* — `verify:billing` (`dunning.settleRecovers`, `dunning.voidRecoversToo`, `dunning.oneOfTwoPaidStaysPastDue`, with no job run) and `verify:jobs`' `dunning.staffClearsTheLedger` on the caller's client.
+
+### <a id="fjs-d368"></a>2026-09-23 · `FJS-D368` — Where does what a commitment's move OWES run — The app names it on the plugin, keyed by commitment: `commitments({ hooks: { 'SubscriptionPeriod.close': renewPeriod } })`. The fire still re-derives and still makes the move; the hook runs after it inside one `$transaction` on the fire's client, a throw rolls both back, and `afterCommit` carries a dispatch to a queue in another file. A key naming no declared commitment is refused at boot.
+
+Asked in [`IDEAS/ontology.md`](IDEAS/ontology.md) § Open questions. **A** was picked over **B** (a litestone plugin's `onAfterWrite`, reacting to `close` on every path that makes it. Billing code in the Data layer's client config, and whether it runs inside the transaction is unmeasured), **C** (an observer on the `subscriptionPeriod:close` announcement dispatches a keyed renewal job. After the commit, so a crash between the two loses the renewal and nothing re-derives it), **D** (keep the renewal sweep beside the period rows. The polling this paper exists to remove).
+
+The paper's recommendation, taken as written: the one path the move is made on is the one path the effect rides, and the move stays the plugin's, so the from-state lock `FJS-D353` gets once-ness from cannot be forgotten by a hook. Hook tier by `FJS-D06`: it may halt the move.
+
+**The plugin makes the move and the hook follows it**, rather than the hook making the move itself: a hook that forgot the transition, or made it through `asSystem()`, would remove the from-state lock a fire's once-ness rests on, and nothing would say so until a period billed twice. **Only the fire runs a hook** — a `transition()` made anywhere else is its caller's to follow up, which is `FJS-D363`'s shape for `recover`. **Adjudication in tension** (§ IV): *batteries vs. smallness*, bounded to one option on a plugin that already exists. **§ V's ninth question**: *a move and what it owes commit together or not at all* — `packages/caravan/test/commitments.test.ts` (*a hook that throws takes the move back with it*), which goes red with the hook run outside the transaction, and the boot refusal for a key naming no commitment beside it.
+
+### <a id="fjs-d358"></a>2026-09-23 · `FJS-D358` — One sweep per declaration, or one generic sweep over all of them — One generic sweep that reads every declaration and dispatches a keyed wake-up per due row; the executor re-derives `on:` and `while:` and then makes the transition as system, so a wake-up minted before its row moved finds nothing due and does nothing — shape 1's rule applied to shape 3.
+
+Asked in [`IDEAS/ontology.md`](IDEAS/ontology.md) § Open questions. **B** was picked over **A** (a Caravan cron generated per declaration, at a cadence the declaration states. N declarations are N crons).
+
+The paper's recommendation, taken as written: one cadence, and the re-derivation is what lets a queue hold a time without being its owner. **Where it runs**: a Junction plugin, `commitments()`, with `requires: ['caravan']` — the `outbox()` shape. Litestone declares and answers *which rows are due by T* but has no clock and may not dispatch (Invariant 1); Caravan reads no schema. The plugin registers ONE `app.jobs.schedule(…)` rather than a `setInterval`, because a timer that dispatches into the queue is the queue's schedule (`FJS-D36`). A tick dispatches per row due within a lookahead, with a `delay` to its time, so the cadence is not the precision; a write to a declaring model kicks that row, as a commit kicks the outbox; under `strategy database` a tick walks every tenant, as `outboxPass` does. A schema declaring `@@commitment` with no `commitments()` installed is refused at boot.
 
 ### <a id="fjs-d338"></a>2026-09-20 · `FJS-D338` — How a per-call value too big for a header reaches the boundary — a header-flagged body envelope: `X-Fjs-Write: enveloped` and a body of `{ data, base }`, with the header absent meaning today's plain-`data` body.
 
@@ -8409,6 +8719,87 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d404"></a>2026-09-25 · `FJS-D404` — A call follows the component's import watches: it re-runs when a `$:` on an import fires, wherever Mesa already re-runs it
+
+Asked while weighing [`FJS-D371`](ISSUES.md#fjs-d371), by measuring what `{canEdit()}` does today. A function imported from another file reads what it reads out of the compiler's sight, so `{money(v)}` under `$: prefs.currency` subscribed to nothing. It moved only when another binding compiled into the same `render()` named `prefs`, which is an accident of grouping, and a call with arguments was classed static and written once. `example`'s `MoneyCell` declares `$: prefs.currency` as *load-bearing*, and measured, it moved nothing ([`FJS-1343`](ISSUES.md#fjs-1343)). **A** (a call to an import, or to a local function whose body reaches one, re-runs when the component's import watches fire) was picked over **B** (signals only: document *pass the store as an argument*, and keep the accident) and **C** (B, plus a warning on an imported call in a component that watches something).
+
+The watch is already how a component says an import is live (`FJS-D381`), so A reads a declaration that exists rather than adding one, and whether a call is live stops depending on which bindings the compiler grouped, the same invisibility `FJS-D379` gave a throw. B leaves a screen correct or stale by what else is on it. C would fire on every formatter in a watching component. **A watch never makes anything reactive that was not**: it adds a trigger to a template binding, a prop and a derived `const`, and a static `const` stays a snapshot, since promoting one would make `const off = store.on(…)` lazy and re-subscribe it on every fire. A handler, a callback that runs later, `{#await}` and an async `const` are excluded, since a re-run there is a side effect or a request. **What A costs** is that every such call in a watching component re-runs when a watch fires, whether or not it reads the watched path. Measured over the repo, 71 render effects in 88 watching components gain a subscription, nearly all formatters; a 1000-row list of `{money(r.total)}` costs 1.6 ms per fire with a cached `Intl.NumberFormat` and 31 ms with one built per call. A narrower `$:` is the lever.
+
+*Lives in:* `packages/mesa/docs/VISION.md` RULE 64 · `packages/mesa/src/compiler.js` (`WATCHED_CALLS` in `rewriteExpr`, `$$watches` in `emitScript`, `_isReactive`) · `packages/mesa/test/watch-follows-calls.test.js`
+
+### <a id="fjs-d381"></a>2026-09-24 · `FJS-D381` — A component watches its imports itself; a cover it gets from another component's watch is incidental, kept as a feature, and measured rather than designed away
+
+Asked while reading VISION RULES 44 and 47 against a scratch component that built `const doubled = store.count * 2` over an import and expected it to move. **RULE 44 stands**: an import is inert until a `$:` in THIS component watches it, and an imported primitive is a constant. Watching an import automatically wherever it is read was weighed and not taken — a library namespace, a config object and a class with private fields (RULE 49) would all be wrapped in a proxy they never asked for — and the per-component watch is what makes a component's reactivity readable from its own source.
+
+**RULE 47 stays, and its text was wrong.** Measured (`packages/mesa/test/import-watch.test.js`): a component with no `$:` on an import reads the raw object and is never updated by any watch, so *"even components that declared nothing"* was false. The cross-component cover reaches only a component that watches ANOTHER path of the same import, and for that one it depends on mount order — mounted after the watcher it is covered, before it is not — and a watch is never unregistered, so the cover outlives the component that declared it. That is kept as a feature: a value this component does not watch shows its current value whenever something re-runs the binding, and the component did not ask for more. `$:` is how a component says it cares and `var` is how it says it wants the value as it was. **How often it matters is to be watched in real apps**; the count at the time of this ruling is in [`FJS-1340`](ISSUES.md#fjs-1340).
+
+**Where a developer is told** (*doctrine vs. discovery*: the hearing amended the doctrine to match the code). The reads nothing watches are listed by the check that already owned the question — `_checkExternalReactivity`, whose strict level Sierra sets — extended to a top-level `const` and to a handler's deps as watches, and a dev build shows the list in the devtools panel beside the component. **No `fli check` rule**: a Sierra build already reports each read under strict, and a third surface grading the same question would be a second owner of it.
+
+*Lives in:* `packages/mesa/docs/VISION.md` RULES 44 and 47 · `packages/mesa/src/compiler.js` `_checkExternalReactivity` · `packages/mesa/mesa-vite/devtools.html`
+
+### <a id="fjs-d380"></a>2026-09-24 · `FJS-D380` — A kit control's one-way `value` is where it starts; a caller whose writes can be refused keeps a draft and puts it back
+
+Asked in [`FJS-1336`](ISSUES.md#fjs-1336). A kit `<Select>` binds its `value` prop to its own copy, so a pick changes what is on screen whether or not the app keeps it. When the app refuses the change, its own value never moved, nothing is pushed, and the control shows a choice the row does not hold. **A** (the caller holds a draft through `bind:value`, follows the row with a `$:`, and resets the draft on refusal) was picked over **B** (the kit returns to its `value` prop after any change the parent did not adopt) and **C** (a stated `controlled` prop that does B on request).
+
+B breaks the ordinary form: a picker whose caller only reads the result through `FormData` passes a starting `value` and never adopts a pick, so it would jump back after every one. C is the config flag *paved road vs. the workaround* warns about — it widens the shoulder, gives the same question two answers, and puts one more prop on every control. A keeps the kit's controls the same kind of thing as a native one, where `value` is where the control starts. **What A costs** is that the caller has to know: a screen that writes the pick straight to a refusable service and passes `value={row.x}` one way shows the refused pick with nothing saying so. The pattern is in `packages/ui/README.md` § Forms, and the kit drive's `select-late-options` spec runs it — a refusal twice in a row, an accepted pick, and the row moving from elsewhere — so the advice fails if it stops working. **The same draft written screen after screen is a measurement of the road**, and a reason to reopen this rather than to copy it again.
+
+*Lives in:* `packages/ui/README.md` (the pattern) · `packages/ui/test/browser/specs/select-late-options.spec.mjs` (the pattern, run)
+
+### <a id="fjs-d379"></a>2026-09-24 · `FJS-D379` — A template binding that throws keeps the value it last showed; the bindings beside it go on updating
+
+Asked in [`FJS-1330`](ISSUES.md#fjs-1330). The text and attribute bindings at one level of a template share one `render()` effect, so an expression that threw stopped every binding after it. Each binding is now contained on its own. The throw goes to the nearest `<mesa:boundary>`, or to the console with none above. **A** (keep the last value) was picked over **B** (clear it: empty text, attribute removed).
+
+Keeping is what a binding with an effect of its own — `class:`, `style:`, `{@html}` — already did, so which bindings the compiler grouped stays invisible; measured, all three held their value through the same throw that froze the grouped ones. Clearing has no neutral value for an attribute: removing `disabled` enables the control, removing `class` unstyles the element, and removing `aria-expanded` changes what the element is. What A costs is a stale value that looks current, reported only in the console when no boundary is above it — Sierra renders every route inside one (`FJS-D376`).
+
+**The first run still throws**, out of `mount()` or into the boundary that is building the content, because there is no last value to keep and a failure while building is the caller's to see — as it is for every effect. The containment is a `try` per binding in the emitted body, one allocation-free statement; it cost 52 gzip bytes on the bench's smallest component and 48 on its rows table.
+*Lives in:* `packages/mesa/src/compiler.js` (the `render()` grouping emits the `try`) · `packages/mesa/src/runtime.js` (`contain`).
+
+### <a id="fjs-d378"></a>2026-09-24 · `FJS-D378` — A boundary waits on the async values its body reads and on nothing else; RULE 40 only chooses which `pending` it shows
+
+Asked in [`IDEAS/derived-suspense.md`](IDEAS/derived-suspense.md) § Open questions. **A** was picked over **B** (as today: a body that reads nothing waits on everything, so a boundary written to catch errors also waits on loads), **C** (a boundary waits only if a `pending` resolves for it by RULE 40, co-located or global).
+
+The paper's recommendation, taken as written: whether a region waits is then read off the region alone. Under B an error boundary quietly becomes a loading gate, and under C adding a global `pending` for one boundary changes when every other boundary in the file appears. What A costs is the only spelling for *hold this region until everything has loaded*, which nothing in the repo uses.
+
+**Waiting for a whole template is `<mesa:mounted>`** — it holds everything behind the promise `$.mounted()` returns (RULE 38), so loads that must all land before anything shows go inside that function. It does not watch `const x = await …` values; a region that must wait for several of those reads them.
+
+### <a id="fjs-d377"></a>2026-09-24 · `FJS-D377` — A throw inside a boundary during a static build fails the build, naming the route and the error
+
+Asked in [`IDEAS/derived-suspense.md`](IDEAS/derived-suspense.md) § Open questions. **B** was picked over **A** (the boundary renders `failed` into the HTML).
+
+The paper's recommendation, taken as written: a prerendered `failed` snippet is an error page published with nothing reporting it. The static-safety gate already fails closed for the same reason.
+
+### <a id="fjs-d376"></a>2026-09-24 · `FJS-D376` — A throw with no boundary above it: Sierra builds each route inside one, whose `failed` the app's layout supplies; Mesa standalone keeps today's behavior
+
+Asked in [`IDEAS/derived-suspense.md`](IDEAS/derived-suspense.md) § Open questions. **C** was picked over **A** (as today: the first run throws to `mount()`'s caller, and anything later is logged and left half-drawn), **B** (the component that threw is disposed and logged, so nothing half-drawn keeps running).
+
+The paper's recommendation, taken as written: the route is the region a person reads as one page and Sierra already owns it. B removes a component from under a layout that then has a hole and no message, which is quieter than the log it replaces.
+
+### <a id="fjs-d375"></a>2026-09-24 · `FJS-D375` — A boundary that catches a throw disposes its content and renders `failed(error, reset)`; `reset` rebuilds it
+
+Asked in [`IDEAS/derived-suspense.md`](IDEAS/derived-suspense.md) § Open questions. **A** was picked over **B** (the content stays and `failed` renders beside it), **C** (A, and the content retries by itself on the next write to anything it read).
+
+The paper's recommendation, taken as written: B keeps exactly the half-drawn, still-subscribed region this exists to remove. C re-runs a failure on every keystroke, and whether a retry is wanted is the author's call, which `reset` puts in their hands.
+
+### <a id="fjs-d374"></a>2026-09-24 · `FJS-D374` — A throw finds its boundary by walking the owner tree from the node that threw, in `_runNode`
+
+**Status:** amended-by [`FJS-1326`](ISSUES.md#fjs-1326) — the clause *from the node that threw*, for a derivation only. A memo is owned where it is declared, usually the script, outside every boundary in its own template, so its throw walks from each node that READS it; readers are routed to rather than woken, since one that re-runs without reading the memo again would drop it. That the owner tree decides, and that one function answers which boundary (`_catcherOf`), are unchanged.
+
+Asked in [`IDEAS/derived-suspense.md`](IDEAS/derived-suspense.md) § Open questions. **A** was picked over **B** (the context stack, reinstated by `captureContext()`).
+
+The paper's recommendation, taken as written: the owner tree IS the render tree, and it is still there during a flush, when the context stack has long been popped. It crosses component edges with no extra work, which answers *does a child's throw reach its parent's boundary* above with B for errors at no cost. The routing stays in `_runNode`, so there is one owner.
+
+### <a id="fjs-d373"></a>2026-09-24 · `FJS-D373` — A throw is caught by `<mesa:boundary>`'s own `failed` snippet, not by a new element
+
+Asked in [`IDEAS/derived-suspense.md`](IDEAS/derived-suspense.md) § Open questions. **A** was picked over **B** (a separate element, `<mesa:catch>`).
+
+The paper's recommendation, taken as written: no new noun, and it is Svelte's shape. **What it costs**: a body that reads no async value gates on the whole component's `$async` union today, so wrapping a plain region to catch errors would also start gating it on loads. Under A, a boundary with no `pending` in scope gates nothing, and RULE 40's global-snippet fallback has to say whether a global `pending` counts.
+
+### <a id="fjs-d372"></a>2026-09-24 · `FJS-D372` — A boundary catches a throw during a flush, not only a rejected await: render, block, derivation and `$:` effect. Not an event handler or a timer
+
+Asked in [`IDEAS/derived-suspense.md`](IDEAS/derived-suspense.md) § Open questions. **B** was picked over **A** (rejected awaits only, as today; a throw is the console's), **C** (B, plus event handlers).
+
+The paper's recommendation, taken as written: Solid and Svelte 5 draw the same line. A throw in a flush leaves a region half-built, while a throw in a handler leaves the DOM as it was, so only the first corrupts what the boundary guards. C would wrap every handler the compiler emits, to catch a failure that damaged nothing. Defect: [`FJS-1326`](ISSUES.md#fjs-1326).
+
 ### <a id="fjs-d327"></a>2026-09-20 · `FJS-D327` — Does `@frontierjs/ui` ship a map control — No. `x-geo` is published, `controlFor()` resolves a validated lat/lng pair, and an app that wants a map brings its own.
 
 Asked in [`IDEAS/geo.md`](IDEAS/geo.md) § Open questions. **A** was picked over **B** (yes, a `<MapField>` over a tile provider).
@@ -10172,6 +10563,56 @@ work, not a decision.)*
 
 ## Repo conventions
 
+### <a id="fjs-d401"></a>2026-09-25 · `FJS-D401` — JSON is `--json` on every fli command. `--as` picks among the layouts a person reads and never offers `json`.
+
+Asked while reviewing feedback from writing real commands in a client app. **`--json`
+everywhere** was picked over **`--as=json` everywhere** (extend `FJS-D223`'s flag to the
+32 commands that already spelled it `--json`).
+
+**The axis `FJS-D223` named was two.** *Which page does a person read* and *does a
+program read this* were one enum there, so the contract a program depends on and a
+layout free to change shared a flag. They answer differently to a change: a report's
+layout may move on any commit, and the model may not move without breaking whatever
+reads it. The case that surfaced it is a client agent parsing `↳ page:` lines out of
+a command's text, which froze that text's layout for as long as nothing printed JSON.
+`FJS-D223`'s own argument — *a boolean and an enum on one axis invite a third* — still
+holds for pages: the next presentation is a value of `--as`, never a new flag.
+
+**One spelling for a program, on every command.** 32 commands already declared a
+`json` boolean and five offered `--as=json`; those five move. `app:atlas` had no
+second page, so it loses `--as`. `--json` with a non-default `--as` is refused by
+the command, since those are two answers to one run.
+
+**The refusal is at the declaration.** `core/flags.js` refuses an `as` flag whose
+`choices` include `json`, on every run, and `--as=json` against a command with a
+`--json` names it in the refusal. `db:tinker` and `db:export` keep an `as` that
+names a PERSON; it has no `choices` and is not a layout.
+
+*Decision rules.* Origin: one — a program reads `--json`. Concept: none added; a
+value leaves `--as`. Complexity: the problem's — two readers with different needs.
+Predictability: raised — one flag across every command, and knowing it on one
+teaches all. Derived: `--help` prints both from the declaration. Owner: `flags.js`
+grades declarations already; each command owns its model. Boundary: `--json` is the
+contract, the page is not. Failure: refused, and the refusal names `--json`
+(§ IV *familiarity vs. precision*: the ecosystem's shape, taken whole, since the word
+fits). Silence: an `as` offering `json` fails at declaration and the shipped-flags
+test in `test/compiler.test.js`; a command that prints data and declares no `--json`
+is not detectable — `none`.
+
+### <a id="fjs-d397"></a>2026-09-25 · `FJS-D397` — Is a CLI a surface — Yes: `cli/` beside `api/` and `web/`, written by `fli make:cli`, laid out like `web/` — `cli/config/` (the binary's name, the origin, how a tenant travels), `cli/src/routes/` (hand-written commands, one file each, beside the derived ones), `cli/test/`, and a `bun build --compile` release — so an app can ship `shop orders find` to its own users.
+
+Asked in [`IDEAS/app-cli.md`](IDEAS/app-cli.md) § Open questions. **B** was picked over **A** (no: one generic program, `<bin> --origin <url> orders find`, and a profile remembers the origin).
+
+an app ships its CLI to its own users as a compiled binary, so the config, the tests and the release are the surface's own; cli/src/routes/ gives hand-written commands the place web/src/routes/ gives pages.
+
+**Invariant 3's surface list gains `cli/` when the first one is built**, not before: no app has one yet, so there is nothing for `fli check`'s `app-layout` to grade.
+
+### <a id="fjs-d396"></a>2026-09-25 · `FJS-D396` — Derived at runtime, or generated per app — Runtime: the program reads `/mcp` when it starts and caches by build. A file under `cli/src/routes/` adds a command the tool list does not carry, or replaces one it does, the way a file under `web/src/routes/` is a page; a route naming a tool the list no longer offers is refused at start-up by name.
+
+Asked in [`IDEAS/app-cli.md`](IDEAS/app-cli.md) § Open questions. **A** was picked over **B** (generated: `fli make:cli` writes commands from the schema into the app, gated by a snapshot).
+
+The paper's recommendation, taken as written: B is a second origin of the command tree, needs a snapshot to stay honest, and cannot grade per standing, since the standing is known only when somebody signs in. A's cost is a request at start-up, which the cache pays once per build. A route file is the only place its own command is written, so it restates nothing; the start-up refusal is what keeps an override from outliving the method it replaced.
+
 ### <a id="fjs-d345"></a>2026-09-20 · `FJS-D345` — an App's SOURCE is a discriminated kind, `inline` is the files themselves, and the machine serves them on a SECOND listener of its own.
 
 Not asked in a paper — ruled while building the prototyping door in basecamp, and written down because two halves of it are the kind a later change would "simplify" without seeing what they hold.
@@ -10818,6 +11259,8 @@ does not feel like one from the inside — every step of it is a person correctl
 consulting the doctrine.
 
 ### <a id="fjs-d223"></a>2026-09-05 · `FJS-D223` — `ws:map` and `ws:atlas` are one command. One model, three presentations of it, chosen by `--as`.
+
+**Status:** amended-by [`FJS-D401`](#fjs-d401) — the clause *`--as` absorbs `--json`*. The model is `--json`; `--as` picks between the deck and the report. That the two pages and the model are one command over one reader is unchanged.
 
 They were never two things. `collect()` in `core/repo-map.js` is the one reader,
 and `core/repo-atlas.js` performs **no filesystem reads at all** — every plate on

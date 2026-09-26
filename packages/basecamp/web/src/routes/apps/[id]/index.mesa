@@ -105,7 +105,7 @@ title: App
   // the composed view above has nothing to fire on. Reads are filtered out or
   // the handler answers its own refetch, forever.
   const READS = new Set(['get', 'find'])
-  const offDomains = domains.service.on('*', (method, changed) => {
+  var offDomains = domains.service.on('*', (method, changed) => {
     if (READS.has(method) || changed?.appId !== page.params.id) return
     load()
   })

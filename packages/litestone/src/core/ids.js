@@ -8,8 +8,9 @@
 // browser cannot import this package, and three fillers cannot each own the
 // answer.
 //
-// What stays is the question only a SCHEMA can answer — `isServerAssignedId` —
-// which reads a field and its model and belongs nowhere near a pure generator.
+// What stays is the question only a SCHEMA can answer — `isServerAssignedId`
+// and `isServerFilled` — which read a field and belong nowhere near a pure
+// generator.
 
 export { generateUlid, generateCuid, generateNanoid, ID_GENERATORS, GENERATED_DEFAULTS, mintId }
   from '@frontierjs/toolbelt/ids'
@@ -51,4 +52,26 @@ export function isServerAssignedId(field, model) {
   if (field.type?.name !== 'Int') return false
   const keyWidth = (model?.fields ?? []).filter(f => f.attributes?.some(a => a.kind === 'id')).length
   return keyWidth === 1
+}
+
+// ─── who fills the column ─────────────────────────────────────────────────────
+
+const SERVER_FILLED = new Set([
+  'default', 'updatedAt', 'sequence', 'computed', 'generated', 'funcCall',
+  'from',    'edge',      'derived',
+])
+
+/**
+ * Is this column filled by the Data boundary when a create omits it?
+ *
+ * Asked by the create-mode JSON Schema's `required` list and by `client.js`'s
+ * required pre-flight. They each kept a list, and the schema's was shorter: a
+ * `@sequence` column was required by the schema and exempt in the client, so
+ * the browser refused every create of a model that numbers its rows with
+ * *number is required* before a request was sent (`FJS-1296`). A caller may
+ * still STATE one of these — an explicit `@sequence` value is honored — so the
+ * answer is *not required*, never *not writable*.
+ */
+export function isServerFilled(field) {
+  return (field.attributes ?? []).some(a => SERVER_FILLED.has(a.kind))
 }

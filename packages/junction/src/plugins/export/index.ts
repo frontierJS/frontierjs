@@ -142,7 +142,7 @@ export function exportPlugin(opts: ExportPluginOptions = {}) {
 
         const sctx: any = {
           auth:     { user: (ctx as any).user ?? null },
-          client:   { headers: (ctx as any).headers ?? {}, ip: (ctx as any).ip },
+          caller:   { headers: (ctx as any).headers ?? {}, ip: (ctx as any).ip },
           query:    { ...((ctx as any).query ?? {}) },
           reserved: { ...((ctx as any).query ?? {}) },
           locals:   {},

@@ -161,6 +161,11 @@ title: Orders
   // the caller cannot make comes back with allowed:false rather than vanishing,
   // so it renders disabled and the reason stays visible. The server refuses
   // regardless — signed in as a user, refund is a 403 whatever this renders.
+  //
+  // A `@system` move is the one exception, and it is left out rather than
+  // disabled: `abandon` is made by the order's `@@commitment` and by nothing a
+  // person presses, so there is no level at which it becomes a button.
+  const movesFor = (order, level) => orders.transitions(order, level).filter(m => !m.system)
 
   let busy = null
 
@@ -272,7 +277,7 @@ title: Orders
              transitions() without mentioning it would compute the moves once
              at mount and never re-grade them on sign-in. -->
         <div class="cluster">
-          {#each orders.transitions(order, session.level) as move}
+          {#each movesFor(order, session.level) as move}
             <Button
               variant="ghost"
               loading={busy === order.id + ':' + move.name}
@@ -283,7 +288,7 @@ title: Orders
               onclick={() => run(move.name, order.id)}
             >{move.name}</Button>
           {/each}
-          {#if !orders.transitions(order, session.level).length}
+          {#if !movesFor(order, session.level).length}
             <span class="text-sm text-muted">—</span>
           {/if}
         </div>

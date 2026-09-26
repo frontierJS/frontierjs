@@ -2,7 +2,7 @@
 //
 // Phase 1b of IDEAS/release-transitions.md. The property the whole design rests
 // on is that a Release id is a pure function of its terms: the same tree and the
-// same bindings mint the same id anywhere, which is what makes *build once,
+// same configuration mint the same id anywhere, which is what makes *build once,
 // promote a digest* a sentence you can say rather than a hope.
 //
 // So the tests are mostly about what DOES and DOES NOT move the id.
@@ -12,12 +12,12 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'fs'
 import { tmpdir }                             from 'os'
 import { join }                               from 'path'
 
-import { bindingSet, schemaSurfaceHash, mintRelease, formatRelease,
-         BindingError, RELEASE_FORMAT }       from '../core/release.js'
+import { configurationSet, schemaSurfaceHash, mintRelease, formatRelease,
+         ConfigurationError, RELEASE_FORMAT } from '../core/release.js'
 
 const base = (over = {}) => ({
   app: 'shop', environment: 'production',
-  bindingsHash: 'bh', schemaHash: 'sh', pivot: 'expand', ...over,
+  configurationHash: 'bh', schemaHash: 'sh', pivot: 'expand', ...over,
 })
 
 describe('the id is the terms and nothing else', () => {
@@ -26,7 +26,7 @@ describe('the id is the terms and nothing else', () => {
   })
 
   // One artefact promotes from staging to production unchanged and only its
-  // bindings differ (invariant 1), so the environment is on the row and never
+  // configuration differs (invariant 1), so the environment is on the row and never
   // in the hash. If this ever flips, promotion becomes a rebuild.
   test('the environment does NOT move it', () => {
     expect(mintRelease(base({ environment: 'stage' })).id)
@@ -39,10 +39,10 @@ describe('the id is the terms and nothing else', () => {
   })
 
   test.each([
-    ['the bytes',        { digest: 'sha256:aaa' }],
-    ['the bindings',     { bindingsHash: 'other' }],
-    ['the data boundary',{ schemaHash: 'other' }],
-    ['the verdict',      { pivot: 'contract' }],
+    ['the bytes',         { digest: 'sha256:aaa' }],
+    ['the configuration', { configurationHash: 'other' }],
+    ['the data boundary', { schemaHash: 'other' }],
+    ['the verdict',       { pivot: 'contract' }],
   ])('%s moves it', (_label, over) => {
     expect(mintRelease(base(over)).id).not.toBe(mintRelease(base()).id)
   })
@@ -59,53 +59,53 @@ describe('the id is the terms and nothing else', () => {
   })
 })
 
-describe('bindings', () => {
+describe('configuration', () => {
   test('per-target beats app-wide, and both are in the hash', () => {
-    const wide = bindingSet({ bindings: { LOG: 'info' } }, 'production')
-    const over = bindingSet({ bindings: { LOG: 'info' }, production: { bindings: { LOG: 'warn' } } }, 'production')
+    const wide = configurationSet({ configuration: { LOG: 'info' } }, 'production')
+    const over = configurationSet({ configuration: { LOG: 'info' }, production: { configuration: { LOG: 'warn' } } }, 'production')
 
     expect(over.values.LOG).toBe('warn')
     expect(over.hash).not.toBe(wide.hash)
   })
 
-  // An app that binds nothing has a binding set. It is a set, and it hashes.
+  // An app that declares nothing has a configuration set. It is a set, and it hashes.
   test('an empty set is a set', () => {
-    const a = bindingSet({}, 'dev')
+    const a = configurationSet({}, 'dev')
     expect(a.count).toBe(0)
-    expect(a.hash).toBe(bindingSet(undefined, 'dev').hash)
+    expect(a.hash).toBe(configurationSet(undefined, 'dev').hash)
   })
 
-  // Everything in a binding set reaches a process as text, so the canonical
+  // Everything in a configuration set reaches a process as text, so the canonical
   // form coerces — otherwise `PORT: 3000` and `PORT: '3000'` are two Releases
   // describing one deployment.
   test('key order and value type do not move the hash', () => {
-    expect(bindingSet({ bindings: { A: '1', B: 2 } }, 'dev').hash)
-      .toBe(bindingSet({ bindings: { B: '2', A: 1 } }, 'dev').hash)
+    expect(configurationSet({ configuration: { A: '1', B: 2 } }, 'dev').hash)
+      .toBe(configurationSet({ configuration: { B: '2', A: 1 } }, 'dev').hash)
   })
 
   test('a value and a secret reference are different terms', () => {
-    expect(bindingSet({ bindings: { K: 'v' } }, 'dev').hash)
-      .not.toBe(bindingSet({ secrets: { K: 'v' } }, 'dev').hash)
+    expect(configurationSet({ configuration: { K: 'v' } }, 'dev').hash)
+      .not.toBe(configurationSet({ secrets: { K: 'v' } }, 'dev').hash)
   })
 
   // A secret is resolved when a process starts, so `latest` means two instances
   // of one immutable Release hold two different values.
   test.each(['name@latest', 'name:latest', 'LATEST'])('an unpinned reference (%s) is refused by name', (ref) => {
     let err = null
-    try { bindingSet({ secrets: { K: ref } }, 'dev') } catch (e) { err = e }
-    expect(err).toBeInstanceOf(BindingError)
+    try { configurationSet({ secrets: { K: ref } }, 'dev') } catch (e) { err = e }
+    expect(err).toBeInstanceOf(ConfigurationError)
     expect(err.key).toBe('K')
     expect(err.message).toMatch(/pinned/)
   })
 
   test('a pinned reference is accepted', () => {
-    expect(bindingSet({ secrets: { K: 'shop-db-key@3' } }, 'dev').secretRefs.K).toBe('shop-db-key@3')
+    expect(configurationSet({ secrets: { K: 'shop-db-key@3' } }, 'dev').secretRefs.K).toBe('shop-db-key@3')
   })
 
   // The split exists to keep secret VALUES out of a Release. A long opaque
   // string in the reference slot is the mistake it exists to make visible.
   test('a value in the reference slot is refused', () => {
-    expect(() => bindingSet({ secrets: { K: 'x'.repeat(300) } }, 'dev')).toThrow(/VALUE, not a reference/)
+    expect(() => configurationSet({ secrets: { K: 'x'.repeat(300) } }, 'dev')).toThrow(/VALUE, not a reference/)
   })
 })
 

@@ -155,7 +155,7 @@ check('subscriptions and invoices are not public either',
 // opinion about what an invoice is.
 const { db } = await import(join(ROOT, 'api/src/core/db.ts'))
 const sys = db.asSystem()
-const { issueInvoice, periodLines } = await import(join(ROOT, 'api/src/domain/billing'))
+const { issueInvoice, periodLines, startSubscription } = await import(join(ROOT, 'api/src/domain/billing'))
 // The period is a pair of DAYS in the shop's calendar (`FJS-D143`); this drive
 // bills in UTC and names it on every call that mints a document.
 const TODAY = plainDateIn(Date.now(), 'UTC')
@@ -171,12 +171,10 @@ const someoneElse = await sys.customer.findFirst({ where: { email: { not: BUYER.
 const OWN_SUB  = `SUB-ACC${RUN}`
 const buyerCust = await sys.customer.findFirst({ where: { email: BUYER.email } })
 const anyVersion = await sys.planVersion.findFirst({ where: { effectiveTo: null } })
-await sys.subscription.create({ data: {
+await startSubscription(sys, {
   reference: OWN_SUB, customerId: buyerCust.id, planVersionId: anyVersion.id,
   status: 'active', quantity: 1, userId: buyerCust.userId,
-  currentPeriodStart: TODAY,
-  currentPeriodEnd:   NEXT,
-} })
+}, { startsOn: TODAY, endsOn: NEXT })
 await issueInvoice(sys, {
   number: OTHER_INV, customerId: someoneElse.id, userId: someoneElse.userId,
   periodStart: TODAY, periodEnd: NEXT, timeZone: 'UTC',
@@ -280,12 +278,10 @@ check('staff settling the same invoice moves it, and stamps when',
 // one would leave every later drive reading a different quantity.
 const OTHER_SUB = `SUB-OTH${RUN}`
 const paidVersion = await sys.planVersion.findFirst({ where: { effectiveTo: null, price: { gt: 0 } } })
-const otherSub = await sys.subscription.create({ data: {
+const otherSub = await startSubscription(sys, {
   reference: OTHER_SUB, customerId: someoneElse.id, planVersionId: paidVersion.id,
   status: 'active', quantity: 1, userId: someoneElse.userId,
-  currentPeriodStart: TODAY,
-  currentPeriodEnd:   NEXT,
-} })
+}, { startsOn: TODAY, endsOn: NEXT })
 const documentsFor = async () => (await sys.invoice.findMany({ where: { subscriptionId: otherSub.id } })).length
 
 const repriceTheirs = await callAs(buyerToken, `/subscriptions/${otherSub.id}`, 'changePlan', { quantity: 7 })
@@ -606,10 +602,12 @@ try {
   // row goes is the CASCADE from the invoice that owns it, which is the
   // schema's answer rather than a trick.
   await sys.invoice.delete({ where: { number: OWN_INV } })
+  await sys.subscriptionPeriod.deleteMany({ where: { subscription: { is: { reference: OWN_SUB } } } })
   await sys.subscription.delete({ where: { reference: OWN_SUB } })
   // The proration invoice staff's change issued goes before the subscription it
   // names.
   await sys.invoice.deleteMany({ where: { subscriptionId: otherSub.id } })
+  await sys.subscriptionPeriod.deleteMany({ where: { subscription: { is: { reference: OTHER_SUB } } } })
   await sys.subscription.delete({ where: { reference: OTHER_SUB } })
 } catch (e) { console.error(`\n!! could not clear up ${OTHER_INV} / ${OWN_SUB} / ${OTHER_SUB}: ${e.message}`) }
 

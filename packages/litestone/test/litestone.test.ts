@@ -6,7 +6,7 @@
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test'
 import { Database } from 'bun:sqlite'
-import { existsSync, unlinkSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from 'fs'
+import { existsSync, unlinkSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, readFileSync } from 'fs'
 import { resolve, join }  from 'path'
 import { tmpdir }          from 'os'
 
@@ -11456,6 +11456,111 @@ describe('lock primitive — $lock(key, fn)', () => {
 })
 
 
+// A service holds a `$setAuth` client and never the root, so a lock reachable
+// only from the root was a lock no service could take — and the system client's
+// was a no-op that let every contender through (FJS-1216).
+describe('lock primitive — every flavor of the client', () => {
+  let db: any
+
+  beforeEach(async () => { db = (await makeTestClient(LOCK_SCHEMA)).db })
+  afterEach(() => db.$close())
+
+  const flavors = () => ({
+    root:     db,
+    auth:     db.$setAuth({ id: 1 }),
+    scopedBy: db.$scopedBy({ projectId: 1 }),
+    system:   db.$setAuth({ id: 1 }).asSystem(),
+  })
+
+  test('each flavor carries $lock and $locks', () => {
+    for (const [name, c] of Object.entries(flavors())) {
+      expect(`${name}:${'$lock' in c}`).toBe(`${name}:true`)
+      expect(typeof c.$lock).toBe('function')
+      expect(typeof c.$locks.acquire).toBe('function')
+    }
+  })
+
+  test('a lock held by one flavor excludes every other, the system client included', async () => {
+    const f = flavors()
+    for (const holder of Object.keys(f)) {
+      const lock = await f[holder].$locks.acquire('cross')
+      try {
+        for (const [name, c] of Object.entries(f)) {
+          if (name === holder) continue
+          await expect(c.$lock('cross', async () => {}, { wait: 0 }), `${holder} held, ${name} entered`)
+            .rejects.toBeInstanceOf(LockNotAcquiredError)
+        }
+      } finally { await lock.release() }
+    }
+  })
+
+  test('contenders on a scoped and a system client queue rather than interleave', async () => {
+    const { auth, system } = flavors()
+    const order: string[] = []
+    const hold = (tag: string) => async () => {
+      order.push(`${tag}-in`)
+      await new Promise(r => setTimeout(r, 30))
+      order.push(`${tag}-out`)
+    }
+    await Promise.all([
+      auth.$lock('q', hold('A'), { wait: 2_000 }),
+      system.$lock('q', hold('B'), { wait: 2_000 }),
+    ])
+    expect([order.slice(0, 2), order.slice(2)].map(p => p[0].split('-')[0] === p[1].split('-')[0])).toEqual([true, true])
+  })
+})
+
+
+// FJS-1217: index.d.ts typed `timeout`, acquire() read `wait`, and the typed
+// spelling degraded the lock to try-once behind an ordinary 409.
+describe('lock primitive — options', () => {
+  let db: any
+
+  beforeEach(async () => { db = (await makeTestClient(LOCK_SCHEMA)).db })
+  afterEach(() => db.$close())
+
+  test('`timeout` is refused naming `wait`, before fn runs or the key is taken', async () => {
+    let ran = false
+    const err = await db.$lock('opt-key', async () => { ran = true }, { timeout: 5_000 }).catch((e: Error) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect(err.message).toContain('timeout is not an option')
+    expect(err.message).toContain('`wait`')
+    expect(ran).toBe(false)
+    expect(await db.$locks.isHeld('opt-key')).toBe(false)
+  })
+
+  test('a misspelled key is refused with the nearest option', async () => {
+    await expect(db.$locks.acquire('opt-key', { wiat: 100 })).rejects.toThrow('did you mean `wait`')
+  })
+
+  test('every key LockOptions types is a key acquire() reads', async () => {
+    const dts   = readFileSync(join(import.meta.dir, '../src/index.d.ts'), 'utf8')
+    const body  = dts.match(/export interface LockOptions \{([\s\S]*?)\n\}/)![1]
+    const typed = [...body.matchAll(/^\s+(\w+)\?:/gm)].map(m => m[1])
+    expect(typed).toEqual(['ttl', 'wait', 'retryEvery', 'owner'])
+    const sample: Record<string, unknown> = { ttl: 1_000, wait: 0, retryEvery: 10, owner: 'o' }
+    for (const k of typed) {
+      const lock = await db.$locks.acquire(`typed-${k}`, { [k]: sample[k] })
+      await lock.release()
+    }
+  })
+
+  test('the typed wait queues the second contender', async () => {
+    const order: string[] = []
+    const hold = (tag: string) => async () => {
+      order.push(`${tag}-in`)
+      await new Promise(r => setTimeout(r, 30))
+      order.push(`${tag}-out`)
+    }
+    await Promise.all([
+      db.$lock('q', hold('A'), { ttl: 10_000, wait: 2_000 }),
+      db.$lock('q', hold('B'), { ttl: 10_000, wait: 2_000 }),
+    ])
+    expect(order).toEqual(['A-in', 'A-out', 'B-in', 'B-out'])
+  })
+})
+
+
 describe('lock primitive — $locks.acquire / release', () => {
   let db: any
 
@@ -11614,26 +11719,6 @@ describe('lock primitive — $locks.list', () => {
     expect(entry.expiresAt).toBeInstanceOf(Date)
     expect(entry.heartbeatAt).toBeInstanceOf(Date)
     await lock.release()
-  })
-})
-
-
-describe('lock primitive — asSystem bypass', () => {
-  let db: any
-
-  beforeEach(async () => { db = (await makeTestClient(LOCK_SCHEMA)).db })
-  afterEach(() => db.$close())
-
-  test('asSystem() bypasses $lock and executes fn directly', async () => {
-    // Hold the lock from the main client
-    const lock = await db.$locks.acquire('sys-bypass-key')
-    try {
-      // asSystem should execute without acquiring the lock
-      const result = await db.asSystem().$lock('sys-bypass-key', async () => 'bypassed')
-      expect(result).toBe('bypassed')
-    } finally {
-      await lock.release()
-    }
   })
 })
 
@@ -17894,7 +17979,7 @@ describe('orderBy key validation', () => {
     test('a write that carries an orderBy is refused too', async () => {
       const db = await opaqueDb('sort-opaque-write')
       await expect(db.asSystem().doc.updateMany({ where: {}, data: { title: 'z' }, orderBy: { nums: 'asc' } }))
-        .rejects.toThrow(/an array column/)
+        .rejects.toThrow(/Unknown argument 'orderBy' to Doc\.updateMany/)
       db.$close()
     })
   })

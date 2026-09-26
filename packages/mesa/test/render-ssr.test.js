@@ -19,6 +19,7 @@ import { writeFileSync, unlinkSync, mkdirSync, rmSync } from 'node:fs'
 import path from 'node:path'
 import { compileSource } from '../src/compiler.js'
 import { ANCHOR_DATA } from '../src/runtime.js'
+import * as runtime from '../src/runtime.js'
 import {
   initRenderer, resetRenderer, renderToHTML, renderAll, wrapPage, escapeHTML,
 } from '../src/render.js'
@@ -1100,5 +1101,46 @@ describe('CSS scope ids are content-addressed', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+// A `failed` rendered into a prerendered page is an error page published with
+// nothing reporting it, so a boundary catches nothing during a server render
+// and the throw fails the render (`FJS-D377`). Built by hand because the case
+// that needs the render's own flush — content that throws only once something
+// queued during setup runs — is not one a compiled component reaches easily,
+// and `renderToHTML`'s `flushSync` sat outside the try that names the failure.
+describe('renderToHTML — a throw under <mesa:boundary> fails the render (FJS-D377)', () => {
+  const failed = () => document.createTextNode('FAILED')
+
+  // The content reads `user.name` in an effect; the write after the boundary
+  // queues that effect, and it throws in the render's flush.
+  const Comp = (withFailed) => (anchor) => {
+    const [user, setUser] = runtime.createSignal({ name: 'a' })
+    const p = document.createElement('p')
+    const at = document.createComment('')
+    anchor.parentNode.insertBefore(at, anchor)
+    runtime.boundaryBlock(at, () => [], () => {
+      runtime.createEffect(() => { p.textContent = user().name })
+      return p
+    }, null, withFailed ? failed : null)
+    setUser(null)
+  }
+
+  it('in the flush, naming the component', async () => {
+    const err = await renderToHTML(Comp(true), {}, { label: 'Page.mesa' }).catch((e) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect(err.message).toContain('in Page.mesa')
+    expect(err.message).not.toContain('FAILED')
+  })
+
+  it('in the content\'s first build', async () => {
+    const Throws = (anchor) => {
+      const at = document.createComment('')
+      anchor.parentNode.insertBefore(at, anchor)
+      runtime.boundaryBlock(at, () => [], () => { throw new Error('first build') }, null, failed)
+    }
+    const err = await renderToHTML(Throws, {}, { label: 'Page.mesa' }).catch((e) => e)
+    expect(err.message).toContain('first build')
   })
 })

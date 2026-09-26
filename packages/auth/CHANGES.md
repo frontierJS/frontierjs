@@ -1,5 +1,57 @@
 # Changes — @frontierjs/auth
 
+## 2026-09-23 — `sessionFields` returning a promise is refused
+
+A promise has no own enumerable keys, so an async `sessionFields` spread to
+nothing and took every standing with it — an administrator graded USER(4) with
+nothing said ([`FJS-1251`](../../ISSUES.md#fjs-1251)). It now throws at the first
+session built, naming where a value on another row belongs: `claim <name> from
+<Model>(<userIdColumn>)` ([`FJS-D359`](../../DECISIONS.md#fjs-d359)).
+`test/session-fields.test.ts`, paired with the synchronous form reaching the session.
+
+## 2026-09-22 — four deadlines are declared, and a lapse is finally testable
+
+`Session`, `Verification`, `LoginChallenge` and `OauthFlow` each declare
+`@@expires(expiresAt)` ([`FJS-D351`](../../DECISIONS.md#fjs-d351), spelled by [`FJS-D352`](../../DECISIONS.md#fjs-d352)), so the
+window is enforced at the Data boundary and the **seven identical
+`expiresAt: { gt: new Date() }`** clauses that used to enforce it are gone —
+`verifySession`, `startSupport`, the OAuth callback, the link confirmation, the
+password reset, the email verification and `listSessions`.
+
+**The clock is the prize, not the seven lines.** The predicate read the HOST's
+clock, so nothing could stage a lapse: a test either waited thirty days or wrote
+a row with a past `expiresAt`, which grades the fixture rather than the lapse.
+The filter now reads the client's, and `test/expiry.test.ts` moves it — the same
+token answers, then does not, with no write, no sweep and no round trip in
+between. Removing one `@@expires` line reds three of its five rows.
+
+**Both halves are on the one clock.** `expiresAt(ttl, now)` mints from
+`sys.$now()` — litestone's new read of the client's clock — and so do the TOTP
+step, the support-episode and API-key comparisons, and the `onCredentialChanged`
+stamp; `completeLogin`'s lapsed-ticket test is `sys.$inWindow`, the window's
+own evaluator, rather than a comparison of its own. `staged()` starts in 2031,
+years from the host, so a mint that went back to `Date.now()` writes a deadline
+already past and reds three rows (measured).
+
+**A purge now has to say so, and that is the sharp edge.** The window filters
+WRITES too, so a delete keyed on a person or a purpose means the rows in force —
+a *sign out everywhere* would leave the lapsed ones behind, and `revokeSession`
+on a session that lapsed while its owner was reading the screen would answer
+`No session with id …`. Fourteen deletes state `withExpired` through one `PURGE`
+const rather than fourteen copies of the flag. Deletes of a row just read as in
+force stay bare, because there is nothing for them to miss.
+
+`cleanup.ts`'s predicate is `{ onlyExpired: true }`. Written as
+`{ expiresAt: { lt: new Date() } }` it would now be ANDed with the window and
+match nothing — a sweep that removes no rows and reports a count.
+
+**One read wants the lapsed row and says so.** `completeLogin` takes
+`withExpired: true`: *this ticket ran out* and *no such ticket* are different
+lines in the audit trail, and only one of them tells a person to sign in again.
+
+`impersonationEndsAt` is untouched — a model declares one window, and a support
+episode lapsing does not put the session out of force.
+
 ## 2026-09-21 — the suite directory is `test/`
 
 **`tests/` is a surface, not a suite.** In an FJS app it sits beside `api/` and `web/` and holds

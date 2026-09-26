@@ -23,6 +23,7 @@ import { humanize }                    from '@frontierjs/toolbelt/inflect'
 // The evaluator litestone's own `evalJs` is, so an affordance and the boundary
 // cannot disagree about a row (`FJS-D259`).
 import { evaluate as evaluatePredicate, truth } from '@frontierjs/toolbelt/predicate'
+import { dueAt }                     from '@frontierjs/toolbelt/datetime'
 
 // `derefFieldSchema` is `@frontierjs/toolbelt/jsonschema`'s — the same walk
 // jetty's resource needs, and one of the pure halves that moved to the
@@ -402,6 +403,13 @@ export function registeredControls() {
   return [..._controls.keys()].reverse()
 }
 
+// The interaction tasks a control can answer. Foley's list has six; path and
+// orient have no column type that asks for them, and a task nothing answers is
+// a word nobody can check. `bytes` is not Foley's: a file is picked like a
+// select, but its technique has to carry size, type and progress, which no
+// select control does (FJS-D387).
+export const INTERACTION_TASKS = Object.freeze(['select', 'quantify', 'text', 'position', 'bytes'])
+
 function _fromRegistry(rule, ctx) {
   return _askRegistry(_controls, rule, ctx, { noun: 'control', key: 'control' })
 }
@@ -465,7 +473,14 @@ export function defaultControlFor(rule) {
  * Which control this field gets.
  *
  *   { control: 'input'|'textarea'|'select'|'checkbox'|'picker'|'datetime'|'geo'|'json'|null,
+ *     task?: 'select'|'quantify'|'text'|'position'|'bytes',
  *     type?, options?, model?, valueField?, relation?, reason? }
+ *
+ * `task` is what the person does to the value (Foley, Wallace & Chan 1984) and
+ * `control` is one technique for it, so the task is read off the column and
+ * survives a registered control replacing the technique. `@money` answers
+ * `quantify` with no control: the task with no built-in technique. A read-only
+ * column and a type this table does not know answer no task.
  *
  * `control: null` is an answer, not an omission — a read-only column and a type
  * this table does not know have no control, and the caller is expected to say
@@ -490,10 +505,23 @@ export function controlFor(rule, ctx = {}) {
   // wants the surface that does not exist yet rather than this one.
   if (rule.readOnly) return { control: null, reason: 'readOnly' }
 
+  const builtin    = _builtinControl(rule)
   const registered = _fromRegistry(rule, ctx)
-  if (registered) return registered
+  if (!registered) return builtin
 
-  return _builtinControl(rule)
+  // The task is the column's and the control is one technique for it, so a
+  // contribution that says nothing inherits the table's — a money box over
+  // `@money` is quantify whoever drew it. A claim outside the list is replaced
+  // by the table's and said, since `task` is what a caller groups by.
+  if (registered.task != null && !INTERACTION_TASKS.includes(registered.task)) {
+    console.warn(
+      `[field-rules] registered control '${registered.by}' claimed the task '${registered.task}' — ` +
+      `a task is one of ${INTERACTION_TASKS.join(', ')}. The table's answer was kept.`)
+  } else if (registered.task != null) {
+    return registered
+  }
+  const { task: _claimed, ...rest } = registered
+  return builtin.task ? { ...rest, task: builtin.task } : rest
 }
 
 function _builtinControl(rule) {
@@ -519,8 +547,8 @@ function _builtinControl(rule) {
       labelField: rule.values.label,
       allowNew,
     }
-    if (rule.type === 'array') return { control: 'multiselect', ...base }
-    return { control: allowNew ? 'combobox' : 'picker', ...base }
+    if (rule.type === 'array') return { control: 'multiselect', task: 'select', ...base }
+    return { control: allowNew ? 'combobox' : 'picker', task: 'select', ...base }
   }
 
   // A foreign key is the one field where a picker is obviously right and a
@@ -528,13 +556,14 @@ function _builtinControl(rule) {
   if (rule.references) {
     return {
       control:    'picker',
+      task:       'select',
       model:      rule.references.model,
       valueField: rule.references.field,
       relation:   rule.references.relation,
     }
   }
 
-  if (Array.isArray(rule.enum)) return { control: 'select', options: rule.options ?? rule.enum }
+  if (Array.isArray(rule.enum)) return { control: 'select', task: 'select', options: rule.options ?? rule.enum }
 
   // A `File` column $refs FileRef, which derefs to an ordinary object — so the
   // `json` control below would offer a textarea over a storage key, a bucket
@@ -555,12 +584,13 @@ function _builtinControl(rule) {
   // be handed the document editor. Asked here, ahead of the type switch, for
   // the same reason a `File` column is: the type is not what separates them.
   if (rule['x-geo']) {
-    return { control: 'geo', latKey: rule['x-geo'].lat, lngKey: rule['x-geo'].lng }
+    return { control: 'geo', task: 'position', latKey: rule['x-geo'].lat, lngKey: rule['x-geo'].lng }
   }
 
   if (rule['x-litestone-file']) {
     return {
       control:  'file',
+      task:     'bytes',
       accept:   rule['x-litestone-accept'] ?? null,
       // `File[]`. The array's `x-litestone-file` is on `items`, which
       // `derefFieldSchema` has already lifted, so the only thing separating the
@@ -588,6 +618,7 @@ function _builtinControl(rule) {
   if (rule['x-money'] || rule['x-scale']) {
     return {
       control: null,
+      task:    'quantify',
       reason: rule['x-money']
         ? '@money — register a control; the box is in major units and the column is minor'
         : '@scale — register a control; the box is in decimals and the column is a scaled integer',
@@ -596,18 +627,18 @@ function _builtinControl(rule) {
 
   switch (rule.type) {
     case 'boolean':
-      return { control: 'checkbox' }
+      return { control: 'checkbox', task: 'select' }
 
     // Input resolves `type="number"` from the rule itself; `step` is the one
     // thing the schema does not say — how finely may this be nudged — so it is
     // stated here rather than derived.
     case 'integer':
-      return { control: 'input', step: 1 }
+      return { control: 'input', task: 'quantify', step: 1 }
     case 'number':
-      return { control: 'input', step: 'any' }
+      return { control: 'input', task: 'quantify', step: 'any' }
 
     case 'string': {
-      if (rule.contentMediaType === _MARKDOWN) return { control: 'textarea' }
+      if (rule.contentMediaType === _MARKDOWN) return { control: 'textarea', task: 'text' }
       // `@big`. Asked before every other string row because it is the one whose
       // JSON type does not describe the value: the column is an integer and the
       // string is only how it travels. `inputMode` is what a phone reads for
@@ -615,15 +646,15 @@ function _builtinControl(rule) {
       // through a JS number and would round the value back at the browser,
       // which is the defect this attribute exists to close, arriving one layer
       // further out.
-      if (rule['x-big']) return { control: 'input', type: 'text', inputMode: 'numeric', pattern: rule.pattern }
+      if (rule['x-big']) return { control: 'input', task: 'quantify', type: 'text', inputMode: 'numeric', pattern: rule.pattern }
       // A date has no zone, so `<input type="date">` round-trips it and the
       // plain input is right. A date-time DOES have one and `datetime-local`
       // has none — it accepts and emits a wall clock — so the two have to be
       // converted at each edge or the value shifts silently, in opposite
       // directions going in and coming out. That is a control rather than a
       // type attribute, which is why this row names one.
-      if (rule.format === 'date') return { control: 'input', type: 'date' }
-      if (rule.format === 'date-time') return { control: 'datetime' }
+      if (rule.format === 'date') return { control: 'input', task: 'quantify', type: 'date' }
+      if (rule.format === 'date-time') return { control: 'datetime', task: 'quantify' }
       // A wall clock has no zone, so `<input type="time">` round-trips it and
       // the plain input is right — the same reason `date` is here and
       // `date-time` is not. `step` is what makes the seconds box appear: the
@@ -632,17 +663,17 @@ function _builtinControl(rule) {
       // type a value the boundary would take.
       if (rule['x-time']) {
         return rule['x-time'].seconds
-          ? { control: 'input', type: 'time', step: 1 }
-          : { control: 'input', type: 'time' }
+          ? { control: 'input', task: 'quantify', type: 'time', step: 1 }
+          : { control: 'input', task: 'quantify', type: 'time' }
       }
-      return { control: 'input' }
+      return { control: 'input', task: 'text' }
     }
 
     // An array column and a declared `type T` shape stop being described by the
     // schema at the point a form would need a field list, so the only editor
     // that covers every value they may hold is the value's own syntax.
-    case 'array':  return { control: 'json' }
-    case 'object': return { control: 'json' }
+    case 'array':  return { control: 'json', task: 'text' }
+    case 'object': return { control: 'json', task: 'text' }
 
     // A `Json` column arrives here, and NOT at `case 'object'`. Litestone
     // emits it as `{}` — the empty schema, no `type` at all, because a Json
@@ -658,7 +689,7 @@ function _builtinControl(rule) {
       if (rule.unresolvedRef) {
         return { control: null, reason: `unresolved $ref ${rule.unresolvedRef} — is the schema registry populated?` }
       }
-      return { control: 'json' }
+      return { control: 'json', task: 'text' }
 
     default:       return { control: null, reason: `no control for type ${rule.type ?? 'unknown'}` }
   }
@@ -1281,6 +1312,68 @@ export function transitionsAt(spec, row, level) {
 
       out.push({ name, field, from: current, to: t.to, gate, system, allowed, refusedBy })
     }
+  }
+  return out
+}
+
+// ── Commitments ───────────────────────────────────────────────────────────────
+
+/**
+ * The model's `@@commitment` declarations, or null when it has none — litestone's
+ * `x-commitments`, keyed as declared (`abandon`, `subscription.lapse`).
+ */
+export function buildCommitments(schema) {
+  const c = schema?.['x-commitments']
+  if (!c || typeof c !== 'object') return null
+  return c
+}
+
+/**
+ * What the system owes `row`, and when — *will be abandoned on 5 Oct*. The
+ * counterpart of `transitionsAt` for the moves no button makes: a `@system`
+ * move is left off a screen's buttons, and this is where it comes back, as a
+ * date.
+ *
+ * ⚠ A UI AFFORDANCE — the same contract as transitionsAt. The date is
+ * `@frontierjs/toolbelt/datetime`'s `dueAt`, the function litestone's `due()`
+ * answers with, so the two cannot disagree about WHEN; whether it is still
+ * owed is graded here from what the row carries:
+ *
+ *   • the move's from-state, on the row it moves — this one, or for a
+ *     commitment across a relation (`subscription.lapse` on an invoice) the
+ *     row `opts.target` names, else the relation as the row carries it.
+ *     `target: null` is *there is none*, which owes nothing, the way `due()`
+ *     answers a null relation; a target nobody read is not graded
+ *   • `while:`, against this row, with the evaluator litestone's own policy
+ *     layer runs
+ *
+ * Unknown is permissive: a target not read, or a `while:` this evaluator does
+ * not know, keeps the entry. Past-due entries are kept too — the sweep runs on
+ * a minute cron, so *due 10:02* at 10:02:30 is true and not yet moved.
+ *
+ * @param {object|null} spec   from buildCommitments()
+ * @param {object} row         the record owing the move
+ * @param {{ target?: object|null }} [opts]
+ * @returns {{name:string, transition:string, via:string|null, target:string, dueAt:string, kind:'instant'|'day'}[]}
+ */
+export function commitmentsAt(spec, row, opts = {}) {
+  if (!spec || !row) return []
+
+  const out = []
+  for (const [name, c] of Object.entries(spec)) {
+    const moved = !c.via ? row : 'target' in opts ? opts.target : row[c.via]
+    if (moved === null) continue
+    if (moved && moved[c.field] != null && Array.isArray(c.from) && !c.from.includes(moved[c.field])) continue
+
+    if (c.while) {
+      let holds = true
+      try { holds = truth(evaluatePredicate(c.while, { record: row })) === true } catch { /* permissive */ }
+      if (!holds) continue
+    }
+
+    const at = dueAt(c, row)
+    if (at == null) continue
+    out.push({ name, transition: c.transition, via: c.via ?? null, target: c.target, dueAt: at, kind: c.kind })
   }
   return out
 }

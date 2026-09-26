@@ -65,6 +65,7 @@ describe('x-labels → rule.options', () => {
 
     expect(controlFor(rules.plan)).toEqual({
       control: 'select',
+      task:    'select',
       options: [
         { value: 'starter',    label: 'Starter' },
         { value: 'pro',        label: 'Pro' },
@@ -74,6 +75,6 @@ describe('x-labels → rule.options', () => {
 
     // Unchanged from before this feature — a bare string array, which is one
     // of the two shapes Select.mesa already normalizes.
-    expect(controlFor(rules.bare)).toEqual({ control: 'select', options: ['a', 'b'] })
+    expect(controlFor(rules.bare)).toEqual({ control: 'select', task: 'select', options: ['a', 'b'] })
   })
 })

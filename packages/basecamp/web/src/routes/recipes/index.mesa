@@ -72,7 +72,7 @@ title: Recipes
   // fleet run fills in machine by machine with nothing polling. `runs` is a
   // read and would otherwise reload the screen for having looked at it.
   const READS = new Set(['get', 'find', 'runs'])
-  const off = recipes.service.on('*', (method) => {
+  var off = recipes.service.on('*', (method) => {
     if (READS.has(method)) return
     load()
   })

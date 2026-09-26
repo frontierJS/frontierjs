@@ -146,7 +146,7 @@ import { unitInfo } from '@frontierjs/toolbelt/units'
 import { TIME_PATTERNS } from './core/validate.js'
 import { dependsOnClock } from './core/policy.js'
 import { capabilitiesForModel } from './core/capabilities.js'
-import { isServerAssignedId, ID_GENERATORS } from './core/ids.js'
+import { isServerAssignedId, isServerFilled, ID_GENERATORS } from './core/ids.js'
 
 /**
  * May the CALLER state this model's key, and how is one made?
@@ -170,6 +170,7 @@ function mintableId(model) {
 }
 import { filterableKeysFor, sortableKeysFor, aggregatableKeysFor, identifyingKeysFor } from './core/query.js'
 import { sealedStates } from './core/seal.js'
+import { buildCommitmentMap } from './core/commitment.js'
 
 export function generateJsonSchema(schema, options = {}) {
   const {
@@ -723,11 +724,10 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
 
     properties[field.name] = fieldSchema
 
-    // Required: non-optional, no @default, not in update mode
+    // Required: non-optional, not filled by the Data boundary, not in update
+    // mode. `isServerFilled` is shared with client.js's required pre-flight,
+    // which answers the same question for the same create.
     if (mode !== 'update') {
-      const hasDefault = field.attributes.find(a => a.kind === 'default')
-      // @default(auth().field) is auto-stamped — not required in API payloads
-      const isAuthDefault = hasDefault?.value?.kind === 'call' && hasDefault?.value?.fn === 'auth'
       // A @system column is never required OF THE CALLER. It is still NOT NULL
       // in SQLite, so a service that forgets to fill it fails at the write —
       // loud, at the layer that owns the value. Listing it here instead made
@@ -736,14 +736,11 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
       // create was refused with "the button does nothing" (FJS-095).
       if (isSystemWritten) {
         // nothing — the application fills it
-      } else if (!field.type.optional && !hasDefault && (!isId || !isServerAssignedId(field, model))) {
+      } else if (!field.type.optional && !isServerFilled(field) && (!isId || !isServerAssignedId(field, model))) {
         // A required @transient field lands here like any other, and this is
         // the only layer that can hold the rule: there is no column, so no
         // NOT NULL catches a caller who omitted it.
         required.push(field.name)
-      } else if (hasDefault && isAuthDefault && !field.type.optional) {
-        // auth() default: field not required in create payload but not optional either
-        // Don't add to required[] — Junction will stamp it from auth context
       }
     }
   }
@@ -914,6 +911,41 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
         ),
       ])
     )
+  }
+
+  // ── x-commitments ──────────────────────────────────────────────────────────
+  // What the system owes a row and when, keyed by the transition owed
+  // (`FJS-D353`). Beside `x-transitions` rather than inside it because a
+  // commitment is a separate declaration (`FJS-D356`) — and because a screen
+  // reading *will be abandoned on 5 Oct* has everything it needs here and on
+  // the row: the anchor and the offset column are both fields, and `while` is
+  // the AST `@frontierjs/toolbelt/predicate` evaluates, as
+  // `x-litestone-required-where` is. The due time itself is never emitted; it
+  // is derived from the row, and a copy would be stale the moment the row
+  // moved.
+  //
+  // `target`, `field` and `from` are the move's own, so a screen grading *is
+  // this still owed* reads the row it reaches without a second document —
+  // `Subscription`'s `x-transitions` for `subscription.lapse` on an invoice.
+  // Read off `buildCommitmentMap`, which is what `due()` filters by.
+  const commitments = buildCommitmentMap(schema)[model.name]
+  if (commitments) {
+    result['x-commitments'] = Object.fromEntries(commitments.map(c => [c.name, {
+      // `via` is the to-one relation the move is made across, and
+      // `transition` the move on the row it reaches — this row's own where
+      // `via` is null (`FJS-D362`).
+      via:        c.via,
+      transition: c.transition,
+      target:     c.target,
+      field:      c.field,
+      from:       c.from,
+      on:         c.on,
+      kind:       c.kind,
+      offset:     !c.offset ? null : c.offset.field
+        ? { sign: c.offset.sign, field: c.offset.field, unit: c.offset.unit ?? null }
+        : { sign: c.offset.sign, value: c.offset.value, unit: c.offset.unit },
+      while:      c.while,
+    }]))
   }
 
   // ── x-relations ─────────────────────────────────────────────────────────────

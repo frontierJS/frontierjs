@@ -26,7 +26,8 @@
  * requires it to FAIL — the worker must not be in that path at all.
  */
 import { spawn, execFileSync } from 'node:child_process'
-import { writeFileSync, rmSync } from 'node:fs'
+import { writeFileSync, rmSync, mkdtempSync } from 'node:fs'
+import { tmpdir }              from 'node:os'
 import { dirname, join }       from 'node:path'
 import { fileURLToPath }       from 'node:url'
 
@@ -34,7 +35,12 @@ import { createNetwork } from './lib/offline.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, '../..')
-const API  = process.env.API_URL ?? 'http://localhost:8110'
+// The preview server is already on the test tier; the API is not and does not
+// move, because its origin is written into rows that outlive the process — a
+// `File` ref stores the `publicBase` it was uploaded against (`FJS-1271`).
+// Both are env-overridable.
+const API_PORT = process.env.API_PORT ?? '8110'
+const API  = process.env.API_URL ?? `http://localhost:${API_PORT}`
 const PORT = process.env.PREVIEW_PORT ?? '7011'
 const UI   = `http://localhost:${PORT}`
 
@@ -79,7 +85,7 @@ async function waitFor(url, label, tries = 160) {
   return false
 }
 
-for (const [port, what] of [[8110, 'the API'], [Number(PORT), 'the preview server']]) {
+for (const [port, what] of [[API_PORT, 'the API'], [Number(PORT), 'the preview server']]) {
   let busy = false
   try { await fetch(`http://localhost:${port}/`, { signal: AbortSignal.timeout(500) }); busy = true } catch {}
   if (busy) {
@@ -94,26 +100,37 @@ console.log('  building…')
 execFileSync('npx', ['vite', 'build', '-c', 'web/config/vite.config.js'], { cwd: ROOT, stdio: 'ignore' })
 execFileSync('bun', ['run', 'db/seed.ts'], { cwd: ROOT, stdio: 'ignore' })
 
-start('bun', ['run', 'api/index.ts'], 'api')
-start(process.execPath, [join(HERE, 'preview.mjs')], 'preview', { PREVIEW_PORT: PORT })
+start('bun', ['run', 'api/index.ts'], 'api', { API_PORT })
+start(process.execPath, [join(HERE, 'preview.mjs')], 'preview',
+      { PREVIEW_PORT: PORT, API_URL: API })
 
 if (!await waitFor(`${API}/api/products`, 'api')) { stopAll(); process.exit(1) }
 if (!await waitFor(UI, 'preview'))                { stopAll(); process.exit(1) }
 
 // ─── Chrome over CDP ───────────────────────────────────────────────────────
 
-start(CHROME, [
-  '--headless=new', '--remote-debugging-port=9223', '--disable-gpu',
-  '--no-sandbox', '--window-size=1400,1000', 'about:blank',
+// Chrome picks the debugging port and the profile is this run's own. A FIXED
+// port is answered by whichever browser bound it first, so a second drive
+// attaches to the first one's session and grades that browser's screen
+// (`FJS-740` one layer over, measured in `verify:stock`); and the default
+// profile carries the previous run's sign-in into this one.
+const profile = mkdtempSync(join(tmpdir(), 'fjs-shell-'))
+const chrome = start(CHROME, [
+  '--headless=new', '--remote-debugging-port=0', '--disable-gpu',
+  '--no-sandbox', '--window-size=1400,1000', `--user-data-dir=${profile}`,
+  'about:blank',
 ], 'chrome')
+process.on('exit', () => { try { rmSync(profile, { recursive: true, force: true }) } catch {} })
 
-let wsUrl = null
-for (let i = 0; i < 80 && !wsUrl; i++) {
-  try {
-    const v = await (await fetch('http://localhost:9223/json/version')).json()
-    wsUrl = v.webSocketDebuggerUrl
-  } catch { await new Promise(r => setTimeout(r, 250)) }
-}
+const wsUrl = await new Promise((resolve) => {
+  let buf = ''
+  const t = setTimeout(() => resolve(null), 20000)
+  chrome.stderr.on('data', (d) => {
+    buf += d
+    const m = buf.match(/ws:\/\/[^\s]+/)
+    if (m) { clearTimeout(t); resolve(m[0]) }
+  })
+})
 if (!wsUrl) { console.error('chrome never came up'); stopAll(); process.exit(1) }
 
 const ws = new WebSocket(wsUrl)

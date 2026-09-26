@@ -139,11 +139,11 @@ import {
 } from './schema-registry.js'
 import {
   derefFieldSchema, buildFieldRules, buildRelations, buildGate, canAtLevel,
-  buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
+  buildTransitions, transitionsAt, buildCommitments, commitmentsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
   toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, columnLabel, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor, declinedFields, requiredFor, withheldFields,
   displayFor, defaultDisplayFor, registerDisplay, unregisterDisplay, registeredDisplays, filterOpFor,
-  registerControl, unregisterControl, registeredControls,
+  registerControl, unregisterControl, registeredControls, INTERACTION_TASKS,
 } from './field-rules.js'
 import { singularize } from '@frontierjs/toolbelt/inflect'
 import { humanize } from '@frontierjs/toolbelt/inflect'
@@ -256,11 +256,11 @@ function _withoutFiles(data, files) {
 // Re-exported so `sierra/junction` stays the one import for resource work.
 export {
   buildFieldRules, buildRelations, buildGate, canAtLevel,
-  buildTransitions, transitionsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
+  buildTransitions, transitionsAt, buildCommitments, commitmentsAt, buildVersion, isStaleWrite, STALE_WRITE_MESSAGE, toConflict,
   validateAgainstFields, normalizeBlanks, coerceToSchema, stripReadOnly, ResourceValidationError, ResourceHookError,
   toFieldErrors, controlFor, defaultControlFor, formFieldList, columnList, labelFieldFor, labelFieldInfo, matchesQuery, sealedFor, declinedFields, requiredFor, withheldFields,
   displayFor, defaultDisplayFor, registerDisplay, unregisterDisplay, registeredDisplays, filterOpFor,
-  registerControl, unregisterControl, registeredControls,
+  registerControl, unregisterControl, registeredControls, INTERACTION_TASKS,
 }
 
 // ── Hook runners and createMakeFromSchema ─────────────────────────────────────
@@ -473,7 +473,7 @@ export function resetResourcesForIdentityChange() {
  *   createResource({ model, service, optionsQuery, hooks })   — object form
  *
  * Returns { service, store, make, load, save, fields, relations, gate, can,
- *           transitions, validate, normalize, coerce, fieldErrors, context,
+ *           transitions, commitments, validate, normalize, coerce, fieldErrors, context,
  *           hooks }
  *   service  — pass-through of the Junction client: find() gives the list
  *              envelope, single-record methods give the record. See "Return
@@ -818,6 +818,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   const relations = schema ? buildRelations(modelDef)   : {}
   const gate      = schema ? buildGate(modelDef)        : null
   const stateSpec = schema ? buildTransitions(modelDef) : null
+  const owedSpec  = schema ? buildCommitments(modelDef) : null
   const versionOf = schema ? buildVersion(modelDef)     : null
 
   // Which column identifies a row of THIS model to a person — `@@label(field)`
@@ -940,6 +941,16 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
    */
   function transitions(row, level) {
     return transitionsAt(stateSpec, row, level)
+  }
+
+  /**
+   * What the system owes the record and when — each `@@commitment` still owed,
+   * with its `dueAt`. A UI affordance only; see commitmentsAt. Returns [] when
+   * the model declares none. `{ target }` is the row a commitment across a
+   * relation moves, for a screen that holds it and did not include it.
+   */
+  function commitments(row, opts) {
+    return commitmentsAt(owedSpec, row, opts)
   }
 
   /**
@@ -2642,7 +2653,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
      * because the call could not arrive.
      */
     cachedAt: () => _cachedAt,
-    fields, relations, gate, can, transitions, validate, normalize, coerce,
+    fields, relations, gate, can, transitions, commitments, validate, normalize, coerce,
     version, versionField: versionOf, conflict,
     formFields, columns, summary, children, filters, options, sealedFields, requiredFields, declined,
     withheld: withheldFor,
@@ -2701,6 +2712,7 @@ function _emptyResource(name) {
     // do for a caller with no session.
     can:         () => false,
     transitions: () => [],
+    commitments: () => [],
     // A create form is making a draft and nothing is sealed, which is the same
     // answer the real resource gives for no record. Missing entirely, it was
     // absorbed by one optional chain at `<Form>`'s only call site, and the next

@@ -209,7 +209,7 @@ if (dockerfileSrc && !/^\s*COPY\s+db\b/m.test(dockerfileSrc)) {
 // ─── Can this image be promoted, or only deployed? ────────────────────────────
 //
 // The property is invariant 1 of the Release design: one artefact moves from
-// staging to production unchanged and only its bindings differ. A build that
+// staging to production unchanged and only its configuration differs. A build that
 // bakes configuration into the image breaks it silently — the image still
 // builds, starts, answers health and reports a digest; it is simply a different
 // digest per environment. Measured, and the rules are in `core/build-check.js`.

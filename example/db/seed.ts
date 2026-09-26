@@ -31,7 +31,7 @@ import { toMinor }             from '@frontierjs/toolbelt/units'
 import { sys, db, DEV_KEY, shops, DEFAULT_SHOP, TIME_ZONE_FLOOR } from '../api/src/core/db.ts'
 import { move }                from '../api/src/domain/shop'
 import { priceBasket, BASE }   from '../api/src/domain/shop'
-import { issueInvoice, periodLines, settleInvoice, advancePeriod } from '../api/src/domain/billing'
+import { issueInvoice, periodLines, settleInvoice, advancePeriod, startSubscription } from '../api/src/domain/billing'
 import { plainDateIn, addToDate, startOfDay } from '@frontierjs/toolbelt/datetime'
 
 // ─── The unit, and why this file is not written in it ─────────────────────
@@ -732,19 +732,17 @@ async function seedBilling() {
 
   if (!sub) {
     const periodStart = addToDate(todayHere(), { days: -10 })
-    sub = await sys.subscription.create({ data: {
+    sub = await startSubscription(sys, {
       reference: REF,
       customerId: buyerCustomer.id,
       planVersionId: soldAt.id,
       status: 'active',
       quantity: 2,
-      currentPeriodStart: periodStart,
-      currentPeriodEnd:   advancePeriod(periodStart, 'monthly'),
       userId: buyerUser?.id ?? null,
-    } })
+    }, { startsOn: periodStart, endsOn: advancePeriod(periodStart, 'monthly') })
   }
 
-  // The document, through the same function the renewal job issues one with.
+  // The document, through the same function a renewal issues one with.
   //
   // `issueInvoice` sums the lines, reads the shop's own tax rate, mints the due
   // date from the shop's terms and writes the header and the lines in one

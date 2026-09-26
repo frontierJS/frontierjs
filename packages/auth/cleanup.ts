@@ -47,7 +47,13 @@ export function createAuthCleanupJobs(db: LitestoneClient): AuthCleanupHandle {
   // can only be tested by restating it — and a test holding its own copy of a
   // rule agrees with whatever the copy says, including when the shipped one has
   // changed underneath it. `sweepNow()` is the same two calls the timers make.
-  const expired = () => ({ where: { expiresAt: { lt: new Date() } } })
+  //
+  // `onlyExpired` rather than a hand-written `expiresAt < now`: all four models
+  // declare the window, so the edge is the schema's and the clock is the
+  // client's. Written as `{ expiresAt: { lt: new Date() } }` it would now be
+  // ANDed with the window and match nothing — a sweep that removes no rows and
+  // reports a count (`FJS-D351`).
+  const expired = () => ({ onlyExpired: true })
 
   const sweepSessions  = async () => { await sys.session.deleteMany(expired()) }
   const sweepEphemeral = async () => {

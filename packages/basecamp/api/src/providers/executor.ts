@@ -117,27 +117,34 @@ export async function resolveExecutor(app: BasecampApp, appId: string): Promise<
   // A machine that is draining or unreachable still holds the app; it is not a
   // machine to send a release to. `online` is the whole of what can take one:
   // a machine that is up and has not been drained.
-  const usable = placements.find((p: any) => p.server?.status === 'online')
-  if (!usable) {
+  const online = placements.filter((p: any) => p.server?.status === 'online')
+  if (!online.length) {
     const states = [...new Set(placements.map((p: any) => p.server?.status ?? 'missing'))].join(', ')
     return { kind: 'none', reason: `No server holding this app can take a release (${states})` }
   }
 
-  const serverId = usable.serverId as string
-  const target   = `outpost:${serverId}`
-
+  // The first online placement that can be REACHED, not the first online one.
+  // A machine that has not heartbeated since the API restarted has no target
+  // yet, and refusing on it refuses a release a second replica could carry —
+  // naming the machine that cannot take it rather than the one that can.
+  //
   // Conduit is optional on the app type, and an app configured without it can
   // reach no machine at all — which is a refusal rather than a crash five steps
   // into a release.
-  if (app.conduit) {
-    const registered = await app.conduit.resolve(target).catch(() => null)
-    if (registered) return outpostExecutor(app, serverId, target)
-  }
+  if (app.conduit)
+    for (const p of online) {
+      const target = `outpost:${p.serverId}`
+      if (await app.conduit.resolve(target).catch(() => null))
+        return outpostExecutor(app, p.serverId as string, target)
+    }
 
-  if (stubAllowed()) return stubExecutor(serverId)
+  if (stubAllowed()) return stubExecutor(online[0].serverId as string)
 
+  const names = online.map((p: any) => `'${p.server?.name ?? p.serverId}'`).join(', ')
   return {
     kind:   'none',
-    reason: `No outpost is registered for '${usable.server?.name ?? serverId}' — it has never reported a URL`,
+    reason: online.length === 1
+      ? `No outpost is registered for ${names} — it has never reported a URL`
+      : `No outpost is registered for any of ${names} — none has reported a URL`,
   }
 }

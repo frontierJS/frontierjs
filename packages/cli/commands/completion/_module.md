@@ -19,11 +19,12 @@ const loadCompletions = async () => {
   const { buildRegistry, uniqueCommands } = await import(
     new URL('file://' + global.fliRoot + '/core/registry.js')
   )
+  const { flagSpelling } = await import(new URL('file://' + global.fliRoot + '/core/flags.js'))
 
   return uniqueCommands(buildRegistry()).map((meta) => {
     const flags = [...DEFAULT_FLAGS]
     for (const [name, def] of Object.entries(meta.flags || {})) {
-      flags.push(`--${name}`)
+      flags.push(flagSpelling(name, def))
       if (def?.char) flags.push(`-${def.char}`)
     }
     return {

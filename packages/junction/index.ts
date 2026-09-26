@@ -209,6 +209,12 @@ export { outboxSchemaFragment }                                    from './src/c
 export type { OutboxApi, OutboxRow, EnqueueOptions, EnqueueRef,
               DeliverOptions, DeliverResult }                      from './src/core/outbox.ts'
 
+export { commitments, fireCommitment,
+         COMMITMENT_SWEEP_JOB, COMMITMENT_FIRE_JOB }               from './src/plugins/commitments/index.ts'
+export type { CommitmentsPluginOptions, CommitmentsApi, CommitmentSweepResult,
+              CommitmentHook, CommitmentHookContext, FirePayload,
+              FireOutcome }                                        from './src/plugins/commitments/index.ts'
+
 export { backfills }                                               from './src/plugins/backfill/index.ts'
 export type { BackfillPluginOptions, BackfillApi }                 from './src/plugins/backfill/index.ts'
 export { defineBackfill, backfillSchemaFragment, nextDelayMs,

@@ -7,13 +7,20 @@ examples:
   - fli ws:terms --as=page --open
   - fli ws:terms --lens=api
   - fli ws:terms --kind=code,framework,web
-  - fli ws:terms --as=json
+  - fli ws:terms --json
 flags:
   as:
     char: a
     type: string
-    description: Which presentation — list (the terminal), page (an interactive HTML page), or json (the model)
+    description: Which layout — list (the terminal) or page (an interactive HTML page)
+    choices:
+      - list
+      - page
     defaultValue: list
+  json:
+    type: boolean
+    description: Print the model instead
+    defaultValue: false
   lens:
     char: l
     type: string
@@ -104,12 +111,18 @@ const { collectTerms, renderList, renderJson, renderPage, KINDS } =
   await import(resolve(global.fliRoot, 'core/terms.js'))
 const { styleBundle } = await import(resolve(global.fliRoot, 'core/assets.js'))
 
+if (flag.json && flag.as !== 'list') {
+  log.error(`--json prints the model; --as=${flag.as} writes a page. Drop one of the two flags.`)
+  process.exitCode = 1
+  return
+}
+
 const root = await context.wsRoot()
 if (!root) { log.error('No workspace found from here'); process.exitCode = 1; return }
 
 const model = collectTerms({ root })
 
-if (flag.as === 'json') {
+if (flag.json) {
   echo(renderJson(model))
   return
 }
@@ -127,12 +140,6 @@ if (flag.as === 'list') {
     return
   }
   echo(renderList(model, { limit: Number(flag.limit) || 40, lens: flag.lens, kinds }))
-  return
-}
-
-if (flag.as !== 'page') {
-  log.error(`Unknown presentation '${flag.as}' — list, page or json`)
-  process.exitCode = 1
   return
 }
 

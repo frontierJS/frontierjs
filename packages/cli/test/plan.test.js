@@ -21,7 +21,7 @@ import { extractFrontmatter } from '../core/compiler.js'
 const RELEASE = {
   id: 'a1b2c3d4e5f6', app: 'shop', environment: 'production',
   digest: null, imageRef: null,
-  bindingsHash: 'b'.repeat(64), schemaHash: 'c'.repeat(64),
+  configurationHash: 'b'.repeat(64), schemaHash: 'c'.repeat(64),
   pivot: 'expand',
 }
 
@@ -226,7 +226,7 @@ describe('the journal rows', () => {
   })
 
   // What each step checks before it runs, and it is the model's own three-part
-  // shape: the Release serving, the binding generation, the schema as applied.
+  // shape: the Release serving, the configuration generation, the schema as applied.
   test('every step carries the same precondition', () => {
     const { steps } = build()
     for (const s of steps)

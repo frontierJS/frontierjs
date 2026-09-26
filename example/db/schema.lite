@@ -1103,38 +1103,38 @@ model Order {
   status         OrderStatus  @default(pending)
 
   
-  /// ─── What was charged, and why ──────────────────────────────────────────
-  ///
-  /// Nine columns for one number, and every one of them is a copy of something
-  /// that lives somewhere else — the code, its wording, the method, the rate.
-  /// `OrderLine`'s header argues the general case; the specific one is that a
-  /// merchant changes the VAT rate the week after a sale and every historical
-  /// receipt silently reprices itself if the rate is joined rather than
-  /// written down.
-  ///
-  /// The arithmetic is `api/src/pricing.ts` and nothing here recomputes it:
-  ///
-  ///     subtotal − discount + shipping + tax = total
-  ///
-  /// Every one is `@money(USD)`, which is to say a whole number of CENTS. The
-  /// scale is the currency's and not the author's — `@frontierjs/toolbelt/units`
-  /// is what knows the yen has none — and storing the minor unit is what makes
-  /// the identity below an equality rather than a tolerance: five integers add
-  /// up exactly, where five binary floats add up to within half a cent and the
-  /// receipt has to be believed rather than checked.
-  ///
-  /// Rounding happens once, on the server, at the moment of sale, and only
-  /// where a rate is applied — tax is the one component that is a
-  /// multiplication. A screen that re-derived any line of this would round on
-  /// its own and be a penny out on exactly the orders where a penny is noticed.
-  ///
-  /// Every one is `@system`: the shop computes them, and there is no request in
-  /// which a caller stating their own total is anything but an attack. They are
-  /// `@default(0)` rather than nullable because an order with no discount was
-  /// discounted by zero, which is a fact — where null would mean *nobody has
-  /// worked it out yet*, and that state does not exist after checkout.
+  // ─── What was charged, and why ──────────────────────────────────────────
+  //
+  // Nine columns for one number, and every one of them is a copy of something
+  // that lives somewhere else — the code, its wording, the method, the rate.
+  // `OrderLine`'s header argues the general case; the specific one is that a
+  // merchant changes the VAT rate the week after a sale and every historical
+  // receipt silently reprices itself if the rate is joined rather than
+  // written down.
+  //
+  // The arithmetic is `api/src/pricing.ts` and nothing here recomputes it:
+  //
+  //     subtotal − discount + shipping + tax = total
+  //
+  // Every one is `@money(USD)`, which is to say a whole number of CENTS. The
+  // scale is the currency's and not the author's — `@frontierjs/toolbelt/units`
+  // is what knows the yen has none — and storing the minor unit is what makes
+  // the identity below an equality rather than a tolerance: five integers add
+  // up exactly, where five binary floats add up to within half a cent and the
+  // receipt has to be believed rather than checked.
+  //
+  // Rounding happens once, on the server, at the moment of sale, and only
+  // where a rate is applied — tax is the one component that is a
+  // multiplication. A screen that re-derived any line of this would round on
+  // its own and be a penny out on exactly the orders where a penny is noticed.
+  //
+  // Every one is `@system`: the shop computes them, and there is no request in
+  // which a caller stating their own total is anything but an attack. They are
+  // `@default(0)` rather than nullable because an order with no discount was
+  // discounted by zero, which is a fact — where null would mean *nobody has
+  // worked it out yet*, and that state does not exist after checkout.
   
-  /// The lines, added up. What `OrderLine.lineTotal` sums to.
+  // The lines, added up. What `OrderLine.lineTotal` sums to.
   subtotal       Int          @money(USD) @default(0) @gte(0) @system @label("Subtotal")
   
   /// What came off, and the code that took it off. The code is nullable
@@ -1237,13 +1237,24 @@ model Order {
   ///
   /// Refund is gated at 5. That gate can only live here, on the model: two
   /// models sharing OrderStatus are allowed to disagree about who may refund.
+  ///
+  /// `abandon` lands where `cancel` does and is its own move so the audit
+  /// trail can tell *somebody cancelled it* from *nobody paid for a fortnight*.
+  /// `@system` because no caller asks for it: the commitment below is its only
+  /// way in, and the orders screens leave it off the buttons.
   @@transitions(status,
-    pay:    pending         -> paid,
-    ship:   paid            -> shipped,
-    refund: paid            -> refunded @gate(5),
-    cancel: [pending, paid] -> cancelled
+    pay:     pending         -> paid,
+    ship:    paid            -> shipped,
+    refund:  paid            -> refunded @gate(5),
+    cancel:  [pending, paid] -> cancelled,
+    abandon: pending         -> cancelled @system
   )
-  
+
+  /// A checkout left `pending` for fourteen days is one somebody walked away
+  /// from. junction's `commitments()` (api/src/app.ts) makes the move once the
+  /// row is due; an order paid first has left `pending` and owes nothing.
+  @@commitment(abandon, on: createdAt + 14d)
+
   /// Whose order this is, when the buyer had an account at the moment of sale.
   ///
   /// DENORMALIZED from `Customer.userId`, deliberately. A row policy compares
@@ -1793,6 +1804,13 @@ model PlanVersion {
 
   @@gate("0.5.5.5")
 
+  /// The window, declared rather than spelled out at each read. ASKED and not
+  /// imposed (`FJS-D352`): a closed version is the price every subscriber
+  /// sold at it is still paying, and billing's renewal, its proration and the
+  /// subscription screen all follow a pointer to one. A read stating
+  /// no moment gets every version; `asOf` gets the one in force.
+  @@effective(from: effectiveFrom, to: effectiveTo)
+
   /// A window that ends before it starts is a row nothing can ever match, and
   /// the two columns are individually fine — which is what makes this a
   /// `@@check` and not a field rule.
@@ -1836,14 +1854,12 @@ model Subscription {
   /// proration has to split a period's price across when it changes mid-cycle.
   quantity           Int                @default(1) @gte(1) @label("Quantity")
 
-  /// The cycle, as DAYS in the shop's calendar: `[start, end)`, so the period
-  /// is over when the shop's day reaches `currentPeriodEnd`. Plain dates rather
-  /// than instants because a month is calendar arithmetic, and an instant
-  /// advanced by a month in UTC lands on a different day in any zone west of
-  /// it — a New York signup on the evening of 30 March renewed on 29 April.
-  /// Both are stamped by the renewal job, never by a caller.
-  currentPeriodStart String             @date @system
-  currentPeriodEnd   String             @date @system
+  /// The cycle, read off `SubscriptionPeriod` rather than kept here: the
+  /// latest period's window, `[start, end)` in the shop's calendar. Both are
+  /// the same row's, since a period opens only as the one before it closes.
+  /// Null on a subscription that has never had a period.
+  currentPeriodStart String?            @from(SubscriptionPeriod, max: startsOn)
+  currentPeriodEnd   String?            @from(SubscriptionPeriod, max: endsOn)
   trialEndsAt        DateTime?
   cancelledAt        DateTime?          @system
 
@@ -1852,13 +1868,13 @@ model Subscription {
   /// A flag beside `active` and not a fifth status, and the choice is the
   /// substance. A `cancelling` state would be declared, so the console's button
   /// set would stay derived from `@@transitions`; it would also double what
-  /// every reader has to grade. `dueForRenewal`, `unpaidInvoices`, the dunning
+  /// every reader has to grade. The renewal, `unpaidInvoices`, the dunning
   /// read and both row policies above ask ONE question about `status`, and *is
   /// this live* becoming a set membership is the shape that goes wrong in one
   /// caller and nowhere else.
   ///
-  /// So *live* stays one comparison and this decides only what the renewal job
-  /// does when it reaches the period end. The cost is recorded rather than
+  /// So *live* stays one comparison and this decides only what a renewal does
+  /// when the period closes. The cost is recorded rather than
   /// argued away: it is invisible to `@@transitions`, so Stop renewing and
   /// Resume are the first buttons in this app that cannot be derived from what
   /// the schema declares.
@@ -1869,6 +1885,7 @@ model Subscription {
   cancelAtPeriodEnd  Boolean            @default(false) @system @label("Cancels at period end")
 
   invoices           Invoice[]
+  periods            SubscriptionPeriod[]
   createdAt          DateTime           @default(now())
 
   /// `Order`'s trick, and for `Order`'s reason: a row policy compares columns on
@@ -1890,10 +1907,12 @@ model Subscription {
   /// gate is a question about the caller, and *nobody may ask for this, ever*
   /// answers nothing about who is asking.
   ///
-  /// `activate` is the trial converting, `lapse` and `recover` are the dunning
-  /// run finding the ledger dirty and clean. **`cancel` joined them**: what a
+  /// `activate` is the trial converting. `lapse` is owed by an invoice unpaid
+  /// past its grace, and `recover` by the last unpaid one leaving `issued` —
+  /// both declared on `Invoice`, below. **`cancel` joined them**: what a
   /// person presses is `cancelAtPeriodEnd` above, and the arrangement ends when
-  /// the renewal job reaches the boundary and finds the flag set. Cancelling at
+  /// its period closes with the flag set, or when an invoice passes its
+  /// dunning deadline. Cancelling at
   /// the instant somebody asks would forfeit the rest of a period they have
   /// already paid for, which is not what the word means to anybody pressing it.
   ///
@@ -1907,12 +1926,72 @@ model Subscription {
     cancel:   [trialing, active, pastDue] -> cancelled @system
   )
 
-  /// Two parents, two lookups. `customerId` is *this customer's plans*, which
-  /// the account screen asks for; `planVersionId` is what a `Restrict` delete
-  /// checks before it will let a price window go, and a restrict that has to
-  /// scan is a scan on every attempt including the ones that succeed.
-  @@index([customerId])
-  @@index([planVersionId])
+  /// `many`, and it is the one word here that has to be said out loud: the same
+  /// customer may hold the same plan version twice — churn, then come back — so
+  /// there is no key over the pair, and what tells the two apart is the period
+  /// window rather than a column. A `once` here would refuse the returning
+  /// customer at the database.
+  ///
+  /// Both ends get an index, because with no unique neither is covered.
+  /// `customerId` is *this customer's plans*, which the account screen asks
+  /// for; `planVersionId` is what a `Restrict` delete checks before it will let
+  /// a price window go, and a restrict that has to scan is a scan on every
+  /// attempt including the ones that succeed.
+  @@relator([customerId, planVersionId], many)
+}
+
+enum PeriodStatus { open closed }
+
+/// One cycle of a subscription — the days it has been charged for.
+///
+/// **Renewal is this row closing** (`FJS-D367`). A subscription stays `active`
+/// across a renewal, so there is no move on `Subscription` to make one, and
+/// `@@transitions` refuses a self-loop; a period is a thing with a start, an
+/// end and a state, so the move is here. `close` is owed at `endsOn`, and
+/// junction's `commitments()` makes it; `renewPeriod` in `api/src/domain/billing`
+/// is the hook that runs in the same transaction — it issues the next invoice
+/// and opens the next period, or ends the arrangement when the subscription
+/// was asked to stop or already has.
+///
+/// The state machine is the once-ness: a second fire for one period meets a
+/// row already `closed`, and the constraint below refuses a second open period
+/// whatever path tries to write one.
+model SubscriptionPeriod {
+  id             Int           @id
+  subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Restrict)
+  subscriptionId Int           @immutable
+
+  /// Days in the shop's calendar, `[start, end)`. `endsOn` is not frozen: a
+  /// move to a yearly plan ends the current period on the day it is made and
+  /// opens a year from there, and the commitment follows the column.
+  startsOn       String        @date @immutable
+  endsOn         String        @date @system
+  status         PeriodStatus  @default(open)
+
+  userId         String?       @system
+  createdAt      DateTime      @default(now())
+
+  /// Written by billing alone: created at 8, so only the system writes one,
+  /// and updated at 7, which is the shop's own principal making the move a
+  /// fire makes. Every column a caller could name is `@system` or frozen.
+  @@gate("1.8.7.8")
+  @@allow('read',   auth().isStaff)
+  @@allow('read',   userId == auth().id)
+  @@allow('update', auth().isStaff)
+
+  @@transitions(status, close: open -> closed @system)
+  @@commitment(close, on: endsOn)
+
+  @@check("startsOn < endsOn", "A period has to end after it starts")
+
+  /// One open period per subscription, said by the database. A replayed fire
+  /// or a crash between two writes cannot leave a subscription billed twice
+  /// for one stretch of days.
+  @@unique([subscriptionId], where: status == 'open')
+
+  /// `Subscription`'s two `@from` fields read the latest period, and a
+  /// `Restrict` delete checks this table first.
+  @@index([subscriptionId, startsOn])
 }
 
 /// What `subscriptions.changePlan` accepts.
@@ -1948,7 +2027,7 @@ enum InvoiceStatus { draft issued paid void }
 /// moment, and the only honest correction is a `CreditNote` beside it. The
 /// freeze holds against `asSystem()`, which matters here more than anywhere
 /// else in this schema, because the caller that writes invoices IS the system:
-/// the renewal job has no session.
+/// a renewal has no session.
 ///
 /// **`draft` exists again, and `@seals` is why** (`FJS-D167`). It was removed
 /// because `@immutable` froze a column at CREATE, so a row assembled over
@@ -2001,17 +2080,27 @@ model Invoice {
   /// The day it has to be paid by, and it is part of the DOCUMENT — an invoice
   /// that could be given a later due date after it was issued is an invoice
   /// whose terms moved, which is the thing a statement about a moment cannot
-  /// do. It is also the only anchor dunning needs: *how long has this been
-  /// unpaid* is the days from `dueOn` to the shop's today on the oldest unpaid
-  /// invoice, so no counter has to be kept on the subscription and no counter
-  /// can disagree with the rows.
+  /// do. It is also the only anchor dunning needs, so no counter has to be kept
+  /// on the subscription and no counter can disagree with the rows.
   ///
   /// A day and not an instant, because terms are written in days and the shop
   /// is the one counting them: seven days from an issue at 23:30 in New York is
   /// the 7th day on the shop's calendar, not 07:30 UTC a week later.
   dueOn          String          @date @immutable
 
+  /// The dunning terms this invoice was issued under, in days after `dueOn`:
+  /// the subscription lapses after the grace and is cancelled after the second.
+  /// Stamped at issue and frozen, so the shop changing its terms moves no
+  /// deadline a customer was already given (`FJS-D355`).
+  graceDays      Int             @unit(d) @immutable
+  dunningDays    Int             @unit(d) @immutable
+
   paidAt         DateTime?       @system
+
+  /// Whether the customer has been told this invoice is coming due. A move of
+  /// its own rather than a status: a reminder is not a stage the invoice passes
+  /// through, and the column is the record that the email was queued.
+  reminded       Boolean         @default(false) @system
 
   lines          InvoiceLine[]   @sealed
   creditNotes    CreditNote[]
@@ -2020,7 +2109,7 @@ model Invoice {
   userId         String?         @system
 
   /// Read at 1; created and deleted by the system alone — an invoice is issued
-  /// by the renewal job and by nothing else. Update is 4 and staff-only, and
+  /// by billing and by nothing else. Update is 4 and staff-only, and
   /// what it can reach is the moves: every other column is `@system` or
   /// `@immutable`. The ladder cannot say *staff* — a verified shopper grades 4
   /// too — so the policy does, and a move is an update underneath, so the
@@ -2052,6 +2141,27 @@ model Invoice {
     settle: issued -> paid @system,
     void:   issued -> void @gate(5)
   )
+
+  /// Dunning. The invoice owns the deadline and the subscription owns the move
+  /// (`FJS-D362`): an unpaid invoice past its grace lapses the subscription
+  /// behind it, and past the second deadline cancels it. With two unpaid
+  /// invoices the older one comes due first, and the later one meets a move
+  /// already made and owes nothing — which is the *oldest unpaid invoice*
+  /// rule without anything computing an oldest.
+  ///
+  /// The way back is not here: `recover` is owed when the LAST unpaid invoice
+  /// leaves `issued`, which is a reaction to a write rather than a time, and
+  /// `recoverIfClear` in `api/src/domain/billing` makes it (`FJS-D363`).
+  @@commitment(subscription.lapse,  on: dueOn + graceDays,   while: status == 'issued')
+  @@commitment(subscription.cancel, on: dueOn + dunningDays, while: status == 'issued')
+
+  /// Three days before `dueOn`, while it is still owed. A literal rather than a
+  /// stamped column: the lead time is the shop's habit, not a term the customer
+  /// was given, so moving it may move reminders not yet sent. The email is an
+  /// outbox row written with the move (`api/src/core/commitments.ts`), so the
+  /// column cannot say it went when it did not.
+  @@transitions(reminded, remind: false -> true @system)
+  @@commitment(remind, on: dueOn - 3d, while: status == 'issued')
 
   /// The ledger a shopper opens, and the run of invoices one arrangement has
   /// issued. Both `Restrict`, so both are also checked on every parent delete.
@@ -2281,7 +2391,10 @@ model CartLine {
   /// One line per variant. A second "navy / m" is a quantity change, not a
   /// second row — and without this the basket shows the same thing twice and
   /// the two rows disagree about how many.
-  @@unique([cartId, variantId])
+  ///
+  /// `once` also indexes `variantId`, which is the walk a `Cascade` from the
+  /// variant starts down when a colorway is withdrawn.
+  @@relator([cartId, variantId], once)
   
   /// All four at 0, unlike `Cart` above, and the difference is delete.
   ///
@@ -2309,10 +2422,6 @@ model CartLine {
   @@allow('create', cartId == auth().cartId)
   @@allow('update', cartId == auth().cartId)
   @@allow('delete', cartId == auth().cartId)
-  
-  /// `Cascade` from the variant: withdrawing a colorway takes it out of every
-  /// basket holding it, and that walk starts here.
-  @@index([variantId])
 }
 
 /// What `carts.checkout` accepts. A basket knows what is in it; it does not
@@ -2404,17 +2513,32 @@ model StockReservation {
 
   quantity Int @gte(1) @lte(99)
 
-  /// When the shelf takes it back. THE READ IS THE TRUTH: every availability
-  /// sum filters on this instant, so a hold is dead the moment it passes even
-  /// if no sweep has run. `holds-release` deletes the rows, which keeps the
-  /// table small and is housekeeping — correctness must not depend on a cron
-  /// having fired, because then a queue outage quietly stops the shop selling.
+  /// When the shelf takes it back. THE READ IS THE TRUTH: a hold is dead the
+  /// moment this passes, whether or not a sweep has run. `holds-release`
+  /// deletes the rows, which keeps the table small and is housekeeping —
+  /// correctness must not depend on a cron having fired, because then a queue
+  /// outage quietly stops the shop selling.
   expiresAt DateTime
 
   createdAt DateTime @default(now())
 
   /// One hold per basket per shelf, mirroring the line it stands for.
-  @@unique([cartId, variantId])
+  ///
+  /// No reverse index is emitted for `variantId`: the composite below already
+  /// leads with it, and an index is prefix-matched.
+  @@relator([cartId, variantId], once)
+
+  /// `expiresAt` is the edge, so every read and write filters to the holds not
+  /// yet expired and the four hand-written `expiresAt: { gt: now }` clauses are gone.
+  /// The two reads that deliberately did NOT filter now say so — `hold()`
+  /// revives a dead row on purpose and `release()` purges the lot, both
+  /// `withExpired: true` — where before they were indistinguishable from the
+  /// ones that had forgotten.
+  ///
+  /// It also makes expiry testable: the filter reads the CLIENT's clock, so
+  /// `env.clock.advance()` moves it, where a `new Date()` in a service moved
+  /// nothing and the drive had to stage expiry by passing a 2099 cutoff.
+  @@expires(expiresAt)
 
   /// Every availability sum is `(variantId, expiresAt)` — the one query this
   /// table exists to answer, and the one on the path of every add to basket.
@@ -2869,6 +2993,12 @@ model PayWindow {
   
   @@gate("5.5.5.5")
   
+  /// ASKED (`FJS-D352`), so `payAsAt` states its day as `asOf` and the history
+  /// panel and `setPay`'s overlap check read every window with no flag. Asked
+  /// is also why no zone is spent here: a day window with no default has no
+  /// *today* to derive.
+  @@effective(from: effectiveFrom, to: effectiveTo)
+  
   /// A window that ends before it starts is a row nothing can ever match, and
   /// the two columns are individually fine — which is what makes this a
   /// `@@check` and not a field rule. `PlanVersion` carries the same one.
@@ -2880,8 +3010,8 @@ model PayWindow {
   @@unique([employeeId], where: effectiveTo == null)
   
   /// The constraint above holds only the OPEN window, which is the one an
-  /// as-at read at a past instant does not want. `payAsAt` filters on
-  /// `employeeId` and orders by `effectiveFrom` descending, so the composite
+  /// as-at read at a past day does not want. `payAsAt` filters on `employeeId`
+  /// with `asOf` and orders by `effectiveFrom` descending, so the composite
   /// answers both halves of it.
   @@index([employeeId, effectiveFrom])
   
@@ -2957,6 +3087,10 @@ model PayRate {
   /// price there is no argument for a lower one, since a band table is what a
   /// payroll is computed from.
   @@gate("5.5.5.5")
+  
+  /// ASKED, as `PayWindow` is: `ratesAsAt` states the day, and a payslip line
+  /// pointing at a band that has since closed still reads it.
+  @@effective(from: effectiveFrom, to: effectiveTo)
   
   @@check("toAmount IS NULL OR fromAmount < toAmount",
           "a band has to end above where it starts")
