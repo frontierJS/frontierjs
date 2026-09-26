@@ -42,6 +42,7 @@ import { join, posix, resolve, relative, isAbsolute, sep } from 'node:path'
 import { allocate }                                         from '@frontierjs/toolbelt/units'
 import { PARSABLE, measureFunctions, worstFunction }        from './functions.js'
 import { encodePng }                                        from './png.js'
+import { ASSET, kindOf }                                    from './file-kind.js'
 
 // ─── the rules ────────────────────────────────────────────────────────────────
 
@@ -77,14 +78,6 @@ export const HALF_LIFE_DAYS = 30
 export const COVERAGE = { tested: 1, partly: 0.5, untested: 0 }
 
 const BINARY_LIMIT = 2_000_000
-const ASSET        = /\.(png|jpe?g|gif|webp|ico|svg|woff2?|ttf|otf|eot|mp4|webm|mp3|wav|pdf|zip|gz|wasm)$/i
-const DOC          = /\.(md|mdx|txt|rst)$/i
-const CONFIG       = /\.(json|jsonc|ya?ml|toml|ini|env)$/i
-const LOCKFILE     = /^(bun\.lockb?|package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock)$/
-// Code that demonstrates the project rather than being it. Counted as source, a
-// kitchen-sink app is the biggest package on the map and its imports decide
-// which package reads most used.
-const EXAMPLE      = /(^|\/)(examples?|website)\//
 
 export const KINDS = ['source', 'private', 'example', 'test', 'doc', 'config', 'generated', 'asset']
 
@@ -102,17 +95,6 @@ export const isCode = file => file != null && (file.kind === 'source' || file.ki
 /** The package directories whose manifest says `private`, the root's excluded. */
 export function unpublishedDirs(manifests) {
   return new Set(manifests.filter(m => m.json?.private && posix.dirname(m.path) !== '.').map(m => posix.dirname(m.path)))
-}
-
-export function kindOf(path) {
-  const base = posix.basename(path)
-  if (/\.snapshot\./.test(base) || /(^|\/)(dist|out|build)\//.test(path) || LOCKFILE.test(base)) return 'generated'
-  if (/(^|\/)(test|tests|__tests__|spec|specs)\//.test(path) || /\.(test|spec)\.[a-z]+$/i.test(base)) return 'test'
-  if (ASSET.test(base))                                                                              return 'asset'
-  if (DOC.test(base) || /^(LICENSE|CHANGELOG)$/.test(base))                                          return 'doc'
-  if (CONFIG.test(base) || base.startsWith('.') || /\.config\.[cm]?[jt]s$/.test(base) || /^(Dockerfile|Makefile|tsconfig.*)$/.test(base)) return 'config'
-  if (EXAMPLE.test(path))                                                                            return 'example'
-  return 'source'
 }
 
 export const band = (value, thresholds) => value == null ? null : thresholds.filter(t => value > t).length

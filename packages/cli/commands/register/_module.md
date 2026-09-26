@@ -18,15 +18,9 @@ DECISIONS.md   — what is settled         (dated rulings; do not relitigate)
 IDEAS/         — what is not started     (one paper per proposal)
 ```
 
-```
-fli register:atlas      — all of them as one page: what to work on, decide, and read
-fli register:check      — grade the registers against their own rules
-fli register:file       — file an issue: the next id, at the top of its severity's table
-fli register:close      — close an issue: move its row into § Closed, dated, with how
-fli register:decisions  — what is waiting on the owner, read out of all of them
-fli register:decide     — rule on one: file the ruling, strike the question
-fli register:next       — the open register ranked, with the terms that scored each row
-```
+**`fli register:overview` is how they are worked**: the issue loop and the
+decision loop, each step with its command and today's count, and where to start.
+`fli register` lists every command.
 
 They stay markdown, because a register is argued in prose and reviewed in a
 diff. What the check adds is the half prose cannot hold up on its own: that an

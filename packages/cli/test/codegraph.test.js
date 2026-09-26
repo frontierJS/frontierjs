@@ -12,7 +12,7 @@ import { tmpdir }                  from 'node:os'
 import { join, dirname }           from 'node:path'
 import { inflateSync }             from 'node:zlib'
 import {
-  gilbert, parseGitLog, indentSum, kindOf, band, parseLcov, collectCodegraph, heatOf, exposureOf, scoreOf, LEVEL,
+  gilbert, parseGitLog, indentSum, band, parseLcov, collectCodegraph, heatOf, exposureOf, scoreOf, LEVEL,
   tileBands, badgeCells, renderBadge, renderMap, regionReader, gridFor, AGE_DAYS, HALF_LIFE_DAYS, SCORE_RAMP, SCORE_WARN,
   themesIn, themeTokens, mixOklab, turnOklch, deltaOklab, scoreRamp, paletteFrom, paletteCss, isHotspot, bandLabels, MIX, TONES, STRONG, QUADRANTS, MORE,
   exportTarget, packageIndex, referenceGraph, coreRegions, coreLayout, packageGrid, depthLayout, unpublishedDirs, isCode,
@@ -161,27 +161,6 @@ describe('indentSum', () => {
   test('blank lines count for nothing', () => {
     expect(indentSum('a\n\n\n  b\n').lines).toBe(2)
   })
-})
-
-test('kindOf reads the path', () => {
-  expect(kindOf('src/app.ts')).toBe('source')
-  expect(kindOf('test/app.test.js')).toBe('test')
-  expect(kindOf('src/app.spec.ts')).toBe('test')
-  expect(kindOf('README.md')).toBe('doc')
-  expect(kindOf('tsconfig.json')).toBe('config')
-  expect(kindOf('web/vite.config.js')).toBe('config')
-  expect(kindOf('db/ddl.snapshot.sql')).toBe('generated')
-  expect(kindOf('bun.lock')).toBe('generated')
-  expect(kindOf('public/logo.png')).toBe('asset')
-  expect(kindOf('example/api/src/app.ts')).toBe('example')
-  expect(kindOf('packages/sierra/examples/basic/main.js')).toBe('example')
-  expect(kindOf('website/src/index.mesa')).toBe('example')
-  // what an example holds that is a test, a doc or config stays that
-  expect(kindOf('example/web/test/verify.mjs')).toBe('test')
-  expect(kindOf('example/README.md')).toBe('doc')
-  // a word inside a name is not the directory
-  expect(kindOf('src/examples.js')).toBe('source')
-  expect(kindOf('site/src/index.mesa')).toBe('source')
 })
 
 test('band thresholds are exclusive below and the last one is strong', () => {

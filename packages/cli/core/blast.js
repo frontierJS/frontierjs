@@ -28,7 +28,8 @@ import { join } from 'node:path'
 // Statically, because importing THIS module is already the decision to pay for
 // it — `core/codegraph.js` is ~1,150 lines and nothing on fli's read-only path
 // imports blast at all. Measured at 6ms.
-import { referenceGraph, regionReader, packageIndex, kindOf, isCode, band, BLAST } from './codegraph.js'
+import { referenceGraph, regionReader, packageIndex, isCode, band, BLAST } from './codegraph.js'
+import { kindOf }                                                       from './file-kind.js'
 
 const TEXT_LIMIT = 2_000_000
 

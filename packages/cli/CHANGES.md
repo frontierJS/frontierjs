@@ -1,5 +1,96 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-26 — a choice met mid-fix is filed and waited on, not asked and stopped at
+
+`fix-next` met a design choice by stopping to ask, and `fix:loop` ended the
+whole run on it, so one question parked every row behind it and the question
+itself lived only in a log. Now the fix files it and moves on.
+`fli file --sev decision` writes a row into § Needs a decision under the next
+`D` id, and `--blocks <row>` writes `blocked by <that id>` into the held row, so
+`fli next` sets that row aside. The options go in a paper bullet naming the id,
+in `IDEAS/owed-rulings.md` when no paper argues the question. `decide` answers
+such a bullet under the row's own id and closes the row in the same act (a
+settle closes it citing the existing ruling), which is what lets the held row
+come back with nothing edited by hand. `close.js` gives up `moveToClosed` for
+that reuse. `fix-loop` reads *blocked* off the register and goes on to the next
+row. `/fix-next --ask` keeps the old behavior, putting the choice to you in the
+session. `test/owed-ruling.test.js` walks file → block → pick or settle →
+unblocked, red with the row lookup stubbed out.
+
+## 2026-09-26 — `fli proves` reads what changed, not what moved, and it sees new files
+
+A test-only change listed 13 drives under `fli done`, and the `client.js` split
+named 40. None of them was needed. There were four causes:
+
+- **New files were invisible.** `changedTree` read `git diff HEAD`, which has no
+  untracked file in it, and `fli done` saw only their names. So every line moved
+  into a new module read as deleted from the old one. `changedTree` now includes
+  untracked files with their content (`git diff --no-index` against
+  `/dev/null`). It is the one reader for `test:proves`, `test:prove`,
+  `test:done` and the GUI's `/api/proves`. `done.js` keeps no filter of its own,
+  and `server.js` keeps no git reading of its own. `--relative` does the job the
+  server's prefix code did, for a project below the repository root.
+- **A moved line counted as a changed one.** `changedLines` cancels a line
+  removed in one place against the same line added in another, ignoring
+  whitespace and a leading `export`. It skips four kinds of line that name a
+  symbol without changing it: hunk headers, comments, imports, and a bare list
+  of names.
+- **A symbol matched as a substring.** `find` matched `findMany` and `Product`
+  matched `ProductVariant`. A symbol is now a whole identifier.
+- **Every changed file fed every tier.** A test proves itself, a document names
+  every symbol it explains, and a snapshot names every symbol in the repo. The
+  area and package tiers now read only `changesBehavior` files. The symbol tier
+  reads only code (`holdsSymbols`), because a changed line is read whole: a
+  command's prose is English, and the one line of a package's test script names
+  every test file it runs. A path a row names still matches any file.
+
+Replayed over the last 40 commits, the matched rows go from 1,755 to 676. The
+biggest drops are documentation sweeps and renames. On the split's litestone
+files the matches go from 40 to 9: the two `client` area rows, which name the
+drives that change needed, and seven rows that name only the package. `fli done`
+now folds package-only rows into one count line. `fli proves` still lists them.
+
+`kindOf` moves from `codegraph.js` to `core/file-kind.js`, so the proof table
+and the codegraph read one classifier. The move also fixes it: any path under a
+`build/` directory was `generated`, which took sierra's and jetty's
+`src/build/` off the codegraph. That is 26 files, the build pipelines included.
+A `build/` under `src/` is source now.
+
+## 2026-09-26 — `fli register:overview`: the two register loops, with today's counts
+
+Seven register commands, two loops and two skills had no one place saying which
+comes when. `register:overview` prints the issue loop (`next` → fix → `close`,
+`file` for a new defect) and the decision loop (open → framed → `decide` or
+`decide --by`), each step with its command and a count read by `rankNext` and
+`openDecisions`, then one *Start here* line. The `fix-next`/`frame-next` skills
+and the `fix:loop`/`frame:loop` scripts are project files, not fli's, so each is
+named only where the project has it. `register/_module.md` drops its hand-kept
+command list for a pointer, since `fli register` already prints the list from
+the commands. `test/register-overview.test.js` resolves every command and flag
+the overview names against the command files (red on a renamed `--how` and on
+an unknown command), and checks its counts against the readers.
+
+## 2026-09-26 — `fli decide` with no id walks the queue, one key per question
+
+55 questions carried options and each needed a typed `fli decide <id> <letter>
+--section "…"`. `core/decide-walk.js` shows them in turn — the settled ones
+first — and a key answers each: the option's letter, Enter for the
+recommendation, `s` skip, `v` open the paper at the question, Esc stop. A pick
+against the recommendation opens `$VISUAL`/`$EDITOR` for the reason, and an
+empty save goes back without ruling. The section is a number, and Enter repeats
+the last one. It writes only through `decide()` and `settle()`, so it has their
+refusals and put-back. With no terminal it refuses and names the typed form.
+The walk hangs off the writer rather than `fli decisions --walk`, so the read
+command stays read-only, as its `GET` twin in the GUI is.
+
+`openDecisions` gains `settled`: an open question whose recommendation names a
+live ruling — the shape `frame-next` writes — carrying that ruling as `by`, and
+no longer counted in `open`. `settledBy(q, live)` is the one reader;
+`scripts/frame-loop.mjs` grades with it and `fli decisions` lists them. Seven
+tests in `test/decide-walk.test.js` script the terminal over real register
+files. Driven once in a pty, settle then pick then section, and once through a
+stand-in `$EDITOR`.
+
 ## 2026-09-26 — `fli decide <id> --by <ruling>`: a question an existing ruling already answers
 
 A question the tree had settled before anybody framed it had one way out:

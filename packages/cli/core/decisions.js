@@ -46,7 +46,7 @@ const MOOT_STATUS = new Set(['superseded-by', 'withdrawn'])
 const TOP_BULLET  = /^(?:[-*]|\d+\.)\s+(.*)$/
 const OPTION      = /^\s+[-*]\s+\*\*([A-Z])\*\*\s*[—–:-]\s*(.+)$/
 const RECOMMEND   = /^\s+[-*]\s+\*\*Recommend(?:ed)?:?\s*([A-Z])\*\*\s*(?:[—–:-]\s*)?(.*)$/
-const QUESTION_ID = /\b[A-Z][A-Z0-9]*-D\d+\b/g
+export const QUESTION_ID = /\b[A-Z][A-Z0-9]*-D\d+\b/g
 
 // ─── the read ─────────────────────────────────────────────────────────────────
 

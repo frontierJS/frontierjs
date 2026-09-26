@@ -526,10 +526,13 @@ export async function run(process) {
         // alias substring
         else if (desc.split(' ').includes(q)) score = 25 // whole word in description
 
-        return { meta: m, score }
+        return { meta: m, score, title }
       })
       .filter((s) => s.score > 0)
-      .sort((a, b) => b.score - a.score)
+      // a tie in score falls back to the shorter, then alphabetically first
+      // title, so the ranking is a property of the match rather than of
+      // registry load order
+      .sort((a, b) => b.score - a.score || a.title.length - b.title.length || a.title.localeCompare(b.title))
       .slice(0, 6)
 
     // ── Exact namespace match → show full namespace help ─────────────────────

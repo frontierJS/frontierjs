@@ -58,6 +58,7 @@ const PORT = 7560
 // The real one. Filtered through `deviceSchema`, which is the only form of it
 // a device is ever given.
 const APP_SCHEMA = join(PKG, '../../example/db/schema.lite')
+const DEVICE     = deviceSchema(parseFile(APP_SCHEMA))
 
 // `@sqlite.org/sqlite-wasm` is a devDependency and reached by PATH rather than
 // by import: this package ships no dependency on it, because WHERE the wasm
@@ -151,11 +152,11 @@ window.boot = (async () => {
 // ── the app's own schema, filtered ────────────────────────────────────────
 //
 // The fixture above is two models written to exercise the worker. This is
-// `example`'s 53, run through `deviceSchema` and served as the three a device
+// `example`'s 53, run through `deviceSchema` and served as the models a device
 // actually gets — which is the only thing that can catch a construct a real
 // schema has and a fixture does not.
 function writeDevicePage() {
-  const { parsed, models, notes } = deviceSchema(parseFile(APP_SCHEMA))
+  const { parsed, models, notes } = DEVICE
   writeFileSync(join(OUT, 'device.json'), JSON.stringify(parsed))
 
   console.log(`  device schema: ${models.join(', ')} — ${JSON.stringify(parsed).length} bytes, ` +
@@ -410,37 +411,45 @@ async function main() {
 
   // ── the app's own schema, in a browser ──
   //
-  // `example`'s 53 models filtered to the three that declare `@@sync`, opened
+  // `example`'s 53 models filtered to the ones that declare `@@sync`, opened
   // over OPFS. Everything above this runs against a fixture written to exercise
   // the worker; this is the first thing that runs against a schema somebody
   // wrote to run a shop — a `File?` column, a gate ladder, an enum, a relation
   // to a model the device does NOT get, and 23 kB of prose that must not be here.
   await b.navigate(`http://localhost:${PORT}/device.html`)
+  // Which models cross is example's to decide and `test/device-schema.test.ts`'s
+  // to grade. This asks only that the browser opened what the filter chose.
+  const crossed = DEVICE.models.map(m => m[0].toLowerCase() + m.slice(1)).sort().join()
   await t(b, "example's own schema, filtered, opens over OPFS",
     `return await window.boot`,
-    v => v?.models?.sort().join() === 'inventoryMovement,stocktakeCount,stocktakeSheet')
+    v => v?.models?.sort().join() === crossed)
 
+  // The variants first: `ProductVariant` crosses, so a count's `variantId` is a
+  // foreign key into a table the device holds, and a made-up id is refused.
   await t(b, 'a stocktake is counted in the stockroom and reads back',
-    `const sheet = await db.stocktakeSheet.create({ data: { note: 'aisle 3' } })
+    `const tee  = await db.productVariant.create({ data: { productId: 1, sku: 'TEE-S', price: 1200, stock: 11 } })
+     const mug  = await db.productVariant.create({ data: { productId: 2, sku: 'MUG-1', price: 900,  stock: 4 } })
+     const sheet = await db.stocktakeSheet.create({ data: { note: 'aisle 3' } })
      await db.stocktakeCount.createMany({ data: [
-       { sheetId: sheet.id, variantId: 42, counted: 9,  expected: 11 },
-       { sheetId: sheet.id, variantId: 43, counted: 4,  expected: 4  },
+       { sheetId: sheet.id, variantId: tee.id, counted: 9, expected: 11 },
+       { sheetId: sheet.id, variantId: mug.id, counted: 4, expected: 4  },
      ] })
      await db.inventoryMovement.create({ data: {
-       variantId: 42, kind: 'adjusted', quantity: -2, stockBefore: 11, stockAfter: 9 } })
+       variantId: tee.id, kind: 'adjusted', quantity: -2, stockBefore: 11, stockAfter: 9 } })
      const back = await db.stocktakeSheet.findUnique({
-       where: { id: sheet.id }, include: { counts: true } })
-     return { counts: back.counts.length, gap: back.counts[0].expected - back.counts[0].counted,
+       where: { id: sheet.id }, include: { counts: { include: { variant: true } } } })
+     const first = back.counts.find(c => c.variantId === tee.id)
+     return { counts: back.counts.length, gap: first.expected - first.counted, sku: first.variant?.sku,
               ledger: await db.inventoryMovement.count() }`,
-    v => v?.counts === 2 && v.gap === 2 && v.ledger === 1)
+    v => v?.counts === 2 && v.gap === 2 && v.sku === 'TEE-S' && v.ledger === 1)
 
-  // The relation that did NOT cross. `variantId` is a column and `variant` is
+  // The relation that did NOT cross. `productId` is a column and `product` is
   // not, and the device has to say so rather than answering an empty join —
   // which is what an `include` of a missing relation would look like on screen.
   await t(b, 'and the relation the filter dropped is refused by name',
-    `try { await db.stocktakeCount.findMany({ include: { variant: true } }); return 'no refusal' }
+    `try { await db.productVariant.findMany({ include: { product: true } }); return 'no refusal' }
      catch (err) { return err.message }`,
-    v => typeof v === 'string' && v !== 'no refusal' && /variant/.test(v))
+    v => typeof v === 'string' && v !== 'no refusal' && /\bproduct\b/.test(v))
 
   await b.close()
   server.close()

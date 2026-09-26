@@ -1,5 +1,28 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-26 — a name that resolves to nothing fails the suite
+
+checkJs is off here, and nothing read a `.js` file for an undeclared name. That
+name is a ReferenceError only on the path that reaches it, and it is what
+pulling a function out of the `makeTable` or `createClient` closure leaves
+behind when the function read a variable the closure held.
+`test/undeclared-names.test.ts` parses every file in `src/` with TypeScript
+(`noResolve`, so an import declares its names without being followed) and fails
+on any *cannot find name* diagnostic, with three exceptions:
+
+- A diagnostic inside JSDoc does not count. `Json @type(Address)` in prose
+  reads as a tag.
+- The runtime's globals are allowed by name in `HOST_GLOBALS`, never as all of
+  lib.dom. lib.dom declares `name`, `origin` and `event`, so a stranded variable
+  with one of those names would resolve to the window's and pass.
+- The diagnostic codes come from `ts.Diagnostics`, so a new code needs no edit.
+
+Two mutations of a copy of `src/` are named by file and line: a dropped import,
+and a moved helper reading a variable nothing declares. The run takes about
+5 seconds. It also re-checks the split below with the codes that its one-off
+proof did not read (the `console` and `Bun` families). It finds only runtime
+globals.
+
 ## 2026-09-26 — `client.js`'s module-level helpers move to nine siblings
 
 `core/client.js` was 14,159 lines, and 43 of the last 55 litestone commits

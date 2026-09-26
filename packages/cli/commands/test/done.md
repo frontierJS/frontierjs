@@ -39,11 +39,19 @@ for (const item of report.items) {
 }
 
 if (report.drives.length) {
+  // A row matched on the package alone says only that something in the package
+  // changed, and a package the table names often matches most of its rows at once.
+  const named = report.drives.filter(d => d.tier !== 'package')
+  const loose = report.drives.filter(d => d.tier === 'package')
   echo('')
   echo('  run before calling it proved:')
-  for (const d of report.drives) {
+  for (const d of named) {
     echo(`    ${d.changed}   (matched by ${d.tier}${d.on.length ? `: ${d.on.slice(0, 3).join(', ')}` : ''})`)
     for (const r of d.run) echo(`      ${r}`)
+  }
+  if (loose.length) {
+    const pkgs = [...new Set(loose.flatMap(d => d.on))].join(', ')
+    echo(`    + ${loose.length} row(s) that name only the package (${pkgs}) — \`fli proves\` lists them`)
   }
 }
 echo('')
@@ -68,7 +76,8 @@ The steps that close a change out and fail in silence when skipped, asked of
 - **snapshots** — every committed snapshot still matches its source.
 
 Then the drives `fli proves` names for the diff. Whether they were run is not
-something the tree records, so they are listed rather than graded. It never
+something the tree records, so they are listed rather than graded. A row
+matched on the package alone is counted in one line rather than listed. It never
 grades whether the change is right — that is what the drives are for.
 
 Exit code 1 while anything is unfinished.

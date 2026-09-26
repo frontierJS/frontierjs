@@ -28,8 +28,10 @@
 // Zero dependencies, plain ESM, node or bun — same rule as its neighbors.
 
 import { execFileSync }                          from 'node:child_process'
-import { existsSync, readFileSync, readdirSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join }                                  from 'node:path'
+
+import { kindOf }                                from './file-kind.js'
 
 // ─── the parse ────────────────────────────────────────────────────────────────
 
@@ -184,6 +186,12 @@ export function resolveWhere(where, root) {
 // The symbol tier needs the diff CONTENT and is skipped without it, rather than
 // being approximated from the file list — a row that matches for a reason
 // nobody can see is worse than a row that does not match.
+//
+// Every tier but `path` reads only what the project RUNS (`changesBehavior`),
+// and the symbol tier only CODE (`holdsSymbols`), only the lines that changed
+// rather than moved (`changedLines`), and a symbol only as a whole identifier:
+// `find` inside `findMany` is not `find()`. A path the row names still matches
+// any file — that is the row saying so.
 
 export function matchChanged(changedText, { files, diff = null, packages = [] }) {
   const ticks = [...changedText.matchAll(/`([^`]+)`/g)].map(m => m[1])
@@ -196,6 +204,8 @@ export function matchChanged(changedText, { files, diff = null, packages = [] })
   }
   if (hits.length) return best(hits)
 
+  const code = files.filter(changesBehavior)
+
   // The leading words, up to the first punctuation the prose uses to qualify.
   const lead  = changedText.toLowerCase().split(/[—·(/]|\s+-\s+/)[0]
   const owned = packages.filter(p => new RegExp(`(^|\\s)${escapeRe(p.name)}(\\b|'s)`).test(lead))
@@ -203,7 +213,7 @@ export function matchChanged(changedText, { files, diff = null, packages = [] })
   if (owned.length) {
     const words = areaWords(changedText, owned)
     for (const pkg of owned) {
-      for (const f of files) {
+      for (const f of code) {
         if (!f.startsWith(`${pkg.dir}/`)) continue
         const hit = words.find(w => f.toLowerCase().includes(w))
         if (hit) hits.push({ tier: 'area', file: f, on: hit })
@@ -213,12 +223,13 @@ export function matchChanged(changedText, { files, diff = null, packages = [] })
   }
 
   if (diff) {
+    const text = diffText(diff)
     for (const t of ticks) {
       if (!/^[A-Za-z_$][\w$.]*(\(\))?$/.test(t)) continue
       const sym = t.replace(/\(\)$/, '')
       // `id` and `db` appear in every diff ever written.
       if (sym.length < 4) continue
-      if (diff.includes(sym)) hits.push({ tier: 'symbol', file: null, on: sym })
+      if (new RegExp(`(?<![\\w$])${escapeRe(sym)}(?![\\w$])`).test(text)) hits.push({ tier: 'symbol', file: null, on: sym })
     }
   }
   if (hits.length) return best(hits)
@@ -227,9 +238,89 @@ export function matchChanged(changedText, { files, diff = null, packages = [] })
   // means *something in here changed and this row is about here*, which is true
   // of four rows at once for sierra.
   for (const pkg of owned) {
-    for (const f of files) if (f.startsWith(`${pkg.dir}/`)) hits.push({ tier: 'package', file: f, on: pkg.name })
+    for (const f of code) if (f.startsWith(`${pkg.dir}/`)) hits.push({ tier: 'package', file: f, on: pkg.name })
   }
   return hits.length ? best(hits) : null
+}
+
+// ─── what a change is evidence of ─────────────────────────────────────────────
+
+// A `.md` under `commands/` is a fli command — prose and fenced code, compiled
+// and run — whatever its namespace directory is called; `commands/test/` is one.
+const COMMAND = /(^|\/)commands\/.+\.md$/
+
+/**
+ * Whether a change to this file is a change to what the project runs. A
+ * document names every symbol it explains and a regenerated snapshot names
+ * every symbol in the repo, so either matched most of the table; a test is its
+ * own proof, and running it is what proves a change to it.
+ */
+export function changesBehavior(file) {
+  return COMMAND.test(file) || !['test', 'doc', 'generated'].includes(kindOf(file))
+}
+
+/**
+ * Whether a changed line in this file is read for symbols. A line is read
+ * whole, so only code: a command's prose is English, and the one line of a
+ * package's test script names every test file it runs.
+ */
+export function holdsSymbols(file) {
+  return ['source', 'example'].includes(kindOf(file))
+}
+
+/**
+ * The lines a `-U0` diff adds and removes in files `keep` accepts, minus every
+ * line that only MOVED — removed in one place and added in another, whitespace
+ * and a leading `export` aside. Splitting a file into nine is thousands of lines
+ * naming every symbol it held, and none of them changed.
+ *
+ * Four kinds of line are not read at all, because each names a symbol without
+ * changing what it does: a hunk header (git writes the enclosing function into
+ * it), a comment, an import, and a bare list of names — the middle of a
+ * multi-line import, which `-U0` hands over one line at a time.
+ */
+export function changedLines(diff, keep = () => true) {
+  const added   = []
+  const removed = []
+  let take = true
+  let hunk = true
+
+  for (const line of String(diff ?? '').split('\n')) {
+    const head = line.match(/^diff --git a\/\S+ b\/(\S+)/)
+    if (head) { take = keep(head[1]); hunk = false; continue }
+    if (line.startsWith('@@')) { hunk = true; continue }
+    if (!hunk || !take) continue
+    const body = line.slice(1).trim().replace(/\s+/g, ' ').replace(/^export (default )?/, '')
+    if (!body || NOT_CODE.some(re => re.test(body))) continue
+    if (line[0] === '+') added.push(body)
+    else if (line[0] === '-') removed.push(body)
+  }
+
+  const moved = new Map()
+  for (const l of removed) moved.set(l, (moved.get(l) ?? 0) + 1)
+  const out = []
+  for (const l of added) {
+    const n = moved.get(l)
+    if (n) moved.set(l, n - 1)
+    else out.push(l)
+  }
+  for (const [l, n] of moved) for (let i = 0; i < n; i++) out.push(l)
+  return out.join('\n')
+}
+
+const NOT_CODE = [
+  /^(\/\/|\/\*|\*)/,
+  /^import\b/,
+  /^(export\s*)?(\*|\{[^}]*\})\s*from\s*['"]/,
+  /^\}\s*from\s*['"]/,
+  /^[\w$]+(\s+as\s+[\w$]+)?(\s*,\s*[\w$]+(\s+as\s+[\w$]+)?)*\s*,?$/,
+]
+
+// Every row asks about the same diff, and a split's diff is megabytes.
+let lastDiff = { diff: null, text: '' }
+function diffText(diff) {
+  if (lastDiff.diff !== diff) lastDiff = { diff, text: changedLines(diff, holdsSymbols) }
+  return lastDiff.text
 }
 
 // Words from the row that could name a directory or a file under the package.
@@ -284,8 +375,13 @@ export function provesFor(root, { files, diff = null, rows = [] } = {}) {
 
 /**
  * The change `provesFor` grades — `{ files, diff }` for the working tree
- * against HEAD, or a branch against `from`. One reader for `test:proves` and
- * `test:prove`, so the two cannot name different drives for one tree.
+ * against HEAD, or a branch against `from`. One reader for `test:proves`,
+ * `test:prove` and `test:done`, so the three cannot name different drives for
+ * one tree.
+ *
+ * The working tree includes UNTRACKED files, content and all. A module that is
+ * new is in no `git diff`, so without it every line moved into one read as
+ * deleted from where it came from — a split named thirty drives.
  *
  * `paths` narrows it to what one change touched. A tree shared with another
  * session holds that session's edits too, and proving them costs every drive
@@ -293,7 +389,9 @@ export function provesFor(root, { files, diff = null, rows = [] } = {}) {
  *
  * The diff CONTENT is the symbol tier: without it a row naming
  * `announceDataWrites` matches only by the package it lives in. `--no-color`,
- * because a user's `color.diff = always` colors a piped diff too.
+ * because a user's `color.diff = always` colors a piped diff too. `--relative`,
+ * because git answers from the repository root, and a project one level below
+ * it would be matched on paths carrying a prefix its own table never writes.
  */
 export function changedTree(root, { from = null, paths = [] } = {}) {
   const against = from ? `${from}...` : 'HEAD'
@@ -302,9 +400,24 @@ export function changedTree(root, { from = null, paths = [] } = {}) {
     try { return execFileSync('git', argv, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) }
     catch { return '' }
   }
-  const files = git(['diff', '--name-only', against, ...only]).trim().split('\n').filter(Boolean)
-  return { files, diff: files.length ? git(['diff', '--no-color', '-U0', against, ...only]) : '' }
+  const lines = text => text.trim().split('\n').filter(Boolean)
+  const fresh = from ? [] : lines(git(['ls-files', '--others', '--exclude-standard', ...only]))
+  const files = [...new Set([...lines(git(['diff', '--relative', '--name-only', against, ...only])), ...fresh])].sort()
+  if (!files.length) return { files, diff: '' }
+  return { files, diff: git(['diff', '--relative', '--no-color', '-U0', against, ...only]) + fresh.map(f => newFileDiff(root, f)).join('') }
 }
+
+// `git diff --no-index` exits 1 when the two sides differ, which for a new file
+// is always, so the answer arrives on the thrown error.
+function newFileDiff(root, file) {
+  try { if (statSync(join(root, file)).size > NEW_FILE_LIMIT) return '' } catch { return '' }
+  try {
+    execFileSync('git', ['diff', '--no-color', '-U0', '--no-index', '--', '/dev/null', file], { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+    return ''
+  } catch (err) { return err.status === 1 ? String(err.stdout ?? '') : '' }
+}
+
+const NEW_FILE_LIMIT = 2_000_000
 
 /** Every directory a proof row could name — `packages/*` plus the root's apps. */
 export function packageDirs(root) {

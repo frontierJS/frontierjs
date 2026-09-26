@@ -196,7 +196,7 @@ CREATE INDEX IF NOT EXISTS "idx_product_deletedAt" ON "product" ("deletedAt") WH
 CREATE VIRTUAL TABLE IF NOT EXISTS "product_fts" USING fts5(
   name, description,
   content="product",
-  content_rowid="id"
+  content_rowid=rowid
 );
 
 -- Triggers to keep FTS index in sync.
@@ -208,14 +208,14 @@ DROP TRIGGER IF EXISTS "product_fts_update";
 DROP TRIGGER IF EXISTS "product_fts_soft_delete";
 DROP TRIGGER IF EXISTS "product_fts_restore";
 CREATE TRIGGER "product_fts_insert" AFTER INSERT ON "product" BEGIN
-  INSERT INTO "product_fts"(rowid, name, description) VALUES (new.id, new.name, new.description);
+  INSERT INTO "product_fts"(rowid, name, description) VALUES (new.rowid, new.name, new.description);
 END;
 CREATE TRIGGER "product_fts_delete" AFTER DELETE ON "product" BEGIN
-  INSERT INTO "product_fts"("product_fts", rowid, name, description) VALUES ('delete', old.id, old.name, old.description);
+  INSERT INTO "product_fts"("product_fts", rowid, name, description) VALUES ('delete', old.rowid, old.name, old.description);
 END;
 CREATE TRIGGER "product_fts_update" AFTER UPDATE ON "product" BEGIN
-  INSERT INTO "product_fts"("product_fts", rowid, name, description) VALUES ('delete', old.id, old.name, old.description);
-  INSERT INTO "product_fts"(rowid, name, description) VALUES (new.id, new.name, new.description);
+  INSERT INTO "product_fts"("product_fts", rowid, name, description) VALUES ('delete', old.rowid, old.name, old.description);
+  INSERT INTO "product_fts"(rowid, name, description) VALUES (new.rowid, new.name, new.description);
 END;
 
 -- The colorways this shop has run. `ProductVariant.color` stores the NAME

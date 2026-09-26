@@ -83,16 +83,24 @@ core/
                 `register:check` finds a new error. A pick against the
                 recommendation needs a reason. `settle` (`decide --by`) is the
                 strike alone, citing a ruling that already answers it — no id
-                minted, `DECISIONS.md` untouched
+                minted, `DECISIONS.md` untouched. A bullet naming an open
+                § Needs a decision row closes that row too, and a pick takes
+                its id, so a `blocked by` naming it resolves to the ruling
+  decide-walk.js  `fli decide` with no id — the queue one key per question,
+                Enter the recommendation. Writes only through `decide`/`settle`;
+                the tty, the editor and the viewer are handed in, so the test
+                scripts them over real register files
   close.js      the writer behind `register:close` — an issue row MOVED into
                 § Closed in that table's shape, the Detail's links carried into
                 How, and put back when `register:check` finds a new error. It
-                and `decide.js` share `errorKeys`/`newErrors` in register-check.js
+                and `decide.js` share `errorKeys`/`newErrors` in register-check.js,
+                and `moveToClosed` is the move `decide` reuses
   file.js       the writer behind `register:file` — the next id (the max the
                 registers hold anywhere, archive included, at the project's
                 width) atop its severity's table, put back on a new
                 `register:check` error, which is also what catches two sessions
-                minting one id
+                minting one id. `decision` files into § Needs a decision under
+                the next D id; `blocks` writes `blocked by` into the held row
   next.js       the open register ranked — severity, then citations, `blocked by`
                 edges and code touched recently, every term printed with its
                 row. `WEIGHTS` is one frozen table and no flag moves it.
@@ -150,7 +158,15 @@ core/
                 2 MB page, which carries neither marker because it is ungated
   proofs.js     which drive proves a change — owns `DRIVES_FILE`, parses its
                 table and resolves both its columns. A PARSE and never
-                a second table; not a build graph, and it must not become one
+                a second table; not a build graph, and it must not become one.
+                `changedTree` is the ONE reader of what changed — untracked
+                files and their content included — for `proves`, `prove`,
+                `done` and `/api/proves`. Every tier but `path` reads only what
+                the project runs, and the symbol tier only code lines that
+                CHANGED rather than moved, as whole identifiers
+  file-kind.js  what a path IS — source, test, doc, config, generated, asset,
+                example — for `codegraph.js` and `proofs.js` both. Zero
+                dependencies, because `checks.js` reaches it on plain node
   prove.js      runs what `proofs.js` names — each drive's *Start first* steps
                 in order, the drive, then the stop — behind `fli prove`. It owns
                 the ORDER only: spawning is `children.js`'s and every process is

@@ -23,10 +23,13 @@
 // uses.
 //
 // Whether a row closed is read off ISSUES.md, not off what the session says:
-// a session can report success over a row it never moved. The session's last
-// line (`fix-next: <id> <status>`, written by the skill) is read only for what
-// the register cannot show — a row that stopped for a ruling ends the loop,
-// since every later row would be decided without the owner.
+// a session can report success over a row it never moved. So is whether it is
+// BLOCKED — the session met a choice, filed it with `fli file --sev decision
+// --blocks <row>`, and `fli next` now sets the row aside until the owner rules;
+// the loop goes on to the next row. The session's last line (`fix-next: <id>
+// <status>`, written by the skill) is read only for what the register cannot
+// show: `busy`, and `ruling`, a session that asked instead of filing, which
+// ends the loop since nobody is there to answer.
 //
 // The session, its log and the ladder are `headless.mjs`, shared with every
 // loop of this shape; what is here is the row — picked, briefed, read back.
@@ -70,6 +73,7 @@ if (args.help) { printHelp(import.meta.url); process.exit(0) }
 const skipped = new Set()
 let spent     = 0
 let closed    = 0
+let blocked   = 0
 
 for (let n = 0; n < rows; n++) {
   const row = nextRow()
@@ -90,8 +94,8 @@ for (let n = 0; n < rows; n++) {
       model, effort, permission, cap: rung === 0 ? budget : budget * 2,
       tag: 'fix-loop', phases: { orient: 0, fix: 0, prove: 0, close: 0 }, phaseOf,
     })
-    const status = /fix-next: \S+ (closed|ruling|corrected|busy|failed)\s*$/.exec(run.report)?.[1]
-    outcome   = isClosed(row.id) ? 'closed' : status ?? 'failed'
+    const status = /fix-next: \S+ (closed|blocked|ruling|corrected|busy|failed)\s*$/.exec(run.report)?.[1]
+    outcome   = isClosed(row.id) ? 'closed' : isBlocked(row.id) ? 'blocked' : status === 'blocked' ? 'failed' : status ?? 'failed'
     spent    += run.cost
 
     appendLog(LOG, { id: row.id, severity: row.severity, model, effort, cost: run.cost, turns: run.turns, minutes: run.minutes, phases: run.phases, outcome, stop: run.stop, denied: run.denied })
@@ -103,6 +107,7 @@ for (let n = 0; n < rows; n++) {
   if (outcome === 'busy') console.log(`[fix-loop] ${row.id} is another session's work in progress — skipped`)
 
   if (outcome === 'closed') closed++
+  if (outcome === 'blocked') { blocked++; console.log(`[fix-loop] ${row.id} waits on a question it filed — fli decide answers it`) }
   if (outcome === 'ruling') {
     console.log(`[fix-loop] ${row.id} needs a ruling — stopping; answer it with fli decisions, then rerun`)
     break
@@ -110,7 +115,7 @@ for (let n = 0; n < rows; n++) {
   skipped.add(row.id)
 }
 
-console.log(`\n[fix-loop] ${closed} closed · $${spent.toFixed(2)} spent · log ${LOG}`)
+console.log(`\n[fix-loop] ${closed} closed · ${blocked} waiting on a ruling · $${spent.toFixed(2)} spent · log ${LOG}`)
 
 // ─── steps ──────────────────────────────────────────────────
 
@@ -201,6 +206,10 @@ function attemptedBefore(id) {
 }
 
 // The register is the authority: an anchor below the § Closed heading is closed.
+function isBlocked(id) {
+  return JSON.parse(fli(['next', '--json'])).blocked.some(r => r.id === id)
+}
+
 function isClosed(id) {
   const lines  = readFileSync(join(ROOT, 'ISSUES.md'), 'utf8').split('\n')
   const header = lines.findIndex(l => l.startsWith('## Closed'))

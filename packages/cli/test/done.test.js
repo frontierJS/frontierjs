@@ -103,9 +103,12 @@ describe('the diff', () => {
 
       writeFileSync(join(root, 'b.js'), '')
       writeFileSync(join(root, 'a.js'), 'two\n')
+      writeFileSync(join(root, 'c.js'), 'const fresh = 1\n')
       const c = collectChanges(root)
-      expect(c.changed).toEqual(['a.js', 'b.js'])
-      expect(c.added).toEqual(['b.js'])
+      expect(c.changed).toEqual(['a.js', 'b.js', 'c.js'])
+      expect(c.added).toEqual(['b.js', 'c.js'])
+      // An untracked file's content is in the diff the drives are read from.
+      expect(c.diff).toContain('+const fresh = 1')
     } finally { cleanup() }
   })
 })

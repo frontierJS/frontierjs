@@ -48,26 +48,11 @@ export function closeIssue({ root, id, how, today = new Date() }) {
 
   const abs    = join(root, record.file)
   const before = readFileSync(abs, 'utf8')
-  const lines  = before.split('\n')
-  const at     = record.line - 1
-  const cells  = splitRow(lines[at] ?? '')
-  if (cells.length < 4) return refuse(`${record.file}:${record.line} no longer reads as ${record.id}'s row — reread it`)
-
-  const links = [...linksIn(cells[cells.length - 1])]
-  const row   = [
-    cells[0],
-    cells[1] ? `${cells[1]} — ${cells[2]}` : cells[2],
-    isoDate(today),
-    [reason, ...links].join(' · '),
-  ]
-
-  lines.splice(at, 1)
-  const insertAt = closedTableBody(lines)
-  if (insertAt === -1) return refuse(`${record.file} has no § Closed table to move the row into`)
-  lines.splice(insertAt, 0, `| ${row.join(' | ')} |`)
+  const moved  = moveToClosed(before, record, reason, today)
+  if (moved.reason) return refuse(moved.reason)
 
   const baseline = errorKeys(root)
-  writeFileSync(abs, lines.join('\n'))
+  writeFileSync(abs, moved.text)
 
   const added = newErrors(baseline, root)
   if (added.length) {
@@ -75,7 +60,34 @@ export function closeIssue({ root, id, how, today = new Date() }) {
     return refuse(`the close was put back: register:check found ${added.map(f => `${f.rule} — ${f.message}`).join('; ')}`)
   }
 
-  return { ok: true, id: record.id, file: record.file, line: insertAt + 1 }
+  return { ok: true, id: record.id, file: record.file, line: moved.line }
+}
+
+/**
+ * The move itself, on the text of the row's file: `{ text, line }`, or
+ * `{ reason }` when the row or § Closed is not where the record says. Checked
+ * and written by the caller, so `decide` can close a question's row in the same
+ * act as the ruling that answers it.
+ */
+export function moveToClosed(src, record, how, today = new Date()) {
+  const lines = src.split('\n')
+  const at    = record.line - 1
+  const cells = splitRow(lines[at] ?? '')
+  if (cells.length < 4) return { reason: `${record.file}:${record.line} no longer reads as ${record.id}'s row — reread it` }
+
+  const links = [...linksIn(cells[cells.length - 1])]
+  const row   = [
+    cells[0],
+    cells[1] ? `${cells[1]} — ${cells[2]}` : cells[2],
+    isoDate(today),
+    [oneCell(how), ...links].join(' · '),
+  ]
+
+  lines.splice(at, 1)
+  const insertAt = closedTableBody(lines)
+  if (insertAt === -1) return { reason: `${record.file} has no § Closed table to move the row into` }
+  lines.splice(insertAt, 0, `| ${row.join(' | ')} |`)
+  return { text: lines.join('\n'), line: insertAt + 1 }
 }
 
 // ─── where the row goes ───────────────────────────────────────────────────────

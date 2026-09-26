@@ -79,6 +79,7 @@ Then, because every other package sits on this one: `example` and `basecamp`
 | an access rule | one row admitted and one refused, through a real scoped client |
 | a `@map`-sensitive path | `test/column-mapping.test.ts` — mapped and unmapped, compared |
 | a `.lite` word | `test/catalog.test.ts` fails until the catalog has its row |
+| a runtime global in `src/` | `HOST_GLOBALS` in `test/undeclared-names.test.ts` — by name, never all of lib.dom |
 
 ## What the default gets wrong
 

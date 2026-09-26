@@ -1,12 +1,12 @@
 ---
 name: fix-next
-description: Take the top open row from `fli next` (or a named id, or `--pkg <name>`) and carry it from re-probe to closed. Use when asked to fix the next issue.
+description: Take the top open row from `fli next` (or a named id, or `--pkg <name>`) and carry it from re-probe to closed; a choice it meets is filed as a question the row waits on, or put to the user with `--ask`. Use when asked to fix the next issue.
 disable-model-invocation: true
 ---
 
 # Fix next
 
-The loop from *what is open* to *closed with proof*, run without a person copying a row in. Arguments: none (top row), an `FJS-###` (that row), or `--pkg <name>` (top row of that package).
+The loop from *what is open* to *closed with proof*, run without a person copying a row in. Arguments: none (top row), an `FJS-###` (that row), or `--pkg <name>` (top row of that package), and `--ask` with any of them (step 4).
 
 ## 1. Pick
 
@@ -35,7 +35,26 @@ Read a file here only when the brief points at it and the edit needs it, and **r
 
 ## 4. Stop for a ruling
 
-If the fix adds an option, coins a noun, or picks between two designs, run `decision-rules`. **Where it leaves a genuine choice, stop and put the options to the user** — the session's job ends at the question, since a ruling made mid-fix is graded by the code already written.
+If the fix adds an option, coins a noun, or picks between two designs, run `decision-rules`. **Where it leaves a genuine choice, the session's job ends at the question**, since a ruling made mid-fix is graded by the code already written. Undo your own edits to source files first, so the tree carries no half-built fix; the red test's assertion goes into the question instead.
+
+**With `--ask`, put the options to the user in the session** and end with `ruling`.
+
+**Otherwise file it, so the row waits and the next row can start:**
+
+```
+fli file --sev decision --blocks FJS-### --area <pkg> --title "<the question, one sentence>" --detail "Found fixing FJS-### · [IDEAS/owed-rulings.md](IDEAS/owed-rulings.md)"
+```
+
+It answers with a `FJS-D###`. Write the options under a bullet whose lead names that id — in the `## Open questions` of the paper the row cites when that paper argues this, otherwise at the end of `IDEAS/owed-rulings.md`:
+
+```
+- **FJS-D### — <the question>?** <what forced it: the code, the red test's assertion>
+  - **A** — <a real alternative, grounded in the tree>
+  - **B** — <another>
+  - **Recommend A** — <why, in one sentence>
+```
+
+`fli decisions --json` then lists it `decidable`. `fli decide` answers it under that id and closes the row, and `fli next` hands the held row back naming the ruling. End with `blocked`.
 
 ## 5. Fix and prove
 
@@ -56,6 +75,6 @@ The How column is the closed row's whole explanation, in the register's own pros
 
 ## 7. Report
 
-The id, the cause in one sentence, what proves it, and anything found along the way filed as its own `FJS-###` (`fli file`) rather than folded in. **The last line of the report is exactly `fix-next: <id> <status>`**, status one of `closed`, `ruling` (stopped at step 4), `corrected` (step 3 found the row wrong and rewrote it), `busy` (step 1 found another session on it) or `failed`. `scripts/fix-loop.mjs` reads it: `failed` is retried at higher effort, `busy` is skipped, `ruling` ends the loop.
+The id, the cause in one sentence, what proves it, and anything found along the way filed as its own `FJS-###` (`fli file`) rather than folded in. **The last line of the report is exactly `fix-next: <id> <status>`**, status one of `closed`, `blocked` (step 4 filed the question the row now waits on), `ruling` (step 4 under `--ask`), `corrected` (step 3 found the row wrong and rewrote it), `busy` (step 1 found another session on it) or `failed`. `scripts/fix-loop.mjs` reads it: `failed` is retried at higher effort, `busy` and `blocked` go on to the next row, `ruling` ends the loop.
 
 Then end the session. **One row per session**: a second row in the same context carries every file the first one read. A batch is `bun run fix:loop`, which gives each row a fresh session.

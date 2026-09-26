@@ -103,7 +103,8 @@ export async function walk({ root, tty, echo, edit, view, today = new Date() }) 
 
   function report(out, done) {
     if (!out.ok) { echo(`  ✗ ${out.reason}\n`); return 'skip' }
-    echo(done === 'settled' ? `  ✓ struck — answered by ${out.ruling}\n` : `  ✓ ${out.ruling} — ${out.pick}\n`)
+    const row = out.closed ? ` · closed ${out.closed}, and what waited on it is back in fli next` : ''
+    echo(done === 'settled' ? `  ✓ struck — answered by ${out.ruling}${row}\n` : `  ✓ ${out.ruling} — ${out.pick}${row}\n`)
     return done
   }
 }

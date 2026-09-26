@@ -17,7 +17,9 @@ import { join, resolve, dirname } from 'path'
 import { tmpdir } from 'os'
 import { fileURLToPath } from 'url'
 
-import { readProofs, resolveRun, matchChanged, provesFor, packageDirs } from '../core/proofs.js'
+import { execFileSync } from 'child_process'
+
+import { readProofs, resolveRun, matchChanged, provesFor, packageDirs, changedLines, changedTree, changesBehavior } from '../core/proofs.js'
 import { runnables } from '../core/runnables.js'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
@@ -201,6 +203,103 @@ describe('matching the changed column', () => {
 
   test('a change nothing covers answers null rather than everything', () => {
     expect(matchChanged('sierra router', { files: ['docs/readme.md'], packages: pkgs })).toBeNull()
+  })
+
+  test('a symbol is a whole identifier, so find() is not findMany', () => {
+    const row = 'a service `find()` that answers more than the rows'
+    expect(matchChanged(row, { files: [], diff: '+  const rows = await db.order.findMany()', packages: [] })).toBeNull()
+    expect(matchChanged(row, { files: [], diff: '+  const rows = await svc.find(query)', packages: [] })?.tier).toBe('symbol')
+  })
+
+  test('a test, a document or a snapshot does not stand for the package', () => {
+    // Each is a pair: the same change made in source still matches.
+    for (const f of ['packages/sierra/test/live-filter.test.js', 'packages/sierra/README.md', 'packages/sierra/x.snapshot.md']) {
+      expect(matchChanged('sierra prerender/islands/static-safety', { files: [f], packages: pkgs })).toBeNull()
+    }
+    expect(matchChanged('sierra prerender/islands/static-safety', { files: ['packages/sierra/src/router.js'], packages: pkgs })?.tier).toBe('package')
+    // A row that names the test file by path is the row saying so.
+    expect(matchChanged('the filter (`test/live-filter.test.js`)', { files: ['packages/sierra/test/live-filter.test.js'], packages: pkgs })?.tier).toBe('path')
+  })
+
+  test('a symbol in a document, a test or a comment is not a change to it', () => {
+    const row = 'litestone migrations (`autoMigrate`, `diffSchemas`)'
+    const section = (file, line) => `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1,0 +1 @@\n+${line}\n`
+    expect(matchChanged(row, { files: [], diff: section('packages/litestone/CHANGES.md', 'now `autoMigrate` refuses'), packages: [] })).toBeNull()
+    expect(matchChanged(row, { files: [], diff: section('packages/litestone/test/m.test.ts', 'await autoMigrate(db)'), packages: [] })).toBeNull()
+    expect(matchChanged(row, { files: [], diff: section('packages/litestone/src/m.js', '// autoMigrate runs first'), packages: [] })).toBeNull()
+    expect(matchChanged(row, { files: [], diff: section('packages/litestone/src/m.js', 'await autoMigrate(db)'), packages: [] })?.tier).toBe('symbol')
+  })
+
+  test("a command's prose and a JSON line are not read for symbols", () => {
+    const section = (file, line) => `diff --git a/${file} b/${file}\n--- a/${file}\n+++ b/${file}\n@@ -1 +1 @@\n+${line}\n`
+    const row = 'a queue\'s operator verbs — `pause`/`resume`'
+    expect(matchChanged(row, { files: [], diff: section('packages/cli/package.json', '"test": "bun test test/pause.test.js test/new.test.js"'), packages: [] })).toBeNull()
+    expect(matchChanged(row, { files: [], diff: section('packages/cli/commands/queue/stop.md', 'Stop the queue — a pause, not a drain.'), packages: [] })).toBeNull()
+    expect(matchChanged(row, { files: [], diff: section('packages/caravan/src/queue.ts', 'export function pause(name) {'), packages: [] })?.tier).toBe('symbol')
+  })
+
+  test('a fli command is code, even under a namespace called test', () => {
+    expect(changesBehavior('packages/cli/commands/test/done.md')).toBe(true)
+    expect(changesBehavior('packages/cli/test/done.test.js')).toBe(false)
+    expect(changesBehavior('packages/sierra/src/build/prerender.js')).toBe(true)
+  })
+
+})
+
+describe('what changed, as against what moved', () => {
+
+  // A module split in two: the body leaves one file and arrives in another,
+  // gaining an `export` and an import on the way. Nothing it does changed.
+  const split = [
+    'diff --git a/src/client.js b/src/client.js',
+    '--- a/src/client.js', '+++ b/src/client.js',
+    '@@ -1,0 +1 @@ function makeTable(schema) {',
+    "+import { wideDb, narrowRow } from './databases.js'",
+    '@@ -40,3 +41,0 @@ function makeTable(schema) {',
+    '-function wideDb(db) {',
+    '-  return wrapDb(db, narrowRow)',
+    '-}',
+    'diff --git a/src/databases.js b/src/databases.js',
+    'new file mode 100644',
+    '--- /dev/null', '+++ b/src/databases.js',
+    '@@ -0,0 +1,6 @@',
+    '+// databases.js — every connection the client opens.',
+    "+import {",
+    '+  wrapDb,',
+    "+} from './wrap.js'",
+    '+export function wideDb(db) {',
+    '+    return wrapDb(db, narrowRow)',
+    '+}',
+  ].join('\n')
+
+  test('a moved line is not a changed one', () => {
+    expect(changedLines(split)).toBe('')
+    expect(matchChanged('a wide integer — `wideDb`/`narrowRow`', { files: [], diff: split, packages: [] })).toBeNull()
+  })
+
+  test('and a line that moved AND changed is', () => {
+    const edited = split.replace('+    return wrapDb(db, narrowRow)', '+    return wrapDb(db, narrowRow, { safe: true })')
+    expect(changedLines(edited).split('\n').sort()).toEqual([
+      'return wrapDb(db, narrowRow)', 'return wrapDb(db, narrowRow, { safe: true })',
+    ])
+    expect(matchChanged('a wide integer — `wideDb`/`narrowRow`', { files: [], diff: edited, packages: [] })?.on).toEqual(['narrowRow'])
+  })
+
+  test('the working tree includes a new file, content and all', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fli-proofs-git-'))
+    const git  = (...a) => execFileSync('git', ['-C', root, ...a], { stdio: 'ignore' })
+    try {
+      writeFileSync(join(root, 'a.js'), 'function wideDb() {}\n')
+      git('init', '-q'); git('add', '.'); git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'x')
+      writeFileSync(join(root, 'a.js'), '')
+      writeFileSync(join(root, 'b.js'), 'export function wideDb() {}\n')
+
+      const { files, diff } = changedTree(root)
+      expect(files).toEqual(['a.js', 'b.js'])
+      expect(diff).toContain('+export function wideDb() {}')
+      // Which is what lets the move cancel: without b.js, a.js only lost a line.
+      expect(changedLines(diff)).toBe('')
+    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 
 })

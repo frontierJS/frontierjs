@@ -492,34 +492,12 @@ async function handleStatus(req, res) {
 async function handleProves(req, res) {
   try {
     const root = global.projectRoot
-    // `execFileSync`, not a shell: nothing here is caller-supplied and it stays
-    // that way by construction rather than by a validator somebody can loosen.
-    const git = (argv) => {
-      try { return execFileSync('git', ['-C', root, ...argv], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }) }
-      catch { return '' }
-    }
+    const { provesFor, changedTree } = await import('./proofs.js')
+    const { runnables }              = await import('./runnables.js')
 
-    // Git answers paths from the repository root, which is the project root
-    // only when the two are the same directory. A project one level down would
-    // otherwise be matched against paths carrying a prefix its own table never
-    // writes — matching nothing, or worse, matching the wrong row.
-    const top    = git(['rev-parse', '--show-toplevel']).trim()
-    const prefix = top && resolve(top) !== resolve(root)
-      ? `${git(['rev-parse', '--show-prefix']).trim()}`
-      : ''
-
-    const files = git(['diff', '--name-only', 'HEAD']).trim().split('\n')
-      .filter(Boolean)
-      .filter(f => !prefix || f.startsWith(prefix))
-      .map(f => f.slice(prefix.length))
-
+    const { files, diff } = changedTree(root)
     if (!files.length) return json(res, 200, { at: new Date().toISOString(), files: [], rows: [] })
 
-    // `--no-color`: a user's `color.diff = always` colors a piped diff too.
-    const diff = git(['diff', '--no-color', '-U0', 'HEAD'])
-
-    const { provesFor } = await import('./proofs.js')
-    const { runnables } = await import('./runnables.js')
     const rows = provesFor(root, { files, diff, rows: runnables(root) })
 
     json(res, 200, { at: new Date().toISOString(), files, rows })

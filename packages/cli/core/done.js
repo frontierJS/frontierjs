@@ -28,7 +28,7 @@ import { runChecks }                        from './checks.js'
 import { checkSnapshots }                   from './snapshots.js'
 import { runRegisterCheck }                 from './register-check.js'
 import { registerSources }                  from './registers.js'
-import { provesFor }                        from './proofs.js'
+import { provesFor, changedTree }           from './proofs.js'
 import { runnables }                        from './runnables.js'
 
 const CODE        = new Set(['.js', '.mjs', '.ts', '.mesa'])
@@ -36,7 +36,10 @@ const SIBLING_MIN = 3
 
 // ─── the diff ─────────────────────────────────────────────────────────────────
 
-/** What changed against HEAD, untracked files included. */
+/**
+ * What changed against HEAD, untracked files included. The diff is
+ * `changedTree`'s, so the drives listed here are the ones `fli proves` names.
+ */
 export function collectChanges(root) {
   const git = argv => {
     try { return execFileSync('git', ['-C', root, ...argv], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) }
@@ -46,9 +49,7 @@ export function collectChanges(root) {
   const untracked = lines(git(['ls-files', '--others', '--exclude-standard']))
   const changed   = [...new Set([...lines(git(['diff', '--name-only', 'HEAD'])), ...untracked])].sort()
   const added     = [...new Set([...lines(git(['diff', '--name-only', '--diff-filter=A', 'HEAD'])), ...untracked])].sort()
-  // `--no-color`: a user's `color.diff = always` colors a piped diff too, and an
-  // added `## ` line then starts with an escape code and matches nothing.
-  return { changed, added, untracked, diff: git(['diff', '--no-color', '-U0', 'HEAD']) }
+  return { changed, added, untracked, diff: changedTree(root).diff }
 }
 
 // ─── the checks ───────────────────────────────────────────────────────────────
@@ -185,10 +186,7 @@ export function runDone(root, { changes = null, engines = true } = {}) {
   let drives = []
   if (engines) {
     try {
-      // Code only. A regenerated snapshot or an edited document carries every
-      // backticked symbol in the repo, and each would match a proof row.
-      const code = f => !/\.md$|\.snapshot\./.test(f)
-      drives = provesFor(root, { files: c.changed.filter(code), diff: sectionsOf(c.diff, code), rows: runnables(root) })
+      drives = provesFor(root, { files: c.changed, diff: c.diff, rows: runnables(root) })
         .map(r => ({ changed: r.changed, tier: r.match?.tier ?? null, on: r.match?.on ?? [], run: r.targets.map(t => t.command ? `cd ${t.dir ?? t.where} && ${t.command}` : `${t.dir ?? t.where}/${t.name}`) }))
     } catch { drives = [] }
   }
@@ -244,13 +242,6 @@ function nearestWith(root, file, name) {
     dir = dirname(dir)
   }
   return null
-}
-
-// The diff narrowed to the files `keep` accepts.
-function sectionsOf(diff, keep) {
-  return String(diff ?? '').split(/^(?=diff --git )/m)
-    .filter(s => { const m = s.match(/^diff --git a\/\S+ b\/(\S+)/); return m ? keep(m[1]) : false })
-    .join('')
 }
 
 // `git diff -U0` → `file → lines it adds`.
