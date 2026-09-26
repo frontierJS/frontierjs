@@ -1,5 +1,28 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-26 — `client.js`'s module-level helpers move to nine siblings
+
+`core/client.js` was 14,159 lines, and 43 of the last 55 litestone commits
+touched it. A file-level signal on a file that size stays at the top band all
+the time, and two sessions editing it collide. Every top-level declaration that
+`makeTable` and `createClient` consume now lives in a sibling named for its
+concern: `args.js`, `databases.js`, `transaction.js`, `stamps.js`,
+`computed.js`, `field-policy.js`, `include.js`, `hooks.js` and `audit-log.js`.
+`client.js` is 10,798 lines, and what is left is the two closures plus the
+helpers only they use. It is a move and nothing else. No body changed, and
+each file's first lines say what it owns. None of the new modules imports
+`client.js`, so the graph has no cycle. None of them is in the `exports` map.
+
+`VIEW_REFUSED` is imported from `core/args.js` by `tools/typegen.js` and
+`test/view-access.test.ts`. `test/query-tap.test.ts` reads `include.js` as well
+as `client.js`, because `runInclude` moved. The `@createdBy map` comment sits
+above `buildCreatedByMap` in `schema-maps.js` now. It had been left in
+`client.js` when the map builders moved out, and it is the twin of the
+`@updatedBy map` block there. Four imports that nothing referenced were dropped:
+`statSync`, `sql`, `opaqueSortKind` and `keyId`. The TypeScript checker reports
+no unresolved name in any of the ten files beyond the runtime globals the
+original already had (`process`, `setImmediate`, `setTimeout`, `performance`).
+
 
 ## `@@fts` over a String id (FJS-1289)
 

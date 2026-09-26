@@ -20,7 +20,7 @@ import { parse } from '../src/core/parser.js'
 import { createClient } from '../src/core/client.js'
 import { createTestEnv } from '../src/testing.js'
 import { generateTypeScript } from '../src/tools/typegen.js'
-import { VIEW_REFUSED } from '../src/core/client.js'
+import { VIEW_REFUSED } from '../src/core/args.js'
 import { generateJsonSchema } from '../src/jsonschema.js'
 import { levelPasses } from '@frontierjs/toolbelt/gate'
 

@@ -11,7 +11,7 @@
 // closed. stderr is captured to its own file here, which is how a person sees it.
 
 import { describe, test, expect } from 'bun:test'
-import { execSync, spawnSync } from 'child_process'
+import { execSync } from 'child_process'
 import { readFileSync, rmSync, mkdtempSync, mkdirSync, writeFileSync } from 'fs'
 import { resolve, dirname, join } from 'path'
 import { tmpdir } from 'os'
@@ -52,8 +52,8 @@ describe('a reader that quit first', () => {
 // makes one write to the non-blocking fd and drops whatever did not fit — 8192
 // bytes arrive and the rest is gone, with no error on either side. `echo` is
 // `console.log`, so `fli decisions --json | jq` parsed a truncated document. A
-// file or a terminal hides it; only a pipe shows it, which is how every test,
-// CI phase and fli-from-fli call reads fli.
+// file or a terminal hides it, and `spawnSync`'s own pipe drains fast enough to
+// hide most of it, so fli runs behind a shell pipe here, as `| jq` runs it.
 
 describe('a reader that reads everything', () => {
 
@@ -63,8 +63,9 @@ describe('a reader that reads everything', () => {
       mkdirSync(join(dir, 'cli/src/routes'), { recursive: true })
       writeFileSync(join(dir, 'cli/src/routes/big.md'),
         '---\ntitle: big\ndescription: echoes more than a pipe holds\n---\n\n```js\necho(\'x\'.repeat(2000000))\n```\n')
-      const out = spawnSync(process.execPath, [FLI, '--project', dir, 'big'], { cwd: dir, encoding: 'utf8', maxBuffer: 64 << 20 })
-      expect(out.stdout.length).toBe(2000001)
+      const out = execSync(`"${process.execPath}" "${FLI}" --project "${dir}" big 2>/dev/null | cat`,
+        { cwd: dir, encoding: 'utf8', maxBuffer: 64 << 20 })
+      expect(out.length).toBe(2000001)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

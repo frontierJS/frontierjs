@@ -15,7 +15,7 @@ import { pluralize as pluralizeWord } from '@frontierjs/toolbelt/inflect'
 // here it would be a second list beside the thing that owns the answer, and the
 // two would part company on the day a verb is added — which is exactly the shape
 // that left a view without `findManyAndCount` (`FJS-997`).
-import { VIEW_REFUSED } from '../core/client.js'
+import { VIEW_REFUSED } from '../core/args.js'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

@@ -187,7 +187,8 @@ describe('every operation the client emits is declared', () => {
   // one of which the client had always emitted, so an app switching on
   // `event.operation` was handed a type that refuses real events.
   const emitted = () => {
-    const src = readFileSync(new URL('../src/core/client.js', import.meta.url), 'utf8')
+    const src = ['client.js', 'include.js']
+      .map(f => readFileSync(new URL(`../src/core/${f}`, import.meta.url), 'utf8')).join('\n')
     const ops = new Set<string>()
     for (const m of src.matchAll(/fireQuery\(\{ operation: '([a-zA-Z:]+)'/g))          ops.add(m[1]!)
     for (const m of src.matchAll(/runInclude\(\w+, rel\.targetModel, '([a-zA-Z:]+)'/g)) ops.add(m[1]!)

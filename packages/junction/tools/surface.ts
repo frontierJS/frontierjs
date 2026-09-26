@@ -31,7 +31,7 @@ import { dirname, relative, resolve } from 'node:path'
 // `junction jobs` — see tools/app-module.ts. The MODEL is shared with every
 // other register — see src/core/app-model.ts. This file renders and nothing
 // else.
-import { flag, getFlag, rel, fatal, loadApp, checkSnapshot } from './app-module.ts'
+import { flag, getFlag, rel, fatal, loadApp, checkSnapshot, writeOut } from './app-module.ts'
 
 import { describeSurface }              from '../src/core/app-model.ts'
 import type { Surface }                 from '../src/core/app-model.ts'
@@ -282,7 +282,7 @@ if (import.meta.main) {
   const body    = renderSurfaceSnapshot(surface, { source: arg(appPath), command })
 
   if (flag('stdout')) {
-    process.stdout.write(body)
+    await writeOut(body)
   } else if (flag('check')) {
     checkSnapshot(outPath, body, command, 'API surface')
   } else {

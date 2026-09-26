@@ -27,7 +27,7 @@
 //   junction atlas --app api/app.ts [--services api/services]
 //   junction atlas --app api/app.ts --pretty
 
-import { getFlag, flag, fatal, loadApp, quietly } from './app-module.ts'
+import { getFlag, flag, fatal, loadApp, quietly, writeOut } from './app-module.ts'
 import { describeAppModel }                      from '../src/core/app-model.ts'
 
 if (import.meta.main) {
@@ -40,7 +40,7 @@ if (import.meta.main) {
   // `loadApp` already moved the build's own chatter to stderr, so stdout holds
   // the document alone and a caller can pipe it. Compact by default because the
   // reader is a program; `--pretty` is for a person at a terminal.
-  process.stdout.write(JSON.stringify(model, null, flag('pretty') ? 2 : 0) + '\n')
+  await writeOut(JSON.stringify(model, null, flag('pretty') ? 2 : 0) + '\n')
 
   // Same reason as every other tool here: an app built for description is holding
   // a database and a poller nobody asked to stop, and a tool that never exits

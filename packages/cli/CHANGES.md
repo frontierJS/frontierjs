@@ -1,5 +1,32 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-26 — `fli decide <id> --by <ruling>`: a question an existing ruling already answers
+
+A question the tree had settled before anybody framed it had one way out:
+write lettered options so `decide` would take it, and `decide` then minted a
+second ruling id saying what the first said. `settle()` in `core/decide.js`
+strikes the question in its paper citing the existing ruling and writes nothing
+to `DECISIONS.md`. It needs no options. The reason is the recommendation's when
+that names the ruling, and `--why` otherwise — `decide`'s own rule. It refuses
+an unknown ruling, a withdrawn one, and a superseded one, naming what replaced
+it, all read through `readRegisters().decisions`. It has the same
+`register:check` put-back as a pick. `pick` is optional on the command, and
+refused beside `--by`. Three tests in `test/decisions.test.js`. This is the
+`settled` outcome the frame loop will report and the walk will confirm.
+
+## 2026-09-26 — fli under bun writes its whole output to a pipe (`FJS-1361`)
+
+`fli decisions --json | jq` parsed 8192 bytes of a 275 KB document. Under Bun,
+once anything has touched `process.stdout`, `console.log` to a pipe makes one
+write to the non-blocking fd and drops what did not fit, silently; `echo` is
+`console.log`. The installed `fli` runs on node and never saw it, but every test,
+CI phase, tutor step and fli-from-fli call (`config.fli`, `release-view.js`)
+runs it under `process.execPath`, which is bun. `bin/fli.js` now routes
+`console.log`/`info`/`debug` through `process.stdout.write` under bun, which
+queues and drains. `test/pipe.test.js` echoes 2 MB behind a shell pipe — red at
+8192 without the patch. A shell pipe and not `spawnSync`: the latter drains
+fast enough to lose only past ~219 KB.
+
 ## 2026-09-26 — `fli prove <paths>`, the verdict printed last, and known failures named
 
 The first loop run with `fli prove` closed a row in 19 turns, 7 of its 9.7 minutes

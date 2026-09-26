@@ -63,14 +63,38 @@ export function readDecisions(root) {
   return [...ideas, ...issueQuestions(root).filter(q => !argued.has(q.id))]
 }
 
-/** The ones a person can answer now, and the ones waiting on work first. */
+/**
+ * The ones a person can answer now, and the ones waiting on work first.
+ *
+ * `settled` is the third kind: an open question whose recommendation names a
+ * live ruling as already answering it — `fli decide <id> --by <ruling>` takes
+ * it with no new id. Each is `{ ...question, by }`, and it is not in `open`.
+ */
 export function openDecisions(root) {
-  const all = readDecisions(root)
+  const all  = readDecisions(root)
+  const live = liveRulings(root)
+  const by   = new Map(all.filter(q => q.state === 'open').map(q => [q.id, settledBy(q, live)]).filter(([, r]) => r))
   return {
     decidable: all.filter(q => q.state === 'decidable'),
-    open:      all.filter(q => q.state === 'open'),
+    settled:   all.filter(q => by.has(q.id)).map(q => ({ ...q, by: by.get(q.id) })),
+    open:      all.filter(q => q.state === 'open' && !by.has(q.id)),
     ruled:     all.filter(q => q.state === 'ruled').length,
   }
+}
+
+/** Ruling ids a question may still be settled by — neither withdrawn nor superseded. */
+export function liveRulings(root) {
+  return new Set(readRegisters(root).decisions.filter(d => !d.status || d.status === 'amended-by').map(d => d.id))
+}
+
+/**
+ * The live ruling an OPEN question's recommendation names, or null. A
+ * decidable question is not settled whatever its recommendation cites: it has
+ * options somebody wrote to be picked between.
+ */
+export function settledBy(q, live) {
+  if (q.state !== 'open' || !q.recommend?.why) return null
+  return (q.recommend.why.match(QUESTION_ID) ?? []).find(id => live.has(id)) ?? null
 }
 
 /**

@@ -33,10 +33,17 @@ if (flag.json) {
   return
 }
 
-const { decidable, open, ruled } = openDecisions(root)
+const { decidable, settled, open, ruled } = openDecisions(root)
 
 echo('')
-echo(`  fli register:decisions — ${decidable.length} to pick · ${open.length} without options · ${ruled} ruled\n`)
+echo(`  fli register:decisions — ${decidable.length} to pick · ${settled.length} settled by a ruling · ${open.length} without options · ${ruled} ruled\n`)
+
+for (const q of settled) {
+  echo(`  ${q.id}`)
+  echo(`    ${q.question}   ${q.file}:${q.line}`)
+  echo(`    settled by ${q.by}: ${q.recommend.why}`)
+  echo('')
+}
 
 for (const q of decidable) {
   echo(`  ${q.id}`)
@@ -49,7 +56,7 @@ for (const q of decidable) {
   echo('')
 }
 
-if (!decidable.length) {
+if (!decidable.length && !settled.length) {
   echo('  Nothing can be picked yet: no open question carries lettered options.')
   echo('')
 }
@@ -67,8 +74,10 @@ if (flag.open) {
   echo('')
 }
 
-if (decidable.length) {
-  echo('  Pick one: fli register:decide <id> <letter> --section "<DECISIONS.md section>" [--why "…"]')
+if (decidable.length || settled.length) {
+  echo('  Walk them one key each: fli decide')
+  if (decidable.length) echo('  Pick one: fli decide <id> <letter> --section "<DECISIONS.md section>" [--why "…"]')
+  if (settled.length)   echo('  Confirm one: fli decide <id> --by <ruling>')
   echo('')
 }
 ```
@@ -86,3 +95,7 @@ Writing those lines is the work that turns an open question into a
 decision; an issue row's cell cannot hold them, so its options go in the paper
 its Detail links. `fli register:decide` answers one, and `fli gui` shows the
 same queue with the options as buttons.
+
+A question whose recommendation names a live ruling as already answering it is
+listed as **settled**: `fli decide <id> --by <ruling>` strikes it citing that
+ruling and mints no new one. `fli decide` with no id walks both kinds.

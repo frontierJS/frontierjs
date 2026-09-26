@@ -37,7 +37,7 @@
 import { writeFileSync }             from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 
-import { flag, getFlag, rel, fatal, loadApp, checkSnapshot } from './app-module.ts'
+import { flag, getFlag, rel, fatal, loadApp, checkSnapshot, writeOut } from './app-module.ts'
 import { describeJobs }                                      from '../src/core/app-model.ts'
 import type { JobsSurface }                                  from '../src/core/app-model.ts'
 
@@ -157,7 +157,7 @@ if (import.meta.main) {
   const body    = renderJobsSnapshot(surface, { source: arg(appPath), command })
 
   if (flag('stdout')) {
-    process.stdout.write(body)
+    await writeOut(body)
   } else if (flag('check')) {
     checkSnapshot(outPath, body, command, 'set of jobs this app runs')
   } else {

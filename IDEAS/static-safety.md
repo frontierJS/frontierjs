@@ -168,17 +168,51 @@ Two cautions, both inherited from above rather than new:
   build that reads through `asSystem()` to publish a public product catalog from a
   gated `Product` model is a real and reasonable pattern. That argues the rule is
   really "the route must declare the level it publishes at," with 0 as the default.
+  - **A** — keep what shipped: `publishes: N` in route meta, absent means 0, a gate above
+    N fails the build naming the route (`packages/sierra/src/build/static-safety.js:237`,
+    `:285`); an `asSystem()` catalog writes `publishes: 4` once, visible in
+    `routes.snapshot.md` (`FJS-D464`)
+  - **B** — derive the bar from the standing the build client runs as, so an
+    `asSystem()` build clears any gate with nothing written in the route
+  - **Recommend A** — it is built and tested; B makes publishing gated data a thing that
+    happened rather than a thing written down, the exact silence this paper exists to close
 - **Islands complicate it in the right direction.** A `client:*` island fetches at
   runtime with the viewer's session, so gated data inside an island is fine. The
   check must therefore distinguish "read during prerender" from "read by an island"
   — which the island seam already separates cleanly.
+  - **A** — as built: the read set is what the tapped build client sees during
+    prerender (`static-safety.js:204`); an island's runtime fetch never touches that
+    client, so it is excluded by construction, and props handed to a prerendered island
+    ARE counted, correctly, since they are in the HTML
+  - **B** — record island reads explicitly (a third bucket per island) so the classifier
+    table names which data moved into islands
+  - **Recommend A** — the exclusion needs no code; B only matters once the classifier
+    table exists, and belongs to that work, not this rule
 - **What about `@guarded` columns reaching the marker?** An island marker carries its
   props **as rendered** (`CLAUDE.md` § Bridge index). If a prerendered island is
   handed a record containing a guarded column, that column is now in the HTML
   comment. Worth probing — this may already be a live defect rather than a
   hypothetical.
+  - **A** — the build refuses: before a page is written, scan each island's serialized
+    props (`packages/mesa/src/runtime.js:5481`) for any column `db.$protectedFields(accessor)`
+    names, failing like a gate overrun; `publishes: N` does not lift it, since `@guarded`
+    takes no level
+  - **B** — refuse an `asSystem()` build client in the tap, so litestone's own read path
+    strips `@guarded` and the marker can never see one
+  - **C** — leave it, documented as the author's responsibility under `publishes:`
+  - **Recommend A** — `@guarded` is system-only both ways (`packages/litestone/CLAUDE.md`
+    § Protection), so the `asSystem()` build A's sibling question blesses reads it and
+    the model-level check never looks at columns; B forbids the legitimate catalog build,
+    C is a silent permanent leak. Probe it first — if confirmed it is an `FJS-###`
 - Does this belong in Sierra's build or in a shared checker that `marshal` also uses?
   Both read gates against something; see `IDEAS/compliance-from-the-seed.md`.
+  - **A** — stays in Sierra's build: `static-safety.js` over `buildGate()` and the
+    schema registry, which `DECISIONS.md:1451` already names as the owner of *what may
+    reach a public file*; marshal, when built, reads the same `buildGate()`
+  - **B** — lift the gate-vs-surface comparison into a shared checker (toolbelt or
+    litestone tools) that both the build and `fli marshal:map` call
+  - **Recommend A** — the shared part already has one owner (`buildGate()`); marshal is
+    unbuilt, and B extracts an abstraction for a second caller that does not exist yet
 
 ## See also
 

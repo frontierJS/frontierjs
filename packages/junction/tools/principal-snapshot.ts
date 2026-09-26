@@ -35,7 +35,7 @@
 import { writeFileSync }              from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 
-import { flag, getFlag, rel, fatal, loadApp, checkSnapshot } from './app-module.ts'
+import { flag, getFlag, rel, fatal, loadApp, checkSnapshot, writeOut } from './app-module.ts'
 import { describePrincipalRealm }                           from '../src/core/litestone.ts'
 import type { PrincipalRealm }                              from '../src/core/litestone.ts'
 import type { App }                                         from '../src/core/app.ts'
@@ -325,7 +325,7 @@ if (import.meta.main) {
   const body    = renderPrincipalSnapshot(realm, { source: arg(appPath), command })
 
   if (flag('stdout')) {
-    process.stdout.write(body)
+    await writeOut(body)
   } else if (flag('check')) {
     checkSnapshot(outPath, body, command, 'principal a caller resolves to')
   } else {

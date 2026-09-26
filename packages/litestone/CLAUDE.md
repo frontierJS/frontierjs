@@ -182,7 +182,16 @@ src/
     opportunities.js — legal-and-MISSING: a word that would have said it better
     schema-maps.js — the schema read once into the maps the client runs on
     ddl.js — AST to CREATE TABLE / INDEX / TRIGGER; isStoredField, isUpdatedAtField
-    client.js — createClient, makeTable, every verb, hooks, events, the flavors
+    client.js — createClient, makeTable, every verb, the flavors
+    args.js — what a verb may be passed: argument names, where/orderBy/aggregate keys, @guarded on the way in
+    databases.js — the database registry, and the handles over a connection: statement cache, @big, @map
+    transaction.js — $transaction: nesting by async context, read routing while one is open
+    stamps.js — what a write fills in: generated defaults, @createdBy/@updatedBy, @sequence
+    computed.js — @computed: load, normalize, apply to a read row
+    field-policy.js — field @allow(read) applied to read rows
+    include.js — include, and @from on a path that builds its own SQL
+    hooks.js — the hooks, onEvent, onQuery and announce options
+    audit-log.js — @log/@@log: the entry, and the fire-and-forget write of it
     errors.js — every error the client throws; junction builds them by name
     engine.js — the SQL engine seam
     pragmas.js — busy_timeout, the one owner

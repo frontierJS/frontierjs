@@ -202,6 +202,16 @@ export function buildSyncMap(schema) {
   return map
 }
 
+// ─── @createdBy map ───────────────────────────────────────────────────────────
+// { modelName: [{ field, authField }] }
+// @createdBy               → stamps ctx.auth.id on create
+// @createdBy(auth().field) → stamps ctx.auth[field] on create
+//
+// A STAMP, not a default — unlike @default(auth().id) the principal wins over a
+// caller-supplied value, so an authenticated caller cannot forge authorship by
+// putting the column in the payload. Skipped entirely when ctx.auth is null,
+// which is what lets asSystem() seeders and backfills carry authorship in.
+
 export function buildCreatedByMap(schema) {
   const map = {}
   for (const model of schema.models) {

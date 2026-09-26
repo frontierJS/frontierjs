@@ -14,7 +14,7 @@ import { tmpdir }        from 'os'
 import { fileURLToPath } from 'url'
 
 import { readDecisions, openDecisions, rulingSections, QUESTIONS_HEADING } from '../core/decisions.js'
-import { decide, nextDecisionNumber } from '../core/decide.js'
+import { decide, settle, nextDecisionNumber } from '../core/decide.js'
 import { runRegisterCheck }           from '../core/register-check.js'
 
 // Every fixture declares the prefix its rows are written under.
@@ -256,6 +256,83 @@ describe('the pick', () => {
       expect(out.ok).toBe(false)
       expect(out.reason).toMatch(/put back/)
       expect([readFileSync(join(root, 'DECISIONS.md'), 'utf8'), readFileSync(join(root, 'IDEAS', 'views.md'), 'utf8')]).toEqual(was)
+    } finally { cleanup() }
+  })
+})
+
+// ─── settled by an existing ruling ────────────────────────────────────────────
+
+describe('the settle', () => {
+  const OPEN = 'views:does-the-cache-key-grow'
+  const read = (root) => [readFileSync(join(root, 'DECISIONS.md'), 'utf8'), readFileSync(join(root, 'IDEAS', 'views.md'), 'utf8')]
+
+  // Two retired rulings beside the live one, written the way `declaredStatus` reads them.
+  const retire = (root) => writeFileSync(join(root, 'DECISIONS.md'), read(root)[0].replace('## Open (discussed', [
+    '### <a id="fjs-d04"></a>2026-08-02 · `FJS-D04` — replaced.', '', '**Status:** superseded-by `FJS-D03`', '',
+    '### <a id="fjs-d05"></a>2026-08-03 · `FJS-D05` — taken back.', '', '**Status:** withdrawn', '',
+    '## Open (discussed',
+  ].join('\n')))
+
+  test('an open question is struck citing the ruling, and DECISIONS.md is not written', () => {
+    const { root, cleanup } = fixture()
+    try {
+      const [dec] = read(root)
+      const next  = nextDecisionNumber(root)
+      const out   = settle({ root, id: OPEN, by: 'fjs-d03', why: 'the key is the view name, which D03 fixes', today: TODAY })
+      expect(out.ok).toBe(true)
+      expect(out.ruling).toBe('FJS-D03')
+      expect(out.files).toEqual(['IDEAS/views.md'])
+
+      const [decAfter, paper] = read(root)
+      expect(decAfter).toBe(dec)
+      expect(nextDecisionNumber(root)).toBe(next)
+      expect(paper).toContain('- ~~**Does the cache key grow?**~~ **Answered 2026-09-14 (`FJS-D03`): the key is the view name, which D03 fixes.** Nobody')
+      expect(readDecisions(root).find(q => q.id === OPEN).state).toBe('ruled')
+      expect(runRegisterCheck({ root, today: TODAY }).errors).toEqual([])
+    } finally { cleanup() }
+  })
+
+  test('a recommendation naming the ruling is the reason, and one that does not is not', () => {
+    const paper = [
+      '---', 'id: views', 'status: proposed', '---', '', '## Open questions', '',
+      '- **Is a view a model?** Asked twice.',
+      '  - **A** — no', '  - **B** — yes', '  - **Recommend A** — FJS-D03 already rules a view is not a model',
+      '- **Is a view cached?** Asked once.',
+      '  - **A** — no', '  - **B** — yes', '  - **Recommend A** — nothing reads it twice',
+      '',
+    ].join('\n')
+    const { root, cleanup } = fixture({ paper })
+    try {
+      const out = settle({ root, id: 'views:is-a-view-a-model', by: 'FJS-D03', today: TODAY })
+      expect(out.ok).toBe(true)
+      expect(read(root)[1]).toContain('**Answered 2026-09-14 (`FJS-D03`): FJS-D03 already rules a view is not a model.**')
+
+      const bare = settle({ root, id: 'views:is-a-view-cached', by: 'FJS-D03', today: TODAY })
+      expect(bare.ok).toBe(false)
+      expect(bare.reason).toMatch(/does not name FJS-D03, so --why/)
+    } finally { cleanup() }
+  })
+
+  test('every refusal leaves both files untouched', () => {
+    const { root, cleanup } = fixture()
+    try {
+      retire(root)
+      const was = read(root)
+      const refusals = [
+        [{ id: 'views:nope', by: 'FJS-D03', why: 'x' },                   /no question has the id/],
+        [{ id: 'views:is-this-a-view-at-all', by: 'FJS-D03', why: 'x' },  /already ruled/],
+        [{ id: OPEN, by: 'FJS-D99', why: 'x' },                           /no ruling FJS-D99/],
+        [{ id: OPEN, by: '', why: 'x' },                                  /no ruling \(none named\)/],
+        [{ id: OPEN, by: 'FJS-D05', why: 'x' },                           /withdrawn/],
+        [{ id: OPEN, by: 'FJS-D04', why: 'x' },                           /superseded by FJS-D03 — settle by that one/],
+        [{ id: OPEN, by: 'FJS-D03' },                                     /--why has to say/],
+      ]
+      for (const [args, reason] of refusals) {
+        const out = settle({ root, today: TODAY, ...args })
+        expect(out.ok).toBe(false)
+        expect(out.reason).toMatch(reason)
+      }
+      expect(read(root)).toEqual(was)
     } finally { cleanup() }
   })
 })

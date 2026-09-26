@@ -81,7 +81,9 @@ core/
   decide.js     the ONE writer behind `register:decide` and the GUI panel: the
                 ruling, the struck question, and a put-back when
                 `register:check` finds a new error. A pick against the
-                recommendation needs a reason
+                recommendation needs a reason. `settle` (`decide --by`) is the
+                strike alone, citing a ruling that already answers it — no id
+                minted, `DECISIONS.md` untouched
   close.js      the writer behind `register:close` — an issue row MOVED into
                 § Closed in that table's shape, the Detail's links carried into
                 How, and put back when `register:check` finds a new error. It

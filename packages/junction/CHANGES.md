@@ -1,5 +1,17 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-26 — a tool's stdout document survives its own exit (`FJS-1361`)
+
+`junction atlas | cat` delivered 16384 bytes of example's 36 KB model, so
+`fli app:atlas` and `project:map --atlas` read truncated JSON. Every tool under
+`tools/` ends with `process.exit` because the booted app holds handles open, and
+Bun drops a stdout write still queued at exit. `writeOut(body)` in
+`tools/app-module.ts` resolves when the stream has taken the whole write; atlas
+and the `--stdout` branch of surface, principal, notifications and jobs await
+it. `test/tool-stdout.test.ts` runs atlas over a 200-service app behind a shell
+pipe — 16384 of 110197 bytes at HEAD. The snapshot tools' `--stdout` still
+appends the shutdown log lines after the document (`FJS-1362`).
+
 ## 2026-09-26 — a bulk write inside its own service call is announced (`FJS-1308`)
 
 `announceDataWrites` skipped every Litestone event for the service whose call

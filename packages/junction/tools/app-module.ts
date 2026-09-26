@@ -38,6 +38,12 @@ export function fatal(message: string): never {
   process.exit(1)
 }
 
+// Every tool here ends with `process.exit`, and Bun drops a stdout write still
+// queued at exit — a pipe read 16384 bytes of a 36 KB atlas and nothing said
+// so. A document on stdout is awaited until the stream has taken all of it.
+export const writeOut = (body: string) =>
+  new Promise<void>(done => { process.stdout.write(body, () => done()) })
+
 // ─── loading the app ──────────────────────────────────────────────────────────
 //
 // Ambiguity is refused rather than guessed. A module exporting two factories has

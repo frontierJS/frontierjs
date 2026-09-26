@@ -369,6 +369,11 @@ half these exercises are abandoned mid-way and the finding is the only thing tha
 was worth having. A fix lands in the framework tree with a drive in `example/`;
 **the stressor itself proves nothing**, because nothing here runs it.
 
+**Write each question in `PLAN.md` as `### Qn — <question>` with a
+`**Status: …**` line under it, and name the ids its answer produced.** The
+questions are worth collecting across runs (`stressor-questions.md`), and that
+shape is what lets a reader extract them without keeping a second copy.
+
 ### What the first run learned about running one
 
 *Folded back from the calendly stressor, 2026-09-21 — twenty-four ids and one

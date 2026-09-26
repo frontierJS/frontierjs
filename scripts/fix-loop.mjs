@@ -28,6 +28,9 @@
 // the register cannot show — a row that stopped for a ruling ends the loop,
 // since every later row would be decided without the owner.
 //
+// The session, its log and the ladder are `headless.mjs`, shared with every
+// loop of this shape; what is here is the row — picked, briefed, read back.
+//
 // The session streams (stream-json): each tool call prints one line as it
 // happens, since a fix runs for minutes and a single JSON answer at the end
 // is indistinguishable from a hang.
@@ -45,19 +48,14 @@
 // same top row.
 // ============================================================
 
-import { spawn, spawnSync }                                     from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs'
-import { homedir }                                              from 'node:os'
-import { join, dirname }                                        from 'node:path'
-import { createInterface }                                      from 'node:readline'
-import { fileURLToPath, pathToFileURL }                         from 'node:url'
+import { existsSync, readFileSync } from 'node:fs'
+import { join }                     from 'node:path'
+import { pathToFileURL }            from 'node:url'
 
-const ROOT      = dirname(dirname(fileURLToPath(import.meta.url)))
-const LOG_DIR   = join(homedir(), '.fli')
-const LOG       = join(LOG_DIR, 'fix-loop.jsonl')
-const LADDER    = [{ model: 'opus', effort: 'low' }, { model: 'opus', effort: 'high' }]
-const STOP_HOOK = join(ROOT, '.claude', 'hooks', 'fli-done-stop.mjs')
-const OUTLINE   = import(pathToFileURL(join(ROOT, 'packages', 'cli', 'core', 'outline.js')).href).catch(() => null)
+import { ROOT, LOG_DIR, LADDER, runSession, printAttempt, appendLog, lastEntry, fli, rg, citation, parseArgs, printHelp } from './headless.mjs'
+
+const LOG     = join(LOG_DIR, 'fix-loop.jsonl')
+const OUTLINE = import(pathToFileURL(join(ROOT, 'packages', 'cli', 'core', 'outline.js')).href).catch(() => null)
 
 const args       = parseArgs(process.argv.slice(2))
 const rows       = Number(args.rows ?? 5)
@@ -65,11 +63,7 @@ const budget     = Number(args.budget ?? 5)
 const permission = args['permission-mode'] ?? 'auto'
 const dryRun     = Boolean(args['dry-run'])
 
-if (args.help) {
-  const lines = readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n')
-  console.log(lines.slice(3, lines.indexOf(lines[2], 3)).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
-  process.exit(0)
-}
+if (args.help) { printHelp(import.meta.url); process.exit(0) }
 
 // ─── the loop ───────────────────────────────────────────────
 
@@ -91,15 +85,17 @@ for (let n = 0; n < rows; n++) {
       ? `/fix-next ${row.id} — an earlier fix-loop attempt at this row did not close it; the edits under its packages in the working tree are that attempt's, so read git diff and build on them`
       : `/fix-next ${row.id}`
 
-    log({ id: row.id, severity: row.severity, model, effort, outcome: 'started' })
-    const run = await attempt(`${prompt}\n\n${brief}`, { model, effort, cap: rung === 0 ? budget : budget * 2 })
-    outcome   = isClosed(row.id) ? 'closed' : run.status ?? 'failed'
+    appendLog(LOG, { id: row.id, severity: row.severity, model, effort, outcome: 'started' })
+    const run = await runSession(`${prompt}\n\n${brief}`, {
+      model, effort, permission, cap: rung === 0 ? budget : budget * 2,
+      tag: 'fix-loop', phases: { orient: 0, fix: 0, prove: 0, close: 0 }, phaseOf,
+    })
+    const status = /fix-next: \S+ (closed|ruling|corrected|busy|failed)\s*$/.exec(run.report)?.[1]
+    outcome   = isClosed(row.id) ? 'closed' : status ?? 'failed'
     spent    += run.cost
 
-    log({ id: row.id, severity: row.severity, model, effort, cost: run.cost, turns: run.turns, minutes: run.minutes, phases: run.phases, outcome, stop: run.stop, denied: run.denied })
-    const split = Object.entries(run.phases).map(([k, n]) => `${k} ${n}`).join(' · ')
-    console.log(`[fix-loop]   ${model}/${effort}: ${outcome} · $${run.cost.toFixed(2)} · ${run.minutes ?? '?'} min · ${run.turns ?? '?'} turns (${split})${run.denied ? ` · ${run.denied} tool calls denied` : ''}`)
-    if (run.report) console.log(run.report.trim().split('\n').map(l => `[fix-loop]   │ ${l}`).join('\n'))
+    appendLog(LOG, { id: row.id, severity: row.severity, model, effort, cost: run.cost, turns: run.turns, minutes: run.minutes, phases: run.phases, outcome, stop: run.stop, denied: run.denied })
+    printAttempt('fix-loop', { model, effort }, outcome, run)
 
     if (outcome !== 'failed') break
   }
@@ -121,9 +117,7 @@ console.log(`\n[fix-loop] ${closed} closed · $${spent.toFixed(2)} spent · log 
 function nextRow() {
   const argv = ['next', '--json', '--limit', String(rows + skipped.size + 5)]
   if (args.pkg) argv.push('--pkg', args.pkg)
-  const out = spawnSync('fli', argv, { cwd: ROOT, encoding: 'utf8' })
-  if (out.status !== 0) throw new Error(`fli next failed: ${out.stderr}`)
-  return JSON.parse(out.stdout).ready.find(r => !skipped.has(r.id))
+  return JSON.parse(fli(argv)).ready.find(r => !skipped.has(r.id))
 }
 
 // Located, not read: a location is cheap to find by script and costs a turn
@@ -163,17 +157,6 @@ async function preBrief(row) {
   return out.join('\n')
 }
 
-function citation(id) {
-  const anchor = `id="${id.toLowerCase()}"`
-  for (const file of ['DECISIONS.md', 'ISSUES.md', 'ISSUES_ARCHIVE.md']) {
-    const hit = rg(['-F', '--no-filename', '--max-count', '1', anchor, file])[0]
-    if (!hit) continue
-    const said = /\*\*(.+?)\*\*/.exec(hit)?.[1] ?? hit.replace(/^#+\s*<a[^>]*><\/a>/, '').replace(/^.*?—\s*/, '')
-    return `${said.slice(0, 220)}${said.length > 220 ? '…' : ''} (${file})`
-  }
-  return null
-}
-
 // Definition-shaped lines first — the declaration is the line the session opens.
 function where(term, dirs) {
   const hits = rg(['-n', '-F', '--max-columns', '160', '--max-columns-preview', term, ...dirs])
@@ -201,56 +184,6 @@ async function span(hit, spans) {
   spans.set(key, true)
   return [`      → ${outline.pathOf(row)} ${row.start}-${row.end}: fli outline ${path} ${line}`]
 }
-// A user's ~/.ripgreprc (--smart-case, --max-columns) would change what matches and truncate a citation.
-function rg(argv) {
-  const out = spawnSync('rg', ['--no-config', ...argv], { cwd: ROOT, encoding: 'utf8' })
-  return out.stdout ? out.stdout.trim().split('\n').filter(Boolean) : []
-}
-
-function attempt(prompt, { model, effort, cap }) {
-  // Not awaited: it takes ~25s, and a session spends longer than that reading
-  // before its first edit. Lost the race, the session's own item goes unshown —
-  // which is the backstop only, since fix-next runs `fli done` itself.
-  const baseline = spawn('node', [STOP_HOOK, '--baseline'], { cwd: ROOT, stdio: ['pipe', 'ignore', 'ignore'] })
-  baseline.stdin.end('{}')
-  const baselined = new Promise(r => baseline.on('close', r))
-
-  const child = spawn('claude', [
-    '-p', prompt,
-    '--model',           model,
-    '--effort',          effort,
-    '--output-format',   'stream-json',
-    '--verbose',
-    '--max-budget-usd',  String(cap),
-    '--permission-mode', permission,
-    '--setting-sources', 'project,local',
-    '--strict-mcp-config',
-  ], { cwd: ROOT, stdio: ['ignore', 'pipe', 'inherit'] })
-
-  let result   = {}
-  const phases = { orient: 0, fix: 0, prove: 0, close: 0 }
-  let edited   = false
-  createInterface({ input: child.stdout }).on('line', line => {
-    let event
-    try { event = JSON.parse(line) } catch { return }
-    if (event.type === 'result') result = event
-    if (event.type !== 'assistant') return
-    for (const part of event.message?.content ?? []) {
-      if (part.type !== 'tool_use') continue
-      edited ||= writes(part)
-      phases[phaseOf(part, edited)]++
-      console.log(`[fix-loop]     ${part.name}: ${describe(part.input)}`)
-    }
-  })
-
-  return new Promise(done => child.on('close', async code => {
-    await baselined
-    if (!result.type) console.log(`[fix-loop]   claude ended with no result (exit ${code})`)
-    const status = /fix-next: \S+ (closed|ruling|corrected|busy|failed)\s*$/.exec(result.result ?? '')?.[1]
-    done({ cost: result.total_cost_usd ?? 0, turns: result.num_turns, stop: result.subtype, denied: result.permission_denials?.length ?? 0, status, report: result.result, phases, minutes: result.duration_ms ? +(result.duration_ms / 60000).toFixed(1) : null })
-  }))
-}
-
 // Where a session's turns went, so the next *what is slow* is read off the log
 // rather than a transcript replay. A heuristic over the command text: a call is
 // PROVE or CLOSE by what it runs, otherwise ORIENT until the first write and FIX
@@ -262,20 +195,8 @@ function phaseOf(part, edited) {
   return edited ? 'fix' : 'orient'
 }
 
-function writes(part) {
-  if (['Edit', 'Write', 'NotebookEdit'].includes(part.name)) return true
-  return part.name === 'Bash' && /\bsed -i\b|python3? - <<|\btee\b|(^|[^0-9&>])>\s*[^&\s/][^\s]*\.(m?[jt]s|md|lite|mesa|json)\b/.test(part.input?.command ?? '')
-}
-
-function describe(input = {}) {
-  const text = input.description ?? input.file_path ?? input.pattern ?? input.skill ?? input.command ?? input.prompt ?? ''
-  return String(text).split('\n')[0].slice(0, 110)
-}
-
 function attemptedBefore(id) {
-  let lines = []
-  try { lines = readFileSync(LOG, 'utf8').trim().split('\n') } catch {}
-  const last = lines.map(l => { try { return JSON.parse(l) } catch { return {} } }).filter(e => e.id === id).at(-1)
+  const last = lastEntry(LOG, id)
   return Boolean(last) && !['closed', 'corrected', 'busy'].includes(last.outcome)
 }
 
@@ -285,20 +206,4 @@ function isClosed(id) {
   const header = lines.findIndex(l => l.startsWith('## Closed'))
   const anchor = lines.findIndex(l => l.includes(`id="${id.toLowerCase()}"`))
   return header !== -1 && anchor > header
-}
-
-function log(entry) {
-  mkdirSync(LOG_DIR, { recursive: true })
-  appendFileSync(LOG, JSON.stringify({ at: new Date().toISOString(), ...entry }) + '\n')
-}
-
-function parseArgs(argv) {
-  const out = {}
-  for (let i = 0; i < argv.length; i++) {
-    const key = argv[i].replace(/^--/, '')
-    const val = argv[i + 1]
-    if (val === undefined || val.startsWith('--')) out[key] = true
-    else { out[key] = val; i++ }
-  }
-  return out
 }
