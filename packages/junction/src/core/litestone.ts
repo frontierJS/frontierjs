@@ -40,7 +40,7 @@ import { singularize } from '@frontierjs/toolbelt/inflect'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
 import { gradeStanding, levelPasses, LEVELS } from '@frontierjs/toolbelt/gate'
 import type { GradableUser } from '@frontierjs/toolbelt/gate'
-import { normalizeOrderBy, normalizeSelect, type SortParam, type SelectParam } from './query-values.ts'
+import { normalizeOrderBy, normalizeSelect, type SortParam, type SelectParam, type OrderBy } from './query-values.ts'
 
 // Module augmentation: typing ctx.locals.db without forcing a hard
 // Litestone dependency on junction core. Apps using the litestone
@@ -177,7 +177,7 @@ const OPS: Record<string, string> = {
 
 export interface ParsedQuery {
   where: Record<string, unknown>
-  orderBy?: Record<string, 'asc' | 'desc'>[]
+  orderBy?: OrderBy
   offset: number
   limit:  number
   after?: string    // $after — the window's far edge, opaque (`FJS-D145`)

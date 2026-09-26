@@ -63,7 +63,7 @@ export function slugify(s: string): string {
  */
 export async function findScoped(
   accessor: string,
-  opts:     { where?: Record<string, unknown>; limit: number; offset: number; orderBy?: Record<string, string> | Record<string, string>[] },
+  opts:     { where?: Record<string, unknown>; limit: number; offset: number; orderBy?: Record<string, unknown> | Record<string, unknown>[] },
 ) {
   const { rows, total } = await db()[accessor].findManyAndCount({
     where:   opts.where ?? {},

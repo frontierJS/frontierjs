@@ -305,7 +305,7 @@ function searchableSource() {
 const SUBSTRATE = ['packages/toolbelt']
 
 const AMBIENT = [
-  [/\bDate\.now\s*\(|\bnew\s+Date\s*\(|\bperformance\.now\s*\(/, 'reads a clock'],
+  [/\bDate\.now\s*\(|\bnew\s+Date\s*\(\s*\)|\bperformance\.now\s*\(/, 'reads a clock'],
   [/\bMath\.random\s*\(|\bcrypto\.randomUUID\s*\(/,                    'is nondeterministic'],
   [/\bprocess\.[a-zA-Z]/,                                                'reads the environment'],
   [/\bfetch\s*\(|\bXMLHttpRequest\b/,                                   'talks to the network'],

@@ -1,6 +1,13 @@
 # Changes — Basecamp
 
 
+## 2026-09-25 — `findScoped` takes junction's structured `orderBy`
+
+`servers.service.ts` passes `$.directives.orderBy` into `findScoped`, and junction's
+`OrderBy` is now `Record<string, unknown>[]`. `findScoped` accepted only string values,
+which raised typecheck one above the baseline of 13. The parameter now takes
+`Record<string, unknown>`. Types only.
+
 ## 2026-09-25 — an API key naming no workspace acts in its own
 
 `workspaceOrKeys` is the principal resolver's `tenantFrom`: the header or

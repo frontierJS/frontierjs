@@ -2,6 +2,14 @@
 
 
 
+## 2026-09-25 — `SortParam` and `ParsedQuery.orderBy` carry a structured ordering
+
+`OrderBy` was widened so that a relation hop, a nulls placement and a distance keep
+their nesting. The input and output types beside it were not widened, so
+`live-order.test.ts` failed typecheck against a baseline of 0. Now `SortParam`'s object
+forms are `Record<string, unknown>` and `ParsedQuery.orderBy` is `OrderBy`. Types only;
+the suite is 2429/2429.
+
 ## 2026-09-25 — `membershipClaim`'s `tenantFrom` may answer a promise
 
 A credential bound to one tenant names it only through a row the app has to read
