@@ -33,9 +33,9 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `svc.describe()` | `packages/junction/src/core/service.ts` | 10 |
 | `mount(label, Component, {props, root})` | `packages/mesa/src/runtime.js` | 7 |
 | `$setAuth(user)` | `packages/litestone/src/core/client.js` | 6 |
-| `resource.options(field)` | `packages/sierra/src/junction/resource.js` | 6 |
 | `app.principal()` | `packages/junction/src/core/app.ts` | 5 |
 | `resource.save(data, { mode })` | `packages/sierra/src/junction/resource.js` | 5 |
+| `resource.options(field)` | `packages/sierra/src/junction/resource.js` | 4 |
 | `$tapEvents(fn)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkWhere(accessor, where)` | `packages/litestone/src/core/client.js` | 3 |
 | `db.$checkOrderBy(accessor, orderBy)` | `packages/litestone/src/core/client.js` | 3 |
@@ -77,7 +77,7 @@ that claimed the strong check while holding the weak one would be worse than no 
 | `controlFor(rule, {field, model})` / `formFieldList(fields, {only, except, model})` | `packages/sierra/src/junction/field-rules.js` | yes | — |
 | `labelFieldInfo(fields, fallback, declared)` | `packages/sierra/src/junction/field-rules.js` | yes | — |
 | `x-values` | `packages/litestone/src/jsonschema.js` | mentioned | — |
-| `resource.options(field)` | `packages/sierra/src/junction/resource.js` | yes | 6 |
+| `resource.options(field)` | `packages/sierra/src/junction/resource.js` | yes | 4 |
 | `toFieldErrors(err)` | `packages/sierra/src/junction/field-rules.js` | yes | — |
 | `$context.form` | `packages/ui/components/forms/Form.mesa` | mentions `form` — weak | — |
 | `buildRelations()` / `buildGate()` / `canAtLevel()` | `packages/sierra/src/junction/field-rules.js` | yes | — |

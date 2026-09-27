@@ -500,3 +500,92 @@ describe('querying by the tenant’s own key', () => {
     expect(plan).toMatch(/USING (COVERING )?INDEX/)
   })
 })
+
+// Under `strategy row` every tenant shares the declaring TABLE, so the tenant
+// column has to be part of the declaration's key and of every read the pool
+// makes of it. Under `strategy database` the table is per tenant by
+// construction, which is the only place this had been driven (`FJS-1290`).
+describe('under tenancy { strategy row }', () => {
+  const ROW = `
+    tenancy { strategy row  column workspaceId  claim workspaceId }
+    enum FieldKind { text number }
+    model CustomField {
+      id          Int    @id
+      workspaceId Int
+      model       String
+      key         String
+      type        FieldKind
+      slot        String?
+      @@unique([model, key])
+      @@unique([model, slot], nullsDistinct: true)
+    }
+    model Issue {
+      id          Int    @id
+      workspaceId Int
+      title       String
+      fields      Json   @default("{}")
+      @@extensible(fields, declaredBy: CustomField, max: { text: 2, number: 1 })
+    }
+    database main { path ":memory:" }`
+
+  const tenants = async () => {
+    const db = await createClient({ schema: ROW, db: ':memory:' })
+    return { db, a: db.$setAuth({ id: 1, workspaceId: 10 }), b: db.$setAuth({ id: 2, workspaceId: 20 }) }
+  }
+
+  test('the per-workspace key parses, prepended or written out', () => {
+    expect(parse(ROW).errors).toEqual([])
+    expect(parse(ROW.replace('@@unique([model, key])', '@@unique([workspaceId, model, key])')).errors).toEqual([])
+  })
+
+  test('two workspaces each declare the same key, and each gets the first slot', async () => {
+    const { a, b } = await tenants()
+    const sa = await a.customField.create({ data: { model: 'Issue', key: 'severity', type: 'text' } })
+    const sb = await b.customField.create({ data: { model: 'Issue', key: 'severity', type: 'text' } })
+    const cb = await b.customField.create({ data: { model: 'Issue', key: 'customer', type: 'text' } })
+    expect([sa.slot, sb.slot, cb.slot]).toEqual(['t1', 't1', 't2'])
+  })
+
+  test('one workspace filling its pool leaves the other its whole pool', async () => {
+    const { a, b } = await tenants()
+    for (const key of ['x', 'y', 'z'])
+      await a.customField.create({ data: { model: 'Issue', key, type: 'text' } })
+    const first = await b.customField.create({ data: { model: 'Issue', key: 'customer', type: 'text' } })
+    expect(first.slot).toBe('t1')
+  })
+
+  test('a write is mirrored through its own workspace’s declarations only', async () => {
+    const { db, a, b } = await tenants()
+    await a.customField.create({ data: { model: 'Issue', key: 'severity', type: 'text' } })
+    await b.customField.create({ data: { model: 'Issue', key: 'customer', type: 'text' } })
+    await b.issue.create({ data: { id: 1, title: 'x', fields: { severity: 'sev1', customer: 'Initech' } } })
+    const [row] = await db.asSystem().sql`SELECT t1, t2 FROM issue WHERE id = 1`
+    expect(row).toEqual({ t1: 'Initech', t2: null })
+  })
+
+  test('a filter by key reads the caller’s own declarations', async () => {
+    const { a, b } = await tenants()
+    await a.customField.create({ data: { model: 'Issue', key: 'severity', type: 'text' } })
+    await b.customField.create({ data: { model: 'Issue', key: 'customer', type: 'text' } })
+    await b.issue.create({ data: { id: 1, title: 'x', fields: { customer: 'Initech' } } })
+    expect((await b.issue.findMany({ where: { fields: { customer: 'Initech' } } })).map((r: any) => r.id)).toEqual([1])
+    await expect(b.issue.findMany({ where: { fields: { severity: 'sev1' } } })).rejects.toThrow(/not a field this Issue declares/)
+  })
+
+  test('a system write is mirrored through the workspace it states, and refused naming none', async () => {
+    const { db, a } = await tenants()
+    await a.customField.create({ data: { model: 'Issue', key: 'severity', type: 'text' } })
+    const sys = db.asSystem()
+    await sys.issue.create({ data: { id: 1, workspaceId: 20, title: 'x', fields: { severity: 'sev1' } } })
+    await sys.issue.create({ data: { id: 2, workspaceId: 10, title: 'y', fields: { severity: 'sev1' } } })
+    expect(await sys.sql`SELECT id, t1 FROM issue ORDER BY id`).toEqual([{ id: 1, t1: null }, { id: 2, t1: 'sev1' }])
+    await expect(sys.issue.update({ where: { id: 2 }, data: { fields: { severity: 'sev2' } } }))
+      .rejects.toThrow(/names none — state 'workspaceId'/)
+  })
+
+  test('the slot index leads with the tenant column', () => {
+    const issue = parse(ROW).schema.models.find((m: any) => m.name === 'Issue')
+    const idx = issue.attributes.find((a: any) => a.kind === 'index' && a.generated === 'extensible')
+    expect(idx.fields).toEqual(['workspaceId', 't1', 't2', 'n1'])
+  })
+})

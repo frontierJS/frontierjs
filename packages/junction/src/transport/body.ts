@@ -60,6 +60,13 @@ export interface ParsedBody {
    * Absent for multipart (there is no single string) and for an empty body.
    */
   raw?:  string
+  /**
+   * Every byte that was read, for every type. Reading them spent the Request —
+   * a Web body is single-use — and these are what `ctx.$raw.$req` is rebuilt
+   * from, so a mounted fetch-style handler (Better Auth, the MCP transport)
+   * reads the body its caller sent rather than nothing (`FJS-1180`).
+   */
+  bytes?: ArrayBuffer
 }
 
 // ─── The size bound ───────────────────────────────────────────────────────
@@ -199,9 +206,9 @@ export async function parseBody(
     try {
       const text = DECODER.decode(buffer)
       const data = JSON.parse(text)
-      return { type: 'json', data, files: [], size, raw: text }
+      return { type: 'json', data, files: [], size, raw: text, bytes: buffer }
     } catch {
-      return { type: 'json', data: null, files: [], size }
+      return { type: 'json', data: null, files: [], size, bytes: buffer }
     }
   }
 
@@ -209,7 +216,7 @@ export async function parseBody(
   if (baseType === CT_URLENCODED) {
     const text   = DECODER.decode(buffer)
     const data   = parseUrlEncoded(text)
-    return { type: 'urlencoded', data, files: [], size, raw: text }
+    return { type: 'urlencoded', data, files: [], size, raw: text, bytes: buffer }
   }
 
   // ── Multipart ────────────────────────────────────────────────────────
@@ -219,7 +226,7 @@ export async function parseBody(
     // is not.
     const boundaryIdx = contentType.indexOf(BOUNDARY_PREFIX)
     if (boundaryIdx === -1)
-      return { type: 'multipart', data: {}, files: [], size }
+      return { type: 'multipart', data: {}, files: [], size, bytes: buffer }
 
     // A quoted boundary is legal and is what a value containing a comma or a
     // space has to use, so the quotes come off before it is matched against the
@@ -229,23 +236,23 @@ export async function parseBody(
       .trim()
       .replace(/^"(.*)"$/, '$1')
     const { fields, files } = parseMultipart(buffer, boundary, MAX_FILE_SIZE)
-    return { type: 'multipart', data: fields, files, size }
+    return { type: 'multipart', data: fields, files, size, bytes: buffer }
   }
 
   // ── XML ──────────────────────────────────────────────────────────────
   if (baseType === CT_XML_APP || baseType === CT_XML_TEXT) {
     const text = DECODER.decode(buffer)
-    return { type: 'xml', data: text, files: [], size, raw: text }
+    return { type: 'xml', data: text, files: [], size, raw: text, bytes: buffer }
   }
 
   // ── Plain text ────────────────────────────────────────────────────────
   if (baseType.startsWith('text/')) {
     const text = DECODER.decode(buffer)
-    return { type: 'text', data: text, files: [], size, raw: text }
+    return { type: 'text', data: text, files: [], size, raw: text, bytes: buffer }
   }
 
   // ── Binary fallback ───────────────────────────────────────────────────
-  return { type: 'binary', data: buffer, files: [], size }
+  return { type: 'binary', data: buffer, files: [], size, bytes: buffer }
 }
 
 // ─── URL-encoded parser ──────────────────────────────────────────────────

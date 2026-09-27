@@ -11,6 +11,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'fs'
 import { join }   from 'path'
 import { tmpdir } from 'os'
+import { spawnSync } from 'child_process'
 import { fileURLToPath } from 'url'
 
 import { runRegisterCheck, formatRegisterCheck, RULES } from '../core/register-check.js'
@@ -394,6 +395,46 @@ describe('exemptions', () => {
     ].join('\n'))
     expect(of(runRegisterCheck({ root, today: TODAY }), 'unknown-ref')).toHaveLength(0)
     rmSync(root, { recursive: true, force: true })
+  })
+})
+
+// ─── in the tree means committed, not on this disk ───────────────────────────
+//
+// A fresh clone is what CI grades, and it holds neither a sibling checkout nor
+// a build: a link to either passed on the machine that wrote it and failed on
+// every runner (FJS-009).
+
+describe('a dead link is graded against the tree, not the disk', () => {
+  let root
+  beforeAll(() => {
+    root = mkdtempSync(join(tmpdir(), 'fli-regtree-'))
+    writeFileSync(join(root, 'package.json'), DECLARED)
+    writeFileSync(join(root, '.gitignore'), 'dist/\n')
+    mkdirSync(join(root, 'dist'))
+    writeFileSync(join(root, 'dist', 'built.css'), '/* built */\n')
+    mkdirSync(join(root, 'src'))
+    writeFileSync(join(root, 'src', 'real.js'), '// committed\n')
+    writeFileSync(join(root, 'ISSUES.md'), [
+      '## S1 — blockers',
+      '| Id | Pkg | Title | Status | Verified | Detail |',
+      '| --- | --- | --- | --- | --- | --- |',
+      '| <a id="fjs-001"></a>FJS-001 | cli | **Committed.** | open | 2026-08-17 | [a](src/real.js) · [dir](src/) |',
+      '| <a id="fjs-002"></a>FJS-002 | cli | **Build output.** | open | 2026-08-17 | [b](dist/built.css) |',
+      '| <a id="fjs-003"></a>FJS-003 | cli | **Another repo.** | open | 2026-08-17 | [c](../elsewhere/x.ts) |',
+    ].join('\n'))
+    const run = spawnSync('git', ['init', '-q'], { cwd: root })
+    if (run.status !== 0) throw new Error('git init failed')
+  })
+  afterAll(() => rmSync(root, { recursive: true, force: true }))
+
+  test('an ignored file on disk is not in the tree', () => {
+    const hits = of(runRegisterCheck({ root, today: TODAY }), 'dead-link')
+    expect(hits.map(h => h.id)).toEqual(['FJS-002'])
+  })
+
+  test('a link that leaves the root is another repository\'s claim, and not graded', () => {
+    const hits = of(runRegisterCheck({ root, today: TODAY }), 'dead-link')
+    expect(hits.some(h => h.id === 'FJS-003')).toBe(false)
   })
 })
 

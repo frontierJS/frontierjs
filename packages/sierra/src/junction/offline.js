@@ -68,7 +68,7 @@
  */
 
 import { listCache, listKey }              from './list-cache.js'
-import { writeThrough, localDbConfigured } from './local-db.js'
+import { writeRows, localDbConfigured }    from './local-db.js'
 import { getClient }                       from '@frontierjs/sierra/junction'
 
 /**
@@ -115,29 +115,69 @@ export function declareOffline({ service, model, find, query, directives }) {
  * and one it does not gets the slot it always had. So it is a fact rather than
  * a hope, and a screen can say which of the two it is reading.
  *
+ * **Every read is made before any row is written, and the writes run in
+ * passes** (`FJS-1279`). The device keeps the foreign keys between `@@sync`
+ * models and refuses a batch naming a parent it does not hold yet, so writing
+ * in declaration order made a child declared before its parent a device that
+ * held neither the child nor anything saying so — and declaration order is the
+ * order modules happen to evaluate, which an app does not control. A batch the
+ * device refused is written again after the others land, until a pass lands
+ * nothing; what never lands is on the report as `error`, with its rows.
+ *
  * @returns {Promise<Array<{service: string, rows?: number, kept?: boolean, error?: string}>>}
  */
 export async function warmOffline() {
-  const out = []
+  const out  = []
+  const read = []
   for (const { service, model, find, query, directives } of _declared.values()) {
     try {
-      const rows = await find(query, directives)
-
-      // Awaited, unlike the write-through a `load()` makes: nothing is
-      // rendering, so there is no screen to keep off a disk — and the answer
-      // is what decides whether the cache below is written at all.
-      const kept = model && localDbConfigured()
-        ? await writeThrough(model, rows)
-        : false
-
-      if (!kept) await listCache().remember(listKey(service, query, directives), rows)
-
-      out.push({ service, rows: Array.isArray(rows) ? rows.length : 0, kept })
+      const rows  = await find(query, directives)
+      const entry = { service, rows: Array.isArray(rows) ? rows.length : 0, kept: false }
+      out.push(entry)
+      read.push({ entry, service, model, query, directives, rows })
     } catch (err) {
       out.push({ service, error: err?.message ?? String(err) })
     }
   }
+
+  // Awaited, unlike the write-through a `load()` makes: nothing is rendering,
+  // so there is no screen to keep off a disk — and the answer is what decides
+  // whether the cache below is written at all.
+  let left = localDbConfigured() ? read.filter(r => r.model) : []
+  const refused = new Map()
+  while (left.length) {
+    const again = []
+    for (const r of left) {
+      try {
+        r.entry.kept = await writeRows(r.model, r.rows)
+        refused.delete(r)
+      } catch (err) {
+        refused.set(r, err)
+        again.push(r)
+      }
+    }
+    if (again.length === left.length) break
+    left = again
+  }
+
+  for (const [r, err] of refused) {
+    r.entry.error = err?.message ?? String(err)
+    _warnOnce(r.service, err)
+  }
+
+  for (const r of read)
+    if (!r.entry.kept) await listCache().remember(listKey(r.service, r.query, r.directives), r.rows)
+
   return out
+}
+
+// Once per service per document: the warm re-runs on every reconnect, and a
+// window the device cannot hold is refused the same way every time.
+const _warned = new Set()
+function _warnOnce(service, err) {
+  if (_warned.has(service)) return
+  _warned.add(service)
+  console.warn(`[Sierra] the offline warm kept nothing of '${service}' on the device, so its declared read is answered from the list cache: ${err?.message ?? err}`)
 }
 
 /** What a screen needs to say how much is held — service names, in declaration order. */
@@ -172,4 +212,4 @@ function _armWarm() {
 }
 
 /** Test seam: forget every declaration so a suite can build its own. */
-export function _resetOffline() { _declared.clear(); _armed = false }
+export function _resetOffline() { _declared.clear(); _armed = false; _warned.clear() }

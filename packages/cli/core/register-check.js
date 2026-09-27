@@ -30,8 +30,9 @@
 // turns it off for a caller that needs a stable answer.
 
 import { existsSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 
+import { treePaths } from './tree.js'
 import { readRegisters, idPatterns, REGISTER_FILES, ISSUE_STATUS, IDEA_STATUS, RULING_STATUS, SEVERITY } from './registers.js'
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
@@ -170,6 +171,18 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
 
   const known = doc.ids.byId
 
+  // A link is live when a clone would hold it, which the disk does not answer:
+  // an ignored build output and a sibling checkout are both there locally.
+  const tree = treePaths(root)
+  const inTree = (abs) => {
+    const rel = relative(root, abs)
+    return existsSync(abs) && (!tree || tree.has(rel.split(sep).join('/')))
+  }
+  const leavesRoot = (abs) => {
+    const rel = relative(root, abs)
+    return rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)
+  }
+
   // ── every record ──
 
   const all = [...doc.issues, ...doc.decisions, ...doc.ideas]
@@ -194,8 +207,12 @@ export function runRegisterCheck({ root, staleDays = 60, today = new Date() } = 
       // same way from any depth). At the root they coincide, which is why one
       // register could be read with either and the other could not. A path is
       // dead only when neither reading finds it.
-      if (existsSync(resolve(root, dirname(record.file), path))) continue
-      if (existsSync(resolve(root, path))) continue
+      const beside = resolve(root, dirname(record.file), path)
+      if (inTree(beside)) continue
+      if (inTree(resolve(root, path))) continue
+      // Out of the root is another repository's file, and this one has no
+      // authority to call it dead or alive — which is all a grade of it said.
+      if (leavesRoot(beside)) continue
       add('dead-link', record, `links ${path}, which is not in the tree`)
     }
   }

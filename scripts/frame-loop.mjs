@@ -42,7 +42,7 @@ import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { pathToFileURL }  from 'node:url'
 
-import { ROOT, LOG_DIR, LADDER, runSession, printAttempt, appendLog, readLog, citation, parseArgs, printHelp, writes } from './headless.mjs'
+import { ROOT, LOG_DIR, LADDER, runSession, printAttempt, appendLog, readLog, citation, parseArgs, printHelp, trace, writes } from './headless.mjs'
 
 const LOG      = join(LOG_DIR, 'frame-loop.jsonl')
 const DECIDING = import(pathToFileURL(join(ROOT, 'packages', 'cli', 'core', 'decisions.js')).href)
@@ -92,7 +92,7 @@ for (let n = 0; n < rows; n++) {
     const notes = {}
     const run   = await runSession(prompt, {
       model, effort, permission, cap: rung === 0 ? budget : budget * 2,
-      tag: 'frame-loop', phases: { orient: 0, rules: 0, frame: 0, verify: 0, close: 0 },
+      tag: 'frame-loop', where: `${paper.id} [${n + 1}/${rows}]`, phases: { orient: 0, rules: 0, frame: 0, verify: 0, close: 0 },
       phaseOf: (part, edited) => { crossed ??= crossing(part); return phaseOf(part, edited) },
     })
     spent += run.cost
@@ -108,7 +108,7 @@ for (let n = 0; n < rows; n++) {
     }
 
     const summary = Object.values(outcomes).join(' ')
-    appendLog(LOG, { id: paper.id, model, effort, cost: run.cost, turns: run.turns, minutes: run.minutes, phases: run.phases, outcome: summary, outcomes: { ...outcomes }, notes, stop: run.stop, denied: run.denied, crossed })
+    appendLog(LOG, { id: paper.id, model, effort, cost: run.cost, turns: run.turns, minutes: run.minutes, phases: run.phases, outcome: summary, outcomes: { ...outcomes }, notes, stop: run.stop, denied: run.denied, crossed , ...trace(run) })
     printAttempt('frame-loop', { model, effort }, summary, run)
     for (const l of lines) console.log(`[frame-loop]   ${l}`)
 

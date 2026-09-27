@@ -1206,7 +1206,19 @@ const MODEL = [
     '@@log(audit)',
     {
       context: 'database audit {\n  path   "./audit.db"\n  driver logger\n}',
-      seeAlso: ['log', 'database']
+      seeAlso: ['log', 'database', 'anonymous']
+    }
+  ),
+  t(
+    'anonymous',
+    'model',
+    'operate',
+    '',
+    'No row of this model may be attributed. Refused on the model: @@log, @log, @createdBy/@updatedBy/auth(), and @updatedAt/now() (a millisecond is a join key; store a String @date). Refused at runtime: a logged write in the same transaction as one of these rows, because the trail\'s clock in order lines the two up. It closes the join by refusing the other end, and does not hide insertion order: raw SQL still reads the rowids, and a log written in a separate transaction still correlates.',
+    '@@anonymous',
+    {
+      extraFields: 'rating Int\n  answeredOn String @date',
+      seeAlso: ['log', 'createdBy', 'date']
     }
   ),
   t(
@@ -1472,6 +1484,7 @@ export const DOCS = {
   'model:transitions': 'schema.md',
   'model:auth': 'access-control.md',
   'model:log': 'audit-logging.md',
+  'model:anonymous': 'audit-logging.md',
   'model:db': 'multi-database.md',
   'model:trait': 'traits.md',
   'model:createdBy': 'schema.md',
@@ -1622,6 +1635,7 @@ export const TIERS = {
     // model attributes
     'model:relator',
     'model:expires',
+    'model:anonymous',
     'model:effective',
     'model:commitment',
     'model:id',
@@ -1693,6 +1707,7 @@ export const SYNONYMS = {
   'field:hardDelete':  ['cascade', 'purge'],
   'model:softDelete':  ['archive', 'trash', 'recycle'],
   'model:expires':     ['ttl', 'deadline'],
+  'model:anonymous':   ['unattributed', 'ballot', 'survey', 'confidential'],
   'model:effective':   ['valid time', 'validity', 'as of', 'effectivity'],
   'model:commitment':  ['obligation', 'timeout', 'auto-cancel', 'dunning', 'scheduled transition'],
   'model:transitions': ['workflow', 'status'],

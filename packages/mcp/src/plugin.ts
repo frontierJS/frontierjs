@@ -16,20 +16,14 @@
  * `Host` header, and the standing re-read per request. It is `FJS-D258`'s
  * one-execution-path argument taken one process further.
  *
- * ── The three traps this file is arranged around ─────────────────────────────
+ * ── The two traps this file is arranged around ───────────────────────────────
  *
- *   1. The body is GONE by the time a route handler runs. `transport/http.ts`
- *      parses every matched request before dispatch and `body.ts` reads
- *      `req.arrayBuffer()` with no clone, so handing `ctx.$raw.$req` to a
- *      fetch-style handler hands over a Request whose body is spent. The MCP
- *      transport answers `400 Parse error: Invalid JSON`, which says nothing
- *      about what actually happened. Measured, with the rebuild beside it.
- *   2. The SSE keep-alive outlives the socket. The SDK's default interval is
+ *   1. The SSE keep-alive outlives the socket. The SDK's default interval is
  *      15s and Bun's idle timeout — junction's `http.idleTimeout` default — is
  *      10s, so the stream is cut five seconds before the frame that would have
  *      held it open. Measured: dead at 12s, alive past 13s with the interval
  *      under the timeout.
- *   3. The standing is the APP's, not this file's. `sessionGateLevel` is the
+ *   2. The standing is the APP's, not this file's. `sessionGateLevel` is the
  *      fallback grader and an app that declares `GatePlugin({ getLevel })` has
  *      its own — measured a whole rung apart on basecamp. `principalGateLevel`
  *      asks the Data boundary, which is the only answer that matches what will
@@ -227,29 +221,13 @@ async function answer(
   })
   await server.connect(transport)
 
-  return transport.handleRequest(replayBody(ctx))
+  return transport.handleRequest((ctx.$raw as { $req: Request }).$req)
 }
 
 /** The tools `narrow` allows, in their order. Only removes. */
 async function narrowTo(tools: Tool[], user: unknown, narrow: NonNullable<McpOptions['narrow']>): Promise<Tool[]> {
   const keep = await Promise.all(tools.map(t => narrow(t, user)))
   return tools.filter((_, i) => keep[i] === true)
-}
-
-/**
- * The Request, with its body put back.
- *
- * junction reads the body off the wire before any route handler runs, so the
- * original Request is spent and the MCP transport's own read finds nothing.
- * `ctx.rawBody` is the bytes it read — present for every single-string body,
- * which is every MCP request, since the protocol is JSON over POST.
- */
-function replayBody(ctx: RouteCtx<App>): Request {
-  const req = (ctx.$raw as { $req: Request }).$req
-  if (req.method === 'GET' || req.method === 'HEAD') return req
-
-  const raw = ctx.rawBody ?? (ctx.body == null ? '' : JSON.stringify(ctx.body))
-  return new Request(req.url, { method: req.method, headers: req.headers, body: raw })
 }
 
 /**

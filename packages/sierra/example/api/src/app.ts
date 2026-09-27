@@ -104,8 +104,6 @@ app.configure(channels((a: App) => {
 
 app.post('/login', async ctx => {
   // A raw route's ctx is a TransportContext: the parsed body is `ctx.body`.
-  // Re-reading the request (ctx.$raw.$req.json()) silently yields nothing,
-  // which showed up here as "sign in as admin" quietly granting level 4.
   const body  = (ctx.body ?? {}) as { admin?: boolean }
   const token = crypto.randomUUID()
   sessions.set(token, { userId: 'demo@example.com', admin: body.admin === true })

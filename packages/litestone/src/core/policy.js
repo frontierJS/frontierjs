@@ -77,7 +77,11 @@ export function policyExprToString(node) {
     case 'ternary': return `${child(node.cond)} ? ${policyExprToString(node.then)} : ${policyExprToString(node.else)}`
     case 'auth':    return node.field ? `auth().${node.field}` : 'auth()'
     case 'now':     return 'now()'
-    case 'check':   return node.operation ? `check(${node.field}, '${node.operation}')` : `check(${node.field})`
+    // The generated delegation asks the parent's TENANCY and nothing else, and
+    // printing it as `check(rel, 'read')` would claim the parent's whole read
+    // rule — the conflation FJS-1319 was. It has no source spelling.
+    case 'check':   return node.tenancy ? `check(${node.field}, tenancy)`
+      : node.operation ? `check(${node.field}, '${node.operation}')` : `check(${node.field})`
     case 'field':   return node.name
     case 'path':    return `${node.rel}.${node.name}`
     case 'list':    return `[${node.items.map(v => typeof v === 'string' ? `'${v}'` : String(v)).join(', ')}]`
@@ -730,12 +734,17 @@ export function delegationProblems(policyMap, schema, relationMap) {
   // fails closed, so an unreported cycle is the behavior that shipped.
   let budget = 50_000
 
-  const walk = (model, op, path, edges) => {
+  // `tenancyOnly` follows what the compiler follows: a generated delegation
+  // reaches the target's tenancy denies and never its allows.
+  const walk = (model, op, path, edges, tenancyOnly = false) => {
     if (budget-- <= 0) return
     const bucket = policyMap[model]?.[op]
     if (!bucket) return
 
-    for (const rule of [...bucket.allows, ...bucket.denies]) {
+    const rules = tenancyOnly
+      ? bucket.denies.filter(d => d.generated === 'tenancy')
+      : [...bucket.allows, ...bucket.denies]
+    for (const rule of rules) {
       for (const node of checksIn(rule.expr)) {
         const rel = relationMap[model]?.[node.field]
         // A check() over anything but a to-one relation is refused by checkExpr.
@@ -767,7 +776,7 @@ export function delegationProblems(policyMap, schema, relationMap) {
           continue
         }
 
-        walk(target, targetOp, new Set([...path, target]), [...edges, edge])
+        walk(target, targetOp, new Set([...path, target]), [...edges, edge], !!node.tenancy)
       }
     }
   }
@@ -849,12 +858,18 @@ export function buildPolicyMap(schema, relationMap, claims = null) {
 // `auth().<claim> == null` — so the null check is the rule rather than a guard
 // on it: a migration, a seed and any job with no caller read everything, as
 // before.
-function rulesFor(policyMap, modelName, op, ctx) {
+//
+// `tenancyOnly` is the generated delegation's question — *is that parent in my
+// tenant* — which is the parent's generated denies and none of its allows. A
+// parent's read rule is also every visibility rule it has, and asked whole it
+// reported a private team as another workspace's (FJS-1319).
+function rulesFor(policyMap, modelName, op, ctx, tenancyOnly = false) {
   const rules = policyMap?.[modelName]?.[op]
   if (!rules) return null
-  if (!ctx.isSystem) return rules
+  if (!ctx.isSystem && !tenancyOnly) return rules
 
-  const denies = rules.denies.filter(d => d.generated === 'tenancy' && ctx.auth?.[d.claim] != null)
+  const denies = rules.denies.filter(d =>
+    d.generated === 'tenancy' && (!ctx.isSystem || ctx.auth?.[d.claim] != null))
   return denies.length ? { allows: [], denies } : null
 }
 
@@ -1003,7 +1018,7 @@ export function checkPostUpdatePolicy(modelName, row, ctx, policyMap, schema, re
 
 // ─── SQL compiler ─────────────────────────────────────────────────────────────
 
-function buildFilterSql(modelName, op, params, ctx, policyMap, schema, relationMap, visited) {
+function buildFilterSql(modelName, op, params, ctx, policyMap, schema, relationMap, visited, tenancyOnly = false) {
   // Cycle guard. Two models each holding `@@allow('read', check(other))` are
   // deny-by-default whitelists on both sides, and re-entry compiling to '1' made
   // that pair readable by a stranger — measured. There is no sound answer to a
@@ -1017,7 +1032,7 @@ function buildFilterSql(modelName, op, params, ctx, policyMap, schema, relationM
   if (visited.has(modelName)) return '0'
   const next = new Set([...visited, modelName])
 
-  const rules = rulesFor(policyMap, modelName, op, ctx)
+  const rules = rulesFor(policyMap, modelName, op, ctx, tenancyOnly)
   if (!rules) return null
 
   const { allows, denies } = rules
@@ -1319,7 +1334,7 @@ function compileSql(node, params, ctx, modelName, op, policyMap, schema, relatio
       const targetModel = rel.targetModel
       const checkOp     = node.operation ?? op   // default to containing rule's operation
       const subParams   = []
-      const subSql      = buildFilterSql(targetModel, checkOp, subParams, ctx, policyMap, schema, relationMap, visited)
+      const subSql      = buildFilterSql(targetModel, checkOp, subParams, ctx, policyMap, schema, relationMap, visited, !!node.tenancy)
 
       params.push(...subParams)
 
@@ -1397,7 +1412,7 @@ function evalCheck(node, ctx, data, modelName, policyMap, relationMap, op) {
 
   const checkOp = node.operation ?? op ?? 'read'
   const params  = []
-  const subSql  = buildFilterSql(rel.targetModel, checkOp, params, ctx, policyMap, schema, relationMap, new Set([modelName]))
+  const subSql  = buildFilterSql(rel.targetModel, checkOp, params, ctx, policyMap, schema, relationMap, new Set([modelName]), !!node.tenancy)
   if (!subSql) return true   // target has no policy — allow, as compileSql does
 
   const sql = `SELECT 1 FROM "${targetTable}" WHERE "${targetTable}"."${rel.referencedKey}" = ? AND (${subSql}) LIMIT 1`

@@ -35,6 +35,7 @@ let _proxy
 vi.mock('@frontierjs/sierra/junction', () => ({
   getClient: () => ({
     service: () => _proxy,
+    callHeaders: () => ({}),
     resource: () => ({
       service: _proxy,
       store: { get: () => [], subscribe: (fn) => { fn([]); return () => {} }, set: () => {} },

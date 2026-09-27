@@ -40,12 +40,17 @@ const SCHEMA = `
 // visible in the same tick. Yield once — there is no timed buffer to wait for.
 const tick = () => new Promise((r) => setImmediate(r))
 
-async function mkApp(opts: { channel?: string | ((...a: unknown[]) => unknown); transactional?: boolean } = {}) {
+async function mkApp(opts: {
+  channel?: string | ((...a: unknown[]) => unknown)
+  transactional?: boolean
+  methods?: Record<string, (ctx: never) => Promise<unknown>>
+} = {}) {
   const db = await createClient({ db: ':memory:', schema: SCHEMA })
   const app = createApp({ db: db as never })
   app.services.register(createService({
     name: 'orders', model: 'Order', db: db as never,
     ...(opts.transactional ? { transactional: true } : {}),
+    ...(opts.methods ? { methods: Object.keys(opts.methods), ...opts.methods } : {}),
     ...(opts.channel !== undefined ? { channel: opts.channel as never } : {}),
   }))
   app.services.register(createService({ name: 'audits', model: 'Audit', db: db as never }))
@@ -225,6 +230,31 @@ describe('a write with no row to hand over (FJS-307)', () => {
     expect(patched).toEqual([1])
     expect(changed.map(c => `${c.operation}#${c.count}`)).toEqual(['updateMany#2'])
   })
+
+  // The per-row half (`FJS-1357`): the call's publish carries the row it
+  // returns, so only THAT row is covered. A method closing a parent's children
+  // one `update()` at a time changed rows no publish names.
+  for (const transactional of [false, true]) {
+    test(`a single-row write to a sibling inside its own call announces${transactional ? ' (transactional)' : ''}`, async () => {
+      const { db, app, seen } = await mkApp({
+        transactional,
+        methods: {
+          async close() {
+            for (const id of [2, 3]) await sys(db).order.update({ where: { id }, data: { status: 'closed' } })
+            return sys(db).order.update({ where: { id: 1 }, data: { status: 'closed' } })
+          },
+        },
+      })
+      const closed: number[] = []
+      app.events.on('orders:close', (row: { id: number }) => { closed.push(row.id) })
+      await sys(db).order.createMany({ data: [{ status: 'a' }, { status: 'b' }, { status: 'c' }] })
+      await tick()
+      await (app.service('orders') as never as { call(m: string): Promise<unknown> }).call('close')
+      await tick()
+      expect(closed).toEqual([1])
+      expect(seen.sort()).toEqual(['orders:updated#2', 'orders:updated#3'])
+    })
+  }
 })
 
 describe('the socket half', () => {

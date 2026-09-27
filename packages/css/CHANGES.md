@@ -1,5 +1,15 @@
 # Changes — @frontierjs/css
 
+## 2026-09-26 — `dist/` is built on pack, not only on publish
+
+`./bundle.css` and `./bundle.min.css` export `dist/`, which is gitignored and
+was built by `prepublishOnly` alone. `bun pm pack` does not run that hook, so
+`ws:exports` and CI's `scaffold` phase packed a tarball with no `dist/` on any
+fresh clone, and the exports snapshot called both targets unpublished there
+while it was current on a machine that had built once. The build is `prepack`
+now, which `pack --dry-run` and a publish both run; `prepublishOnly` keeps the
+suite.
+
 ## 2026-09-21 — `vocabulary.js` has a fifth reader
 
 `fli ws:terms` reads the generated `vocabulary.json` as a vocabulary register,

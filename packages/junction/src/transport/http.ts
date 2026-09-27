@@ -941,6 +941,7 @@ export class HttpTransport {
     // Lazy cookie parse — most API traffic is bearer-token and never reads
     // ctx.cookies, so don't pay header parsing until first access.
     let _cookies: Record<string, string> | undefined
+    let replayed: Request | undefined
 
     // Build response helpers bound to this request. The request-independent
     // helpers (json/text/html/redirect/stream/empty) are shared, prebuilt
@@ -1097,7 +1098,14 @@ export class HttpTransport {
       },
 
       $raw: {
-        $req: req,
+        // The parse above spent `req`, so a handler handed it reads nothing.
+        // Rebuilt once, on first ask, from the bytes the parse kept.
+        get $req() {
+          if (!parsed.bytes) return req
+          return replayed ??= new Request(req.url, {
+            method: req.method, headers: req.headers, body: parsed.bytes, signal: req.signal,
+          })
+        },
         url:  req.url,
       }
     }

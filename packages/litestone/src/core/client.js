@@ -1507,14 +1507,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // ── Logging helpers ───────────────────────────────────────────────────────
   //
   // All log configuration is pre-computed once at makeTable() time.
-  // Tables with no @log / @@log get tableHasAnyLog = false — the hot path
+  // Tables with no @log / @@log get tableHasLogWork = false — the hot path
   // (findMany, create, update, remove, delete) checks this single boolean and
   // exits immediately with zero allocation cost.
   //
   // Design:
   //   tableFieldLogs  — Map<fieldName, [{db, reads, writes}]> for THIS table only
   //   tableModelLogs  — [{db, reads, writes}] for THIS table only, or null
-  //   tableHasAnyLog  — pre-computed boolean: skip all log work if false
+  //   tableHasLogWork  — pre-computed boolean: skip all log work if false
   //   tableNeedsModel — pre-computed: does any @@log declaration exist for this table
   //   tableNeedsField — pre-computed: does any @log declaration exist for this table
 
@@ -1539,7 +1539,12 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
 
   const tableModelLogs   = _rawModelLogs[modelName] ?? null
-  const tableHasAnyLog   = tableFieldLogs.size > 0 || (tableModelLogs?.length > 0)
+  // An @@anonymous table has no log (the parser refuses one) and still takes
+  // this path, because its writes are what a logged write in the same
+  // transaction is refused against (`FJS-D349`).
+  const tableAnonymous   = ctx.models[modelName]?.attributes?.some(a => a.kind === 'anonymous') ?? false
+  const tableLogsWrites  = !!tableModelLogs?.some(l => l.writes) || [...tableFieldLogs.values()].some(cs => cs.some(c => c.writes))
+  const tableHasLogWork  = tableFieldLogs.size > 0 || (tableModelLogs?.length > 0) || tableAnonymous
   const tableNeedsField  = tableFieldLogs.size > 0
   const tableNeedsModel  = tableModelLogs?.length > 0
 
@@ -1621,7 +1626,18 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // Called once per operation — extracts ids once, shared by both helpers.
   // operation: 'read' | 'write' | 'create' | 'update' | 'delete'
   function emitLogs(operation, rows, { before: beforeMap, after: afterMap, transition = null } = {}) {
-    if (!tableHasAnyLog) return          // ← fast exit for unlogged tables
+    if (!tableHasLogWork) return          // ← fast exit for unlogged tables
+    if (operation !== 'read' && (tableAnonymous || tableLogsWrites) && tx.owns()) {
+      const other = tx.noteWrite(modelName, tableAnonymous)
+      if (other) {
+        const [anon, logged] = tableAnonymous ? [modelName, other] : [other, modelName]
+        throw new Error(
+          `${modelName}: refused a write in a transaction that also wrote ${other}. ${anon} is @@anonymous and ` +
+          `${logged} is logged, and the trail's clock in order re-attributes every ${anon} row. ` +
+          `Drop the log on ${logged} — writing the two in separate transactions leaves the same join and only escapes this check (FJS-D349)`)
+      }
+    }
+    if (tableAnonymous) return
     const ids = extractIds(rows)         // extract once, shared below
 
     // ── Field-level logs ──────────────────────────────────────────────────
@@ -2120,22 +2136,54 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (!model?.attributes?.some(a => a.kind === 'extensible' && a.max)) return null
     const index = model.attributes.find(a => a.kind === 'index' && a.generated === 'extensible')
     if (!index) return null
+    // Slots only: row tenancy leads the index with its tenant column, which is
+    // an index prefix and not a slot anything can be allocated into.
+    const kinds = new Map(model.fields.filter(f => f.extKind).map(f => [f.name, f.extKind]))
     return {
-      order: index.fields,
-      kind:  Object.fromEntries(model.fields.filter(f => f.extKind).map(f => [f.name, f.extKind])),
+      order: index.fields.filter(s => kinds.has(s)),
+      kind:  Object.fromEntries(kinds),
     }
   }
 
-  function _extDeclarations() {
+  function _extDeclarations(tenant) {
     if (!_extensible?.declTable) return []
     const cache = (ctx.extDecl ??= new Map())
-    const hit   = cache.get(modelName)
+    const at    = _extTenantCol ? `${modelName}\0${tenant}` : modelName
+    const hit   = cache.get(at)
     if (hit) return hit
-    const rows = readDb.query(
-      `SELECT "key", "type", "slot" FROM "${_extensible.declTable}" WHERE "model" = ?`
-    ).all(modelName) ?? []
-    cache.set(modelName, rows)
+    const rows = (_extTenantCol
+      ? readDb.query(`SELECT "key", "type", "slot" FROM "${_extensible.declTable}" WHERE "model" = ? AND "${_extTenantCol}" = ?`).all(modelName, tenant)
+      : readDb.query(`SELECT "key", "type", "slot" FROM "${_extensible.declTable}" WHERE "model" = ?`).all(modelName)) ?? []
+    cache.set(at, rows)
     return rows
+  }
+
+  // Under row tenancy every tenant shares the declaring TABLE, so each raw read
+  // of it is narrowed to one tenant — unnarrowed, one tenant's declaration took
+  // another's slot and promoted its values into an indexed column (`FJS-1290`).
+  // Null where there is nothing to narrow: no row tenancy, or a declaring model
+  // with no tenant column, whose declarations are the installation's on purpose.
+  const _extTenantCol = (() => {
+    const t = ctx.schema?.tenancy
+    if (t?.strategy !== 'row') return null
+    const decl = ctx.models?.[_extensible ? _extensible.declaredBy : modelName]
+    return decl?.fields?.some(f => f.name === t.column) ? t.column : null
+  })()
+
+  // Which tenant a pool read is for: the one the payload states, else the
+  // caller's claim, else the one a filter pins. A system call naming none is
+  // refused rather than read across every tenant, because the wrong tenant's
+  // declarations map a value into a slot with nothing failing.
+  function extTenant(data, where) {
+    const col = _extTenantCol
+    if (data && data[col] != null) return data[col]
+    const claim = ctx.auth?.[ctx.schema.tenancy.claim]
+    if (claim != null) return claim
+    const pinned = where?.[col]
+    if (pinned != null && typeof pinned !== 'object') return pinned
+    throw new ValidationError([{ path: [col], message:
+      `${modelName}: @@extensible under row tenancy reads declarations per tenant, and this call names none — ` +
+      `state '${col}' on it, or make it as the tenant` }])
   }
 
   function requiredFailure(f) {
@@ -2172,9 +2220,10 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // table's own gate in front of it. Narrowed because one declaring table
       // serves every extensible model and `t1` on a customer is not `t1` on a
       // product.
-      const taken = new Set(readDb.query(
-        `SELECT "slot" FROM "${tableName}" WHERE "model" = ? AND "slot" IS NOT NULL`
-      ).all(String(data.model)).map(r => r.slot))
+      const taken = new Set((_extTenantCol
+        ? readDb.query(`SELECT "slot" FROM "${tableName}" WHERE "model" = ? AND "slot" IS NOT NULL AND "${_extTenantCol}" = ?`).all(String(data.model), extTenant(data))
+        : readDb.query(`SELECT "slot" FROM "${tableName}" WHERE "model" = ? AND "slot" IS NOT NULL`).all(String(data.model))
+      ).map(r => r.slot))
       // First free of the matching kind, in INDEX order — so the field a
       // tenant declares first lands leftmost, where a one-term query reaches
       // it. A full pool answers null, which is the ordinary end of a pool and
@@ -2187,7 +2236,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   }
 
   function mirrorExtSlots(data, stamped) {
-    const declared = _extDeclarations()
+    const declared = _extDeclarations(_extTenantCol ? extTenant(data) : undefined)
     const blob     = data[_extensible.column]
     const slots    = {}
     // An unpromoted or absent key is omitted rather than written null: a
@@ -2821,7 +2870,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const fromMap = outerIsAliased ? _fromExprMapAliased : _fromExprMap
     if (!where) return buildWhere(where, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, fieldKinds, columnMap, _pointMap)
     where = _hasScopes ? expandScopes(where) : where
-    where = _extensible ? rewriteExtensibleWhere(where) : where
+    where = _extensible ? rewriteExtensibleWhere(where, _extTenantCol ? () => extTenant(null, where) : null) : where
     let rewritten = where
     if (ctx.enc.key) {
       rewritten = rewriteEncryptedWhere(where)
@@ -2852,14 +2901,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
    * request succeeds, the count looks plausible, and the answer is about more
    * rows than were asked for.
    */
-  function rewriteExtensibleWhere(where) {
+  function rewriteExtensibleWhere(where, tenantOf) {
     if (!where || typeof where !== 'object') return where
-    if (Array.isArray(where)) return where.map(rewriteExtensibleWhere)
+    if (Array.isArray(where)) return where.map(w => rewriteExtensibleWhere(w, tenantOf))
 
     const out = {}
     for (const [key, val] of Object.entries(where)) {
       if (key === 'AND' || key === 'OR' || key === 'NOT') {
-        out[key] = rewriteExtensibleWhere(val)
+        out[key] = rewriteExtensibleWhere(val, tenantOf)
         continue
       }
       // Only the blob, and only when handed an object of keys. An operator
@@ -2871,7 +2920,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         continue
       }
 
-      const declared = _extDeclarations()
+      const declared = _extDeclarations(tenantOf?.())
       const byKey    = new Map(declared.map(d => [d.key, d]))
       for (const [k, v] of Object.entries(val)) {
         const d = byKey.get(k)
@@ -4139,7 +4188,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       // READ connection at table-build time, so it cannot see uncommitted writes.
       // The normal path goes through readDb.query(), which routes to the write
       // connection while a transaction is open.
-      if (_fastStmt && !_inTx() && !args.where && !args.orderBy && !args.limit && !args.offset && !args.select && !args.include && !args.withDeleted && !args.onlyDeleted && !args.window && !args.distinct && !plugins?.hasPlugins && !tableHasAnyLog) {
+      if (_fastStmt && !_inTx() && !args.where && !args.orderBy && !args.limit && !args.offset && !args.select && !args.include && !args.withDeleted && !args.onlyDeleted && !args.window && !args.distinct && !plugins?.hasPlugins && !tableHasLogWork) {
         const _needsTiming = ctx.onQuery || ctx._queryListeners.size
         const _t0 = _needsTiming ? performance.now() : 0
         const rows = readAll(_fastStmt.all(), { mode: 'list' })
@@ -4222,7 +4271,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       if (_dists) for (let i = 0; i < rows.length; i++) rows[i][DISTANCE_FIELD] = _dists[i]
       attachFlatEdges(rows, scopedBy)
       if (plugins?.hasPlugins) await plugins.afterRead(modelName, rows, ctx, { select })
-      if (tableHasAnyLog && rows.length > 0) emitLogs('read', rows)
+      if (tableHasLogWork && rows.length > 0) emitLogs('read', rows)
       return rows
     },
 
@@ -4259,7 +4308,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       else row = null
       if (plugins?.hasPlugins && row) await plugins.afterRead(modelName, [row], ctx, { select })
       // ── Logging ──────────────────────────────────────────────────────────────
-      if (tableHasAnyLog && row) emitLogs('read', [row])
+      if (tableHasLogWork && row) emitLogs('read', [row])
       return row
     },
 
@@ -4286,7 +4335,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
               // The plugin hooks are not skipped here — `_canFastFindUnique`
               // requires there to be none. The LOG is a separate question: a
               // table can declare `@@log` with no plugin installed anywhere.
-              if (tableHasAnyLog && rows[0]) emitLogs('read', [rows[0]])
+              if (tableHasLogWork && rows[0]) emitLogs('read', [rows[0]])
               return rows[0] ?? null
             }
           }
@@ -4324,7 +4373,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       // `beforeRead` above was already here, which is what made the gap look
       // like plugin support rather than half of it.
       if (plugins?.hasPlugins && row) await plugins.afterRead(modelName, [row], ctx, { select })
-      if (tableHasAnyLog && row) emitLogs('read', [row])
+      if (tableHasLogWork && row) emitLogs('read', [row])
       return row
     },
 
@@ -4482,7 +4531,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const total = readDb.query(countSql).get(...countParams).n
 
       if (plugins?.hasPlugins) await plugins.afterRead(modelName, rows, ctx, { select })
-      if (tableHasAnyLog && rows.length > 0) emitLogs('read', rows)
+      if (tableHasLogWork && rows.length > 0) emitLogs('read', rows)
 
       return { rows, total }
     },
@@ -5230,7 +5279,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       fireRowEvent('create', 'create', created)
       if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'create', created, ctx)
       // ── Logging ──────────────────────────────────────────────────────────────
-      if (tableHasAnyLog && created) emitLogs('create', [created], { after: created })
+      if (tableHasLogWork && created) emitLogs('create', [created], { after: created })
       // `select: false` still means *do not hand me the row*. A nested write
       // needs the parent's id, so RETURNING could not be skipped — but that is
       // this method's need and it does not change what the caller asked for.
@@ -5246,7 +5295,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // something, and refusing it after the write has landed helps nobody.
       const { mode: _cmMode, wantRows: _cmWantRows } = announceFor(announce)
       // A logged model already takes RETURNING, so opting in costs it nothing.
-      const _cmNeedRows = tableHasAnyLog || _cmWantRows
+      const _cmNeedRows = tableHasLogWork || _cmWantRows
       // Operators are refused on a create-shaped write, and this is where that
       // refusal is made for a bulk one. It used to be reached only by the
       // object-where-a-value-belongs guard in writeData, which cannot see
@@ -5352,7 +5401,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         _cmSql = [...stmts.values()].map(e => e.sql).join('\n')
       })
       fireQuery({ operation: 'createMany', args: { data }, sql: _cmSql, params: null, duration: _nt ? performance.now() - _cmT0 : 0, rowCount: count })
-      if (tableHasAnyLog && _cmInserted?.length) emitLogs('create', _cmInserted)
+      if (tableHasLogWork && _cmInserted?.length) emitLogs('create', _cmInserted)
       // No `where` on the collection form — a batch names its rows by supplying
       // them, and their ids exist only after SQLite assigns them.
       announceBulk({ mode: _cmMode, event: 'create', operation: 'createMany', count, rows: _cmInserted })
@@ -5513,7 +5562,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
         // ── Logging + post-update rollback: capture before snapshot ────────────
         // Also needed when post-update policy exists so rollback has data to revert with.
-        const needsBeforeRow = tableHasAnyLog || (ctx.hasPolicies && ctx.policyMap?.[modelName]?.['post-update'])
+        const needsBeforeRow = tableHasLogWork || (ctx.hasPolicies && ctx.policyMap?.[modelName]?.['post-update'])
         // Two snapshots of one row, and the rollback needs the RAW one. read()
         // parses Json to objects and coerces booleans, and a SQLite parameter
         // cannot be an object — reverting from it threw "Binding expected string,
@@ -5631,10 +5680,10 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         updated = null
         if (_setColsV) {
           // select: false + no post-update side-effects → use run(), skip RETURNING entirely
-          // Note: tableHasAnyLog forces RETURNING even with select: false — the log needs
+          // Note: tableHasLogWork forces RETURNING even with select: false — the log needs
           // before/after snapshots. select: false has no perf benefit on @@log models.
           const _canSkipReturn = select === false
-            && !tableHasAnyLog
+            && !tableHasLogWork
             && !(ctx.hasPolicies && ctx.policyMap?.[modelName]?.['post-update'])
             && !hasNested
             && !edgeWrites.length
@@ -5738,7 +5787,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         // The move by name, and not only for an announced one: an abandon and a
         // cancel write the same before and after, so a SYSTEM-scoped move that
         // is not announced is exactly the one the trail must still tell apart.
-        if (tableHasAnyLog && updated) emitLogs('update', [updated], {
+        if (tableHasLogWork && updated) emitLogs('update', [updated], {
           before: beforeRow, after: updated, transition: _transResult?.transitionName ?? null,
         })
       }
@@ -5809,7 +5858,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // A logged model takes RETURNING so the trail can name the rows it changed.
       // Still one statement — bulk ops record WHICH rows and WHAT operation, never
       // their contents (same shape as createMany; see emitLogs).
-      const _umNeedRows = tableHasAnyLog || _umWantRows
+      const _umNeedRows = tableHasLogWork || _umWantRows
       const _umSql = `UPDATE "${tableName}" SET ${_umSetCols}${finalWhere ? ` WHERE ${finalWhere}` : ''}`
                    + (_umNeedRows ? ` RETURNING *` : '')
       const _nt = needsTiming()
@@ -5832,7 +5881,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         else noteCardinalityBySql(finalWhere, _umWhereP)
       })
       fireQuery({ operation: 'updateMany', args: { where, data }, sql: _umSql, params, duration: _nt ? performance.now() - _umT0 : 0, rowCount: count })
-      if (tableHasAnyLog && _umRows?.length) emitLogs('update', _umRows)
+      if (tableHasLogWork && _umRows?.length) emitLogs('update', _umRows)
       announceBulk({ mode: _umMode, event: 'update', operation: 'updateMany', where, count, rows: _umRows })
       return { count }
     },
@@ -5905,7 +5954,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // to the original read-then-write implementation below.
       fastPath: if (
         !plugins?.hasPlugins && !emitter && !ctx._eventListeners.size &&
-        !ctx.hasPolicies && !tableHasAnyLog && !_tableTransitions &&
+        !ctx.hasPolicies && !tableHasLogWork && !_tableTransitions &&
         !softDelete && !hasTemplates && !effective && !hasFieldPolicy && !_rawFilter &&
         !ctx.sequenceMap?.[modelName]?.length &&
         !ctx.updatedByMap?.[modelName]?.length &&
@@ -6061,7 +6110,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // again: the caller asked for precision, and knowing which half a row fell
       // in is the difference between announcing `create` and announcing `update`
       // — the compromise the collection form has to make and this one does not.
-      const _usNeedRows = tableHasAnyLog || _usWantRows
+      const _usNeedRows = tableHasLogWork || _usWantRows
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data }, ctx)
 
       const autoId       = ctx.autoIdMap?.[modelName]
@@ -6272,7 +6321,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         sql = [...stmts.values()].map(e => e.sql).join('\n')
       })
       fireQuery({ operation: 'upsertMany', args: { data, conflictTarget, update: updateFields }, sql, params: null, duration: _nt ? performance.now() - _usT0 : 0, rowCount: count })
-      if (tableHasAnyLog) {
+      if (tableHasLogWork) {
         if (_usCreated?.length) emitLogs('create', _usCreated)
         if (_usUpdated?.length) emitLogs('update', _usUpdated)
       }
@@ -6369,7 +6418,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         fireRowEvent('remove', 'remove', softResult)
         if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'delete', softResult, ctx)
         // ── Logging ──────────────────────────────────────────────────────────
-        if (tableHasAnyLog) emitLogs('delete', [softResult], { before: { ...softResult, deletedAt: null } })
+        if (tableHasLogWork) emitLogs('delete', [softResult], { before: { ...softResult, deletedAt: null } })
         return softResult
       }
 
@@ -6384,7 +6433,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'delete', row, ctx)
       if (plugins?.hasPlugins) await plugins.afterDelete(modelName, [row], ctx)
       // ── Logging ───────────────────────────────────────────────────────────
-      if (tableHasAnyLog && row) emitLogs('delete', [row], { before: row })
+      if (tableHasLogWork && row) emitLogs('delete', [row], { before: row })
       return row
     },
 
@@ -6393,7 +6442,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // real DELETE FROM on hard-delete tables.
     async removeMany({ where, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
       const { mode: _rmMode, wantRows: _rmWantRows } = announceFor(announce)
-      const _rmNeedRows = tableHasAnyLog || _rmWantRows
+      const _rmNeedRows = tableHasLogWork || _rmWantRows
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
       const _flags = { withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf }
@@ -6459,7 +6508,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
           if (!_rmsRows) writeDb.run(_rmsSql, ts, ...params)
           softCount = _rmsRows ? _rmsRows.length : rowsChanged(writeDb)
         })
-        if (tableHasAnyLog && _rmsRows?.length) emitLogs('delete', _rmsRows)
+        if (tableHasLogWork && _rmsRows?.length) emitLogs('delete', _rmsRows)
         announceBulk({ mode: _rmMode, event: 'remove', operation: 'removeMany', where, count: softCount, rows: _rmsRows })
         return { count: softCount }
       }
@@ -6479,7 +6528,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       fireQuery({ operation: 'removeMany', args: { where }, sql: _rmnSql, params, duration: _nt ? performance.now() - _rmnT0 : 0, rowCount: count })
       if (plugins?.hasPlugins && affectedRows.length)
         await plugins.afterDelete(modelName, affectedRows, ctx)
-      if (tableHasAnyLog && _rmnRows?.length) emitLogs('delete', _rmnRows)
+      if (tableHasLogWork && _rmnRows?.length) emitLogs('delete', _rmnRows)
       announceBulk({ mode: _rmMode, event: 'remove', operation: 'removeMany', where, count, rows: _rmnRows })
       return { count }
     },
@@ -6570,7 +6619,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // Un-deleting is a write and belongs in the trail. It logs as 'update' —
       // the entry vocabulary is create|update|delete|read, and a restored row is
       // a row that changed state, not one that was created.
-      if (tableHasAnyLog && restored.length) emitLogs('update', restored)
+      if (tableHasLogWork && restored.length) emitLogs('update', restored)
       // The rows, shaped — not `{ count }`. Three sources claimed three
       // different answers here (index.d.ts said one row, CLAUDE.md said an
       // array, the code returned a count), so the TypeScript declaration
@@ -7127,7 +7176,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // from the same region (FJS-307).
       if (row) fireRowEvent('remove', 'delete', row)
       // ── Logging ───────────────────────────────────────────────────────────
-      if (tableHasAnyLog && row) emitLogs('delete', [row], { before: row })
+      if (tableHasLogWork && row) emitLogs('delete', [row], { before: row })
       return row
     },
 
@@ -7135,7 +7184,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
     // Real DELETE FROM — bypasses soft delete. where is optional (deletes all if omitted).
     async deleteMany({ where, announce, withDeleted, onlyDeleted, withTemplates, onlyTemplates, withExpired, onlyExpired, asOf } = {}) {
       const { mode: _dmMode, wantRows: _dmWantRows } = announceFor(announce)
-      const _dmNeedRows = tableHasAnyLog || _dmWantRows
+      const _dmNeedRows = tableHasLogWork || _dmWantRows
       if (plugins?.hasPlugins) await plugins.beforeDelete(modelName, { where }, ctx)
       const params   = []
       const whereSql = buildWhereWithEncryption(
@@ -7170,7 +7219,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       fireQuery({ operation: 'deleteMany', args: { where }, sql: _dmnSql, params, duration: _nt ? performance.now() - _dmnT0 : 0, rowCount: result.changes })
       if (plugins?.hasPlugins && affectedRows.length)
         await plugins.afterDelete(modelName, affectedRows, ctx)
-      if (tableHasAnyLog && _dmnRows?.length) emitLogs('delete', _dmnRows)
+      if (tableHasLogWork && _dmnRows?.length) emitLogs('delete', _dmnRows)
       announceBulk({ mode: _dmMode, event: 'remove', operation: 'deleteMany', where, count: result.changes, rows: _dmnRows })
       return { count: result.changes }
     },
@@ -8503,6 +8552,9 @@ function makeLockPrimitive(rawWriteDb) {
     typeMap,
     enumTypeMap,
     extDeclarers,
+    // Shared by reference: a scoped client is `{ ...ctx }`, and a cache each
+    // copy created for itself was one the declaring table's write never cleared.
+    extDecl:       new Map(),
     fieldPolicyMap,
     policyMap,
     hasPolicies:   Object.keys(policyMap).length > 0,

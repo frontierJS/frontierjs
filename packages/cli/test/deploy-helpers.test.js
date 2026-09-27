@@ -50,12 +50,12 @@ async function loadModuleHelpers() {
   const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor
   const fn = new AsyncFunction(`
     ${scriptMatch[1]}
-    return { resolveTarget, resolveDeployConf, swapContainer }
+    return { resolveTarget, resolveDeployConf, swapContainer, healthOrRestore }
   `)
   return fn()
 }
 
-const { resolveTarget, resolveDeployConf, swapContainer } = await loadModuleHelpers()
+const { resolveTarget, resolveDeployConf, swapContainer, healthOrRestore } = await loadModuleHelpers()
 
 // ─── loadFrontierConfig ───────────────────────────────────────────────────────
 
@@ -398,5 +398,51 @@ describe('swapContainer', () => {
     const { runCmd } = drive({ deployConf: {} })
 
     expect(runCmd.indexOf('--env PORT=3000')).toBeGreaterThan(runCmd.indexOf('--env-file'))
+  })
+})
+
+// ─── healthOrRestore ──────────────────────────────────────────────────────────
+//
+// `restored` is read by the revert as *the release that was serving is running
+// again*, and `docker start` answers the moment the process exists — before the
+// app has migrated and bound. On a slow runner the check right after a refused
+// deploy found the put-back release still booting (FJS-009), so the restore is
+// polled like the deploy was, and only an answer counts.
+
+describe('healthOrRestore', () => {
+  const drive = ({ answersAfterRestore }) => {
+    const commands = []
+    let restored = false
+    const context = {
+      config: {},
+      exec: ({ command, input }) => {
+        const body = input ?? command
+        commands.push(body)
+        if (body.includes('docker rename')) { restored = true; return 'restored' }
+        if (body.includes('curl')) {
+          if (restored && answersAfterRestore) return 'ok'
+          throw new Error('fail')
+        }
+        return ''
+      },
+    }
+    const result = healthOrRestore(context, {
+      host: 'localhost', container: 'my-app-api', replaced: 'my-app-api_replaced',
+      apiPort: 7102, healthPath: '/api/health', attempts: 1, intervalS: 0,
+      log: { info() {}, success() {}, warn() {}, error() {} },
+    })
+    return { commands, result }
+  }
+
+  test('the put-back container is polled before it is called restored', () => {
+    const { commands } = drive({ answersAfterRestore: true })
+    const rename = commands.findIndex(c => c.includes('docker rename'))
+    expect(rename).toBeGreaterThanOrEqual(0)
+    expect(commands.slice(rename + 1).some(c => c.includes('curl'))).toBe(true)
+  })
+
+  test('a put-back container that never answers is not restored', () => {
+    expect(drive({ answersAfterRestore: false }).result).toEqual({ healthy: false, restored: false })
+    expect(drive({ answersAfterRestore: true }).result).toEqual({ healthy: false, restored: true })
   })
 })

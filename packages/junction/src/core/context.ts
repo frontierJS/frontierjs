@@ -854,12 +854,13 @@ export const $: CallContext = new Proxy({} as CallContext, {
 // `announcingService()`, and litestone buffers a transaction's events to the
 // commit — where the innermost span is the OUTER call's, so the comparison
 // missed and the row was broadcast twice (measured: three events for one inner
-// create). A name in this set is a name some call in this transaction has taken
-// responsibility for.
+// create). A name in this map is a name some call in this transaction has taken
+// responsibility for, and its set is the ids of the rows it will announce --
+// only those, since a sibling the call wrote is in no payload (`FJS-1357`).
 export interface CommitScope {
   effects:       Array<() => unknown>
   announcements: Array<() => Promise<void>>
-  announced:     Set<string>
+  announced:     Map<string, Set<string>>
 }
 
 const _commitScopeStore = new AsyncLocalStorage<CommitScope>()
@@ -883,16 +884,11 @@ export function runInCommitScope<T>(fn: (scope: CommitScope, owner: boolean) => 
   // proxy for it (is it empty? is a flag set?) is true of a scope somebody else
   // opened a moment ago and has not filled yet.
   if (existing) return fn(existing, false)
-  const scope: CommitScope = { effects: [], announcements: [], announced: new Set() }
+  const scope: CommitScope = { effects: [], announcements: [], announced: new Map() }
   return _commitScopeStore.run(scope, () => fn(scope, true))
 }
 
-/** Has some call in this transaction taken responsibility for announcing `name`? */
-export function announcedInCommitScope(name: string): boolean {
-  return _commitScopeStore.getStore()?.announced.has(name) ?? false
-}
-
-// ─── Which service is announcing this call? ───────────────────────────────
+// ─── Which service is announcing this call, and which rows ───────────────
 // Read by the Litestone adapter's write tap, which announces a write that
 // nothing else did. Every service write also passes that tap, so without this
 // the same mutation would be broadcast twice — once by callService's
@@ -904,19 +900,61 @@ export function announcedInCommitScope(name: string): boolean {
 // row an orders hook writes — is not covered by that announcement and must
 // still fire. A boolean swallowed it, measured.
 //
+// And the ROWS, for the same reason one step narrower: the announcement carries
+// the rows the call returns, so a method closing a parent's children one
+// `update()` at a time wrote rows no payload names, and suppressing by name
+// alone told nobody (`FJS-1357`). Which rows are covered is not known until the
+// call has a result, and the tap sees the write before that — so a write under
+// the call's name waits in `deferred` until the call settles, and one arriving
+// after it is answered from `ids` directly. Either order, one answer.
+//
 // An ALS rather than a counter or a field: calls interleave, and a depth
 // integer shared between two concurrent requests decrements under the wrong
-// one. A nested call re-runs this with its own name, so the innermost scope is
+// one. A nested call re-runs this with its own record, so the innermost scope is
 // what the tap compares against — which is exactly the call that will announce.
-const _serviceCallStore = new AsyncLocalStorage<string>()
+export interface CallCoverage {
+  name:     string
+  /** The ids the call's announcement covers; null until the call settles. */
+  ids:      Set<string> | null
+  deferred: Array<{ id: unknown; announce: () => void }>
+}
 
-export function runInServiceCall<T>(service: string, fn: () => T): T {
-  return _serviceCallStore.run(service, fn)
+const _serviceCallStore = new AsyncLocalStorage<CallCoverage>()
+
+export function runInServiceCall<T>(coverage: CallCoverage, fn: () => T): T {
+  return _serviceCallStore.run(coverage, fn)
 }
 
 /** The service whose announcement covers a write happening right now, if any. */
 export function announcingService(): string | undefined {
-  return _serviceCallStore.getStore()
+  return _serviceCallStore.getStore()?.name
+}
+
+/**
+ * The tap's question: is the write of row `id` to `name` covered by an
+ * announcement some call will make? True when it is, and when it has been held
+ * until the call knows — `announce` then runs at `settleCoverage` if the call's
+ * rows turn out not to include it.
+ */
+export function coveredWrite(name: string, id: unknown, announce: () => void): boolean {
+  const inTransaction = _commitScopeStore.getStore()?.announced.get(name)
+  if (inTransaction && id != null && inTransaction.has(String(id))) return true
+  const call = _serviceCallStore.getStore()
+  if (call?.name !== name) return false
+  if (call.ids === null) { call.deferred.push({ id, announce }); return true }
+  return id != null && call.ids.has(String(id))
+}
+
+/** The call has its result: `ids` are the rows it announces, and every held write outside them announces now. */
+export function settleCoverage(call: CallCoverage, ids: Set<string>): void {
+  call.ids = ids
+  const held = call.deferred
+  call.deferred = []
+  for (const { id, announce } of held) {
+    if (id != null && ids.has(String(id))) continue
+    try { announce() }
+    catch (e) { console.error(`[Junction] announcing a write '${call.name}' made to a row it did not return threw: ${(e as Error)?.message}`) }
+  }
 }
 
 /**

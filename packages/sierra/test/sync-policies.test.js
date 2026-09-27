@@ -38,10 +38,15 @@ const SIERRA_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 
 let _proxy
 const _calls = []
+let _headers = {}
+const _listeners = []
 
 vi.mock('@frontierjs/sierra/junction', () => ({
   getClient: () => ({
     service: () => _proxy,
+    callHeaders: () => ({ ..._headers }),
+    on: (event, fn) => { _listeners.push([event, fn]) },
+    connected: false,
     resource: () => ({
       service: _proxy,
       store: { get: () => [], subscribe: (fn) => { fn([]); return () => {} }, set: () => {} },
@@ -76,6 +81,8 @@ let patching = (id, d) => Promise.resolve({ ...d })
 
 beforeEach(async () => {
   _calls.length = 0
+  _headers = {}
+  _listeners.length = 0
   _resetPendingQueue()
   _resetAttachmentQueue()
   patching = (id, d) => Promise.resolve({ ...d })
@@ -124,6 +131,20 @@ describe('the policy reaches the browser as itself', () => {
 // ─── append ───────────────────────────────────────────────────────────────
 
 describe('append — rows are only ever added', () => {
+  // FJS-1300: the replay states the workspace the write was made in, so the
+  // entry has to hold it, and the live call says the same thing under the
+  // same key.
+  test('a held write keeps the call headers it was made under', async () => {
+    _headers = { 'x-workspace-id': 'acme' }
+    let stated
+    _proxy.create = (d, p, opts) => { stated = opts; return offline() }
+    const ledger = createResource('ledgers', { model: 'Ledger' })
+    await ledger.save({ name: 'opening' }).catch(() => {})
+    _headers = { 'x-workspace-id': 'globex' }
+    expect(held()[0].callHeaders).toEqual({ 'x-workspace-id': 'acme' })
+    expect(stated.callHeaders).toEqual({ 'x-workspace-id': 'acme' })
+  })
+
   test('a create is held like any other', async () => {
     _proxy.create = offline
     const ledger = createResource('ledgers', { model: 'Ledger' })
@@ -313,5 +334,33 @@ describe('a held create is a row this device has read', () => {
     await merge.service.patch(id, { name: 'moved' }).catch(() => {})
     expect(held()[1].data.v).toBe(1)
     expect(held()[1].base).toEqual({ id, name: 'draft', v: 1 })
+  })
+})
+
+// ─── the boot drain ───────────────────────────────────────────────────────
+
+// FJS-1277: the drain was armed by the first WRITE, so a device reopened after
+// an outage held what the last session left until somebody wrote again. The
+// declaration of a model that can be held is what arms it, the way an
+// `offlineQuery` arms the warm.
+describe('the boot drain', () => {
+  const connects = () => _listeners.filter(([e]) => e === 'connect')
+
+  test('a resource over a @@sync model arms the drain before any write', async () => {
+    createResource('ledgers', { model: 'Ledger' })
+    expect(connects().length).toBe(1)
+
+    // What the last session left behind, sent when the socket comes up.
+    _proxy.create = offline
+    await pendingQueue().add({ service: 'ledgers', model: 'Ledger', method: 'create', data: { name: 'left behind' } })
+    _proxy.create = (d) => { _calls.push(['create', d]); return Promise.resolve({ ...d }) }
+    connects()[0][1]()
+    await vi.waitFor(() => expect(held()).toEqual([]))
+    expect(_calls).toEqual([['create', { name: 'left behind' }]])
+  })
+
+  test('a resource over a model that declared nothing arms nothing', () => {
+    createResource('plains', { model: 'Plain' })
+    expect(connects().length).toBe(0)
   })
 })

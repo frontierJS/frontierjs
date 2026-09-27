@@ -64,14 +64,14 @@ Fix at the owner (Invariant 4). Run the package's own `test` script from its dir
 
 ## 6. Record and close
 
-A `CHANGES.md` entry per package touched — a `## ` heading, then prose. Then the register, by command and never by editing `ISSUES.md`:
+A `CHANGES.md` entry per package touched, inserted above the newest entry: a heading of the form `## <today, YYYY-MM-DD> — <what is now true, in plain words>` with the row id in backticks and parentheses after it, then prose. The files run to 14,000 lines, so read the first 20 for the voice and no further.
 
 ```
 fli close FJS-### --how "<the cause, the fix, and the test or drive that proves it>"
 fli file --sev S3 --area <pkg> --title "<the defect, one sentence>" --detail "<how it was measured · [file](path)>"
 ```
 
-The How column is the closed row's whole explanation, in the register's own prose voice. `fli file` is for what the fix found and did not fix; it takes the next id and tops that severity's table. Finish with `fli done` and clear what it lists.
+The How column is the closed row's whole explanation, in the register's own prose voice. `fli file` is for what the fix found and did not fix; it takes the next id and tops that severity's table. Finish with `fli done` and clear what it lists **for the files you changed**; it reads the whole tree, so an item from another session's edits gets one sentence saying so and nothing more.
 
 ## 7. Report
 

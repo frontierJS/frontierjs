@@ -39,8 +39,12 @@ if (!needs(context, ['appDir', 'userToken', 'adminToken'], { from: { appDir: '01
 
 if (!await refreshTokens(context)) return
 
+// Only where no model is marked: a second `@@auth` is refused by `db push`, and
+// an app scaffolded with `--auth` already carries one on User.
+const marked = /^\s*@@auth\b/m.test(readFileSync(schemaFile(context), 'utf8'))
+
 for (const [from, to] of [
-  ['  @@gate("4.4.4.5")', '  @@auth\n  @@gate("4.4.4.5")'],
+  ...(marked ? [] : [['  @@gate("4.4.4.5")', '  @@auth\n  @@gate("4.4.4.5")']]),
   ['  updatedAt DateTime  @default(now()) @updatedAt\n\n  ///',
    '  updatedAt DateTime  @default(now()) @updatedAt\n  authorId  String?   @default(auth().id)\n\n  @@allow(\'read\', authorId == auth().id)\n\n  ///'],
 ]) {

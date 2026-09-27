@@ -43,6 +43,7 @@
 
 import { getClient }  from '@frontierjs/sierra/junction'
 import { unreachable } from './pending.js'
+import { isStaleWrite } from './field-rules.js'
 
 const DB_NAME    = 'fjs-attachments'
 const DB_VERSION = 1
@@ -142,7 +143,7 @@ export function createAttachmentQueue({ now = () => Date.now() } = {}) {
      * nothing to attach to is a file nobody will ever find. The caller is the
      * resource layer, which has the id because the browser minted it.
      */
-    async add({ service, model, id, field, blob }) {
+    async add({ service, model, id, field, blob, versionField = null }) {
       if (id == null)  throw new Error('an attachment needs the id of the row it belongs to')
       if (!field)      throw new Error('an attachment needs the field it fills')
       const entry = {
@@ -150,6 +151,12 @@ export function createAttachmentQueue({ now = () => Date.now() } = {}) {
         service, model, field,
         id,
         blob,
+        // The `@version` column, where the model has one. Litestone refuses a
+        // patch there that carries no version, and the version this patch
+        // needs is the one the row is at once the write queue has drained —
+        // not knowable now, so `version` is read at the first send and kept.
+        versionField,
+        version:   null,
         // Copied out of the Blob so a list can be rendered without touching the
         // bytes — a queue screen showing three photographs should not decode
         // three photographs.
@@ -182,6 +189,20 @@ export function createAttachmentQueue({ now = () => Date.now() } = {}) {
         state:     'rejected',
         lastError: { message: String(error?.message ?? error), code: error?.code ?? null },
       })
+    },
+
+    /**
+     * The version the next send carries. Kept on the entry because a send
+     * whose answer was lost may have landed and moved the row, and a re-send
+     * reading afresh would reuse the idempotency key under a different
+     * payload, which junction refuses `422`. Null forgets it.
+     */
+    async pin(key, version) {
+      const entry = mem.get(key)
+      if (!entry) return null
+      const next = { ...entry, version }
+      await write(next)
+      return next
     },
 
     /** It did not reach the server. Counted, kept, tried again later. */
@@ -249,10 +270,19 @@ export function attachmentQueue() {
  * running them again on their own output would coerce and validate a payload
  * that is now one Blob.
  */
-async function _send(client, entry) {
-  return client.service(entry.service).patch(
+async function _send(client, q, entry) {
+  const svc  = client.service(entry.service)
+  const data = { [entry.field]: entry.blob }
+  if (entry.versionField) {
+    if (entry.version == null) {
+      const row = await svc.get(entry.id)
+      entry = (await q.pin(entry.key, row?.[entry.versionField] ?? null)) ?? entry
+    }
+    data[entry.versionField] = entry.version
+  }
+  return svc.patch(
     entry.id,
-    { [entry.field]: entry.blob },
+    data,
     undefined,
     // The key is the entry's, so a re-send after a timeout nobody can read
     // replays the first answer instead of uploading a second object and
@@ -267,7 +297,16 @@ export async function drainAttachments(client) {
   let settled = 0, rejected = 0
   await q.drain(async (entry) => {
     try {
-      await _send(client, entry)
+      try {
+        await _send(client, q, entry)
+      } catch (err) {
+        // Somebody else wrote the row between the read and the patch. The
+        // bytes do not depend on what they wrote, so read it again once —
+        // a failed call released the idempotency key, so the new version
+        // may ride it.
+        if (!isStaleWrite(err)) throw err
+        await _send(client, q, await q.pin(entry.key, null) ?? entry)
+      }
       await q.settle(entry.key)
       settled++
       return 'settled'

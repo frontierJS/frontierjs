@@ -136,32 +136,43 @@ function accessorFor(db, model) {
 /**
  * Keep what the server just answered.
  *
- * `upsertMany` and not a row at a time: an autocommit INSERT over OPFS is one
- * filesystem sync, measured at 9.23 ms against 0.033 ms batched, which is the
- * difference between a page that pauses and one that does not.
- *
  * Failure is silent on purpose — this is a side effect of a read that already
  * succeeded, and a screen must not fail because a device could not write.
  */
 export async function writeThrough(model, rows) {
-  if (!_config || !Array.isArray(rows) || rows.length === 0) return false
   try {
-    const db = await localDb()
-    if (!db) return false
-    const accessor = accessorFor(db, model)
-    if (!accessor) return false
-
-    await db.asSystem()[accessor].upsertMany({ data: rows })
-    return true
+    return await writeRows(model, rows)
   } catch (err) {
-    // ONCE, and then never again. Whatever makes one write-through fail makes
-    // every one of them fail, so a warning per read would be a console nobody
-    // can use — and no warning at all is a device that quietly never holds
-    // anything, which is the failure this whole file exists to prevent and the
-    // one that is only discovered offline.
-    _warnOnce('wrote nothing to the device', err)
+    // Once per MODEL. Whatever makes one write-through of a model fail usually
+    // makes every one of them fail, so a warning per read is a console nobody
+    // can use; but keyed once per document, the first model to fail hid every
+    // other one, and a device that holds nothing is only discovered offline.
+    _warnOnce(`wrote nothing of ${model} to the device`, err)
     return false
   }
+}
+
+/**
+ * The write itself, which THROWS what the device refused.
+ *
+ * `upsertMany` and not a row at a time: an autocommit INSERT over OPFS is one
+ * filesystem sync, measured at 9.23 ms against 0.033 ms batched, which is the
+ * difference between a page that pauses and one that does not. The batch is one
+ * transaction, so a single row naming a parent the device does not hold — the
+ * device keeps the foreign keys between `@@sync` models — refuses all of it.
+ *
+ * Answers false where there is nothing to write to: no config, no rows, no
+ * database, or a model the device does not hold.
+ */
+export async function writeRows(model, rows) {
+  if (!_config || !Array.isArray(rows) || rows.length === 0) return false
+  const db = await localDb()
+  if (!db) return false
+  const accessor = accessorFor(db, model)
+  if (!accessor) return false
+
+  await db.asSystem()[accessor].upsertMany({ data: rows })
+  return true
 }
 
 const _warned = new Set()
@@ -174,8 +185,8 @@ function _warnOnce(what, err) {
 /**
  * Answer a read from the device.
  *
- * The same arguments the SERVER's derived find builds — `{ where, limit,
- * offset, orderBy, select }` — because a junction service over a litestone
+ * The same call the SERVER's derived find makes — `findMany({ where, limit,
+ * offset, orderBy, select })`, or `search(term, …)` under a `$search` — because a junction service over a litestone
  * model passes the caller's filters through as the `where` and its directives
  * as the rest. What differs is only what is there to be found.
  *
@@ -205,7 +216,13 @@ export async function readLocal(model, query, directives) {
     if (d.orderBy)        args.orderBy = normalizeOrderBy(d.orderBy)
     if (d.select)         args.select  = normalizeSelect(d.select)
 
-    const rows = await db.asSystem()[accessor].findMany(args)
+    // A search is the engine's `search()`, as it is on the server; left out of
+    // `args` it was a read of the whole table, stored as the screen's rows
+    // (`FJS-1311`). A device schema with no FTS index refuses it by name.
+    const table = db.asSystem()[accessor]
+    const rows = d.search
+      ? await table.search(d.search, args)
+      : await table.findMany(args)
     return Array.isArray(rows) ? rows : null
   } catch (err) {
     _warnOnce(`could not answer a read of ${model}`, err)
@@ -239,7 +256,7 @@ export async function clearLocalDb() {
 }
 
 /** Test seam: forget the configuration and the open client. */
-export function _resetLocalDb() { _config = null; _client = null; _opening = null; _closing = null }
+export function _resetLocalDb() { _config = null; _client = null; _opening = null; _closing = null; _warned.clear() }
 
 /**
  * Test seam: stand a client in for the one a worker would have opened.

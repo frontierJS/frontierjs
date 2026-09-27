@@ -120,10 +120,10 @@ describe('the endpoint answers at all', () => {
 
   test('initialize is answered — which means the body survived junction reading it', () => {
     // junction parses the body of every matched request BEFORE the handler runs,
-    // with no clone, so the Request a route hands on is spent. Handed over as-is
-    // the transport answers `400 Parse error: Invalid JSON`, a message about
-    // JSON that has nothing to do with the JSON. This asserting 200 is the whole
-    // proof that `replayBody` put the bytes back.
+    // and a spent Request handed on makes the transport answer `400 Parse error:
+    // Invalid JSON`, a message about JSON that has nothing to do with the JSON.
+    // This asserting 200 is the proof that `ctx.$raw.$req` still carries the
+    // bytes (`FJS-1180`).
     return rpc('initialize', {
       protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '0' },
     }).then(r => {

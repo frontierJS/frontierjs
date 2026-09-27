@@ -81,6 +81,21 @@ export function makeTxManager(db, state = { depth: 0 }, ledger = null) {
     for (const fire of fns) fire()
   }
 
+  // ── Which side of an @@anonymous pairing this transaction has written ──────
+  //
+  // An anonymous row and a logged row written together are re-attributable:
+  // the trail's clock, in order, lines up with the anonymous table's rowid
+  // order, and the logged row usually names the person (`FJS-D349`). Returns
+  // the model on the OTHER side already written, which the caller refuses.
+  // Marked per frame like `pending`, so a savepoint rolled back takes its
+  // writes out of the pairing.
+  const wrote = []
+  function noteWrite(model, anonymous) {
+    const other = wrote.find(w => w.anonymous !== anonymous)
+    wrote.push({ model, anonymous })
+    return other?.model ?? null
+  }
+
   function begin() {
     // BEGIN IMMEDIATE (matching the $transaction doc comment): take the write
     // lock up front. A deferred BEGIN upgrades to a write lock mid-transaction,
@@ -88,7 +103,7 @@ export function makeTxManager(db, state = { depth: 0 }, ledger = null) {
     if (state.depth === 0) { db.run('BEGIN IMMEDIATE') }
     else { spCount++; db.run(`SAVEPOINT sp_${spCount}`) }
     state.depth++
-    return { sp: state.depth === 1 ? null : spCount, mark: pending.length, cmark: ledger?.length ?? 0 }
+    return { sp: state.depth === 1 ? null : spCount, mark: pending.length, cmark: ledger?.length ?? 0, wmark: wrote.length }
   }
 
   function commit({ sp }) {
@@ -98,13 +113,14 @@ export function makeTxManager(db, state = { depth: 0 }, ledger = null) {
     // refusal.
     if (sp == null && ledger) { ledger.grade(db); ledger.truncate(0) }
     state.depth--
-    if (sp == null) { db.run('COMMIT'); flushPending() }
+    if (sp == null) { db.run('COMMIT'); wrote.length = 0; flushPending() }
     else            db.run(`RELEASE sp_${sp}`)
   }
 
-  function rollback({ sp, mark, cmark }) {
+  function rollback({ sp, mark, cmark, wmark }) {
     state.depth--
     pending.length = mark
+    wrote.length = wmark
     if (ledger) ledger.truncate(cmark)
     if (sp == null) db.run('ROLLBACK')
     else { db.run(`ROLLBACK TO sp_${sp}`); db.run(`RELEASE sp_${sp}`) }
@@ -146,7 +162,7 @@ export function makeTxManager(db, state = { depth: 0 }, ledger = null) {
     finally { release() }
   }
 
-  return { begin, commit, rollback, wrap, exclusive, wrapExclusive, queueEvent, ledger, owns: () => ownsTx(state), state }
+  return { begin, commit, rollback, wrap, exclusive, wrapExclusive, queueEvent, noteWrite, ledger, owns: () => ownsTx(state), state }
 }
 
 // ─── Read routing ─────────────────────────────────────────────────────────────

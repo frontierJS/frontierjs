@@ -122,6 +122,10 @@ An `update` never re-allocates. Re-pointing a live field would leave every exist
 
 `@@unique([model, key])` on the declaring model is required. Without it one model can declare a key twice, and the second declaration is a field whose value nothing can find.
 
+### Under `tenancy { strategy row }`
+
+Every tenant shares the declaring table, so the declaring model carries the tenant column and its key becomes per tenant: `[model, key]` is scoped to `[workspaceId, model, key]` the way the tenancy block scopes every unique, and either spelling is accepted. **The pool is per tenant.** The slot columns are the table's, and each tenant maps its own keys onto all of them, the way `strategy database` gives every tenant's file its own full pool. The allocation, the mirror and a filter by key each read only the writing or reading tenant's declarations, and the slot index leads with the tenant column. A system call that states no tenant is refused rather than read across all of them. A declaring model *without* the tenant column is one set of declarations for the whole installation, on purpose.
+
 ## What it must not become
 
 **Not a per-tenant schema.** The moment a tenant can declare a *model*, a relation or a `@@gate`, there are two schema languages and one of them is a database table. The extension point is one column shape on one model.

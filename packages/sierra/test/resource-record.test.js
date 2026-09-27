@@ -45,6 +45,14 @@ globalThis.fetch = (async (url, init) => {
       total: rows.size, limit: 20, offset: 0,
     }), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }
+  // A patch answers the row it wrote, as the server does. Nothing is
+  // announced: `_receive` is how a test says a broadcast came back.
+  if (method === 'PATCH' && rows.has(id)) {
+    const { version: _read, ...changes } = JSON.parse(init.body)
+    const row = { ...rows.get(id), ...changes, version: rows.get(id).version + 1 }
+    rows.set(id, row)
+    return new Response(JSON.stringify(row), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }
   return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
 })
 
@@ -176,6 +184,39 @@ describe('resource.record(id)', () => {
     const orders = createResource('orders', { model: 'Order' })
     await expect(orders.save({ status: 'pending' }, { optimistic: true }))
       .rejects.toThrow(/needs an existing record/)
+  })
+
+  // The writer's own screen moves on the ANSWER, not on the broadcast: a
+  // graded refusal, `channel: false`, a write-only model and a write over HTTP
+  // while the socket is down all answer 200 and announce nothing back (`FJS-1317`).
+  test('a save moves the writer\'s own row with no broadcast coming back', async () => {
+    const orders = createResource('orders', { model: 'Order' })
+    await orders.load()
+    const row = orders.record(1)
+    await row.ready
+
+    await orders.save({ id: 1, status: 'paid' }, { mode: 'patch' })
+
+    expect(orders.store.get()[0]).toEqual({ id: 1, status: 'paid', version: 4 })
+    expect(row.get()).toEqual({ id: 1, status: 'paid', version: 4 })
+    expect(orders.version(1)).toBe(4)
+  })
+
+  test('an answer older than a push already held does not roll the row back', async () => {
+    // Another writer's broadcast can overtake this call's answer on the wire.
+    const orders = createResource('orders', { model: 'Order' })
+    await orders.load()
+    const done = orders.save({ id: 1, status: 'paid' }, { mode: 'patch' })
+    client.service('orders')._receive('patched', { id: 1, status: 'shipped', version: 5 })
+    await done
+    expect(orders.store.get()[0]).toEqual({ id: 1, status: 'shipped', version: 5 })
+  })
+
+  test('an answer with no id writes no row', async () => {
+    const orders = createResource('orders', { model: 'Order' })
+    await orders.load()
+    await orders.save({ status: 'new' })   // the mock answers {}
+    expect(orders.store.get()).toEqual([{ id: 1, status: 'pending', version: 3 }])
   })
 
   test('a resource with no client answers a view that is simply empty', async () => {

@@ -5,8 +5,8 @@
 // Services are registered in the app and called by the transport.
 
 import type { ServiceContext, ServiceMethod } from './context.ts'
-import { requestMeta, reenterAs, enterCall, runInServiceCall, withCallEffects, commitScope, runInCommitScope } from './context.ts'
-import type { CommitScope } from './context.ts'
+import { requestMeta, reenterAs, enterCall, runInServiceCall, settleCoverage, withCallEffects, commitScope, runInCommitScope } from './context.ts'
+import type { CommitScope, CallCoverage } from './context.ts'
 import { claimIdempotency } from './idempotency.ts'
 import { diagnostic, isDiagnosticMode } from './diagnostics.ts'
 import {
@@ -622,13 +622,14 @@ async function _callService(
   let pipelineError: unknown  = null
   let methodSucceeded         = false
   let openScope: CommitScope | undefined = undefined
+  const coverage: CallCoverage = { name: service.name, ids: null, deferred: [] }
 
   try {
     // Marked for the whole pipeline, hooks included: a write from an `after`
     // hook belongs to this call and is covered by the announcement below.
     // Anything the Litestone tap sees OUTSIDE this scope is a write no service
     // announced, which is what it exists to catch.
-    await runInServiceCall(service.name, () => runPipeline(ctx, resolvedPipeline, async () => {
+    await runInServiceCall(coverage, () => runPipeline(ctx, resolvedPipeline, async () => {
       const raw = await methodFn(ctx)
       // The method returned, so any write it made is real. Recorded here rather
       // than inferred from `pipelineError` below, because with no transaction
@@ -812,17 +813,28 @@ async function _callService(
     }
   }
 
-  if (announce) {
-    if (scope) {
-      // The name goes in before the drain, not at it: litestone buffers a
-      // transaction's write events to the commit, so the tap sees them with
-      // the OUTERMOST call's span in force and its `announcingService()`
-      // comparison misses. `announced` is what it asks instead.
-      scope.announced.add(service.name)
-      scope.announcements.push(doAnnounce)
-    } else {
-      await doAnnounce()
+  // The rows this call's announcement covers, and so the only writes under its
+  // name the tap may stay quiet about. A call that announces nothing covers
+  // nothing: a method that wrote and then threw left durable rows no payload
+  // carries.
+  const covered = announce ? announcedIds(ctx, (service as { idField?: string }).idField ?? 'id') : new Set<string>()
+  try {
+    if (announce) {
+      if (scope) {
+        // The ids go in before the drain, not at it: litestone buffers a
+        // transaction's write events to the commit, so the tap sees them with
+        // the OUTERMOST call's span in force and this call's own coverage is
+        // not the one it reads. `announced` is what it asks instead.
+        const held = scope.announced.get(service.name)
+        if (held) for (const id of covered) held.add(id)
+        else scope.announced.set(service.name, new Set(covered))
+        scope.announcements.push(doAnnounce)
+      } else {
+        await doAnnounce()
+      }
     }
+  } finally {
+    settleCoverage(coverage, covered)
   }
 
   // ── after commit ──────────────────────────────────────────────────
@@ -1275,6 +1287,25 @@ export function resolveTransactional(
   if (decl === undefined || decl === false) return []
   const wanted = decl === true ? methods : decl
   return wanted.filter(m => !NON_TRANSACTIONAL_METHODS.has(m))
+}
+
+// The ids of the rows a call's announcement carries: the id it was called with,
+// the rows it answered, and the rows a hook stated in `ctx.dispatch`. Keyed as
+// strings because a route's id arrives as one and the row's is a number.
+// `ctx.dispatch = false` still covers the call's rows -- the app declined to
+// announce THEM, which says nothing about a sibling.
+function announcedIds(ctx: ServiceContext, idField: string): Set<string> {
+  const ids = new Set<string>()
+  if (ctx.id != null) ids.add(String(ctx.id))
+  const add = (value: unknown) => {
+    for (const row of Array.isArray(value) ? value : [value]) {
+      const id = row && typeof row === 'object' ? (row as Record<string, unknown>)[idField] : undefined
+      if (id != null) ids.add(String(id))
+    }
+  }
+  add(resultData(ctx.result))
+  add(ctx.dispatch)
+  return ids
 }
 
 // The call whose transaction hook OPENED the commit scope, and whether that

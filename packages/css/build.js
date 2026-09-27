@@ -9,7 +9,7 @@
  *
  *   bun run build     → dist/frontier.css + dist/frontier.min.css
  *
- * dist/ is gitignored and built on publish (prepublishOnly). The source is
+ * dist/ is gitignored and built on pack (prepack), which `bun pm pack` runs too. The source is
  * still the product; this is a convenience artifact.
  *
  * ── The one thing that makes this non-trivial ────────────────────────

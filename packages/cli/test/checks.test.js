@@ -10,7 +10,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs'
 import { join }   from 'path'
 import { tmpdir } from 'os'
 
-import { keyLiteral, weakLiteral } from '../core/seams.js'
+import { keyLiteral, weakLiteral, buildIndex } from '../core/seams.js'
+import { spawnSync } from 'child_process'
 import { RULES, runChecks, findApps, applyFixes, verdictOf,
          BASELINE_FILE, readBaseline, gradeBaseline, writeBaseline } from '../core/checks.js'
 
@@ -3554,5 +3555,23 @@ describe('seam-listed', () => {
       'CLAUDE.md': '# x\n',
     })
     expect(only(root, 'seam-listed', { scope: 'repo' }).findings).toEqual([])
+  })
+})
+
+// The seams page is committed, so it is read off what a clone holds: a built
+// `out/` beside the source counted two extra callers here and none on a runner,
+// and the snapshot phase failed on every fresh checkout (FJS-009).
+describe('the seams index reads the tree, not the disk', () => {
+  test('an ignored build output is not indexed', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fli-seams-tree-'))
+    mkdirSync(join(root, 'packages', 'a', 'src'), { recursive: true })
+    mkdirSync(join(root, 'packages', 'a', 'out'), { recursive: true })
+    writeFileSync(join(root, '.gitignore'), 'out/\n')
+    writeFileSync(join(root, 'packages', 'a', 'src', 'x.js'), 'export const x = 1\n')
+    writeFileSync(join(root, 'packages', 'a', 'out', 'x.js'), 'export const x = 1\n')
+    expect(spawnSync('git', ['init', '-q'], { cwd: root }).status).toBe(0)
+    try {
+      expect(buildIndex(root).map(f => f.path)).toEqual(['packages/a/src/x.js'])
+    } finally { rmSync(root, { recursive: true, force: true }) }
   })
 })

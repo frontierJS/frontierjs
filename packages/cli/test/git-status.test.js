@@ -4,7 +4,7 @@
 // a clean file look identical. Every test here is ultimately that one question.
 
 import { test, expect } from 'bun:test'
-import { buildStatus, splitRel, zoneOf, roleOf, ROLE_ORDER } from '../core/git-status.js'
+import { buildStatus, splitRel, hubsOf, zoneOf, roleOf, ROLE_ORDER } from '../core/git-status.js'
 
 const z = (lines) => lines.map(l => l + '\0').join('')
 
@@ -160,4 +160,20 @@ test('an app inside a workspace groups by its surfaces, a package stays whole', 
 test('an untracked directory keeps its name rather than becoming a nameless place', () => {
   expect(zoneOf('web/')).toMatchObject({ zone: '(root)', prefix: '' })
   expect(zoneOf('example/site/')).toMatchObject({ zone: 'example', prefix: 'example/' })
+})
+
+test('hubs are the amber rows alone, most reach first, untracked only when asked', () => {
+  // The same band the listing paints amber — a second threshold here would let
+  // `--hubs` and the listing disagree about which file is a hub.
+  const index = { 'packages/cli/core/checks.js': { usedBy: 24, band: 3 },
+                  'packages/litestone/src/core/parser.js': { usedBy: 77, band: 3 },
+                  'packages/cli/core/mid.js': { usedBy: 9, band: 2 },
+                  'packages/cli/core/new.js': { usedBy: 40, band: 3 } }
+  const model = buildStatus({
+    porcelain: z([' M packages/cli/core/checks.js', ' M packages/litestone/src/core/parser.js',
+                  ' M packages/cli/core/mid.js', '?? packages/cli/core/new.js', ' M packages/cli/CHANGES.md']),
+    blastOf: (p) => index[p] ?? null,
+  })
+  expect(hubsOf(model)).toEqual(['packages/litestone/src/core/parser.js', 'packages/cli/core/checks.js'])
+  expect(hubsOf(model, { withNew: true })).toEqual(['packages/litestone/src/core/parser.js', 'packages/cli/core/new.js', 'packages/cli/core/checks.js'])
 })

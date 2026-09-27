@@ -17,7 +17,7 @@ Two commands ask the same rows one at a time: `litestone explain @guarded`, and
 Litestone Studio's Explore panel, which also places a word into your schema
 and shows you the diff first.
 
-**110 words** — 12 declarations · 66 field attributes · 32 model attributes.
+**111 words** — 12 declarations · 66 field attributes · 33 model attributes.
 
 ## Index
 
@@ -42,7 +42,7 @@ and shows you the diff first.
 - *Identify a row* — [`@@id`](#id-model)
 - *Shape the table* — [`@@index`](#index-model) · [`@@unique`](#unique-model) · [`@@check`](#check-model) · [`@@arc`](#arc-model) · [`@@relator`](#relator-model) · [`@@map`](#map-model) · [`@@label`](#label-model) · [`@@external`](#external-model) · [`@@noStrict`](#nostrict-model) · [`@@fts`](#fts-model) · [`@@extensible`](#extensible-model) · [`@@softDelete`](#softdelete-model) · [`@@hasTemplates`](#hastemplates-model) · [`@@expires`](#expires-model) · [`@@effective`](#effective-model) · [`@@commitment`](#commitment-model)
 - *Decide who may* — [`@@capabilities`](#capabilities-model) · [`@@gate`](#gate-model) · [`@@export`](#export-model) · [`@@allow`](#allow-model) · [`@@deny`](#deny-model) · [`@@scope`](#scope-model) · [`@@tenant`](#tenant-model) · [`@@transitions`](#transitions-model)
-- *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@log`](#log-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
+- *Wire it to the app* — [`@@sync`](#sync-model) · [`@@auth`](#auth-model) · [`@@log`](#log-model) · [`@@anonymous`](#anonymous-model) · [`@@db`](#db-model) · [`@@trait`](#trait-model) · [`@@createdBy`](#createdby-model) · [`@@updatedBy`](#updatedby-model)
 
 ## Declarations
 
@@ -1760,7 +1760,24 @@ model Example {
 ```
 
 - **Deeper** — [audit-logging.md](audit-logging.md)
-- **See also** — [`@log`](#log-field) · [`database`](#database-declaration)
+- **See also** — [`@log`](#log-field) · [`database`](#database-declaration) · [`@@anonymous`](#anonymous-model)
+
+#### `@@anonymous` <a id="anonymous-model"></a>
+
+No row of this model may be attributed. Refused on the model: @@log, @log, @createdBy/@updatedBy/auth(), and @updatedAt/now() (a millisecond is a join key; store a String @date). Refused at runtime: a logged write in the same transaction as one of these rows, because the trail's clock in order lines the two up. It closes the join by refusing the other end, and does not hide insertion order: raw SQL still reads the rowids, and a log written in a separate transaction still correlates.
+
+```lite
+model Example {
+  id Int @id
+  rating Int
+  answeredOn String @date
+  @@anonymous
+}
+```
+
+- **Also typed** — `unattributed` · `ballot` · `survey` · `confidential`
+- **Deeper** — [audit-logging.md](audit-logging.md)
+- **See also** — [`@log`](#log-field) · [`@createdBy`](#createdby-field) · [`@date`](#date-field)
 
 #### `@@db` `(<database>)` <a id="db-model"></a>
 

@@ -10,7 +10,7 @@ parser by `test/catalog.test.ts`; this file is the other question — what
 changed. Blurbs are deliberately absent: prose churns on wording, and a
 snapshot that reshuffles on an edited sentence is one nobody reads.
 
-**110 words** — 12 declarations · 66 field attributes · 32 model attributes.
+**111 words** — 12 declarations · 66 field attributes · 33 model attributes.
 
 ## Declarations
 
@@ -132,6 +132,7 @@ snapshot that reshuffles on an edited sentence is one nobody reads.
 | `@@transitions` | Decide who may | (<field>, [<name>:] <from>\|[<from>,…] -> <to> [@gate(N)] [@system] [@seals], …) |  |  |  |
 | `@@auth` | Wire it to the app |  |  |  |  |
 | `@@log` | Wire it to the app | (<database>[, reads: false][, writes: false]) |  |  |  |
+| `@@anonymous` | Wire it to the app |  |  |  |  |
 | `@@db` | Wire it to the app | (<database>) | in a model |  |  |
 | `@@trait` | Wire it to the app | (<TraitName>) |  |  |  |
 | `@@createdBy` | Wire it to the app | [(<base>)] |  |  |  |

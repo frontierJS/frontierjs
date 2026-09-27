@@ -90,11 +90,11 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 ### `AlertEvent`
 
-- deny **read** — `!check(rule, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(rule, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(rule, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(rule, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(rule, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(rule, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(rule, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(rule, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(rule, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(rule, tenancy)` — "Outside your workspaceId"
 
 ### `AlertRule`
 
@@ -106,16 +106,16 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 ### `AlertRuleChannel`
 
-- deny **read** — `!check(rule, 'read')` — "Outside your workspaceId"
-- deny **read** — `!check(channel, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(rule, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(channel, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(rule, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(channel, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(rule, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(channel, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(rule, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(channel, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(rule, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(channel, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(rule, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(channel, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(rule, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(channel, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(rule, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(channel, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(rule, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(channel, tenancy)` — "Outside your workspaceId"
 
 ### `ApiKey`
 
@@ -135,29 +135,29 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 ### `AppNetwork`
 
-- deny **read** — `!check(app, 'read')` — "Outside your workspaceId"
-- deny **read** — `!check(network, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(app, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(network, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(app, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(network, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(app, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(network, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(app, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(network, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(network, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(network, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(network, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(network, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(network, tenancy)` — "Outside your workspaceId"
 
 ### `AppServer`
 
-- deny **read** — `!check(app, 'read')` — "Outside your workspaceId"
-- deny **read** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(app, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(app, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(app, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(app, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
 ### `AuditEvent`
 
@@ -169,11 +169,11 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 ### `CleanupRun`
 
-- deny **read** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
 ### `Dashboard`
 
@@ -185,21 +185,21 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 ### `DashboardWidget`
 
-- deny **read** — `!check(dashboard, 'read')` — "Outside your workspaceId"
-- deny **read** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **read** — `!check(app, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(dashboard, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(app, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(dashboard, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(app, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(dashboard, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(app, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(dashboard, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(app, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(dashboard, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(dashboard, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(dashboard, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(dashboard, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(app, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(dashboard, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(app, tenancy)` — "Outside your workspaceId"
 
 ### `Deployment`
 
@@ -211,19 +211,19 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 ### `DeploymentStep`
 
-- deny **read** — `!check(deployment, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(deployment, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(deployment, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(deployment, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(deployment, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(deployment, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(deployment, tenancy)` — "Outside your workspaceId"
 
 ### `DiskUsage`
 
-- deny **read** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
 ### `Domain`
 
@@ -251,16 +251,16 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 ### `FlagOverride`
 
-- deny **read** — `!check(flag, 'read')` — "Outside your workspaceId"
-- deny **read** — `!check(environment, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(flag, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(environment, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(flag, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(environment, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(flag, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(environment, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(flag, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(environment, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(flag, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(environment, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(flag, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(environment, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(flag, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(environment, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(flag, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(environment, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(flag, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(environment, tenancy)` — "Outside your workspaceId"
 
 ### `fleetByProvider` *(view)*
 
@@ -290,25 +290,25 @@ An operation with no `@@allow` is unrestricted at this layer.
 ### `FlowLayout`
 
 - allow **read** — `flow.ownerId == auth().id || auth().level >= 5`
-- deny **read** — `!check(flow, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(flow, tenancy)` — "Outside your workspaceId"
 - allow **create** — `flow.ownerId == auth().id`
-- deny **create** — `!check(flow, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(flow, tenancy)` — "Outside your workspaceId"
 - allow **update** — `flow.ownerId == auth().id`
-- deny **update** — `!check(flow, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(flow, 'read')` — "Outside your workspaceId"
+- deny **update** — `!check(flow, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(flow, tenancy)` — "Outside your workspaceId"
 - allow **delete** — `flow.ownerId == auth().id`
-- deny **delete** — `!check(flow, 'read')` — "Outside your workspaceId"
+- deny **delete** — `!check(flow, tenancy)` — "Outside your workspaceId"
 
 ### `FlowVersion`
 
 - allow **read** — `flow.ownerId == auth().id || auth().level >= 5`
-- deny **read** — `!check(flow, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(flow, tenancy)` — "Outside your workspaceId"
 - allow **create** — `flow.ownerId == auth().id`
 - deny **create** — `authorId != null && authorId != auth().id`
-- deny **create** — `!check(flow, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(flow, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(flow, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(flow, 'read')` — "Outside your workspaceId"
+- deny **create** — `!check(flow, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(flow, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(flow, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(flow, tenancy)` — "Outside your workspaceId"
 
 ### `Invitation`
 
@@ -328,11 +328,11 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 ### `JobRun`
 
-- deny **read** — `!check(job, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(job, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(job, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(job, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(job, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(job, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(job, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(job, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(job, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(job, tenancy)` — "Outside your workspaceId"
 
 ### `KvEntry`
 
@@ -389,16 +389,16 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 ### `RecipeRun`
 
-- deny **read** — `!check(recipe, 'read')` — "Outside your workspaceId"
-- deny **read** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(recipe, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(recipe, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(recipe, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(recipe, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(recipe, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(recipe, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(recipe, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(recipe, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(recipe, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
 ### `RegistryImage`
 
@@ -411,20 +411,20 @@ An operation with no `@@allow` is unrestricted at this layer.
 ### `Run`
 
 - allow **read** — `actorId == auth().id || auth().level >= 5`
-- deny **read** — `!check(flowVersion, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(flowVersion, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(flowVersion, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(flowVersion, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(flowVersion, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(flowVersion, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(flowVersion, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(flowVersion, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(flowVersion, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(flowVersion, tenancy)` — "Outside your workspaceId"
 
 ### `RunStep`
 
 - allow **read** — `run.actorId == auth().id || auth().level >= 5`
-- deny **read** — `!check(run, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(run, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(run, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(run, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(run, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(run, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(run, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(run, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(run, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(run, tenancy)` — "Outside your workspaceId"
 
 ### `Secret`
 
@@ -444,24 +444,24 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 ### `ServerEvent`
 
-- deny **read** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
 ### `ServerNetwork`
 
-- deny **read** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **read** — `!check(network, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(network, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(network, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(network, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(network, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **read** — `!check(network, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(network, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(network, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(network, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(network, tenancy)` — "Outside your workspaceId"
 
 ### `User`
 
@@ -469,19 +469,19 @@ An operation with no `@@allow` is unrestricted at this layer.
 
 ### `Volume`
 
-- deny **read** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(server, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(server, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(server, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(server, tenancy)` — "Outside your workspaceId"
 
 ### `Wait`
 
-- deny **read** — `!check(run, 'read')` — "Outside your workspaceId"
-- deny **create** — `!check(run, 'read')` — "Outside your workspaceId"
-- deny **update** — `!check(run, 'read')` — "Outside your workspaceId"
-- deny **post-update** — `!check(run, 'read')` — "Outside your workspaceId"
-- deny **delete** — `!check(run, 'read')` — "Outside your workspaceId"
+- deny **read** — `!check(run, tenancy)` — "Outside your workspaceId"
+- deny **create** — `!check(run, tenancy)` — "Outside your workspaceId"
+- deny **update** — `!check(run, tenancy)` — "Outside your workspaceId"
+- deny **post-update** — `!check(run, tenancy)` — "Outside your workspaceId"
+- deny **delete** — `!check(run, tenancy)` — "Outside your workspaceId"
 
 ### `WorkspaceMember`
 

@@ -1,5 +1,10 @@
 # Changes — frontierjs-vscode
 
+## 2026-09-26 — `@@anonymous` highlights as a model attribute (`FJS-1247`)
+
+The grammar's `@@` word list gains `anonymous`, the model attribute litestone
+now parses. Completion and hover already read litestone's catalog.
+
 ## 2026-09-25 — the formatter changes whitespace and nothing else (FJS-1341)
 
 `0.1.3`. `npm test` 123 pass, typecheck clean.

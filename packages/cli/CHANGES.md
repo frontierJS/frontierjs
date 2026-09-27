@@ -1,5 +1,68 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-26 — A CI run links into a fence, not the machine's global `fli` (`FJS-1364`)
+
+`fli new --source local` runs `bun link` in every package it needs, and bun
+keeps one global link per name, so CI's deploy and tutor phases in a temp clone
+re-pointed `~/.bun/bin/fli` and every `@frontierjs/*` link into that clone.
+The standalone `scripts/scaffold-build.mjs` did the same. `core/bun-fence.js`
+points `BUN_INSTALL` at a temp dir for the run and leaves the package cache
+where it was, so installs stay warm. `scripts/ci.mjs` and the standalone
+`scaffold-build.mjs` fence themselves at start, so every child inherits the
+fence, and remove it on exit. The link bun writes into the app points at the
+source tree rather than through the fence. `test/bun-fence.test.js` runs a real
+`bun link` and `bun install` under a fake HOME. It goes red when the fence
+drops `BUN_INSTALL`. A real `fli new --source local` run from a fenced node
+parent linked ten packages into the fence and left the machine's global dir
+unchanged.
+
+## 2026-09-26 — `tutor:access` runs past its policy step on a scaffolded app (`FJS-1367`)
+
+Step 06 put `@@auth` above User's `@@gate("4.4.4.5")` every time, and
+`fli new --auth` has written `@@auth` there since FJS-737, so the push that
+followed was refused as a duplicate (FJS-1174) and the lesson stopped. The
+step now adds it only when no line in the schema already declares `@@auth`,
+which is what its prose already said it did. Proved by running
+`fli tutor:access --tmp --yes` before the change (step 06 fails on *@@auth is
+declared twice*) and after it (all nine steps pass).
+
+## 2026-09-26 — `git:status --hubs`: the amber rows as a bare list
+
+`fli gs --hubs` prints only the edited files named by more than fifteen others,
+one repo-relative path per line, most reach first, and nothing else, so it
+pipes. The threshold is the listing's own amber band (`hubsOf` in
+`core/git-status.js`), so the two cannot disagree about what a hub is.
+`--with-new` adds untracked hubs, as it does for the listing.
+
+## 2026-09-26 — a row can say it is for a person, and the fix loop passes over it
+
+`fix:loop` took FJS-009, whose proof is a ten-minute CI run in a fresh clone.
+The session backgrounded the run, said it would read the result later, and
+ended, since a headless session stops when it stops calling tools; the attempt
+cost twelve minutes and closed nothing. A row now declares `by hand` as its own
+segment of the links cell, the way `blocked by` is written, and `fli next`
+reports it as `byHand` and marks it *(by hand)* while keeping it ranked, since a
+person reading the list is who it is for. `scripts/fix-loop.mjs` skips it. Prose
+that says someone did a thing by hand is not the declaration; `next.test.js`
+holds both halves.
+
+## 2026-09-26 — a committed page is graded against the tree, not this disk
+
+The runner annotations name the phase again, and on `573cfd30` two of the four
+failures were one defect: a check reading the DISK where the question was the
+tree a clone holds. `ws:seams` walked `packages/` and counted callers in
+ignored build output (`basecamp/web/config/routes.js`, vscode's `out/`), so
+`resource.options(field)` had six sites here and four on a runner, and the
+committed page was stale on every fresh checkout. `register:check` called a
+link live when `existsSync` found it, so a row linking `packages/css/dist/` or a
+sibling `../fjs-prototypes/` checkout passed here and was ninety dead links
+there. `core/tree.js` is the one reading of *in the tree* — tracked files plus
+untracked ones git does not ignore, `null` without git so a plain directory
+still falls back to the disk — and both read it. A link leaving the root is
+another repository's claim and is no longer graded; `repo-map.js` had already
+made the same move for its file counts. `test/register-check.test.js` and
+`test/checks.test.js` each build a git fixture with an ignored file on disk.
+
 ## 2026-09-26 — a choice met mid-fix is filed and waited on, not asked and stopped at
 
 `fix-next` met a design choice by stopping to ask, and `fix:loop` ended the

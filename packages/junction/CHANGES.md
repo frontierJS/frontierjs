@@ -1,5 +1,55 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-26 — `ctx.$raw.$req` still carries its body (`FJS-1180`)
+
+The transport reads every matched request's body before a route runs, and a Web
+Request's body is single-use, so a handler that took the whole Request read
+nothing. `createBetterAuthPlugin` hands `$req` to `auth.handler`, which made
+sign-in, sign-up and every callback arrive with `{}` and answer 400 about a
+field the caller sent; the MCP transport kept a private `replayBody` for the
+same reason. `parseBody` now returns the `bytes` it read, for every type, and
+`$raw.$req` is a getter that rebuilds the Request from them once, on first ask
+— the original when nothing was read. One owner in place of a rebuild per
+mounted handler; the sierra example's comment that re-reading `$req` yields
+nothing is gone with it. `test/raw-body.test.ts` reads the body back from a raw
+route as text and as multipart, and through the Better Auth plugin with a stub
+`handler`; all three answered `Body already used` before.
+
+## 2026-09-26 — a call can state the headers it was made under (`FJS-1300`)
+
+A write held offline is sent again later, and every call read the client's
+LIVE call headers when it left, so a write made in one workspace and drained
+after its author switched to another was graded and stamped in the second.
+`CallOptions.callHeaders` states the set a call was made under and replaces
+the live set for that call, over HTTP (`_request`) and over the socket
+(`meta.headers`); it replaces rather than merges, so a header set since does
+not ride a call made before it. The set itself is now public as
+`client.callHeaders()`, the private `_extraHeaders()` renamed, so a caller
+that holds a call can record what it would have carried. The two
+`X-Service-Method` sites (restore, a custom method) build their header through
+one `_methodCall` so the stated set reaches them too.
+`test/call-headers.test.ts` sends every write kind after a workspace switch
+and asserts the made-in workspace arrives on both transports.
+
+## 2026-09-26 — a single-row write to a sibling inside its own call is announced (`FJS-1357`)
+
+The tap suppressed every row event for the service whose call was running,
+because that call's publish covers the row it returns. A method closing a
+parent's children with one `update()` each wrote rows no payload names, and
+nobody announced them. Coverage is now per id. `runInServiceCall` carries a
+`CallCoverage` record, not just a name. The tap asks
+`coveredWrite(name, id, announce)`, and a write under the call's name waits
+there until the call settles. `settleCoverage` is handed the ids the
+announcement carries: `ctx.id`, the rows answered and the rows in
+`ctx.dispatch`. It announces every held write outside them. A write that
+arrives after the settle is answered from those ids directly. Both orders
+happen, and the siblings in the new test arrive late. Under a transaction,
+`CommitScope.announced` maps each name to its ids rather than holding the name.
+A call that announces nothing covers nothing, so a method that wrote and then
+threw now announces the durable rows. Proved by the two
+`data-write-announcement.test.ts` cases, plain and transactional; both were red
+at HEAD with no sibling announced.
+
 ## 2026-09-26 — a tool's stdout document survives its own exit (`FJS-1361`)
 
 `junction atlas | cat` delivered 16384 bytes of example's 36 KB model, so

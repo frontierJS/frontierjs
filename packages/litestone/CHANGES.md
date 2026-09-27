@@ -1,5 +1,78 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-26 — a model can declare `@@anonymous`, and a log that would name its rows is refused (`FJS-1247`)
+
+An anonymous survey kept its anonymity only by leaving things out. There was no
+actor column, no timestamp and no log. One `@@log(audit)` on the roster table,
+written in the same transaction, undid all of it: the trail's millisecond clock,
+in order, lined up with the answer table's rowid order and put a name on every
+answer. `@@anonymous` is the declaration `FJS-D349` ruled for. The parser
+refuses `@@log`, `@log` (including the one `@secret` implies), a column stamped
+from the writer, and a clock column (`@updatedAt`, `@default(now())`) on the
+model. The client refuses a transaction that writes an anonymous row and a row
+whose model logs writes, in either order, so both roll back. The pairing is kept
+per transaction frame, so a savepoint rolled back takes its write out of it.
+The same refusal does not cover raw SQL reading rowids, or a log written in a
+separate transaction, and `docs/audit-logging.md` says so.
+`test/anonymous.test.ts`. `tableHasAnyLog` is now `tableHasLogWork`, because an
+anonymous table takes that path with no log of its own.
+
+## 2026-09-26 — a system client with a tenant in scope is scoped one hop away too
+
+`$setAuth({ workspaceId: 10 }).asSystem()` keeps its tenancy denies, and
+`rulesFor` decides that from the deny's `claim`. Only the column denies carried
+one. The delegated deny had none, so it was dropped, and that client read
+workspace 10's apps and every workspace's deploys (`FJS-1370`). The delegated
+deny now carries `claim` as the column denies do. A system client with no tenant
+in scope still reads every tenant. Tested in `test/tenancy-delegation.test.ts`,
+covering reads one and two hops away and a create into another tenant's parent.
+
+## 2026-09-26 — a delegated child asks its parent's tenancy, not its parent's read rule
+
+A model with no tenant column that is scoped through a parent got
+`@@deny(all, !check(parent, 'read'))`. `check()` asks the parent's WHOLE read
+rule, so every visibility rule the parent has became a tenancy rule of the
+child and was reported as one. In linear a private team is readable only by its
+members, so the workspace admin who had just created one was refused adding its
+first member, as `Outside your workspaceId` (`FJS-1319`).
+
+The generated `check` node now carries `tenancy: true`, and the compiler and the
+JS evaluator answer it from the parent's generated tenancy denies alone. Those
+include the parent's own delegated deny, so a grandchild still reaches the tenant
+column. A null parent still allows, and `delegationProblems` walks the same
+narrowed set. Whether the caller may SEE the parent is now the child's own
+`@@allow` to say, as it already was for a model that carries the column. A child
+with no `@@allow` of its own is readable by its whole tenant. The access and
+release snapshots print the rule as `check(rel, tenancy)`, since it has no source
+spelling. Tested in `test/tenancy-delegation.test.ts`.
+
+## 2026-09-26 — `@@extensible` under `strategy row`: the pool is per tenant
+
+`@@extensible` had only been driven under `strategy database`, where each tenant
+has its own declaring table. Under `strategy row` every tenant shares that
+table, and four things were wrong (`FJS-1290`):
+
+- The per-workspace declaring model did not parse. The tenancy desugar prepends
+  the tenant column to `@@unique([model, key])`, and the `@@extensible` check
+  then wanted exactly two fields. It now accepts the key with the tenant column
+  in front, prepended or written out.
+- `allocateExtSlot`, `_extDeclarations` and the key-to-slot filter rewrite read
+  the declaring table raw with no tenant. So workspace B's first field took
+  `t2` because A held `t1`, and B's write was mirrored through A's
+  declarations. Each read is now narrowed to the tenant: the one the payload
+  states, else the caller's claim, else the one the filter pins. A system call
+  naming none is refused.
+- The generated slot index now leads with the tenant column.
+- The declaration cache is shared by reference from the root context. Before,
+  a scoped client's `{ ...ctx }` copy made its own cache, and the declaring
+  table's write never cleared it.
+
+The pool is per tenant. The slot columns are the table's, and every tenant
+maps onto all of them, which is what `strategy database` already gave. A
+per-table pool would let one tenant's declarations starve the rest, and the
+`[model, slot]` unique is already per tenant under the tenancy desugar.
+`test/extensible.test.ts` § *under tenancy { strategy row }* holds seven cases.
+
 ## 2026-09-26 — a name that resolves to nothing fails the suite
 
 checkJs is off here, and nothing read a `.js` file for an undeclared name. That

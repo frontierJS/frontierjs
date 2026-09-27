@@ -19,7 +19,8 @@
     "ci:fast": "node scripts/ci.mjs --fast",
     "hooks:install": "node scripts/install-hooks.mjs",
     "fix:loop": "bun scripts/fix-loop.mjs",
-    "frame:loop": "bun scripts/frame-loop.mjs"
+    "frame:loop": "bun scripts/frame-loop.mjs",
+    "loop:review": "bun scripts/loop-review.mjs"
   },
   "devDependencies": {
     "typescript": "^5.0.0",

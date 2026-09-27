@@ -201,3 +201,15 @@ export const splitRel = (rel) => {
   const cut    = body.lastIndexOf('/')
   return { dir: cut === -1 ? '' : body.slice(0, cut + 1), base: body.slice(cut + 1) + (folder ? '/' : ''), folder }
 }
+
+// ─── hubs ─────────────────────────────────────────────────────────────────────
+//
+// The amber rows alone, as bare repo-relative paths: the files a change reaches
+// furthest from, which is the list a reviewer or a `| xargs` wants without the
+// grouping around it. Band 3 is the listing's own amber, so the two never
+// disagree about which file is a hub. Most reach first.
+export const hubsOf = (model, { withNew = false } = {}) => model.zones
+  .flatMap(z => z.files)
+  .filter(f => f.blast && f.blast.band >= 3 && (withNew || !f.untracked))
+  .sort((a, b) => b.blast.usedBy - a.blast.usedBy || a.path.localeCompare(b.path))
+  .map(f => f.path)

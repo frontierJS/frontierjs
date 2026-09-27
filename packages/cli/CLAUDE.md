@@ -45,6 +45,13 @@ core/
   registry.js   command discovery and resolution
   prose.js      the markdown side
   checks.js     the architecture rules — shared with scripts/ci.mjs
+  tree.js       what a clone of this root holds — tracked plus unignored
+                untracked. A check that asks the disk instead is green here and
+                red on a runner; `null` without git, and the caller uses the disk
+  bun-fence.js  a temp `BUN_INSTALL` for a run that scaffolds `--source local`,
+                whose `bun link` otherwise re-points the machine's global `fli`
+                at this tree. `scripts/ci.mjs` and `scaffold-build.mjs` fence
+                themselves at start (`FJS-1364`)
   runnables.js  what this project can START — surfaces, tools, drives, suites,
                 tasks, snapshots, each a row with an id, a command and a port.
                 Derived from files that would break something else if they were
@@ -103,7 +110,8 @@ core/
                 the next D id; `blocks` writes `blocked by` into the held row
   next.js       the open register ranked — severity, then citations, `blocked by`
                 edges and code touched recently, every term printed with its
-                row. `WEIGHTS` is one frozen table and no flag moves it.
+                row. `WEIGHTS` is one frozen table and no flag moves it. A
+                `by hand` segment stays ranked as `byHand`; `fix:loop` skips it.
                 Proposals are not ranked; nothing measurable separates them
   register-atlas.js  the registers as one page to work from — `register:atlas`,
                 for any project declaring `registers`, not only this workspace.

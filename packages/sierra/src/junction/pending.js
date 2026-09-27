@@ -116,6 +116,10 @@ export function createPendingQueue({ now = () => Date.now() } = {}) {
   }
 
   async function write(entry) {
+    // The first write of a document is usually made before `indexedDB.open()`
+    // answers — pressing a button on noticing there is no signal — and without
+    // this it went to memory only and a closed tab lost it (FJS-1276).
+    await ready
     mem.set(entry.key, entry)
     if (db) {
       try { await wrap(db.transaction(STORE, 'readwrite').objectStore(STORE).put(entry)) }
@@ -148,7 +152,7 @@ export function createPendingQueue({ now = () => Date.now() } = {}) {
      * phase 2 and the resource refuses it by name rather than storing a blob
      * nothing will ever upload.
      */
-    async add({ service, model, method, id, data, base }) {
+    async add({ service, model, method, id, data, base, callHeaders }) {
       const entry = {
         key:       crypto.randomUUID(),
         service, model, method,
@@ -159,6 +163,10 @@ export function createPendingQueue({ now = () => Date.now() } = {}) {
         // than spread, so a field the caller passes and this does not list is
         // dropped — which is what happened to this one first time round.
         ...(base ? { base } : {}),
+        // The call headers current when the write was made — the workspace
+        // among them. A replay after the author switched workspace would
+        // otherwise be graded and stamped in the one they are in now (FJS-1300).
+        ...(callHeaders ? { callHeaders } : {}),
         createdAt: now(),
         attempts:  0,
         state:     'pending',
@@ -283,8 +291,8 @@ export function pendingQueue() {
     const retry = _queue.retry
     // A retry the person asked for goes now if it can, not at the next reconnect.
     _queue.retry = async (key) => { await retry(key); _drainNow?.() }
-    _armDrain()
   }
+  _armDrain()
   return _queue
 }
 
@@ -303,7 +311,11 @@ async function _send(client, entry) {
   // whatever the row holds by then — which is the whole of `@@sync(field)`
   // (`FJS-D334`). Absent on every other policy, and litestone refuses one it
   // was not expecting by name.
-  const opts  = { idempotencyKey: entry.key, ...(entry.base ? { base: entry.base } : {}) }
+  const opts  = {
+    idempotencyKey: entry.key,
+    ...(entry.base        ? { base: entry.base }               : {}),
+    ...(entry.callHeaders ? { callHeaders: entry.callHeaders } : {}),
+  }
   switch (entry.method) {
     case 'create': return proxy.create(entry.data ?? {}, undefined, opts)
     case 'patch':  return proxy.patch(entry.id, entry.data ?? {}, undefined, opts)
@@ -349,10 +361,12 @@ let _drainNow = null
  */
 function _armDrain() {
   if (_armed) return
-  _armed = true
   try {
+    // Armed only where a client was found — otherwise a queue built before
+    // `initJunction` marked the app armed against nothing, and nothing drained.
     const client = getClient()
     if (!client) return
+    _armed = true
     const both = async () => {
       await drainPending(client)
       // The bytes go AFTER the rows, because an attachment names a row that has

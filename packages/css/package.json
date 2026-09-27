@@ -8,7 +8,8 @@
     "test": "bun test/run.js",
     "build": "bun build.js && bun run build:vocabulary",
     "build:vocabulary": "bun build-vocabulary.js",
-    "prepublishOnly": "bun run build && bun run test",
+    "prepack": "bun run build",
+    "prepublishOnly": "bun run test",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "main": "./src/index.css",

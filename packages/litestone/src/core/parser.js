@@ -2531,6 +2531,11 @@ class Parser {
             policyToken)
         return { kind: 'sync', policy: policyToken.value }
       }
+      // @@anonymous — no row of this model may be attributed (`FJS-D349`). A
+      // fact validate() and the client reason from, because what re-attributes
+      // a row is usually on a DIFFERENT model: a logged write in the same
+      // transaction, whose trail clock lines up with this table's rowid order.
+      case 'anonymous': return { kind: 'anonymous' }
       default:
         throw new ParseError(`Unknown model attribute '@@${name}'`, this.peek())
     }
@@ -4034,6 +4039,13 @@ function expandTenancy(schema) {
   // containing one: the question is always *is that parent mine*, never *may I
   // create that parent*, and the default would ask the second for a create.
   //
+  // And `tenancy: true` narrows it to the parent's GENERATED denies. The
+  // parent's read rule is also every visibility rule it has — a private team
+  // readable only by its members — and asked whole, each of them became a
+  // tenancy rule of the child, refusing a workspace's own admin as `Outside
+  // your workspaceId` (FJS-1319). Whether the caller may SEE the parent is the
+  // child's own @@allow to say, as it is for a model carrying the column.
+  //
   // Transitive by fixpoint — a grandchild is scoped once its parent is — and a
   // self-relation is skipped, since a model cannot delegate to itself (the SQL
   // cycle guard opens it, which would be a rule that enforces nothing).
@@ -4075,10 +4087,12 @@ function expandTenancy(schema) {
           // Same four plus `post-update`, for the same reason the column rule
           // above takes it: without it a child could be re-pointed at a parent
           // in another tenant, which is the delegated spelling of the same
-          // move.
+          // move. `claim` as the column rule carries it: without it a system
+          // client with a tenant in scope dropped this deny and read every
+          // tenant's children (FJS-1370).
           kind: 'deny', operations: ['read', 'update', 'delete', 'create', 'post-update'], generated: 'tenancy',
-          message: `Outside your ${t.column}`,
-          expr: { type: 'not', expr: { type: 'check', field: r.field, operation: 'read' } },
+          claim, message: `Outside your ${t.column}`,
+          expr: { type: 'not', expr: { type: 'check', field: r.field, operation: 'read', tenancy: true } },
         })
 
       p.done = true
@@ -4183,6 +4197,15 @@ function expandTenancy(schema) {
       scopedUniques.push(`${model.name}([${a.fields.join(', ')}])`)
       a.fields    = [t.column, ...a.fields]
       a.generated = 'tenancy'
+    }
+
+    // The @@extensible slot index, which is the framework's own and so is
+    // rewritten rather than warned about: every read under row tenancy filters
+    // on the tenant first, and a composite that does not lead with it is one
+    // SQLite cannot seek into on the column it always has.
+    if (carries) for (const a of model.attributes) {
+      if (a.kind === 'index' && a.generated === 'extensible' && a.fields[0] !== t.column)
+        a.fields = [t.column, ...a.fields]
     }
 
     const lifted = []
@@ -6000,11 +6023,15 @@ function validate(schema) {
 
       // A declaring model whose key is not unique PER MODEL is the drift this
       // attribute exists to prevent: two models cannot each declare `notes`,
-      // and one model cannot declare it twice.
-      const hasKeyUnique = decl.attributes.some(a =>
-        (a.kind === 'uniqueIndex' || a.kind === 'partialUnique') &&
-        Array.isArray(a.fields) && a.fields.length === 2 &&
-        a.fields.includes('model') && a.fields.includes('key'))
+      // and one model cannot declare it twice. Under row tenancy the key is
+      // per model PER TENANT — the tenancy desugar has already prepended the
+      // column by now — and an exact-pair test refused the one right spelling.
+      const tenantCol = schema.tenancy?.strategy === 'row' ? schema.tenancy.column : null
+      const hasKeyUnique = decl.attributes.some(a => {
+        if ((a.kind !== 'uniqueIndex' && a.kind !== 'partialUnique') || !Array.isArray(a.fields)) return false
+        const key = a.fields[0] === tenantCol ? a.fields.slice(1) : a.fields
+        return key.length === 2 && key.includes('model') && key.includes('key')
+      })
       if (!hasKeyUnique)
         errors.push(`${where} — '${ext.declaredBy}' does not declare @@unique([model, key]). Without it one model can declare a key twice, and the second declaration is a field whose value nothing can find`)
     }
@@ -7447,6 +7474,30 @@ function validate(schema) {
     }
     if (isOpt) {
       errors.push(`Model '${model.name}': @@hasTemplates field '${ht.field}' must not be optional — templates are categorical, not nullable`)
+    }
+  }
+
+  // ── @@anonymous: nothing on the model may name or time its writer ─────────
+  // Each of these re-attributes a row by itself: a log stamps actorId and the
+  // whole row, an authorship column is the writer, and a millisecond clock is a
+  // join key against whatever the writer's other write in that request
+  // recorded. A day (`String @date`) is the grain that survives. The other end
+  // of that join, a log on a DIFFERENT model, is refused per transaction by
+  // the client (`FJS-D349`).
+  for (const model of schema.models) {
+    if (!model.attributes.some(a => a.kind === 'anonymous')) continue
+    const where = `Model '${model.name}' is @@anonymous`
+    for (const log of model.attributes.filter(a => a.kind === 'log'))
+      errors.push(`${where}, and @@log(${log.db}) stamps the writer and the whole row on every write. Remove the log`)
+    for (const field of model.fields) {
+      const kinds = new Set(field.attributes.map(a => a.kind))
+      const dflt  = field.attributes.find(a => a.kind === 'default')?.value
+      if (kinds.has('log'))
+        errors.push(`${where}, and field '${field.name}' is logged (@log, or the one @secret implies) — an audit entry names its writer`)
+      if (kinds.has('createdBy') || kinds.has('updatedBy') || (dflt?.kind === 'call' && dflt.fn === 'auth'))
+        errors.push(`${where}, and field '${field.name}' is stamped from the writer (@createdBy, @updatedBy or auth())`)
+      if (kinds.has('updatedAt') || (dflt?.kind === 'call' && dflt.fn === 'now'))
+        errors.push(`${where}, and field '${field.name}' stamps the clock — a millisecond joins this row to the writer's other writes. Use a String @date the app sets`)
     }
   }
 

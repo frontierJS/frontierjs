@@ -62,6 +62,12 @@ import { findChrome }                          from '../packages/cli/core/browse
 // Packs the working tree and builds a scaffolded app against it. Its own file
 // because the mechanism needs more explaining than the phase does.
 import { scaffoldAndBuild, scaffoldAndDeploy, deployJournalCycle, pauseEdgeCycle, pauseQueueCycle, daemonBlindHint, ciWorkBase, portFree } from './scaffold-build.mjs'
+import { fenceThisProcess }                  from '../packages/cli/core/bun-fence.js'
+
+// The deploy and tutor phases scaffold with `--source local`, which `bun link`s
+// this tree's packages; unfenced, a run in any clone re-points the machine's
+// global `fli` and every `@frontierjs/*` link into that clone (FJS-1364).
+fenceThisProcess()
 
 const ROOT       = resolveRoot()
 const ALLOWANCES = join(ROOT, 'scripts', 'ci-allowances.json')

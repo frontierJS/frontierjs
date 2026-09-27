@@ -1,5 +1,115 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-26 — the example's `/login` no longer says `$req` is spent (`FJS-1180`)
+
+junction now rebuilds `ctx.$raw.$req` from the bytes it read, so the comment in
+`example/api/src/app.ts` that re-reading it yields nothing was false; the route
+still reads `ctx.body`, which is the parsed one.
+
+## 2026-09-26 — the warm writes parents before children, and says what it could not keep (`FJS-1279`)
+
+The device keeps the foreign keys between `@@sync` models, and `warmOffline()`
+wrote one `upsertMany` per model in declaration order — the order modules
+happened to evaluate — so a child declared before its parent was refused as a
+whole batch with `SQLITE_CONSTRAINT_FOREIGNKEY`. A refusal warned once per
+document under one key, so a second model failing said nothing, and the report
+carried no error for a write. The warm now makes every read first and writes in
+passes: a batch the device refused is written again after the others land,
+until a pass lands nothing, which is the device schema's own parent-first order
+found by the device rather than a second derivation of the graph. What never
+lands is on the report as `error` and warned once per service; `writeThrough()`
+warns once per MODEL. `local-db.js` exports `writeRows()`, the write that
+throws, which the warm uses so a batch refused on the first pass and accepted
+on the second is not reported as a failure. `test/local-db.test.js` declares a
+child before its parent and asserts both land, a child naming a parent the
+device never holds is on the report with its error, and two models failing are
+two warnings. `example`'s `main.js` now imports `InventoryMovement` before
+`ProductVariant`, and its comment claiming the order mattered is gone.
+
+## 2026-09-26 — a reopened device sends what the last session held (`FJS-1277`)
+
+The drain was armed by constructing the pending queue, and only the resource
+write path constructed it — so a document that opened after an outage and made
+no write registered no `connect` listener, and what the last session held sat
+`pending` with `attempts` unmoved until somebody wrote again (connectteam
+measured it). `createResource` now builds the queue for a model that declares
+`@@sync`, the way an `offlineQuery` arms the warm: the declaration arms it, not
+the write. `_armDrain` also sets its flag only once it has found a client,
+which `_armWarm` already did, so a queue built before `initJunction` no longer
+marks the app armed against nothing. The export half the row asked for was
+already there — `pendingQueue` is exported from `@frontierjs/sierra/junction`
+(`FJS-D300`). `test/sync-policies.test.js` asserts a `@@sync` resource
+registers the listener before any write and that firing it sends a held entry,
+and that a model with no `@@sync` arms nothing.
+
+## 2026-09-26 — the first held write of a document is stored, not only remembered (`FJS-1276`)
+
+The pending queue opens IndexedDB when it is created and `write()` put an
+entry only `if (db)`, without waiting for the handle. A write made in the
+first moments of a document — pressing *Clock in* on noticing there is no
+signal — landed in memory only, told `durable: false`, and a closed tab lost
+it; connectteam and linear both measured it. `write()` now awaits `ready`
+first, as `list-cache.js`'s `remember()` already did.
+`test/pending-queue.test.js` adds a write against an IndexedDB whose open
+answers late and asserts the row is in the store and `durable` is true.
+
+## 2026-09-26 — a held write replays in the workspace it was made in (`FJS-1300`)
+
+A pending entry held `key, service, model, method, id, data` and no
+workspace, and `_send()` went through the client, which put the CURRENT
+workspace on the call. Linear measured it: an issue made offline in Acme,
+drained after switching to Globex, was refused as Globex; a model whose
+policy does not reach a tenant-scoped parent would have been written there.
+The resource now records `client.callHeaders()` on the entry when it holds a
+write, the live call states that same set under the same key, and `_send()`
+states the entry's set on replay (junction's `CallOptions.callHeaders`).
+`test/pending-queue.test.js` drains an Acme entry through a Globex client;
+`test/sync-policies.test.js` asserts the resource records the set and the live
+call states it.
+
+## 2026-09-26 — an offline `$search` is the device's search, never its whole table (`FJS-1311`)
+
+`readLocal` built `{ where, limit, offset, orderBy, select }` out of the
+directives and dropped `search`, so a `load()` that could not reach the server
+answered a search with every row of the model and stored it as the screen's
+rows with a `cachedAt`. A `search` directive now goes to the device engine's
+own `search(term, args)`, the call the server's derived find makes; a device
+schema with no `@@fts` refuses it by name, which is the throw the file's comment
+already read as *cannot answer*, so the load falls through to the list cache
+rather than rendering the table. `test/local-db.test.js` pins both halves at the
+seam and through an offline `load()`.
+
+## 2026-09-26 — a save moves the writer's own screen on its answer (`FJS-1317`)
+
+The live store took a write only from the server's announcement, so wherever
+that did not come back to the writer (a graded refusal, `channel: false`, a
+model they may write but not read, a write over HTTP while the socket is down)
+their own save answered 200 to a screen that never moved. `_call` now writes
+the row a `create`, `patch` or `update` was answered with into its node
+(`client.nodes.write`), next to `_rememberRows`, so the broadcast confirms the
+write instead of carrying it. An answer whose `@version` is older than the row
+already held is skipped, because that is a push that overtook the answer on the
+wire. An answer with no id writes nothing. `remove` is left to its broadcast.
+`test/resource-record.test.js` § a save moves the writer's own row.
+
+## 2026-09-26 — the attachment queue carries a version on a `@version` model (`FJS-1298`)
+
+The bytes queue drained as `patch(id, { [field]: blob })`, and litestone refuses a
+patch on a `@version` model that carries no version, so a photograph taken
+offline on a `@@sync(field)` or `refuse` model was parked `rejected` on exactly
+the models two people edit. D301's one drive, `StocktakeCount`, has no
+`@version`, which is why nothing caught it.
+
+The version is not knowable when the entry is written — the write queue drains
+first and every held patch moves it — so `attachments.js` now records the
+model's `@version` column on the entry and reads the row at the first send,
+pinning the version it read (`pin(key, version)`). A re-send reuses the pin
+rather than reading again, because a send whose answer was lost may have landed
+and junction refuses the same idempotency key under a different payload `422`.
+A stale-write `409` forgets the pin and sends once more, since the bytes do not
+depend on what the other writer changed. A model with no `@version` is sent
+exactly as before, without the read. `test/attachment-queue.test.js`.
+
 ## 2026-09-26 — a composed list reads offline (`FJS-1281`)
 
 `composed: true` read through `resource.find()`, and only `load()` falls back to the device and the list cache, so the word about a response envelope also opted a screen out of offline: an outage rendered a roster as empty. `list.js` `run()` now sends an unreachable composed find to `load()`, the owner of that fallback; the rows are the device's, bare of what the find composed onto them, and `cachedAt()` says so. A refusal still refuses. `test/list-cache.test.js` § a composed list.

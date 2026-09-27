@@ -106,12 +106,6 @@ is not must never be added to make a list look complete.
   Bun's idle timeout cuts a hold longer than ten seconds with nothing said.
 - **This is an affordance** (Invariant 6). Nothing here is a boundary, and no
   caller of it may treat it as one.
-- **junction has already read the body by the time a route handler runs.**
-  `transport/http.ts` parses every matched request before dispatch and `body.ts`
-  reads `req.arrayBuffer()` with no clone, so `ctx.$raw.$req` is a spent Request.
-  Handed to the MCP transport it answers `400 Parse error: Invalid JSON`, which
-  names JSON and not the cause. `replayBody` rebuilds from `ctx.rawBody`; never
-  pass `$req` through.
 - **There is no `app.db` under `tenancy { strategy database }`.** One
   `ctx.locals.db` cannot be many databases, so a tenant app has no app-wide
   client — `example` is that shape. `registry.schema` is the declared way to read

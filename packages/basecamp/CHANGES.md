@@ -1,6 +1,13 @@
 # Changes — Basecamp
 
 
+## 2026-09-26 — access and release snapshots regenerated for `FJS-1319`
+
+The 19 models scoped through a parent now print their generated deny as
+`!check(rel, tenancy)`. It asks the parent's tenancy and no longer the parent's
+whole read rule. Every Basecamp parent's read rule is the tenant comparison
+plus its gate, so the rows each caller can reach are the same.
+
 ## 2026-09-25 — `findScoped` takes junction's structured `orderBy`
 
 `servers.service.ts` passes `$.directives.orderBy` into `findScoped`, and junction's

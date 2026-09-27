@@ -40,11 +40,14 @@ const FLI       = join(ROOT, 'packages', 'cli', 'bin', 'fli.js')
  * streams, printing each tool call as it happens, because a session runs for
  * minutes and one JSON answer at the end is indistinguishable from a hang.
  *
+ * `where` heads every waiting line (`FJS-1036 [4/5]`), since a long wait
+ * scrolls the item's own header out of view.
+ *
  * `phaseOf(toolUse, edited)` names the phase a call belongs to and `phases` is
  * the starting tally; both are the loop's, since what counts as proving a fix
  * and verifying a framing differ.
  */
-export function runSession(prompt, { model, effort, cap, permission, tag, phases, phaseOf }) {
+export function runSession(prompt, { model, effort, cap, permission, tag, phases, phaseOf, where = '' }) {
   // Not awaited: it takes ~25s, and a session spends longer than that reading
   // before its first edit. Lost the race, the session's own item goes unshown —
   // which is the backstop only, since each skill runs `fli done` itself.
@@ -65,15 +68,47 @@ export function runSession(prompt, { model, effort, cap, permission, tag, phases
   ], { cwd: ROOT, stdio: ['ignore', 'pipe', 'inherit'] })
 
   let result   = {}
+  let session  = null
   let edited   = false
+  const errors = {}                       // tool name → failed calls
   const tally  = { ...phases }
+
+  // A silent stretch is either a tool running, which costs nothing, or the
+  // model holding the turn, which is what the budget pays for; from outside
+  // the two look the same, so the heartbeat names which one it is.
+  // A beat per whole minute of one state, checked often so a stretch that
+  // starts mid-interval is not left unreported for nearly two.
+  const pending = new Map()               // tool_use id → { name, at }
+  let turnAt    = Date.now()
+  let told      = { at: 0, minutes: 0 }
+  const beat    = setInterval(() => {
+    const [call]  = pending.values()
+    const since   = call?.at ?? turnAt
+    const s       = Math.round((Date.now() - since) / 1000)
+    const minutes = Math.floor(s / 60)
+    if (told.at !== since) told = { at: since, minutes: 0 }
+    if (minutes <= told.minutes) return
+    told.minutes = minutes
+    console.log(`[${tag}]       … ${where ? `${where} - ` : ''}${call ? `${call.name} running` : 'model thinking'} ${clock(s)}`)
+  }, 5_000)
+
   createInterface({ input: child.stdout }).on('line', line => {
     let event
     try { event = JSON.parse(line) } catch { return }
     if (event.type === 'result') result = event
+    if (event.type === 'system' && event.subtype === 'init') session = event.session_id
+    if (event.type === 'user') for (const part of event.message?.content ?? []) {
+      if (part.type !== 'tool_result' || !pending.has(part.tool_use_id)) continue
+      const s = Math.round((Date.now() - pending.get(part.tool_use_id).at) / 1000)
+      if (part.is_error) errors[pending.get(part.tool_use_id).name] = (errors[pending.get(part.tool_use_id).name] ?? 0) + 1
+      pending.delete(part.tool_use_id)
+      if (s >= 5) console.log(`[${tag}]       ↳ ${where ? `${where} - ` : ''}${clock(s)}${part.is_error ? ' · error' : ''}`)
+      if (!pending.size) turnAt = Date.now()
+    }
     if (event.type !== 'assistant') return
     for (const part of event.message?.content ?? []) {
       if (part.type !== 'tool_use') continue
+      pending.set(part.id, { name: part.name, at: Date.now() })
       edited ||= writes(part)
       const phase = phaseOf(part, edited)
       tally[phase] = (tally[phase] ?? 0) + 1
@@ -82,6 +117,7 @@ export function runSession(prompt, { model, effort, cap, permission, tag, phases
   })
 
   return new Promise(done => child.on('close', async code => {
+    clearInterval(beat)
     await baselined
     if (!result.type) console.log(`[${tag}]   claude ended with no result (exit ${code})`)
     done({
@@ -89,6 +125,15 @@ export function runSession(prompt, { model, effort, cap, permission, tag, phases
       turns:   result.num_turns,
       stop:    result.subtype,
       denied:  result.permission_denials?.length ?? 0,
+      sessionId:   result.session_id ?? session,
+      deniedTools: (result.permission_denials ?? []).map(d => d.tool_name),
+      errors,
+      usage:   result.usage && {
+        input:      result.usage.input_tokens,
+        cacheWrite: result.usage.cache_creation_input_tokens,
+        cacheRead:  result.usage.cache_read_input_tokens,
+        output:     result.usage.output_tokens,
+      },
       report:  result.result ?? '',
       phases:  tally,
       minutes: result.duration_ms ? +(result.duration_ms / 60000).toFixed(1) : null,
@@ -103,9 +148,20 @@ export function writes(part) {
   return part.name === 'Bash' && /\bsed -i\b|python3? - <<|\btee\b|(^|[^0-9&>])>\s*[^&\s/][^\s]*\.(m?[jt]s|md|lite|mesa|json)\b/.test(part.input?.command ?? '')
 }
 
+function clock(s) {
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
+}
+
+// Sessions run at ROOT yet prefix most commands with a cd to it; the path is
+// the same on every line and pushes the command itself past the cut.
+const ROOT_CD = new RegExp(`^cd ['"]?${ROOT.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}['"]?\\s*(&&|;)\\s*`)
+export function atRoot(text) {
+  return text.replace(ROOT_CD, '').replaceAll(`${ROOT}/`, '')
+}
+
 function describe(input = {}) {
   const text = input.description ?? input.file_path ?? input.pattern ?? input.skill ?? input.command ?? input.prompt ?? ''
-  return String(text).split('\n')[0].slice(0, 110)
+  return atRoot(String(text).split('\n')[0]).slice(0, 110)
 }
 
 // One line per attempt: cost per SOLVED item is the number to tune the budget
@@ -117,6 +173,18 @@ export function printAttempt(tag, { model, effort }, outcome, run) {
 }
 
 // ─── the log ────────────────────────────────────────────────
+
+// What `loop-review.mjs` needs to find an attempt's transcript and read why it
+// went the way it did, without every loop spelling the fields out.
+export function trace(run) {
+  return {
+    sessionId:   run.sessionId,
+    errors:      Object.keys(run.errors).length ? run.errors : undefined,
+    deniedTools: run.deniedTools.length ? run.deniedTools : undefined,
+    usage:       run.usage,
+    report:      run.report ? run.report.trim().slice(-500) : undefined,
+  }
+}
 
 export function appendLog(file, entry) {
   mkdirSync(LOG_DIR, { recursive: true })
@@ -179,5 +247,37 @@ export function parseArgs(argv) {
 // A loop's usage is its own header block, between the first two rule lines.
 export function printHelp(url) {
   const lines = readFileSync(fileURLToPath(url), 'utf8').split('\n')
-  console.log(lines.slice(3, lines.indexOf(lines[2], 3)).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
+  const open  = lines.findIndex(l => /^\/\/ ={10,}/.test(l))
+  const close = lines.indexOf(lines[open], open + 1)
+  console.log(lines.slice(open + 1, close).map(l => l.replace(/^\/\/ ?/, '')).join('\n'))
+}
+
+// ─── plan usage ─────────────────────────────────────────────
+
+// What /usage reads. The endpoint is undocumented, so any failure answers
+// null and the loop prints nothing rather than dying at its last line.
+export async function planUsage() {
+  try {
+    const { accessToken } = JSON.parse(readFileSync(join(homedir(), '.claude', '.credentials.json'), 'utf8')).claudeAiOauth
+    const res = await fetch('https://api.anthropic.com/api/oauth/usage', {
+      headers: { Authorization: `Bearer ${accessToken}`, 'anthropic-beta': 'oauth-2025-04-20' },
+      signal:  AbortSignal.timeout(10_000),
+    })
+    return res.ok ? (await res.json()).limits ?? null : null
+  } catch { return null }
+}
+
+// A limit whose resets_at moved between the two reads rolled over mid-loop,
+// so its delta would be a lie and is left out.
+export function printPlanUsage(tag, label, limits, before) {
+  if (!limits) return
+  const key  = l => `${l.kind}:${l.scope?.model?.display_name ?? ''}`
+  const min  = t => Math.floor(Date.parse(t) / 60_000)
+  const prev = new Map((before ?? []).map(l => [key(l), l]))
+  for (const l of limits) {
+    const name = l.scope?.model ? `${l.kind} (${l.scope.model.display_name})` : l.kind
+    const was  = prev.get(key(l))
+    const diff = !was ? '' : min(was.resets_at) !== min(l.resets_at) ? ' · window reset' : ` · ${l.percent - was.percent >= 0 ? '+' : ''}${l.percent - was.percent}%`
+    console.log(`[${tag}] ${label} ${name}: ${l.percent}%${diff} · resets ${l.resets_at ? new Date(l.resets_at).toLocaleString() : '—'}`)
+  }
 }

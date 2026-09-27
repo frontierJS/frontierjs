@@ -179,6 +179,26 @@ test('the app queue is reachable from @frontierjs/sierra/junction', async () => 
   expect(typeof mod.pendingQueue).toBe('function')
 })
 
+// FJS-1300: made in Acme, drained after the author opened Globex. The live
+// headers name Globex by then, so a replay that took them was graded and
+// stamped there.
+test('a held write replays under the call headers it was made under', async () => {
+  const { pendingQueue, drainPending, _resetPendingQueue } = await import('../src/junction/pending.js')
+  _resetPendingQueue()
+  const q = pendingQueue()
+  await q.ready
+  await q.add(entry({ method: 'create', id: null, callHeaders: { 'x-workspace-id': 'acme' } }))
+
+  const sent = []
+  const client = {
+    callHeaders: () => ({ 'x-workspace-id': 'globex' }),
+    service: () => ({ create: (data, params, opts) => { sent.push(opts); return Promise.resolve({ id: 1 }) } }),
+  }
+  await drainPending(client)
+  expect(sent[0]?.callHeaders).toEqual({ 'x-workspace-id': 'acme' })
+  _resetPendingQueue()
+})
+
 // The refusal at replay is the case FJS-1302 measured: parked, and nothing on
 // the device said so. It must be told and be retryable on the app's own queue.
 test('a write refused at replay is announced, and the app queue can retry it', async () => {
@@ -202,4 +222,34 @@ test('a write refused at replay is announced, and the app queue can retry it', a
   await q.retry(e.key)
   expect(q.pending().map(x => x.key)).toEqual([e.key])
   _resetPendingQueue()
+})
+
+// FJS-1276: an IndexedDB whose open answers a beat late, as a fresh profile's
+// does. A write made in that beat went to memory only and a closed tab lost it.
+function lateIndexedDB() {
+  const rows = new Map()
+  const later = (req, result) => setTimeout(() => { req.result = result; req.onsuccess?.() }, 5)
+  const store = {
+    put:    (e) => { const r = {}; rows.set(e.key, structuredClone(e)); later(r, e.key); return r },
+    delete: (k) => { const r = {}; rows.delete(k); later(r); return r },
+    getAll: ()  => { const r = {}; later(r, [...rows.values()]); return r },
+  }
+  const db = {
+    objectStoreNames: { contains: () => true },
+    transaction: () => ({ objectStore: () => store }),
+  }
+  return { rows, indexedDB: { open: () => { const r = {}; setTimeout(() => { r.result = db; r.onsuccess?.() }, 20); return r } } }
+}
+
+test('a write made before the database handle arrives is stored, not only held in memory', async () => {
+  const fake = lateIndexedDB()
+  vi.stubGlobal('indexedDB', fake.indexedDB)
+  try {
+    const q = createPendingQueue()
+    const e = await q.add(entry())
+    expect(q.durable).toBe(true)
+    expect([...fake.rows.keys()]).toEqual([e.key])
+  } finally {
+    vi.unstubAllGlobals()
+  }
 })

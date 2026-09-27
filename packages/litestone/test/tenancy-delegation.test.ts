@@ -131,7 +131,9 @@ describe('a model scoped through its parent (FJS-282)', () => {
     expect(denies[0].operations).toEqual(['read', 'update', 'delete', 'create', 'post-update'])
     // 'read' is STATED: the question is always "is that parent mine", never
     // "may I create that parent", which is what the default would ask.
-    expect(denies[0].expr).toEqual({ type: 'not', expr: { type: 'check', field: 'app', operation: 'read' } })
+    // And `tenancy` narrows it to the parent's generated denies, so the parent's
+    // visibility rules do not become the child's tenancy (FJS-1319).
+    expect(denies[0].expr).toEqual({ type: 'not', expr: { type: 'check', field: 'app', operation: 'read', tenancy: true } })
   })
 })
 
@@ -303,5 +305,100 @@ describe('a delegated child whose parent is optional', () => {
 
     const caller = db.$setAuth({ id: 'u1', workspaceId: 1 })
     expect(await caller.widget.findMany({})).toEqual([])
+  })
+})
+
+// The generated deny asks whether the parent is in YOUR TENANT, not whether you
+// may READ it. Delegating to the parent's whole read rule made every visibility
+// rule the parent has a tenancy rule of the child, reported as one: a private
+// team only its members can read refused its own workspace's admin adding the
+// first member, as `Outside your workspaceId` (FJS-1319).
+describe('a parent the caller may not read is still in their tenant (FJS-1319)', () => {
+  const PRIVATE = `
+    tenancy { strategy row  column workspaceId  claim workspaceId }
+
+    model Team {
+      id          Int     @id
+      workspaceId Int
+      private     Boolean @default(false)
+      members     TeamMember[]
+      @@allow('all', private == false || id in auth().teamIds)
+    }
+
+    model TeamMember {
+      id     Int  @id
+      team   Team @relation(fields: [teamId], references: [id])
+      teamId Int
+      userId Int
+      notes  Note[]
+    }
+
+    model Note {
+      id           Int        @id
+      teamMember   TeamMember @relation(fields: [teamMemberId], references: [id])
+      teamMemberId Int
+      text         String
+    }
+  `
+
+  let pdb: any, admin: any
+  beforeEach(async () => {
+    pdb = await createClient({ db: ':memory:', schema: PRIVATE })
+    const sys = pdb.asSystem()
+    await sys.team.createMany({ data: [
+      { id: 1, workspaceId: 10, private: true },
+      { id: 2, workspaceId: 20, private: false },
+    ] })
+    await sys.teamMember.create({ data: { id: 1, teamId: 1, userId: 7 } })
+    await sys.note.create({ data: { id: 1, teamMemberId: 1, text: 'n1' } })
+    admin = pdb.$setAuth({ id: 1, workspaceId: 10, teamIds: [] })
+  })
+
+  test('a create naming a private team in your workspace is not refused as tenancy', async () => {
+    await admin.teamMember.create({ data: { id: 2, teamId: 1, userId: 1 } })
+    expect(await pdb.asSystem().teamMember.count({ where: { teamId: 1 } })).toBe(2)
+  })
+
+  test('and neither is one two hops down', async () => {
+    await admin.note.create({ data: { id: 2, teamMemberId: 1, text: 'n2' } })
+    expect(await pdb.asSystem().note.count()).toBe(2)
+  })
+
+  test('visibility is the child\'s own policy: with none, its tenant reads it', async () => {
+    expect((await admin.teamMember.findMany()).map((m: any) => m.id)).toEqual([1])
+    expect((await admin.note.findMany()).map((n: any) => n.text)).toEqual(['n1'])
+  })
+
+  test('a team in ANOTHER workspace is still refused as tenancy, public or not', async () => {
+    const err = await thrown(admin.teamMember.create({ data: { id: 3, teamId: 2, userId: 1 } }))
+    expect(err.name).toBe('AccessDeniedError')
+    expect(err.message).toContain('Outside your workspaceId')
+    const other = pdb.$setAuth({ id: 2, workspaceId: 20, teamIds: [] })
+    expect(await other.teamMember.findMany()).toEqual([])
+    expect(await other.note.findMany()).toEqual([])
+  })
+})
+
+// FJS-519 kept a system client's tenancy denies while a tenant is in scope, and
+// read that off the deny's `claim` — which only the column denies carried, so a
+// system client scoped workspace 10's apps and read every workspace's deploys.
+describe('a system client with a tenant in scope is scoped one hop away too (FJS-1370)', () => {
+  const scopedSys = () => db.$setAuth({ workspaceId: 10 }).asSystem()
+
+  test('reads are scoped through the parent', async () => {
+    expect((await scopedSys().app.findMany()).map((a: any) => a.id)).toEqual([1])
+    expect((await scopedSys().deploy.findMany()).map((d: any) => d.id)).toEqual([1])
+    expect((await scopedSys().logLine.findMany()).map((l: any) => l.id)).toEqual([1])
+  })
+
+  test('a create into another tenant\'s parent is refused', async () => {
+    const err = await thrown(scopedSys().deploy.create({ data: { id: 4, appId: 2, sha: 'ddd' } }))
+    expect(err?.name).toBe('AccessDeniedError')
+    expect(await db.asSystem().deploy.count({ where: { id: 4 } })).toBe(0)
+  })
+
+  test('a system client with no tenant in scope still reads every tenant', async () => {
+    expect((await db.asSystem().deploy.findMany()).map((d: any) => d.id)).toEqual([1, 2])
+    expect((await db.asSystem().logLine.findMany()).map((l: any) => l.id)).toEqual([1, 2])
   })
 })

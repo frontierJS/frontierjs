@@ -1,5 +1,12 @@
 # Changes — example
 
+## 2026-09-26 — the boot imports put the ledger before the variants (`FJS-1279`)
+
+The warm no longer writes in declaration order, so `web/src/main.js` imports
+`InventoryMovement` before the `ProductVariant` it references, and
+`verify:shell`'s hydration section is the real-browser proof that a child
+declared first still lands.
+
 ## 2026-09-25 — `perShopAuth` reads `requestMeta()?.caller` (`FJS-D392`)
 
 Junction renamed `ctx.client` to `ctx.caller`; this follows it.

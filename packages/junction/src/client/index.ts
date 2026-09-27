@@ -264,8 +264,16 @@ class EventEmitter {
  * The socket path builds the same name into `meta.headers`, so a rename is one
  * edit rather than two that can disagree.
  */
-const _callHeader = (opts?: CallOptions) =>
-  opts?.idempotencyKey ? { header: { 'Idempotency-Key': opts.idempotencyKey } } : {}
+const _callHeader = (opts?: CallOptions): { header?: Record<string, string>, callHeaders?: Record<string, string> } => ({
+  ...(opts?.idempotencyKey ? { header: { 'Idempotency-Key': opts.idempotencyKey } } : {}),
+  ...(opts?.callHeaders    ? { callHeaders: opts.callHeaders } : {}),
+})
+
+/** A custom method's call: the method rides beside the per-call header, never instead of it. */
+const _methodCall = (method: string, opts?: CallOptions) => {
+  const call = _callHeader(opts)
+  return { ...call, header: { 'X-Service-Method': method, ...call.header } }
+}
 
 /**
  * The write envelope, and the only place its flag is spelled.
@@ -280,7 +288,7 @@ const _envelope = (
 ): { body: unknown, extra: Record<string, unknown> } =>
   opts?.base
     ? { body:  { data, base: opts.base },
-        extra: { header: { ...(_callHeader(opts) as any).header, 'X-Fjs-Write': 'enveloped' } } }
+        extra: { ..._callHeader(opts), header: { ..._callHeader(opts).header, 'X-Fjs-Write': 'enveloped' } } }
     : { body: data, extra: _callHeader(opts) }
 
 /**
@@ -309,6 +317,15 @@ export interface CallOptions {
    * already carries its extras in (`FJS-D338`).
    */
   base?: Record<string, unknown> | null
+
+  /**
+   * The call headers this call was MADE under, sent in place of the live set
+   * (`client.callHeaders()`). A write held offline is sent again after its
+   * author may have switched workspace, and the live set would grade and stamp
+   * it in the one they are in now (`FJS-1300`). Replaces rather than merges:
+   * a header set since would otherwise ride a call made before it existed.
+   */
+  callHeaders?: Record<string, string>
 }
 
 // ─── ServiceProxy ─────────────────────────────────────────────────────────
@@ -520,9 +537,8 @@ export class ServiceProxy<
   ): Promise<T | T[]> {
     if (typeof idOrQuery === 'object') {
       const qs = buildQueryString(idOrQuery, params)
-      return this._client._request('PUT', `${this._base}${qs}`, undefined, {
-        header: { 'x-service-method': 'restore', ..._callHeader(opts).header }
-      }) as Promise<T[]>
+      return this._client._request('PUT', `${this._base}${qs}`, undefined,
+        _methodCall('restore', opts)) as Promise<T[]>
     }
     // Prefer the socket, like find/get/create/patch/remove. This was the one
     // CRUD method that always used HTTP, contradicting the documented rule —
@@ -532,9 +548,8 @@ export class ServiceProxy<
     if (this._client._wsReady) {
       return this._client._wsCall(this.name, 'restore', idOrQuery, null, null, opts) as Promise<T>
     }
-    return this._client._request('PUT', `${this._base}/${idOrQuery}`, undefined, {
-      header: { 'x-service-method': 'restore', ..._callHeader(opts).header }
-    }) as Promise<T>
+    return this._client._request('PUT', `${this._base}/${idOrQuery}`, undefined,
+      _methodCall('restore', opts)) as Promise<T>
   }
 
   // upsert — client-side convenience: data.id != null → patch, else → create
@@ -585,15 +600,11 @@ export class ServiceProxy<
     // into the `$`-prefixed directive syntax. A custom method declares its own query
     // vocabulary; the bridge still splits `$` keys off as directives if the
     // caller uses them.
-    // The method header and the per-call one are merged rather than one
-    // replacing the other: `_callHeader` answers `{ header: {…} }`, so spreading
-    // its object alone would drop `X-Service-Method` and the bridge would
-    // dispatch a custom method as a plain create.
     return this._client._request(
       'POST',
       `${path}${_plainQuery(query)}`,
       data ?? {},
-      { header: { 'X-Service-Method': name, ..._callHeader(opts).header } }
+      _methodCall(name, opts)
     )
   }
 
@@ -1368,7 +1379,7 @@ export class JunctionClient extends EventEmitter {
    * workspace, which is one of these and was only ever spelled separately
    * because it was the first.
    */
-  private _extraHeaders(): Record<string, string> {
+  callHeaders(): Record<string, string> {
     return this.workspaceId
       ? { ...this._callHeaders, 'x-workspace-id': this.workspaceId }
       : { ...this._callHeaders }
@@ -1930,7 +1941,7 @@ export class JunctionClient extends EventEmitter {
     method: string,
     path: string,
     body?: unknown,
-    opts: { skipAuth?: boolean; header?: Record<string, string> } = {}
+    opts: { skipAuth?: boolean; header?: Record<string, string>; callHeaders?: Record<string, string> } = {}
   ): Promise<unknown> {
     const url = this._url + path
     const fileUpload = body !== undefined && _hasFiles(body)
@@ -1944,7 +1955,7 @@ export class JunctionClient extends EventEmitter {
     if (this.token && !opts.skipAuth) {
       headers['Authorization'] = `Bearer ${this.token}`
     }
-    Object.assign(headers, this._extraHeaders())
+    Object.assign(headers, opts.callHeaders ?? this.callHeaders())
     if (opts.header) {
       Object.assign(headers, opts.header)
     }
@@ -2243,7 +2254,7 @@ export class JunctionClient extends EventEmitter {
       // not the app declared any call headers: `idempotency-key` is one of
       // Junction's own protocol headers, always mergeable.
       const extraHeaders = {
-        ...this._extraHeaders(),
+        ...(opts?.callHeaders ?? this.callHeaders()),
         ...(opts?.idempotencyKey ? { 'idempotency-key': opts.idempotencyKey } : {}),
       }
       if (Object.keys(extraHeaders).length > 0)      meta.headers = extraHeaders

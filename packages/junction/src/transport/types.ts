@@ -11,8 +11,10 @@ import type { SessionContext } from '../auth/types.ts'
 // ctx.method, ctx.path, ctx.query, ctx.headers, ctx.body, ctx.route etc.
 // are all accessible on the context itself — no need to duplicate them here.
 export interface RawRequest {
-  // The original Bun Request object — use when you need the raw fetch API
-  // (streaming body, native Headers, FormData, etc.)
+  // The Request, for a handler that wants the fetch API (native Headers,
+  // FormData) or takes a whole Request, like Better Auth or the MCP transport.
+  // Its body is still readable: the transport read the original's, and this is
+  // rebuilt from the bytes it kept.
   $req: Request
   // Full URL string including origin, path, and query
   url:  string

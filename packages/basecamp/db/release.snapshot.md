@@ -103,11 +103,11 @@ table `alert_event` · db `main` · gate `2.8.4.8`
 ```
 @@index(ruleId)
 @@index(status)
-@@deny('create', !check(rule, 'read'))
-@@deny('delete', !check(rule, 'read'))
-@@deny('post-update', !check(rule, 'read'))
-@@deny('read', !check(rule, 'read'))
-@@deny('update', !check(rule, 'read'))
+@@deny('create', !check(rule, tenancy))
+@@deny('delete', !check(rule, tenancy))
+@@deny('post-update', !check(rule, tenancy))
+@@deny('read', !check(rule, tenancy))
+@@deny('update', !check(rule, tenancy))
 ```
 
 ### `AlertRule`
@@ -158,16 +158,16 @@ table `alert_rule_channel` · db `main` · gate `2.5`
 ```
 @@unique(channelId, ruleId)
 @@index(channelId)
-@@deny('create', !check(channel, 'read'))
-@@deny('create', !check(rule, 'read'))
-@@deny('delete', !check(channel, 'read'))
-@@deny('delete', !check(rule, 'read'))
-@@deny('post-update', !check(channel, 'read'))
-@@deny('post-update', !check(rule, 'read'))
-@@deny('read', !check(channel, 'read'))
-@@deny('read', !check(rule, 'read'))
-@@deny('update', !check(channel, 'read'))
-@@deny('update', !check(rule, 'read'))
+@@deny('create', !check(channel, tenancy))
+@@deny('create', !check(rule, tenancy))
+@@deny('delete', !check(channel, tenancy))
+@@deny('delete', !check(rule, tenancy))
+@@deny('post-update', !check(channel, tenancy))
+@@deny('post-update', !check(rule, tenancy))
+@@deny('read', !check(channel, tenancy))
+@@deny('read', !check(rule, tenancy))
+@@deny('update', !check(channel, tenancy))
+@@deny('update', !check(rule, tenancy))
 ```
 
 ### `ApiKey`
@@ -263,16 +263,16 @@ table `app_network` · db `main` · gate `2.8`
 ```
 @@unique(appId, networkId)
 @@index(networkId)
-@@deny('create', !check(app, 'read'))
-@@deny('create', !check(network, 'read'))
-@@deny('delete', !check(app, 'read'))
-@@deny('delete', !check(network, 'read'))
-@@deny('post-update', !check(app, 'read'))
-@@deny('post-update', !check(network, 'read'))
-@@deny('read', !check(app, 'read'))
-@@deny('read', !check(network, 'read'))
-@@deny('update', !check(app, 'read'))
-@@deny('update', !check(network, 'read'))
+@@deny('create', !check(app, tenancy))
+@@deny('create', !check(network, tenancy))
+@@deny('delete', !check(app, tenancy))
+@@deny('delete', !check(network, tenancy))
+@@deny('post-update', !check(app, tenancy))
+@@deny('post-update', !check(network, tenancy))
+@@deny('read', !check(app, tenancy))
+@@deny('read', !check(network, tenancy))
+@@deny('update', !check(app, tenancy))
+@@deny('update', !check(network, tenancy))
 ```
 
 ### `AppServer`
@@ -296,16 +296,16 @@ table `app_server` · db `main` · gate `2.8`
 ```
 @@unique(appId, replicaIndex, serverId)
 @@index(serverId)
-@@deny('create', !check(app, 'read'))
-@@deny('create', !check(server, 'read'))
-@@deny('delete', !check(app, 'read'))
-@@deny('delete', !check(server, 'read'))
-@@deny('post-update', !check(app, 'read'))
-@@deny('post-update', !check(server, 'read'))
-@@deny('read', !check(app, 'read'))
-@@deny('read', !check(server, 'read'))
-@@deny('update', !check(app, 'read'))
-@@deny('update', !check(server, 'read'))
+@@deny('create', !check(app, tenancy))
+@@deny('create', !check(server, tenancy))
+@@deny('delete', !check(app, tenancy))
+@@deny('delete', !check(server, tenancy))
+@@deny('post-update', !check(app, tenancy))
+@@deny('post-update', !check(server, tenancy))
+@@deny('read', !check(app, tenancy))
+@@deny('read', !check(server, tenancy))
+@@deny('update', !check(app, tenancy))
+@@deny('update', !check(server, tenancy))
 ```
 
 ### `AuditEvent`
@@ -441,11 +441,11 @@ table `cleanup_run` · db `main` · gate `2.4.8.8`
 
 ```
 @@index(serverId)
-@@deny('create', !check(server, 'read'))
-@@deny('delete', !check(server, 'read'))
-@@deny('post-update', !check(server, 'read'))
-@@deny('read', !check(server, 'read'))
-@@deny('update', !check(server, 'read'))
+@@deny('create', !check(server, tenancy))
+@@deny('delete', !check(server, tenancy))
+@@deny('post-update', !check(server, tenancy))
+@@deny('read', !check(server, tenancy))
+@@deny('update', !check(server, tenancy))
 ```
 
 ### `Credential`
@@ -527,21 +527,21 @@ table `dashboard_widget` · db `main` · gate `2.4.4.4`
 @@index(appId)
 @@index(dashboardId)
 @@index(serverId)
-@@deny('create', !check(app, 'read'))
-@@deny('create', !check(dashboard, 'read'))
-@@deny('create', !check(server, 'read'))
-@@deny('delete', !check(app, 'read'))
-@@deny('delete', !check(dashboard, 'read'))
-@@deny('delete', !check(server, 'read'))
-@@deny('post-update', !check(app, 'read'))
-@@deny('post-update', !check(dashboard, 'read'))
-@@deny('post-update', !check(server, 'read'))
-@@deny('read', !check(app, 'read'))
-@@deny('read', !check(dashboard, 'read'))
-@@deny('read', !check(server, 'read'))
-@@deny('update', !check(app, 'read'))
-@@deny('update', !check(dashboard, 'read'))
-@@deny('update', !check(server, 'read'))
+@@deny('create', !check(app, tenancy))
+@@deny('create', !check(dashboard, tenancy))
+@@deny('create', !check(server, tenancy))
+@@deny('delete', !check(app, tenancy))
+@@deny('delete', !check(dashboard, tenancy))
+@@deny('delete', !check(server, tenancy))
+@@deny('post-update', !check(app, tenancy))
+@@deny('post-update', !check(dashboard, tenancy))
+@@deny('post-update', !check(server, tenancy))
+@@deny('read', !check(app, tenancy))
+@@deny('read', !check(dashboard, tenancy))
+@@deny('read', !check(server, tenancy))
+@@deny('update', !check(app, tenancy))
+@@deny('update', !check(dashboard, tenancy))
+@@deny('update', !check(server, tenancy))
 ```
 
 ### `Deployment`
@@ -613,11 +613,11 @@ table `deployment_step` · db `main` · gate `2.4.8.8`
 
 ```
 @@index(deploymentId)
-@@deny('create', !check(deployment, 'read'))
-@@deny('delete', !check(deployment, 'read'))
-@@deny('post-update', !check(deployment, 'read'))
-@@deny('read', !check(deployment, 'read'))
-@@deny('update', !check(deployment, 'read'))
+@@deny('create', !check(deployment, tenancy))
+@@deny('delete', !check(deployment, tenancy))
+@@deny('post-update', !check(deployment, tenancy))
+@@deny('read', !check(deployment, tenancy))
+@@deny('update', !check(deployment, tenancy))
 ```
 
 ### `DiskUsage`
@@ -643,11 +643,11 @@ table `disk_usage` · db `main` · gate `2.8`
 
 ```
 @@unique(serverId)
-@@deny('create', !check(server, 'read'))
-@@deny('delete', !check(server, 'read'))
-@@deny('post-update', !check(server, 'read'))
-@@deny('read', !check(server, 'read'))
-@@deny('update', !check(server, 'read'))
+@@deny('create', !check(server, tenancy))
+@@deny('delete', !check(server, tenancy))
+@@deny('post-update', !check(server, tenancy))
+@@deny('read', !check(server, tenancy))
+@@deny('update', !check(server, tenancy))
 ```
 
 ### `Domain`
@@ -772,16 +772,16 @@ table `flag_override` · db `main` · gate `2.4.4.4`
 ```
 @@unique(environmentId, flagId)
 @@index(environmentId)
-@@deny('create', !check(environment, 'read'))
-@@deny('create', !check(flag, 'read'))
-@@deny('delete', !check(environment, 'read'))
-@@deny('delete', !check(flag, 'read'))
-@@deny('post-update', !check(environment, 'read'))
-@@deny('post-update', !check(flag, 'read'))
-@@deny('read', !check(environment, 'read'))
-@@deny('read', !check(flag, 'read'))
-@@deny('update', !check(environment, 'read'))
-@@deny('update', !check(flag, 'read'))
+@@deny('create', !check(environment, tenancy))
+@@deny('create', !check(flag, tenancy))
+@@deny('delete', !check(environment, tenancy))
+@@deny('delete', !check(flag, tenancy))
+@@deny('post-update', !check(environment, tenancy))
+@@deny('post-update', !check(flag, tenancy))
+@@deny('read', !check(environment, tenancy))
+@@deny('read', !check(flag, tenancy))
+@@deny('update', !check(environment, tenancy))
+@@deny('update', !check(flag, tenancy))
 ```
 
 ### `Flow`
@@ -864,14 +864,14 @@ table `flow_layout` · db `main` · gate `4.4.4.5`
 
 ```
 @@allow('create', flow.ownerId == auth().id)
-@@deny('create', !check(flow, 'read'))
+@@deny('create', !check(flow, tenancy))
 @@allow('delete', flow.ownerId == auth().id)
-@@deny('delete', !check(flow, 'read'))
-@@deny('post-update', !check(flow, 'read'))
+@@deny('delete', !check(flow, tenancy))
+@@deny('post-update', !check(flow, tenancy))
 @@allow('read', flow.ownerId == auth().id || auth().level >= 5)
-@@deny('read', !check(flow, 'read'))
+@@deny('read', !check(flow, tenancy))
 @@allow('update', flow.ownerId == auth().id)
-@@deny('update', !check(flow, 'read'))
+@@deny('update', !check(flow, tenancy))
 ```
 
 ### `FlowVersion`
@@ -892,13 +892,13 @@ table `flow_version` · db `main` · gate `4.4.9.8`
 ```
 @@unique(flowId, version)
 @@allow('create', flow.ownerId == auth().id)
-@@deny('create', !check(flow, 'read'))
+@@deny('create', !check(flow, tenancy))
 @@deny('create', authorId != null && authorId != auth().id)
-@@deny('delete', !check(flow, 'read'))
-@@deny('post-update', !check(flow, 'read'))
+@@deny('delete', !check(flow, tenancy))
+@@deny('post-update', !check(flow, tenancy))
 @@allow('read', flow.ownerId == auth().id || auth().level >= 5)
-@@deny('read', !check(flow, 'read'))
-@@deny('update', !check(flow, 'read'))
+@@deny('read', !check(flow, tenancy))
+@@deny('update', !check(flow, tenancy))
 ```
 
 ### `HubConfig`
@@ -1017,11 +1017,11 @@ table `job_run` · db `main` · gate `2.8`
 
 ```
 @@index(jobId)
-@@deny('create', !check(job, 'read'))
-@@deny('delete', !check(job, 'read'))
-@@deny('post-update', !check(job, 'read'))
-@@deny('read', !check(job, 'read'))
-@@deny('update', !check(job, 'read'))
+@@deny('create', !check(job, tenancy))
+@@deny('delete', !check(job, tenancy))
+@@deny('post-update', !check(job, tenancy))
+@@deny('read', !check(job, tenancy))
+@@deny('update', !check(job, tenancy))
 ```
 
 ### `KvEntry`
@@ -1345,16 +1345,16 @@ table `recipe_run` · db `main` · gate `2.4.8.8`
 ```
 @@index(recipeId)
 @@index(serverId)
-@@deny('create', !check(recipe, 'read'))
-@@deny('create', !check(server, 'read'))
-@@deny('delete', !check(recipe, 'read'))
-@@deny('delete', !check(server, 'read'))
-@@deny('post-update', !check(recipe, 'read'))
-@@deny('post-update', !check(server, 'read'))
-@@deny('read', !check(recipe, 'read'))
-@@deny('read', !check(server, 'read'))
-@@deny('update', !check(recipe, 'read'))
-@@deny('update', !check(server, 'read'))
+@@deny('create', !check(recipe, tenancy))
+@@deny('create', !check(server, tenancy))
+@@deny('delete', !check(recipe, tenancy))
+@@deny('delete', !check(server, tenancy))
+@@deny('post-update', !check(recipe, tenancy))
+@@deny('post-update', !check(server, tenancy))
+@@deny('read', !check(recipe, tenancy))
+@@deny('read', !check(server, tenancy))
+@@deny('update', !check(recipe, tenancy))
+@@deny('update', !check(server, tenancy))
 ```
 
 ### `RegistryImage`
@@ -1412,12 +1412,12 @@ table `run` · db `main` · gate `4.8.8.8`
 @@index(flowVersionId, startedAt)
 @@index(status, createdAt)
 @@index(status, heartbeatAt)
-@@deny('create', !check(flowVersion, 'read'))
-@@deny('delete', !check(flowVersion, 'read'))
-@@deny('post-update', !check(flowVersion, 'read'))
+@@deny('create', !check(flowVersion, tenancy))
+@@deny('delete', !check(flowVersion, tenancy))
+@@deny('post-update', !check(flowVersion, tenancy))
 @@allow('read', actorId == auth().id || auth().level >= 5)
-@@deny('read', !check(flowVersion, 'read'))
-@@deny('update', !check(flowVersion, 'read'))
+@@deny('read', !check(flowVersion, tenancy))
+@@deny('update', !check(flowVersion, tenancy))
 transition status.cancel: pending, running, waiting → cancelled
 transition status.complete: running → completed
 transition status.fail: pending, running, waiting → failed
@@ -1447,12 +1447,12 @@ table `run_step` · db `main` · gate `4.8.9.8`
 
 ```
 @@unique(nodeId, runId)
-@@deny('create', !check(run, 'read'))
-@@deny('delete', !check(run, 'read'))
-@@deny('post-update', !check(run, 'read'))
+@@deny('create', !check(run, tenancy))
+@@deny('delete', !check(run, tenancy))
+@@deny('post-update', !check(run, tenancy))
 @@allow('read', run.actorId == auth().id || auth().level >= 5)
-@@deny('read', !check(run, 'read'))
-@@deny('update', !check(run, 'read'))
+@@deny('read', !check(run, tenancy))
+@@deny('update', !check(run, tenancy))
 ```
 
 ### `Secret`
@@ -1567,11 +1567,11 @@ table `server_event` · db `main` · gate `2.4.8.8`
 
 ```
 @@index(serverId)
-@@deny('create', !check(server, 'read'))
-@@deny('delete', !check(server, 'read'))
-@@deny('post-update', !check(server, 'read'))
-@@deny('read', !check(server, 'read'))
-@@deny('update', !check(server, 'read'))
+@@deny('create', !check(server, tenancy))
+@@deny('delete', !check(server, tenancy))
+@@deny('post-update', !check(server, tenancy))
+@@deny('read', !check(server, tenancy))
+@@deny('update', !check(server, tenancy))
 ```
 
 ### `ServerNetwork`
@@ -1591,16 +1591,16 @@ table `server_network` · db `main` · gate `2.5`
 ```
 @@unique(networkId, serverId)
 @@index(networkId)
-@@deny('create', !check(network, 'read'))
-@@deny('create', !check(server, 'read'))
-@@deny('delete', !check(network, 'read'))
-@@deny('delete', !check(server, 'read'))
-@@deny('post-update', !check(network, 'read'))
-@@deny('post-update', !check(server, 'read'))
-@@deny('read', !check(network, 'read'))
-@@deny('read', !check(server, 'read'))
-@@deny('update', !check(network, 'read'))
-@@deny('update', !check(server, 'read'))
+@@deny('create', !check(network, tenancy))
+@@deny('create', !check(server, tenancy))
+@@deny('delete', !check(network, tenancy))
+@@deny('delete', !check(server, tenancy))
+@@deny('post-update', !check(network, tenancy))
+@@deny('post-update', !check(server, tenancy))
+@@deny('read', !check(network, tenancy))
+@@deny('read', !check(server, tenancy))
+@@deny('update', !check(network, tenancy))
+@@deny('update', !check(server, tenancy))
 ```
 
 ### `Session`
@@ -1702,11 +1702,11 @@ table `volume` · db `main` · gate `2.5.5.5`
 ```
 @@unique(name, serverId)
 @@index(serverId)
-@@deny('create', !check(server, 'read'))
-@@deny('delete', !check(server, 'read'))
-@@deny('post-update', !check(server, 'read'))
-@@deny('read', !check(server, 'read'))
-@@deny('update', !check(server, 'read'))
+@@deny('create', !check(server, tenancy))
+@@deny('delete', !check(server, tenancy))
+@@deny('post-update', !check(server, tenancy))
+@@deny('read', !check(server, tenancy))
+@@deny('update', !check(server, tenancy))
 ```
 
 ### `Wait`
@@ -1725,11 +1725,11 @@ table `wait` · db `main` · gate `8`
 
 ```
 @@index(timeoutAt)
-@@deny('create', !check(run, 'read'))
-@@deny('delete', !check(run, 'read'))
-@@deny('post-update', !check(run, 'read'))
-@@deny('read', !check(run, 'read'))
-@@deny('update', !check(run, 'read'))
+@@deny('create', !check(run, tenancy))
+@@deny('delete', !check(run, tenancy))
+@@deny('post-update', !check(run, tenancy))
+@@deny('read', !check(run, tenancy))
+@@deny('update', !check(run, tenancy))
 ```
 
 ### `Workspace`

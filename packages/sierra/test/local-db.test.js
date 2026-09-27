@@ -65,7 +65,7 @@ let device
  * regardless cannot tell a hydrated device from an empty one — which is the
  * exact confusion the feature is about. So the fake keeps what it is given.
  */
-function makeDevice({ models = ['sheet'], rows = [], fail = null } = {}) {
+function makeDevice({ models = ['sheet'], rows = [], fail = null, fts = false } = {}) {
   const calls = []
   const held = new Map(rows.map(r => [r.id, r]))
   const table = {
@@ -80,6 +80,13 @@ function makeDevice({ models = ['sheet'], rows = [], fail = null } = {}) {
       return fail ? Promise.reject(fail) : Promise.resolve([...held.values()])
     },
     deleteMany: (args) => { calls.push(['deleteMany', args]); held.clear(); return Promise.resolve({ count: 0 }) },
+    // Litestone's own answer for a model with no `@@fts`: a refusal by name,
+    // which is a throw and so *cannot answer* here.
+    search: (q, args) => {
+      calls.push(['search', q, args])
+      if (!fts) return Promise.reject(new Error(`Sheet.search() requires @@fts`))
+      return Promise.resolve([...held.values()].filter(r => String(r.name ?? '').includes(q)))
+    },
   }
   const client = {
     $models: models,
@@ -247,6 +254,26 @@ describe('answering a read from the device', () => {
     expect(d.calls[0][1]).toEqual({ where: {} })
   })
 
+  // A `$search` dropped on the way to the device is a read of the whole table,
+  // stored as the screen's rows: every offline search box showing every row as
+  // matching (`FJS-1311`). It goes to the engine's own `search()`, the call the
+  // server's derived find makes, and a device with no FTS index refuses it —
+  // which is *cannot answer*, never the table.
+  test('a search is answered by the device index, and never by the whole table', async () => {
+    const d = makeDevice({ fts: true, rows: [{ id: 'L1', name: 'tachyon drive' }, { id: 'L2', name: 'unrelated' }] })
+    useDevice(d)
+    const rows = await readLocal('Sheet', { closedAt: null }, { search: 'tachyon', limit: 20 })
+    expect(rows.map(r => r.id)).toEqual(['L1'])
+    expect(d.calls).toEqual([['search', 'tachyon', { where: { closedAt: null }, limit: 20 }]])
+  })
+
+  test('a search the device has no index for is null, not every row', async () => {
+    const d = makeDevice({ rows: [{ id: 'L1', name: 'tachyon drive' }, { id: 'L2', name: 'unrelated' }] })
+    useDevice(d)
+    expect(await readLocal('Sheet', {}, { search: 'tachyon', limit: 20 })).toBeNull()
+    expect(d.calls.some(([m]) => m === 'findMany')).toBe(false)
+  })
+
   // `null` is *cannot answer* and `[]` is *no rows*, and the two must never be
   // the same value: one falls through to the list cache and the other is a
   // legitimate empty screen.
@@ -308,6 +335,16 @@ describe('a load that cannot reach the server', () => {
     _proxy.find = offline
 
     expect(await r.load({ closedAt: null })).toEqual([])
+  })
+
+  test('a search the device cannot answer does not render the whole table', async () => {
+    const r = sheets()
+    useDevice(makeDevice({ rows: [{ id: 'L1', name: 'tachyon drive' }, { id: 'L2', name: 'unrelated' }] }))
+    _proxy.find = offline
+
+    await expect(r.load({}, { search: 'tachyon' })).rejects.toThrow(/Failed to fetch/)
+    expect(r.store.get()).toEqual([])
+    expect(r.cachedAt()).toBeNull()
   })
 
   // The rule the cache underneath already follows, and the one thing neither
@@ -428,7 +465,7 @@ describe('the warm fills the device rather than the cache', () => {
     const r = sheets({ offlineQuery: OPEN })
 
     const report = await warmOffline()
-    expect(report).toEqual([{ service: 'sheets', rows: 1, kept: false }])
+    expect(report).toEqual([{ service: 'sheets', rows: 1, kept: false, error: 'no quota' }])
     expect(await listCache().recall(listKey('sheets', OPEN.query, null))).toBeTruthy()
 
     _proxy.find = offline
@@ -447,5 +484,78 @@ describe('the warm fills the device rather than the cache', () => {
     const report = await warmOffline()
     expect(report).toEqual([{ service: 'status', rows: 1, kept: false }])
     expect(d.calls.length).toBe(0)
+  })
+})
+
+// ── `FJS-1279`: the device's foreign keys are real ─────────────────────────
+//
+// `deviceSchema()` keeps a relation between two models that both declared
+// `@@sync`, so on the device a child's batch naming a parent the device does
+// not hold yet is refused WHOLE. The order the warm writes in was the order the
+// resources were declared — which an app controls only by the order its modules
+// happen to evaluate — and a refusal was one warning per document.
+describe('the warm against a device with real foreign keys', () => {
+  /** A device whose `line` table refuses a batch naming a sheet it does not hold. */
+  function fkDevice() {
+    const held  = { sheet: new Map(), line: new Map() }
+    const order = []
+    const table = (name) => ({
+      upsertMany: ({ data }) => {
+        order.push(name)
+        if (name === 'line' && data.some(r => !held.sheet.has(r.sheetId)))
+          return Promise.reject(new Error(`Line: data[0] of ${data.length} failed — nothing in the batch was written. SQLITE_CONSTRAINT_FOREIGNKEY`))
+        for (const r of data) held[name].set(r.id, r)
+        return Promise.resolve({ count: data.length })
+      },
+    })
+    const client = {
+      $models: ['sheet', 'line'],
+      $close: () => Promise.resolve(true),
+      asSystem: () => ({ sheet: table('sheet'), line: table('line') }),
+    }
+    return { client, held, order }
+  }
+
+  const declare = async (service, model, rows) => {
+    const { declareOffline } = await import('../src/junction/offline.js')
+    declareOffline({ service, model, find: () => Promise.resolve(rows) })
+  }
+
+  test('a child declared before its parent still lands', async () => {
+    const d = fkDevice()
+    useDevice(d)
+    await declare('lines',  'Line',  [{ id: 'L1', sheetId: 'S1' }])
+    await declare('sheets', 'Sheet', [{ id: 'S1', name: 'one' }])
+
+    const report = await warmOffline()
+    expect(report).toEqual([
+      { service: 'lines',  rows: 1, kept: true },
+      { service: 'sheets', rows: 1, kept: true },
+    ])
+    expect([...d.held.line.keys()]).toEqual(['L1'])
+  })
+
+  // A child naming a parent outside the parent's own window can never land, and
+  // that is said — on the report, and once per MODEL rather than per document.
+  test('a batch the device never accepts is on the report and warned by name', async () => {
+    const d = fkDevice()
+    useDevice(d)
+    await declare('lines', 'Line', [{ id: 'L1', sheetId: 'NOT-HELD' }])
+    await declare('sheets', 'Sheet', [{ id: 'S1', name: 'one' }])
+
+    const report = await warmOffline()
+    expect(report[0]).toMatchObject({ service: 'lines', rows: 1, kept: false })
+    expect(report[0].error).toMatch(/SQLITE_CONSTRAINT_FOREIGNKEY/)
+    expect(report[1]).toEqual({ service: 'sheets', rows: 1, kept: true })
+    expect(console.warn.mock.calls.flat().join('\n')).toMatch(/Line/)
+  })
+
+  test('two models failing are two warnings', async () => {
+    useDevice(makeDevice({ models: ['sheet', 'plain'], fail: new Error('no quota') }))
+    await writeThrough('Sheet', [{ id: 'S1' }])
+    await writeThrough('Plain', [{ id: 'P1' }])
+    const said = console.warn.mock.calls.map(c => String(c[0]))
+    expect(said.filter(l => l.includes('Sheet')).length).toBe(1)
+    expect(said.filter(l => l.includes('Plain')).length).toBe(1)
   })
 })

@@ -25,6 +25,7 @@ let _proxy
 vi.mock('@frontierjs/sierra/junction', () => ({
   getClient: () => ({
     service: () => _proxy,
+    callHeaders: () => ({}),
     resource: () => ({
       service: _proxy,
       store: { get: () => [], subscribe: (fn) => { fn([]); return () => {} }, set: () => {} },
@@ -38,11 +39,12 @@ const { generateSchemas }   = await import('../src/build/schema-plugin.js')
 const { registerSchemas }   = await import('../src/junction/schema-registry.js')
 const { createResource }    = await import('../src/junction/resource.js')
 const { pendingQueue, _resetPendingQueue }       = await import('../src/junction/pending.js')
-const { attachmentQueue, _resetAttachmentQueue } = await import('../src/junction/attachments.js')
+const { attachmentQueue, drainAttachments, _resetAttachmentQueue } = await import('../src/junction/attachments.js')
 
 const SOURCE = `
 model Shot   { id String @id @default(uuid())  name String  damage File?  @@gate("0.0.0.0")  @@sync(server) }
 model Keyed  { id Int    @id                   name String  damage File?  @@gate("0.0.0.0")  @@sync(server) }
+model Note   { id String @id @default(uuid())  name String  damage File?  version Int @version  @@gate("0.0.0.0")  @@sync(field) }
 `
 
 /** A failure the client attaches no code to — a request that never got a reply. */
@@ -164,5 +166,83 @@ describe('the queue itself', () => {
       .rejects.toThrow(/needs the id/)
     await expect(attachmentQueue().add({ service: 's', model: 'M', id: 'x', blob: blob() }))
       .rejects.toThrow(/needs the field/)
+  })
+})
+
+describe('draining the bytes onto a @version row', () => {
+  // Litestone refuses a patch on a `@version` model that carries no version
+  // (`FJS-1298`), so bytes drained as `{ damage: blob }` alone were parked
+  // `rejected` on exactly the models two people edit. The version the patch
+  // needs is the one the row is at AFTER the write queue drained, which only
+  // the server knows.
+  const client = () => ({ service: () => _proxy })
+
+  async function parkOne() {
+    creating = offline
+    const notes = createResource('notes', { model: 'Note' })
+    await notes.save({ name: 'scratched', damage: blob() }).catch(() => {})
+    expect(attachmentQueue().pending().length).toBe(1)
+    return attachmentQueue().pending()[0]
+  }
+
+  test('reads the row and patches with the version it is at', async () => {
+    const entry = await parkOne()
+    _proxy.get = (id) => { _calls.push(['get', id]); return Promise.resolve({ id, name: 'scratched', version: 3 }) }
+
+    const out = await drainAttachments(client())
+
+    expect(out).toEqual({ settled: 1, rejected: 0 })
+    const patch = _calls.find(c => c[0] === 'patch')
+    expect(patch[1]).toBe(entry.id)
+    expect(patch[2].version).toBe(3)
+    expect(patch[2].damage instanceof Blob).toBe(true)
+  })
+
+  test('a re-send carries the version the first send read', async () => {
+    // A send whose answer was lost may have landed and moved the row, and
+    // the idempotency key is refused `422` under a different payload — so the
+    // re-send must be the same bytes AND the same version, not a fresh read.
+    await parkOne()
+    let at = 3
+    _proxy.get = (id) => Promise.resolve({ id, version: at })
+    _proxy.patch = (id, d) => { _calls.push(['patch', id, d]); at = 4; return offline() }
+    await drainAttachments(client())
+    expect(attachmentQueue().pending().length).toBe(1)
+
+    _proxy.patch = (id, d) => { _calls.push(['patch', id, d]); return Promise.resolve(d) }
+    const out = await drainAttachments(client())
+
+    expect(out.settled).toBe(1)
+    const patches = _calls.filter(c => c[0] === 'patch')
+    expect(patches.map(p => p[2].version)).toEqual([3, 3])
+  })
+
+  test('a stale version is read again rather than rejecting the photograph', async () => {
+    await parkOne()
+    let at = 3
+    _proxy.get = (id) => Promise.resolve({ id, version: at })
+    let first = true
+    _proxy.patch = (id, d) => {
+      _calls.push(['patch', id, d])
+      if (first) { first = false; at = 5; return Promise.reject(Object.assign(new Error('stale'), { code: 409, retryable: true })) }
+      return Promise.resolve(d)
+    }
+
+    const out = await drainAttachments(client())
+
+    expect(out).toEqual({ settled: 1, rejected: 0 })
+    expect(_calls.filter(c => c[0] === 'patch').map(p => p[2].version)).toEqual([3, 5])
+  })
+
+  test('a model with no @version is patched without a read', async () => {
+    creating = offline
+    const shots = createResource('shots', { model: 'Shot' })
+    await shots.save({ name: 'crushed', damage: blob() }).catch(() => {})
+    _proxy.get = (id) => { _calls.push(['get', id]); return Promise.resolve({ id }) }
+
+    await drainAttachments(client())
+
+    expect(_calls.some(c => c[0] === 'get')).toBe(false)
+    expect(Object.keys(_calls.find(c => c[0] === 'patch')[2])).toEqual(['damage'])
   })
 })

@@ -6,6 +6,7 @@ examples:
   - fli gs
   - fli gs --with-new
   - fli gs --short
+  - fli gs --hubs
   - fli gs --json
 flags:
   short:
@@ -16,6 +17,10 @@ flags:
   with-new:
     type: boolean
     description: List untracked files in the groups too (their count is always in the summary)
+    defaultValue: false
+  hubs:
+    type: boolean
+    description: Only the edited hubs (the amber rows), one path per line
     defaultValue: false
   json:
     type: boolean
@@ -50,6 +55,10 @@ everyone, and it cannot be narrowed by target.
 Untracked files are counted in the summary but not listed — a scaffold or a
 generated tree drowns the edits the scan is for. `--with-new` lists them.
 
+`--hubs` prints only the amber rows — edited files named by more than fifteen
+others — as bare paths, one per line, most reach first. Nothing else is printed,
+so it pipes.
+
 `--short` hands over to plain `git status -s` unchanged.
 
 ```js
@@ -60,7 +69,7 @@ if (flag.short) {
   return
 }
 
-const { buildStatus, splitRel } = await import(joinPath(global.fliRoot, 'core/git-status.js'))
+const { buildStatus, splitRel, hubsOf } = await import(joinPath(global.fliRoot, 'core/git-status.js'))
 const { usedByIndex, blastReader } = await import(joinPath(global.fliRoot, 'core/blast.js'))
 
 const git = (argv) => {
@@ -79,6 +88,12 @@ const model = buildStatus({
 })
 
 if (flag.json) { console.log(JSON.stringify(model, null, 2)); return }
+
+if (flag.hubs) {
+  const hubs = hubsOf(model, { withNew: flag['with-new'] })
+  if (hubs.length) console.log(hubs.join('\n'))
+  return
+}
 
 if (!model.total.files) { log.success(`${model.branch ?? 'detached'} — clean`); return }
 

@@ -49,6 +49,7 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative }                                  from 'node:path'
 
 import { stripComments }                                   from './codegraph.js'
+import { treePaths }                                       from './tree.js'
 
 const read = p => { try { return readFileSync(p, 'utf8') } catch { return null } }
 
@@ -266,7 +267,10 @@ const TYPEONLY = /\.d\.[cm]?ts$/
 
 export function buildIndex(root) {
   const roots = ['packages']
+  // Committed page, so what a clone holds: a built `out/` counted as callers.
+  const tree  = treePaths(root)
   const files = roots.flatMap(r => walk(join(root, r)))
+    .filter(f => !tree || tree.has(relative(root, f)))
   // Comments are blanked rather than dropped, so a line number still names the
   // line: this module's own comment quoting `return function $levelOf` was
   // counted as a declaration of it. One owner for that reading, in codegraph.

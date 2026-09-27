@@ -124,6 +124,53 @@ describe('a call header rides both transports', () => {
   })
 })
 
+// A write held offline is sent again after its author may have switched
+// workspace, and the live set is then the WRONG one: made in Acme, graded and
+// stamped as Globex (FJS-1300). The held call states the set it was made
+// under, and that set replaces the live one rather than merging into it — a
+// header set since would otherwise ride a call made before it existed.
+describe('a call can state the headers it was made under', () => {
+
+  test('callHeaders() is the set as it goes on the wire', () => {
+    const c = createJunctionClient({ url: 'http://localhost:3000' })
+    c.setCallHeader('X-Cart-Token', 'tok-1')
+    c.setWorkspace('acme')
+    expect(c.callHeaders()).toEqual({ 'x-cart-token': 'tok-1', 'x-workspace-id': 'acme' })
+  })
+
+  test('HTTP: every write states them, over the live set', async () => {
+    const seen = traceHeaders()
+    const c = createJunctionClient({ url: 'http://localhost:3000' })
+    c.setWorkspace('acme')
+    const made = c.callHeaders()
+    c.setWorkspace('globex')
+    c.setCallHeader('x-cart-token', 'later')
+
+    const svc = c.service('issues')
+    await svc.create({ title: 'a' }, undefined, { callHeaders: made })
+    await svc.patch(1, { title: 'b' }, undefined, { callHeaders: made })
+    await svc.patch(1, { title: 'b' }, undefined, { callHeaders: made, base: { title: 'a' } })
+    await svc.remove(1, undefined, { callHeaders: made })
+    await svc.restore(1, undefined, { callHeaders: made })
+    await svc.invoke('close', 1, {}, undefined, { callHeaders: made })
+
+    expect(seen.map(h => h['x-workspace-id'])).toEqual(Array(6).fill('acme'))
+    expect(seen.map(h => h['x-cart-token'])).toEqual(Array(6).fill(undefined))
+  })
+
+  test('WS: the frame states them, over the live set', async () => {
+    const { c, sent } = withFakeSocket()
+    c.setWorkspace('acme')
+    const made = (c as unknown as { callHeaders(): Record<string, string> }).callHeaders()
+    c.setWorkspace('globex')
+    await c.service('issues').create({ title: 'a' } as never, undefined as never,
+      { callHeaders: made, idempotencyKey: 'k1' } as never)
+
+    expect((sent[0]?.meta as Record<string, unknown>)?.headers)
+      .toEqual({ 'x-workspace-id': 'acme', 'idempotency-key': 'k1' })
+  })
+})
+
 // ─── The server half, against a real socket ───────────────────────────────
 
 describe('the server merges only what the app declared', () => {

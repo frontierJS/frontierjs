@@ -62,6 +62,7 @@ import { pointAtLocalServer }                          from '../packages/cli/cor
 import { nginxGuard, DEFAULT_PAGE, queueScript, queueVerdict, queueStateLine, jobsVolumeVerdict } from '../packages/cli/core/pause.js'
 import { edgeVhost } from '../packages/cli/core/edge.js'
 import { reapTempDirs }                                from '../packages/litestone/src/tmp-dirs.js'
+import { fenceThisProcess }                            from '../packages/cli/core/bun-fence.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 
@@ -1225,6 +1226,8 @@ function publishablePackages() {
 // ─── standalone ──────────────────────────────────────────────
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
+  // The deploy half links this tree's packages; see FJS-1364 in bun-fence.js.
+  fenceThisProcess()
   const keep     = process.argv.includes('--keep')
   const verbose  = process.argv.includes('--verbose')
   const onlyBuild  = process.argv.includes('--build')

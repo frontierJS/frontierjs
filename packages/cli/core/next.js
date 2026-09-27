@@ -15,6 +15,14 @@
 // and nowhere else. A blocker that closes stops blocking with no edit, and one
 // that names nothing is already `register:check`'s dangling citation.
 //
+// ── By hand ─────────────────────────────────────────────────────────────────
+//
+// A row a headless session cannot finish — a run longer than a session lasts,
+// a check only the owner can make — says `by hand` as its own segment of the
+// links cell, the way `blocked by` is written. It stays ranked, since a person
+// reading `fli next` is who it is for, and `fix:loop` passes over it. Prose that
+// merely says someone did a thing by hand is not the declaration.
+//
 // ── What this does not rank ─────────────────────────────────────────────────
 //
 // Proposals. `IDEAS/overview.md` ranks those by hand, and nothing a reader can
@@ -42,6 +50,7 @@ const RECENT_COMMITS = 10
 // Any prefix: a blocker is only counted when it names an open row, so the
 // register's own prefix is what survives the filter in `rankNext`.
 const BLOCKED_BY = /\bblocked by\s+`?([A-Z][A-Z0-9]*-D?\d+)`?/gi
+const BY_HAND    = /(^|·)\s*`?by hand`?\s*(·|\|?\s*$)/im
 
 /**
  * The open rows, ranked, plus the ones that cannot start and what the owner
@@ -98,6 +107,7 @@ export function rankNext(root, { pkg = null, touched = null } = {}) {
       score:     terms.reduce((n, t) => n + t.value, 0),
       terms,
       blockedBy: blockers.get(r.id),
+      byHand:    byHand(r),
       // A row inherited from an older audit is a lead: probe it before acting.
       probeFirst: r.status === 'stale?',
     }
@@ -124,6 +134,10 @@ export function rankNext(root, { pkg = null, touched = null } = {}) {
 // register, so a row linking one would read as *being worked on* forever.
 function isCode(path) {
   return !/\.md$/i.test(path) && !/\.snapshot\./.test(path)
+}
+
+export function byHand(record) {
+  return BY_HAND.test(String(record.body ?? ''))
 }
 
 export function blockedBy(record) {

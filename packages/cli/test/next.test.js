@@ -10,7 +10,7 @@ import { join }          from 'path'
 import { tmpdir }        from 'os'
 import { fileURLToPath } from 'url'
 
-import { rankNext, blockedBy, WEIGHTS } from '../core/next.js'
+import { rankNext, blockedBy, byHand, WEIGHTS } from '../core/next.js'
 
 // Every fixture declares the prefix its rows are written under.
 const DECLARED = JSON.stringify({ registers: { prefix: 'FJS' } })
@@ -128,6 +128,23 @@ describe('the declaration', () => {
   test('blocked by is read with or without backticks, and nothing else in prose is', () => {
     expect(blockedBy({ body: 'blocked by FJS-12 and blocked by `FJS-D7`' })).toEqual(['FJS-12', 'FJS-D7'])
     expect(blockedBy({ body: 'the header block by FJS-12 · blocks FJS-9' })).toEqual([])
+  })
+
+  test('by hand is read as its own segment of the links cell, and not out of prose', () => {
+    expect(byHand({ body: '[ci](scripts/ci.mjs) · by hand · blocked by FJS-12' })).toBe(true)
+    expect(byHand({ body: '[ci](scripts/ci.mjs) · `by hand`' })).toBe(true)
+    expect(byHand({ body: 'The owner takes it by hand once CI is green · [ci](scripts/ci.mjs)' })).toBe(false)
+  })
+
+  test('a by-hand row stays ranked and says so', () => {
+    const { root, cleanup } = fixture([
+      S3('FJS-001', 'cli', 'Runs for ten minutes.', '[a](src/a.js) · by hand'),
+      S3('FJS-002', 'cli', 'Fits a session.'),
+    ])
+    try {
+      const out = rankNext(root, { touched: new Set() }).ready
+      expect(out.map(r => [r.id, r.byHand])).toEqual([['FJS-001', true], ['FJS-002', false]])
+    } finally { cleanup() }
   })
 })
 

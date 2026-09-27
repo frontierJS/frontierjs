@@ -34,7 +34,7 @@ import { NotFound, BadRequest, Unauthorized, Forbidden } from './errors.ts'
 import { fieldError } from './field-errors.ts'
 import type { ServiceContext, QueryDirectives } from './context.ts'
 import { clampPage } from './directives.ts'
-import { announcingService, announcedInCommitScope, freezeUser, requestMeta, currentCall } from './context.ts'
+import { coveredWrite, freezeUser, requestMeta, currentCall } from './context.ts'
 import { toBulkFailure, partitionBulk, BULK_FAILURES, type BulkFailure } from './envelope.ts'
 import { singularize } from '@frontierjs/toolbelt/inflect'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
@@ -3937,15 +3937,18 @@ export function announceDataWrites(
     catch { /* a dead socket is not a background job's problem */ }
   }
 
-  // Covered only for a ROW: the call's publish carries the rows it returns, and
-  // a write with no row -- a bulk `{count}` or a `select: false` -- is never one
-  // of them. Suppressing it by service name hid every sibling a method wrote:
-  // a renumber's `updateMany` over 2,800 rows reached no socket and no bus
-  // subscriber, and every other screen's next write to one was a 409
-  // (`FJS-1308`). The service's own bulk paths write row by row, so a rowless
-  // event inside its call is always app code.
-  const coveredByCall = (name: string): boolean =>
-    announcedInCommitScope(name) || announcingService() === name
+  // Covered only for a ROW the call's publish carries. A write with no row -- a
+  // bulk `{count}` or a `select: false` -- is never one of them: suppressing it
+  // by service name hid every sibling a method wrote, and a renumber's
+  // `updateMany` over 2,800 rows reached no socket and no bus subscriber
+  // (`FJS-1308`). A single-row write to a sibling is the same miss one row at a
+  // time, so the question is asked of the row's id, and held until the call
+  // knows its rows (`FJS-1357`).
+  const coveredByCall = (name: string, row: unknown, announce: () => void): boolean => {
+    const svc = app.services.get(name) as { idField?: string } | undefined
+    const id  = (row as Record<string, unknown>)[svc?.idField ?? 'id']
+    return coveredWrite(name, id, announce)
+  }
 
   return tap((e) => {
     if (!e.model) return
@@ -3968,7 +3971,11 @@ export function announceDataWrites(
       const record = e.record
       for (const name of servicesFor(e.model)) {
         const rowless = record === null || record === undefined
-        if (!rowless && coveredByCall(name)) continue
+        const announce = () => {
+          app.events?.emit(`${name}:${e.transition}`, record)
+          sendToChannel(name, e.transition!, record)
+        }
+        if (!rowless && coveredByCall(name, record, announce)) continue
         // No row to hand over — the same position a `select: false` write is in
         // below, and it takes the same answer rather than a guess.
         if (rowless) {
@@ -3977,8 +3984,7 @@ export function announceDataWrites(
           sendToChannel(name, 'changed', detail, 'gate')
           continue
         }
-        app.events?.emit(`${name}:${e.transition}`, record)
-        sendToChannel(name, e.transition, record)
+        announce()
       }
       return
     }
@@ -3993,9 +3999,10 @@ export function announceDataWrites(
     if (e.transition) return
     const row = e.result
     // The write is already covered by callService's announcement point — but
-    // only for the service that call is running. A write to ANOTHER model from
-    // inside a hook (the audit row an orders hook writes) is not covered by
-    // `orders created` and still announces under its own name.
+    // only for the service that call is running, and only for the rows it
+    // announces. A write to ANOTHER model from inside a hook (the audit row an
+    // orders hook writes) is not covered by `orders created` and still
+    // announces under its own name.
     //
     // The comparison survives the emitter's setImmediate because ALS propagates
     // to a callback through the scheduling, so the store read here is the one
@@ -4008,7 +4015,11 @@ export function announceDataWrites(
     // (`FJS-682`). `announcedInCommitScope` is the same question asked of the
     // transaction rather than of the call.
     for (const name of servicesFor(e.model)) {
-      if (row !== null && row !== undefined && coveredByCall(name)) continue
+      const announce = () => {
+        app.events?.emit(`${name}:${past}`, row)
+        sendToChannel(name, past, row)
+      }
+      if (row !== null && row !== undefined && coveredByCall(name, row, announce)) continue
 
     // ── A write with no row to hand over ──────────────────────────────────
     // Two arrive here and they are the same problem: a bulk statement answers
@@ -4030,8 +4041,7 @@ export function announceDataWrites(
         continue
       }
 
-      app.events?.emit(`${name}:${past}`, row)
-      sendToChannel(name, past, row)
+      announce()
     }
   })
 }

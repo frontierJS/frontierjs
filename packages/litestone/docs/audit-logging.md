@@ -161,6 +161,38 @@ model User {
 
 Every access to `@secret` fields (reads via `asSystem()` and all writes) is automatically logged.
 
+## @@anonymous — rows nobody may attribute
+
+An anonymous survey answer must have no writer, and an ordinary log can give it
+one back from ANOTHER model. The survey writes the answer and flips the
+respondent's row on a roster in one transaction. Log the roster, and every flip
+is an audit entry naming the person with a millisecond clock, in order. That
+order lines up with the answer table's rowid order, which SQLite keeps whether
+the schema mentions it or not. So a comment on the answer model protects
+nothing. `@@anonymous` is a declaration the parser and client refuse from:
+
+```prisma
+model SurveyResponse {
+  id         String @id @default(uuid())
+  rating     Int
+  answeredOn String @date     // a day, which everyone answering shares
+  @@anonymous
+}
+```
+
+- **At parse**, the model may not carry `@@log` or `@log` (including the one
+  `@secret` implies), a column stamped from the writer (`@createdBy`,
+  `@updatedBy`, `@@createdBy`, `@default(auth().…)`), or a clock
+  (`@updatedAt`, `@default(now())`).
+- **At runtime**, a transaction that writes an `@@anonymous` row and a row of a
+  model that logs writes is refused, whichever comes first, and both roll back.
+
+**What it does not do.** It closes the join by refusing the logged end. It does
+not hide insertion order: raw SQL against the file still reads the rowids, and
+a log on the roster written in a *separate* transaction still lines up in time.
+It also cannot be tightened later. Rows written while the model was
+attributable stay attributable, so declare it before the first row (`FJS-D349`).
+
 ## Retention
 
 The `retention` value on a logger database prunes old entries on startup:

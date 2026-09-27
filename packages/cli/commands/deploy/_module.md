@@ -524,11 +524,12 @@ done
 echo "fail"
 exit 1`
 
-  try {
-    machine.run(healthCmd)
+  const answers = () => { try { machine.run(healthCmd); return true } catch { return false } }
+
+  if (answers()) {
     log.success('Health check passed')
     return { healthy: true, restored: false }
-  } catch {}
+  }
 
   // Name the URL. The most common cause is not a sick app but a health path that
   // omits the app's apiPrefix — healthPlugin() registers through app.get(), which
@@ -566,12 +567,21 @@ fi`
 
   try {
     machine.run(restoreCmd)
-    log.warn('Restored the previous container')
-    return { healthy: false, restored: true }
   } catch (err) {
     log.error('Restore also failed: ' + err.message)
     return { healthy: false, restored: false }
   }
+
+  // `docker start` returns while the app is still migrating, so a put-back
+  // release is restored when it ANSWERS — the caller tells the operator the
+  // previous release is serving again, and a slow machine made that a lie.
+  if (!answers()) {
+    log.error(`The previous container was put back and does not answer ${healthPath} either`)
+    showContainerTail(machine, container, log)
+    return { healthy: false, restored: false }
+  }
+  log.warn('Restored the previous container, and it answers')
+  return { healthy: false, restored: true }
 }
 
 // ─── connectJournal ───────────────────────────────────────────────────────────

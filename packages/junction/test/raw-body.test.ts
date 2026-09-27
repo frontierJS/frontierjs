@@ -105,3 +105,66 @@ describe('the test request builder', () => {
     await app.stop()
   })
 })
+
+describe('the Request a route handler is handed', () => {
+  // The transport reads the body before any route runs, and a Web Request's
+  // body is single-use — so a mounted fetch-style handler given the original
+  // read nothing. Better Auth's sign-in, sign-up and every callback arrived
+  // with `{}` and answered 400 about a field the caller plainly sent
+  // (`FJS-1180`).
+  async function appWith(mount: (app: any) => void) {
+    const app = createApp({
+      config: { port: 0, database: { url: '', log: false }, services: { dir: '/nonexistent' } },
+    } as never)
+    mount(app)
+    await app.start()
+    return app
+  }
+
+  it('still carries the body, byte for byte', async () => {
+    let seen: string | undefined = 'never ran'
+    const app = await appWith(app => app.post('/hook', async (ctx: any) => {
+      seen = await ctx.$raw.$req.text()
+      return ctx.json({ ok: true })
+    }))
+
+    const raw = '{ "b": 1,  "a": "x" }'
+    await app.http.fetch(new Request('http://localhost/hook', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: raw,
+    }))
+
+    expect(seen).toBe(raw)
+    await app.stop()
+  })
+
+  it('carries a multipart body its handler can parse again', async () => {
+    let names: string[] = []
+    const app = await appWith(app => app.post('/upload', async (ctx: any) => {
+      const form = await ctx.$raw.$req.formData()
+      names = [...form.keys()]
+      return ctx.json({ ok: true })
+    }))
+
+    const form = new FormData()
+    form.append('title', 'x')
+    form.append('file', new File(['bytes'], 'a.txt'))
+    await app.http.fetch(new Request('http://localhost/upload', { method: 'POST', body: form }))
+
+    expect(names).toEqual(['title', 'file'])
+    await app.stop()
+  })
+
+  it('reaches Better Auth with the payload the caller sent', async () => {
+    const { createBetterAuthPlugin } = await import('../src/auth/providers/better-auth.ts')
+    const auth = { handler: async (req: Request) => Response.json(await req.json()) }
+    const app  = await appWith(app => app.configure(createBetterAuthPlugin(auth as never)))
+
+    const res = await app.http.fetch(new Request('http://localhost/auth/sign-in', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'a@b.c', password: 'pw' }),
+    }))
+
+    expect(await res.json()).toEqual({ email: 'a@b.c', password: 'pw' })
+    await app.stop()
+  })
+})

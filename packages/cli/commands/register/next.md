@@ -57,7 +57,7 @@ if (out.decide.rows.length) {
 }
 
 out.ready.slice(0, limit).forEach((r, i) => {
-  const flag_ = r.probeFirst ? '  (stale? — probe before acting)' : ''
+  const flag_ = (r.probeFirst ? '  (stale? — probe before acting)' : '') + (r.byHand ? '  (by hand)' : '')
   echo(`  ${String(i + 1).padStart(2)}. ${r.id.padEnd(9)} ${String(r.score).padStart(3)}  ${r.pkg.join(' · ')}${flag_}`)
   echo(`      ${r.title.slice(0, 110)}`)
   echo(`      ${r.terms.map(t => `${t.note} +${t.value}`).join(' · ')}   ${r.file}:${r.line}`)
@@ -83,4 +83,5 @@ up. The weights are one table in `core/next.js` and no flag moves them.
 
 A row that cannot start until another closes says `blocked by FJS-###` in its
 own text; it leaves the ranking and is listed under *blocked* until the blocker
-closes. Proposals are not ranked here — `IDEAS/overview.md` ranks those.
+closes. A row a headless session cannot finish says `by hand` as its own segment
+of the links cell; it stays ranked, marked *(by hand)*, and `fix:loop` skips it. Proposals are not ranked here — `IDEAS/overview.md` ranks those.

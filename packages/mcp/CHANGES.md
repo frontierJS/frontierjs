@@ -1,6 +1,13 @@
 # Changes — @frontierjs/mcp
 
 
+## 2026-09-26 — `replayBody` is gone; junction's `$req` carries its body (`FJS-1180`)
+
+The transport now rebuilds `ctx.$raw.$req` from the bytes it read, so the
+Request is handed to the MCP transport as-is and the first of the three traps
+the plugin was arranged around is no longer one. `plugin.test.ts`'s
+`initialize` answering 200 is the proof it still arrives.
+
 ## 2026-09-25 — `--help --agent`: how an agent reaches the app
 
 **`--help --agent` at the top level is a guide for an agent**: the `claude mcp add` line

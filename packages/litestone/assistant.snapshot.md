@@ -1518,12 +1518,22 @@ This model is the principal auth() reads. One per schema; @scoped resolves again
 
 #### `@@log` (<database>[, reads: false][, writes: false])
 
-tier: **common** · legal in: in a model, in a trait · see also: `log`, `database`
+tier: **common** · legal in: in a model, in a trait · see also: `log`, `database`, `anonymous`
 
 Record writes to this model in a logger database. Protected fields (@encrypted/@guarded/@secret) log as [redacted], in field entries and in before/after snapshots alike. This records a WRITE — db.$audit() is the verb for an EVENT nothing wrote.
 
 ```lite
 @@log(audit)
+```
+
+#### `@@anonymous`
+
+tier: **situational** · legal in: in a model, in a trait · also called: unattributed, ballot, survey, confidential · see also: `log`, `createdBy`, `date`
+
+No row of this model may be attributed. Refused on the model: @@log, @log, @createdBy/@updatedBy/auth(), and @updatedAt/now() (a millisecond is a join key; store a String @date). Refused at runtime: a logged write in the same transaction as one of these rows, because the trail's clock in order lines the two up. It closes the join by refusing the other end, and does not hide insertion order: raw SQL still reads the rowids, and a log written in a separate transaction still correlates.
+
+```lite
+@@anonymous
 ```
 
 #### `@@db` (<database>)

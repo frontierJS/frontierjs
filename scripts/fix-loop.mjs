@@ -10,7 +10,8 @@
 // rung of LADDER, and a row that does not close is retried once on the next —
 // the outcome is checkable (the row moves to § Closed or it does not), so
 // paying for high effort only on the rows that need it is cheaper per solved
-// row than running everything high. Model and effort are set per
+// row than running everything high. An S1 or S2 row skips the low rung and
+// runs once, high. Model and effort are set per
 // session, never changed inside one, since a mid-session change drops the
 // prompt cache.
 //
@@ -41,6 +42,8 @@
 // One line per attempt goes to ~/.fli/fix-loop.jsonl: id, model, effort,
 // cost, minutes, turns and where they went (orient · fix · prove · close), outcome. Cost per SOLVED row is the number to tune --budget and
 // LADDER against; the defaults here are guesses until that log says otherwise.
+// It also carries the session id, failed and denied tools, token usage and the
+// report's tail, which is what `loop-review.mjs` reads the transcripts back by.
 //
 // A failed or interrupted attempt leaves its edits in the tree, and the next
 // attempt at that row is told so rather than handed a clean tree — the partial
@@ -55,7 +58,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join }                     from 'node:path'
 import { pathToFileURL }            from 'node:url'
 
-import { ROOT, LOG_DIR, LADDER, runSession, printAttempt, appendLog, lastEntry, fli, rg, citation, parseArgs, printHelp } from './headless.mjs'
+import { ROOT, LOG_DIR, LADDER, runSession, printAttempt, appendLog, lastEntry, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage } from './headless.mjs'
 
 const LOG     = join(LOG_DIR, 'fix-loop.jsonl')
 const OUTLINE = import(pathToFileURL(join(ROOT, 'packages', 'cli', 'core', 'outline.js')).href).catch(() => null)
@@ -75,6 +78,9 @@ let spent     = 0
 let closed    = 0
 let blocked   = 0
 
+const usageAtStart = dryRun ? null : await planUsage()
+printPlanUsage('fix-loop', 'start', usageAtStart)
+
 for (let n = 0; n < rows; n++) {
   const row = nextRow()
   if (!row) { console.log('[fix-loop] nothing ready'); break }
@@ -84,21 +90,23 @@ for (let n = 0; n < rows; n++) {
 
   const brief = await preBrief(row)
   let outcome
-  for (const [rung, { model, effort }] of LADDER.entries()) {
+  // An S1 or S2 that fails low is retried high anyway, so the low attempt is spend with no row at the end of it.
+  const ladder = /^S[12]$/.test(row.severity) ? LADDER.slice(1) : LADDER
+  for (const { model, effort } of ladder) {
     const prompt = attemptedBefore(row.id)
       ? `/fix-next ${row.id} — an earlier fix-loop attempt at this row did not close it; the edits under its packages in the working tree are that attempt's, so read git diff and build on them`
       : `/fix-next ${row.id}`
 
     appendLog(LOG, { id: row.id, severity: row.severity, model, effort, outcome: 'started' })
     const run = await runSession(`${prompt}\n\n${brief}`, {
-      model, effort, permission, cap: rung === 0 ? budget : budget * 2,
-      tag: 'fix-loop', phases: { orient: 0, fix: 0, prove: 0, close: 0 }, phaseOf,
+      model, effort, permission, cap: effort === 'low' ? budget : budget * 2,
+      tag: 'fix-loop', where: `${row.id} [${n + 1}/${rows}]`, phases: { orient: 0, fix: 0, prove: 0, close: 0 }, phaseOf,
     })
     const status = /fix-next: \S+ (closed|blocked|ruling|corrected|busy|failed)\s*$/.exec(run.report)?.[1]
     outcome   = isClosed(row.id) ? 'closed' : isBlocked(row.id) ? 'blocked' : status === 'blocked' ? 'failed' : status ?? 'failed'
     spent    += run.cost
 
-    appendLog(LOG, { id: row.id, severity: row.severity, model, effort, cost: run.cost, turns: run.turns, minutes: run.minutes, phases: run.phases, outcome, stop: run.stop, denied: run.denied })
+    appendLog(LOG, { id: row.id, severity: row.severity, model, effort, cost: run.cost, turns: run.turns, minutes: run.minutes, phases: run.phases, outcome, stop: run.stop, denied: run.denied , ...trace(run) })
     printAttempt('fix-loop', { model, effort }, outcome, run)
 
     if (outcome !== 'failed') break
@@ -116,13 +124,14 @@ for (let n = 0; n < rows; n++) {
 }
 
 console.log(`\n[fix-loop] ${closed} closed · ${blocked} waiting on a ruling · $${spent.toFixed(2)} spent · log ${LOG}`)
+if (usageAtStart) printPlanUsage('fix-loop', 'end', await planUsage(), usageAtStart)
 
 // ─── steps ──────────────────────────────────────────────────
 
 function nextRow() {
   const argv = ['next', '--json', '--limit', String(rows + skipped.size + 5)]
   if (args.pkg) argv.push('--pkg', args.pkg)
-  return JSON.parse(fli(argv)).ready.find(r => !skipped.has(r.id))
+  return JSON.parse(fli(argv)).ready.find(r => !skipped.has(r.id) && !r.byHand)
 }
 
 // Located, not read: a location is cheap to find by script and costs a turn
@@ -159,6 +168,11 @@ async function preBrief(row) {
   if (tests.length) out.push('', 'Tests naming the most of them:', ...tests.map(([file, n]) => `- ${file} (${n})`))
 
   out.push('', 'Start from this rather than re-finding it; the hazards, whether it still reproduces and the red test are still yours.')
+  // Each line is a detour loop-review found in more than one transcript.
+  out.push('', 'Headless, so:',
+    '- Run every command in the foreground under `timeout`. The session ends when it stops calling tools, so a background run is never read back and the row fails with it still going.',
+    '- Search a tree with `rg`; a recursive `grep` is refused by a hook and costs the turn.',
+    '- A drive that fails outside your diff is checked with `fli prove` and its `open: FJS-###` tag before anything is rebuilt to test it.')
   return out.join('\n')
 }
 

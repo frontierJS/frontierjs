@@ -194,6 +194,10 @@ const APPEND_REFUSES = new Set(['patch', 'remove', 'restore'])
  * between the two and the reason `refuse` is a word at all. Anything else is
  * left exactly as the hooks produced it.
  */
+// The methods whose answer is the row as it now stands. `remove` answers the
+// row it took away, which is not a value the node should hold.
+const NODE_WRITES = new Set(['create', 'patch', 'update'])
+
 function _heldData(data, policy, versionOf) {
   if (policy !== 'server' || !versionOf) return data
   if (!data || typeof data !== 'object' || !(versionOf in data)) return data
@@ -809,6 +813,12 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // sees rather than a row nobody knows was lost.
   const syncPolicy = schema?.['x-sync'] ?? null
 
+  // The queue is built by the DECLARATION rather than the first write, because
+  // building it is what arms its drain — and a device reopened after an outage
+  // makes no write, so what the last session held sat unsent until somebody
+  // happened to make one (FJS-1277).
+  if (syncPolicy) pendingQueue()
+
   // How this model's key is made when the CALLER makes it — `{ field, kind }`,
   // or null where only the server can key it. Crossed only for a model that
   // declares `@@sync`, because stating the key is what offline creates need and
@@ -911,6 +921,20 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
   // being present at all and this set would grow one entry per row of every
   // page for nothing.
   const _seen = new Set()
+
+  // The row a write was ANSWERED with goes into its node, so the writer's own
+  // screen moves on the answer and the broadcast only confirms it. Without it a
+  // graded refusal, `channel: false`, a write-only model or a write over HTTP
+  // while the socket is down answered 200 to a screen that never changed
+  // (`FJS-1317`). An answer older than the row already held is a broadcast that
+  // overtook it on the wire, and writing it would roll the row back.
+  function _writeNode(row) {
+    if (!client?.nodes || idField === null || !row || typeof row !== 'object' || row[idField] == null) return
+    const key  = model ?? serviceName
+    const held = versionOf ? client.nodes.peek(key, row[idField])?.committed() : null
+    if (held?.[versionOf] != null && row[versionOf] != null && held[versionOf] > row[versionOf]) return
+    client.nodes.write(key, row, idField)
+  }
 
   function _rememberRows(result) {
     if (!result) return
@@ -1157,7 +1181,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       //
       // (The attachment queue is untouched either way — it patches through the
       // raw client, because the bytes of a row THIS device created arriving
-      // late are not a second writer.)
+      // late are not a second writer. It still carries a version on a
+      // `@version` model, read at drain, since the boundary refuses one without.)
       if (syncPolicy === 'append' && APPEND_REFUSES.has(method))
         throw _appendOnly(model, method)
 
@@ -1183,6 +1208,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
             service: serviceName, model, method, id: ctx.id,
             data: _heldData(_withoutFiles(ctx.data, files), syncPolicy, versionOf),
             ...(heldBase ? { base: heldBase } : {}),
+            callHeaders: client.callHeaders(),
           })
         : null
 
@@ -1192,7 +1218,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // happens when that request could not arrive.
       const parked = held
         ? await Promise.all(Object.entries(files).map(([field, blob]) =>
-            attachmentQueue().add({ service: serviceName, model, id: rowId, field, blob })))
+            attachmentQueue().add({ service: serviceName, model, id: rowId, field, blob, versionField: versionOf })))
         : []
 
       // network call
@@ -1202,7 +1228,8 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // same comparison either way — otherwise `field` would only ever resolve
       // for a device that had been offline, which is not what it declares.
       const callOpts = held || heldBase
-        ? { ...(held ? { idempotencyKey: held.key } : {}), ...(heldBase ? { base: heldBase } : {}) }
+        ? { ...(held ? { idempotencyKey: held.key, callHeaders: held.callHeaders } : {}),
+            ...(heldBase ? { base: heldBase } : {}) }
         : undefined
       try {
       switch (method) {
@@ -1288,6 +1315,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // Record before the after-hooks, so a hook that reads the version off the
       // resource sees the one that just came back rather than the previous read.
       _rememberRows(ctx.result)
+      if (NODE_WRITES.has(method)) _writeNode(ctx.result)
 
       // after
       await runPhase(_hooks, 'after', method, ctx)
