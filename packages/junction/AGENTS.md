@@ -236,7 +236,8 @@ Everything above is loud. These are not.
   answer goes to every joined socket.
 
 - **A header a caller varies per call must be listed in
-  `config.http.callHeaders`.** Over HTTP it arrives regardless; over the
+  `middleware.callHeaders`** in `junction.config.js` (`config.http.callHeaders`
+  at runtime). Over HTTP it arrives regardless; over the
   WebSocket, which the browser client prefers once connected, an undeclared
   header is absent — a token-scoped row policy then answers empty.
 

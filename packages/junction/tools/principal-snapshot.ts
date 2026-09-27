@@ -35,7 +35,7 @@
 import { writeFileSync }              from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 
-import { flag, getFlag, rel, fatal, loadApp, checkSnapshot, writeOut } from './app-module.ts'
+import { flag, getFlag, rel, fatal, loadApp, checkSnapshot, writeOut, stopApp } from './app-module.ts'
 import { describePrincipalRealm }                           from '../src/core/litestone.ts'
 import type { PrincipalRealm }                              from '../src/core/litestone.ts'
 import type { App }                                         from '../src/core/app.ts'
@@ -336,6 +336,6 @@ if (import.meta.main) {
 
   // Same reason as `junction surface`: an app built for description holds a
   // database and a poller nobody asked to stop.
-  await app.stop?.().catch(() => {})
+  await stopApp(app)
   process.exit(0)
 }

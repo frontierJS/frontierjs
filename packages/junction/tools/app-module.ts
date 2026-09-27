@@ -212,3 +212,8 @@ export function checkSnapshot(outPath: string, body: string, command: string, su
   process.exit(1)
 }
 
+// The app's shutdown announces itself on stdout, which under `--stdout` lands
+// two lines below the document. Every tool stops its app here for that reason.
+export async function stopApp(app: { stop?: () => Promise<unknown> }): Promise<void> {
+  await quietly(async () => { await app.stop?.().catch(() => {}) })
+}

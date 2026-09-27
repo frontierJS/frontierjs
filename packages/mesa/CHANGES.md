@@ -1,5 +1,12 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-27 — `{#await p then v}` is refused by name (`FJS-1345`)
+
+The Svelte one-line form compiled with no error and emitted `(load() then c)`
+verbatim, so the module did not parse in the browser. The template parser now
+refuses a `then`/`catch` word in the `{#await}` expression and names the long
+form, `{#await p}…{:then v}…{/await}`. `.then(...)` calls still compile.
+
 ## 2026-09-26 — the refused-export message names all four forms
 
 [`FJS-D211`](../../DECISIONS.md#fjs-d211). Refusing `export default`, `export *`

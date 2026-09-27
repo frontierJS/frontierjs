@@ -1338,11 +1338,11 @@ export function createApp(opts: AppOptions = {}): App {
           `this work as the app itself with runAs(null, …).`
         )
         user = await resolve.call(app.auth, userId)
-        if (!user) throw new Error(
+        if (!user) throw Object.assign(new Error(
           `[Junction] app.runAs('${userId}') — no such principal. The user was ` +
           `resolvable when this work was enqueued and is not now (deleted, or ` +
           `disabled). Deferred work outlives the caller; handle the absence.`
-        )
+        ), { code: 'PRINCIPAL_MISSING', userId: String(userId) })
         }
       } else {
         user = opts.system ?? null

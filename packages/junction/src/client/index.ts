@@ -420,23 +420,25 @@ export class ServiceProxy<
      * translation of the `$` convention on the client, where the whole point of
      * `@frontierjs/toolbelt/directives` is that there is one per boundary.
      */
-    _wire?: Record<string, unknown>
+    _wire?: Record<string, unknown>,
+    // A replayed read states the workspace its write was made in (`FJS-1372`).
+    opts?: CallOptions
   ): Promise<T> {
     if (typeof idOrQuery === 'object') {
       // findFirst — pass $first=true
       const qs = buildQueryString(idOrQuery, params, { $first: true })
-      return this._client._request('GET', `${this._base}${qs}`) as Promise<T>
+      return this._client._request('GET', `${this._base}${qs}`, undefined, _callHeader(opts)) as Promise<T>
     }
     // params travels on a by-id get too. It used to be accepted and dropped on
     // both transports, so `get(id, { populate: 'customer' })` — the shape a
     // detail page wants most — silently answered the bare row.
     if (this._client._wsReady) {
       return this._client._wsCall(
-        this.name, 'get', idOrQuery, null, params ? buildWsQuery(null, params) : undefined
+        this.name, 'get', idOrQuery, null, params ? buildWsQuery(null, params) : undefined, opts
       ) as Promise<T>
     }
     const qs = (params || _wire) ? buildQueryString(_wire, params) : ''
-    return this._client._request('GET', `${this._base}/${idOrQuery}${qs}`) as Promise<T>
+    return this._client._request('GET', `${this._base}/${idOrQuery}${qs}`, undefined, _callHeader(opts)) as Promise<T>
   }
 
   // create(data, params?) → T

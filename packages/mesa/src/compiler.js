@@ -2015,6 +2015,12 @@ export function parseHTML(source) {
             return
           }
           if (v.startsWith('#await ')) {
+            // `then`/`catch` is never a JS operator, so an expression holding one as a word
+            // is the Svelte one-line form, which would be emitted verbatim and not parse.
+            const short = v.slice(7).match(/(?:^|[\s)\]}])(then|catch)\b(?![\s]*[:(=.])/)
+            assertAt(!short,
+              `{${v}} — the one-line \`${short?.[1]}\` form is not supported. Write ` +
+              `{#await p}…{:${short?.[1]} v}…{/await}.`, bindStart)
             const tag = { type: 'await', value: v, parts: { main: [] }, start: bindStart }
             push(tag)
             go(tag, (n) => tag.parts.main.push(n))

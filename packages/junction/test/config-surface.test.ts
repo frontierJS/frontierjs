@@ -35,6 +35,7 @@ import { createApp } from '../src/core/app.ts'
 
 const COVERED: Record<string, { section: 'middleware' | 'plugins'; how: 'behavior' | 'registration' }> = {
   cors:          { section: 'middleware', how: 'behavior' },
+  callHeaders:   { section: 'middleware', how: 'behavior' },
   helmet:        { section: 'middleware', how: 'behavior' },
   requestLogger: { section: 'middleware', how: 'registration' },
   correlationId: { section: 'middleware', how: 'behavior' },
@@ -156,6 +157,28 @@ describe('middleware declared in config is installed', () => {
     const off = await serve({})
     expect((await off.get('/probe', { origin: 'https://shop.test' })).headers.get('access-control-allow-origin'))
       .toBeNull()
+  })
+
+  // The declaration EXTENDS junction's own allow-list rather than replacing
+  // it, so a preflight naming the app's header gets it back beside the
+  // defaults — and without it the preflight still answers 204, which is why
+  // the miss surfaced only as a browser's `Failed to fetch` (`FJS-1226`).
+  test('callHeaders reaches the preflight allow-list, and is absent without it', async () => {
+    const preflight = (s: { app: unknown }, port: number) => fetch(`http://127.0.0.1:${port}/probe`, {
+      method: 'OPTIONS',
+      headers: { origin: 'https://shop.test', 'access-control-request-method': 'POST', 'access-control-request-headers': 'x-booking-token' },
+    })
+    const portOf = (s: { app: unknown }) => (s.app as { http: { port: number } }).http.port
+    const cors = { origins: ['https://shop.test'] }
+
+    const on = await serve({ middleware: { cors, callHeaders: ['X-Booking-Token'] } })
+    const allowed = (await preflight(on, portOf(on))).headers.get('access-control-allow-headers') ?? ''
+    expect(allowed).toContain('X-Booking-Token')
+    expect(allowed).toContain('Authorization')
+
+    const off = await serve({ middleware: { cors } })
+    expect((await preflight(off, portOf(off))).headers.get('access-control-allow-headers') ?? '')
+      .not.toContain('X-Booking-Token')
   })
 
   test('correlationId stamps a response, and nothing does without it', async () => {

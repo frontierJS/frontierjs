@@ -94,6 +94,12 @@ export interface LitestoneCtx {
   auth:       LitestoneAuth | null
   isSystem:   boolean
   policyDebug: boolean | 'verbose'
+  /**
+   * The calling flavor's own accessors, keyed like the client (`tables.issue`) —
+   * how a plugin hook reads another row under the caller's policies. Absent in
+   * `onInit`, which runs before the tables are built.
+   */
+  tables:     Record<string, TableClient<Record<string, unknown>>>
   [key: string]: unknown
 }
 

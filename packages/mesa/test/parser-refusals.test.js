@@ -271,3 +271,17 @@ describe('a compile error names a file, a line and a column (FJS-844)', () => {
     expect(msg).toMatch(/Broken\.mesa:3:/)
   })
 })
+
+describe('FJS-1345 — {#await p then v} one-line form', () => {
+  it('refuses the then shorthand naming the long form', async () => {
+    const msg = await refusal('<script>const load = async () => 1</script>{#await load() then c}<p>{c}</p>{/await}')
+    expect(msg).toMatch(/one-line `then` form/)
+    expect(msg).toMatch(/\{:then v\}/)
+  })
+  it('refuses the catch shorthand', async () => {
+    expect(await refusal('<script>const load = async () => 1</script>{#await load() catch e}<p>{e}</p>{/await}')).toMatch(/`catch` form/)
+  })
+  it('still accepts the long form and .then() calls', async () => {
+    expect(await refusal('<script>const load = async () => 1</script>{#await load().then(x => x)}<p>w</p>{:then c}<p>{c}</p>{/await}')).toBe(null)
+  })
+})

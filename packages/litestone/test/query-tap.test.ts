@@ -219,3 +219,23 @@ describe('every operation the client emits is declared', () => {
     expect(missing).toEqual([])
   })
 })
+
+// Raw SQL is where an app puts the queries it could not express — the slow
+// ones — so a tap that skipped `db.sql` hid exactly what an investigation needs.
+describe('raw SQL reaches the tap (FJS-1312)', () => {
+  test('db.sql and asSystem().sql each fire one event with sql, params and rowCount', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: SCHEMA })
+    await db.author.create({ data: { id: 1, name: 'a' } })
+    const events: any[] = []
+    db.$tapQuery((e: any) => events.push(e))
+    const rows = await db.sql`SELECT name FROM author WHERE id = ${1}`
+    await db.asSystem().sql`SELECT count(*) AS n FROM author`
+    const raw = events.filter(e => e.operation === 'sql')
+    expect(rows.length).toBe(1)
+    expect(raw.length).toBe(2)
+    expect(raw[0].sql).toBe('SELECT name FROM author WHERE id = ?')
+    expect(raw[0].params).toEqual([1])
+    expect(raw[0].rowCount).toBe(1)
+    expect(typeof raw[0].duration).toBe('number')
+  })
+})

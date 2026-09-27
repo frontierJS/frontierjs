@@ -89,43 +89,10 @@ ${body}
 }
 
 // ─── A page wired to a Resource ───────────────────────────────────────────────
+// The list, create and detail pages `make:scaffold` writes, from the one module
+// that writes them — which of the three is read off the path's last segment.
 
-// The import is the resource's FILE on the left of `from` and its EXPORT on
-// the right of the braces, and the two are spelled differently on purpose: the
-// file is named for the model, the export for the service (repo invariant 19).
-const makeResourcePage = (title, model, service, up) => `---
-title: ${title}
----
-<script>
-  import { ${service} } from '${up}resources/${model}.mesa'
-  import { useStore } from '@frontierjs/sierra/junction'
-  import { $onDestroy } from '@frontierjs/mesa/runtime'
-
-  // useStore wraps the Resource's store as a Mesa signal. Call it once here —
-  // in the script block, never inside a reactive computation — and hand the
-  // unsubscribe to $onDestroy so the subscription dies with the component.
-  const { get: rows, unsubscribe } = useStore(${service}.store)
-  $onDestroy(unsubscribe)
-
-  let error = null
-
-  ${service}.load().catch(e => { error = e.message })
-${SC}
-
-<h1>${title}</h1>
-
-{#if error}<p class="err">{error}</p>{/if}
-
-<ul>
-  {#each rows() as row}
-    <li>{row.id}</li>
-  {/each}
-</ul>
-
-<style>
-  .err { color: #b91c1c }
-</style>
-`
+const { resourceRoutePage } = await import(resolve(global.fliRoot, 'core/crud-templates.js'))
 
 // ─── A layout ─────────────────────────────────────────────────────────────────
 // _module.mesa wraps this directory and everything under it. Layouts nest: this
@@ -177,9 +144,18 @@ that use it.
 `--layout` writes `_module.mesa` instead: a layout wrapping this directory and
 everything beneath it. Layouts nest rather than replace.
 
-`--resource Invoice` wires the page to `src/resources/Invoice.mesa`. It does not
-write that file — `fli make:resource` owns that template, and this command tells
-you to run it when the resource is missing.
+`--resource Invoice` wires the page to `src/resources/Invoice.mesa`, and the
+path's last segment says which page it is — the same three `fli make:scaffold`
+writes. `invoices/[id]` is the detail page, `invoices/create` the create page
+rendering `<Invoice />` as its form, and anything else the list, written as
+`invoices/index.mesa` so the other two can live beside it. It does not write the
+resource — `fli make:resource` owns that template, and this command tells you to
+run it when the resource is missing.
+
+A page never lands beside a directory of the same name, which is a route
+conflict the build refuses: `users` becomes `users/index.mesa` when `users/`
+exists, and a route under `users/` is refused, naming the move, when
+`users.mesa` does.
 
 ```js
 const created = []
@@ -188,9 +164,6 @@ const editor  = process.env.EDITOR || 'vi'
 // ─── The route file ───────────────────────────────────────────────────────────
 
 const raw  = arg.path.replace(/\.(mesa|md)$/, '').replace(/^\/+|\/+$/g, '')
-const file = flag.layout
-  ? resolve(context.paths.webPages, raw, '_module.mesa')
-  : resolve(context.paths.webPages, raw + '.mesa')
 
 const display = toLabel(basename(raw).replace(/^\[\.\.\./, '').replace(/^\[/, '').replace(/\]$/, ''))
 
@@ -199,19 +172,41 @@ const params = raw.split('/')
   .filter(seg => /^\[.+\]$/.test(seg))
   .map(seg => seg.replace(/^\[\.\.\./, '').replace(/^\[/, '').replace(/\]$/, ''))
 
-// How deep the file sits below src/routes/, so a relative import resolves.
-// Sierra has no `@/` alias — imports are relative or bare package specifiers.
-//   routes/invoices.mesa        → 1 segment  → ../resources/…
-//   routes/invoices/[id].mesa   → 2 segments → ../../resources/…
-//   routes/admin/_module.mesa   → counts the directory it was placed in
-const segments = raw.split('/').length + (flag.layout ? 1 : 0)
-const up       = '../'.repeat(segments)
-
 const model   = flag.resource ? flag.resource.charAt(0).toUpperCase() + flag.resource.slice(1) : ''
 const service = model ? servicePlural(model) : ''
+const wired   = model && !flag.layout ? resourceRoutePage({ path: raw, model, service }) : null
 
-const content = flag.layout ? makeLayout(display)
-              : model       ? makeResourcePage(display, model, service, up)
+if (wired?.error) {
+  log.error(`${raw}: ${wired.error}`)
+  return
+}
+
+// `x.mesa` beside `x/` is a route conflict the build refuses. A page whose
+// directory already exists becomes its index; a file standing where this one
+// needs a directory is the user's, so it is named rather than moved — moving
+// it would break every relative import in it.
+let file = wired ? resolve(context.paths.webPages, wired.file)
+         : flag.layout ? resolve(context.paths.webPages, raw, '_module.mesa')
+         : resolve(context.paths.webPages, raw + '.mesa')
+
+if (!wired && !flag.layout && existsSync(resolve(context.paths.webPages, raw))) {
+  file = resolve(context.paths.webPages, raw, 'index.mesa')
+}
+
+const rel     = file.slice(resolve(context.paths.webPages).length + 1).split(/[\\/]/)
+const blocker = rel.slice(0, -1)
+  .map((_, i) => rel.slice(0, i + 1).join('/') + '.mesa')
+  .find(f => existsSync(resolve(context.paths.webPages, f)))
+
+if (blocker) {
+  const dir = blocker.replace(/\.mesa$/, '')
+  log.error(`${blocker} exists, and this route needs ${dir}/ — Sierra refuses both.`)
+  echo(`    Move it to ${dir}/index.mesa (one more ../ on each relative import), then run this again.`)
+  return
+}
+
+const content = wired       ? wired.content
+              : flag.layout ? makeLayout(display)
               :               makePage(display, params)
 
 if (flag.dry) {

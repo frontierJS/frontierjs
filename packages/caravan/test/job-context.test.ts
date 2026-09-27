@@ -280,8 +280,37 @@ describe('what cannot be resolved', () => {
 
     const failed = () => jobsOf(app).list({ status: 'failed' })
     expect(await until(() => failed().length > 0)).toBe(true)
-    expect(failed()[0].error).toContain('no such principal')
+    expect(failed()[0].error).toContain('no longer resolves')
 
+    await app.stop()
+  })
+
+  it('a deleted actor fails at once, not after the ladder, naming the job and the actor (FJS-D202)', async () => {
+    const stub = authStub({})
+    const app  = await bootApp({ auth: stub.auth })
+    let ran = 0
+    jobsOf(app).handle('receipt', async () => { ran++ }, { maxAttempts: 3, retryDelay: [60_000] })
+    await jobsOf(app).dispatch('receipt', {}, { actor: 'gone-7' })
+
+    const failed = () => jobsOf(app).list({ status: 'failed' })
+    expect(await until(() => failed().length > 0)).toBe(true)
+    expect(failed()[0].attempts).toBe(1)
+    expect(failed()[0].error).toContain("'receipt'")
+    expect(failed()[0].error).toContain('gone-7')
+    expect(ran).toBe(0)
+    await app.stop()
+  })
+
+  it("onMissingActor: 'system' runs a departed actor's job as the app", async () => {
+    const stub = authStub({})
+    const app  = await bootApp({ auth: stub.auth, system: SYSTEM })
+    const seen: JobContext[] = []
+    jobsOf(app).handle('receipt', async (ctx) => { seen.push(ctx) }, { onMissingActor: 'system' })
+    await jobsOf(app).dispatch('receipt', {}, { actor: 'gone-7' })
+
+    expect(await until(() => seen.length > 0)).toBe(true)
+    expect(seen[0].auth.user?.userId).toBe('system')
+    expect(seen[0].actorId).toBe('gone-7')
     await app.stop()
   })
 

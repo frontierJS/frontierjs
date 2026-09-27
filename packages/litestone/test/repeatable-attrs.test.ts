@@ -51,6 +51,7 @@ describe('an attribute answered twice is refused', () => {
 const MODEL_FIXTURES: Record<string, string> = {
   index:       '@@index([a])\n  @@index([b])',
   uniqueIndex: '@@unique([a])\n  @@unique([b])',
+  partialUnique: '@@unique([a], where: b > 0)\n  @@unique([b], where: a > 0)',
   check:       '@@check("a > 0", "a must be positive")\n  @@check("b > 0", "b must be positive")',
   scope:       '@@scope(mine, a > 0)\n  @@scope(other, b > 0)',
   allow:       "@@allow('read', a > 0)\n  @@allow('read', b > 0)",
@@ -86,4 +87,15 @@ describe('every listed kind is a kind the parser actually emits', () => {
     it(`@${kind} may be written twice`, () => {
       expect(refusal(`model M {\n  id Int @id\n  a Int ${attrs}\n}`)).toBe(null)
     })
+})
+
+describe('two partial uniques, one per predicate (FJS-1306)', () => {
+  it('an entry row and a move row both declare, and `col != null` counts as excluding NULLs', () => {
+    expect(refusal('model W {\n  id Int @id\n  teamId Int\n  fromId Int?\n  toId Int\n' +
+      '  @@unique([fromId, toId], where: fromId != null)\n  @@unique([teamId, toId], where: fromId == null)\n}')).toBe(null)
+  })
+  it('a nullable member the predicate does NOT exclude is still refused', () => {
+    expect(refusal('model W {\n  id Int @id\n  fromId Int?\n  toId Int\n  @@unique([fromId, toId], where: toId > 0)\n}'))
+      .toContain('two NULLs never compare equal')
+  })
 })

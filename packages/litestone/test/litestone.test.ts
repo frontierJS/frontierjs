@@ -9129,6 +9129,46 @@ describe('plugin system', () => {
     db.$close()
   })
 
+  // A plugin that needs to read another row has no documented client but
+  // `ctx.tables`, and it must be the CALLER's flavor — a client captured at
+  // install reads as nobody, or as everybody, whoever is calling.
+  test('FJS-1358: ctx.tables in a hook is the calling flavor, policy-scoped', async () => {
+    const { Plugin } = await import('../src/core/plugin.js')
+    const seen: Record<string, number[]> = {}
+    class ReadBack extends Plugin {
+      async onBeforeCreate(model: string, args: any, ctx: any) {
+        if (model !== 'Note') return
+        const who = ctx.isSystem ? 'system' : String(ctx.auth?.id ?? 'anon')
+        seen[who] = (await ctx.tables.secret.findMany({})).map((r: any) => r.id)
+      }
+    }
+    const db = await makeDb(`
+      model User { id Int @id
+        @@auth }
+      model Secret {
+        id    Int @id
+        owner Int
+        @@allow('all', owner == auth().id)
+      }
+      model Note {
+        id Int @id
+        @@allow('all', true)
+      }
+    `, 'plugin-ctx-tables', { plugins: [new ReadBack()] })
+    await db.$db.run(`INSERT INTO secret VALUES (1, 1), (2, 2)`)
+    await db.$setAuth({ id: 1 }).note.create({ data: { id: 1 } })
+    await db.asSystem().note.create({ data: { id: 2 } })
+    expect(seen).toEqual({ '1': [1], system: [1, 2] })
+    db.$close()
+  })
+
+  test('FJS-1358: LitestoneCtx declares tables', () => {
+    const dts  = readFileSync(resolve(import.meta.dir, '../src/index.d.ts'), 'utf8')
+    const head = dts.indexOf('export interface LitestoneCtx {')
+    const body = dts.slice(head, dts.indexOf('\n}', head))
+    expect(body).toMatch(/^  tables\s*:/m)
+  })
+
   test('plugin onBeforeUpdate can block an update', async () => {
     const { Plugin, AccessDeniedError } = await import('../src/core/plugin.js')
     class BlockUpdate extends Plugin {

@@ -535,21 +535,8 @@ rule names `x-messages` answers for, which is what a failure is allowed to say.
 | `orderCount` | `integer` | — | — | `x-aggregatable` `x-litestone-from` `x-litestone-kind` | — |
 | `fields` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` | — |
 | `version` | `integer` | — | — | `x-litestone-kind` | — |
-| `fieldsSlots` | `json` = `{}` | — | — | `x-sortable: "json"` `x-aggregatable` `x-litestone-kind` | — |
-| `t1` | `string`? | — | — | `x-litestone-kind` | — |
-| `t2` | `string`? | — | — | `x-litestone-kind` | — |
-| `n1` | `number`? | — | — | `x-litestone-kind` | — |
-| `t3` | `string`? | — | — | `x-litestone-kind` | — |
-| `t4` | `string`? | — | — | `x-litestone-kind` | — |
-| `n2` | `number`? | — | — | `x-litestone-kind` | — |
-| `t5` | `string`? | — | — | `x-litestone-kind` | — |
-| `t6` | `string`? | — | — | `x-litestone-kind` | — |
-| `n3` | `number`? | — | — | `x-litestone-kind` | — |
-| `t7` | `string`? | — | — | `x-litestone-kind` | — |
-| `t8` | `string`? | — | — | `x-litestone-kind` | — |
-| `n4` | `number`? | — | — | `x-litestone-kind` | — |
 
-**On create**: required — `name`, `firstName`, `lastName`, `email` · not accepted — `id`, `fullName`, `orderCount`, `version`, `t1`, `t2`, `n1`, `t3`, `t4`, `n2`, `t5`, `t6`, `n3`, `t7`, `t8`, `n4`
+**On create**: required — `name`, `firstName`, `lastName`, `email` · not accepted — `id`, `fullName`, `orderCount`, `version`
 
 ### `CustomField`
 

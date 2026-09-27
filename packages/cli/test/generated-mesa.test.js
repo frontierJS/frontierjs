@@ -27,7 +27,7 @@ const { compileSource } = await import(resolve(HERE, '../../mesa/src/compiler.js
 // acorn is mesa's dependency, not this package's — reached the same way the
 // compiler itself is, by path, so the CLI gains no dependency for a test.
 const { parse: parseJs } = await import(resolve(HERE, '../../mesa/node_modules/acorn/dist/acorn.mjs'))
-const { listPage, createPage, editPage } = await import(resolve(HERE, '../core/crud-templates.js'))
+const { listPage, createPage, editPage, resourceRoutePage } = await import(resolve(HERE, '../core/crud-templates.js'))
 const { resourceFile } = await import(resolve(HERE, '../core/resource-template.js'))
 
 // The shape `fli make:scaffold` actually passes — see commands/make/scaffold.md.
@@ -66,6 +66,10 @@ const GENERATED = {
     backLabel: 'All orders', deleteLabel: 'Delete', basePath, imports, res: 'orders', form: 'Order',
   }),
   'make:resource — resource file': resourceFile('Order', 'orders'),
+  // `fli make:route <path> --resource Order`, one per shape the path can name.
+  'make:route — list':   resourceRoutePage({ path: 'orders', model: 'Order', service: 'orders' }).content,
+  'make:route — create': resourceRoutePage({ path: 'orders/create', model: 'Order', service: 'orders' }).content,
+  'make:route — detail': resourceRoutePage({ path: 'orders/[id]', model: 'Order', service: 'orders' }).content,
 }
 
 describe('what the generators write', () => {
@@ -184,5 +188,41 @@ describe('what the generators write', () => {
       expect(source, `${what} never offers more rows`).toContain('{#if list.hasMore}')
     }
     expect(lists, 'no generated page renders a table at all').toBeGreaterThan(0)
+  })
+})
+
+// `fli make:route --resource` wrote ONE page for every path — a list under a
+// detail route's heading, no form on a create route, a runtime import that does
+// not exist, and a list file beside the directory its own next example creates
+// (`FJS-1261`).
+describe('make:route --resource', () => {
+  const route = (path) => resourceRoutePage({ path, model: 'Order', service: 'orders' })
+
+  test('the path names which of the three pages it writes', () => {
+    expect(route('orders').kind).toBe('list')
+    expect(route('orders/create').kind).toBe('create')
+    expect(route('orders/[id]').kind).toBe('detail')
+    const [list, create, detail] = ['orders', 'orders/create', 'orders/[id]'].map((p) => route(p).content)
+    expect(new Set([list, create, detail]).size).toBe(3)
+    expect(detail).toContain('page.params.id')
+    expect(create).toContain('<Order')
+    expect(list).toContain('columns()')
+  })
+
+  test('a list lands as index.mesa, so the detail and create routes can sit beside it', () => {
+    expect(route('orders').file).toBe('orders/index.mesa')
+    expect(route('orders/index').file).toBe('orders/index.mesa')
+    expect(route('orders/[id]').file).toBe('orders/[id].mesa')
+    expect(route('admin/orders').file).toBe('admin/orders/index.mesa')
+  })
+
+  test('each import reaches src/resources from where the file lands', () => {
+    expect(route('orders').content).toContain(`from '../../resources/Order.mesa'`)
+    expect(route('admin/orders/[id]').content).toContain(`from '../../../resources/Order.mesa'`)
+    expect(route('admin/orders/[id]').content).toContain(`href="/admin/orders/"`)
+  })
+
+  test('a detail route keyed by anything but [id] is refused, not written with an undefined id', () => {
+    expect(route('orders/[slug]').error).toContain('[id]')
   })
 })

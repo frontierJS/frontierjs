@@ -76,19 +76,20 @@ export function runSession(prompt, { model, effort, cap, permission, tag, phases
   // A silent stretch is either a tool running, which costs nothing, or the
   // model holding the turn, which is what the budget pays for; from outside
   // the two look the same, so the heartbeat names which one it is.
-  // A beat per whole minute of one state, checked often so a stretch that
-  // starts mid-interval is not left unreported for nearly two.
+  // A beat per two whole minutes of one state, checked often so a stretch
+  // that starts mid-interval is not left unreported for nearly four.
+  const BEAT_S  = 120
   const pending = new Map()               // tool_use id → { name, at }
   let turnAt    = Date.now()
-  let told      = { at: 0, minutes: 0 }
+  let told      = { at: 0, beats: 0 }
   const beat    = setInterval(() => {
     const [call]  = pending.values()
     const since   = call?.at ?? turnAt
     const s       = Math.round((Date.now() - since) / 1000)
-    const minutes = Math.floor(s / 60)
-    if (told.at !== since) told = { at: since, minutes: 0 }
-    if (minutes <= told.minutes) return
-    told.minutes = minutes
+    const beats   = Math.floor(s / BEAT_S)
+    if (told.at !== since) told = { at: since, beats: 0 }
+    if (beats <= told.beats) return
+    told.beats = beats
     console.log(`[${tag}]       … ${where ? `${where} - ` : ''}${call ? `${call.name} running` : 'model thinking'} ${clock(s)}`)
   }, 5_000)
 

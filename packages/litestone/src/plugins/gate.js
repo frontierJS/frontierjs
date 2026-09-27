@@ -201,17 +201,19 @@ export class GatePlugin extends Plugin {
       throw new Error('GatePlugin: getLevel must be a function')
     getLevel = getLevel ?? gradeStanding
     this._getLevel    = getLevel
-    this._accessMap   = {}
-    this._relationMap = {}
     // Per-ctx level resolvers. A ctx object is stable for the lifetime of a
     // scoped client ($setAuth), so caching here delivers the documented
     // "getLevel() called at most once per model per request" behavior.
     this._resolvers   = new WeakMap()
   }
 
+  // Nothing read from the schema is kept on the instance. A tenant registry
+  // forwards one plugin to every client it opens, and an app exports one from
+  // one module, so a second onInit on `this` re-bound the FIRST client's ladder
+  // to the second schema's — and a loosened gate there admitted callers here
+  // (`FJS-1267`). The maps live on the client's ctx, which every hook is handed.
   onInit(schema, ctx) {
-    this._accessMap   = buildAccessMap(schema)
-    this._relationMap = ctx.relationMap ?? {}
+    const accessMap = buildAccessMap(schema)
     // Publish the level resolver onto ctx. GatePlugin owns the 0–7 scale and
     // the per-request cache; anything else that needs a level (the @@transitions
     // gate check in client.js) asks here rather than calling getLevel itself,
@@ -226,7 +228,7 @@ export class GatePlugin extends Plugin {
     // does not grant. `$readAs` is the caller — it grades a row for somebody who
     // is not this client's principal, so it needs both halves and may spell
     // neither. `null` where the model declares no gate for that operation.
-    ctx.gateFor = (model, op) => this._accessMap[model]?.[op] ?? null
+    ctx.gateFor = (model, op) => accessMap[model]?.[op] ?? null
   }
 
   // ── Resolve level for this request's auth user ──────────────────────────────
@@ -253,9 +255,7 @@ export class GatePlugin extends Plugin {
   // ── Gate check helper ───────────────────────────────────────────────────────
 
   async _check(model, op, ctx) {
-    const gate = this._accessMap[model]
-    if (!gate) return
-    const required  = gate[op]
+    const required  = ctx.gateFor(model, op)
     if (required == null) return
     const userLevel = this._resolver(ctx)(model)
     checkLevel(required, userLevel, model, op)
@@ -265,7 +265,7 @@ export class GatePlugin extends Plugin {
 
   async onBeforeRead(model, args, ctx) {
     await this._check(model, 'read', ctx)
-    for (const target of collectIncludedModels(args, model, this._relationMap))
+    for (const target of collectIncludedModels(args, model, ctx.relationMap))
       await this._check(target, 'read', ctx)
   }
 
@@ -273,14 +273,12 @@ export class GatePlugin extends Plugin {
 
   async onBeforeCreate(model, args, ctx) {
     await this._check(model, 'create', ctx)
-    const nested  = collectNestedOps(args?.data, model, this._relationMap)
+    const nested  = collectNestedOps(args?.data, model, ctx.relationMap)
     const resolve = this._resolver(ctx)
     for (const { model: m, op } of nested) {
-      const gate = this._accessMap[m]
-      if (!gate) continue
-      const required = gate[op] ?? gate.create
-      const level    = resolve(m)
-      checkLevel(required, level, m, op)
+      const required = ctx.gateFor(m, op) ?? ctx.gateFor(m, 'create')
+      if (required == null) continue
+      checkLevel(required, resolve(m), m, op)
     }
   }
 
@@ -288,14 +286,12 @@ export class GatePlugin extends Plugin {
 
   async onBeforeUpdate(model, args, ctx) {
     await this._check(model, 'update', ctx)
-    const nested  = collectNestedOps(args?.data, model, this._relationMap)
+    const nested  = collectNestedOps(args?.data, model, ctx.relationMap)
     const resolve = this._resolver(ctx)
     for (const { model: m, op } of nested) {
-      const gate = this._accessMap[m]
-      if (!gate) continue
-      const required = gate[op] ?? gate.update
-      const level    = resolve(m)
-      checkLevel(required, level, m, op)
+      const required = ctx.gateFor(m, op) ?? ctx.gateFor(m, 'update')
+      if (required == null) continue
+      checkLevel(required, resolve(m), m, op)
     }
   }
 

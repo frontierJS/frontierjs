@@ -946,6 +946,36 @@ describe('@@unique(where:) — what it parses to', () => {
     expect(r.errors.join(' ')).toContain('never moved')
   })
 
+  // `FJS-1243`. A quoted predicate is a STRING LITERAL, not SQL — `@@check("…")`
+  // takes SQL and this word does not — and SQLite reads `WHERE 'endedAt IS
+  // NULL'` as the constant 0: the index exists, covers no row, and every
+  // duplicate lands. Driven against SQLite, because the whole defect was that
+  // nothing below the parser noticed.
+  it('refuses a quoted predicate, which lowers to a constant and covers no row', () => {
+    const r = one('@@unique([employeeId], where: "effectiveTo IS NULL")')
+    expect(r.valid).toBe(false)
+    expect(r.errors.join(' ')).toContain('not SQL')
+    expect(r.errors.join(' ')).toContain('constant')
+
+    const db = new Database(':memory:')
+    db.run(`CREATE TABLE w (employeeId INTEGER, effectiveTo TEXT)`)
+    db.run(`CREATE UNIQUE INDEX u ON w (employeeId) WHERE 'effectiveTo IS NULL'`)
+    db.run(`INSERT INTO w VALUES (1, NULL)`)
+    db.run(`INSERT INTO w VALUES (1, NULL)`)
+    expect((db.prepare('SELECT count(*) n FROM w').get() as any).n).toBe(2)
+  })
+
+  it('refuses a constant anywhere a truth value is read, and on @@index and @required too', () => {
+    for (const w of ['true', '1', 'effectiveTo == null && "x"', '!"x"']) {
+      expect(one(`@@unique([employeeId], where: ${w})`).errors.join(' ')).toContain('constant')
+    }
+    expect(one('@@index([employeeId], where: "effectiveTo IS NULL")').errors.join(' ')).toContain('constant')
+    expect(parse(`model W { id Int @id  status String  shippedAt DateTime? @required(where: "status = 'x'") }`)
+      .errors.join(' ')).toContain('constant')
+    // The legal shape one character away (`FJS-351`) — a boolean COLUMN reads as a truth value.
+    expect(parse(`model W { id Int @id  e Int  live Boolean  @@unique([e], where: live) }`).errors).toEqual([])
+  })
+
   it('refuses auth(), a column of another model, and a subquery', () => {
     expect(one('@@unique([employeeId], where: rate == auth().rate)').errors.length).toBe(1)
     expect(one('@@unique([employeeId], where: nope == null)').errors.join(' ')).toContain('not a column')

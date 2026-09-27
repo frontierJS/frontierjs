@@ -172,6 +172,7 @@ async function preBrief(row) {
   out.push('', 'Headless, so:',
     '- Run every command in the foreground under `timeout`. The session ends when it stops calling tools, so a background run is never read back and the row fails with it still going.',
     '- Search a tree with `rg`; a recursive `grep` is refused by a hook and costs the turn.',
+    '- Change a file with Edit or Write, never a `python3` or `sed -i` replace: a replace whose old text does not match changes nothing and exits 0, so the fix you prove may not be in the file. Edit fails on a mismatch. `cat >>` onto the end of a file is fine.',
     '- A drive that fails outside your diff is checked with `fli prove` and its `open: FJS-###` tag before anything is rebuilt to test it.')
   return out.join('\n')
 }

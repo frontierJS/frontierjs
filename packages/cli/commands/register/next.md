@@ -50,8 +50,13 @@ if (out.decide.decidable) {
   echo(`  decide first: ${out.decide.decidable} question(s) have options written — fli decisions`)
   echo('')
 }
+if (out.decide.framed.length) {
+  echo('  waiting on a ruling, options written — fli decide:')
+  for (const r of out.decide.framed) echo(`    ${r.id}  ${r.title.slice(0, 90)}`)
+  echo('')
+}
 if (out.decide.rows.length) {
-  echo('  waiting on a ruling, with no options written yet:')
+  echo('  waiting on a ruling, with no options written yet — /frame-next:')
   for (const r of out.decide.rows) echo(`    ${r.id}  ${r.title.slice(0, 90)}`)
   echo('')
 }

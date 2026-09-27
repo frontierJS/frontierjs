@@ -412,6 +412,13 @@ db.post.findMany({ where: { author: { isNot: { name: 'Ann' } } } })
 
 Relation filters compose with scalar filters and `AND`/`OR`/`NOT`, and nest
 (a relation filter's inner `where` can itself contain relation filters).
+Each nested key resolves against the model it sits in, so a tag-shaped
+relation is filtered by anything on the tag, not only its id:
+
+```js
+// Issue → IssueLabel → Label
+db.issue.findMany({ where: { labels: { some: { label: { is: { name: 'bug' } } } } } })
+```
 
 ## Filtering an include
 

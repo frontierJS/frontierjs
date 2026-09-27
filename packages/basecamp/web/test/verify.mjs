@@ -2740,9 +2740,11 @@ const patHub = await fetch(`http://localhost:${API_PORT}/hub`, {
   headers: { accept: 'application/json', authorization: `Bearer ${patToken}`,
              'x-service-method': 'overview' },
 })
-// 404, not 403: the hub is not a screen somebody is being refused, it is a
-// surface they have no business knowing exists.
-check('the hub is invisible to a non-administrator', patHub.status, 404)
+// 403 naming the level, not 404: /hub ships in every member's bundle, so
+// hiding it hid nothing (FJS-1342). A 404 here means the declared SYSADMIN
+// gate was lost and something else answered.
+check('the hub refuses a non-administrator', patHub.status, 403)
+check('…naming the level it needs', await patHub.text(), t => t.includes('requires level 7'))
 
 // ── The gate ladder, asked of somebody who is not a sysadmin ──────────
 //

@@ -1,5 +1,22 @@
 # Changes — @frontierjs/outpost
 
+## 2026-09-26 — a disk report reads Docker's sizes as decimal, and the volume sweep removes volumes (`FJS-257`)
+
+The inspector had only ever met canned text, and the first real daemon it met disagreed with it
+twice. **Docker's human sizes are decimal** — its API put the images at 13,808,647,133 bytes and its
+CLI printed `13.81GB` — and `bytes()` scaled them by 1024, so every disk report basecamp received
+read 2.4% fuller at kB and 7.4% at GB. `bytes()` is base 1000 now and knows `P`. **`docker volume
+prune` takes no `--format`**: asked for one it exits 125 having removed nothing, so the
+`unused_volumes` sweep answered an empty list on every machine. It runs `volume prune -f` and reads
+the names under `Deleted Volumes:`, the block a real daemon prints.
+
+The canned test asserted the 1024 reading, which is how both passed; it is corrected, and a second
+canned test holds four lines captured from Docker 29.8. `test/docker-live.test.js` is the grade
+nothing canned can give: the inspector's `disk()` against the daemon's own byte counts read off its
+API socket, and a volume sweep scoped by label to a volume the test made, since the sweep itself
+removes every unused anonymous volume on the machine. It skips, and says so, where no daemon
+answers. Both go red on the old code.
+
 ## 2026-09-20 — an app whose source is the files themselves
 
 `docker.js` had the whole vocabulary of a release — pull, build, deploy, stop, health-check — and

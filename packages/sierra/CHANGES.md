@@ -1,5 +1,19 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-27 — held bytes drain in the workspace they were saved in (`FJS-1372`)
+
+`attachmentQueue().add` now records the call headers of the save — the same set the held row carries — and `_send` states them on both the version read and the patch, so a photograph queued in Acme and drained after its author opened Globex lands in Acme. Proved in `test/attachment-queue.test.js`.
+
+## 2026-09-26 — a nullable `@system` date gets no control on a generated form (`FJS-1259`)
+
+`buildFieldRules` carried `readOnly` off the deref'd branch, and for an `anyOf`
+the flag was on the wrapper, so `decidedAt DateTime? @system` rendered a
+datetime box that answered 403 while `decidedById String? @system` got none.
+The fix is in toolbelt's `derefFieldSchema`, which now keeps the wrapper's
+keywords; the same lift reaches `stripReadOnly`, `x-labels`, `x-values`,
+`x-sortable` and the tenancy kind on a nullable column. Proof:
+`test/field-rules-nullable.test.js`, schema generated from `.lite` source.
+
 ## 2026-09-26 — the example's `/login` no longer says `$req` is spent (`FJS-1180`)
 
 junction now rebuilds `ctx.$raw.$req` from the bytes it read, so the comment in

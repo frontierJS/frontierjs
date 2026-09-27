@@ -8,6 +8,15 @@ import type { JobContext, RegisteredHandler, QueueConfig, CaravanTelemetry, Cara
 
 const DEFAULT_RETRY_DELAY = [60_000, 300_000, 1_800_000] // 1m, 5m, 30m
 
+// Jobs that failed together against one downed provider would otherwise all
+// return at one instant. The declared delay is a floor -- a job waiting out a
+// provider's rate-limit window must not come back early -- so jitter only adds.
+export function retryDelayFor(declared: number[], attempt: number): number {
+  const delays = declared.length > 0 ? declared : DEFAULT_RETRY_DELAY
+  const base   = delays[Math.min(attempt - 1, delays.length - 1)]
+  return base + Math.floor(Math.random() * base * 0.25)
+}
+
 // Once per name per process. A queue shared by a process that has the handler
 // and one that does not is the normal deployment, so the release is routine and
 // a line per job would be the log.
@@ -239,8 +248,20 @@ export class QueueWorker {
     }
 
     try {
+      const as = (actor: string | null) =>
+        runAs!.call(this._app, actor, { tenant: record.tenant_id ?? null }, run) as Promise<void>
+      // A departed actor is permanent, so it never climbs the ladder: it
+      // fails now naming the job, or runs as the app where the job said so.
       const invoke = runAs
-        ? () => runAs.call(this._app, record.actor_id ?? null, { tenant: record.tenant_id ?? null }, run) as Promise<void>
+        ? () => as(record.actor_id ?? null).catch((e: unknown) => {
+            if ((e as { code?: string })?.code !== 'PRINCIPAL_MISSING') throw e
+            if (handler.onMissingActor === 'system') return as(null)
+            throw Object.assign(new Error(
+              `[Caravan] job '${record.name}' (${record.id}) — its actor '${record.actor_id}' ` +
+              `no longer resolves, so it failed without retrying. Declare ` +
+              `onMissingActor: 'system' to run it as the app instead.`
+            ), { terminal: true })
+          })
         : () => run(null)
       await this._bounded(invoke(), handler.timeout, record)
       const doneMs = Date.now()
@@ -262,7 +283,7 @@ export class QueueWorker {
       const attempt = record.attempts  // already incremented by claimNext
 
       const failedAt = Date.now()
-      if (attempt >= max) {
+      if (attempt >= max || (err as { terminal?: boolean })?.terminal) {
         // Out of retries — mark failed (terminal)
         const { changes } = this._write(() => this._stmts.markFailed.run({
           id:     record.id,
@@ -282,13 +303,7 @@ export class QueueWorker {
           durationMs: failedAt - startMs,
         })
       } else {
-        // Schedule retry with configured or default delay
-        const delays = handler.retryDelay.length > 0
-          ? handler.retryDelay
-          : DEFAULT_RETRY_DELAY
-
-        const delayMs = delays[Math.min(attempt - 1, delays.length - 1)]
-        const runAt   = failedAt + delayMs
+        const runAt = failedAt + retryDelayFor(handler.retryDelay, attempt)
 
         const { changes } = this._write(() => this._stmts.markFailed.run({
           id:     record.id,

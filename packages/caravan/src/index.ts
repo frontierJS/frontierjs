@@ -572,6 +572,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
           queue:       def.queue,
           maxAttempts: def.maxAttempts,
           retryDelay:  def.retryDelay,
+          onMissingActor: def.onMissingActor,
           timeout:     def.timeout,
           cron:        def.cron,
           timeZone:    def.timeZone,
@@ -591,6 +592,7 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       queue,
       maxAttempts,
       retryDelay,
+      onMissingActor: o.onMissingActor ?? 'fail',
       // The queue's default applies to a handler that declares none, and is
       // resolved HERE rather than in the worker so `registrations()` reports
       // the bound that will actually be enforced. A snapshot showing `—` for
@@ -1140,6 +1142,7 @@ export function defineJob<T = unknown>(
     queue:       opts.queue       ?? 'default',
     maxAttempts: opts.maxAttempts ?? 3,
     retryDelay:  opts.retryDelay  ?? [],
+    onMissingActor: opts.onMissingActor ?? 'fail',
     timeout:     opts.timeout,
     cron:        opts.cron,
     timeZone:    opts.timeZone,

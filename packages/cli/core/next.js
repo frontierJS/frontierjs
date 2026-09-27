@@ -33,7 +33,7 @@
 import { execFileSync } from 'node:child_process'
 
 import { readRegisters } from './registers.js'
-import { openDecisions } from './decisions.js'
+import { openDecisions, QUESTION_ID } from './decisions.js'
 
 // One table, and no flag moves it: a weight somebody can pass is a ranking
 // that means whatever the last caller wanted.
@@ -118,13 +118,18 @@ export function rankNext(root, { pkg = null, touched = null } = {}) {
   const ranked = scored.filter(inPkg).sort((a, b) => b.score - a.score)
 
   const decisions = openDecisions(root)
+  // A row whose id leads a bullet with options is answered by `fli decide`;
+  // printed as unframed, it sent the owner to frame what was already framed.
+  const framed = new Set(decisions.decidable.flatMap(q => q.question.match(QUESTION_ID) ?? []))
+  const owed   = ranked.filter(r => r.severity === 'decision')
   return {
     ready:   ranked.filter(r => !r.blockedBy.length && r.severity !== 'decision'),
     blocked: ranked.filter(r => r.blockedBy.length),
     decide:  {
       decidable: decisions.decidable.length,
       // An open ruling row that holds work up is the one worth naming.
-      rows:      ranked.filter(r => r.severity === 'decision'),
+      framed:    owed.filter(r => framed.has(r.id)),
+      rows:      owed.filter(r => !framed.has(r.id)),
     },
     weights: WEIGHTS,
   }

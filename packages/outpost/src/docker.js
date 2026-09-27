@@ -272,11 +272,13 @@ export function createInspector({ run = spawnRun } = {}) {
   }
 
   const bytes = (value) => {
-    // Docker's own human sizes — `4.13GB`, `927MB`, `0B`. Parsed rather than
-    // asked for in bytes because `docker system df` has no byte mode.
-    const m = /^([\d.]+)\s*([KMGT]?)B?$/i.exec(String(value ?? '').trim())
+    // Docker's own human sizes — `4.13GB`, `927MB`, `12.3kB`, `0B`. Parsed
+    // rather than asked for in bytes because `docker system df` has no byte
+    // mode, and they are DECIMAL: a real daemon prints 13,808,647,133 bytes as
+    // `13.81GB`, which a 1024 scale reads 7% large.
+    const m = /^([\d.]+)\s*([KMGTP]?)B?$/i.exec(String(value ?? '').trim())
     if (!m) return 0
-    const scale = { '': 1, K: 1024, M: 1024 ** 2, G: 1024 ** 3, T: 1024 ** 4 }
+    const scale = { '': 1, K: 1e3, M: 1e6, G: 1e9, T: 1e12, P: 1e15 }
     return Math.round(Number(m[1]) * (scale[m[2].toUpperCase()] ?? 1))
   }
 
@@ -364,8 +366,12 @@ export function createInspector({ run = spawnRun } = {}) {
         removed.build_cache_bytes = freed - before
       }
       if (targets.includes('unused_volumes')) {
-        const { stdout } = await run(['docker', 'volume', 'prune', '-f', '--format', '{{.Name}}'])
-        volumes.push(...stdout.trim().split('\n').filter(Boolean))
+        // `volume prune` takes no `--format`: asked for one it exits 125 having
+        // removed nothing. The names are the block under `Deleted Volumes:`,
+        // ended by the blank line before the total.
+        const out = await sweep(['docker', 'volume', 'prune', '-f'])
+        const block = /(?:^|\n)Deleted Volumes:\n([\s\S]*?)(?:\n\s*\n|$)/.exec(out)
+        if (block) volumes.push(...block[1].split('\n').map(s => s.trim()).filter(Boolean))
       }
 
       return { freed_bytes: freed, removed, volumes }

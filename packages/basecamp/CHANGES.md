@@ -1,6 +1,15 @@
 # Changes — Basecamp
 
 
+## 2026-09-26 — `verify` expects the hub's 403 naming level 7 (`FJS-1359`)
+
+`FJS-1342` moved the hub's standing from a `requireSystemAdmin` hook to a
+declared SYSADMIN level. A member now gets 403 naming level 7, where the hook
+gave 404. `web/test/verify.mjs` still asserted 404 and failed that one check,
+340/341. It now checks for 403 and for a body containing `requires level 7`.
+A 404 there would mean the declared gate was lost. `bun run verify --reset`
+passes 342/342.
+
 ## 2026-09-26 — access and release snapshots regenerated for `FJS-1319`
 
 The 19 models scoped through a parent now print their generated deny as

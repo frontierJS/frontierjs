@@ -1,5 +1,28 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-27 — a snapshot tool's `--stdout` ends at its document (`FJS-1362`)
+
+`junction surface`, `jobs`, `notifications` and `principal` stopped their app outside `quietly`, so the app's two `[App] Shutting down` lines landed on stdout below the document. Every tool now stops its app through one `stopApp()` in `tools/app-module.ts`, the way `atlas` already did; `test/tool-stdout.test.ts` pipes each tool and asserts the lines are absent.
+
+## 2026-09-27 — `service.get` takes `CallOptions` as its fourth argument (`FJS-1372`)
+
+A by-id or findFirst read can now state `callHeaders` (and an idempotency key) on both transports, which sierra's attachment drain needs to read a row's version in the workspace its bytes were held in.
+
+## 2026-09-26 — `middleware.callHeaders` in `junction.config.js` reaches CORS and the socket (`FJS-1226`)
+
+`callHeaders` had no spelling a config file could use: top-level `http:` is
+refused as an unread section, and `middleware.callHeaders` booted and was
+dropped by the normalizer, which maps its keys one at a time. It is now
+declared on `JunctionMiddlewareConfig` and mapped onto `http.callHeaders`, and
+`config-surface.test.ts` grades it per `FJS-D256` with a real preflight that
+must list the app's header beside junction's defaults.
+
+## 2026-09-26 — `app.runAs` tags an unresolvable principal `PRINCIPAL_MISSING` (`FJS-711`)
+
+The *no such principal* error now carries `code: 'PRINCIPAL_MISSING'` and the
+`userId`, so Caravan's `onMissingActor` (`FJS-D202`) branches on a code rather
+than on the message's wording.
+
 ## 2026-09-26 — `ctx.$raw.$req` still carries its body (`FJS-1180`)
 
 The transport reads every matched request's body before a route runs, and a Web

@@ -143,7 +143,7 @@ export function createAttachmentQueue({ now = () => Date.now() } = {}) {
      * nothing to attach to is a file nobody will ever find. The caller is the
      * resource layer, which has the id because the browser minted it.
      */
-    async add({ service, model, id, field, blob, versionField = null }) {
+    async add({ service, model, id, field, blob, versionField = null, callHeaders = null }) {
       if (id == null)  throw new Error('an attachment needs the id of the row it belongs to')
       if (!field)      throw new Error('an attachment needs the field it fills')
       const entry = {
@@ -157,6 +157,9 @@ export function createAttachmentQueue({ now = () => Date.now() } = {}) {
         // not knowable now, so `version` is read at the first send and kept.
         versionField,
         version:   null,
+        // The workspace the row was written in; the bytes drain there, not in
+        // whichever one the client names at drain (`FJS-1372`).
+        callHeaders,
         // Copied out of the Blob so a list can be rendered without touching the
         // bytes — a queue screen showing three photographs should not decode
         // three photographs.
@@ -273,9 +276,10 @@ export function attachmentQueue() {
 async function _send(client, q, entry) {
   const svc  = client.service(entry.service)
   const data = { [entry.field]: entry.blob }
+  const call = entry.callHeaders ? { callHeaders: entry.callHeaders } : {}
   if (entry.versionField) {
     if (entry.version == null) {
-      const row = await svc.get(entry.id)
+      const row = await svc.get(entry.id, undefined, undefined, call)
       entry = (await q.pin(entry.key, row?.[entry.versionField] ?? null)) ?? entry
     }
     data[entry.versionField] = entry.version
@@ -287,7 +291,7 @@ async function _send(client, q, entry) {
     // The key is the entry's, so a re-send after a timeout nobody can read
     // replays the first answer instead of uploading a second object and
     // orphaning the first.
-    { idempotencyKey: entry.key },
+    { idempotencyKey: entry.key, ...call },
   )
 }
 

@@ -114,9 +114,20 @@ export interface HandlerOptions {
    * Delay in ms before each retry attempt.
    * Index 0 = delay before attempt 2, index 1 = before attempt 3, etc.
    * If attempts exceed the array length, the last value is reused.
+   * Each wait is the value plus up to 25% random jitter, never less.
    * Default: [60_000, 300_000, 1_800_000]  (1m, 5m, 30m)
    */
   retryDelay?:  number[]
+  /**
+   * What a job does when the actor recorded at dispatch no longer resolves —
+   * a staff member who left, a reseeded fixture (`FJS-D202`).
+   *
+   * `'fail'`, the default, is terminal on the first attempt with no ladder: the
+   * condition is permanent, and retrying it only delays the error. `'system'`
+   * runs the work as the app's own principal, which is above every gate the
+   * departed actor passed, so it is a per-job choice and never the default.
+   */
+  onMissingActor?: 'fail' | 'system'
   /**
    * Give up waiting after this many ms and treat the attempt as failed.
    *
@@ -161,6 +172,7 @@ export interface RegisteredHandler {
   queue:       string
   maxAttempts: number
   retryDelay:  number[]
+  onMissingActor: 'fail' | 'system'
   timeout?:    number
   cron?:       string
   timeZone?:   string
@@ -188,6 +200,7 @@ export interface JobDefinition<T = unknown> {
   queue:        string
   maxAttempts:  number
   retryDelay:   number[]
+  onMissingActor: 'fail' | 'system'
   timeout?:     number
   cron?:        string
   timeZone?:    string

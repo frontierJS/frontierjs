@@ -175,6 +175,37 @@ const litestreamStatus = (run) => {
 
 const LITESTREAM_MIN_LABEL = `v${LITESTREAM_MIN.major}.${LITESTREAM_MIN.minor}`
 
+// The build `deploy:setup` installs. A distro package or an unpinned `latest`
+// is whatever the day hands out, and 0.3.x is still what apt serves — the build
+// that replicates nothing. FJS controls the version, never the artifact
+// (`FJS-D31`): the bytes are upstream's release, refused unless they match the
+// digests upstream's own checksums.txt published for it. Raising the pin means
+// copying both lines from that file, and the pin must clear LITESTREAM_MIN.
+const LITESTREAM_PIN = {
+  version: '0.5.17',
+  sha256: {
+    x86_64: 'cfb371176d164437ae869f8351cfde49bd1804ae71c61923f75c9cba9c9c006d',
+    arm64:  'f8ca4a050095c1efbda2c4365172e61bf9d955ea0d9ac42f448b52e51819baa5',
+  },
+}
+
+// A shell script with no single quote in it — 02-install-deps runs it inside
+// `sudo sh -c '…'`. An architecture without a pinned digest refuses rather than
+// fetching something unchecked.
+const litestreamInstall = (dir = '/usr/local/bin') => {
+  const { version: v, sha256 } = LITESTREAM_PIN
+  return [
+    'set -e',
+    `case "$(uname -m)" in x86_64) a=x86_64; s=${sha256.x86_64};; aarch64|arm64) a=arm64; s=${sha256.arm64};; *) echo "litestream: no pinned build for $(uname -m)" >&2; exit 1;; esac`,
+    't=$(mktemp -d)',
+    `curl -fsSL -o "$t/l.tgz" "https://github.com/benbjohnson/litestream/releases/download/v${v}/litestream-${v}-linux-$a.tar.gz"`,
+    'echo "$s  $t/l.tgz" | sha256sum -c - >/dev/null || { echo "litestream: checksum mismatch, refusing" >&2; rm -rf "$t"; exit 1; }',
+    'tar -xzf "$t/l.tgz" -C "$t" litestream',
+    `install -m 0755 "$t/litestream" "${dir}/litestream"`,
+    'rm -rf "$t"',
+  ].join('; ')
+}
+
 // ─── distinctHosts ────────────────────────────────────────────────────────────
 // The machines a run touches, deduplicated by host AND path — the SSH check, the
 // deploy lock, the git pull and the cleanup are per machine, not per side, and
@@ -656,7 +687,7 @@ const restoreStepNote = (context, output) => {
   if (!note || typeof note !== 'object') return
   if (note.image) {
     context.config.imageAddress  = note.image
-    context.config.imageIdentity ??= note.scope ? { scope: note.scope } : null
+    context.config.imageIdentity = note.scope ? { scope: note.scope } : null
   }
 }
 
@@ -756,7 +787,17 @@ const openDeployJournal = async (context, flag, opts) => {
     const self = real.steps.find(st => /journal/.test(st.name))?.ordinal ?? 0
     for (const st of real.steps) {
       if (st.ordinal >= self) continue
-      if (byName.get(st.name)?.status !== 'pending') continue
+      // An adopted transition already recorded these steps, and its record wins
+      // over what this run just did: `04-build-api` ran again before the journal
+      // opened, and a rebuild that is not a full cache hit is another image.
+      // Left on the run, `06-swap` started the rebuild while the transition named
+      // the first build — so a revert-of-revert restored bytes that had never
+      // served (`FJS-937`).
+      if (byName.get(st.name)?.status !== 'pending') {
+        const d = resumeDecision(byName.get(st.name))
+        if (d.action === 'skip') { takeNote(context, st.name); restoreStepNote(context, d.output) }
+        continue
+      }
       // Their notes too — `04-build-api` records which bytes it built, and that
       // is what a revert reads to find a startable image.
       await j.finish({

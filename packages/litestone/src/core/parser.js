@@ -3237,6 +3237,9 @@ function attrAnswer(attr, at = '@@', ordinal = 'the first') {
 // in the suite parses each of these twice and fails on a kind no parse emits.
 export const REPEATABLE_MODEL_ATTRS = new Set([
   'allow', 'deny', 'index', 'uniqueIndex', 'check', 'scope', 'trait',
+  // One per predicate, as `index` beside it — an entry row and a move row are
+  // two constraints ([FJS-1306](ISSUES.md#fjs-1306)).
+  'partialUnique',
   // One per MOVE owed, and a second for the same move is refused by name in
   // @@commitment's own check — an invoice owes both a lapse and a cancel.
   'commitment',
@@ -3257,7 +3260,19 @@ export const REPEATABLE_FIELD_ATTRS = new Set(['fieldAllow'])
 // which is how `REPEATABLE_MODEL_ATTRS` came to list 'unique', a kind that
 // never occurs, and so refused a legitimate second `@@unique` on an extend
 // while letting every real duplicate through ([FJS-1174](ISSUES.md#fjs-1174)).
-const TYPED_AS = { uniqueIndex: 'unique' }
+const TYPED_AS = { uniqueIndex: 'unique', partialUnique: 'unique' }
+// Columns a predicate's top-level AND chain pins as `col != null`.
+const nonNullConjuncts = (node, out = new Set()) => {
+  if (!node) return out
+  if (node.type === 'and') { nonNullConjuncts(node.left, out); nonNullConjuncts(node.right, out) }
+  else if (node.type === 'compare' && node.op === '!=') {
+    const isNull = (n) => n?.type === 'literal' && n.value === null
+    if (node.left?.type === 'field' && isNull(node.right)) out.add(node.left.name)
+    else if (node.right?.type === 'field' && isNull(node.left)) out.add(node.right.name)
+  }
+  return out
+}
+
 export const typedAttr = (kind) => TYPED_AS[kind] ?? kind
 
 /**
@@ -5625,6 +5640,10 @@ function validate(schema) {
       const label = `${at}: @required(where: …)`
       const names = predicateNames(req.where, model)
 
+      if (names.constant) {
+        errors.push(constantPredicate(label, names.constant))
+        continue
+      }
       if (names.auth) {
         errors.push(
           `${label} names auth(), which is a different answer for every caller — this is one answer for the ROW, ` +
@@ -6254,10 +6273,23 @@ function validate(schema) {
   // touched it — and a refusal that cannot say what this declaration did wrong
   // is the shape `FJS-351` is about.
   //
-  // Returns `{ auth, now, crossesModel, unknown }`. `crossesModel` is `check()`
-  // and a relation path together: both read another model, and both arrive at
-  // the compiler as a subquery.
+  // Returns `{ auth, now, crossesModel, unknown, constant }`. `crossesModel` is
+  // `check()` and a relation path together: both read another model, and both
+  // arrive at the compiler as a subquery.
+  //
+  // `constant` is a literal standing where a truth value is read. SQLite reads
+  // `WHERE 'endedAt IS NULL'` as 0 and accepts it, so a partial unique covered
+  // no row and enforced nothing (`FJS-1243`) — and a quoted argument is the
+  // reachable spelling, because `@@check("…")` beside it takes SQL.
   function predicateNames(expr, model) {
+    let constant
+    ;(function truth(n) {
+      if (!n || typeof n !== 'object' || constant) return
+      if (n.type === 'literal') constant = n
+      else if (n.type === 'and' || n.type === 'or') { truth(n.left); truth(n.right) }
+      else if (n.type === 'not') truth(n.expr)
+    })(expr)
+
     const named = []
     ;(function walk(n) {
       if (!n || typeof n !== 'object') return
@@ -6276,7 +6308,19 @@ function validate(schema) {
       now:          named.includes('\0now'),
       crossesModel: named.includes('\0cross'),
       unknown:      named.filter(n => n[0] !== '\0' && !model.fields.some(f => f.name === n)),
+      constant,
     }
+  }
+
+  // One sentence for all three callers: the cause is the same and so is the
+  // way out, where auth() and now() differ per structure.
+  function constantPredicate(label, lit) {
+    return typeof lit.value === 'string'
+      ? `${label} is the string ${JSON.stringify(lit.value)}, not SQL — SQLite reads a string there as the ` +
+        `constant 0, so the predicate admits no row and the rule holds nothing. \`@@check("…")\` takes SQL; ` +
+        `this takes an expression, unquoted: \`where: endedAt == null\`, \`where: status == "active"\``
+      : `${label} reads the literal ${JSON.stringify(lit.value)} as a truth value — a constant, the same for ` +
+        `every row, so the predicate admits all of them or none. Compare a column: \`where: endedAt == null\``
   }
 
   // ── @@index(where:) — a partial index ───────────────────────────────────────
@@ -6330,6 +6374,10 @@ function validate(schema) {
       const names = predicateNames(attr.where, model)
 
       const where = `${word}([${attr.fields.join(', ')}], where: …)`
+      if (names.constant) {
+        errors.push(constantPredicate(`Model '${model.name}': ${where}`, names.constant))
+        continue
+      }
       if (names.auth) {
         errors.push(
           `Model '${model.name}': ${where} names auth(), which is a different answer for every caller — ` +
@@ -6507,7 +6555,10 @@ function validate(schema) {
       const partial = c.kind === 'partialUnique'
       if ((c.kind !== 'uniqueIndex' && !partial) || !Array.isArray(c.fields)) continue
       if (c.fields.length < 2 || c.nullsDistinct) continue
-      const nullable = c.fields.filter(name =>
+      // A predicate conjunct `col != null` leaves no NULL of that column in the
+      // index, so the column is not optional as far as the constraint goes.
+      const excluded = partial ? nonNullConjuncts(c.where) : new Set()
+      const nullable = c.fields.filter(name => !excluded.has(name) &&
         model.fields.find(f => f.name === name)?.type.optional)
       if (!nullable.length) continue
       const many = nullable.length > 1

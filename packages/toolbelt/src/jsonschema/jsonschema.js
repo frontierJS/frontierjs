@@ -35,9 +35,13 @@ export function derefFieldSchema(def, resolve) {
 
   if (Array.isArray(def.anyOf)) {
     const nonNull = def.anyOf.find(d => d && d.type !== 'null')
+    // The wrapper is the field's own schema, so the same rule holds: a
+    // nullable `@system` date is an anyOf with `readOnly` on the wrapper, and
+    // answering the branch alone offered it a control the Data boundary
+    // refuses (`FJS-1259`).
     if (nonNull) {
-      const inner = derefFieldSchema(nonNull, resolve)
-      return 'default' in def ? { ...inner, default: def.default } : inner
+      const { anyOf, ...own } = def
+      return { ...derefFieldSchema(nonNull, resolve), ...own }
     }
   }
 

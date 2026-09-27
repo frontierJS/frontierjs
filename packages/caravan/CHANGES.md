@@ -1,5 +1,19 @@
 # Changes — @frontierjs/caravan
 
+## 2026-09-26 — Jobs that fail together no longer retry together (`FJS-1384`)
+
+The retry ladder read one fixed delay per attempt, so every job that failed at one instant against a downed provider came back at one instant — the thundering herd a queue is bought to prevent. `retryDelayFor()` in `worker.ts` adds up to 25% random jitter above the declared delay. The declared delay stays a floor, because a job waiting out a provider's rate-limit window must not come back early. Split from the `FJS-711` umbrella as `caravan-11`; `test/retry-jitter.test.ts` proves it.
+
+## 2026-09-26 — a job whose actor is gone fails at once, or runs as the app where it says so (`FJS-711`, `FJS-D202`)
+
+A job whose recorded actor had been deleted burned its whole retry ladder on a
+permanent condition, the handler running zero times, and died with an error
+about a principal. `onMissingActor` is now declared beside `maxAttempts`:
+`'fail'`, the default, is terminal on the first attempt and names the job and the
+actor id; `'system'` runs the work as the app's own principal. The worker tells
+the case apart by Junction's `PRINCIPAL_MISSING` code rather than its prose.
+Proved by `test/job-context.test.ts` § what cannot be resolved.
+
 ## 2026-09-25 — `findByCorrelation(id)`: the jobs one request dispatched
 
 Every job already carries the `correlation_id` of the request that dispatched it;

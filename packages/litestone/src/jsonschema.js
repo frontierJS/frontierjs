@@ -493,6 +493,12 @@ function modelToJsonSchema(model, schema, enumDefs, typeDefs, opts) {
     const isTransient = field.attributes.some(a => a.kind === 'transient')
     if (isTransient && mode !== 'create' && mode !== 'update') continue
 
+    // An @@extensible slot is one tenant's Severity and another's Region, so a
+    // screen offering `t1` by name asks a different question per tenant under
+    // one label. The declared keys travel through the column itself. The mirror
+    // feeding them is refused to a caller, so a box for it can only fail.
+    if (field.extKind || field.generated === 'extensible') continue
+
     const isComputed  = field.attributes.find(a => a.kind === 'computed')
     const isGenerated = field.attributes.find(a => a.kind === 'generated' || a.kind === 'funcCall')
     if (isComputed || isGenerated) {

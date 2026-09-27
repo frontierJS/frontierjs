@@ -49,7 +49,7 @@
 
 import { spawnSync }                                  from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync,
-         copyFileSync, rmSync, mkdtempSync, readdirSync } from 'node:fs'
+         copyFileSync, rmSync, mkdtempSync, readdirSync, cpSync } from 'node:fs'
 import { join, dirname, resolve }                      from 'node:path'
 import { fileURLToPath }                               from 'node:url'
 import { tmpdir, homedir }                             from 'node:os'
@@ -822,6 +822,19 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
       return fail('a killed deploy left no unfinished transition in the journal', j2.output)
     const before = countTransitions(j2.output)
 
+    // The bytes the killed run built, which its transition recorded. The resume
+    // rebuilds before the journal opens, and a rebuild that is not a full cache
+    // hit is a different image — so the build context is MOVED here, on purpose,
+    // and the resume must still start the recorded one. Left to chance it moved
+    // only when another session was editing the workspace mid-run, and the
+    // container served bytes the journal did not name until a revert-of-revert
+    // restored the recorded ones (`FJS-937`).
+    const recorded = exec('docker', ['image', 'inspect', `${appName}:${shortCommit(srv)}`, '--format', '{{.Id}}'],
+                          { verbose: false }).output.trim()
+    if (!recorded) return fail('the killed deploy left no image under its tag', killed.output)
+    const drift = join(srv, 'api', 'fjs-ci-drift.ts')
+    writeFileSync(drift, `// ${process.pid}\n`)
+
     // A crashed deploy leaves its lock behind, and the refusal has to be worth
     // reading: whether that run is still alive is a fact about a process on the
     // operator's machine, which the target cannot see, so what the lock owes is
@@ -865,6 +878,10 @@ export function deployJournalCycle({ keep = false, verbose = false, log = consol
         `${resumed.output}\n--- journal ---\n${j3.output}`)
     if (health() !== '200') return fail('the resumed deploy does not answer health', dockerLogs(container))
     const C = running()
+    rmSync(drift, { force: true })
+    if (C !== recorded)
+      return fail(`the resume started ${short(C)}, not the image its adopted transition recorded (${short(recorded)})`,
+                  resumed.output)
     log('  ✓ the rerun continued the same transition rather than opening a second, and landed healthy')
 
     // ── 5 · revert ────────────────────────────────────────
@@ -1556,7 +1573,14 @@ await jobs.dispatch('send', { n: Number(process.argv[2]) }, { queue: 'mail' })
 await jobs.stop()
 `)
 
-    const pkg = (p) => join(ROOT, 'packages', p)
+    // Copied into the work dir rather than mounted from ROOT: ciWorkBase picked
+    // a base the daemon can read, and a checkout it cannot (snap Docker, a clone
+    // in /tmp) mounts as empty directories, so the worker died on a missing
+    // module reported as never ready (`FJS-1365`).
+    const staged = join(work, 'packages')
+    for (const p of ['caravan/src', 'caravan/bin', 'caravan/package.json', 'toolbelt/src', 'toolbelt/package.json'])
+      cpSync(join(ROOT, 'packages', p), join(staged, p), { recursive: true })
+    const pkg = (p) => join(staged, p)
     const mounts = [
       [pkg('caravan/src'),           '/app/node_modules/@frontierjs/caravan/src'],
       [pkg('caravan/bin'),           '/app/node_modules/@frontierjs/caravan/bin'],

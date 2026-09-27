@@ -291,6 +291,11 @@ export interface JunctionMiddlewareConfig {
   // `credentials` is read by `applyConfiguredCors` and was undeclared, so a
   // config that works had a type saying it did not.
   cors?:          { origins?: string[]; methods?: string[]; headers?: string[]; credentials?: boolean; maxAge?: number }
+  /**
+   * The app's own per-call headers, ADDED to junction's CORS allow-list and
+   * let through on a socket frame — lands on `http.callHeaders` (`FJS-1226`).
+   */
+  callHeaders?:   string[]
   helmet?:        boolean
   requestLogger?: boolean | { level?: 'info' | 'debug'; format?: 'common' | 'json' }
   correlationId?: boolean | { header?: string }
@@ -478,6 +483,7 @@ export async function loadConfig(configDir = './config'): Promise<AppConfig & { 
       // `load-config` runs, so a value routed there from this file arrives
       // after the only reader has taken its copy (`FJS-1066`).
       if (mw.rateLimit     !== undefined) http.rateLimit     = mw.rateLimit
+      if (mw.callHeaders   !== undefined) http.callHeaders   = mw.callHeaders
       if (mw.helmet        !== undefined) http.helmet        = mw.helmet
       if (mw.requestLogger !== undefined) http.requestLogger = mw.requestLogger
       if (mw.correlationId !== undefined) http.correlationId = mw.correlationId

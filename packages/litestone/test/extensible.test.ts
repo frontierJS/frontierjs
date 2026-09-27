@@ -589,3 +589,27 @@ describe('under tenancy { strategy row }', () => {
     expect(idx.fields).toEqual(['workspaceId', 't1', 't2', 'n1'])
   })
 })
+
+// The slot columns are storage, not fields: `t1` is one tenant's Severity and
+// another's Region, so a generated list or filter bar offering it by name asks
+// a different question per tenant under one label (FJS-1321).
+describe('the slot pool in the JSON Schema', () => {
+  test('no mode names a slot column', async () => {
+    const { generateJsonSchema } = await import('../src/jsonschema.js')
+    for (const mode of ['read', 'create', 'update', undefined] as const) {
+      const props = generateJsonSchema(parse(SCHEMA).schema, mode ? { mode } : {}).$defs.Customer.properties
+      expect(Object.keys(props).filter(k => /^[tn]\d+$/.test(k))).toEqual([])
+      expect(props.fields).toBeDefined()
+    }
+  })
+
+  // The mirror is the slot pool's source, refused to a caller that names it, so
+  // a filter bar offering 'Fields Slots' offers a box that can only fail (FJS-1387).
+  test('no mode names the mirror either', async () => {
+    const { generateJsonSchema } = await import('../src/jsonschema.js')
+    for (const mode of ['read', 'create', 'update', undefined] as const) {
+      const props = generateJsonSchema(parse(SCHEMA).schema, mode ? { mode } : {}).$defs.Customer.properties
+      expect(props.fieldsSlots).toBeUndefined()
+    }
+  })
+})

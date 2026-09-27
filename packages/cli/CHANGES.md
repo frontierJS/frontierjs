@@ -1,5 +1,85 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-26 — every generator that writes a Resource or a page over one is executed and graded by `fli check` (`FJS-372`)
+
+`test/generators-run.test.js` runs `make:model --resource`, `make:route
+--resource`, `web:route --resource` and `admin:generate` into a temp app and
+hands the result to `runChecks`, asserting `resource-file-name` and
+`resource-script` RAN and nothing fired. The page generators run after
+`make:resource` and `admin:generate` beside a service, since over an empty app
+each writes nothing and every rule about its output skips. Its first run found
+`make:model`'s default `@@gate("0.4.4.6")` tripping `gate-unreachable`; that is
+filed as `FJS-1385` and the case tolerates that one rule until it closes.
+
+## 2026-09-26 — `deploy:setup` installs a pinned, checksum-verified litestream (`FJS-243`)
+
+`deploy:setup` checked for docker, nginx, git, bun, rsync and sqlite3 and never
+for litestream, so the replication binary reached a server however the operator
+found it — and apt still serves 0.3.x, the build that loops on STRICT tables
+and replicates nothing. `LITESTREAM_PIN` in `deploy/_module.md` names v0.5.17
+and the sha256 of its linux x86_64 and arm64 tarballs, copied from upstream's
+checksums.txt; `litestreamInstall()` fetches upstream's release, refuses it
+unless `sha256sum -c` passes, and refuses an architecture with no pinned
+digest. `01-check-deps` lists litestream with that script. The generated
+Dockerfile never fetched litestream, so it has no digest to pin. Tests in
+`test/deploy-helpers.test.js`, including a stubbed curl returning the wrong
+bytes that must install nothing; the real fetch was run once by hand and
+installed a working 0.5.17.
+
+## 2026-09-26 — `fli next` tells a framed ruling from an unframed one
+
+`fli next` printed every open decision row under *waiting on a ruling, with no
+options written yet*, including rows whose id already led a bullet with options
+in a paper. On this tree that was 14 rows, and all 14 had options. `rankNext`
+now splits `decide` into `framed` and `rows`. `framed` is the rows a
+decidable bullet names, printed under *options written — fli decide*. `rows` is
+the rest, printed under *no options written yet — /frame-next*. The test is in
+`test/owed-ruling.test.js`: a row is listed as unframed when it is filed and as
+framed once it is argued.
+
+## 2026-09-26 — `make:route --resource` writes the list, create or detail page its path names (`FJS-1261`)
+
+`make:route <path> --resource <Model>` wrote one page for every path. That page
+imported `$onDestroy` from the mesa runtime, which exports no such name, so the
+build stopped. It also carried a raw hex on an undefined class. Every route got
+the same `useStore` list: a detail route rendered the whole list under its
+heading, and a create route rendered no form. A list written as `employees.mesa`,
+followed by the next example in the command's own help, left `employees.mesa`
+beside `employees/`, and the build refuses that pair as a route conflict.
+The page now comes from `resourceRoutePage` in `core/crud-templates.js`, the
+module that writes `make:scaffold`'s three pages. The last segment of the path
+picks the page: `[id]` gives the detail page, `create` gives the create page
+rendering `<Model />`, and anything else gives the list. The list is written as
+`<path>/index.mesa`. A detail keyed by any param other than `[id]` is refused,
+because the detail page reads `page.params.id`. A plain page whose directory
+already exists becomes that directory's `index.mesa`. A route under `x/` is
+refused while `x.mesa` exists, and the error names the move. Moving the file
+for the user would break its relative imports. `test/generated-mesa.test.js`
+compiles and parses all three pages. It also pins the kind, the file and the
+import depth for each path shape. Stubbing the path choice turns 9 of its tests
+red.
+
+## 2026-09-26 — A resumed deploy starts the image its adopted transition recorded (`FJS-937`)
+
+`04-build-api` runs before `04c-journal` opens, so a `--resume` always
+rebuilds. It then adopts the open transition, whose `04-build-api` row
+already names the interrupted run's image. `openDeployJournal` only marked
+`pending` pre-journal rows done and left a recorded row alone, so the
+recorded image never came back onto the run. `06-swap` started this run's
+rebuild instead. A cached rebuild is the same image, so this showed only when
+the build context moved between the kill and the resume. That happened when
+another session was editing the tree during a CI run. The container then
+served bytes the journal did not name, and a revert-of-revert restored the
+recorded image, which was not the one that had been serving. The pre-journal
+loop now restores a replayed step's recorded note and discards this run's
+note, the same way `beforeStep` handles a skip. `restoreStepNote` now
+overwrites `imageIdentity` instead of keeping the rebuild's. The deploy cycle
+in `scripts/scaffold-build.mjs` now writes a file into the build context
+between the kill and the resume. It asserts the resumed container runs the
+image the killed run built. With the fix stubbed it goes red with *the resume
+started sha256:3729f563078a, not the image its adopted transition recorded
+(sha256:604775940a74)*, and with the fix the whole cycle is green.
+
 ## 2026-09-26 — A CI run links into a fence, not the machine's global `fli` (`FJS-1364`)
 
 `fli new --source local` runs `bun link` in every package it needs, and bun

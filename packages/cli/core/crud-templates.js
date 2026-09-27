@@ -466,3 +466,67 @@ ${kids.markup}{#if record}
 {/if}
 `
 }
+
+// ─── one page, from a route path ──────────────────────────────────────────────
+
+const labelOf = (name) => name
+  .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+  .replace(/[_-]/g, ' ')
+  .replace(/\b\w/g, c => c.toUpperCase())
+  .trim()
+
+/**
+ * The page `fli make:route <path> --resource <Model>` writes. The path's last
+ * segment says which of the three pages `make:scaffold` lays out it is: `[id]`
+ * the detail page, `create` the create page, anything else the list. One page
+ * written for all three rendered a list under a detail route's heading and no
+ * form on a create route (`FJS-1261`).
+ *
+ * The list is written as `<path>/index.mesa`, never `<path>.mesa`: the detail
+ * and create routes that follow it live in `<path>/`, and a file and a
+ * directory of one name are a route conflict the build refuses.
+ *
+ * @param {object} o
+ * @param {string} o.path     route path under src/routes/, no extension
+ * @param {string} o.model    PascalCase model name — the resource file
+ * @param {string} o.service  the resource's export
+ * @returns {{ file: string, kind: 'list'|'create'|'detail', content: string } | { error: string }}
+ *          `file` is relative to src/routes/
+ */
+export function resourceRoutePage({ path, model, service }) {
+  const segs = path.split('/')
+  const last = segs[segs.length - 1]
+
+  const kind = last === '[id]'  ? 'detail'
+             : last === 'create' ? 'create'
+             : /^\[.+\]$/.test(last) ? null
+             : 'list'
+  // editPage reads page.params.id, so a detail route keyed by any other name
+  // would render every page with an undefined id.
+  if (!kind) return { error: `a detail page is keyed [id] — ${last} is not a param it reads` }
+
+  const listDir = kind === 'list'
+    ? (last === 'index' ? segs.slice(0, -1) : segs)
+    : segs.slice(0, -1)
+  const file = kind === 'list' ? [...listDir, 'index.mesa'].join('/') : path + '.mesa'
+
+  const up       = '../'.repeat(file.split('/').length)
+  const imports  = [
+    `import ${model} from '${up}resources/${model}.mesa'`,
+    `import { ${service} } from '${up}resources/${model}.mesa'`,
+  ]
+  const basePath = '/' + listDir.map(s => s + '/').join('')
+  const one      = labelOf(model)
+  const many     = labelOf(service)
+  const shared   = { basePath, imports, res: service, form: model }
+
+  const content = kind === 'list'
+    ? listPage({ ...shared, title: many, heading: many, newLabel: `New ${one}` })
+    : kind === 'create'
+    ? createPage({ ...shared, title: `New ${one}`, heading: `New ${one}`,
+        submitLabel: `Create ${one}`, backLabel: 'Back to list' })
+    : editPage({ ...shared, title: one, heading: one, submitLabel: 'Save',
+        backLabel: `All ${many.toLowerCase()}`, deleteLabel: 'Delete' })
+
+  return { file, kind, content }
+}

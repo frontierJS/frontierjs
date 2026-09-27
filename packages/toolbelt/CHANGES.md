@@ -1,5 +1,15 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-26 — `derefFieldSchema` keeps an `anyOf` wrapper's own keywords (`FJS-1259`)
+
+The `$ref` branch already let the field's own keywords win over the target's;
+the `anyOf` branch lifted only `default`. So a nullable column emitted as an
+`anyOf` — anything with a `format`, a constraint or a `$ref` — lost the
+`readOnly` and `x-litestone-kind` litestone writes on the wrapper, and every
+reader downstream saw a writable field. Both branches now answer the same
+rule. Proof: `test/specs/jsonschema.spec.js`, the `decidedAt DateTime? @system`
+shape.
+
 ## 2026-09-25 — `/directives` states each value's schema
 
 Each row carries a `schema` beside `read`, and `DIRECTIVE_SCHEMAS` is the table

@@ -7,7 +7,12 @@
 //
 //   onInit(schema, ctx)
 //     Called once when the client is created. Use to build maps from schema,
-//     store config, or validate options. ctx is the shared client context.
+//     store config, or validate options. ctx is the shared client context,
+//     before ctx.tables exists.
+//
+//   Every other hook gets the CALLING flavor's ctx, and ctx.tables is that
+//   flavor's own accessors (ctx.tables.issue) — the one client a hook has to
+//   read another row with, graded by the caller's policies.
 //
 //   async onBeforeRead(model, args, ctx)
 //     Before findMany/findFirst/findUnique/count/search.

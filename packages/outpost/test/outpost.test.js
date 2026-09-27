@@ -416,9 +416,42 @@ describe('what this machine tells basecamp', () => {
     expect(body.server_id).toBe('srv-1')
     expect(body.images.total).toBe(12)
     // Docker has no byte mode for `system df`, so its human sizes are parsed —
-    // a screen reading 4.13 bytes is the failure this covers.
-    expect(body.images.size_bytes).toBe(Math.round(4.13 * 1024 ** 3))
-    expect(body.images.reclaimable_bytes).toBe(Math.round(2.5 * 1024 ** 3))
+    // a screen reading 4.13 bytes is the failure this covers. They are
+    // decimal: a 1024 scale reads every disk several percent fuller than it is.
+    expect(body.images.size_bytes).toBe(4_130_000_000)
+    expect(body.images.reclaimable_bytes).toBe(2_500_000_000)
+  })
+
+  test('a disk report reads the lines a real daemon prints', async () => {
+    // Captured from Docker 29.8, whose own API put the images at 13,808,647,133
+    // bytes and the build cache at 46,774,088,368. `kB` is lowercase there.
+    const { reporter, sent } = reporterWith({
+      'docker system df': { stdout: [
+        '{"Active":"28","Reclaimable":"3.303GB (23%)","Size":"13.81GB","TotalCount":"63","Type":"Images"}',
+        '{"Active":"0","Reclaimable":"646.2MB (100%)","Size":"646.2MB","TotalCount":"48","Type":"Containers"}',
+        '{"Active":"4","Reclaimable":"638.7MB (53%)","Size":"1.204GB","TotalCount":"13","Type":"Local Volumes"}',
+        '{"Active":"0","Reclaimable":"45.94GB","Size":"46.77GB","TotalCount":"803","Type":"Build Cache"}',
+      ].join('\n') + '\n' },
+    })
+    await reporter.reportDisk()
+
+    const body = sent[0].body
+    expect(body.images).toMatchObject({ total: 63, unused: 35, size_bytes: 13_810_000_000, reclaimable_bytes: 3_303_000_000 })
+    expect(body.containers).toMatchObject({ running: 0, stopped: 48, reclaimable_bytes: 646_200_000 })
+    expect(body.build_cache).toMatchObject({ size_bytes: 46_770_000_000, reclaimable_bytes: 45_940_000_000 })
+    expect(Math.abs(body.images.size_bytes - 13_808_647_133) / 13_808_647_133).toBeLessThan(0.001)
+  })
+
+  test('a volume sweep names what the daemon deleted', async () => {
+    // The block a real `docker volume prune -f` prints. Asked for `--format`
+    // the same daemon exits 125 having removed nothing.
+    const fake = fakeRunner({
+      'docker volume prune': { stdout: 'Deleted Volumes:\npg-old\ncache-tmp\n\nTotal reclaimed space: 12.3kB\n' },
+    })
+    const result = await createInspector({ run: fake.run }).prune({ targets: ['unused_volumes'] })
+    expect(result.volumes).toEqual(['pg-old', 'cache-tmp'])
+    expect(result.freed_bytes).toBe(12_300)
+    expect(fake.calls[0]).toEqual(['docker', 'volume', 'prune', '-f'])
   })
 
   test('a control plane that is down does not take the Outpost with it', async () => {

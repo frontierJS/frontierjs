@@ -55,4 +55,20 @@ describe('a tool writing its document to a pipe', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   }, 60_000)
+
+  // The app's shutdown logs on stdout; a snapshot tool that stops it outside
+  // `quietly` ends its document with two [App] Shutting down lines.
+  it.each(['surface', 'jobs', 'notifications', 'principal'])('junction %s --stdout ends at the document', tool => {
+    const dir = mkdtempSync(join(tmpdir(), 'junction-stdout-'))
+    try {
+      writeFileSync(join(dir, 'app.ts'), APP)
+      const out = execSync(`"${process.execPath}" "${join(ROOT, 'tools/cli.ts')}" ${tool} --app app.ts --stdout 2>/dev/null | cat`, {
+        cwd: dir, encoding: 'utf8', maxBuffer: 64 << 20,
+      })
+      expect(out).not.toContain('Shutting down')
+      expect(out).not.toContain('Shutdown complete')
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
 })

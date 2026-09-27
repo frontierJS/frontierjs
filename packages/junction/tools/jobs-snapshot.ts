@@ -37,7 +37,7 @@
 import { writeFileSync }             from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 
-import { flag, getFlag, rel, fatal, loadApp, checkSnapshot, writeOut } from './app-module.ts'
+import { flag, getFlag, rel, fatal, loadApp, checkSnapshot, writeOut, stopApp } from './app-module.ts'
 import { describeJobs }                                      from '../src/core/app-model.ts'
 import type { JobsSurface }                                  from '../src/core/app-model.ts'
 
@@ -169,6 +169,6 @@ if (import.meta.main) {
   // Same reason as `junction surface`: an app built for description is holding a
   // database and a poller nobody asked to stop, and a tool that never exits
   // fails CI as a timeout rather than as an answer.
-  await app.stop?.().catch(() => {})
+  await stopApp(app)
   process.exit(0)
 }

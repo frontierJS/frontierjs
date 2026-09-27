@@ -31,7 +31,7 @@ import { dirname, relative, resolve } from 'node:path'
 // `junction jobs` — see tools/app-module.ts. The MODEL is shared with every
 // other register — see src/core/app-model.ts. This file renders and nothing
 // else.
-import { flag, getFlag, rel, fatal, loadApp, checkSnapshot, writeOut } from './app-module.ts'
+import { flag, getFlag, rel, fatal, loadApp, checkSnapshot, writeOut, stopApp } from './app-module.ts'
 
 import { describeSurface }              from '../src/core/app-model.ts'
 import type { Surface }                 from '../src/core/app-model.ts'
@@ -294,6 +294,6 @@ if (import.meta.main) {
   // An app built for description holds whatever its plugins opened — a database,
   // a job poller, a scheduler. Nothing here asked them to stop, and a tool that
   // never exits fails CI as a timeout rather than as an answer.
-  await app.stop?.().catch(() => {})
+  await stopApp(app)
   process.exit(0)
 }

@@ -84,7 +84,7 @@ import { makeTxManager, makeReadRouter } from './transaction.js'
 import { applyFieldPolicyTo } from './field-policy.js'
 import { fromSelectExpr, resolveFromRowRefs, coerceEdgeValue, resolveIncludes } from './include.js'
 import {
-  checkAnnounce, emitQuery, buildHookRunner, installHooks, buildEventEmitter,
+  checkAnnounce, emitQuery, queryTapped, buildHookRunner, installHooks, buildEventEmitter,
 } from './hooks.js'
 import { makeLoggerAutoModel, buildLogMap, buildLogEntry, fireLog } from './audit-log.js'
 // buildRelationMap is part of this module's published surface — junction and the
@@ -2769,34 +2769,47 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // `relName` isn't a relation on THIS model, so buildWhere falls through to
   // normal column handling.
   function relationFilterSql(relName, cond, params, tableAlias) {
-    const rel = ctx.relationMap?.[modelName]?.[relName]
+    return relationFilterOn(modelName, 0, relName, cond, params, tableAlias)
+  }
+  // A nested where is resolved against the model it sits in, and each level
+  // takes its own alias: resolved against the query's model, `labels: { some:
+  // { label: { is } } }` looked `label` up on Issue and compiled it as a column
+  // (FJS-1314), and a second `t` would shadow the first, so the inner
+  // correlation would compare the target to itself.
+  function relationFilterOn(owner, depth, relName, cond, params, tableAlias) {
+    const rel = ctx.relationMap?.[owner]?.[relName]
     if (!rel) return undefined   // not a relation → normal column
 
     const parentRefKey = rel.referencedKey ?? (rel.kind === 'manyToMany' ? rel.selfPk : null) ?? 'id'
-    // The parent side is THIS model's column; everything aliased `t` is the
+    // The parent side is the OWNER's column; everything aliased `t` is the
     // target's, so the two take different maps.
+    const omap = ctx.columnMaps?.[owner]
+    const oc   = owner === modelName ? col : (nm) => omap?.[nm] ?? nm
     const tmap = ctx.columnMaps?.[rel.targetModel]
     const tc   = tmap && Object.keys(tmap).length ? (nm) => tmap[nm] ?? nm : (nm) => nm
-    const parentCol = `${tableAlias ? `${tableAlias}.` : `"${tableName}".`}"${col(rel.kind === 'belongsTo' ? rel.foreignKey : parentRefKey)}"`
+    const parentCol = `${tableAlias ? `${tableAlias}.` : `"${tableName}".`}"${oc(rel.kind === 'belongsTo' ? rel.foreignKey : parentRefKey)}"`
+    const t = depth ? `t${depth}` : 't'
+    const j = depth ? `j${depth}` : 'j'
     const targetTable = _modelToTable(rel.targetModel)
-    const targetSoft  = ctx.softDeleteMap?.[rel.targetModel] ? ` AND t."${tc('deletedAt')}" IS NULL` : ''
+    const targetSoft  = ctx.softDeleteMap?.[rel.targetModel] ? ` AND ${t}."${tc('deletedAt')}" IS NULL` : ''
 
-    // Build the inner WHERE against the target table (aliased `t`).
+    // Build the inner WHERE against the target table (aliased `t`, `t1`, … by depth).
     const innerOf = (w) => {
       if (!w || (typeof w === 'object' && !Object.keys(w).length)) return ''
       const p = []
-      const sql = buildWhere(w, p, null, 't', null, relationFilterSql, ctx.filterKindMap?.[rel.targetModel], tmap)
+      const sql = buildWhere(w, p, null, t, null,
+        (k, v, pp, al) => relationFilterOn(rel.targetModel, depth + 1, k, v, pp, al), ctx.filterKindMap?.[rel.targetModel], tmap)
       return { sql, p }
     }
 
     // Correlated FROM+WHERE that ties the target back to this parent row.
     let corr
     if (rel.kind === 'hasMany') {
-      corr = `FROM "${targetTable}" t WHERE t."${tc(rel.foreignKey)}" = ${parentCol}${targetSoft}`
+      corr = `FROM "${targetTable}" ${t} WHERE ${t}."${tc(rel.foreignKey)}" = ${parentCol}${targetSoft}`
     } else if (rel.kind === 'manyToMany') {
-      corr = `FROM "${rel.joinTable}" j INNER JOIN "${targetTable}" t ON t."${tc(rel.targetPk ?? 'id')}" = j."${rel.targetKey}" WHERE j."${rel.selfKey}" = ${parentCol}${targetSoft}`
+      corr = `FROM "${rel.joinTable}" ${j} INNER JOIN "${targetTable}" ${t} ON ${t}."${tc(rel.targetPk ?? 'id')}" = ${j}."${rel.targetKey}" WHERE ${j}."${rel.selfKey}" = ${parentCol}${targetSoft}`
     } else { // belongsTo
-      corr = `FROM "${targetTable}" t WHERE t."${tc(parentRefKey)}" = ${parentCol}${targetSoft}`
+      corr = `FROM "${targetTable}" ${t} WHERE ${t}."${tc(parentRefKey)}" = ${parentCol}${targetSoft}`
     }
 
     const clauses = []
@@ -9837,6 +9850,16 @@ function makeLockPrimitive(rawWriteDb) {
     if (entry.actorType != null) built.actorType = entry.actorType
     if (entry.meta      != null) built.meta      = JSON.stringify(entry.meta)
 
+    // An explicit event lines up with an @@anonymous row by clock exactly as a
+    // @@log entry does, and the trail is not rolled back with the transaction.
+    if (tx.owns()) {
+      const other = tx.noteWrite('$audit', false)
+      if (other) throw new Error(
+        `$audit: refused '${entry.operation}' in a transaction that also wrote ${other}. ${other} is @@anonymous, ` +
+        `and an audit event beside it re-attributes the row by the trail's clock. Record the event without naming ` +
+        `the respondent, or not at all (FJS-D349)`)
+    }
+
     return await table.create({ data: built })
   }
 
@@ -9938,7 +9961,11 @@ function makeLockPrimitive(rawWriteDb) {
     // still routes as a write rather than as an unrecognized statement.
     const head = query.replace(/^(?:\s|--[^\n]*\n?|\/\*[\s\S]*?\*\/)+/, '')
     const conn = _RAW_READ.test(head) ? readDb : writeDb
-    return conn.query(query).all(...values)
+    if (!queryTapped(ctx)) return conn.query(query).all(...values)
+    const t0 = performance.now()
+    const rows = conn.query(query).all(...values)
+    emitQuery(ctx, null, 'main', { operation: 'sql', args: null, sql: query, params: values, duration: performance.now() - t0, rowCount: rows.length })
+    return rows
   }
 
   async function sql(strings, ...values) {

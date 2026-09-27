@@ -75,6 +75,7 @@ describe('a question that holds a row up', () => {
     expect(readFileSync(join(root, 'ISSUES.md'), 'utf8')).toContain('Measured by hand · blocked by `FJS-D4` |')
 
     const next = rankNext(root)
+    expect(next.decide).toMatchObject({ framed: [], rows: [{ id: 'FJS-D4' }] })
     expect(next.ready.map(r => r.id)).not.toContain('FJS-010')
     expect(next.blocked.map(r => [r.id, r.blockedBy])).toEqual([['FJS-010', ['FJS-D4']]])
     expect(errors(root)).toEqual([])
@@ -84,6 +85,9 @@ describe('a question that holds a row up', () => {
     const root = project()
     fileIssue({ root, severity: 'decision', area: 'api', title: 'Does a retry reuse its key?', detail: 'Found fixing FJS-010', blocks: 'FJS-010', today: TODAY })
     argue(root, 'FJS-D4')
+
+    // Argued, the row is named as waiting on a pick, not on a framing.
+    expect(rankNext(root).decide).toMatchObject({ framed: [{ id: 'FJS-D4' }], rows: [] })
 
     const q = openDecisions(root)
     expect(q.decidable.map(d => d.id)).toEqual(['owed-rulings:fjs-d4-does-a-retry-reuse-its-idempotency-key'])

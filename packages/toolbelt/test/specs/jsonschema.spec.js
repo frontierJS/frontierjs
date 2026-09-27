@@ -31,6 +31,18 @@ test('jsonschema: anyOf follows the non-null branch and keeps an outer default',
   assert.equal(out.default, 3)
 })
 
+test('jsonschema: anyOf keeps every keyword the wrapper states, not only default', function () {
+  // What litestone emits for `decidedAt DateTime? @system` (FJS-1259).
+  const out = derefFieldSchema({
+    anyOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
+    readOnly: true, 'x-litestone-kind': 'system',
+  }, undefined)
+  assert.equal(out.format, 'date-time')
+  assert.equal(out.readOnly, true, 'the flag a form reads to refuse a control')
+  assert.equal(out['x-litestone-kind'], 'system')
+  assert.equal('anyOf' in out, false)
+})
+
 /* ── createMakeFromSchema ──────────────────────────────────────────── */
 
 test('jsonschema: each type gets its own blank, and instances share nothing', function () {

@@ -21,11 +21,12 @@ const SIERRA_ROOT = dirname(dirname(fileURLToPath(import.meta.url)))
 
 const _calls = []
 let _proxy
+let _headers = {}
 
 vi.mock('@frontierjs/sierra/junction', () => ({
   getClient: () => ({
     service: () => _proxy,
-    callHeaders: () => ({}),
+    callHeaders: () => _headers,
     resource: () => ({
       service: _proxy,
       store: { get: () => [], subscribe: (fn) => { fn([]); return () => {} }, set: () => {} },
@@ -58,6 +59,7 @@ let creating = (d) => Promise.resolve({ ...d })
 
 beforeEach(async () => {
   _calls.length = 0
+  _headers = {}
   _resetPendingQueue()
   _resetAttachmentQueue()
   creating = (d) => Promise.resolve({ ...d })
@@ -244,5 +246,24 @@ describe('draining the bytes onto a @version row', () => {
 
     expect(_calls.some(c => c[0] === 'get')).toBe(false)
     expect(Object.keys(_calls.find(c => c[0] === 'patch')[2])).toEqual(['damage'])
+  })
+})
+
+describe('the workspace the bytes were held in', () => {
+  // `FJS-1372`: the row half of FJS-1300 replayed under the headers it was
+  // made with, the bytes drained under whichever ones the client names now.
+  test('the read and the patch both carry the headers of the save', async () => {
+    _headers = { 'X-Workspace': 'acme' }
+    creating = offline
+    const notes = createResource('notes', { model: 'Note' })
+    await notes.save({ name: 'scratched', damage: blob() }).catch(() => {})
+    _headers = { 'X-Workspace': 'globex' }
+    _proxy.get   = (id, _p, _w, opts) => { _calls.push(['get', id, opts]); return Promise.resolve({ id, version: 1 }) }
+    _proxy.patch = (id, d, _p, opts)  => { _calls.push(['patch', id, d, opts]); return Promise.resolve(d) }
+
+    await drainAttachments({ service: () => _proxy })
+
+    expect(_calls.find(c => c[0] === 'get')[2].callHeaders).toEqual({ 'X-Workspace': 'acme' })
+    expect(_calls.find(c => c[0] === 'patch')[3].callHeaders).toEqual({ 'X-Workspace': 'acme' })
   })
 })

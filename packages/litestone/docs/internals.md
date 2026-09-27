@@ -909,5 +909,9 @@ class MyPlugin extends Plugin {
 }
 ```
 
+`ctx.tables` is how a hook reads another row: the calling flavor's own accessors,
+so a read under `$setAuth` is graded by that principal's policies and one under
+`asSystem()` is not. `onInit` runs before the tables are built and has none.
+
 A `@@gate` lives in a plugin's `beforeRead`, so a read path that skips the plugin
 runner skips the gate — `aggregate`, `groupBy` and `search` did (`FJS-262`).

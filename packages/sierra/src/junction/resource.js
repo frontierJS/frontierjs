@@ -1218,7 +1218,7 @@ export function createResource(nameOrSpec, schemaOrOpts = {}, maybeOpts = {}) {
       // happens when that request could not arrive.
       const parked = held
         ? await Promise.all(Object.entries(files).map(([field, blob]) =>
-            attachmentQueue().add({ service: serviceName, model, id: rowId, field, blob, versionField: versionOf })))
+            attachmentQueue().add({ service: serviceName, model, id: rowId, field, blob, versionField: versionOf, callHeaders: held.callHeaders })))
         : []
 
       // network call

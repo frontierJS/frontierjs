@@ -135,6 +135,12 @@ plus `auth` and `isSystem`. It is built once in `createClient`, and `asSystem()`
 There is no `ctx.query`, `ctx.method` or `ctx.locals`; a hook gets `model`,
 `args` and `rows` as its own arguments.
 
+**A hook that reads another row reads it through `ctx.tables`** (`FJS-1358`) —
+the calling flavor's own accessors, so `$setAuth` reads under that principal's
+policies and `asSystem()` past them. Never a client captured at install: the
+root reads as nobody and `asSystem()` as everybody, whoever is calling.
+`onInit` runs before the tables exist and has none.
+
 **`ctx.auth` is the principal that scoped the CLIENT**, which is why `$setAuth`
 returns a new one. One table object per model serves every flavor, so a cache
 keyed on the ctx answers the first caller's value to everybody (`FJS-722`) — key

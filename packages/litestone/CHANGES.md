@@ -1,5 +1,95 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-27 — a model may declare several `@@unique(…, where:)`, and `col != null` in the predicate counts (`FJS-1306`)
+
+`partialUnique` was missing from `REPEATABLE_MODEL_ATTRS`, so a second partial unique was refused as a second answer to `@@partialUnique`, a word nobody wrote; it is listed now and `typedAttr` prints it as `@@unique`. The optional-member check also reads the predicate: a top-level `col != null` conjunct removes that column from the nullable list, so `@@unique([fromId, toId], where: fromId != null)` beside `@@unique([teamId, toId], where: fromId == null)` declares. `test/repeatable-attrs.test.ts` covers both.
+
+## 2026-09-27 — raw SQL reaches the query tap (`FJS-1312`)
+
+`_runRawSql` ran `db.sql`, `asSystem().sql` and `$setAuth(u).sql` without
+`emitQuery`, so `onQuery`, `$tapQuery`, junction's `litestone.query` telemetry
+and the devtools panel saw every read but the hand-written ones — the slow
+ones. Each raw statement now fires one event, `operation: 'sql'`, `model: null`,
+with its SQL, params, duration and row count; untapped it stays untimed.
+`query-tap.test.ts` asserts both spellings.
+
+## 2026-09-27 — the JSON Schema no longer names the `@@extensible` mirror (`FJS-1387`)
+
+`FJS-1321` skipped the slot columns but not `fieldsSlots`, the `@system` Json
+mirror they are generated from, so a generated filter bar still offered *Fields
+Slots* — a box whose every write is refused. `modelToJsonSchema` now skips every
+field the `@@extensible` expansion generated. `extensible.test.ts` asserts no
+mode names the mirror.
+
+## 2026-09-27 — the JSON Schema no longer names an `@@extensible` slot column (`FJS-1321`)
+
+The `max:` pool's `t1`, `n1`, … columns were emitted as ordinary read-only
+properties, so a generated list and filter bar offered *T 1* as a field. A slot
+holds a different declared key per tenant, so the label asked a different
+question per workspace. `modelToJsonSchema` now skips a field carrying
+`extKind` in every mode; the declared keys travel through the extensible column.
+
+## 2026-09-27 — a `$audit()` event beside an `@@anonymous` write in one transaction is refused (`FJS-1375`)
+
+The pairing check was fed by `emitLogs` only, so an explicit `db.$audit()`
+naming the respondent inside the anonymous write's transaction still lined up
+with the row by the trail's clock. `$audit` now notes itself as the logged side
+of the pairing before it writes, and either order is refused.
+
+## 2026-09-26 — a relation filter nested in `some`/`every`/`none` resolves against its own model (`FJS-1314`)
+
+`labels: { some: { label: { is: { name: 'bug' } } } }` was refused as an
+unknown operator on a column: the inner `where` was compiled with the resolver
+bound to the query's model, so `label` was looked up on Issue, missed, and fell
+through to scalar handling. The grader already walked the target model, which
+is why the bare form was told to use `is`. `relationFilterOn(owner, depth, …)`
+now carries the owning model down each level, and each level aliases its target
+`t`, `t1`, `t2`… so an inner correlation no longer shadows the outer one.
+`test/relation-filter-nested-hop.test.ts`.
+
+## 2026-09-26 — a quoted index or `@required` predicate is refused, because SQLite reads it as a constant (`FJS-1243`)
+
+`@@unique([employeeId], where: "endedAt IS NULL")` parsed, migrated and applied
+as `WHERE 'endedAt IS NULL'`. SQLite reads a string there as the constant 0, so
+the partial unique covered no row and every duplicate landed. The quoted form
+is the one people reach for, because `@@check("…")` beside it takes SQL. The
+shared predicate walk (`predicateNames`) now also reports a literal standing
+where a truth value is read: the root, either side of `&&`/`||`, or under `!`.
+`@@unique(where:)`, `@@index(where:)` and `@required(where:)` refuse it, and for
+a string the message says it is not SQL and gives the unquoted spelling.
+`@@index` already refused the quoted form, but called it *compares against a
+value*. `test/index-predicates.test.ts` checks the refusal and shows on SQLite
+that the old index admits a second open row.
+
+## 2026-09-26 — one `GatePlugin` serves any number of clients, each against its own ladder (`FJS-1267`)
+
+`GatePlugin.onInit` kept the access map and the relation map on the instance, so
+installing one plugin into a second client replaced the first client's ladder
+with the second schema's. A tenant registry forwards one plugin to every client
+it opens, and an app exports one from one module, so this was the ordinary
+case. A second schema that tightened a gate made the first client refuse. One
+that loosened it made the first client admit callers its own schema refuses,
+and nothing reported it. The maps now live on the client: `onInit` closes the
+access map into `ctx.gateFor`, and every hook reads `ctx.gateFor` and
+`ctx.relationMap` from the ctx it is handed. The instance keeps only
+`getLevel` and the per-flavor level cache. `test/gate-per-client.test.ts`
+shares one plugin between two clients and checks both directions, for a direct
+read and for an include.
+
+## 2026-09-26 — a plugin hook's client is `ctx.tables`, typed and documented (`FJS-1358`)
+
+A plugin that had to read another row had one working client, `ctx.tables`: the
+calling flavor's own accessors, graded by that caller's policies. linear's
+`WorkflowPlugin` reads the issue through it. It had no documentation, and on
+`LitestoneCtx` it fell under the index signature as `unknown`, so a TypeScript
+plugin had to cast its ctx to reach it. `LitestoneCtx` now declares
+`tables: Record<string, TableClient>`. The package `CLAUDE.md`, the `plugin.js`
+header and `docs/internals.md` § Plugin hooks say what it is and that `onInit`,
+which runs before the tables are built, has none. `test/litestone.test.ts` pins
+two things. The first is the scoping: a hook reading through `ctx.tables` under
+`$setAuth` sees only its own rows, and under `asSystem()` sees all of them. The
+second is the declaration.
+
 ## 2026-09-26 — a model can declare `@@anonymous`, and a log that would name its rows is refused (`FJS-1247`)
 
 An anonymous survey kept its anonymity only by leaving things out. There was no
