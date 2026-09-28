@@ -43,6 +43,18 @@ let sysadmin: any
 // test is asserting the status of.
 let machine: any
 
+// A Server is born `pending`, even for the system, so a fixture in any other
+// state walks the declared moves to it.
+const WALK_TO: Record<string, string[]> = {
+  pending: [], online: ['checkIn'], stopped: ['reportStopped'], draining: ['checkIn', 'drain'],
+}
+async function serverAt(status: string, data: Record<string, unknown>) {
+  const sys = env.system as any
+  let row = await sys.server.create({ data })
+  for (const move of WALK_TO[status]) row = await sys.server.transition(row.id, move)
+  return row
+}
+
 beforeAll(async () => {
   env = await createTestEnv({
     schema:        SCHEMA,
@@ -431,10 +443,9 @@ describe('?search= — a search box over a name, which answered 400 on every use
   })
 
   test('a column filter beside it still filters, and a stray key is still refused', async () => {
-    const sys = env.system as any
     const tag = uniq()
-    await sys.server.create({ data: { workspaceId: ws.id, name: `mix-${tag}-on`,  slug: `mix-${tag}-on`,  status: 'online' } })
-    await sys.server.create({ data: { workspaceId: ws.id, name: `mix-${tag}-off`, slug: `mix-${tag}-off`, status: 'stopped' } })
+    await serverAt('online',  { workspaceId: ws.id, name: `mix-${tag}-on`,  slug: `mix-${tag}-on` })
+    await serverAt('stopped', { workspaceId: ws.id, name: `mix-${tag}-off`, slug: `mix-${tag}-off` })
 
     expect(names(await env.as(owner).service('servers').find({ search: tag, status: 'online' })))
       .toEqual([`mix-${tag}-on`])
@@ -452,9 +463,8 @@ describe('the audit trail records what changed', () => {
   test('a custom method writes a before/after diff', async () => {
     const sys = env.system as any
 
-    const server = await sys.server.create({
-      data: { workspaceId: ws.id, name: 'audit-01', slug: `audit-${Math.random().toString(36).slice(2, 8)}`, status: 'online' },
-    })
+    const server = await serverAt('online',
+      { workspaceId: ws.id, name: 'audit-01', slug: `audit-${Math.random().toString(36).slice(2, 8)}` })
 
     // `call(name, id, data, opts)` is the server-side spelling of a custom
     // method — `invoke` is the browser client's.
@@ -845,8 +855,7 @@ describe('a job runs as whoever asked for it', () => {
     await sys.workspaceMember.create({
       data: { workspaceId: w.id, userId: u.id, role: 'owner',
               capabilities: grantsFor('owner'), acceptedAt: new Date().toISOString() } })
-    const server = await sys.server.create({
-      data: { workspaceId: w.id, name: 'far-01', slug: `far-${uniq()}`, status: 'online' } })
+    const server = await serverAt('online', { workspaceId: w.id, name: 'far-01', slug: `far-${uniq()}` })
     const recipe = await sys.recipe.create({
       data: { workspaceId: w.id, name: 'Far', slug: `far-${uniq()}`, script: 'echo far' } })
     const run = await sys.recipeRun.create({
@@ -1244,12 +1253,8 @@ describe('a backup is asked for by a person and run by the app', () => {
 describe('Server.status is a declared machine', () => {
   const uniq = () => Math.random().toString(36).slice(2, 8)
 
-  const makeServer = async (status: string) => {
-    const sys = env.system as any
-    return sys.server.create({
-      data: { workspaceId: ws.id, name: `sm-${uniq()}`, slug: `sm-${uniq()}`, status },
-    })
-  }
+  const makeServer = async (status: string) =>
+    serverAt(status, { workspaceId: ws.id, name: `sm-${uniq()}`, slug: `sm-${uniq()}` })
 
   test('an illegal move is refused by name, as a conflict rather than a 400', async () => {
     const server = await makeServer('pending')
@@ -1510,9 +1515,8 @@ describe('a column the system writes and its caller does not', () => {
 describe('a move the engine makes, asked for by a person', () => {
   const uniq = () => Math.random().toString(36).slice(2, 8)
 
-  const aServer = async (status: string) => (env.system as any).server.create({
-    data: { workspaceId: ws.id, name: `sys-${uniq()}`, slug: `sys-${uniq()}`, status },
-  })
+  const aServer = async (status: string) =>
+    serverAt(status, { workspaceId: ws.id, name: `sys-${uniq()}`, slug: `sys-${uniq()}` })
 
   test('an owner cannot make one by hand, at any level', async () => {
     const server = await aServer('online')
@@ -2101,12 +2105,9 @@ describe('the cleanup screen is told how full each disk is', () => {
   const mine  = async (id: string) => (await usage()).servers.find((s: any) => s.serverId === id)
 
   beforeAll(async () => {
-    const sys = env.system as any
-    box = await sys.server.create({
-      data: { workspaceId: ws.id, name: 'full-box', slug: `fbox-${Math.random().toString(36).slice(2, 8)}`,
-              status: 'online', lastHeartbeatAt: new Date().toISOString(),
-              health: { cpu: 12, memory: 40, disk: 94.2 } },
-    })
+    box = await serverAt('online',
+      { workspaceId: ws.id, name: 'full-box', slug: `fbox-${Math.random().toString(36).slice(2, 8)}`,
+        lastHeartbeatAt: new Date().toISOString(), health: { cpu: 12, memory: 40, disk: 94.2 } })
   })
 
   test('the mount reading reaches the read the screen makes', async () => {
@@ -2135,12 +2136,9 @@ describe('the cleanup screen is told how full each disk is', () => {
     // `Number(null)` is 0, so this is the spelling that turns *I could not read
     // it* into a disk with 100% free. Paired with a sibling key that survives,
     // or dropping the whole health document would pass this row.
-    const sys = env.system as any
-    const odd = await sys.server.create({
-      data: { workspaceId: ws.id, name: 'odd-disk', slug: `od-${Math.random().toString(36).slice(2, 8)}`,
-              status: 'online', lastHeartbeatAt: new Date().toISOString(),
-              health: { cpu: 30, disk: null } },
-    })
+    const odd = await serverAt('online',
+      { workspaceId: ws.id, name: 'odd-disk', slug: `od-${Math.random().toString(36).slice(2, 8)}`,
+        lastHeartbeatAt: new Date().toISOString(), health: { cpu: 30, disk: null } })
     expect((await mine(odd.id)).fullness).toBe(null)
     expect(readingOf({ cpu: 30, disk: null }, 'cpu')).toBe(30)
   })
@@ -2181,11 +2179,9 @@ describe('the cleanup screen is told how full each disk is', () => {
     // select is asserted to be still inside the same scope.
     const sys       = env.system as any
     const elsewhere = await sys.workspace.findFirst({ where: { name: 'Other' } })
-    const theirs    = await sys.server.create({
-      data: { workspaceId: elsewhere.id, name: 'their-disk',
-              slug: `td-${Math.random().toString(36).slice(2, 8)}`, status: 'online',
-              health: { disk: 99 } },
-    })
+    const theirs    = await serverAt('online',
+      { workspaceId: elsewhere.id, name: 'their-disk',
+        slug: `td-${Math.random().toString(36).slice(2, 8)}`, health: { disk: 99 } })
     expect((await usage()).servers.find((s: any) => s.serverId === theirs.id)).toBeUndefined()
   })
 })

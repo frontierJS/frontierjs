@@ -7027,6 +7027,13 @@ function validate(schema) {
         else seenMoves.set(name, attr.field)
       }
 
+      // The @default is where every row starts, whoever creates it (`FJS-D470`),
+      // so a machine without one has no legal create.
+      const stateField = model.fields.find(f => f.name === attr.field)
+      if (stateField && !stateField.attributes.some(a => a.kind === 'default'))
+        errors.push(`Model '${model.name}': @@transitions(${attr.field}) — '${attr.field}' has no @default. ` +
+                    `A new row starts at the default and reaches every other state by a move, so the machine needs one.`)
+
       if (attr.fromEnum) continue
 
       const field = model.fields.find(f => f.name === attr.field)

@@ -3754,6 +3754,59 @@ describe('ctx.sse()', () => {
     const res = await request(app).get('/events')
     expect(res.headers['x-accel-buffering']).toBe('no')
   })
+
+  // The compression step read a `text/*` body to its end before asking its
+  // size, so a caller sending `accept-encoding: gzip` (every browser) got the
+  // whole stream at once when it closed (FJS-1416).
+  async function firstChunkAfter(app: Awaited<ReturnType<typeof createTestApp>>, path: string) {
+    // `request()` reads the whole body, so the timing needs the transport direct.
+    await app._startForTest()
+    app.http!.router.build()
+    const started = performance.now()
+    const res = await app.http!.fetch(new Request(`http://localhost${path}`, {
+      headers: { 'accept-encoding': 'gzip, deflate, br' },
+    }))
+    const reader = res.body!.getReader()
+    const first = await reader.read()
+    const ms = performance.now() - started
+    const rest: Uint8Array[] = []
+    for (let r = await reader.read(); !r.done; r = await reader.read()) rest.push(r.value)
+    return { res, ms, first: new TextDecoder().decode(first.value) }
+  }
+
+  it('delivers each frame as it is sent to a caller that accepts gzip', async () => {
+    const app = await createTestApp({
+      services: [() => createService({ name: 'noop', find: async () => [] })]
+    })
+    app.get('/events', (ctx) => {
+      const { response, send, close } = ctx.sse()
+      send({ data: 'one' })
+      setTimeout(() => { send({ data: 'two' }); close() }, 300)
+      return response
+    })
+    const { res, ms, first } = await firstChunkAfter(app, '/events')
+    expect(ms).toBeLessThan(150)
+    expect(first).toContain('one')
+    expect(res.headers.get('content-encoding')).toBeNull()
+  })
+
+  it('ctx.stream() is not read to its end before it is sent', async () => {
+    const app = await createTestApp({
+      services: [() => createService({ name: 'noop', find: async () => [] })]
+    })
+    app.get('/export', (ctx) => {
+      const readable = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(new TextEncoder().encode('a,b\n'))
+          setTimeout(() => { c.enqueue(new TextEncoder().encode('1,2\n')); c.close() }, 300)
+        },
+      })
+      return ctx.stream(readable, 'text/csv')
+    })
+    const { ms, first } = await firstChunkAfter(app, '/export')
+    expect(ms).toBeLessThan(150)
+    expect(first).toContain('a,b')
+  })
 })
 
 // ─── apiPrefix ────────────────────────────────────────────────────────────

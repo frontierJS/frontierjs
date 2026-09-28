@@ -14,8 +14,12 @@
 // ─── Transition error types ──────────────────────────────────────────────────
 
 export class TransitionViolationError extends Error {
+  // `from` null is a create: no row yet, so the one legal state is the entry
+  // (`FJS-D470`), and the message names it rather than a from-state.
   constructor(model, field, from, to, allowed) {
-    super(`Cannot transition ${model}.${field} from '${from}' to '${to}' — valid transitions from '${from}': ${allowed.length ? allowed.map(a => `'${a}'`).join(', ') : 'none'}`)
+    super(from == null
+      ? `Cannot create ${model} with ${field} '${to}' — a new ${model} starts at '${allowed[0]}' and reaches '${to}' by its moves`
+      : `Cannot transition ${model}.${field} from '${from}' to '${to}' — valid transitions from '${from}': ${allowed.length ? allowed.map(a => `'${a}'`).join(', ') : 'none'}`)
     this.name       = 'TransitionViolationError'
     this.model      = model
     this.field      = field

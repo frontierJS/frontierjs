@@ -6,6 +6,7 @@
 import type { TransportContext } from './types.ts'
 import { toFrameworkError, FrameworkError, BadRequest, sanitizeError } from '../core/errors.ts'
 import { accessorCandidates } from '../core/litestone.ts'
+import { omitBy } from '@frontierjs/toolbelt/redact'
 
 // ─── Context types — moved to core (core/context.ts) ─────────────────────
 // The service layer's vocabulary (ServiceContext, ServiceResult, hook and
@@ -252,10 +253,10 @@ export const bridge = {
     // always the service name, so a service literally named 'list' no longer
     // changes how its singles serialize.
     return jsonResponse(
-      unwrapResult(result, {
+      withholdProtected(unwrapResult(result, {
         single: rawWrap === true  ? 'envelope' : 'data',
         list:   rawWrap === false ? 'data'     : 'envelope',
-      }),
+      }), ctx),
       status
     )
   },
@@ -341,15 +342,47 @@ function boundaryOptions(ctx?: ServiceContext) {
   }
 }
 
+/*
+ * A success body with every protected column of the call's model DROPPED.
+ *
+ * A method that writes through `asSystem()` and returns what it wrote answered
+ * a stranger with the DECRYPTED `@secret`, while `GET` of the same row omitted
+ * it (`FJS-1221`). Each layer was right on its own: a system client returns the
+ * column by design, and the method returned what it was handed. So the wire is
+ * where it is answered, with the error path's own list, and dropped rather than
+ * `[redacted]` so the body has the shape a caller-scoped read of the row has
+ * (`FJS-D473`).
+ *
+ * Every wire calls this -- HTTP here, the socket's `service_result`, an MCP tool
+ * result -- and an in-process `app.service()` does not, because that caller is
+ * the app. By key name, so a method meaning to hand back a protected value once
+ * (a freshly minted token) returns it under a key that is not a column's name.
+ */
+export function withholdProtected(value: unknown, ctx?: Pick<ServiceContext, 'locals' | 'model' | 'service'>): unknown {
+  const fields = protectedFieldsFor(ctx as ServiceContext)
+  if (!Object.keys(fields).length) return value
+  return omitBy(value, (k) => Boolean(fields[k]))
+}
+
+/** The body `errorResponse` writes -- for a wire that is not a `Response`. */
+export function errorBody(err: unknown, ctx?: ServiceContext): ReturnType<FrameworkError['toJSON']> {
+  return sanitizeError(toFrameworkError(err), boundaryOptions(ctx)).toJSON()
+}
+
 function protectedFieldsFor(ctx?: ServiceContext): Record<string, string> {
   const db = ctx?.locals?.db as { $protectedFields?: (a: string) => Record<string, string> } | undefined
-  if (typeof db?.$protectedFields !== 'function') return {}
+  // A client that throws on a name it does not know answers the probe itself,
+  // and this runs on every success body, so a throw here is a 500 on every read.
+  let lookup: unknown
+  try { lookup = db?.$protectedFields } catch { return {} }
+  if (typeof lookup !== 'function') return {}
+  const fieldsOf = (lookup as (a: string) => Record<string, string>).bind(db)
 
   const out: Record<string, string> = {}
   for (const name of [ctx?.model, ctx?.service]) {
     if (!name) continue
     for (const accessor of accessorCandidates(name)) {
-      try { Object.assign(out, db.$protectedFields(accessor)) } catch { /* an unknown accessor is not a failure */ }
+      try { Object.assign(out, fieldsOf(accessor)) } catch { /* an unknown accessor is not a failure */ }
     }
   }
   return out

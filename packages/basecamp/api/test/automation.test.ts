@@ -92,7 +92,8 @@ beforeAll(async () => {
   developer = session({ userId: d.id, workspaceId: ws.id })
   outsider  = session({ userId: o.id, workspaceId: other.id })
 
-  box = await sys.server.create({ data: { workspaceId: ws.id, name: `box-${uniq()}`, slug: `box-${uniq()}`, status: 'online' } })
+  box = await sys.server.create({ data: { workspaceId: ws.id, name: `box-${uniq()}`, slug: `box-${uniq()}` } })
+  box = await sys.server.transition(box.id, 'checkIn')
   const project = await sys.project.create({ data: { workspaceId: ws.id, name: 'Shop', slug: `p-${uniq()}` } })
   environment   = await sys.environment.create({ data: { workspaceId: ws.id, projectId: project.id, name: 'Production', slug: `e-${uniq()}` } })
 

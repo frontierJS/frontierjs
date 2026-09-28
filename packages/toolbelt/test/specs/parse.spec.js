@@ -163,3 +163,14 @@ test("parse: a policy's own words are refused in a flow", function () {
 test('parse: a lambda parameter is out of scope outside its body', function () {
   assert.throws(() => flow('add(i, map($.items, i => i))'), /'i' is not defined here/)
 })
+
+test('parse: an ordering against a literal null is refused, == and != are not', function () {
+  // SQL answers UNKNOWN for `qty > NULL` and the JS half answered `!absent`, so
+  // the two interpreters disagreed on every ordering (`FJS-1152`).
+  const q = (op) => cursor([tok(T.IDENT, 'qty'), tok(op, ''), tok(T.IDENT, 'null')])
+  for (const op of [T.LT, T.GT, T.LTE, T.GTE]) assert.throws(() => parseExpression(q(op)), /null/)
+  const r = (op) => cursor([tok(T.IDENT, 'null'), tok(op, ''), tok(T.IDENT, 'qty')])
+  assert.throws(() => parseExpression(r(T.GT)), /null/)
+  assert.equal(parseExpression(q(T.EQ)).op, '==')
+  assert.equal(parseExpression(q(T.NEQ)).op, '!=')
+})

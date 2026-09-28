@@ -148,6 +148,8 @@ export const RULES = [
     title: 'every project command compiles, with its namespace module, to JavaScript that parses' },
   { id: 'css-token-undefined',  scope: 'app',  severity: 'error', invariant: 13,
     title: 'a styled value names a token the stylesheets define' },
+  { id: 'css-raw-literal',      scope: 'app',  severity: 'warn',  invariant: 13,
+    title: 'a .mesa <style> holds no raw color, size or spacing value' },
   { id: 'package-root-md',      scope: 'repo', severity: 'warn',  invariant: 17,
     title: 'four markdown files are the standard at a package root' },
   { id: 'test-files-run',       scope: 'repo', severity: 'error', invariant: null,
@@ -478,6 +480,25 @@ export function applyFixes(findings, { read = readFileSync, write = writeFileSyn
   return { fixed, failed }
 }
 
+
+// The CSS named colors; transparent and currentColor are not, since no theme owns them.
+const CSS_NAMED_COLORS = (
+  'aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue blueviolet brown ' +
+  'burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk crimson cyan darkblue darkcyan ' +
+  'darkgoldenrod darkgray darkgreen darkgrey darkkhaki darkmagenta darkolivegreen darkorange darkorchid ' +
+  'darkred darksalmon darkseagreen darkslateblue darkslategray darkslategrey darkturquoise darkviolet ' +
+  'deeppink deepskyblue dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ' +
+  'ghostwhite gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki ' +
+  'lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow ' +
+  'lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen lightskyblue lightslategray ' +
+  'lightslategrey lightsteelblue lightyellow lime limegreen linen magenta maroon mediumaquamarine ' +
+  'mediumblue mediumorchid mediumpurple mediumseagreen mediumslateblue mediumspringgreen mediumturquoise ' +
+  'mediumvioletred midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab ' +
+  'orange orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru ' +
+  'pink plum powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown ' +
+  'seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen steelblue tan ' +
+  'teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen'
+).split(' ').sort((a, b) => b.length - a.length)
 
 // ─── the checks ───────────────────────────────────────────────────────────────
 
@@ -3044,6 +3065,54 @@ const CHECKS = {
                        `dropped whole. Name the one you meant, or give it a fallback if it is a knob a ` +
                        `caller may set.`,
             })
+          }
+        }
+      })
+    }
+    return { findings }
+  },
+
+  'css-raw-literal': ({ root }) => {
+    if (!shippedTokens(root).size) return { skipped: 'no dependency ships CSS' }
+
+    // A color is never a hairline; 1px is, and 0 is no value. 1rem is 16px.
+    const RAW = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch|oklab|lab|lch|hwb)\(|(?<![\w.-])(?:(?:\d*\.\d+|[2-9]|\d{2,})(?:\.\d+)?(?:px|rem|em)|1(?:rem|em))\b/g
+    // A keyword is a color too, and only a value holds one — .blue in a selector is a class.
+    const NAMED = new RegExp(`(?<![\\w.#-])(?:${CSS_NAMED_COLORS.join('|')})(?![\\w-])`, 'gi')
+    const findings = []
+    for (const surface of CLIENT_SURFACES) {
+      walk(join(root, surface), 6, (dir) => {
+        for (const name of safeRead(dir)) {
+          if (!name.endsWith('.mesa')) continue
+          const file = join(dir, name)
+          let text
+          try { text = readFileSync(file, 'utf8') } catch { continue }
+
+          for (const block of text.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)) {
+            const start = block.index + block[0].indexOf('>') + 1
+            // Blanked rather than cut, so every index still maps to its line.
+            const css = block[1]
+              .replace(/\/\*[\s\S]*?\*\//g, s => s.replace(/[^\n]/g, ' '))
+              // Declaring a token is where a literal belongs, and a var() fallback names the token first.
+              .replace(/--[A-Za-z0-9_-]+\s*:[^;}]*/g, s => s.replace(/[^\n]/g, ' '))
+              .replace(/var\([^)]*\)/g, s => s.replace(/[^\n]/g, ' '))
+              // A condition cannot read var(), so a breakpoint has no token spelling to offer.
+              .replace(/@(?:media|container|supports)\b[^{;]*/g, s => s.replace(/[^\n]/g, ' '))
+            const hits = [...css.matchAll(RAW)]
+            for (const d of css.matchAll(/:([^;{}]*)/g)) {
+              for (const m of d[1].matchAll(NAMED)) hits.push({ 0: m[0], index: d.index + 1 + m.index })
+            }
+            hits.sort((a, b) => a.index - b.index)
+            for (const m of hits) {
+              findings.push({
+                file,
+                line: lineOf(text, start + m.index),
+                message: `${m[0].replace(/\($/, '(…)')} in a <style> — a raw color, size or spacing value is the ` +
+                         `one thing @frontierjs/css rules out, since a theme switch and a density change cannot ` +
+                         `reach it. Say what the thing is and what is true of it — a tone and a treatment on the ` +
+                         `element — or read a token with var(--…).`,
+              })
+            }
           }
         }
       })

@@ -1,5 +1,34 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-28 — `omitBy`, and a shared value is not a cycle (`FJS-D473`)
+
+`omitBy` is `redactBy` with a matching key dropped rather than replaced, for junction's success bodies. Both now run over one walk whose cycle guard holds ANCESTORS only: the old `seen` set never forgot, so an object named in two places read `[circular]` the second time. Proved in `redact.spec.js`.
+
+## 2026-09-28 — an ordering against a literal `null` is a parse error (`FJS-1152`)
+
+`qty > null` evaluated `true` in the JS half (the null branch answered every
+non-`==` operator as `!=`) and UNKNOWN in SQL. The parser now refuses `<`, `>`,
+`<=`, `>=` with a literal `null` on either side and points at `== null` /
+`!= null`; those two are unchanged. Proved in `parse.spec.js`.
+
+## 2026-09-27 — `singularize('Lens')` is `Lens` (`FJS-1421`)
+
+It answered `Len`: the bare-`s` rule strips any `s` the `us`/`is`/`as` guards
+miss, and `pens` has the same ending, so no guard can reach `lens`. The `-ses`
+list already names `lens` as a singular and was asked only about the stem of a
+`-ses` word; `rules()` now asks it about the word itself before stripping, so
+`lens` and `CameraLens` stay put while `pens` and `plans` still lose their `s`.
+The spec that pinned `len` as a limit is now a round trip over the list with
+that control beside it. Proof: `test/specs/inflect.spec.js`, and litestone,
+junction and sierra green.
+
+## 2026-09-27 — `isCompressible` refuses `text/event-stream` (`FJS-1416`)
+
+Unifying the mime tables made every `text/` type compressible, and an event
+stream is one. A server that gzips a body reads it to the end first, and an
+event stream is never finished, so junction handed a browser every SSE frame
+at once when the stream closed. Proof: `test/specs/mime.spec.js`.
+
 ## 2026-09-26 — `derefFieldSchema` keeps an `anyOf` wrapper's own keywords (`FJS-1259`)
 
 The `$ref` branch already let the field's own keywords win over the target's;

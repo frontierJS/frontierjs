@@ -435,6 +435,30 @@ is which subset earns a name.
     calls what B removes, and the enforcer is a junction test asserting
     `app.scheduler` offers no `cron`, with the `scheduler-dispatch` fixture moved to
     `every()`.
+- **FJS-D512 — What does the zone binding spell when the wall clock's zone lives on
+  another model, and is the zone column refused by a new `@zone` validator?**
+  `FJS-1214`: `FJS-D143` ruled the form `DateTime @zoned(field)`, but both stressors'
+  central object is `startLocal String @time` whose zone is `site.timeZone` (connectteam)
+  or `schedule.timeZone` (calendly), one relation away. Today `Site.timeZone String`
+  accepts `"banana"` and the throw arrives at the first shift, from toolbelt; and the
+  resolved instants live in `@system` columns nothing marks as derived, so a zone
+  corrected later leaves every `startsAt` an hour out, silently. Red assertion owed:
+  a create with `timeZone: 'banana'` rejects at the Data boundary.
+  - **A** — `@zone` beside `@date`/`@datetime`/`@time` on the zone column (IANA set via
+    `Intl.supportedValuesOf`), and `@zoned(path)` on `@time`/`@date` columns taking a
+    one-hop relation path (`site.timeZone`), the `FJS-499` one-hop precedent; litestone
+    only refuses and describes (`x-zoned` in JSON Schema), and an instant pair stays the
+    app's `@system` columns.
+  - **B** — A, plus litestone DERIVES the instant columns (`@zoned` on a `DateTime`
+    names its wall-clock and zone sources) and recomputes them when either source
+    changes, so a zone correction cannot leave a stale instant.
+  - **C** — sibling-column only (`@zoned(timeZone)` on the same model), and the app
+    copies the zone down; fewest new rules, but it keeps the copy that drifts.
+  - **Recommend A now, B as the follow-up row** — A closes the `"banana"` hole and makes
+    the pairing declared rather than remembered at the cost of one validator and one
+    path argument; B's recompute-on-write is the real fix for the Azores case, but it
+    is a derived-column mechanism the language does not yet have, and deserves its own
+    ruling.
 
 ## See also
 

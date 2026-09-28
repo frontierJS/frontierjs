@@ -107,13 +107,14 @@ describe('the fleet sweep', () => {
   const NOW = Date.parse('2026-09-08T12:00:00.000Z')
   const ago = (m: number) => new Date(NOW - m * MINUTE).toISOString()
 
-  /** A machine at a stated status and a stated last check-in. Created through
-   *  the system client because `status` is `@@transitions`-guarded and this is
-   *  a fixture rather than a move. */
-  async function machine(status: string, lastHeartbeatAt: string | null) {
+  /** A machine at a stated status and a stated last check-in. A Server is born
+   *  `pending` even for the system, so the status is reached by its moves. */
+  async function machine(status: 'online' | 'stopped', lastHeartbeatAt: string | null) {
     const uniq = Math.random().toString(36).slice(2, 8)
-    return (env.system as any).server.create({ data: {
-      workspaceId: ws.id, name: `box-${uniq}`, slug: `box-${uniq}`, status, lastHeartbeatAt } })
+    const sys  = env.system as any
+    const row  = await sys.server.create({ data: {
+      workspaceId: ws.id, name: `box-${uniq}`, slug: `box-${uniq}`, lastHeartbeatAt } })
+    return sys.server.transition(row.id, status === 'online' ? 'checkIn' : 'reportStopped')
   }
   const statusOf = async (id: string) =>
     (await (env.system as any).server.findUnique({ where: { id } })).status

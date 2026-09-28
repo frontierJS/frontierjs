@@ -64,9 +64,14 @@ beforeAll(async () => {
     refund: move('refund'),
     methods: ['find', 'get', 'create', 'patch', 'remove', 'pay', 'refund'],
   }))
+  // `mint` is FJS-1221's shape: a system write, returned as it came back.
+  type Creds = { asSystem(): { credential: { create(a: unknown): Promise<unknown> } } }
   app.services.register(createService({
     name: 'credentials', model: 'Credential',
-    methods: ['find', 'get', 'create'],
+    mint: async () => ($.db as unknown as Creds).asSystem().credential.create({
+      data: { label: 'minted', value: 'hunter2-minted', scope: 'scope-minted' },
+    }),
+    methods: ['find', 'get', 'create', { method: 'mint', gate: 5 }],
   }))
   app.services.register(createService({
     name: 'customers', model: 'Customer',
@@ -79,10 +84,12 @@ beforeAll(async () => {
   // the path here is the plugin's own, with no prefix of this test's invention.
   base = `http://localhost:${app.http.port}/mcp`
 
-  const system = (db as unknown as { asSystem(): Record<string, { create(a: unknown): Promise<unknown> }> }).asSystem()
+  const system = (db as unknown as { asSystem(): Record<string, { create(a: unknown): Promise<unknown>; transition(id: number, move: string): Promise<unknown> }> }).asSystem()
   await system.order!.create({ data: { id: 1, reference: 'ORD-1', total: 2500, status: 'pending' } })
   await system.customer!.create({ data: { id: 50, name: 'Ada' } })
-  await system.order!.create({ data: { id: 51, reference: 'ORD-51', total: 900, status: 'paid', customerId: 50 } })
+  // A row starts at its @default (FJS-D470), so the paid order is walked there.
+  await system.order!.create({ data: { id: 51, reference: 'ORD-51', total: 900, customerId: 50 } })
+  await system.order!.transition(51, 'pay')
 })
 
 afterAll(async () => { await app?.stop?.() })
@@ -368,5 +375,17 @@ describe('a credential column reaches no tool schema', () => {
 
     const all = JSON.stringify(await list('staff'))
     for (const key of guarded) expect(all, key).not.toContain(`"${key}"`)
+  })
+})
+
+describe('a protected column reaches no tool RESULT (FJS-D473)', () => {
+
+  test('a method returning a system write answers the row without its @secret or @guarded', async () => {
+    const res  = await callTool('credentials_mint', {}, 'staff')
+    // The control: an answer that was refused satisfies every absence below.
+    expect(res.body.result?.isError ?? false).toBe(false)
+    expect(res.text).toContain('minted')
+    expect(res.text).not.toContain('hunter2')
+    expect(res.text).not.toContain('scope-minted')
   })
 })

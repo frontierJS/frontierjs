@@ -923,9 +923,11 @@ describe('a machine signs with its OWN key, and only its own', () => {
     const sys = env.system as any
     const row = await sys.server.create({ data: {
       workspaceId: ws.id, name, slug: `${name}-${Math.random().toString(36).slice(2, 7)}`,
-      status: 'installing', role: 'general', providerKind: 'digitalocean',
+      role: 'general', providerKind: 'digitalocean',
       registerMethod: 'provisioned', ipAddress: '203.0.113.5',
     }})
+    await sys.server.transition(row.id, 'provision')
+    await sys.server.transition(row.id, 'reportProvisioned')
     const token = mintEnrollToken().token
     await sys.server.update({ where: { id: row.id }, data: {
       enrollTokenHash: hashEnrollToken(token), enrollExpiresAt: new Date(Date.now() + 60_000),

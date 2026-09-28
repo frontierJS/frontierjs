@@ -344,3 +344,36 @@ describe('a name declared twice, once by $:', () => {
     expect(errors).toEqual([])
   })
 })
+
+// ─── FJS-1109 · Svelte and React spellings refused by name ──────────────────
+
+describe('a construct from another framework is refused by name', () => {
+  it('refuses the one-line {#await p then v}', async () => {
+    expect(await threw('<script>let p = Promise.resolve(1)</script>{#await p then v}<b>{v}</b>{/await}'))
+      .toContain('one-line `then` form is not supported')
+  })
+
+  it('refuses JSX inside an expression', async () => {
+    expect(await threw('<script>let ok = true</script>{ok && <b>x</b>}'))
+      .toContain('JSX inside an expression is not supported')
+    expect(await threw('<script>let ok = true</script>{ok ? <A/> : null}'))
+      .toContain('JSX inside an expression')
+  })
+
+  it('leaves a comparison and a string holding a tag alone', async () => {
+    expect(await threw('<script>let a = 1, b = 2</script><b>{a <b ? 1 : 2}</b>')).toBe('')
+    expect(await threw("<script>let ok = true</script><b>{ok && '<b>'}</b>")).toBe('')
+  })
+
+  it('refuses assigning a derived const', async () => {
+    const { errors } = await cx(
+      '<script>let a = 1; const d = a * 2; function f() { d = 3 }</script><button onclick={f}>{d}</button>')
+    expect(errors.join('\n')).toContain("'d' is a derived 'const'")
+  })
+
+  it('allows a local that shadows the derived', async () => {
+    const { errors } = await cx(
+      '<script>let a = 1; const d = a * 2; function f() { let d = 0; d = 3 }</script><button onclick={f}>{d}</button>')
+    expect(errors).toEqual([])
+  })
+})

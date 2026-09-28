@@ -208,7 +208,9 @@ export function createOrionServices(deps: {
      * Moves the flow to `active` — graded by the move's own `@gate(5)` on the
      * owner's client — and registers its triggers here. A version that does not
      * compile is refused before the move; a trigger that cannot register, such
-     * as a webhook path another flow holds, puts the status back.
+     * as a webhook path another flow holds, rolls the move back. The machine
+     * has no move from `active` to `draft`, for the system client either
+     * (`FJS-D502`), so the move and the registration are one transaction.
      */
     async activate(ctx: ServiceContext) {
       const flow = await readableFlow(ctx, ctx.id)
@@ -217,16 +219,16 @@ export function createOrionServices(deps: {
       const version = await systemOf(ctx).flowVersion.findFirst({ where: { flowId: flow.id, version: flow.currentVersion } })
       assertCompiles(version?.definition)
 
-      await db.flow.transition(flow.id, "activate")
-      try {
-        const activation = await runner.activate(flow.id, tenantOf(ctx))
-        const row        = await clientOf(ctx).flow.findFirst({ where: { id: flow.id } })
+      return await db.$transaction(async (tx: Client) => {
+        await tx.flow.transition(flow.id, "activate")
+        let activation
+        try { activation = await runner.activate(flow.id, tenantOf(ctx)) } catch (err) {
+          throw new Conflict((err as Error).message)
+        }
+        const row = await clientOf(ctx).flow.findFirst({ where: { id: flow.id } })
         ctx.dispatch = row
         return { ...row, activation }
-      } catch (err) {
-        await systemOf(ctx).flow.update({ where: { id: flow.id }, data: { status: flow.status } })
-        throw new Conflict((err as Error).message)
-      }
+      })
     },
 
     async pause(ctx: ServiceContext)   { return move(ctx, "pause",   "pause it") },

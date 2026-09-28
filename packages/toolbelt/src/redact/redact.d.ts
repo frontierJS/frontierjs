@@ -21,9 +21,16 @@ export function isSecretEnvName(name: string): boolean
 
 /**
  * A copy of `value` with every key `isSecret` answers true for replaced.
- * Cycles answer `'[circular]'`; a non-plain object is returned untouched.
+ * A cycle (an ancestor) answers `'[circular]'`; a non-plain object is returned untouched.
  */
 export function redactBy(
+  value:    unknown,
+  isSecret: (key: string) => boolean,
+  seen?:    WeakSet<object>
+): unknown
+
+/** `redactBy` with a matching key dropped rather than replaced. */
+export function omitBy(
   value:    unknown,
   isSecret: (key: string) => boolean,
   seen?:    WeakSet<object>

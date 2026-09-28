@@ -105,17 +105,11 @@ title: ${title}
   import { isActive } from '@frontierjs/sierra/router'
 ${SC}
 
-<nav>
-  <a href="/" class:on={isActive('/', { exact: true })}>Home</a>
+<nav class="cluster">
+  <a class="navlink" href="/" aria-current={isActive('/', { exact: true }) ? 'page' : undefined}>Home</a>
 </nav>
 
 <main><slot /></main>
-
-<style>
-  nav { display: flex; gap: 14px; padding: 12px 0 }
-  nav a { color: #6b7280; text-decoration: none }
-  nav a.on { color: #111; font-weight: 600 }
-</style>
 `
 
 // ─── A co-located component ───────────────────────────────────────────────────

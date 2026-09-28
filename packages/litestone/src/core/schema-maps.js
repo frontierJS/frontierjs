@@ -789,6 +789,10 @@ export function buildTransitionMap(schema) {
         // same way, while the declared states are real booleans — so both sides
         // of every comparison below need normalizing or nothing ever matches.
         isBoolean:   field?.type?.name === 'Boolean',
+        // Where a row may start: the column's @default and nothing else
+        // (`FJS-D470`). The parser refuses a machine without one, so null here
+        // is a schema that never validated.
+        entry:       field?.attributes?.find(a => a.kind === 'default')?.value?.value ?? null,
         transitions: attr.transitions,
       }
     }

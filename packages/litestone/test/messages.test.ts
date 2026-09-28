@@ -203,7 +203,8 @@ model Job {
       plugins: [new GatePlugin({ getLevel: () => 4 })],
     })
     autoMigrate(db)
-    await db.asSystem().job.create({ data: { status: 'paid' } })
+    await db.asSystem().job.create({ data: {} })
+    await db.asSystem().job.transition(1, 'pay')
     try {
       await db.$setAuth({ id: 1 }).job.transition(1, 'ship')   // wants 5
       throw new Error('should have refused')

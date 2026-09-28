@@ -218,6 +218,9 @@ export function isTextType(type) {
 export function isCompressible(type) {
   const t = baseType(type)
   if (!t) return false
+  // An event stream is never finished, and a compressor holds bytes until it
+  // has enough to encode — every frame arrives late or at close (FJS-1416).
+  if (t === 'text/event-stream') return false
   if (t.startsWith('text/')) return true
   if (t === 'image/svg+xml') return true
   if (t.startsWith('application/')) {

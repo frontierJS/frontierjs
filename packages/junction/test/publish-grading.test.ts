@@ -85,14 +85,16 @@ async function publishOnce(manager: Manager, db: unknown, row: unknown = ROW, se
 }
 
 describe('a broadcast is graded per recipient', () => {
-  test('a connection the schema refuses receives nothing at all', async () => {
+  test('a connection the schema refuses never receives the row', async () => {
     const manager = createChannelManager()
     const anon    = subscriber(manager, 'orders', null)
     const { db }  = boundary((p) => (p ? ROW : null))
 
     await publishOnce(manager, db)
 
-    expect(anon.sent()).toEqual([])
+    // The row never reaches it. A patch refused to a reader is its removal, by id
+    // alone, since it may have held the row before the write (FJS-1425).
+    expect(anon.sent()).toEqual([{ type: 'event', event: 'orders removed', data: { id: 1 } }])
   })
 
   test('and the control — a connection it admits receives the row', async () => {
@@ -114,7 +116,7 @@ describe('a broadcast is graded per recipient', () => {
 
       await publishOnce(manager, db)
 
-      expect(anon.sent()).toEqual([])
+      expect(anon.sent()).toEqual([{ type: 'event', event: 'orders removed', data: { id: 1 } }])
       expect(staff.rows()).toEqual([ROW])
     })
 
@@ -327,7 +329,7 @@ describe('the cohort key is the principal value, not the object', () => {
 
     expect(asked.length).toBe(2)
     expect(staff.rows()).toEqual([ROW])
-    expect(buyer.rows()).toEqual([])
+    expect(buyer.rows()).toEqual([{ id: 1 }])
   })
 
   test('the key order a session was built in does not split a cohort', async () => {

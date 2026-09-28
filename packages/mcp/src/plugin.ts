@@ -35,7 +35,7 @@
  */
 
 import { McpServer, WebStandardStreamableHTTPServerTransport, fromJsonSchema } from '@modelcontextprotocol/server'
-import { CALL_OPTIONS_AT, principalGateLevel, toDataPrincipal, toFrameworkError } from '@frontierjs/junction'
+import { CALL_OPTIONS_AT, principalGateLevel, toDataPrincipal, toFrameworkError, withholdProtected } from '@frontierjs/junction'
 import type { App, Plugin } from '@frontierjs/junction'
 import { AWAIT_META, JOBS_META, awaitJobs, describeOutcome, type JobsReader } from './await.ts'
 import { BREADCRUMBS_META, answersOneRow, breadcrumbsFor, describeBreadcrumbs } from './breadcrumbs.ts'
@@ -360,7 +360,12 @@ async function run(app: App, tool: Tool, args: unknown, user: unknown, call: Cal
   const since  = Date.now()
 
   try {
-    const result = await invoke(caller, tool, a, opts)
+    // `app.service()` is the in-process caller and answers the app whole; an
+    // agent is on a wire, so what it is handed is what HTTP would hand it
+    // (`FJS-D473`) -- a system write's `@secret` included.
+    const result = withholdProtected(await invoke(caller, tool, a, opts), {
+      locals: { db: (app as { db?: unknown }).db } as never, model: tool.model ?? undefined, service: tool.service,
+    })
     const answer: CallResult = { content: [{ type: 'text', text: JSON.stringify(result ?? null) }] }
     if (answersOneRow(tool)) {
       // Read off the row the CALLER was answered, so a foreign key their read

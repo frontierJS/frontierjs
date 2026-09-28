@@ -84,3 +84,29 @@ describe('a generator writes what `fli check` accepts', () => {
     }, 30000)
   }
 })
+
+// FJS-1220: the CSS rule is *never a color, a size or a spacing value*, and
+// css-token-undefined reads only var() references, so a literal in a generated
+// <style> passes `fli check` — this is the only thing that sees it.
+const RAW = /#[0-9a-f]{3,8}\b|\brgba?\(|\b\d+px\b/i
+
+describe('a generated page styles with the vocabulary, never a literal', () => {
+  const PAGES = [
+    { arg: ['leads'], flag: { resource: 'Lead' }, before: [LEAD_RESOURCE], wrote: 'web/src/routes/leads/index.mesa' },
+    { arg: ['about'], flag: {},                   wrote: 'web/src/routes/about.mesa' },
+    { arg: ['admin'], flag: { layout: true },     wrote: 'web/src/routes/admin/_module.mesa' },
+  ]
+  for (const c of PAGES) {
+    test(`fli make:route ${c.arg[0]} ${Object.keys(c.flag).map(k => '--' + k).join(' ')}`, async () => {
+      const root = makeApp()
+      try {
+        for (const [cmd, arg, flag] of c.before ?? []) await run(root, cmd, arg, flag)
+        await run(root, 'make:route', c.arg, c.flag)
+        const src = await Bun.file(join(root, c.wrote)).text()
+        expect(src.match(RAW)?.[0] ?? null).toBeNull()
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    }, 30000)
+  }
+})

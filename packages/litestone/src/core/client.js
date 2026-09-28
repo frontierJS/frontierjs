@@ -303,6 +303,15 @@ function rowsChanged(db) {
   return db.query('SELECT changes() AS n').get()?.n ?? 0
 }
 
+// The row as the auth stamps will leave it, for a create policy to grade on
+// the batch paths, which stamp later inside the transaction. Graded bare,
+// `ownerId @default(auth().id)` under `ownerId == auth().id` refuses every
+// create omitting the column (FJS-1402); a stamp fills only an absent key, so
+// what the caller sent is still graded as sent.
+function authStamped(row, modelName, ctx) {
+  return stampFromAuth(applyAuthDefaults(row, ctx.authDefaultMap?.[modelName], ctx.auth), ctx.createdByMap?.[modelName], ctx.auth)
+}
+
 // The three arguments are three different lifetimes, and that is the whole of
 // why they are separate. `readDb`/`writeDb` are the CONNECTION. `shape` is what
 // the SCHEMA says about this one model — derived once at client build, identical
@@ -952,11 +961,9 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // enforcement one verb did not apply. Refusing one KEY is narrower than
   // removing the tool.
   //
-  // SYSTEM bypass: ctx.isSystem skips enforcement and logs a warning — here
-  // too, because `asSystem()` means no rules and a bulk backfill of a status
-  // column is exactly what it is for. The warning is its own, because a bulk
-  // write reaches no `emitTransitionEvent` and would otherwise have been the
-  // one silent bypass of the two.
+  // Refused for `asSystem()` as for everyone: the machine is integrity, not
+  // authority, and a system principal lifts only authority (`FJS-D502`). A row
+  // put where no move leads goes through `sys.sql`, the bypass that says so.
   //
   const _tableTransitions = ctx.transitionMap?.[modelName] ?? null
   const _tableCapabilities = ctx.capabilityMap?.[modelName] ?? null
@@ -967,18 +974,31 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (!_tableTransitions || !data) return null
     for (const field of Object.keys(_tableTransitions)) {
       if (!(field in data)) continue
-      // `asSystem()` means no rules and a bulk backfill of a status column is
-      // what it is for — but `update()` says so when it bypasses a move, and a
-      // bulk write reaches no `emitTransitionEvent`, so it would have been the
-      // one silent bypass of the two.
-      if (ctx.isSystem) {
-        console.warn(`[litestone] SYSTEM bypassed @@transitions on ${tableName}.${field}: ` +
-                     `${verb}() writes it without a from-state`)
-        return null
-      }
       return field
     }
     return null
+  }
+
+  // Where a row may START (`FJS-D470`): the column's @default and nowhere else,
+  // for every principal. `create` is the one write with no from-state, so a
+  // gated destination named on the way in was reached without the move — a
+  // USER(4) created a LeaveRequest `approved`, and nothing on the row said how
+  // (`FJS-1257`). A row that belongs further along is created at the entry and
+  // walked there by its declared moves.
+  function refuseOffEntry(rows) {
+    if (!_tableTransitions) return
+    for (const [field, spec] of Object.entries(_tableTransitions)) {
+      const norm = spec.isBoolean ? (v) => (v == null ? v : !!v) : (v) => v
+      // A value the enum does not name is writeData's refusal, which lists the
+      // members; answering it here would say where the row starts instead.
+      const members = ctx.enumMap?.[modelName]?.[field]?.values
+      for (const row of rows) {
+        if (row == null || !(field in row) || row[field] == null) continue
+        if (members && !members.has(row[field])) continue
+        if (norm(row[field]) !== spec.entry)
+          throw new TransitionViolationError(modelName, field, null, row[field], [spec.entry])
+      }
+    }
   }
 
   // Resolve the caller's gate level for this model. GatePlugin owns the scale and
@@ -1009,7 +1029,6 @@ function makeTable(readDb, writeDb, shape, ctx) {
 
   async function checkTransitions(data, whereParams, whereSql, systemFields = null, requestedMove = null) {
     if (!_tableTransitions) return null
-    if (ctx.isSystem) return null   // SYSTEM always bypasses — logged below
 
     // Whether this CALLER may make this MOVE — the three refusals that are
     // true whatever the row is doing. One function because two paths reach it:
@@ -1017,6 +1036,15 @@ function makeTable(readDb, writeDb, shape, ctx) {
     // for by NAME through transition(). Two copies would be two answers to one
     // question the first time either learned something (Invariant 4).
     const gradeMove = async (fieldName, moveName, move) => {
+      // @gate(9) is a move declared for its from-state and made by nobody, the
+      // system client included, as a 9 is on @@gate.
+      if (move.gate === 9) throw new TransitionGateError(tableName, fieldName, moveName, 9, ctx.isSystem ? 8 : await transitionLevel())
+
+      // Everything below is authority — who may make the move — which is what
+      // `asSystem()` lifts. The move itself, its from-state and its
+      // compare-and-swap, still holds (`FJS-D502`).
+      if (ctx.isSystem) return
+
       // A transition gate is a floor on top of @@gate's update level, which has
       // already passed to get here: shipping an order and refunding one are not
       // the same authority.
@@ -1045,8 +1073,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // the application decides it and a caller may only ask. The escape is the
       // column mechanism unchanged — name the field on the write — because a
       // move IS a write to that column and there is no reason for two hatches.
-      // asSystem() passes for the reason it passes everywhere else.
-      if (move.system && !ctx.isSystem) {
+      if (move.system) {
         const named = Array.isArray(systemFields) ? systemFields : systemFields ? [systemFields] : []
         if (!named.includes(fieldName))
           throw new TransitionSystemError(tableName, fieldName, moveName)
@@ -1067,7 +1094,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       // row that is not there — § Rule one in access-control.md.
       const scope = callerReadScope()
       const current = readDb.query(
-        `SELECT "${fieldName}" FROM "${tableName}" WHERE (${whereSql})${scope ? ` AND (${scope.sql})` : ''}`,
+        `SELECT "${col(fieldName)}" AS "${fieldName}" FROM "${tableName}" WHERE (${whereSql})${scope ? ` AND (${scope.sql})` : ''}`,
       ).get(...whereParams, ...(scope?.params ?? []))
       if (!current) return NOT_VISIBLE
       // The raw column, not a read() row, so a boolean arrives as 1/0; the write
@@ -1280,7 +1307,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (!transitionResult) return { sql: finalWhereSql, params: finalWhereParams }
     // Add WHERE field = currentValue for optimistic concurrency
     return {
-      sql:    `(${finalWhereSql}) AND "${transitionResult.field}" = ?`,
+      sql:    `(${finalWhereSql}) AND "${col(transitionResult.field)}" = ?`,
       // _ecp: a boolean state is stored 1/0, and a raw `false` binds as nothing
       // the column ever equals — the swap would match no row and every move on a
       // Boolean machine would report a conflict.
@@ -1357,15 +1384,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const hasAudience = () => !!(emitter || ctx._eventListeners.size || ctx._crossProcess)
 
   function emitTransitionEvent(transitionResult, record) {
-    // The audience check leads, so the SYSTEM-bypass warning below stays tied
-    // to somebody listening for transitions — it was reached only when an
-    // emitter existed, and an app that subscribes to nothing should not start
-    // seeing it.
     if (!transitionResult || !hasAudience()) return
-    if (ctx.isSystem) {
-      console.warn(`[litestone] SYSTEM bypassed transition on ${tableName}.${transitionResult.field}: '${transitionResult.from}' -> '${transitionResult.to}'`)
-      return
-    }
     fireEvent('transition', {
       // `modelName`, like every other event this client fires. It used to be
       // `tableName`, so a subscriber handling both kinds got `Order` from an
@@ -1575,6 +1594,16 @@ function makeTable(readDb, writeDb, shape, ctx) {
     return rows.map(r => r[idField]).filter(id => id != null)
   }
 
+  // A logged read whose `select` leaves out the id still has to name its rows:
+  // the entry was written with actor and clock and `records: []`, a trail with
+  // a hole a reviewer cannot see (FJS-1422). So the STATEMENT selects the id,
+  // and `finalize` with the caller's own parse strips it again. `distinct`
+  // keeps the caller's projection, since an id would make every row distinct.
+  function logReadParse(select, include, ps, distinct) {
+    if (!tableHasLogWork || tableAnonymous || !select || select[idField] || distinct === true) return ps
+    return parseArgs({ ...select, [idField]: true }, include)
+  }
+
   // Emit a log entry fire-and-forget to a logger database.
   function emitLog(dbName, entry) {
     const table = getLogTable(dbName)
@@ -1629,7 +1658,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // Emit field-level and model-level log entries for a completed operation.
   // Called once per operation — extracts ids once, shared by both helpers.
   // operation: 'read' | 'write' | 'create' | 'update' | 'delete'
-  function emitLogs(operation, rows, { before: beforeMap, after: afterMap, transition = null } = {}) {
+  function emitLogs(operation, rows, { before: beforeMap, after: afterMap, transition = null, ids: readIds = null } = {}) {
     if (!tableHasLogWork) return          // ← fast exit for unlogged tables
     if (operation !== 'read' && (tableAnonymous || tableLogsWrites) && tx.owns()) {
       const other = tx.noteWrite(modelName, tableAnonymous)
@@ -1642,7 +1671,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
       }
     }
     if (tableAnonymous) return
-    const ids = extractIds(rows)         // extract once, shared below
+    const ids = readIds ?? extractIds(rows)         // extract once, shared below
 
     // ── Field-level logs ──────────────────────────────────────────────────
     if (tableNeedsField) {
@@ -1882,6 +1911,15 @@ function makeTable(readDb, writeDb, shape, ctx) {
   const _uncheckableWith = (field) => field.attributes
     .filter(a => ['lt', 'lte', 'gt', 'gte', 'maxItems', 'uniqueItems'].includes(a.kind))
     .map(a => `@${a.kind}`)
+  const _checkOp = { lt: '<', lte: '<=', gt: '>', gte: '>=' }
+  // One expression, since a field carries one `@check`.
+  const _checkSpelling = (field, column) => {
+    const terms = field.attributes.flatMap(a =>
+      _checkOp[a.kind]        ? [`${column} ${_checkOp[a.kind]} ${a.value}`]
+      : a.kind === 'maxItems' ? [`json_array_length(${column}) <= ${a.value}`]
+      : [])
+    return terms.length ? `@check("${terms.join(' AND ')}")` : null
+  }
 
   const _fieldsByName = new Map((ctx.models?.[modelName]?.fields ?? []).map(f => [f.name, f]))
   const NUMERIC_TYPES = new Set(['Int', 'Float', 'BigInt', 'Decimal'])
@@ -1977,9 +2015,16 @@ function makeTable(readDb, writeDb, shape, ctx) {
         refuseOp(key, `"${op}" changes a value that is already there, so it belongs on update, not ${where}. State the value itself`)
 
       const uncheckable = _uncheckableWith(field)
-      if (uncheckable.length)
+      if (uncheckable.length) {
+        // The old advice here was read-modify-write, which loses updates under
+        // concurrency — 50 increments that way left a counter at 1 (FJS-1405).
+        // A CHECK is the bound SQLite holds while it computes, so name that.
+        const check = _checkSpelling(field, col(key))
         refuseOp(key, `${key} carries ${uncheckable.join(' and ')}, and "${op}" computes its new value inside SQLite where no validator can see it. ` +
-                      `Read the row, change it and write it back — that path validates`)
+                      (check
+                        ? `State the bound as ${check} instead — SQLite holds a CHECK on every write, this one included, where reading the row and writing it back loses updates to concurrent writers`
+                        : `@uniqueItems has no CHECK spelling, since SQLite allows no subquery in one, so write the whole array`))
+      }
 
       if (NUMERIC_OPS[op]) {
         if (field.type.array || !NUMERIC_TYPES.has(field.type.name))
@@ -4221,6 +4266,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const em              = effMode(args)
       const asOf            = effective ? effAsOf(args) : null
       const ps              = parseArgs(select, include)
+      const psLog           = logReadParse(select, include, ps, distinct)
 
       // ── the similarity ordering's two halves (`FJS-D331`) ────────────────
       //
@@ -4252,7 +4298,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
         // the default payload (`FJS-D328`) — so the SCAN's select is widened
         // and `read()` is still handed the caller's own, which strips the
         // column again unless they asked for it.
-        const psScan = select ? parseArgs({ ...select, [_jsVec.field]: true }, include) : ps
+        const psScan = select ? parseArgs({ ...select, ...(psLog !== ps && { [idField]: true }), [_jsVec.field]: true }, include) : ps
 
         // The same guard the compiled path ANDs on, stated here because the
         // ordering it is derived from has been taken out of this query.
@@ -4269,7 +4315,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
           skip: offset == null ? 0        : Number(offset),
         })
       } else {
-        ;({ sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: ps, sdMode: mode, htMode: htm, effMode: em, asOf, distinct: distinct === true, windowSpec }))
+        ;({ sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: psLog, sdMode: mode, htMode: htm, effMode: em, asOf, distinct: distinct === true, windowSpec }))
         rawRows = readDb.query(sql).all(...params)
       }
 
@@ -4281,14 +4327,15 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
 
       const _nt = needsTiming()
       const _fmT0 = _nt ? performance.now() : 0
-      let rows              = readAll(rawRows, { mode: 'list', selectedFields: ps?.requestedFields })
+      let rows              = readAll(rawRows, { mode: 'list', selectedFields: psLog?.requestedFields })
       if (_nt) fireQuery({ operation: 'findMany', args, sql, params, duration: _nt ? performance.now() - _fmT0 : 0, rowCount: rows.length })
+      const _logIds = psLog !== ps ? extractIds(rows) : null
       withIncludes(rows, ps, include)
       rows = finalize(rows, ps)
       if (_dists) for (let i = 0; i < rows.length; i++) rows[i][DISTANCE_FIELD] = _dists[i]
       attachFlatEdges(rows, scopedBy)
       if (plugins?.hasPlugins) await plugins.afterRead(modelName, rows, ctx, { select })
-      if (tableHasLogWork && rows.length > 0) emitLogs('read', rows)
+      if (tableHasLogWork && rows.length > 0) emitLogs('read', rows, { ids: _logIds })
       return rows
     },
 
@@ -4309,12 +4356,14 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const em              = effMode(args)
       const asOf            = effective ? effAsOf(args) : null
       const ps              = parseArgs(select, include)
-      const { sql, params } = buildSQL({ where, orderBy, limit: 1, parsedSelect: ps, sdMode: mode, htMode: htm, effMode: em, asOf })
+      const psLog           = logReadParse(select, include, ps)
+      const { sql, params } = buildSQL({ where, orderBy, limit: 1, parsedSelect: psLog, sdMode: mode, htMode: htm, effMode: em, asOf })
       const _nt = needsTiming()
       const _ffT0 = _nt ? performance.now() : 0
       const _raw            = readDb.query(sql).get(...params)
       const _dist           = _raw ? _raw[DISTANCE_FIELD] : undefined
-      let row               = read(_raw, { mode: 'list', selectedFields: ps?.requestedFields })
+      let row               = read(_raw, { mode: 'list', selectedFields: psLog?.requestedFields })
+      const _logIds         = psLog !== ps && row ? extractIds([row]) : null
       if (_nt) fireQuery({ operation: 'findFirst', args, sql, params, duration: _nt ? performance.now() - _ffT0 : 0, rowCount: row ? 1 : 0 })
       if (row) {
         withIncludes([row], ps, include); row = finalizeOne(row, ps); attachFlatEdges([row], scopedBy)
@@ -4325,7 +4374,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       else row = null
       if (plugins?.hasPlugins && row) await plugins.afterRead(modelName, [row], ctx, { select })
       // ── Logging ──────────────────────────────────────────────────────────────
-      if (tableHasLogWork && row) emitLogs('read', [row])
+      if (tableHasLogWork && row) emitLogs('read', [row], { ids: _logIds })
       return row
     },
 
@@ -4367,10 +4416,12 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const em              = effMode(args)
       const asOf            = effective ? effAsOf(args) : null
       const ps              = parseArgs(select, include)
-      const { sql, params } = buildSQL({ where, limit: 2, parsedSelect: ps, sdMode: mode, htMode: htm, effMode: em, asOf })
+      const psLog           = logReadParse(select, include, ps)
+      const { sql, params } = buildSQL({ where, limit: 2, parsedSelect: psLog, sdMode: mode, htMode: htm, effMode: em, asOf })
       const _nt = needsTiming()
       const _fuT0 = _nt ? performance.now() : 0
-      const rows            = readAll(readDb.query(sql).all(...params), { mode: 'single', selectedFields: ps?.requestedFields })
+      const rows            = readAll(readDb.query(sql).all(...params), { mode: 'single', selectedFields: psLog?.requestedFields })
+      const _logIds         = psLog !== ps ? extractIds(rows) : null
       if (_nt) fireQuery({ operation: 'findUnique', args, sql, params, duration: _nt ? performance.now() - _fuT0 : 0, rowCount: rows.length })
       if (rows.length > 1) throw new Error(`findUnique on "${tableName}" returned more than one row`)
       let row = rows[0] ?? null
@@ -4390,7 +4441,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       // `beforeRead` above was already here, which is what made the gap look
       // like plugin support rather than half of it.
       if (plugins?.hasPlugins && row) await plugins.afterRead(modelName, [row], ctx, { select })
-      if (tableHasLogWork && row) emitLogs('read', [row])
+      if (tableHasLogWork && row) emitLogs('read', [row], { ids: _logIds })
       return row
     },
 
@@ -4515,15 +4566,17 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const em   = effMode(args)
       const asOf = effective ? effAsOf(args) : null
       const ps   = parseArgs(select, include)
+      const psLog = logReadParse(select, include, ps, distinct)
 
       // ── rows query (with limit/offset) ──────────────────────────────────
-      const { sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: ps, sdMode: mode, htMode: htm, effMode: em, asOf, distinct: distinct === true })
+      const { sql, params } = buildSQL({ where, orderBy, limit, offset, parsedSelect: psLog, sdMode: mode, htMode: htm, effMode: em, asOf, distinct: distinct === true })
       const _nt = needsTiming()
       const _t0 = _nt ? performance.now() : 0
       const rawRows = readDb.query(sql).all(...params)
       const _dists  = vectorOrderPlan(orderBy, _vectorMap) ? rawRows.map(r => r[DISTANCE_FIELD]) : null
-      let rows = readAll(rawRows, { mode: 'list', selectedFields: ps?.requestedFields })
+      let rows = readAll(rawRows, { mode: 'list', selectedFields: psLog?.requestedFields })
       fireQuery({ operation: 'findMany', args, sql, params, duration: _nt ? performance.now() - _t0 : 0, rowCount: rows.length })
+      const _logIds = psLog !== ps ? extractIds(rows) : null
       withIncludes(rows, ps, include)
       rows = finalize(rows, ps)
       if (_dists) for (let i = 0; i < rows.length; i++) rows[i][DISTANCE_FIELD] = _dists[i]
@@ -4548,7 +4601,7 @@ SELECT _id, MIN(_depth) AS _depth FROM _t GROUP BY _id`.trim()
       const total = readDb.query(countSql).get(...countParams).n
 
       if (plugins?.hasPlugins) await plugins.afterRead(modelName, rows, ctx, { select })
-      if (tableHasLogWork && rows.length > 0) emitLogs('read', rows)
+      if (tableHasLogWork && rows.length > 0) emitLogs('read', rows, { ids: _logIds })
 
       return { rows, total }
     },
@@ -5124,7 +5177,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // The plugins first: a value one writes into the payload is a value the
       // row lands with, and grading before it would pass it ungraded (FJS-1307).
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data, include, select }, ctx)
-      if (ctx.hasPolicies) checkCreatePolicy(modelName, data, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
+      refuseOffEntry([data])
       // Auto-generate @id if field uses @default(uuid/ulid/cuid) and not provided
       // What the ENGINE puts in this payload, so the @guarded/@system refusals
       // in writeData can grade the caller's keys alone (FJS-565).
@@ -5137,6 +5190,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       data = applyGeneratedDefaults(data, ctx.generatedDefaultMap?.[modelName], stamped)
       data = applyAuthDefaults(data, ctx.authDefaultMap?.[modelName], ctx.auth, stamped)
       data = stampFromAuth(data, ctx.createdByMap?.[modelName], ctx.auth, stamped)
+      // After the auth stamps, never before — see authStamped (FJS-1402).
+      if (ctx.hasPolicies) checkCreatePolicy(modelName, data, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
       // A new row is version 1, whatever the payload says. Honouring a supplied
       // version would let a client start a row at 500 and make the first real
       // editor's read look stale.
@@ -5321,7 +5376,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       for (const row of data) extractWriteOps(row, { where: 'createMany' })
       await enforceValueSets(modelName, data, ctx)
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data }, ctx)
-      if (ctx.hasPolicies) for (const row of data) checkCreatePolicy(modelName, row, ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
+      refuseOffEntry(data)
+      if (ctx.hasPolicies) for (const row of data) checkCreatePolicy(modelName, authStamped(row, modelName, ctx), ctx, ctx.policyMap, ctx.schema, ctx.relationMap)
 
       // Auto-generate @id and run writeData (transforms + validation) on every row
       // before touching the DB — so @email, @lower, @trim, @encrypted, enum checks
@@ -5797,7 +5853,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // from a refusal: the caller asked what the row is and gets an answer.
       if (!_wroteNothing) {
         fireRowEvent('update', 'update', finalRow,
-          _transResult && !ctx.isSystem ? _transResult.transitionName : null)
+          _transResult ? _transResult.transitionName : null)
         emitTransitionEvent(_transResult, updated)
         if (plugins?.hasPlugins) await plugins.afterWrite(modelName, 'update', finalRow, ctx)
         // ── Logging: emit after ─────────────────────────────────────────────
@@ -5957,6 +6013,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // binding grades it against `where` (`FJS-D122`).
       await enforceValueSets(modelName, [createData], ctx)
       await enforceValueSets(modelName, [updateData], ctx, { where })
+      refuseOffEntry([createData])
       // Threaded through to both halves: the lookup has to SEE the row the
       // update would write, or an upsert against an excluded row reads as
       // absent and tries to INSERT one that is already there.
@@ -6114,8 +6171,8 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
 
     async upsertMany({ data, conflictTarget, update: updateFields, system, announce } = {}) {
       // The `update:` half is an ON CONFLICT SET over rows nobody read, which is
-      // `updateMany`'s problem exactly. The insert half is a create and has no
-      // from-state to grade, so it is untouched.
+      // `updateMany`'s problem exactly. The insert half is a create, graded
+      // against the entry below.
       const _upMove = _bulkTransitionField(updateFields, 'upsertMany')
       if (_upMove) throw new BulkTransitionError(modelName, _upMove, 'upsertMany')
       if (!data?.length) return { count: 0 }
@@ -6129,6 +6186,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
       // — the compromise the collection form has to make and this one does not.
       const _usNeedRows = tableHasLogWork || _usWantRows
       if (plugins?.hasPlugins) await plugins.beforeCreate(modelName, { data }, ctx)
+      refuseOffEntry(data)
 
       const autoId       = ctx.autoIdMap?.[modelName]
       const genDefaults  = ctx.generatedDefaultMap?.[modelName]
@@ -6230,7 +6288,7 @@ SELECT ${selectCols.join(', ')} FROM "${tableName}"${dataWhere} GROUP BY ${group
         if (ctx.hasPolicies) {
           for (const [i, row] of rows.entries()) {
             if (present.has(keyOf(row))) continue
-            try { checkCreatePolicy(modelName, data[i], ctx, ctx.policyMap, ctx.schema, ctx.relationMap) }
+            try { checkCreatePolicy(modelName, authStamped(data[i], modelName, ctx), ctx, ctx.policyMap, ctx.schema, ctx.relationMap) }
             catch (e) { throw asBatchRowError(e, i, rows.length, data[i]) }
           }
         }

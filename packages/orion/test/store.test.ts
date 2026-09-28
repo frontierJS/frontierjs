@@ -137,9 +137,9 @@ describe("orion.lite — access", () => {
       .rejects.toThrow(/@@deny/)
   })
 
-  test("a create straight into active is refused — activation is ADMINISTRATOR(5)", async () => {
+  test("a create straight into active is refused — a flow starts at draft", async () => {
     await expect(env.actingAs(USER).flow.create({ data: { name: "x", status: "active" } }))
-      .rejects.toThrow(/@@deny/)
+      .rejects.toThrow(/starts at 'draft'/)
   })
 
   test("the owner is never rewritten", async () => {

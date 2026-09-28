@@ -232,7 +232,8 @@ title: Products
 <style>
   .product-row { cursor: pointer }
   .thumb {
-    width: 40px; height: 40px;
+    --thumb: 40px;
+    width: var(--thumb); height: var(--thumb);
     object-fit: contain;
     border-radius: var(--btn-radius);
     background: var(--surface-sunken);

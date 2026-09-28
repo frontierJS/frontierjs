@@ -2231,6 +2231,13 @@ export function parseText(source, options = {}) {
     if (js) exp = exp.substring(1)
     exp = exp.trim()
     if (!exp) throw parseError('Empty {} expression in: ' + source, i)
+    // A tag where an operand belongs is JSX, which would be emitted verbatim and
+    // fail as a syntax error inside compiled output that names neither construct.
+    const jsx = exp.replace(/(["'`])(?:\\.|(?!\1)[^\\])*\1/g, '""')
+      .match(/(?:^|[(,=?:&|![]|=>|\breturn)\s*<\/?[A-Za-z]/)
+    if (jsx) throw parseError(
+      `{${exp}} — JSX inside an expression is not supported; markup is not a value. ` +
+      'Write {#if cond}<b>…</b>{/if}, or a {#snippet} rendered with {@render}.', i)
     parts.push({ value: exp, type: js ? 'js' : 'exp' })
     i = end
   }
@@ -7287,6 +7294,50 @@ function _checkUnreadDerived(ctx) {
   }
 }
 
+// A derived `const` is emitted as a getter call, so `d = 3` becomes `d() = 3`
+// and fails as a syntax error inside compiled output (`FJS-1109`). A function
+// declaring its own `d` shadows it and is skipped.
+function _checkDerivedAssigned(ctx) {
+  const derived = new Set(Object.values(ctx.analysis.vars ?? {})
+    .filter((v) => v.kind === 'const' && v.isDerived && !v.isProp).map((v) => v.name))
+  if (!derived.size) return
+  const declares = (fn, name) => {
+    const names = []
+    const collect = (p) => {
+      if (!p) return
+      if (p.type === 'Identifier') names.push(p.name)
+      else if (p.type === 'AssignmentPattern') collect(p.left)
+      else if (p.type === 'RestElement') collect(p.argument)
+      else if (p.type === 'ObjectPattern') p.properties.forEach((q) => collect(q.value ?? q.argument))
+      else if (p.type === 'ArrayPattern') p.elements.forEach(collect)
+    }
+    fn.params.forEach(collect)
+    for (const s of fn.body?.body ?? [])
+      if (s.type === 'VariableDeclaration') s.declarations.forEach((d) => collect(d.id))
+    return names.includes(name)
+  }
+  const found = new Set()
+  const walk = (n, shadowed) => {
+    if (!n || typeof n !== 'object') return
+    if (/^(FunctionDeclaration|FunctionExpression|ArrowFunctionExpression)$/.test(n.type))
+      shadowed = new Set([...shadowed, ...[...derived].filter((d) => declares(n, d))])
+    const target = n.type === 'AssignmentExpression' ? n.left : n.type === 'UpdateExpression' ? n.argument : null
+    if (target?.type === 'Identifier' && derived.has(target.name) && !shadowed.has(target.name))
+      found.add(target.name)
+    for (const k of Object.keys(n)) {
+      if (k === 'start' || k === 'end' || k === 'type') continue
+      const c = n[k]
+      if (Array.isArray(c)) c.forEach((x) => walk(x, shadowed))
+      else if (c?.type) walk(c, shadowed)
+    }
+  }
+  walk(ctx.script?.ast, new Set())
+  for (const name of found)
+    ctx.analysis.errors.push(
+      `'${name}' is a derived 'const' — it is computed from the state it reads, and cannot be ` +
+      `assigned. Assign the state it reads, or declare it 'let ${name}' for a writable value.`)
+}
+
 function _checkExternalReactivity(ctx, imports) {
   if (!ctx.DOM) return
   // externalSignals drives the signal tier; the path-watch tier works without it.
@@ -7519,6 +7570,7 @@ export function emitScript(ctx) {
 
   _checkExternalReactivity(ctx, imports)
   _checkUnreadDerived(ctx)
+  _checkDerivedAssigned(ctx)
 
   // ── 2. Watch proxies ──────────────────────────────────────────────────────
   // Two cases:

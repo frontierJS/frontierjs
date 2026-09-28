@@ -285,7 +285,7 @@ const AGENT_RULES = [
   { needs: '@frontierjs/sierra', rules: ['resource-dir-mesa', 'resource-script', 'resource-file-name', 'resource-one-per-file'],
     text: 'A Resource is a `.mesa` file in `src/resources/`, one per file and named for its model (`Lead.mesa`). '
         + 'Its `<script module>` calls `createResource`; its markup, when present, is the model\'s default form.' },
-  { needs: '@frontierjs/css', rules: ['css-token-undefined'],
+  { needs: '@frontierjs/css', rules: ['css-token-undefined', 'css-raw-literal'],
     text: 'Style with what a thing is and what is true about it — `class="btn outlined danger"` — never with a '
         + 'color, a size or a spacing value.' },
 ]

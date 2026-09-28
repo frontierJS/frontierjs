@@ -134,10 +134,9 @@ Four things follow, and each of them is the reason it is spelled this way:
 - **`@sealed` is explicit and is never inferred.** Every child relation on a
   sealing model looks sealable and they are not — a payment against an issued
   invoice is exactly the row that must keep arriving.
-- **`asSystem()` does not lift it**, exactly as it does not lift `@immutable`.
-  This is the one place it parts company with `@@transitions`, which `asSystem()`
-  bypasses entirely: a gate is about who is asking and a seal is about what the
-  row IS.
+- **`asSystem()` does not lift it**, exactly as it does not lift `@immutable`
+  or a `@@transitions` move: a gate is about who is asking and a seal is about
+  what the row IS.
 - **It says nothing about deleting the document itself**, for the reason
   `@immutable` says nothing about DELETE: whether an issued invoice may be
   removed is a question about who may remove it, which is `@@gate`'s. `@sealed`

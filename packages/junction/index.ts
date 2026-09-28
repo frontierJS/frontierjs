@@ -64,7 +64,7 @@ export {
 export type { Hook, AroundHook, BridgeHook, HookMap, ResolvedPipeline, CircuitBreakerOptions } from './src/core/hooks.ts'
 
 // ─── Bridge ───────────────────────────────────────────────────────────────
-export { bridge, jsonResponse, errorResponse, redirectResponse } from './src/transport/bridge.ts'
+export { bridge, jsonResponse, errorResponse, redirectResponse, withholdProtected } from './src/transport/bridge.ts'
 export type { ServiceContext, ServiceMethod, AnyMethod, ServiceContextLocals, CallOptions, RequestMeta } from './src/transport/bridge.ts'
 export type { QueryDirectives } from './src/core/context.ts'
 export { requestMeta } from './src/transport/bridge.ts'

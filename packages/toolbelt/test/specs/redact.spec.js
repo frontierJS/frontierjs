@@ -15,7 +15,7 @@
  *                   PRESERVATION row beside it.
  */
 
-import { SECRET_KEY_NAMES, REDACTED, isSecretKey, isSecretEnvName, redactBy, redactSecrets, redactUrl, redactValue }
+import { SECRET_KEY_NAMES, REDACTED, isSecretKey, isSecretEnvName, redactBy, omitBy, redactSecrets, redactUrl, redactValue }
   from '../../src/redact/redact.js'
 
 // ─── the names ────────────────────────────────────────────────────────────────
@@ -67,6 +67,19 @@ test('redact: a cycle is answered, not followed', function () {
   const out = redactSecrets(a)
   assert.equal(out.token, REDACTED)
   assert.equal(out.self, '[circular]')
+})
+
+test('redact: a value reached by two paths is walked twice, not called a cycle', function () {
+  const shared = { token: 't', label: 'x' }
+  const out = redactSecrets({ a: shared, b: shared, list: [shared, shared] })
+  assert.deepEqual(out.b, { token: REDACTED, label: 'x' })
+  assert.deepEqual(out.list[1], { token: REDACTED, label: 'x' })
+})
+
+test('omitBy: a matching key is dropped, the rest kept, nested and in lists', function () {
+  const isSecret = (k) => k === 'secret'
+  const out = omitBy({ id: 1, secret: 's', rows: [{ id: 2, secret: 's2', title: 't' }] }, isSecret)
+  assert.deepEqual(out, { id: 1, rows: [{ id: 2, title: 't' }] })
 })
 
 test('redact: a non-plain object is returned WHOLE', function () {

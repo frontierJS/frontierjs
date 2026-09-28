@@ -43,7 +43,7 @@ async function env() {
   })
   const sys = db.asSystem()
   for (let i = 1; i <= 6; i++) await sys.doc.create({ data: { title: `d${i}` } })
-  await sys.doc.updateMany({ where: { id: { in: [2, 5] } }, data: { status: 'review' } })
+  for (const id of [2, 5]) await sys.doc.transition(id, 'submit')
   return { db, sys, at: (level: number) => db.$setAuth({ id: 1, level }) }
 }
 
@@ -132,15 +132,15 @@ describe('the power tool survives — one KEY is refused, not the verb', () => {
 describe('upsertMany', () => {
   test("its update: half is refused and its insert half is not", async () => {
     const { db, sys } = await env()
-    // The insert half is a CREATE and has no from-state to grade, so a status
-    // in `data` is legitimate — asserted first, or the refusal below could be
-    // the whole verb rather than the one key.
+    // The insert half is a CREATE, so a status in `data` is legal at the entry
+    // — asserted first, or the refusal below could be the whole verb rather
+    // than the one key.
     await sys.doc.upsertMany({
-      data: [{ id: 90, title: 'made', status: 'review' }],
+      data: [{ id: 90, title: 'made', status: 'draft' }],
       conflictTarget: ['id'],
       update: { title: 'made' },
     })
-    expect(await state(sys)).toContain('90:review')
+    expect(await state(sys)).toContain('90:draft')
 
     await expect(db.$setAuth({ id: 1, level: 4 }).doc.upsertMany({
       data: [{ id: 91, title: 'x' }],
@@ -151,23 +151,15 @@ describe('upsertMany', () => {
   })
 })
 
-// ─── asSystem() bypasses, and says so ────────────────────────────────────────
+// ─── asSystem() is refused too (FJS-D502) ────────────────────────────────────
 
-describe('asSystem() keeps the power tool and is audible', () => {
-  test('a system bulk write moves the column and warns', async () => {
+describe('asSystem() holds the machine on a bulk write', () => {
+  test('a system bulk write of the column is refused, and the other columns are not', async () => {
     const { db, sys } = await env()
-    const said: string[] = []
-    const warn = console.warn
-    console.warn = (...a: unknown[]) => { said.push(a.join(' ')) }
-    try {
-      const r = await sys.doc.updateMany({ where: { id: 4 }, data: { status: 'published' } })
-      expect(r.count).toBe(1)
-    } finally { console.warn = warn }
-    expect(await state(sys)).toContain('4:published')
-    // `update()` announces its own bypass through `emitTransitionEvent`, which a
-    // bulk write never reaches — so without this the system path would have been
-    // the one silent bypass of the two.
-    expect(said.some(s => s.includes('SYSTEM bypassed @@transitions on doc.status'))).toBe(true)
+    await expect(sys.doc.updateMany({ where: { id: 4 }, data: { status: 'published' } }))
+      .rejects.toBeInstanceOf(BulkTransitionError)
+    expect(await state(sys)).toContain('4:draft')
+    expect((await sys.doc.updateMany({ where: { id: 4 }, data: { note: 'kept' } })).count).toBe(1)
     db.$close()
   })
 })

@@ -35,6 +35,15 @@ process.env.BASECAMP_STUB_OUTPOST = '1'
 let env: any, ws: any, admin: any, developer: any, box: any, environment: any
 const uniq = () => Math.random().toString(36).slice(2, 8)
 
+/** A release already at `status` — a Deployment is born `pending`, even for the system. */
+async function releaseAt(status: 'success' | 'failed', data: Record<string, unknown>) {
+  const sys = env.system as any
+  const row = await sys.deployment.create({ data })
+  const moves = status === 'success' ? ['build', 'succeed'] : ['fail']
+  for (const move of moves) await sys.deployment.transition(row.id, move)
+  return sys.deployment.findUnique({ where: { id: row.id } })
+}
+
 beforeAll(async () => {
   env = await createTestEnv({
     schema:        join(import.meta.dir, '..', '..', 'db', 'schema.lite'),
@@ -64,7 +73,8 @@ beforeAll(async () => {
   // A machine that can take a release, or `resolveExecutor` refuses before any
   // of this is reached.
   box = await sys.server.create({ data: {
-    workspaceId: ws.id, name: `box-${uniq()}`, slug: `box-${uniq()}`, status: 'online' } })
+    workspaceId: ws.id, name: `box-${uniq()}`, slug: `box-${uniq()}` } })
+  box = await sys.server.transition(box.id, 'checkIn')
 
   // `App.environmentId` is required, and an Environment hangs off a Project.
   const project = await sys.project.create({ data: {
@@ -84,9 +94,9 @@ async function anAppWithHistory(config: Record<string, unknown> = { replicas: 3 
     type: 'container', config } })
   await sys.appServer.create({ data: { appId: target.id, serverId: box.id, replicaIndex: 0 } })
 
-  const shipped = async (data: Record<string, unknown>) => sys.deployment.create({ data: {
-    appId: target.id, workspaceId: ws.id, status: 'success',
-    finishedAt: new Date().toISOString(), ...data } })
+  const shipped = async (data: Record<string, unknown>) => releaseAt('success', {
+    appId: target.id, workspaceId: ws.id,
+    finishedAt: new Date().toISOString(), ...data })
 
   const first = await shipped({
     toImage: `${slug}:v1`, builtImage: 'sha256:' + 'a'.repeat(64),
@@ -188,9 +198,9 @@ describe('what a rollback refuses, before it writes anything', () => {
       workspaceId: ws.id, environmentId: environment.id, name: slug, slug,
       type: 'container', config: {} } })
     await sys.appServer.create({ data: { appId: target.id, serverId: box.id, replicaIndex: 0 } })
-    const only = await sys.deployment.create({ data: {
-      appId: target.id, workspaceId: ws.id, status: 'success',
-      toImage: `${slug}:v1`, finishedAt: new Date().toISOString() } })
+    const only = await releaseAt('success', {
+      appId: target.id, workspaceId: ws.id,
+      toImage: `${slug}:v1`, finishedAt: new Date().toISOString() })
 
     await expect(roll(admin, only.id)).rejects.toThrow(/first release/i)
     expect(await statusOf(only.id)).toBe('success')
@@ -201,9 +211,9 @@ describe('what a rollback refuses, before it writes anything', () => {
     // machine, so there is nothing of it to undo.
     const { current, app } = await anAppWithHistory()
     const sys = env.system as any
-    const failed = await sys.deployment.create({ data: {
-      appId: app.id, workspaceId: ws.id, status: 'failed',
-      previousDeploymentId: current.id, toImage: 'x:v3' } })
+    const failed = await releaseAt('failed', {
+      appId: app.id, workspaceId: ws.id,
+      previousDeploymentId: current.id, toImage: 'x:v3' })
 
     await expect(roll(admin, failed.id)).rejects.toThrow(/cannot be rolled back/i)
     expect(await statusOf(failed.id)).toBe('failed')
@@ -216,11 +226,11 @@ describe('what a rollback refuses, before it writes anything', () => {
       workspaceId: ws.id, environmentId: environment.id, name: slug, slug,
       type: 'container', config: {} } })
     await sys.appServer.create({ data: { appId: target.id, serverId: box.id, replicaIndex: 0 } })
-    const blank = await sys.deployment.create({ data: {
-      appId: target.id, workspaceId: ws.id, status: 'success' } })
-    const current = await sys.deployment.create({ data: {
-      appId: target.id, workspaceId: ws.id, status: 'success',
-      toImage: `${slug}:v2`, previousDeploymentId: blank.id } })
+    const blank = await releaseAt('success', {
+      appId: target.id, workspaceId: ws.id })
+    const current = await releaseAt('success', {
+      appId: target.id, workspaceId: ws.id,
+      toImage: `${slug}:v2`, previousDeploymentId: blank.id })
 
     await expect(roll(admin, current.id)).rejects.toThrow(/no image/i)
     expect(await statusOf(current.id)).toBe('success')
@@ -239,8 +249,8 @@ describe('what a rollback refuses, before it writes anything', () => {
     const target = await sys.app.create({ data: {
       workspaceId: other.id, environmentId: otherEnv.id, name: slug, slug,
       type: 'container', config: {} } })
-    const theirs = await sys.deployment.create({ data: {
-      appId: target.id, workspaceId: other.id, status: 'success', toImage: 'x:v1' } })
+    const theirs = await releaseAt('success', {
+      appId: target.id, workspaceId: other.id, toImage: 'x:v1' })
 
     await expect(roll(admin, theirs.id)).rejects.toThrow(/not found/i)
     expect(await statusOf(theirs.id)).toBe('success')

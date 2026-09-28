@@ -101,19 +101,32 @@ test('inflect: a singular that ends in s is left alone', function () {
   })
 })
 
-test('inflect: a singular ending in a bare s is NOT reachable', function () {
+test('inflect: a singular the -ses list names is left alone', function () {
   /*
-   * `lens` singularizes to `len`, and no rule can prevent it: `pens` and
-   * `plans` are real plurals with the same ending, so telling them apart needs
-   * a dictionary rather than a rule. The guards cover the endings that are
-   * reliably singular (`ss`, `us`, `is`, `as`) and stop there. A schema whose
-   * model lands on this says so by hand — `@@map` in the Data realm,
-   * `createResource('lenses', { model: 'Lens' })` in the UI.
-   *
-   * Asserted as-is: a fix that ever teaches this word turns the case red
-   * rather than leaving a stale expectation nobody reruns.
+   * `lens` singularized to `len`, so `fli check` refused the `Lens.mesa` that
+   * `fli make:resource Lens` had just written and failed CI on it (`FJS-1421`).
+   * No ENDING separates `lens` from `pens` and `plans`, which are real plurals,
+   * but the list that splits `-ses` already names `lens` as a singular — the
+   * word is asked about before the bare-`s` rule strips it. Each word here is
+   * paired with its plural, because a fix that stopped stripping `-ns` would
+   * pass the first half and break `pens`.
    */
-  assert.equal(singularize('lens'), 'len')
+  ;['lens', 'bus', 'status', 'campus', 'canvas', 'atlas', 'alias', 'virus',
+    'census', 'bonus', 'gas', 'plus', 'bias', 'iris', 'chassis', 'axis',
+  ].forEach(function (w) {
+    assert.equal(singularize(w), w, 'singularize(' + w + ') moved')
+    assert.equal(singularize(pluralize(w)), w, w + ' did not survive the round trip')
+  })
+  assert.equal(singularize('Lens'), 'Lens')
+  assert.equal(singularize('CameraLens'), 'CameraLens')
+  assert.equal(singularize('camera_lens'), 'camera_lens')
+  assert.equal(modelName('lenses'), 'Lens')
+
+  // The control: the same ending off the list is still a plural.
+  ;[['pens', 'pen'], ['plans', 'plan'], ['tokens', 'token'], ['items', 'item']]
+    .forEach(function ([many, one]) {
+      assert.equal(singularize(many), one, 'singularize(' + many + ')')
+    })
 })
 
 test('inflect: -ses splits by a list, because no ending can split it', function () {

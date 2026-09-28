@@ -10418,7 +10418,7 @@ describe('@@transitions — parser', () => {
 
   test('an unnamed clause names itself after the target state', () => {
     const r = parse(`enum S { pending paid }
-model Order { id Int @id  status S  @@transitions(status, pending -> paid) }`)
+model Order { id Int @id  status S @default(pending)  @@transitions(status, pending -> paid) }`)
     expect(r.valid).toBe(true)
     const attr = r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
     expect(attr.transitions.paid).toEqual({ from: ['pending'], to: 'paid', gate: null, system: false, seals: false })
@@ -10426,7 +10426,7 @@ model Order { id Int @id  status S  @@transitions(status, pending -> paid) }`)
 
   test('@gate accepts a level name as well as a number', () => {
     const r = parse(`enum S { a b }
-model M { id Int @id  s S  @@transitions(s, go: a -> b @gate(ADMINISTRATOR)) }`)
+model M { id Int @id  s S @default(a)  @@transitions(s, go: a -> b @gate(ADMINISTRATOR)) }`)
     expect(r.valid).toBe(true)
     expect(r.schema.models[0].attributes.find((a: any) => a.kind === 'transitions')
       .transitions.go.gate).toBe(5)
@@ -10465,8 +10465,8 @@ describe('@@transitions — enum block desugars into it', () => {
   test('every model using the enum picks up the shared machine', () => {
     const { schema, valid } = parse(`enum S { draft live archived
   transitions { publish: draft -> live  archive: live -> archived } }
-model Page    { id Int @id  status S }
-model Article { id Int @id  status S }`)
+model Page    { id Int @id  status S @default(draft) }
+model Article { id Int @id  status S @default(draft) }`)
     expect(valid).toBe(true)
     for (const m of schema.models) {
       const attr = m.attributes.find((a: any) => a.kind === 'transitions')
@@ -10480,7 +10480,7 @@ model Article { id Int @id  status S }`)
   test('an explicit @@transitions overrides rather than merges', () => {
     const { schema, valid } = parse(`enum S { draft live archived
   transitions { publish: draft -> live  archive: live -> archived } }
-model Page { id Int @id  status S  @@transitions(status, bin: draft -> archived) }`)
+model Page { id Int @id  status S @default(draft)  @@transitions(status, bin: draft -> archived) }`)
     expect(valid).toBe(true)
     const attrs = schema.models[0].attributes.filter((a: any) => a.kind === 'transitions')
     expect(attrs).toHaveLength(1)
@@ -10515,7 +10515,8 @@ describe('@@transitions — gates', () => {
       })],
     })
     db = result.db
-    await db.order.create({ data: { id: 1, status: 'paid' } })
+    await db.order.create({ data: { id: 1 } })
+    await db.order.transition(1, 'pay')
   })
   afterEach(() => db.$close())
 
@@ -10550,9 +10551,11 @@ describe('@@transitions — gates', () => {
     expect((await user.order.transition(1, 'ship')).status).toBe('shipped')
   })
 
-  test('asSystem() bypasses the gate as it bypasses the machine', async () => {
+  test('asSystem() lifts the gate and keeps the machine (FJS-D502)', async () => {
     const r = await db.asSystem().order.update({ where: { id: 1 }, data: { status: 'refunded' } })
     expect(r.status).toBe('refunded')
+    await expect(db.asSystem().order.update({ where: { id: 1 }, data: { status: 'pending' } }))
+      .rejects.toThrow(TransitionViolationError)
   })
 
   test('an illegal move is still refused for an admin — a gate is not an override', async () => {
@@ -10565,7 +10568,8 @@ describe('@@transitions — gates', () => {
     // A declared gate that silently does nothing is a fail-open default, so
     // createClient auto-installs a resolver the same way @@gate does.
     const { db: bare } = await makeTestClient(GATED_SCHEMA)
-    await bare.order.create({ data: { id: 9, status: 'paid' } })
+    await bare.order.create({ data: { id: 9 } })
+    await bare.order.transition(9, 'pay')
     const user = bare.$setAuth({ id: 1 })
     const err  = await user.order.transition(9, 'refund').catch((e: any) => e)
     expect(err).toBeInstanceOf(TransitionGateError)
@@ -10594,7 +10598,8 @@ describe('@@transitions — transitions() listing', () => {
     })
     db = result.db
     await db.order.create({ data: { id: 1, status: 'pending' } })
-    await db.order.create({ data: { id: 2, status: 'paid' } })
+    await db.order.create({ data: { id: 2 } })
+    await db.order.transition(2, 'pay')
   })
   afterEach(() => db.$close())
 
@@ -10893,8 +10898,11 @@ describe('enum transitions — enforcement', () => {
     const result = await makeTestClient(TRANSITION_SCHEMA)
     db = result.db
     await db.order.create({ data: { id: 1, status: 'pending' } })
-    await db.order.create({ data: { id: 2, status: 'paid' } })
-    await db.order.create({ data: { id: 3, status: 'shipped' } })
+    await db.order.create({ data: { id: 2 } })
+    await db.order.create({ data: { id: 3 } })
+    await db.order.transition(2, 'pay')
+    await db.order.transition(3, 'pay')
+    await db.order.transition(3, 'ship')
   })
   afterEach(() => db.$close())
 
@@ -10997,18 +11005,18 @@ describe('enum transitions — enforcement', () => {
     db2.$close()
   })
 
-  // ── No enforcement on create ─────────────────────────────────────────────────
+  // ── A create starts at the entry (FJS-D470) ──────────────────────────────────
 
-  test('create with @default value: no enforcement', async () => {
-    // pending is the default — creating with it should always work
+  test('create naming the @default succeeds', async () => {
     const r = await db.order.create({ data: { id: 10, status: 'pending' } })
     expect(r.status).toBe('pending')
   })
 
-  test('create with non-default value: no enforcement (create is exempt)', async () => {
-    // Creating directly with 'paid' skips transition checks — create is always exempt
-    const r = await db.order.create({ data: { id: 11, status: 'paid' } })
-    expect(r.status).toBe('paid')
+  test('create naming any other state is refused, and names the entry', async () => {
+    const err = await db.order.create({ data: { id: 11, status: 'paid' } }).catch((e: any) => e)
+    expect(err).toBeInstanceOf(TransitionViolationError)
+    expect(err.message).toContain("starts at 'pending'")
+    expect(await db.order.findUnique({ where: { id: 11 } })).toBeNull()
   })
 
   // ── Plain enum not affected ──────────────────────────────────────────────────
@@ -11024,12 +11032,11 @@ describe('enum transitions — enforcement', () => {
     db2.$close()
   })
 
-  // ── SYSTEM bypass ────────────────────────────────────────────────────────────
+  // ── asSystem() holds the machine (FJS-D502) ──────────────────────────────────
 
-  test('asSystem() bypasses transition enforcement', async () => {
-    // pending -> shipped would normally be invalid
-    const r = await db.asSystem().order.update({ where: { id: 1 }, data: { status: 'shipped' } })
-    expect(r.status).toBe('shipped')
+  test('asSystem() is refused a move the machine does not declare', async () => {
+    await expect(db.asSystem().order.update({ where: { id: 1 }, data: { status: 'shipped' } }))
+      .rejects.toBeInstanceOf(TransitionViolationError)
   })
 
   // ── Events ───────────────────────────────────────────────────────────────────
@@ -11082,7 +11089,10 @@ describe('enum transitions — conflict and upsert', () => {
     const result = await makeTestClient(TRANSITION_SCHEMA)
     db = result.db
     await db.order.create({ data: { id: 1, status: 'pending' } })
-    await db.order.create({ data: { id: 2, status: 'paid' } })
+    await db.order.create({ data: { id: 2 } })
+    // Placed by SQL rather than by the move: the race below intercepts the first
+    // prepare of the move's UPDATE, and a move made here would have cached it.
+    await db.asSystem().sql`UPDATE "order" SET status = 'paid' WHERE id = 2`
   })
   afterEach(() => db.$close())
 
@@ -11365,7 +11375,7 @@ describe('enum transitions — conflict and upsert', () => {
   // ── upsert() transition enforcement ─────────────────────────────────────
   //
   // upsert() delegates to update() for the existing-row path → enforcement
-  // is inherited. create() path is always exempt (per decision).
+  // is inherited. The create half starts at the entry, as create() does.
 
   test('upsert existing row: valid transition enforced', async () => {
     // id=1 exists with status=pending — pay is a valid transition
@@ -11386,14 +11396,18 @@ describe('enum transitions — conflict and upsert', () => {
     })).rejects.toBeInstanceOf(TransitionViolationError)
   })
 
-  test('upsert new row (create path): exempt from enforcement', async () => {
-    // id=99 does not exist — create path, always exempt
+  test('upsert new row (create path): starts at the entry', async () => {
+    await expect(db.order.upsert({
+      where:  { id: 99 },
+      create: { id: 99, status: 'shipped' },
+      update: { status: 'delivered' },
+    })).rejects.toBeInstanceOf(TransitionViolationError)
     const r = await db.order.upsert({
       where:  { id: 99 },
-      create: { id: 99, status: 'shipped' },   // non-default, would fail if enforced
+      create: { id: 99 },
       update: { status: 'delivered' },
     })
-    expect(r.status).toBe('shipped')
+    expect(r.status).toBe('pending')
   })
 })
 

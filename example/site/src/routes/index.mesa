@@ -241,6 +241,7 @@ render: static
     --surface:        #0b182b;
     --surface-raised: #14263e;
     --surface-sunken: #060f1c;
+    --sand:           #d8b892;
 
     position: relative;
     /* The same rung `.site-main` pads with, negated — see the note above. */
@@ -278,14 +279,16 @@ render: static
     z-index:  -1;
 
     background:
-    linear-gradient( 100deg, rgba(6, 15, 28, 0.95) 0%, rgba(6, 15, 28, 0.55) 46%, rgba(6, 15, 28, 0.74) 100% )
+    linear-gradient( 100deg, color-mix(in srgb, var(--surface-sunken) 95%, transparent) 0%, color-mix(in srgb, var(--surface-sunken) 55%, transparent) 46%, color-mix(in srgb, var(--surface-sunken) 74%, transparent) 100% )
   }
 
   .hero-inner {
     display:       grid;
     gap:           var(--space-5xl);
     align-items:   center;
-    min-height:    clamp(24rem, 44vw, 33rem);
+    --band-min:    24rem;
+    --band-max:    33rem;
+    min-height:    clamp(var(--band-min), 44vw, var(--band-max));
     padding-block: var(--space-5xl);
   }
 
@@ -298,7 +301,8 @@ render: static
   }
 
   .hero-copy {
-    max-width: 38rem;
+    --copy-width: 38rem;
+    max-width: var(--copy-width);
     gap:       var(--space-2xl);
   }
 
@@ -312,7 +316,7 @@ render: static
     border-radius: var(--card-radius);
     /* A warm hairline rather than --rule: the plate's own edge is sunset and a
        neutral gray line reads as a seam against it. */
-    border:     var(--border-width) solid rgba(216, 184, 146, 0.35);
+    border:     var(--border-width) solid color-mix(in srgb, var(--sand) 35%, transparent);
     box-shadow: var(--shadow-lg);
   }
 
@@ -321,22 +325,25 @@ render: static
     font-size:      var(--text-xs);
     font-weight:    var(--label-font-weight);
     text-transform: var(--label-text-transform);
-    letter-spacing: 0.18em;
-    color:          #d8b892;
+    --label-letter-spacing: 0.18em;
+    letter-spacing: var(--label-letter-spacing);
+    color:          var(--sand);
   }
 
   .hero-title {
     margin:      0;
     /* One step above the ladder's top rung: this is the only display type on
        the surface, and --text-4xl is tuned for a page title in a console. */
-    font-size:   clamp(var(--text-4xl), 6vw, 3.75rem);
+    --display-max: 3.75rem;
+    font-size:   clamp(var(--text-4xl), 6vw, var(--display-max));
     line-height: var(--leading-display);
     text-wrap:   balance;
   }
 
   .hero-lede {
     margin:      0;
-    max-width:   34rem;
+    --lede-width: 34rem;
+    max-width:   var(--lede-width);
     font-size:   var(--text-lg);
     line-height: var(--leading-relaxed);
     color:       var(--ink-soft);
@@ -356,14 +363,15 @@ render: static
    * is the inverted one because `theme-dark` is on the section.
    */
   .hero-btn-2 {
-    --bg-mix: #d8b892;
+    --bg-mix: var(--sand);
   }
 
   @media (max-width: 899px) {
     /* One column: the plate stacks under the copy, and at that width it is the
        first thing scrolled past rather than a companion to the headline. */
     .hero-art {
-      max-inline-size: 26rem;
+      --art-width: 26rem;
+      max-inline-size: var(--art-width);
     }
   }
 
@@ -371,6 +379,7 @@ render: static
 
   .creed {
     --surface: #060f1c;
+    --sand:    #d8b892;
     background:    var(--surface);
     color:         var(--ink);
     border-block-end: var(--border-width) solid var(--rule);
@@ -387,8 +396,9 @@ render: static
     font-size:      var(--text-sm);
     font-weight:    var(--label-font-weight);
     text-transform: var(--label-text-transform);
-    letter-spacing: 0.12em;
-    color:          #d8b892;
+    --label-letter-spacing: 0.12em;
+    letter-spacing: var(--label-letter-spacing);
+    color:          var(--sand);
   }
   .creed-line-soft {
     color: var(--ink-mute);
@@ -402,14 +412,16 @@ render: static
     margin:     0;
     display:    grid;
     gap:        var(--space-4xl);
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+    --card-min: 15rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--card-min)), 1fr));
   }
   .archetype {
     gap: var(--space-sm);
   }
   .archetype-art {
-    inline-size: 7.5rem;
-    block-size:  7.5rem;
+    --art-size: 7.5rem;
+    inline-size: var(--art-size);
+    block-size:  var(--art-size);
     /* The disc is already round with a transparent surround; the ring is the
        artwork's own. */
     border-radius: var(--pill-radius);
@@ -435,12 +447,14 @@ render: static
   }
   .merch-head-copy {
     gap:       var(--space-sm);
-    max-width: 34rem;
+    --lede-width: 34rem;
+    max-width: var(--lede-width);
   }
   .merch-title {
     margin:         0;
     text-transform: uppercase;
-    letter-spacing: 0.02em;
+    --label-letter-spacing: 0.02em;
+    letter-spacing: var(--label-letter-spacing);
   }
   .merch-card {
     background: var(--surface);
@@ -463,7 +477,8 @@ render: static
     margin:     0;
     display:    grid;
     gap:        var(--space-4xl);
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+    --card-min: 16rem;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, var(--card-min)), 1fr));
   }
   .trail-item > * + * {
     margin-block-start: var(--space-sm);
@@ -499,7 +514,8 @@ render: static
        22rem rather than 16: the grid holds six, and at the container's own
        content width a 16rem track fits four — which orphans two on a second
        row. Three across is two clean rows. */
-    grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+    --card-min: 22rem;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--card-min)), 1fr));
   }
   .card-link {
     display: grid;
@@ -531,7 +547,8 @@ render: static
 
   .closing {
     margin:    0;
-    max-width: 42rem;
+    --closing-width: 42rem;
+    max-width: var(--closing-width);
     color:     var(--ink-soft);
   }
 </style>

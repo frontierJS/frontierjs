@@ -489,6 +489,23 @@ are what the examples here use. Every chain method (`state`, `seed`, `withRelati
 `withParents`, `has`, `attach`, `for`, `usingDb`, traits) returns a **clone** —
 `f.seed(42)` does not mutate `f`.
 
+### A state further along a state machine
+
+A row under `@@transitions` starts at its column's `@default`, whoever creates it
+(`FJS-D470`). A factory asked for another state — by its definition, a `state()`
+or an override — creates the row at the entry and makes the declared moves that
+reach it: the fewest, the first declared on a tie, never a `@gate(9)` move.
+
+```js
+await orders.asSystem().create({ status: 'shipped' })   // create, then pay, then ship
+```
+
+The moves are ordinary ones on the factory's client, so they are graded (a gated
+move needs `asSystem()` or a caller at the level), announced and audited — a seed that runs through an app with listeners sends
+whatever those moves send, where a create at the state announced nothing. A state
+no declared move reaches is refused by name before anything is written; put such a
+row there with `db.asSystem().sql`. `build()` writes nothing and keeps the state.
+
 ## Relations
 
 A model is rarely creatable on its own. Four chain methods cover the shapes a

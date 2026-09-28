@@ -11,6 +11,9 @@
 //   • FJS-686 — a 500's `message` was the raw exception text (paths, SQL,
 //     table names) and `data` reached the wire unredacted, so a domain error
 //     that attached the row it refused sent that row's `@secret` with it.
+//   • FJS-D473 — a SUCCESS body was neither: a method returning a system write
+//     answered a stranger with the decrypted `@secret`, over HTTP and over the
+//     socket, and the socket's error frame had never been sanitized at all.
 //
 // The production half has to be asserted with NODE_ENV really set: the whole
 // rule is a branch on it, and a test that runs under `test` grades the dev
@@ -20,6 +23,7 @@ import { describe, test, expect, afterAll } from 'bun:test'
 import { createClient } from '../../litestone/src/index.js'
 import { createApp } from '../src/core/app.ts'
 import { createService } from '../src/core/service.ts'
+import { channels } from '../src/transport/channels.ts'
 
 const SCHEMA = `
   model Note {
@@ -37,7 +41,7 @@ class Refused extends Error {
   constructor(message: string, data: unknown) { super(message); this.data = data }
 }
 
-async function mkApp() {
+async function mkApp(listen = false) {
   // `@secret` is `@encrypted @guarded`, so the client wants a key. Fixed
   // rather than generated: what is asserted is that the value never leaves,
   // and a key that changes per run cannot be told from one that never worked.
@@ -55,7 +59,7 @@ async function mkApp() {
   })
   app.services.register(createService({
     name: 'notes', model: 'Note', db: db as never,
-    methods: ['find', 'get', 'create', 'boom', 'withRow', 'versionish'],
+    methods: ['find', 'get', 'create', 'boom', 'withRow', 'versionish', 'mint'],
     // A raw SQLite failure — the shape that put a table name and the absolute
     // path of the database file on the wire.
     async boom(ctx) {
@@ -68,6 +72,11 @@ async function mkApp() {
         .asSystem().note.findFirst({ where: { id: 1 }, select: { id: true, title: true, secret: true } })
       throw new Refused('cannot be done', { row, note: 'why' })
     },
+    // FJS-1221's shape: a system write, returned as it came back.
+    async mint(ctx) {
+      return (ctx.locals.db as never as { asSystem(): { note: { create(a: unknown): Promise<unknown> } } })
+        .asSystem().note.create({ data: { title: 'minted', secret: 'hunter2-new' } })
+    },
     // VersionConflictError's shape: a plain object of numbers, and none of its
     // keys is a protected field. It must survive the walk untouched.
     async versionish() {
@@ -77,7 +86,9 @@ async function mkApp() {
       })
     },
   }))
-  await app._startForTest()
+  app.configure(channels())
+  if (listen) await app.start()
+  else        await app._startForTest()
   app.http.router.build()
   return app
 }
@@ -194,6 +205,60 @@ describe('what a failure may say (FJS-686)', () => {
     expect(res.status).toBe(409)
     expect(res.body.data).toEqual({ model: 'Note', field: 'version', expected: 3, actual: 4 })
     expect(res.body.retryable).toBe(true)
+    await app.stop()
+  })
+})
+
+// ─── FJS-D473 ─────────────────────────────────────────────────────────────
+
+async function socketCall(app: Awaited<ReturnType<typeof mkApp>>, method: string): Promise<string> {
+  const ws = new WebSocket(`ws://localhost:${(app.http as never as { port: number }).port}/ws`)
+  await new Promise<void>((ok, no) => { ws.onopen = () => ok(); ws.onerror = () => no(new Error('ws')) })
+  const frame = await new Promise<string>(ok => {
+    ws.onmessage = (e: MessageEvent) => { if (JSON.parse(e.data).id === 'c1') ok(e.data) }
+    ws.send(JSON.stringify({ type: 'service_call', id: 'c1', service: 'notes', method, data: {} }))
+  })
+  ws.close()
+  return frame
+}
+
+describe('what a success may carry (FJS-D473)', () => {
+
+  test('a system write returned over HTTP answers the row without its @secret', async () => {
+    const app = await mkApp()
+    const res = await http(app, 'POST', '/notes', { 'x-service-method': 'mint' })
+
+    expect(res.status).toBe(200)
+    // DROPPED, not `[redacted]`: the shape a caller-scoped read of the row has.
+    expect(res.body).toEqual({ id: 151, title: 'minted' })
+    expect(res.text).not.toContain('hunter2')
+    await app.stop()
+  })
+
+  test('and the same over the socket', async () => {
+    const app   = await mkApp(true)
+    const frame = JSON.parse(await socketCall(app, 'mint'))
+
+    expect(frame.type).toBe('service_result')
+    expect(frame.result).toEqual({ id: 151, title: 'minted' })
+    await app.stop()
+  })
+
+  test("the socket's error frame is sanitized as the HTTP one is", async () => {
+    const app   = await mkApp(true)
+    const frame = JSON.parse(await socketCall(app, 'withRow'))
+
+    expect(frame.type).toBe('service_error')
+    expect(frame.error.data.row.secret).toBe('[redacted]')
+    expect(frame.error.data.row.title).toBe('note 1')
+    await app.stop()
+  })
+
+  test('a list read is unchanged -- the control for a walk that drops too much', async () => {
+    const app = await mkApp()
+    const res = await http(app, 'GET', '/notes?$limit=2')
+    expect(res.body.data).toEqual([{ id: 1, title: 'note 1' }, { id: 2, title: 'note 2' }])
+    expect(res.body.total).toBe(150)
     await app.stop()
   })
 })

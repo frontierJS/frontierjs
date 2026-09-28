@@ -100,6 +100,7 @@ Covered: **18 of 19**.
 | Kind | What | Covers |
 | --- | --- | --- |
 | `fli check` | `css-token-undefined` | a styled value names a token the stylesheets define |
+| `fli check` | `css-raw-literal` | a .mesa <style> holds no raw color, size or spacing value |
 | test | `packages/css/test/specs/anatomy.spec.js` | the vocabulary against the real CSSOM, both directions — a class the vocabulary does not name fails the suite |
 
 ### 14. Typecheck baselines ratchet down only

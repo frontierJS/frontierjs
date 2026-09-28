@@ -129,11 +129,16 @@ function primary(p, ctx) {
   const left = operand(p, ctx)
   const op   = compOp(p)
   if (op) {
-    p.advance()
+    const opTok = p.advance()
     // BOTH sides take a group: `ownerId == (open ? auth().id : auth().adminId)`
     // is a ternary choosing which value to compare against, which is most of
     // what a ternary is for here.
     const right = operand(p, ctx)
+    // SQL answers UNKNOWN for `qty > NULL` where the JS half would answer a
+    // presence test, so the two interpreters disagree (`FJS-1152`).
+    const isNull = (n) => n.type === 'literal' && n.value === null
+    if (op !== '==' && op !== '!=' && op !== 'in' && (isNull(left) || isNull(right)))
+      throw p.fail(`'${sourceHint(left)} ${op} ${sourceHint(right)}' orders against null, which is never true — use == null or != null`, opTok ?? p.peek())
     return { type: 'compare', op, left, right }
   }
   // A bare word where an operator belongs. Left alone it unwinds into

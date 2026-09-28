@@ -272,7 +272,6 @@ An operation with no `@@allow` is unrestricted at this layer.
 - deny **read** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"
 - allow **create** — `true`
 - deny **create** — `ownerId != null && ownerId != auth().id`
-- deny **create** — `status != null && status != 'draft'`
 - deny **create** — `auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId` — "Outside your workspaceId"
 - allow **update** — `ownerId == auth().id`
 - deny **update** — `auth().workspaceId == null || workspaceId != auth().workspaceId` — "Outside your workspaceId"

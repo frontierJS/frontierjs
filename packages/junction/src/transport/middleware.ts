@@ -12,7 +12,7 @@
 
 import type { MiddlewareFn, TransportContext } from './types.ts'
 import type { App }                            from '../core/app.ts'
-import { Forbidden }                            from '../core/errors.ts'
+import { Forbidden, toFrameworkError }          from '../core/errors.ts'
 import { clientIp, requestMeta }                from '../core/context.ts'
 import {
   createRateLimiter,
@@ -350,11 +350,18 @@ export function requestLogger(opts: RequestLoggerOptions = {}) {
       if (skip?.(ctx)) { await next(); return }
 
       const start = Date.now()
+      // A raw route's throw leaves `ctx.__status` unset, so without the
+      // catch a refused sign-in logged as 200 (`FJS-1417`). The status is the
+      // one the error boundary will answer with, from its own owner.
+      let thrown: number | undefined
       try {
         await next()
+      } catch (err) {
+        thrown = toFrameworkError(err).code
+        throw err
       } finally {
         const ms     = Date.now() - start
-        const status = ctx.__status ?? 200
+        const status = thrown ?? ctx.__status ?? 200
         // The id the rest of the request's lines carry. Read from the store
         // rather than from ctx, because `enterRequest` is the one owner of it
         // and a second reading of `x-request-id` here is a second answer.

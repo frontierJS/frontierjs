@@ -345,3 +345,41 @@ describe('every write path files an entry (FJS-1042)', () => {
     db.$close()
   })
 })
+
+describe('a logged read names its rows whatever it selects (FJS-1422)', () => {
+  const schema = `
+    database main { path ":memory:" model AuditRow }
+    model AuditRow { ${TRAIL} }
+    model Rule { id Int @id  domain String  @@log(main, reads: true) }
+  `
+  const seed = async (db: any) => {
+    for (const id of [1, 2, 3]) await db.asSystem().rule.create({ data: { id, domain: `d${id}.com` } })
+    await tick()
+  }
+  const lastRead = async (db: any) =>
+    (await db.asSystem().auditRow.findMany({ where: { operation: 'read' }, orderBy: { id: 'desc' }, limit: 1 }))[0]
+
+  test('findMany, findManyAndCount, findFirst and findUnique record the id and hand back only the select', async () => {
+    const db = await client(schema)
+    await seed(db)
+
+    const rows = await db.asSystem().rule.findMany({ select: { domain: true }, orderBy: { id: 'asc' } })
+    expect(rows).toEqual([{ domain: 'd1.com' }, { domain: 'd2.com' }, { domain: 'd3.com' }])
+    await tick()
+    expect((await lastRead(db)).records).toEqual([1, 2, 3])
+
+    const page = await db.asSystem().rule.findManyAndCount({ select: { domain: true }, where: { id: { gt: 1 } }, orderBy: { id: 'asc' } })
+    expect(page.rows).toEqual([{ domain: 'd2.com' }, { domain: 'd3.com' }])
+    await tick()
+    expect((await lastRead(db)).records).toEqual([2, 3])
+
+    expect(await db.asSystem().rule.findFirst({ select: { domain: true }, where: { id: 2 } })).toEqual({ domain: 'd2.com' })
+    await tick()
+    expect((await lastRead(db)).records).toEqual([2])
+
+    expect(await db.asSystem().rule.findUnique({ select: { domain: true }, where: { id: 3 } })).toEqual({ domain: 'd3.com' })
+    await tick()
+    expect((await lastRead(db)).records).toEqual([3])
+    db.$close()
+  })
+})

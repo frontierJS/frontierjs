@@ -137,6 +137,28 @@ describe('what is refused, and why', () => {
       .toMatch(/capped carries @lte, and "increment" computes its new value inside SQLite/)
   })
 
+  // The advice used to be read-modify-write, which is a lost update: 50
+  // concurrent increments that way left a counter at 1 (FJS-1405). A CHECK is
+  // the bound SQLite holds while it computes, so the refusal names that one.
+  test('the refusal points at the CHECK, and the CHECK holds the operator', async () => {
+    const m = msg(await thrown(upd({ capped: { increment: 1 } })))
+    expect(m).toContain('@check("capped <= 10")')
+    expect(m).not.toMatch(/Read the row/)
+
+    const c = (await createClient({ db: ':memory:', schema: `
+      model Counter {
+        id    Int @id
+        count Int @default(0) @check("count <= 3")
+      }
+    ` })).asSystem()
+    await c.counter.create({ data: { id: 1 } })
+    await Promise.all(Array.from({ length: 3 }, () =>
+      c.counter.update({ where: { id: 1 }, data: { count: { increment: 1 } } })))
+    expect((await c.counter.findFirst({ where: { id: 1 } })).count).toBe(3)
+    expect(await thrown(c.counter.update({ where: { id: 1 }, data: { count: { increment: 1 } } }))).toBeTruthy()
+    expect((await c.counter.findFirst({ where: { id: 1 } })).count).toBe(3)
+  })
+
   test('two operators on one column, and an operator mixed with a value', async () => {
     expect(msg(await thrown(upd({ views: { increment: 1, decrement: 1 } })))).toMatch(/was given 2 operators/)
     expect(msg(await thrown(upd({ views: { increment: 1, other: 2 } })))).toMatch(/an operator stands alone/)

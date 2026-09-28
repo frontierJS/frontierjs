@@ -281,7 +281,7 @@ describe('@@commitment — due()', () => {
     const old  = await sys.order.create({ data: { label: 'old',  createdAt: '2025-12-01T00:00:00.000Z' } })
     const edge = await sys.order.create({ data: { label: 'edge', createdAt: '2025-12-18T00:00:00.000Z' } })
     const newb = await sys.order.create({ data: { label: 'new',  createdAt: '2025-12-30T00:00:00.000Z' } })
-    const paid = await sys.order.create({ data: { label: 'paid', createdAt: '2025-11-01T00:00:00.000Z', status: 'paid' } })
+    const paid = await sys.order.transition((await sys.order.create({ data: { label: 'paid', createdAt: '2025-11-01T00:00:00.000Z' } })).id, 'pay')
     return { env, db: sys, old, edge, newb, paid }
   }
 

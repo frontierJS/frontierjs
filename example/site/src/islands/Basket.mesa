@@ -246,7 +246,7 @@
 <style>
   .line-name       { display: grid; gap: var(--space-3xs); }
   .line-controls   { display: flex; align-items: center; gap: var(--space-2xl); }
-  .qty             { width: 4.5rem; }
-  .line-total      { min-width: 5rem; text-align: right; }
-  #basket-checkout { max-width: 28rem; }
+  .qty             { --qty-width: 4.5rem; width: var(--qty-width); }
+  .line-total      { --total-width: 5rem; min-width: var(--total-width); text-align: right; }
+  #basket-checkout { --checkout-width: 28rem; max-width: var(--checkout-width); }
 </style>

@@ -1,5 +1,34 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-28 — `css-raw-literal` sees a named color (`FJS-1432`)
+
+The rule matched hex and color functions only, so `background: blue` passed. It now also reads each declaration value for the CSS named colors, case-insensitive; a selector's `.blue` is a class and is not read, and `transparent` and `currentColor` are not colors a theme owns. A fourth test in `test/checks.test.js` pins both halves.
+
+## 2026-09-28 — `css-raw-literal` leaves a breakpoint alone and counts `1rem` as a length (`FJS-1430`)
+
+A `@media`, `@container` or `@supports` condition cannot read `var()`, so a breakpoint was reported with a fix no media query can take; the prelude is blanked now. And the hairline exemption was written as *a single digit 1*, which let `1rem` and `1em` — sixteen pixels — pass beside a flagged `.5rem`; only `1px` is exempt now. A third test in `test/checks.test.js` pins both. With them the rule reports nothing across example and basecamp.
+
+## 2026-09-28 — `fli check` sees a raw color or length in a hand-written `<style>` (`FJS-1429`)
+
+`css-token-undefined` reads only `var()` references, so the never-a-color rule the app's AGENTS.md cites it for had no enforcement outside the generator grep. `css-raw-literal` (warn, Invariant 13) reports a hex color, a color function, or a px/rem/em length above 1px in a `.mesa` `<style>`, skipping comments, a custom-property declaration and anything inside `var()`. Warn rather than error because example and basecamp carry such literals today; each is a baseline entry or a fix.
+
+## 2026-09-28 — `fli make:route` writes no literal color or size (`FJS-1220`)
+
+The resource page had already moved onto `crud-templates.js` (`Alert tone="danger"`,
+no `.err`), but `--layout` still wrote `<style>` with `#6b7280`, `#111` and `px`
+gaps. It now writes `<nav class="cluster">` and `.navlink` with `aria-current`,
+the vocabulary's own nav, and no `<style>`. `test/generators-run.test.js` greps
+every `make:route` shape for a hex, `rgb()` or `px` literal, since
+`css-token-undefined` reads only `var()` and cannot see one.
+
+## 2026-09-27 — `fli check` accepts the `Lens.mesa` `fli make:resource Lens` writes (`FJS-1421`)
+
+`resource-file-name` said *Lens.mesa should be Len.mesa* and failed CI on a
+generated file, and `model-name-plural` warned on `model Lens`, because
+`looksPlural` asks toolbelt's `singularize` and it answered `Len`. Fixed in
+toolbelt; `test/checks.test.js` pins both rules on the generated shape, and goes
+red with toolbelt's fix stubbed out.
+
 ## 2026-09-27 — the decision-rules hook fires on a write, not on a mention
 
 The two Bash hooks in `.claude/settings.json` matched `DECISIONS.md`, `IDEAS/*.md`

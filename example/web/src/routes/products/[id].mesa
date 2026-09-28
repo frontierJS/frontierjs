@@ -433,30 +433,30 @@ title: Product
      `minmax(0, 22rem)`: an <img> at `width: 100%` contributes no intrinsic
      width, so a max-only track collapses to nothing and the photograph
      renders at thumbnail size inside a square hole the aspect-ratio reserved. */
-  .detail  { display: grid; grid-template-columns: 22rem minmax(0, 1fr); gap: 1.5rem; align-items: start }
-  .gallery { display: grid; gap: .75rem }
+  .detail  { --gallery: 22rem; display: grid; grid-template-columns: var(--gallery) minmax(0, 1fr); gap: var(--space-4xl); align-items: start }
+  .gallery { display: grid; gap: var(--space-lg) }
   .add-photo {
     padding: var(--space-lg);
     border: 1px solid var(--rule);
     border-radius: var(--card-radius);
   }
-  .right   { display: grid; gap: 1rem; align-content: start }
+  .right   { display: grid; gap: var(--space-2xl); align-content: start }
   /* Three across, so the numbers sit beside the photograph rather than
      stacking into a column as tall as it. */
-  .stats   { display: grid; gap: .75rem; grid-template-columns: repeat(3, minmax(0, 1fr)) }
+  .stats   { display: grid; gap: var(--space-lg); grid-template-columns: repeat(3, minmax(0, 1fr)) }
 
   .hero {
-    width: 100%; aspect-ratio: 1; max-height: 22rem;
+    width: 100%; aspect-ratio: 1; max-height: var(--gallery);
     object-fit: contain;
     background: var(--surface-sunken);
     border-radius: var(--card-radius);
   }
   .hero-empty { display: grid; place-items: center }
 
-  .strip  { display: flex; gap: .5rem; flex-wrap: wrap }
+  .strip  { display: flex; gap: var(--space-sm); flex-wrap: wrap }
   .swatch {
-    display: grid; gap: .25rem; justify-items: center;
-    padding: .35rem; width: 5rem;
+    display: grid; gap: var(--space-2xs); justify-items: center;
+    --swatch: 5rem; padding: var(--space-xs); width: var(--swatch);
     background: var(--surface-sunken);
     border: 1px solid transparent;
     border-radius: var(--btn-radius);
@@ -469,15 +469,15 @@ title: Product
   /* The three controls sit on one line at desktop width and wrap on their own
      below it — `auto-fit` rather than a media query, because what decides is
      how much room the buy box has and not how wide the window is. */
-  .buy      { display: grid; gap: .75rem }
-  .buy-row  { display: grid; gap: .75rem; grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr)) }
-  .buy-line { display: flex; align-items: baseline; gap: .6rem }
+  .buy      { display: grid; gap: var(--space-lg) }
+  .buy-row  { display: grid; --control-min: 7rem; gap: var(--space-lg); grid-template-columns: repeat(auto-fit, minmax(var(--control-min), 1fr)) }
+  .buy-line { display: flex; align-items: baseline; gap: var(--space-md) }
   .buy-price { font-size: var(--text-xl); font-weight: 700 }
 
   .table-scroll { overflow-x: auto }
   .grid { width: 100%; border-collapse: collapse }
   .grid th, .grid td {
-    padding: .6rem;
+    padding: var(--space-md);
     border-bottom: 1px solid var(--rule);
     text-align: left;
     vertical-align: top;

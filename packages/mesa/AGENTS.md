@@ -243,8 +243,8 @@ in the browser (the loader is Sierra's).
 | `{@render children()}` for plain content | `<slot />` | throws at mount |
 | `<slot item={x}>` · `let:item` | snippet prop + `{@render children?.(x)}` | refused |
 | `bind:class` · `bind:disabled` on an element | `{class}` · `disabled={expr}` | refused |
-| `{#await p then v}` | `{#await p}…{:then v}…{/await}` | compiles; the emitted JS does not parse |
-| `{ok && <b/>}` · `{xs.map(x => <li/>)}` | `{#if}` · `{#each}` | compiles; the emitted JS does not parse |
+| `{#await p then v}` | `{#await p}…{:then v}…{/await}` | refused by name |
+| `{ok && <b/>}` · `{xs.map(x => <li/>)}` | `{#if}` · `{#each}` | refused by name |
 | `$store.name` auto-subscribe | `$: store.name` then `{store.name}` | `$store is not defined` |
 | `<svelte:window>` | `<mesa:window>` | renders a literal `<svelte>` element |
 | `transition:fade` · `use:action` | `{@attach $.fade()}` · `{@attach action}` | an inert attribute |
@@ -253,9 +253,8 @@ in the browser (the loader is Sierra's).
 | `{title}` from `.mesa` frontmatter | a prop or a `let` | `ReferenceError` at render |
 | `<script lang="ts">` · two `<script>` blocks | JS; one instance + one `module` | refused |
 
-**A JavaScript syntax error pointing into a compiled `.mesa` module means a
-construct Mesa does not have** — the two *does not parse* rows above, or an
-assignment to a derived `const`.
+**An assignment to a derived `const` is refused by name** — the value is
+computed from what it reads; assign that, or declare it `let`.
 
 ---
 

@@ -37,6 +37,53 @@ function _isUniqueViolation(e) {
 }
 
 
+// ─── A row asked for further along its state machine ─────────────────────────
+//
+// A row under @@transitions starts at its @default whoever creates it
+// (`FJS-D470`), so a definition naming another state would refuse every
+// create. The factory creates the row at the entry and makes the declared moves
+// that reach the state: the fewest moves, the first declared on a tie, never a
+// @gate(9) move. They are ordinary moves, graded on the factory's client,
+// announced and audited like any other.
+
+function _statePath(transitions, from, to) {
+  const prev  = new Map([[from, null]])
+  const queue = [from]
+  while (queue.length && !prev.has(to)) {
+    const at = queue.shift()
+    for (const [name, t] of Object.entries(transitions)) {
+      if (t.gate === 9 || !t.from.includes(at) || prev.has(t.to)) continue
+      prev.set(t.to, { from: at, move: name })
+      queue.push(t.to)
+    }
+  }
+  if (!prev.has(to)) return null
+  const moves = []
+  for (let s = to; prev.get(s); s = prev.get(s).from) moves.unshift(prev.get(s).move)
+  return moves
+}
+
+// Takes the states out of `data` and answers the moves to make once the row
+// exists. Throws, naming the state, when no declared move leads there.
+function _machineWalk(schema, modelName, data) {
+  const model = schema?.models?.find(m => m.name === modelName)
+  const moves = []
+  for (const attr of model?.attributes ?? []) {
+    if (attr.kind !== 'transitions' || data[attr.field] == null) continue
+    const entry = model.fields.find(f => f.name === attr.field)
+      ?.attributes.find(a => a.kind === 'default')?.value?.value
+    const want  = data[attr.field]
+    if (want === entry) continue
+    const path = _statePath(attr.transitions, entry, want)
+    if (!path) throw new Error(
+      `Factory(${modelName}): no declared move leads from '${entry}' to '${want}' on ${attr.field}. ` +
+      `A row starts at its @default; create it there and put it where no move leads with db.asSystem().sql.`)
+    delete data[attr.field]
+    moves.push(...path)
+  }
+  return moves
+}
+
 export class Factory {
   // Subclasses declare:
   //   model = 'tableName'
@@ -374,15 +421,23 @@ export class Factory {
     // construction — but the token pool is finite and the value catalog is small,
     // so at scale two rows can still collide. Rebuilding advances the seq, which
     // changes every generated value; retry rather than fail a 5000-row seed.
-    let row
+    let row, moves
+    const table = this._db[modelToAccessor(this.model)]
     for (let attempt = 0; ; attempt++) {
       const data = this.buildOne({ ...fkOverrides, ...resolvedOverrides })
+      moves = _machineWalk(this._db.$schema ?? this._schema, this.model, data)
       try {
-        row = await this._db[modelToAccessor(this.model)].create({ data })
+        row = await table.create({ data })
         break
       } catch (e) {
         if (attempt >= UNIQUE_RETRIES || !_isUniqueViolation(e)) throw e
       }
+    }
+    if (moves.length) {
+      const pkField = (this._db.$schema ?? this._schema)?.models?.find(m => m.name === this.model)
+        ?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
+      const pk = row[pkField]
+      for (const move of moves) Object.assign(row, await table.transition(pk, move))
     }
 
     // afterCreate hook

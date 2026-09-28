@@ -186,6 +186,14 @@ async function mkDb(schema: string): Promise<Client> {
   return await createClient({ db: ':memory:', schema }) as unknown as Client
 }
 
+// A row starts at its @default (FJS-D470), so a paid one is walked there.
+async function paidOrder(db: unknown, id: number): Promise<void> {
+  const order = (db as Record<string, { create(a: unknown): Promise<unknown>; transition(id: number, move: string): Promise<unknown> }>).order!
+  await order.create({ data: { id } })
+  await order.transition(id, 'submit')
+  await order.transition(id, 'pay')
+}
+
 function ctx(db: unknown, over: Record<string, unknown> = {}): ServiceContext {
   return {
     service: 'orders', method: 'patch', id: undefined, data: null,
@@ -237,9 +245,9 @@ describe('a filtered bulk patch enforces what a single patch enforces', () => {
 
   test('partial success — the rows that can make the move do, the rest report why', async () => {
     const db  = await mkDb(ORDERS) as never as Record<string, { create(a: unknown): Promise<unknown> }>
-    await db.order!.create({ data: { id: 1, status: 'paid'  } })
+    await paidOrder(db, 1)
     await db.order!.create({ data: { id: 2, status: 'draft' } })
-    await db.order!.create({ data: { id: 3, status: 'paid'  } })
+    await paidOrder(db, 3)
 
     const svc = createService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
       { patch(c: ServiceContext): Promise<Bulk> }
@@ -257,7 +265,7 @@ describe('a filtered bulk patch enforces what a single patch enforces', () => {
 
   test('the answer is a LIST envelope carrying errors, as bulk create already was', async () => {
     const db  = await mkDb(ORDERS) as never as Record<string, { create(a: unknown): Promise<unknown> }>
-    await db.order!.create({ data: { id: 1, status: 'paid' } })
+    await paidOrder(db, 1)
 
     const svc = createService({ name: 'orders', model: 'Order', allowBulk: true }) as never as
       { patch(c: ServiceContext): Promise<Bulk> }

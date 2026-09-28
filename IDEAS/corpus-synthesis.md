@@ -86,7 +86,9 @@ may — `@@gate`, `@@allow`, `@@capabilities`. An *integrity* rule says what mus
 `@@transitions`, `@@check`, a balance, `@@arc`, once-ness. `asSystem()` drops both.
 *Corrected 2026-09-27 by probe: it drops `@@transitions` and nothing else on the
 integrity side. `@@check`, `@@arc`, `@immutable`, seals and `@unique` all hold under it.
-The ruling this section asks for is `FJS-D502`, and it is narrower than written here.*
+The ruling this section asks for is `FJS-D502`, and it is narrower than written here.
+Ruled 2026-09-28: `asSystem()` holds the machine and lifts only a move's `@gate` and
+`@system`, and `FJS-D470` holds it to the entry too.*
 **The files already sort them by hand**: `polymorphic-relations.md`,
 `declared-field-state.md`, `partial-indexes.md` and `ontology.md` each push a rule into a
 CHECK or a unique index *because* `asSystem()` *"cannot drop a CHECK"*. The split exists;

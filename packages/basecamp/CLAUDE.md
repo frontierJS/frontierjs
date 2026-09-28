@@ -432,8 +432,9 @@ docs/     SCREENS.md — the mock inventory, 41 of 41 built (FJS-153, closed
   them. **`drain`/`undrain` carry no role hook** — `@gate(5)` on the move is the
   same sentence in the place a reviewer can see it. Two things follow. A move at
   `@gate(8)` is one only `asSystem()` can make (`heartbeat`'s `checkIn`), and a
-  system client BYPASSES enforcement, so a hand-written from-set beside one has
-  to agree with the declared one by hand. And a refusal arrives in litestone's
+  system client lifts the gate but still makes only DECLARED moves from the
+  row's current state (`FJS-D502`) — so an engine answering after a cancel has
+  to leave the cancelled row alone, as `finishRun` does. And a refusal arrives in litestone's
   vocabulary — *requires level 5* — which is why `app.ts` registers one error
   mapper turning it back into a role; add to that mapper, never beside it.
 - **A placement is written by `apps.place`, through `asSystem()`.** `AppServer`

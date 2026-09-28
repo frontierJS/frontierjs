@@ -36,6 +36,7 @@ beforeAll(async () => {
   app.services.register(probe)
   app.configure(channels())
   app.configure(requestLogger({ format: 'json' }))
+  app.post('/refuse', () => { throw new Forbidden('no') })
   await app.start()
 })
 
@@ -65,4 +66,14 @@ test('a socket call, answered or refused, is one request line', async () => {
     ['patch', 'probe/7', 403],
   ])
   expect(reqs[0].data!.correlationId).toBe('corr-1')
+})
+
+// A raw route's throw escaped `next()` before anything set `ctx.__status`, so
+// the line said 200 over a 403 answer — every refused sign-in a success
+// (`FJS-1417`).
+test('a raw route that throws is logged with the status it answered', async () => {
+  const res = await fetch(`http://localhost:${app.http.port}/refuse`, { method: 'POST' })
+  expect(res.status).toBe(403)
+  const line = lines.find(l => l.message === 'request' && l.data?.path === '/refuse')
+  expect(line?.data?.status).toBe(403)
 })

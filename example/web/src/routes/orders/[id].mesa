@@ -718,12 +718,12 @@ title: Order
 <style>
   /* Right-aligned and tabular: a receipt whose digits do not line up cannot
      be checked by eye, which is the only thing anybody does with one. */
-  .receipt { font-variant-numeric: tabular-nums; display: grid; gap: .25rem }
+  .receipt { font-variant-numeric: tabular-nums; display: grid; gap: var(--space-2xs) }
   .receipt p { margin: 0 }
   .receipt .grand {
     border-top: 1px solid var(--rule);
-    padding-top: .4rem;
-    margin-top: .25rem;
+    padding-top: var(--space-xs);
+    margin-top: var(--space-2xs);
   }
 
   /* The header cells get their alignment from the column's own `align:` —

@@ -530,10 +530,12 @@ license.
 - **A round trip is not a correctness test here.** `pluralize('cas')` is
   `cases`, so `singularize`/`pluralize` agreed with each other for as long as
   both were wrong. Assert the singular you expect, not that it survives.
-- **A word the rules cannot reach is still not a bug to fix here.** `lens` as
-  an INPUT singularizes to `len`: `pens` is a real plural with the same ending,
-  so telling them apart needs a dictionary. `inflect.spec.js` asserts that
-  limit rather than hiding it. (`lenses` → `lens` does work — that is the list.)
+- **The `-ses` list is asked about the bare word too, and that is what keeps
+  `lens`.** `pens` has its ending, so no rule separates them; before the list
+  was read there, `lens` became `len` and `fli check` refused the `Lens.mesa`
+  `fli make:resource` had written (`FJS-1421`). A singular ending in a bare `s`
+  that the `us`/`is`/`as` guards miss goes on that list, never into
+  `INVARIANT`, which would make its plural `lens` as well.
 
 ## Proving a change
 

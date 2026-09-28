@@ -793,12 +793,16 @@ export class BasecampSeeder extends Seeder {
         })
 
         // One server left deliberately unhealthy per workspace, so the alert
-        // and the drain paths have something real to point at.
-        if (servers.length > 2) {
+        // and the drain paths have something real to point at. It is the last
+        // ONLINE one, because `loseContact` is the only move into `unreachable`
+        // and `asSystem()` makes only declared moves (`FJS-D502`).
+        const quiet = servers.length > 2 ? [...servers].reverse().find(s => s.status === 'online') : null
+        if (quiet) {
           await sys.server.update({
-            where: { id: servers[servers.length - 1].id },
-            data:  { status: 'unreachable', lastHeartbeatAt: new Date(Date.now() - 45 * 60_000).toISOString() },
+            where: { id: quiet.id },
+            data:  { lastHeartbeatAt: new Date(Date.now() - 45 * 60_000).toISOString() },
           })
+          await sys.server.transition(quiet.id, 'loseContact')
         }
 
         // ── The registry mirror ───────────────────────────────────────

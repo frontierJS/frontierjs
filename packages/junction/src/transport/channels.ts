@@ -400,6 +400,23 @@ function principalKey(user: unknown): unknown {
   return key
 }
 
+// The `removed` frame a refused reader of an update is owed, or null when the
+// event is not an update or the row carries no key to name it by. The event
+// keeps its service prefix (`orders updated` → `orders removed`).
+const UPDATE_SUFFIX = new RegExp(`\\b(${AUTO_EVENT_MAP.update}|${AUTO_EVENT_MAP.patch})$`)
+function removalFrameFor(db: object, accessor: string, event: string, payload: object): string | null {
+  if (!UPDATE_SUFFIX.test(event)) return null
+  let keys: string[] = ['id']
+  if ('$primaryKey' in db && typeof (db as { $primaryKey?: unknown }).$primaryKey === 'function') {
+    const pk = (db as { $primaryKey: (a: string) => string[] }).$primaryKey(accessor)
+    if (Array.isArray(pk) && pk.length) keys = pk
+  }
+  const row = payload as Record<string, unknown>
+  if (keys.some(k => row[k] == null)) return null
+  const id = Object.fromEntries(keys.map(k => [k, row[k]]))
+  return encodeEventFrame(event.replace(UPDATE_SUFFIX, AUTO_EVENT_MAP.remove), id)
+}
+
 /**
  * Who, of everyone subscribed, may see this — in cohorts.
  *
@@ -493,6 +510,14 @@ export async function gradeRecipients(
     }
   }
 
+  // An update that narrows who may read a row is refused to the reader it took
+  // the row from, and a refusal alone strands the row in their live store —
+  // share arrived live and revoke never did (`FJS-1425`). So a refused reader
+  // of an update is told `removed` with the id alone: an id they already held,
+  // or one of a row they never saw.
+  const removal = mode === 'row' ? removalFrameFor(db, accessor, event, payload) : null
+  let admitted = 0
+
   const out: Cohort[] = []
   for (const [key, group] of byPrincipal) for (const { claims, conns } of group.byClaims.values()) {
     // `toDataPrincipal` for the reason the Bridge index gives it: a
@@ -517,17 +542,22 @@ export async function gradeRecipients(
       // workspace role — is invisible to `sessionGateLevel` and is most of what
       // decides a level in a tenanted app.
       if (principalGateLevel(db, accessor, who, group.user) < (readLevel as number)) continue
+      admitted++
       out.push({ conns, frame: encodeEventFrame(event, payload) })
       continue
     }
     let visible: unknown
     try { visible = await db.$readAs(accessor, payload, who) }
     catch { continue }                      // undecidable: refuse, never widen
-    if (!visible) continue                  // the gate or a policy said no
+    if (!visible) {                         // the gate or a policy said no
+      if (removal) out.push({ conns, frame: removal })
+      continue
+    }
+    admitted++
     out.push({ conns, frame: encodeEventFrame(event, visible) })
   }
 
-  if (live > 0 && out.length === 0 && src.label)
+  if (live > 0 && admitted === 0 && src.label)
     warnRefusedAll(src.label, accessor, live, tenancyHint(db, claimsFor))
   return out
 }
@@ -1239,7 +1269,7 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
 
             ;(async () => {
               await ensureDeps()
-              const { bridge: _bridge2 }         = _bridge!
+              const { bridge: _bridge2, withholdProtected: _withhold, errorBody: _errorBody } = _bridge!
               const { callService: _call }        = _callSvc!
               const { toFrameworkError: _toErr }  = _errUtils!
 
@@ -1345,12 +1375,12 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
                   caller:         svcCtx.caller,
                 }, () =>
                   _call(svc, svcCtx, app._appHooks, app.events, app.telemetry))
-                // The second hand-copy of the bridge's rule. Both now call it.
-                ctx.send({ type: 'service_result', id: callId, result: unwrapResult(svcCtx.result) })
+                // The bridge's rule and the bridge's redaction, not a copy of either.
+                ctx.send({ type: 'service_result', id: callId, result: _withhold(unwrapResult(svcCtx.result), svcCtx) })
               } catch (err: unknown) {
                 const fe = _toErr(err)
                 status = fe.code
-                ctx.send({ type: 'service_error', id: callId, error: fe.toJSON() })
+                ctx.send({ type: 'service_error', id: callId, error: _errorBody(fe, svcCtx) })
               } finally {
                 logSocketCall(app, {
                   service: svc.name, method: method as string, id: svcCtx.id == null ? null : String(svcCtx.id),

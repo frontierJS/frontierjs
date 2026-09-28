@@ -124,7 +124,6 @@ An operation with no `@@allow` is unrestricted at this layer.
 - allow **read** — `ownerId == auth().id || auth().level >= 5`
 - allow **create** — `true`
 - deny **create** — `ownerId != null && ownerId != auth().id`
-- deny **create** — `status != null && status != 'draft'`
 - deny **create** — `auth().isStaff != true`
 - allow **update** — `ownerId == auth().id`
 

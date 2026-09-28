@@ -317,7 +317,6 @@ table `flow` · db `main` · gate `4.4.4.5`
 @@allow('create', true)
 @@deny('create', auth().isStaff != true)
 @@deny('create', ownerId != null && ownerId != auth().id)
-@@deny('create', status != null && status != 'draft')
 @@allow('read', ownerId == auth().id || auth().level >= 5)
 @@allow('update', ownerId == auth().id)
 transition status.activate: draft, paused → active @gate(5)

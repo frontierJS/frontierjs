@@ -308,3 +308,24 @@ describe('a token that does not verify (FJS-702)', () => {
     expect(await ready(s)).toBe(true)
   })
 })
+
+describe('an update that takes a row out of a reader\'s set (FJS-1425)', () => {
+
+  test('the reader who can no longer see it is sent removed, id alone', async () => {
+    const { db, port } = await mkApp()
+    const owner = open(port, 'u5')
+    const next  = open(port, 'u6')
+    expect(await ready(owner)).toBe(true)
+    expect(await ready(next)).toBe(true)
+
+    const row = await (db as any).asSystem().order.create({ data: { customerId: '5' } })
+    await settle()
+    await (db as any).asSystem().order.update({ where: { id: row.id }, data: { customerId: '6' } })
+    await settle()
+
+    expect(owner.events.map(e => e.event)).toEqual(['orders created', 'orders removed'])
+    expect(owner.events[1].data).toEqual({ id: row.id })
+    expect(next.events.map(e => e.event)).toEqual(['orders updated'])
+    expect(next.events[0].data.customerId).toBe(6)
+  })
+})

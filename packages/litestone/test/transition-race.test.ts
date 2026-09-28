@@ -165,7 +165,7 @@ describe('the skip took the caller grading with it', () => {
   it('a @gate(5) move is refused at level 4 even where the row is already there', async () => {
     const db = await setup(4)
     const id = await mk(db)
-    await db.asSystem().run.update({ where: { id }, data: { status: 'approved' } })
+    for (const move of ['calculate', 'approve']) await db.asSystem().run.transition(id, move)
     await expect(db.run.transition(id, 'approve')).rejects.toThrow(/TransitionGateError|not senior|level/i)
     await db.$close()
   })
@@ -173,7 +173,7 @@ describe('the skip took the caller grading with it', () => {
   it('a @system move is refused for an ordinary caller where the row is already there', async () => {
     const db = await setup(5)
     const id = await mk(db)
-    await db.asSystem().run.update({ where: { id }, data: { status: 'paid' } })
+    for (const move of ['calculate', 'approve', 'pay']) await db.asSystem().run.transition(id, move)
     await expect(db.run.transition(id, 'pay')).rejects.toThrow(/is @system/)
     await db.$close()
   })
@@ -201,12 +201,11 @@ describe('an ordinary update is untouched', () => {
     await db.$close()
   })
 
-  it('asSystem() bypasses this like every other rule in this package', async () => {
+  it('asSystem() is told the move was already made, as any caller is (FJS-D502)', async () => {
     const db = await setup()
     const id = await mk(db)
     await db.asSystem().run.transition(id, 'calculate')
-    const row = await db.asSystem().run.transition(id, 'calculate')
-    expect(row.status).toBe('calculated')
+    await expect(db.asSystem().run.transition(id, 'calculate')).rejects.toThrow(/already been made/)
     await db.$close()
   })
 })

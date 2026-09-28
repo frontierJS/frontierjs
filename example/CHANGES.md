@@ -1,5 +1,17 @@
 # Changes — example
 
+## 2026-09-28 — the product page's selected thumbnail reads `--color-primary` (`FJS-1432`)
+
+`.active` in `site/src/routes/products/[slug].mesa` set `background: blue`, which `css-raw-literal` now reports. It reads the primary tone token instead, so a theme switch reaches it.
+
+## 2026-09-28 — the seed and `startSubscription` start every row at its `@default` (`FJS-1257`)
+
+Litestone now refuses a create that names any state but the column's `@default`, for `asSystem()` too (`FJS-D470`), and holds the machine for a system principal (`FJS-D502`). The seed created `ORD-1002` `paid` and `ORD-1003`/`ORD-2001` `shipped`. It now creates them `pending` and walks them there by `pay` and `ship`. Two resets reach a state no move leads to: an order moved on by a drive, and `SUB-3001` revived from `cancelled`. Both now go through `sys.sql`, the bypass that says it is one. `startSubscription` takes `status` out of the data, creates at `trialing` and makes the `activate` move when `active` is asked for. Six verify drives call it that way. Checked by seeding an empty copy twice, then re-seeding after moving an order to `shipped` and the subscription to `cancelled`. `verify:billing` passes.
+
+## 2026-09-28 — no `.mesa` `<style>` holds a raw color or length (`FJS-1430`)
+
+`css-raw-literal` reported 130 across thirteen files. On `web/` and `site/` a spacing or type literal is its rung (`.75rem` → `--space-lg`), the hero's scrim is `color-mix()` over the `--surface-sunken` it already declared, and a layout measure with no rung — a gallery track, a thumbnail, a card minimum — is a property named for what it is on the element that uses it, so a media query moves one value (`--thumb` in the cart) instead of restating the grid. The extension's dock and the `BuyButton` widget load no `@frontierjs/css`, and a custom property inherits into a shadow root from a stranger's page, so each declares its values once on its root under the package's own token names. `verify:site` passes; `verify:widget` and `verify:extension` were not run here, since port 8110 was held.
+
 ## 2026-09-27 — `verify:replicate`: a missing key nobody stated is refused (`FJS-D501`)
 
 `verify.refusesAMissingKeyNobodyStated` — no key, no terminal, no `--without-key` — exits 1 naming the flag and creates nothing; the keyless pass now says `--without-key`. 33 assertions.

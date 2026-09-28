@@ -357,5 +357,5 @@ title: Inventory
   /* Two forms side by side above ~52rem and stacked below it — `auto-fit`
      rather than a media query, because what decides is how much room the pair
      has and not how wide the window is. */
-  .forms { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); margin-bottom: 1.5rem }
+  .forms { --form-min: 20rem; display: grid; gap: var(--space-2xl); grid-template-columns: repeat(auto-fit, minmax(var(--form-min), 1fr)); margin-bottom: var(--space-4xl) }
 </style>

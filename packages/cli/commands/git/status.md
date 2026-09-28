@@ -120,7 +120,7 @@ console.log('')
 // a ten-cell bar can answer honestly.
 const QUIET   = new Set(['test', 'record', 'snapshot', 'docs'])
 const withNew = flag.all || flag['with-new']
-const visible = (f) => (withNew || !f.untracked) && (flag.all || !QUIET.has(f.role))
+const visible = (f) => f.untracked ? withNew : flag.all || !QUIET.has(f.role)
 const sum     = (fs, k) => fs.reduce((a, f) => a + (f[k] || 0), 0)
 const shown = model.zones
   .map(z => {

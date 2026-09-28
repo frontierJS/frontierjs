@@ -423,6 +423,15 @@ export function createDeploymentsService(app: BasecampApp) {
         status: 'success' | 'failed'; error?: string; startedAt?: string
       }
 
+      // A release cancelled while its build was in flight stays cancelled: no
+      // move leaves `cancelled`, for the system client either (`FJS-D502`), and
+      // a late answer from the runner must not put the app back to running.
+      const now = await sys().deployment.findFirst({ where: { id: deploy.id }, select: { status: true } })
+      if (now?.status === 'cancelled') {
+        await pushRow(deploy.id)
+        return { id: deploy.id, status: 'cancelled' }
+      }
+
       const finishedAt = Date.now()
       const startedMs  = startedAt ? Date.parse(startedAt)
                        : deploy.startedAt ? Date.parse(String(deploy.startedAt))

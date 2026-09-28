@@ -113,6 +113,8 @@ test('mime: compression refuses what is already compressed', function () {
     assert.equal(isCompressible(t), false, t)
   assert.equal(isCompressible(''), false)
   assert.equal(isCompressible(undefined), false)
+  // Buffered to gzip, an SSE stream reached the caller in one piece at close.
+  assert.equal(isCompressible('text/event-stream; charset=utf-8'), false)
 })
 
 test('mime: inline is an allow-list, and svg and html are not on it', function () {

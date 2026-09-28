@@ -483,14 +483,20 @@ export async function openFirstPeriod(
 }
 
 /** Start a subscription: the row and its first period, in one transaction —
- *  a subscription with no period has no window and would never renew. */
+ *  a subscription with no period has no window and would never renew.
+ *  A row is created at its `@default` and nowhere else (litestone `FJS-D470`),
+ *  so one asked for `active` starts `trialing` and makes the `activate` move. */
 export async function startSubscription(
   sys: Client,
-  data: Record<string, unknown> & { userId?: string | null },
+  data: Record<string, unknown> & { userId?: string | null, status?: string },
   first: { startsOn: string, endsOn: string },
 ): Promise<any> {
+  const { status, ...row } = data
   return await sys.$transaction(async (tx: Client) => {
-    const sub = await tx.subscription.create({ data })
+    const sub = await tx.subscription.create({ data: row })
+    if (status === 'active') await tx.subscription.transition(sub.id, 'activate')
+    else if (status != null && status !== sub.status)
+      throw new Error(`startSubscription: a subscription starts '${sub.status}' or 'active', not '${status}'`)
     await tx.subscriptionPeriod.create({ data: {
       subscriptionId: sub.id, startsOn: first.startsOn, endsOn: first.endsOn, userId: sub.userId ?? null,
     } })

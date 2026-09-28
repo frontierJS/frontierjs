@@ -452,37 +452,38 @@ title: Basket
 {/if}
 
 <style>
-  .lines { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem }
+  .lines { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-sm) }
 
   /* Photo · description · stepper · money · remove. The description is the
      only track allowed to grow, so the numbers on the right stay in a column
      the eye can run down. */
   .line {
+    --thumb: 64px;
     display: grid;
-    grid-template-columns: 64px minmax(0, 1fr) auto auto auto;
+    grid-template-columns: var(--thumb) minmax(0, 1fr) auto auto auto;
     align-items: center;
-    gap: 1rem;
-    padding: .75rem;
+    gap: var(--space-2xl);
+    padding: var(--space-lg);
     background: var(--surface);
     border: 1px solid var(--rule);
     border-radius: var(--card-radius);
   }
 
   .thumb {
-    width: 64px; height: 64px;
+    width: var(--thumb); height: var(--thumb);
     object-fit: contain;
     background: var(--surface-sunken);
     border-radius: var(--btn-radius);
   }
   .thumb-empty { display: inline-block }
 
-  .what { display: grid; gap: .15rem; min-width: 0 }
+  .what { display: grid; gap: var(--space-3xs); min-width: 0 }
   .name { font-weight: 600 }
 
-  .qty   { display: flex; align-items: center; gap: .25rem }
+  .qty   { display: flex; align-items: center; gap: var(--space-2xs) }
   .count { min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums }
 
-  .money { display: grid; justify-items: end; gap: .1rem; font-variant-numeric: tabular-nums }
+  .money { display: grid; justify-items: end; gap: var(--space-3xs); font-variant-numeric: tabular-nums }
 
   /* The breakdown reads down a column, so every figure is on the same right
      edge and tabular — a receipt whose digits do not line up cannot be checked
@@ -491,31 +492,31 @@ title: Basket
 
   .row {
     display: flex; justify-content: space-between; align-items: baseline;
-    gap: 1rem;
+    gap: var(--space-2xl);
   }
   .row .grand, .grand {
     font-size: var(--text-lg);
     border-top: 1px solid var(--rule);
-    padding-top: .5rem;
+    padding-top: var(--space-sm);
   }
 
-  .options { display: grid; gap: .5rem }
+  .options { display: grid; gap: var(--space-sm) }
   .option {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    gap: .75rem;
-    padding: .6rem .75rem;
+    gap: var(--space-lg);
+    padding: var(--space-md) var(--space-lg);
     border: 1px solid var(--rule);
     border-radius: var(--card-radius);
     cursor: pointer;
   }
   .option:hover { background: var(--surface-sunken) }
-  .option-body  { display: grid; gap: .1rem; min-width: 0 }
+  .option-body  { display: grid; gap: var(--space-3xs); min-width: 0 }
   .option-price { font-variant-numeric: tabular-nums }
 
   @media (max-width: 40rem) {
-    .line  { grid-template-columns: 48px minmax(0, 1fr) auto }
+    .line  { --thumb: 48px; grid-template-columns: var(--thumb) minmax(0, 1fr) auto }
     .money { grid-column: 2 / -1; justify-items: start }
   }
 </style>

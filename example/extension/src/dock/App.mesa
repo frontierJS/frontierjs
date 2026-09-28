@@ -129,22 +129,30 @@
 </div>
 
 <style>
-  .dock    { font: 13px system-ui, sans-serif; padding: 12px; width: 320px; }
+  /* The popup page loads no @frontierjs/css, so the tokens it reads are
+     declared here under the package's own names — importing the stylesheet
+     is then deleting this block, not rewriting every rule below it. */
+  .dock    { --space-2xs: 4px; --space-xs: 6px; --space-sm: 8px; --space-md: 10px; --space-lg: 12px;
+             --text-2xs: 11px; --text-xs: 12px; --text-sm: 13px;
+             --card-radius: 4px; --pill-radius: 10px; --orders-max: 220px; --dock-width: 320px;
+             --rule: #f0f0f0; --rule-strong: #e3e3e3; --surface-sunken: #eee;
+             --ink-soft: #666; --ink-mute: #999; --color-danger: #b3261e;
+             font: var(--text-sm) system-ui, sans-serif; padding: var(--space-lg); width: var(--dock-width); }
   header   { display: flex; justify-content: space-between; align-items: baseline;
-             padding-bottom: 8px; border-bottom: 1px solid #e3e3e3; margin-bottom: 10px; }
-  .status  { font-size: 11px; color: #666; }
+             padding-bottom: var(--space-sm); border-bottom: 1px solid var(--rule-strong); margin-bottom: var(--space-md); }
+  .status  { font-size: var(--text-2xs); color: var(--ink-soft); }
   .who     { display: flex; justify-content: space-between; align-items: center;
-             margin-bottom: 10px; font-size: 12px; }
-  .bar     { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+             margin-bottom: var(--space-md); font-size: var(--text-xs); }
+  .bar     { display: flex; align-items: center; gap: var(--space-sm); margin-bottom: var(--space-xs); }
   .bar span:first-child { flex: 1; font-weight: 600; }
-  .count   { background: #eee; border-radius: 10px; padding: 1px 8px; }
-  .orders  { list-style: none; margin: 0; padding: 0; border: 1px solid #e3e3e3;
-             border-radius: 4px; max-height: 220px; overflow-y: auto; }
-  .orders li { display: flex; align-items: center; gap: 8px; padding: 6px 8px;
-               border-bottom: 1px solid #f0f0f0; }
+  .count   { background: var(--surface-sunken); border-radius: var(--pill-radius); padding: 1px var(--space-sm); }
+  .orders  { list-style: none; margin: 0; padding: 0; border: 1px solid var(--rule-strong);
+             border-radius: var(--card-radius); max-height: var(--orders-max); overflow-y: auto; }
+  .orders li { display: flex; align-items: center; gap: var(--space-sm); padding: var(--space-xs) var(--space-sm);
+               border-bottom: 1px solid var(--rule); }
   .ref     { font-variant-numeric: tabular-nums; }
   .total   { flex: 1; text-align: right; font-variant-numeric: tabular-nums; }
-  .empty   { color: #999; justify-content: center; }
-  .signin  { display: grid; gap: 6px; }
-  .error   { color: #b3261e; margin: 8px 0 0; }
+  .empty   { color: var(--ink-mute); justify-content: center; }
+  .signin  { display: grid; gap: var(--space-xs); }
+  .error   { color: var(--color-danger); margin: var(--space-sm) 0 0; }
 </style>

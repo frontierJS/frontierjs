@@ -76,6 +76,9 @@ export const IRREGULAR = {
  * whether the stem before `es` is itself a word, which no ending can see —
  * `status` and `cas` both end in a vowel + `s`. The list is the closed half of
  * that pair; everything else is `-se` and there are thousands of those.
+ *
+ * Read in both places a bare `s` is judged: the stem of a `-ses` word, and the
+ * word itself, which is how `lens` stays `lens` while `pens` is `pen`.
  */
 const SES_BARE_S = new Set([
   'status', 'bus', 'gas', 'lens', 'plus', 'bias', 'atlas', 'canvas', 'iris',
@@ -258,6 +261,11 @@ function rules(word) {
   }
 
   if (/(?:xes|zes|ches|shes)$/i.test(word)) return word.slice(0, -2)
+
+  // A word the list names is already singular. The ending guards below reach
+  // most of it, and `lens` is the entry they cannot: `pens` has its ending, so
+  // it became `len` and `fli check` refused the `Lens.mesa` a generator wrote.
+  if (SES_BARE_S.has(word.toLowerCase())) return word
   if (/s$/i.test(word) && !/(?:ss|us|is|as)$/i.test(word)) return word.slice(0, -1)
   return word
 }

@@ -232,7 +232,7 @@ model Invoice {
     const { errors } = parse(`${HEAD}
 model Invoice {
   id    Int      @id
-  state DocState
+  state DocState @default(draft)
   n     String   @immutable
   @@transitions(state, issue: draft -> issued @seals)
 }`)

@@ -944,6 +944,18 @@ view revenueByStatus {
     expect(only(root, 'resource-file-name').findings).toEqual([])
   })
 
+  test('a singular ending in a bare s passes both rules a generator is graded by', () => {
+    // `fli make:resource Lens` wrote this file and the next `fli check` refused
+    // it as `Len.mesa`, failing CI on generated code (`FJS-1421`).
+    const root = tree('r-lens', {
+      ...CLEAN,
+      'db/schema.lite': 'model Lens { id Int @id }\n',
+      'web/src/resources/Lens.mesa': resource('lenses', `model: 'Lens'`),
+    })
+    expect(only(root, 'resource-file-name').findings).toEqual([])
+    expect(only(root, 'model-name-plural').findings).toEqual([])
+  })
+
   test('and it is still judged — a name the service does not give is an error', () => {
     // The control. Without it the branch above is "a view states anything and
     // the rule stops looking", which passes every misnamed projection file.
@@ -3599,5 +3611,42 @@ describe('mesa-compiles', () => {
     const out = only(root, 'mesa-compiles')
     expect(out.findings).toEqual([])
     expect(out.skipped[0].why).toMatch(/Sierra surface/)
+  })
+})
+
+describe('a .mesa <style> holds no raw color, size or spacing value', () => {
+  // FJS-1429: css-token-undefined reads only var() references, so a hex color
+  // in a hand-written <style> passed `fli check` while the docs cited it.
+  const styled = (css) => ({ ...CLEAN, 'web/src/pages/panel.mesa': `<p style="color: #fff">x</p>\n<style>\n  .p { ${css} }\n</style>\n` })
+
+  test('a hex color, a color function and a spacing length are each reported', () => {
+    const root = tree('raw-bad', styled('color: #c0ffee; background: rgb(0 0 0); gap: 16px'))
+    const { findings } = only(root, 'css-raw-literal')
+    expect(findings).toHaveLength(3)
+    expect(findings[0].line).toBe(3)
+    expect(findings[0].message).toMatch(/#c0ffee/)
+  })
+
+  test('a token read, a token declared, a hairline and a zero are not', () => {
+    const root = tree('raw-ok', styled('--mine: #fff; color: var(--mine, #000); border: 1px solid; margin: 0'))
+    expect(only(root, 'css-raw-literal').findings).toEqual([])
+  })
+
+  // FJS-1430: a breakpoint was reported with a var() fix no media query can
+  // take, and a bare 1rem passed as if it were a hairline.
+  test('a breakpoint is not reported, and 1rem is a length where 1px is a hairline', () => {
+    const root = tree('raw-media', {
+      ...CLEAN,
+      'web/src/pages/panel.mesa': '<style>\n  @media (max-width: 40rem) {\n    .p { gap: 1rem; border: 1px solid }\n  }\n</style>\n',
+    })
+    const { findings } = only(root, 'css-raw-literal')
+    expect(findings.map(f => [f.line, f.message.split(' ')[0]])).toEqual([[3, '1rem']])
+  })
+
+  // FJS-1432: a color keyword passed, since RAW matched hex and color functions only.
+  test('a named color in a value is reported, and a class named for one is not', () => {
+    const root = tree('raw-named', styled('background: blue; border: 1px solid DarkRed } .blue:hover { color: currentColor; background: transparent'))
+    const { findings } = only(root, 'css-raw-literal')
+    expect(findings.map(f => f.message.split(' ')[0])).toEqual(['blue', 'DarkRed'])
   })
 })

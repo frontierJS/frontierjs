@@ -54,6 +54,7 @@ Detail: `references/transitions.md`
 - **A BULK write may not name a transitions field** (`FJS-D182`)
 - **A move asked for BY NAME is not the same question as an update carrying the column** (`FJS-611`)
 - **A row that stops counting at a date and is also MOVED at that date has two answers until the move fires, and the date is the one to read** (`FJS-D353`)
+- **`asSystem()` holds the machine, and a row starts at its `@default`** (`FJS-D502`, `FJS-D470`)
 
 ## `@immutable` and encryption
 Detail: `references/immutable-and-encryption.md`

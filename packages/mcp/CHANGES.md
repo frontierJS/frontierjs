@@ -1,6 +1,10 @@
 # Changes — @frontierjs/mcp
 
 
+## 2026-09-28 — a tool result never carries a protected column (`FJS-D473`)
+
+`run` dispatches through `app.service()`, the in-process caller junction leaves ungraded, so a method returning a system write handed an agent its `@secret` and `@guarded` columns. The result now goes through junction's `withholdProtected` first. Proved in `plugin.test.ts`.
+
 ## 2026-09-26 — `replayBody` is gone; junction's `$req` carries its body (`FJS-1180`)
 
 The transport now rebuilds `ctx.$raw.$req` from the bytes it read, so the

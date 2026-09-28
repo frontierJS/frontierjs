@@ -101,27 +101,48 @@ export const REDACTED = '[redacted]'
  * walker is how the cycle guard comes to exist in one of them and not the other.
  *
  * **A cycle is answered rather than followed.** An object that points at itself
- * is not worth a stack overflow inside a log call.
+ * is not worth a stack overflow inside a log call. Only an ANCESTOR is a cycle:
+ * a value reached twice by two paths is walked twice, or a response body that
+ * names one object in two places reads `[circular]` the second time.
  *
  * **A non-plain object is returned untouched.** A `Date`, a `URL`, an `Error`, a
  * class instance: walking one rebuilds it as a bare object and destroys it, and
  * a logger that turned every Date into `{}` would be worse than the leak.
  */
 export function redactBy(value, isSecret, seen = new WeakSet()) {
-  if (!value || typeof value !== 'object') return value
-  if (seen.has(value)) return '[circular]'
-  seen.add(value)
+  return walk(value, isSecret, true, seen)
+}
 
-  if (Array.isArray(value)) return value.map(v => redactBy(v, isSecret, seen))
+/**
+ * `redactBy`, with a matching key DROPPED rather than replaced.
+ *
+ * For a body a program reads rather than a person: a caller-scoped read of a
+ * row omits a protected column, and a `'[redacted]'` string where a typed
+ * client expects a `Date` or a number is a second shape for the same row.
+ */
+export function omitBy(value, isSecret, seen = new WeakSet()) {
+  return walk(value, isSecret, false, seen)
+}
+
+function walk(value, isSecret, replace, ancestors) {
+  if (!value || typeof value !== 'object') return value
+  if (ancestors.has(value)) return '[circular]'
 
   const proto = Object.getPrototypeOf(value)
-  if (proto !== Object.prototype && proto !== null) return value
+  if (!Array.isArray(value) && proto !== Object.prototype && proto !== null) return value
 
-  const out = {}
-  for (const [k, v] of Object.entries(value)) {
-    out[k] = isSecret(k) ? REDACTED : redactBy(v, isSecret, seen)
+  ancestors.add(value)
+  try {
+    if (Array.isArray(value)) return value.map(v => walk(v, isSecret, replace, ancestors))
+    const out = {}
+    for (const [k, v] of Object.entries(value)) {
+      if (!isSecret(k))  out[k] = walk(v, isSecret, replace, ancestors)
+      else if (replace)  out[k] = REDACTED
+    }
+    return out
+  } finally {
+    ancestors.delete(value)
   }
-  return out
 }
 
 /** `redactBy` with the credential name list. The common case. */

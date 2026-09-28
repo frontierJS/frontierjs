@@ -497,6 +497,8 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
       items: [{ sku: 'FJS-TEE-NVY-L', quantity: 2 }] },
   ]
 
+  const WALK_TO: Record<string, string[]> = { pending: [], paid: ['pay'], shipped: ['pay', 'ship'] }
+
   for (const { items, discountCode, shipping, ...row } of wanted) {
     const lines = await orderLinesFor(items)
     const money = await priceOrder(lines, discountCode, shipping)
@@ -504,9 +506,11 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
     const existing = await reseed<any>(sys.order, { reference: row.reference })
     if (existing) {
       // Present but moved on — the drive pays and ships these. Put the state
-      // back so the next run finds the same buttons.
+      // back so the next run finds the same buttons. No move leads backwards
+      // and `asSystem()` holds the machine (litestone `FJS-D502`), so the reset
+      // is raw SQL, the bypass that says it is one.
       if (existing.status !== row.status) {
-        await sys.order.update({ where: { id: existing.id }, data: { status: row.status } })
+        await sys.sql`UPDATE "order" SET status = ${row.status} WHERE id = ${existing.id}`
       }
       // Lines arrived after these orders did, so a database seeded before them
       // has orders with nothing in them. Backfilled rather than left, because
@@ -527,8 +531,13 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
       continue
     }
 
-    const order = await sys.order.create({ data: { ...row, ...money } })
+    // Created at `pending`, the one state a row may start in (litestone
+    // `FJS-D470`), and walked to where the fixture wants it by the moves a
+    // customer's order would make.
+    const { status, ...fields } = row
+    const order = await sys.order.create({ data: { ...fields, ...money } })
     await sys.orderLine.createMany({ data: lines.map(l => ({ ...l, orderId: order.id })) })
+    for (const move of WALK_TO[status]) await sys.order.transition(order.id, move)
   }
 
   // ── Demo users ───────────────────────────────────────────────────────────
@@ -597,7 +606,6 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
     ])
     const order = await sys.order.create({ data: {
       reference:  'ORD-2001',
-      status:     'shipped',
       customerId: buyerRecord.id,
       userId:     buyerUser.id,
       ...await priceOrder(lines, null, 'Standard'),
@@ -605,6 +613,8 @@ async function seed(auth: ReturnType<typeof createLitestoneAuth>) {
     await sys.orderLine.createMany({
       data: lines.map(l => ({ ...l, orderId: order.id, userId: buyerUser.id })),
     })
+    // Shipped, by the moves that reach it from `pending` (litestone `FJS-D470`).
+    for (const move of ['pay', 'ship']) await sys.order.transition(order.id, move)
   }
 
   // Last, because it needs the buyer's customer row and the shop's tax rate.
@@ -707,11 +717,10 @@ async function seedBilling() {
   // shop's only subscription is dead after the first run and no re-seed brings
   // it back — the row exists, so the branch below never fires. The same shape
   // as `reseed()` restoring a soft-deleted customer, one state machine along.
-  // `asSystem()` is what makes it possible at all: it bypasses `@@transitions`
-  // like every other rule that is not a check.
+  // No move leaves `cancelled` and `asSystem()` holds the machine (litestone
+  // `FJS-D502`), so the revive is raw SQL, the bypass that says it is one.
   if (sub && sub.status === 'cancelled') {
-    await sys.subscription.update({ where: { id: sub.id }, data: { status: 'active', cancelledAt: null },
-                                    system: ['cancelledAt'] })
+    await sys.sql`UPDATE "subscription" SET status = 'active', cancelledAt = NULL WHERE id = ${sub.id}`
     sub = await sys.subscription.findFirst({ where: { id: sub.id } })
   }
 

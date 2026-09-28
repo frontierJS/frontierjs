@@ -88,8 +88,10 @@ Then, because every other package sits on this one: `example` and `basecamp`
 - **`createClient({ db })` overrides MAIN and nothing else.** Precedence:
   `databases: ':memory:'` > `databases: { main }` > `db` > the declaration.
 - **`$setAuth(user)` RETURNS a scoped client.** `asSystem()` bypasses the gate,
-  `@@allow`/`@@deny` and `@guarded`, and does not lift the soft-delete or template
-  filters, a `@check`/`@@check`/`@@arc`, or `@immutable`.
+  `@@allow`/`@@deny`, `@guarded` and a move's `@gate`/`@system`, and does not lift
+  the soft-delete or template filters, a `@check`/`@@check`/`@@arc`, `@immutable`,
+  or the `@@transitions` machine — its moves, its compare-and-swap, and a create
+  starting at the `@default` (`FJS-D502`, `FJS-D470`).
 - **Raw SQL keeps the policies only inside a where** —
   ``where: { $raw: sql`price > ${min}` }``. `db.sql` throws once a schema declares
   access rules; `db.asSystem().sql` is the deliberate bypass.

@@ -426,7 +426,7 @@
 </section>
 
 <style>
-  .account { max-width: 44rem; }
+  .account { --account-width: 44rem; max-width: var(--account-width); }
   .who     { display: flex; align-items: start; justify-content: space-between;
              gap: var(--space-2xl); margin-bottom: var(--space-3xl); }
   .who h2  { margin: 0; }
@@ -436,7 +436,8 @@
   .orders li { border-bottom: 1px solid var(--rule); }
   .orders li:last-child { border-bottom: 0; }
 
-  .row     { display: grid; grid-template-columns: 8rem 1fr auto 6rem;
+  .row     { --ref-col: 8rem; --status-col: 6rem;
+             display: grid; grid-template-columns: var(--ref-col) 1fr auto var(--status-col);
              gap: var(--space-lg); align-items: center; width: 100%;
              padding: var(--space-lg); background: none; border: 0;
              text-align: left; cursor: pointer; font: inherit; color: inherit; }
@@ -446,14 +447,14 @@
   .row.static, .row.static:hover { cursor: default; background: none; }
   .ref     { font-variant-numeric: tabular-nums; font-weight: 600; }
   .total   { text-align: right; font-variant-numeric: tabular-nums; }
-  .status  { font-size: 0.8rem; }
+  .status  { font-size: var(--text-sm); }
 
   .lines   { width: 100%; border-collapse: collapse;
              padding: 0 var(--space-lg) var(--space-lg); }
   .lines td { padding: var(--space-sm) var(--space-lg); border-top: 1px solid var(--rule); }
   .num     { text-align: right; font-variant-numeric: tabular-nums; }
 
-  .signin  { display: grid; gap: var(--space-lg); max-width: 22rem; }
+  .signin  { display: grid; gap: var(--space-lg); --signin-width: 22rem; max-width: var(--signin-width); }
   .signin label { display: grid; gap: var(--space-2xs); }
   .link    { background: none; border: 0; padding: 0; font: inherit;
              color: var(--color-primary); text-decoration: underline; cursor: pointer; }

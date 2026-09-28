@@ -107,12 +107,13 @@ render: static
 
 <style>
   .active {
-    background: blue;
+    background: var(--color-primary);
   }
   .product {
     display: grid;
     gap: var(--space-4xl);
-    grid-template-columns: minmax(0, 22rem) minmax(0, 1fr);
+    --gallery: 22rem;
+    grid-template-columns: minmax(0, var(--gallery)) minmax(0, 1fr);
     align-items: start;
   }
   @media (max-width: 48rem) {
@@ -131,7 +132,8 @@ render: static
     margin: 0;
     padding: 0;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(4rem, 1fr));
+    --thumb-min: 4rem;
+    grid-template-columns: repeat(auto-fill, minmax(var(--thumb-min), 1fr));
     gap: var(--space-sm);
   }
   .product-thumbs img {

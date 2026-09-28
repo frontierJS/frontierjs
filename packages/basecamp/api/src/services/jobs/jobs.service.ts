@@ -240,7 +240,11 @@ export function createJobsService(app: BasecampApp) {
         },
       })
 
-      await sys().job.update({
+      // A job cancelled while its run was in flight stays cancelled: no move
+      // leaves `cancelled`, for the system client either (`FJS-D502`), and the
+      // run's own row above still says how it ended.
+      const now = await sys().job.findFirst({ where: { id: job.id }, select: { status: true } })
+      if (now?.status !== 'cancelled') await sys().job.update({
         where: { id: job.id },
         data:  status === 'success'
           ? { status: 'pending', lastRunStatus: 'success', retryCount: 0 }

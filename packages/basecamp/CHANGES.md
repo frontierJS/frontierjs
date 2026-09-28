@@ -1,5 +1,13 @@
 # Changes — Basecamp
 
+## 2026-09-28 — `verify:screens` counts notification kinds from `kinds.ts` (`FJS-1082`)
+
+The `/settings/` section had typed the number of notification kinds into five places: the `until` predicate, the `ok()` sentence and the two `N of M chosen` checks. It now imports `NOTIFICATION_KIND_NAMES`, which `db/test/schema.test.ts` holds equal to the `NotificationKind` enum, so adding a kind updates the drive with it. That section passes again. The run now stops later, at `/infra-graph/`, which is filed as `FJS-1445`.
+
+## 2026-09-28 — a run answering after a cancel leaves the row cancelled (`FJS-1436`, `FJS-D502`, `FJS-D470`)
+
+`asSystem()` now holds `@@transitions`, and a row starts at its `@default` for every creator. Two engine writes had been going through a one-way door the schema declares. `jobs.finishRun` put a job cancelled mid-run back to `pending` or `failed`, and `deployments.finishRun` turned a release cancelled mid-build into `success` and the app back to `running`. Both now leave a cancelled row where it is. The job run's own row still records how it ended. `api/test/finish-after-cancel.test.ts` pairs each case with the uncancelled run. `db/seed.js` keeps its random fleet: litestone's `Factory` walks the declared moves to the state it picks, and the unhealthy server per workspace is the last online one, made `unreachable` by `loseContact`. The test fixtures that started servers, releases and jobs mid-machine now create them at the default and make the moves. 449 pass; `verify` 342/342 on a scratch database.
+
 ## 2026-09-27 — an image app's release names its image (`FJS-1418`)
 
 A release made from the app screen sends `{ appId }` only, and the runner used

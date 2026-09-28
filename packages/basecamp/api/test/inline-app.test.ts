@@ -58,7 +58,8 @@ beforeAll(async () => {
   admin = session({ userId: user.id, workspaceId: ws.id })
 
   box = await sys.server.create({ data: {
-    workspaceId: ws.id, name: `box-${uniq()}`, slug: `box-${uniq()}`, status: 'online' } })
+    workspaceId: ws.id, name: `box-${uniq()}`, slug: `box-${uniq()}` } })
+  box = await sys.server.transition(box.id, 'checkIn')
   const project = await sys.project.create({ data: {
     workspaceId: ws.id, name: 'Shop', slug: `p-${uniq()}` } })
   environment = await sys.environment.create({ data: {
@@ -246,9 +247,13 @@ describe('the release pipeline an inline app runs', () => {
     // Two shipped releases of the pasted files, then the app is switched to a
     // container. Rolling back to the inline release through the container
     // pipeline would ask a machine to start an image nobody ever built.
-    const shipped = async (data: Record<string, unknown>) => sys.deployment.create({ data: {
-      appId: target.id, workspaceId: ws.id, status: 'success',
-      finishedAt: new Date().toISOString(), ...data } })
+    // A Deployment is born `pending`, even for the system, so a shipped one walks there.
+    const shipped = async (data: Record<string, unknown>) => {
+      const row = await sys.deployment.create({ data: {
+        appId: target.id, workspaceId: ws.id, finishedAt: new Date().toISOString(), ...data } })
+      await sys.deployment.transition(row.id, 'build')
+      return sys.deployment.transition(row.id, 'succeed')
+    }
 
     const first   = await shipped({
       builtImage: 'sha256:' + 'a'.repeat(64),

@@ -810,7 +810,6 @@ table `flow` · db `main` · gate `4.4.4.5`
 @@allow('create', true)
 @@deny('create', auth().workspaceId == null || workspaceId != null && workspaceId != auth().workspaceId)
 @@deny('create', ownerId != null && ownerId != auth().id)
-@@deny('create', status != null && status != 'draft')
 @@deny('delete', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@deny('post-update', auth().workspaceId == null || workspaceId != auth().workspaceId)
 @@allow('read', ownerId == auth().id || auth().level >= 5)

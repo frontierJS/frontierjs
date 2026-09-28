@@ -136,8 +136,11 @@ app.configure(channels((a: App) => {
 // broadcast every read to every connected browser.
 
 // ─── 4. Demo login ────────────────────────────────────────────────────────
+// This route, /client.js and / sit at the root, where the page asks for them.
+// app.get/app.post would put them under apiPrefix (/api/login); the router
+// beneath them applies no prefix.
 
-app.post('/login', async ctx => {
+app.http.router.post('/login', async ctx => {
   const token = crypto.randomUUID()
   sessions.set(token, { userId: 'demo@example.com' })
   return ctx.json({ token })
@@ -162,13 +165,13 @@ if (!bundle.success) {
 
 const clientJs = await bundle.outputs[0]!.text()
 
-app.get('/client.js', async ctx =>
+app.http.router.get('/client.js', async ctx =>
   new Response(clientJs, { headers: { 'content-type': 'text/javascript' } }))
 
 // ctx.file() for a single file. (serveStatic() is the directory-tree version
 // and takes a raw Request, which lives at ctx.$raw.$req — two levels of $,
 // worth knowing before you go looking for ctx.req.)
-app.get('/', async ctx => ctx.file(join(HERE, 'public/index.html')))
+app.http.router.get('/', async ctx => ctx.file(join(HERE, 'public/index.html')))
 
 await app.start()
 

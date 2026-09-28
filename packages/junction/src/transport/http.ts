@@ -53,6 +53,16 @@ function serializeSetCookie(
 // Below this threshold compression overhead exceeds the saving
 const MIN_COMPRESS_BYTES = 1024
 
+// Every Response body is a ReadableStream in Bun, so a stream cannot be told
+// from a string by looking. Compressing means reading to the end first, which
+// holds an open stream's every byte until it closes (FJS-1416) — the helpers
+// that hand back a stream say so here, and those bodies pass through as sent.
+const STREAMED = new WeakSet<Response>()
+function streamed(response: Response): Response {
+  STREAMED.add(response)
+  return response
+}
+
 const ENCODER  = new TextEncoder()  // singleton — not per-request
 
 // Frozen response-header constants — Response copies the init object into
@@ -278,7 +288,7 @@ export class HttpTransport {
       },
       stream: (readable, type, status = 200) => {
         stats.response.stream++
-        return new Response(readable, { status, headers: { 'content-type': type } })
+        return streamed(new Response(readable, { status, headers: { 'content-type': type } }))
       },
       empty: (status = 204) => {
         stats.response.empty++
@@ -842,6 +852,7 @@ export class HttpTransport {
       this._opts.compress !== false &&
       canDecorate &&
       acceptEncoding.includes('gzip') &&
+      !STREAMED.has(response) &&
       isCompressible(rawContentType) &&
       !response.headers.has('content-encoding')
 
@@ -1074,7 +1085,7 @@ export class HttpTransport {
         }
 
         return {
-          response: new Response(readable, {
+          response: streamed(new Response(readable, {
             status: 200,
             headers: {
               'content-type':      'text/event-stream; charset=utf-8',
@@ -1082,7 +1093,7 @@ export class HttpTransport {
               'connection':        'keep-alive',
               'x-accel-buffering': 'no',   // disable Nginx buffering
             }
-          }),
+          })),
           send,
           close,
           onDisconnect,

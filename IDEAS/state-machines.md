@@ -94,11 +94,13 @@ logic in the component.
   name is optional on an enum (`pending -> paid` names itself after its target)
   and required where the target says nothing about what a person did, which is a
   `Boolean` column. `db.order.transition(id, 'pay')` calls one by name.
-- **Initial state and creation.** A create has no from-state and is not graded;
-  `@default` is the entry.
+- **Initial state and creation.** ~~A create has no from-state and is not graded;
+  `@default` is the entry.~~ Struck by `FJS-D470`: `@default` is the only entry, and
+  a create naming another state is refused for every principal.
 - **Side effects** stayed hooks. The machine runs no jobs.
-- **Does `asSystem()` bypass transitions?** Yes, and it says so — except a
-  `@gate(9)` move, which nothing makes. The honest way for the application to make a move a
+- **Does `asSystem()` bypass transitions?** ~~Yes, and it says so — except a
+  `@gate(9)` move, which nothing makes.~~ Struck by `FJS-D502`: it lifts a move's
+  `@gate` and `@system` and holds the machine; `@gate(9)` refuses it too. The honest way for the application to make a move a
   caller may not is a `@system` move (`FJS-D150`), which keeps the model gate, the
   row policies and the audit actor that `asSystem()` drops.
 - **Terminal states.** Still a one-way door by design. Studio's Access panel shows

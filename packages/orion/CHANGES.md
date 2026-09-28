@@ -1,5 +1,9 @@
 # Changes — @frontierjs/orion
 
+## 2026-09-28 — an activation that cannot register rolls its move back (`FJS-D502`, `FJS-D470`)
+
+`flows.activate` made the `activate` move, and when a trigger could not register (a webhook path another flow holds) it wrote the old status back through the system client. `active -> draft` is no declared move, and `asSystem()` now holds the machine, so the write-back was refused and the flow stayed `active` with nothing registered. The move and `runner.activate` are now one `$transaction`, and the Conflict thrown inside it is the rollback. Flow's `@@deny('create', status != null && status != 'draft')` is gone: a flow starts at its `@default`, `draft`, for every creator, so the deny restated the machine. `store.test.ts` asserts the machine's refusal instead. 596 pass.
+
 ## 2026-09-25 — the tenancy test reads `ctx.caller.headers` (`FJS-D392`)
 
 Junction renamed `ctx.client` to `ctx.caller`; this follows it.

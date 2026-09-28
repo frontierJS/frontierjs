@@ -1149,6 +1149,8 @@ describe('Deployment · Job · Domain — the tenancy declared', () => {
     const sys = db.asSystem()
     const { theirs } = await twoFleets(sys)
 
+    // The system holds the machine like anyone, so the release is walked there.
+    await sys.deployment.update({ where: { id: theirs.deployment.id }, data: { status: 'building' } })
     expect((await sys.deployment.update({
       where: { id: theirs.deployment.id }, data: { status: 'success' } })).status).toBe('success')
     expect((await sys.job.update({
@@ -2014,7 +2016,7 @@ describe('Deployment and Job declare their own state machines', () => {
     return db.$setAuth({ id: `u-${memberRole}`, workspaceId: ws.id, memberRole })
   }
 
-  async function aDeployment(sys: any, ws: any, status = 'pending') {
+  async function aDeployment(sys: any, ws: any, status: 'pending' | 'building' | 'success' = 'pending') {
     const uniq = () => Math.random().toString(36).slice(2, 8)
     const proj = await sys.project.create({
       data: { workspaceId: ws.id, name: 'P', slug: `p-${uniq()}` },
@@ -2025,7 +2027,11 @@ describe('Deployment and Job declare their own state machines', () => {
     const app = await sys.app.create({
       data: { environmentId: env.id, workspaceId: ws.id, name: 'web', slug: `web-${uniq()}`, type: 'container' },
     })
-    return sys.deployment.create({ data: { appId: app.id, environmentId: env.id, workspaceId: ws.id, status } })
+    // A Deployment is born `pending`, even for the system, so any other state is walked to.
+    let d = await sys.deployment.create({ data: { appId: app.id, environmentId: env.id, workspaceId: ws.id } })
+    const moves = { pending: [], building: ['build'], success: ['build', 'succeed'] }[status]
+    for (const move of moves) d = await sys.deployment.transition(d.id, move)
+    return d
   }
 
   test('a release walks its pipeline and cannot walk back', async () => {
@@ -2034,8 +2040,8 @@ describe('Deployment and Job declare their own state machines', () => {
     const ws  = await seedWorkspace(sys)
     const d   = await aDeployment(sys, ws)
 
-    // asSystem() bypasses transitions by design, so enforcement has to be asked
-    // of a SCOPED client — which is what every request holds.
+    // asSystem() lifts a move's `@system` and its gate, so who may make a move
+    // has to be asked of a SCOPED client — which is what every request holds.
     const dev = as(db, ws, 'developer')
 
     // `build` is the ENGINE's move. `deployments.patch` allows `status` and a
@@ -2052,9 +2058,10 @@ describe('Deployment and Job declare their own state machines', () => {
       .toBe('cancelled')
 
     // building -> pending is not declared, and the refusal NAMES what is legal
-    // from here, which the old `TERMINAL.includes(...)` guard never did.
-    await sys.deployment.update({ where: { id: d.id }, data: { status: 'building' } })
-    await expect(dev.deployment.update({ where: { id: d.id }, data: { status: 'pending' } }))
+    // from here, which the old `TERMINAL.includes(...)` guard never did. A
+    // second release, because `cancelled` has no move out even for the system.
+    const building = await aDeployment(sys, ws, 'building')
+    await expect(dev.deployment.update({ where: { id: building.id }, data: { status: 'pending' } }))
       .rejects.toThrow(/from 'building' to 'pending'/)
 
     db.$close()
@@ -2130,7 +2137,10 @@ describe('Deployment and Job declare their own state machines', () => {
     const db  = await client()
     const sys = db.asSystem() as any
     const ws  = await seedWorkspace(sys)
-    const job = await sys.job.create({ data: { workspaceId: ws.id, name: 'Flaky', status: 'failed' } })
+    // A Job is born `pending`, even for the system, so it fails the way a run does.
+    const created = await sys.job.create({ data: { workspaceId: ws.id, name: 'Flaky' } })
+    await sys.job.transition(created.id, 'start')
+    const job = await sys.job.transition(created.id, 'fail')
 
     // `cancel` reaches `failed` because remove() cancels whatever it soft-
     // deletes — a job left pending behind a deletedAt is invisible to every

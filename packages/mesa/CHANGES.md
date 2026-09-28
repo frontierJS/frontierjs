@@ -1,5 +1,17 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-28 — JSX in an expression and an assignment to a derived `const` are refused by name (`FJS-1109`)
+
+`{ok && <b>x</b>}` and `d = 3` against a derived `const d` both compiled with an
+empty `analysis.errors` and emitted a module acorn refuses, at a line in compiled
+output naming neither construct. `parseText`, the owner of what a mustache holds,
+now throws on a tag where an operand belongs (string contents and `a <b`
+comparisons are left alone), and `_checkDerivedAssigned` reports an assignment or
+update to a derived `const` unless a function declares its own of that name. The
+`{#await p then v}` half of the row was already refused (`FJS-1345`); all three
+are pinned in `test/compile-errors.test.js`, and `AGENTS.md` § Wrong guesses says
+*refused by name* for each.
+
 ## 2026-09-27 — `{#await p then v}` is refused by name (`FJS-1345`)
 
 The Svelte one-line form compiled with no error and emitted `(load() then c)`
