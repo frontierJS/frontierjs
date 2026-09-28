@@ -1,5 +1,9 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-28 — `publish-grading` typechecks again
+
+`FJS-1425` made a refused reader of a patch receive a removal frame, and its tests assert the whole frame, `{ type: 'event', … }`. The `subscriber` helper cast each parsed frame to `{ event?, data? }`, so `tsc` refused `type` as an unknown key and the package's typecheck failed CI. The cast now names `type`. Tests only; no runtime change.
+
 ## 2026-09-28 — a success body never carries a protected column (`FJS-1221`, `FJS-D473`)
 
 A method that wrote through `asSystem()` and returned the row answered a stranger with the DECRYPTED `@secret`, over HTTP and over the socket, while `GET` of the same row omitted it. The bridge now drops every column `$protectedFields` names for the call's model from the success body, through one export, `withholdProtected(value, ctx)`: `toResponse`, the socket's `service_result`, and `mcpPlugin`'s tool result all call it. Dropped rather than `[redacted]`, so the body has a caller-scoped read's shape. The socket's `service_error` frame had never been through `sanitizeError` (FJS-686 closed HTTP only) and sent an attached row's secret; it now goes through the bridge's `errorBody`, and a production 500 over the socket is generic as it is over HTTP. `protectedFieldsFor` now also survives a client that throws on the `$protectedFields` probe, since it runs on every success. Proved in `wire-safety.test.ts`. An `include`d relation of a different model stays outside the list, as on the error path.

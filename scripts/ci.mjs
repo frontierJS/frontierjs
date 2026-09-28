@@ -44,7 +44,7 @@
 
 import { spawnSync }                       from 'node:child_process'
 import { createRequire }                   from 'node:module'
-import { existsSync, readFileSync, writeFileSync, readdirSync, rmSync, mkdtempSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, readdirSync, rmSync, mkdtempSync, mkdirSync } from 'node:fs'
 import { join, dirname, relative }         from 'node:path'
 import { fileURLToPath }                   from 'node:url'
 import { tmpdir }                          from 'node:os'
@@ -149,6 +149,7 @@ Phases, in the order a full run does them
 ${Object.keys(PHASES).map(n => `  ${n.padEnd(width)}  ${tier(n)}`).join('\n')}
 
 What fails each one: docs/CI.md.
+The last run's summary, failures and their output: .cache/ci-last.txt.
 Every allowance is a named entry with a reason in scripts/ci-allowances.json.
 `.trim())
 }
@@ -1991,26 +1992,45 @@ function escapeProp(value) {
 
 function report() {
   const seconds = ((Date.now() - started) / 1000).toFixed(1)
+  const lines = []
+  const say = line => { console.log(line); lines.push(line) }
 
   if (notes.length) {
-    console.log(`\n─── notes ${'─'.repeat(45)}`)
-    for (const n of notes) { console.log(`  · ${n}`); annotate('notice', n) }
+    say(`\n─── notes ${'─'.repeat(45)}`)
+    for (const n of notes) { say(`  · ${n}`); annotate('notice', n) }
   }
 
   if (!problems.length) {
-    console.log(`\n✓ CI passed in ${seconds}s${fast ? ' (fast tier — suites not run)' : ''}\n`)
+    say(`\n✓ CI passed in ${seconds}s${fast ? ' (fast tier — suites not run)' : ''}\n`)
+    saveLast(lines)
     process.exit(0)
   }
 
-  console.log(`\n─── ${problems.length} failure(s) ${'─'.repeat(35)}`)
+  say(`\n─── ${problems.length} failure(s) ${'─'.repeat(35)}`)
   for (const p of problems) {
     const output = outputText(p.output)
-    console.log(`\n✗ ${p.message}`)
-    if (output) console.log(output)
+    say(`\n✗ ${p.message}`)
+    if (output) say(output)
     annotate('error', output ? `${p.message}\n\n${output.slice(0, 4000)}` : p.message)
   }
-  console.log(`\n✗ CI failed in ${seconds}s\n`)
+  say(`\n✗ CI failed in ${seconds}s\n`)
+  saveLast(lines)
   process.exit(1)
+}
+
+// The pre-push hook runs this and the terminal it printed to is gone by the
+// time anyone asks what failed, so the summary is kept where it can be read
+// back instead of pasted.
+function saveLast(lines) {
+  const file = join(ROOT, '.cache', 'ci-last.txt')
+  const head = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: ROOT, encoding: 'utf8' }).stdout?.trim()
+  const header = `# ${new Date().toISOString()} · ${head ?? '?'} · ci ${process.argv.slice(2).join(' ')}`.trimEnd()
+  try {
+    mkdirSync(dirname(file), { recursive: true })
+    writeFileSync(file, `${header}\n${lines.join('\n')}\n`)
+  } catch (e) {
+    console.error(`[ci] could not write ${relative(ROOT, file)}: ${e.message}`)
+  }
 }
 
 // ─── helpers ────────────────────────────────────────────────

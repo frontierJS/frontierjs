@@ -44,7 +44,7 @@ function subscriber(manager: Manager, channelName: string, user: unknown = null,
   // every assertion here is asking. Both views are kept: `sent` is the
   // published event alone, `frames` is everything.
   const published = () => frames
-    .map(f => JSON.parse(f) as { event?: string; data?: unknown })
+    .map(f => JSON.parse(f) as { type?: string; event?: string; data?: unknown })
     .filter(f => (f.event ?? '').startsWith('orders ') || (f.event ?? '').startsWith('products '))
   return {
     conn,
