@@ -1,5 +1,21 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-27 — a `cache:` service keys on the directives as well as the query (`FJS-1399`)
+
+`buildCacheKey` read only `ctx.query`. The bridge has already moved every `$`-param into `ctx.directives`, so two reads of one filter that differed only in `$limit`, `$offset`, `$orderBy` or `$select` shared an entry. Page 2 was answered with page 1, and a `$select` read got whichever shape had been cached first. The default key now carries the key-sorted directives in a `:$=` segment on both `find` and `get`. A `keyBy` author still states their own key. `test/cache-directives.test.ts` covers four cases: a wider limit, a second page, a `get` with and without `$select`, and one entry for reordered directives.
+
+## 2026-09-27 — `$.db`'s table type declares `transition` and `upsert` (`FJS-1219`)
+
+`LitestoneTable` named neither verb, so a service driving a declared `@@transitions` move, or an idempotent write against a `@@unique`, worked at runtime and failed `bun run typecheck`. Both are now declared beside `restore`, with `transition` taking litestone's own `(id, name, opts?)`. `test/litestone-table-type.test.ts` calls both through `ctx.locals.db`'s type, so the package typecheck is the proof.
+
+## 2026-09-27 — `requestLogger` logs a service call over the socket (`FJS-1301`)
+
+`requestLogger` wrapped the HTTP router and nothing else, so a connected client's reads and writes, including refused ones, left no line on the server. The plugin now also registers a per-app sink that `transport/channels.ts` calls once per `service_call`, whether it was answered or refused. The line has the same level and format as the HTTP one: `WS <method> <service>[/<id>] <status> <ms>ms - <ip>`, or `request` with `transport: 'websocket'` under `json`, and it carries the frame's correlation id. It stays off until `requestLogger` is configured. `test/ws-request-log.test.ts` pins both a 200 and a 403.
+
+## 2026-09-27 — the header a declared principal reads is allowed at the preflight and on the socket (`FJS-1227`)
+
+`header(name)` returned a bare closure, so the name was lost and an app had to restate it in `http.callHeaders` or a cross-origin preflight dropped it. The source now carries `headerName`, `bearerClaim`'s `describe()` states it as `headers`, and `declaredCallHeaders(app, config)` in `core/litestone.ts` — `http.callHeaders` unioned with the resolver's headers — is the one list `applyConfiguredCors` and the socket frame allow-list both read. `test/bearer-claim.test.ts` pins it. `cookie()` is untouched: a cookie is not a request header a preflight names.
+
 ## 2026-09-27 — a snapshot tool's `--stdout` ends at its document (`FJS-1362`)
 
 `junction surface`, `jobs`, `notifications` and `principal` stopped their app outside `quietly`, so the app's two `[App] Shutting down` lines landed on stdout below the document. Every tool now stops its app through one `stopApp()` in `tools/app-module.ts`, the way `atlas` already did; `test/tool-stdout.test.ts` pipes each tool and asserts the lines are absent.

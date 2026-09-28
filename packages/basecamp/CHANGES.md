@@ -1,5 +1,17 @@
 # Changes — Basecamp
 
+## 2026-09-27 — an image app's release names its image (`FJS-1418`)
+
+A release made from the app screen sends `{ appId }` only, and the runner used
+`deploy.toImage ?? app.name`. The image in `source.image` never reached the
+machine, which was asked to run an image named after the app. A `container`
+app also got the build step list whatever its source, so no `/pull` was sent.
+The stub accepts any image name, so no test could see either problem.
+
+`imageOf()` in `core/app-source.ts`. `deployments.create` records it as
+`toImage` when the caller gives none, and `buildInitialSteps` gives an image
+source the pull list. `verify:outpost` now releases a container app through
+the real daemon too: 24/24, where it failed at *Start container* before.
 
 ## 2026-09-26 — `verify` expects the hub's 403 naming level 7 (`FJS-1359`)
 

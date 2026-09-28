@@ -255,6 +255,17 @@ function openRegistry(path, busyTimeout) {
   return db
 }
 
+const LIST_IDS = `SELECT id FROM tenants ORDER BY createdAt`
+
+// The ids a registry file names, read without opening the fleet: a restore
+// has to learn which tenants to fetch from a registry it has not moved into
+// place yet, and `openRegistry` would write to it.
+export function registryIds(path) {
+  const db = openDatabase(path, { readonly: true })
+  try { return db.prepare(LIST_IDS).all().map(r => r.id) }
+  finally { db.close() }
+}
+
 // ─── TenantRegistry ───────────────────────────────────────────────────────────
 
 
@@ -524,7 +535,7 @@ class TenantRegistry {
    */
   list() {
     return this.#registryDb
-      .prepare(`SELECT id FROM tenants ORDER BY createdAt`)
+      .prepare(LIST_IDS)
       .all()
       .map(r => r.id)
   }

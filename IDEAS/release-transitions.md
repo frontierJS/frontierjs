@@ -1482,14 +1482,38 @@ Compose has no traffic layer at all and stops the old container before starting 
   `generateEnvExample` reads.
 - **Retention economics.** Nobody publishes the storage and routing cost of keeping N
   Releases addressable for a week. We would be finding out.
-- **Who owns a backfill** — a Caravan job holding a cursor, a journalled transition, or
-  the first caller of a general durable-workflow primitive. Made once, or discovered
-  twice. **The evidence is now three instances rather than two**: junction's outbox
-  relay is a committed intent handed to a queue and marked delivered, caravan's cron
-  fire is an occurrence claimed once across replicas, and the journal here is the
-  third. That is enough to rule `IDEAS/overview.md` 4.19 rather than defer it, and the
-  ruling wanted is narrow — whether these three are one primitive or three uses of
-  `occurrenceKey`, which is the part they already share.
+- **FJS-D503 — Is `IDEAS/overview.md` 4.19 one durable-run primitive, or several uses
+  of `occurrenceKey`?** Who owns a backfill is settled (FJS-D157: a durable row plus a
+  Caravan job). What remained is 4.19 itself, and this paper both defers it (§ The
+  hole) and says there is "enough to rule" it. Surveyed 2026-09-27 across six
+  mechanisms. **Shared by all six:** a namespaced key used as the primary key, so a
+  replay is a no-op. Five mint it through `occurrenceKey`; orion builds `run:`,
+  `resume:` and `orion:` ids by hand (`packages/orion/src/runner.ts`, `outbound.ts`).
+  **Shared by two or three:** a compare-and-swap claim (deploy, caravan, outbox); a
+  moving term in the key so that finished work can run again (deploy's `attempt`,
+  backfill's `generation`, the cron fire minute); an attempts counter; a lease (the
+  deploy lock has none, by FJS-D156). **In one realm only:** ordered steps, each
+  claimed, resumed after a crash with their output replayed (the journal, proven by
+  `deployJournalCycle`). Orion checkpoints one `context` blob per run and writes its
+  `RunStep` rows once, at the end. **Nowhere:** compensation. Deploy records
+  `crossesPivot`, and a revert is a separate transition.
+  - **A** — several uses of `occurrenceKey`, and 4.19 is withdrawn as a primitive. The
+    discipline becomes graded: every durable dispatch id goes through `occurrenceKey`,
+    orion's three hand-built ids are the first to move, and `toolbelt/history`'s header
+    states the moving term (attempt, generation, fire minute) as part of an occurrence's
+    contract. It reopens when a second realm needs claimed, ordered steps resumed after
+    a crash.
+  - **B** — extract the journal's decision half into toolbelt (`resumeDecision`,
+    `attemptDecision`, the claim, `formatVersion` plus `migrationPlan`, all pure
+    `{ sql, params }`). Deploy is the first consumer, and orion moves `RunStep` to
+    claimed-per-step to become the second.
+  - **C** — the full noun: run, step, compensation and pivot as one package, with
+    orion's engine as the host and the journal and the backfill migrating onto it.
+  - **Recommend A** — the part that crosses realms is the key, and it is already
+    extracted. B has one consumer and makes the second by changing orion's run model
+    to fit, and C builds compensation that no realm executes. `corpus-synthesis.md`
+    § 3 argued for B from the number of realms. Counted per property, it is the key
+    that crosses realms, not the journal.
 - **Whether an Audience is a Deployment-realm noun or a Data-realm one.** It is a set
   of principals, which sounds like the Trust Hierarchy's neighbourhood, and if it is
   declarable in the seed then `@@gate` and Audience should be checked against each

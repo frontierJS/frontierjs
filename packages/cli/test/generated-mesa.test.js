@@ -170,6 +170,17 @@ describe('what the generators write', () => {
     expect(handed, 'no generated page renders a filter bar at all').toBeGreaterThan(0)
   })
 
+  // Nothing between <main class="screen"> and a page's components carries a
+  // vertical gap, so flat siblings put the filter bar flush on the table.
+  test('a generated page wraps its markup in one .stack', () => {
+    for (const [what, source] of Object.entries(GENERATED)) {
+      if (!source.includes('<SectionHeader')) continue
+      const markup = source.slice(source.lastIndexOf('</script>') + 9).trim()
+      expect(markup.startsWith('<div class="stack">'), `${what} has no .stack around its body`).toBe(true)
+      expect(markup.endsWith('</div>'), `${what} closes its .stack early`).toBe(true)
+    }
+  })
+
   // A list page is a consumer of resource.list() and wires none of it itself.
   // The hand-wired shape failed in silence twice: without the bare $: watch the
   // load ran once and every filter and sort was a control that did nothing, and

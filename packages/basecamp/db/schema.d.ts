@@ -1638,11 +1638,10 @@ export interface Server {
    * The `Secret` holding THIS machine's own Outpost credential, minted at
    * enrollment. A bare id for `Domain.certSecretId`'s reason.
    * 
-   * Null means the machine still signs with the fleet-wide `OUTPOST_SECRET`,
-   * which every machine shares — so one compromised box can forge any other's
-   * check-in (`core/hooks.ts` says so at the verification). Per-server
-   * credentials are what make that column non-null; deleting the fallback is
-   * phase 3, and it can only happen once every machine in a fleet has one.
+   * Null means the machine has not enrolled, and every signed request about
+   * it is refused (`outpostSecretFor` in `core/hooks.ts`) — there is no fleet
+   * key to fall back to. Nullable because the row exists before the machine
+   * does: provisioned or imported, it is created first and enrolls after.
    */
   outpostSecretId?: string | null
   plan: unknown
@@ -1701,11 +1700,10 @@ export interface ServerCreate {
    * The `Secret` holding THIS machine's own Outpost credential, minted at
    * enrollment. A bare id for `Domain.certSecretId`'s reason.
    * 
-   * Null means the machine still signs with the fleet-wide `OUTPOST_SECRET`,
-   * which every machine shares — so one compromised box can forge any other's
-   * check-in (`core/hooks.ts` says so at the verification). Per-server
-   * credentials are what make that column non-null; deleting the fallback is
-   * phase 3, and it can only happen once every machine in a fleet has one.
+   * Null means the machine has not enrolled, and every signed request about
+   * it is refused (`outpostSecretFor` in `core/hooks.ts`) — there is no fleet
+   * key to fall back to. Nullable because the row exists before the machine
+   * does: provisioned or imported, it is created first and enrolls after.
    */
   outpostSecretId?: string | null
   plan?: unknown
@@ -4225,7 +4223,7 @@ export interface TableClient<TRow, TCreate, TUpdate, TWhere> {
   /** @@transitions — [] on a model that declares none. */
   transitions(idOrRow: TRow | string | number): Promise<TransitionOption[]>
   /** @@commitment — the rows owing a declared transition by `by` (the client's clock unless stated). */
-  due(args?: { by?: Date | string; timeZone?: string; transition?: string; where?: TWhere }): Promise<Array<{ transition: string; id: any; dueAt: string }>>
+  due(args?: { by?: Date | string; timeZone?: string; transition?: string; where?: TWhere }): Promise<Array<{ transition: string; id: any; dueAt: string; target: { model: string; accessor: string; transition: string; id: any } }>>
 }
 
 // ── View client interface ────────────────────────────────────────────────────
@@ -4386,6 +4384,8 @@ export interface LitestoneClient {
   readonly $schema:     Record<string, unknown>
   readonly $databases:  Record<string, { driver: string; access: string; path: string }>
   readonly $softDelete: Record<string, boolean>
+  /** Every declared `@@commitment` — what a sweep walks, asking `due()` of each accessor. */
+  readonly $commitments: Array<{ model: string; accessor: string; transition: string }>
   readonly $enums:      Record<string, string[]>
   readonly $cacheSize:  { read: number; write: number }
   readonly $attached:   string[]

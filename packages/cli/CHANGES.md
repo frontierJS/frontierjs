@@ -1,5 +1,48 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-27 — the decision-rules hook fires on a write, not on a mention
+
+The two Bash hooks in `.claude/settings.json` matched `DECISIONS.md`, `IDEAS/*.md`
+or litestone's parser/catalog anywhere in a command, so `rg` over the register
+drew "Register write" — an alarm that rings on reads is skipped on the write it
+exists for. The four path hooks are one, `.claude/hooks/guarded-write.mjs`, over
+`core/guarded-write.js`: Write/Edit graded by path as before, Bash only where the
+guarded path is a write target. `test/guarded-write.test.js` pins both directions.
+
+## 2026-09-27 — `fli check` compiles every `.mesa` in a surface (`FJS-1228`)
+
+`bun run check`, the whole of a scaffolded app's CI, read nothing in the UI
+realm's language: rules parse `.mesa` for structure, Biome cannot read one and
+tsc is told not to, so an unclosed `{#if}` or a RULE 7 watch merged green and
+failed at `vite build`. The new `mesa-compiles` rule (error) runs sierra's
+`@frontierjs/sierra/check` in a child `bun` from each surface directory — the
+compiler is async and `runChecks` is not, and resolving from the surface uses
+the copy that surface builds with — and reports Mesa's own diagnostic at the
+file and line. A surface that cannot resolve sierra is skipped. The clean-app
+test links sierra in, so the rule RUNS over CLEAN's `.mesa` rather than
+skipping; `test/checks.test.js` § mesa-compiles holds the broken route, the
+frontmatter/fence/slot preprocessing and the unresolved skip.
+
+## 2026-09-27 — `service-model` judges a service by the name junction registers it under (`FJS-1218`)
+
+The rule read the raw file name, so `order-lines.service.ts` singularized to
+`order-line`, matched no accessor, and every multi-word service with no
+`model:` was an `error` saying it failed open. Junction's registry camelises
+the file (`orderLines`), which singularizes to `orderLine`, and measured on the
+calendly stressor the gate and validation both apply. The rule now camelises
+before resolving, so it fires only where no model answers the name. Its `--fix`
+went with it: a model the schema holds under the name now resolves, so there
+was never a model left to write in.
+
+## 2026-09-27 — a generated list, create or detail page lays its body out in one `.stack` (`FJS-1225`)
+
+The three templates in `core/crud-templates.js` emitted the header, alerts,
+filter bar and table as flat siblings, and nothing from `<main class="screen">`
+down carries a vertical gap, so the filter bar sat flush on the table on every
+generated screen. Each body is now wrapped in `<div class="stack">`, the
+spatial helper `@frontierjs/css` already names for a page body.
+`test/generated-mesa.test.js` asserts the wrapper on every generated page.
+
 ## 2026-09-26 — every generator that writes a Resource or a page over one is executed and graded by `fli check` (`FJS-372`)
 
 `test/generators-run.test.js` runs `make:model --resource`, `make:route

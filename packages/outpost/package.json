@@ -17,6 +17,7 @@
   "scripts": {
     "start": "bun src/index.js",
     "test": "bun test",
+    "verify:docker": "bun test/verify-docker.mjs",
     "typecheck": "node ../../scripts/typecheck.mjs"
   },
   "engines": {

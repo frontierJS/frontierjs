@@ -224,6 +224,12 @@ const HELP = `
     ${cyan('litestone edge eject')} <Model>.<field>  promote an @edge/@scoped field to a real model [--apply]
     ${cyan('litestone backup')} [dest]               backup all databases (SQLite + JSONL/logger)
     ${cyan('litestone replicate')} [config.js]       stream every SQLite db's WAL to S3/R2 via litestream
+    ${cyan('litestone restore')} [config.js]         bring every db back from its replica — all or nothing
+    ${dim('  --at=<instant>')}                          one point in time for every file
+    ${dim('  --from-backup=<dir>')}                     jsonl/logger dbs from a litestone backup destination
+    ${dim('  --force')}                                 replace files that exist (stop the app first)
+    ${dim('  --verify=<dir>')}                          restore into <dir> instead and prove the copy is good
+    ${dim('  --without-key')}                           verify with no ENCRYPTION_KEY, encrypted columns unchecked
     ${cyan('litestone rsync')} <dest>              sync all SQLite DBs to a destination via sqlite3_rsync
     ${cyan('litestone transform')} [config.js]      run a transform pipeline (DSL)
     ${cyan('litestone tenant list')}                list all tenants
@@ -1620,6 +1626,54 @@ async function tenantOptions(cfg) {
   return { dir, registry, migrationsDir, declared }
 }
 
+// The files `strategy database` writes that no `database { }` block names: one
+// `<id>.db` per tenant, and the registry that lists them. `backup` and
+// `replicate` read `$databases`, which is the declared set — so under this
+// strategy they copied the machinery in `main` and not one tenant's rows, and
+// both reported success. The names are hyphenated so a declared database can
+// never collide with them.
+//
+// A DIRECTORY and a PATTERN rather than a list of ids: a replica started before
+// a tenant exists has to cover it, so the unit is "every tenant file there".
+async function tenantStorage(parseResult, cfg) {
+  if (parseResult.schema.tenancy?.strategy !== 'database') return null
+  const { dir, registry } = await tenantOptions(cfg)
+  const files = { name: 'tenant-files', dir: resolve(dir), pattern: '*.db' }
+  const reg   = resolve(registry ?? join(dir, 'registry.db'))
+  // A registry inside the tenant directory is already one of its `*.db` files.
+  if (dirname(reg) === files.dir && reg.endsWith('.db')) return [files]
+  return [files, { name: 'tenant-registry', dir: dirname(reg), pattern: basename(reg) }]
+}
+
+// What `backup`, `replicate` and `restore` copy, resolved from the schema
+// WITHOUT a client. Opening one creates every missing declared file and its
+// directory, so a restore would find its destinations already there and a
+// replica of a mistyped path would stream the empty database it had just made.
+// It also needs the encryption key, which none of the three decrypts with.
+//
+//   sqlite  [{ name, path }]          streamed by litestream, copied hot
+//   other   [{ name, driver, path }]  jsonl/logger directories — copied, never streamed
+//   dirs    [{ name, dir, pattern }]  tenantStorage()
+async function copyTargets(parseResult, cfg, onlyDb = null) {
+  const anchor   = schemaAnchor(cfg.schema)
+  const declared = parseResult.schema.databases.map(d => ({
+    name: d.name, driver: d.driver ?? 'sqlite', path: resolveDbPath(d.path, null, anchor),
+  }))
+  if (!declaresDatabases(parseResult)) declared.unshift({ name: 'main', driver: 'sqlite', path: resolve(cfg.db) })
+  const wanted = t => !onlyDb || t.name === onlyDb
+  return {
+    sqlite: declared.filter(d => d.driver === 'sqlite' && wanted(d)).map(({ name, path }) => ({ name, path })),
+    other:  declared.filter(d => d.driver !== 'sqlite' && wanted(d)),
+    dirs:   ((await tenantStorage(parseResult, cfg)) ?? []).filter(wanted),
+  }
+}
+
+// The files a directory target covers right now. The dot-prefixed entries are
+// litestream's own `.<db>-litestream` state, which it writes beside every file.
+const matchingFiles = ({ dir, pattern }) =>
+  !existsSync(dir) ? [] : readdirSync(dir).filter(f =>
+    !f.startsWith('.') && (pattern === '*.db' ? f.endsWith('.db') : f === pattern))
+
 async function cmdTenant(subCmd, args, cfg) {
   const { createTenantRegistry } = await import('../tenant.js')
 
@@ -1636,6 +1690,7 @@ async function cmdTenant(subCmd, args, cfg) {
     // that if it is told which file the schema came from.
     path:          cfg.schema,
     migrationsDir: migrationsDir && existsSync(resolve(migrationsDir)) ? resolve(migrationsDir) : null,
+    encryptionKey: getEncKey(),
   })
 
   try {
@@ -4492,7 +4547,7 @@ async function cmdValidate(cfg) {
     console.log(`       ${dim('If this database should hold rows, the path above is not the one you meant.')}\n`)
   } else if (report.ok) {
     console.log(`  ${green('✓')}  ${rows} row(s) across ${report.checked.length} model(s) satisfy the schema.\n`)
-  } else {
+  } else if (report.findings.length || report.models.length) {
     // The model rollup first: a rule NO row satisfies is a deploy that
     // half-landed, and reading the rows one by one would not say so.
     for (const m of report.models) {
@@ -4513,6 +4568,9 @@ async function cmdValidate(cfg) {
     console.log(`  ${failing} of ${rows} row(s) would be refused by the schema as it stands.`)
     console.log(`  ${dim('Nothing was written. Backfill the rows, or loosen the rule back.')}\n`)
   }
+
+  for (const u of report.unreadable)
+    console.log(`  ${red('✗')}  ${cyan(u.model)} could not be read — ${u.error}\n`)
 
   for (const s of report.skipped)
     console.log(`  ${dim('skipped')} ${s.model} — ${dim(s.reason)}`)
@@ -6259,7 +6317,6 @@ async function cmdOptimize(targetTable, cfg) {
 async function cmdBackup(dest, cfg) {
   header('litestone backup')
 
-  const { createClient }                    = await import('../core/client.js')
   const { mkdirSync, cpSync, readdirSync }  = await import('fs')
 
   const parseResult = loadSchema(cfg.schema)
@@ -6283,24 +6340,15 @@ async function cmdBackup(dest, cfg) {
 
   mkdirSync(resolvedDest, { recursive: true })
 
-  // ── Open ONE client ────────────────────────────────────────────────────────
-  // Held open for the whole run. It used to be opened to read $databases,
-  // closed, and then reopened once PER DATABASE as
-  // `createClient({ parsed, db: info.path })` — but that argument names MAIN, so
-  // every one of those clients backed up main, filed under a different
-  // database's name. `$backup(dest, { only: [name] })` asks the one client for
-  // the one database instead.
-  const db        = await createClient({ parsed: parseResult, path: cfg.schema, resolveFrom: 'schema', db: clientDb(parseResult, cfg), encryptionKey: getEncKey() })
-  const databases = db.$databases
+  // Each file is opened on its own path, never through a client — see copyTargets.
+  const { sqlite, other, dirs: tenantDirs } = await copyTargets(parseResult, cfg, onlyDb)
+  const targets = [...sqlite.map(t => ({ ...t, driver: 'sqlite' })), ...other]
 
-  const targets = Object.entries(databases)
-    .filter(([name]) => !onlyDb || name === onlyDb)
-
-  if (!targets.length) fatal(`No databases found${onlyDb ? ` matching --db=${onlyDb}` : ''}.`)
+  if (!targets.length && !tenantDirs.length) fatal(`No databases found${onlyDb ? ` matching --db=${onlyDb}` : ''}.`)
 
   console.log()
   console.log(`  ${dim('destination:')} ${cyan(zip ? rel(zipPath) : rel(resolvedDest))}`)
-  console.log(`  ${dim('databases:')}   ${targets.map(([n]) => n).join(', ')}`)
+  console.log(`  ${dim('databases:')}   ${[...targets.map(t => t.name), ...tenantDirs.map(t => t.name)].join(', ')}`)
   if (zip) console.log(`  ${dim('format:')}      zip`)
   console.log()
 
@@ -6314,22 +6362,41 @@ async function cmdBackup(dest, cfg) {
   // audit trail. Collect what did not make it and refuse at the end.
   const incomplete = []
 
-  for (const [name, info] of targets) {
+  for (const info of targets) {
+    const { name } = info
     const t1 = performance.now()
 
     if (info.driver === 'sqlite') {
       // ── SQLite: hot backup ──────────────────────────────────────────────
+      // Absent is the logger arm's two cases: a parent that exists is an app
+      // that has not written yet — a first deploy's pre-migration backup — and
+      // a missing one is a path that leads nowhere on this machine.
+      if (!existsSync(info.path)) {
+        if (existsSync(dirname(info.path))) {
+          console.log(`  ${dim('·')}  ${cyan(name)}: ${dim('nothing written yet')}`)
+          console.log(`     ${dim(info.path)}`)
+        } else {
+          console.log(`  ${yellow('⚠')}  ${cyan(name)}: ${dim(info.path)} not found, skipping`)
+          incomplete.push(`${name} (${info.path} does not exist — nor does ${dirname(info.path)}, so nothing is mounted there)`)
+        }
+        console.log()
+        continue
+      }
       const destFile = resolve(resolvedDest, `${name}.db`)
+      let raw
       try {
-        const result = await db.$backup(destFile, { vacuum, only: [name] })
-        totalSize += result.size ?? 0
-        const mb = ((result.size ?? 0) / 1024 / 1024).toFixed(2)
+        raw = openDatabase(info.path)
+        const size = await backupSqliteTo(raw, destFile, { vacuum })
+        totalSize += size
+        const mb = (size / 1024 / 1024).toFixed(2)
         const ms = (performance.now() - t1).toFixed(0)
         console.log(`  ${green('✓')}  ${cyan(name)}  ${dim(`${mb} MB · ${ms}ms${vacuum ? ' · vacuumed' : ''}`)}`)
         console.log(`     ${dim(rel(destFile))}`)
       } catch (e) {
         console.log(`  ${red('✗')}  ${cyan(name)} failed: ${e.message}`)
         incomplete.push(`${name} (${e.message})`)
+      } finally {
+        raw?.close()
       }
 
     } else if (info.driver === 'jsonl' || info.driver === 'logger') {
@@ -6391,6 +6458,46 @@ async function cmdBackup(dest, cfg) {
     console.log()
   }
 
+  // ── Tenant files: a hot copy of each, the way `main` is copied ──────────────
+  // Absent has the two causes the logger arm separates, and the same answer:
+  // a parent that exists is a fleet with no tenant yet, a missing one is a path
+  // that leads nowhere on this machine.
+  for (const t of tenantDirs) {
+    const t1    = performance.now()
+    const files = matchingFiles(t)
+    if (!files.length) {
+      if (existsSync(dirname(t.dir))) {
+        console.log(`  ${dim('·')}  ${cyan(t.name)}: ${dim('nothing written yet')}`)
+        console.log(`     ${dim(join(t.dir, t.pattern))}`)
+      } else {
+        console.log(`  ${yellow('⚠')}  ${cyan(t.name)}: ${dim(t.dir)} not found, skipping`)
+        incomplete.push(`${t.name} (${t.dir} does not exist — nor does ${dirname(t.dir)}, so nothing is mounted there)`)
+      }
+      console.log()
+      continue
+    }
+    const destDir = resolve(resolvedDest, t.name)
+    mkdirSync(destDir, { recursive: true })
+    let dirSize = 0
+    for (const f of files) {
+      let raw
+      try {
+        raw = openDatabase(join(t.dir, f))
+        dirSize += await backupSqliteTo(raw, resolve(destDir, f))
+      } catch (e) {
+        console.log(`  ${red('✗')}  ${cyan(t.name)}/${f} failed: ${e.message}`)
+        incomplete.push(`${t.name}/${f} (${e.message})`)
+      } finally {
+        raw?.close()
+      }
+    }
+    totalSize += dirSize
+    const count = files.length
+    console.log(`  ${green('✓')}  ${cyan(t.name)}  ${dim(`${count} file${count !== 1 ? 's' : ''} · ${(dirSize / 1024 / 1024).toFixed(2)} MB · ${(performance.now() - t1).toFixed(0)}ms`)}`)
+    console.log(`     ${dim(rel(destDir))}`)
+    console.log()
+  }
+
   // ── Zip the backup directory ────────────────────────────────────────────────
   if (zip) {
     const tZip = performance.now()
@@ -6421,7 +6528,6 @@ async function cmdBackup(dest, cfg) {
     }
   }
 
-  db.$close()
 
   const totalMs = (performance.now() - t0).toFixed(0)
   const totalMb = (totalSize / 1024 / 1024).toFixed(2)
@@ -6456,7 +6562,6 @@ async function cmdBackup(dest, cfg) {
 // it did reads as though it did everything.
 
 async function cmdReplicate(cfg) {
-  const { createClient } = await import('../core/client.js')
   const { replicate }    = await import('./replicate.js')
 
   const parseResult = loadSchema(cfg.schema)
@@ -6488,20 +6593,15 @@ async function cmdReplicate(cfg) {
 
   header('litestone replicate')
 
-  const db        = await createClient({ parsed: parseResult, path: cfg.schema, resolveFrom: 'schema', db: clientDb(parseResult, cfg), encryptionKey: getEncKey() })
-  const databases = db.$databases
-  db.$close()
+  const { sqlite, other: unreplicable, dirs } = await copyTargets(parseResult, cfg, onlyDb)
+  if (!sqlite.length && !unreplicable.length && !dirs.length) fatal(`No databases found${onlyDb ? ` matching --db=${onlyDb}` : ''}.`)
 
-  const declared = Object.entries(databases).filter(([name]) => !onlyDb || name === onlyDb)
-  if (!declared.length) fatal(`No databases found${onlyDb ? ` matching --db=${onlyDb}` : ''}.`)
-
-  const targets    = declared.filter(([, i]) => i.driver === 'sqlite').map(([name, i]) => ({ name, path: i.path }))
-  const unreplicable = declared.filter(([, i]) => i.driver !== 'sqlite')
+  const targets = [...sqlite, ...dirs]
 
   if (unreplicable.length) {
     console.log(`  ${yellow(bold('⚠  not replicated'))}  ${dim('litestream streams SQLite WAL only')}`)
-    for (const [name, info] of unreplicable)
-      console.log(`     ${cyan(name)} ${dim(`(${info.driver})`)}  ${dim(info.path ?? 'no path')}`)
+    for (const info of unreplicable)
+      console.log(`     ${cyan(info.name)} ${dim(`(${info.driver})`)}  ${dim(info.path ?? 'no path')}`)
     console.log()
     console.log(`  ${dim(`Cover these with ${cyan('litestone backup')} on a schedule, or sync the directory to object storage.`)}`)
     console.log()
@@ -6515,6 +6615,338 @@ async function cmdReplicate(cfg) {
   }
 
   await replicate({ targets, options, dir: dirname(resolve(cfg.schema)) })
+}
+
+// ─── cmdRestore ───────────────────────────────────────────────────────────────
+// The mirror of `replicate`: the same targets, from the same `<url>/<name>`
+// paths, back onto the paths the schema and the tenancy block resolve to.
+//
+//   litestone restore --url s3://bucket/myapp          → every database, latest
+//   litestone restore --at 2026-09-27T10:00:00Z        → one instant, for every file
+//   litestone restore --from-backup ./backups/<stamp>  → jsonl/logger from a `backup`
+//   litestone restore --force                          → over files that exist
+//
+// All or nothing. Every file is restored beside its destination first, and
+// only when every one of them has come back is any of them moved into place:
+// an app that starts on `main` and yesterday's tenants, or on its rows and no
+// audit trail, is the failure a restore has to make impossible rather than
+// report. The registry comes back first, because it is what names the tenants.
+
+async function cmdRestore(cfg) {
+  const { requireLitestream, restoreFile, replicaUrl } = await import('./replicate.js')
+  const { rmSync, renameSync, cpSync }                 = await import('fs')
+
+  const parseResult = loadSchema(cfg.schema)
+  const onlyDb      = declaresDatabases(parseResult) ? getFlag('db') : null
+  const url         = getFlag('url') ?? cfg.replicate?.url
+  const at          = getFlag('at')
+  const fromBackup  = getFlag('from-backup')
+  const force       = flag('force')
+  const verifyDir   = getFlag('verify') ? resolve(getFlag('verify')) : null
+
+  if (verifyDir && force) fatal(`${cyan('--verify')} restores beside the app and never over it, so ${cyan('--force')} has nothing to replace.`)
+  if (verifyDir) await confirmKeyless(loadSchema(cfg.schema))
+  if (verifyDir && existsSync(verifyDir) && readdirSync(verifyDir).length)
+    fatal(`${cyan('--verify')} restores into an empty directory, and ${rel(verifyDir)} is not one.`)
+  if (!url) fatal(`No replica url. Pass ${cyan('--url=s3://bucket/myapp')} — the one ${cyan('replicate')} streamed to — or set ${cyan('replicate.url')} in litestone.config.js.`)
+  if (at && Number.isNaN(Date.parse(at))) fatal(`${cyan('--at')} is an instant — ${cyan('2026-09-27T10:00:00Z')} — and ${cyan(at)} is not one.`)
+
+  header('litestone restore')
+
+  const targets = await copyTargets(parseResult, cfg, onlyDb)
+  // Under --verify every target lands beneath the one directory, in the layout
+  // `litestone backup` writes, and no live path is ever named.
+  const { sqlite, other, dirs } = verifyDir ? {
+    sqlite: targets.sqlite.map(t => ({ ...t, path: join(verifyDir, `${t.name}.db`) })),
+    other:  targets.other.map(t => ({ ...t, path: join(verifyDir, t.name) })),
+    dirs:   targets.dirs.map(t => ({ ...t, dir: join(verifyDir, t.name) })),
+  } : targets
+  if (!sqlite.length && !other.length && !dirs.length) fatal(`No databases found${onlyDb ? ` matching --db=${onlyDb}` : ''}.`)
+
+  // jsonl and logger databases were never streamed, so their only way back is
+  // a `litestone backup` directory — and without one this is the partial the
+  // command exists to refuse.
+  if (other.length && !fromBackup)
+    fatal(`${other.map(o => cyan(o.name)).join(', ')} ${other.length > 1 ? 'are' : 'is a'} ${other.map(o => o.driver).join('/')} database${other.length > 1 ? 's' : ''}, which litestream never streamed.\n` +
+          `     Pass ${cyan('--from-backup <dir>')} — a ${cyan('litestone backup')} destination — to bring ${other.length > 1 ? 'them' : 'it'} back from there,\n` +
+          `     or ${cyan('--db <name>')} to restore one database and leave the rest deliberately.`)
+  const missingCopies = other.filter(o => !existsSync(join(resolve(fromBackup ?? '.'), o.name)))
+  if (other.length && missingCopies.length)
+    fatal(`The backup at ${cyan(fromBackup)} has no ${missingCopies.map(o => cyan(o.name + '/')).join(', ')}.`)
+
+  const binary  = requireLitestream()
+  const staging = []
+  const stage   = dest => join(dirname(dest), `.${basename(dest)}.restoring`)
+  const discard = () => { for (const s of staging) rmSync(s, { force: true }) }
+
+  // Every file this run will write, collected before anything is fetched.
+  const jobs = sqlite.map(t => ({ kind: 'declared', name: t.name, url: replicaUrl(url, t.name), dest: t.path }))
+
+  // ── The registry, then the tenants it names ────────────────────────────────
+  const files = dirs.find(d => d.name === 'tenant-files')
+  const reg   = dirs.find(d => d.name === 'tenant-registry')
+  if (files) {
+    const inDir   = basename(resolve((await tenantOptions(cfg)).registry ?? 'registry.db'))
+    const regDest = reg ? join(reg.dir, reg.pattern) : verifyDir ? join(files.dir, inDir) : resolve((await tenantOptions(cfg)).registry ?? join(files.dir, 'registry.db'))
+    const regUrl  = reg ? `${replicaUrl(url, 'tenant-registry')}/${reg.pattern}` : `${replicaUrl(url, 'tenant-files')}/${basename(regDest)}`
+    mkdirSync(dirname(regDest), { recursive: true })
+    const got = restoreFile(binary, { url: regUrl, out: stage(regDest), at })
+    staging.push(stage(regDest))
+    if (!got.ok) { discard(); fatal(`The tenant registry did not come back — nothing was restored.\n     ${regUrl}\n     ${got.error}`) }
+
+    const { registryIds } = await import('../tenant.js')
+    for (const id of registryIds(stage(regDest)))
+      jobs.push({ kind: 'tenant', id, name: `tenant ${id}`, url: `${replicaUrl(url, 'tenant-files')}/${id}.db`, dest: join(files.dir, `${id}.db`) })
+    jobs.push({ kind: 'registry', name: 'tenant-registry', url: regUrl, dest: regDest, staged: true })
+  } else if (reg) {
+    jobs.push({ kind: 'registry', name: 'tenant-registry', url: `${replicaUrl(url, 'tenant-registry')}/${reg.pattern}`, dest: join(reg.dir, reg.pattern) })
+  }
+
+  // ── Refuse before fetching anything else ──────────────────────────────────
+  const occupied = [...jobs.map(j => j.dest), ...other.map(o => o.path)].filter(p => existsSync(p))
+  if (occupied.length && !force) {
+    discard()
+    fatal(`Restoring would replace what is already there:\n` +
+          occupied.map(p => `       ${rel(p)}`).join('\n') + '\n' +
+          `     Stop the app first, then pass ${cyan('--force')} — or point the paths somewhere empty to restore beside it.`)
+  }
+
+  const unreachable = []
+  for (const j of jobs.filter(j => !j.staged)) {
+    const probe = restoreFile(binary, { url: j.url, out: stage(j.dest), at, dryRun: true })
+    if (!probe.ok) unreachable.push(`${j.name}  ${dim(j.url)}\n       ${probe.error}`)
+  }
+  if (unreachable.length) {
+    discard()
+    fatal(`${unreachable.length} of ${jobs.length} could not be reached — nothing was restored:\n` +
+          unreachable.map(u => `     ${u}`).join('\n'))
+  }
+
+  console.log()
+  console.log(`  ${dim('replica:')}     ${cyan(url)}`)
+  console.log(`  ${dim('as of:')}       ${at ? cyan(at) : dim('the latest')}`)
+  console.log()
+
+  // ── Fetch everything beside its destination ───────────────────────────────
+  for (const j of jobs.filter(j => !j.staged)) {
+    mkdirSync(dirname(j.dest), { recursive: true })
+    const got = restoreFile(binary, { url: j.url, out: stage(j.dest), at })
+    staging.push(stage(j.dest))
+    if (!got.ok) { discard(); fatal(`${cyan(j.name)} failed after the others were reached — nothing was restored.\n     ${got.error}`) }
+  }
+
+  // ── Then move it all into place ───────────────────────────────────────────
+  // An old -wal beside a restored file would be replayed onto it, and
+  // litestream's own `.<db>-litestream` state describes the database that is
+  // being replaced — the next `replicate` starts that file's history over.
+  for (const j of jobs) {
+    for (const stale of [`${j.dest}-wal`, `${j.dest}-shm`, join(dirname(j.dest), `.${basename(j.dest)}-litestream`)])
+      rmSync(stale, { recursive: true, force: true })
+    renameSync(stage(j.dest), j.dest)
+    console.log(`  ${green('✓')}  ${cyan(j.name)}  ${dim(rel(j.dest))}`)
+  }
+  for (const o of other) {
+    rmSync(o.path, { recursive: true, force: true })
+    cpSync(join(resolve(fromBackup), o.name), o.path, { recursive: true })
+    console.log(`  ${green('✓')}  ${cyan(o.name)}  ${dim(`${rel(o.path)} ← ${rel(join(resolve(fromBackup), o.name))}`)}`)
+  }
+
+  console.log()
+  console.log(`  ${green(bold('✓  restore complete'))}  ${dim(`${jobs.length + other.length} database${jobs.length + other.length !== 1 ? 's' : ''}`)}`)
+  console.log()
+
+  if (verifyDir) await verifyRestored({ parseResult, cfg, jobs, other, files, dir: verifyDir, binary })
+}
+
+// ─── restore --verify: who says it runs without the key ───────────────────────
+// A keyless verify passes with a warning, and a cron line reads only the exit
+// code — so a drill whose environment lost the key would stop checking every
+// encrypted column and go on passing. The operator states it every time: a
+// terminal is asked, anything else needs `--without-key` (`FJS-D501`). Asked
+// before the first download, so a refusal costs nothing.
+
+async function confirmKeyless(parseResult) {
+  if (getEncKey()) return
+  const sealed = parseResult.schema.models.flatMap(m => m.fields
+    .filter(f => f.attributes.some(a => a.kind === 'encrypted' || a.kind === 'secret'))
+    .map(f => `${m.name}.${f.name}`))
+  if (!sealed.length || flag('without-key')) return
+
+  const what = `No ${cyan('ENCRYPTION_KEY')}, so ${sealed.length} encrypted column(s) could not be proven readable:\n` +
+               `     ${dim(sealed.join(', '))}`
+  if (!process.stdin.isTTY)
+    fatal(`${what}\n     Set the key, or pass ${cyan('--without-key')} to verify everything else and say so.`)
+
+  const { createInterface } = await import('node:readline/promises')
+  console.log(`  ${yellow('!')}  ${what}\n`)
+  const rl = createInterface({ input: process.stdin, output: process.stdout })
+  let answer
+  try { answer = (await rl.question('  verify without it? [y/N] ')).trim().toLowerCase() }
+  finally { rl.close() }
+  console.log()
+  if (answer !== 'y' && answer !== 'yes') fatal(`Not verified. Set ${cyan('ENCRYPTION_KEY')} and run it again.`)
+}
+
+// ─── restore --verify ─────────────────────────────────────────────────────────
+// A restored copy is proven by what the schema can say about it, not by the
+// app's suite, which arranges its own rows and cannot run on real ones
+// (`FJS-D497`). Every check is graded except replica lag: a tenant nobody wrote
+// to since Tuesday has a Tuesday replica, and that is correct.
+//
+// Without the key, the `@encrypted` and `@secret` columns are read around and
+// named as not checked — a warning, never a pass (`FJS-D498`). With it, a value
+// written under a different key is a failure, which is the lost-key case.
+
+async function verifyRestored({ parseResult, cfg, jobs, other, files, dir, binary }) {
+  const { lastWrite }        = await import('./replicate.js')
+  const { validateRows }     = await import('../validate-rows.js')
+  const { createClient }     = await import('../core/client.js')
+  const { buildPristine, buildPristineForDatabase } = await import('../core/migrate.js')
+  const { rmSync }           = await import('fs')
+
+  // An empty variable is the operator unsetting the key, not a key.
+  const key     = getEncKey() || null
+  const keyless = !key
+  const sqliteNames = parseResult.schema.databases.filter(d => !d.driver || d.driver === 'sqlite').map(d => d.name)
+  const multi   = sqliteNames.length > 1
+
+  // One tenant file holds every sqlite database's tables, so it is graded
+  // against all of them; a declared file against its own.
+  const drift = (path, names) => {
+    const pristineDb = openDatabase(':memory:')
+    const live       = openDatabase(path, { readonly: true })
+    try {
+      const pristine = (multi && names.length === 1) ? buildPristineForDatabase(pristineDb, parseResult, names[0]) : buildPristine(pristineDb, parseResult)
+      const found    = introspect(live)
+      const changed  = (names.length ? names : ['main'])
+        .map(n => diffSchemas(pristine, found, parseResult, n, { pluralize: cfg.pluralize }))
+        .filter(d => d.hasChanges)
+      return changed.length ? changed.map(d => summarizeDiff(d).split('\n')[0]).join('; ') : null
+    } finally { pristineDb.close(); live.close() }
+  }
+
+  const pragmas = (path) => {
+    const raw = openDatabase(path, { readonly: true })
+    try {
+      const integrity = raw.query('PRAGMA integrity_check').all().map(r => Object.values(r)[0])
+      const orphans   = raw.query('PRAGMA foreign_key_check').all()
+      return {
+        integrity:   integrity.length === 1 && integrity[0] === 'ok' ? null : integrity.slice(0, 3).join('; '),
+        foreignKeys: orphans.length ? `${orphans.length} row(s) reference nothing — first in ${orphans[0].table}` : null,
+      }
+    } finally { raw.close() }
+  }
+
+  const rowsOf = (report) => {
+    if (report.unreadable.length) return report.unreadable.map(u => `${u.model} unreadable: ${u.error}`).join('; ')
+    const failing = report.checked.reduce((n, c) => n + c.failing, 0)
+    return failing ? `${failing} row(s) the schema would refuse — run litestone validate on the copy` : null
+  }
+  const counted = (report) => report.checked.reduce((n, c) => n + c.rows, 0)
+
+  // Every declared database the client can reach points into the copy: the
+  // ones restored at their restored file, the rest at nothing, so no check
+  // ever opens — and so creates — a live path.
+  const restoredAt = Object.fromEntries([
+    ...jobs.filter(j => j.kind === 'declared').map(j => [j.name, j.dest]),
+    ...other.map(o => [o.name, o.path]),
+  ])
+  const databases = Object.fromEntries(parseResult.schema.databases.map(d => [d.name, {
+    path: restoredAt[d.name] ?? (!d.driver || d.driver === 'sqlite' ? ':memory:' : join(dir, '.unrestored', d.name) + '/'),
+  }]))
+  const clientKey = key ?? [...crypto.getRandomValues(new Uint8Array(32))].map(b => b.toString(16).padStart(2, '0')).join('')
+
+  const results    = []
+  const notChecked = new Set()
+
+  for (const j of jobs) {
+    const r = { name: j.name, path: j.dest, checks: pragmas(j.dest), lag: null, rows: null }
+    const last = lastWrite(binary, j.url)
+    r.lag = last == null ? null : Math.max(0, Math.round((Date.now() - last) / 1000))
+    if (j.kind !== 'registry') r.checks.schema = drift(j.dest, j.kind === 'tenant' ? sqliteNames : [j.name])
+    results.push(r)
+  }
+
+  // ── Through a client: every row against the schema, every model read ──────
+  const declared = jobs.filter(j => j.kind === 'declared')
+  if (declared.length) {
+    const db = await createClient({
+      parsed: parseResult, path: cfg.schema, resolveFrom: 'schema', encryptionKey: clientKey,
+      ...(declaresDatabases(parseResult) ? { databases } : { db: declared[0].dest }),
+    })
+    try {
+      const report = await validateRows(db, { keyless })
+      report.notChecked.forEach(c => notChecked.add(c))
+      for (const r of results.filter(r => declared.some(j => j.name === r.name))) {
+        r.checks.rows = rowsOf(report)
+        r.rows = counted(report)
+      }
+    } finally { db.$close() }
+  }
+
+  const tenantJobs = jobs.filter(j => j.kind === 'tenant')
+  if (tenantJobs.length) {
+    const { createTenantRegistry } = await import('../tenant.js')
+    const reg = jobs.find(j => j.kind === 'registry')
+    const tenants = await createTenantRegistry({
+      path: cfg.schema, dir: files.dir, registry: reg.dest, encryptionKey: clientKey,
+      clientOptions: { databases: Object.fromEntries(Object.entries(databases).filter(([n]) => !sqliteNames.includes(n))) },
+    })
+    try {
+      for (const j of tenantJobs) {
+        const r = results.find(r => r.name === j.name)
+        const report = await validateRows(await tenants.get(j.id), { keyless })
+        report.notChecked.forEach(c => notChecked.add(c))
+        r.checks.rows = rowsOf(report)
+        r.rows = counted(report)
+      }
+    } finally { tenants.close() }
+  }
+
+  for (const o of other) {
+    const n = existsSync(o.path) ? readdirSync(o.path).length : 0
+    results.push({ name: o.name, path: o.path, checks: { copied: n ? null : 'the directory came back empty' }, lag: null, rows: null, files: n })
+  }
+
+  // ── Report ────────────────────────────────────────────────────────────────
+  const failed = results.filter(r => Object.values(r.checks).some(v => v))
+  const lags   = results.map(r => r.lag).filter(l => l != null)
+  const report = {
+    ok:         failed.length === 0,
+    dir,
+    newestLag:  lags.length ? Math.min(...lags) : null,
+    files:      results,
+    notChecked: [...notChecked],
+  }
+
+  if (flag('json')) process.stdout.write(JSON.stringify(report, null, 2) + '\n')
+  else {
+    const ago = s => s == null ? '' : s < 120 ? `${s}s` : s < 7200 ? `${Math.round(s / 60)}m` : `${Math.round(s / 3600)}h`
+    // The kept copy is something to open, so a path that climbs out of here is printed whole.
+    const where = p => rel(p).startsWith('../..') ? p : rel(p)
+    console.log(`  ${bold('verify')}  ${dim(where(dir))}`)
+    console.log()
+    for (const r of results) {
+      const bad = Object.entries(r.checks).filter(([, v]) => v)
+      const facts = [r.rows != null ? `${r.rows} row(s)` : null, r.files != null ? `${r.files} file(s)` : null, r.lag != null ? `last write ${ago(r.lag)} ago` : null].filter(Boolean).join(' · ')
+      console.log(`  ${bad.length ? red('✗') : green('✓')}  ${cyan(r.name)}  ${dim(facts)}`)
+      for (const [check, why] of bad) console.log(`       ${red(check)}  ${why}`)
+    }
+    console.log()
+    if (report.notChecked.length) {
+      console.log(`  ${yellow('!')}  ${bold('NOT checked')} — no encryption key, so ${report.notChecked.length} column(s) could not be read:`)
+      console.log(`       ${dim(report.notChecked.join(', '))}`)
+      console.log(`       ${dim('Set ENCRYPTION_KEY to prove they decrypt.')}`)
+      console.log()
+    }
+    if (report.newestLag != null) console.log(`  ${dim('newest write in the replica:')} ${ago(report.newestLag)} ago\n`)
+    console.log(report.ok
+      ? `  ${green(bold('✓  the copy is good'))}  ${dim('— removed')}\n`
+      : `  ${red(bold(`✗  ${failed.length} of ${results.length} failed`))}  ${dim(`— the copy is kept at ${where(dir)}`)}\n`)
+  }
+
+  if (report.ok) rmSync(dir, { recursive: true, force: true })
+  process.exitCode = report.ok ? 0 : 1
 }
 
 // ─── db push ─────────────────────────────────────────────────────────────────
@@ -6796,6 +7228,14 @@ async function main() {
       process.exit(1)
     })
     return   // intentionally no await — replicate() runs until Ctrl+C
+  }
+
+  if (cmd === 'restore') {
+    if (sub && !/\.(js|ts)$/.test(sub))
+      fatal(`litestone restore takes a config file positionally, got: ${sub}\n     To point at a schema, use ${cyan('--schema=path/to/schema.lite')}.`)
+    const cfg = await loadConfig(sub ?? undefined)
+    await cmdRestore(cfg)
+    return
   }
 
   if (cmd === 'types') {

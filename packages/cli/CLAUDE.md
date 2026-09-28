@@ -409,6 +409,11 @@ core/
                 agree; a range starts at its attached comment. A `.lite` is
                 read by brace depth over toolbelt's `tokenize`, a `.mesa` by
                 its column-0 blocks with each script parsed at its own lines
+  guarded-write.js the policy of `.claude/hooks/guarded-write.mjs` — decision-rules
+                hinted in front of a WRITE to `DECISIONS.md`, `IDEAS/` or
+                litestone's parser/catalog. A Bash command counts only where
+                the path is a write target (redirect, `tee`, `sed -i`, mv/rm,
+                a git verb, an inline `writeFile`), never where it is read
   codegraph-page.js the codegraph model as one page; reads no files. `gilbert`,
                 `gridFor` and `coreLayout` are serialized into its script with
                 `toString()` and every band and score is graded in node, so the
@@ -1188,8 +1193,8 @@ test/     one file per module under core/, plus the deploy pipeline's own
 - **A finding may carry an EDIT, and `applyFixes` is the one thing that writes.**
   `edit: { start, end, was, replacement }`, byte offsets into the real file —
   which works only because `readCode` blanks comments to SPACES, so a span found
-  in the blanked text names the same bytes on disk. Three rules carry one
-  (`raw-route-param`, `service-model`, `resource-model-miss`) and the other six
+  in the blanked text names the same bytes on disk. Two rules carry one
+  (`raw-route-param`, `resource-model-miss`) and the others
   carry none on purpose: `const scoped = db.$setAuth(u)` would silence
   `set-auth-discarded` and leave every write below it unscoped, which is a green
   check over the bug. **Adding a fix to a rule means asking whether the rewrite

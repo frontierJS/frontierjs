@@ -109,10 +109,13 @@ export function setServiceCache(cache: ICache): void {
 /**
  * Builds a deterministic, normalized cache key from a ServiceContext.
  *
- * find → `{service}:find:{sorted-params}[:uid={userId}]`
- * get  → `{service}:get:{id}[:uid={userId}]`
+ * find → `{service}:find:{sorted-params}[:$={sorted-directives}][:uid={userId}]`
+ * get  → `{service}:get:{id}[:$={sorted-directives}][:uid={userId}]`
  *
  * Query params are key-sorted so param order never produces phantom misses.
+ * The directives are in the key because the bridge has already moved every
+ * `$`-param out of `ctx.query`: keyed on the query alone, page 2 was answered
+ * with page 1 and a `$select` read with whichever shape was cached first.
  * User ID is appended when present — naturally scopes auth'd routes without
  * needing to inspect the hook pipeline.
  *
@@ -123,18 +126,23 @@ export function setServiceCache(cache: ICache): void {
  */
 function buildCacheKey(ctx: ServiceContext): string {
   const userSeg = ctx.auth.user?.userId != null ? `:uid=${ctx.auth.user.userId}` : ''
+  const shape   = sortedPairs(ctx.directives)
+  const dirSeg  = shape ? `:$=${shape}` : ''
 
   if (ctx.method === 'get') {
-    return `${ctx.service}:get:${ctx.id ?? ''}${userSeg}`
+    return `${ctx.service}:get:${ctx.id ?? ''}${dirSeg}${userSeg}`
   }
 
-  const query  = ctx.query ?? {}
-  const sorted = Object.keys(query)
-    .sort()
-    .map(k => `${k}=${JSON.stringify(query[k])}`)
-    .join('&')
+  return `${ctx.service}:find:${sortedPairs(ctx.query)}${dirSeg}${userSeg}`
+}
 
-  return `${ctx.service}:find:${sorted}${userSeg}`
+function sortedPairs(params: object | undefined): string {
+  const record = (params ?? {}) as Record<string, unknown>
+  return Object.keys(record)
+    .filter(k => record[k] !== undefined)
+    .sort()
+    .map(k => `${k}=${JSON.stringify(record[k])}`)
+    .join('&')
 }
 
 type HookFn = (ctx: ServiceContext) => Promise<void> | void

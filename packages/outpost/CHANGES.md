@@ -1,5 +1,9 @@
 # Changes — @frontierjs/outpost
 
+## 2026-09-27 — the process against a real daemon, and a volume report that says what the volumes hold (`FJS-1398`)
+
+`verify:docker` starts the Outpost process on test-tier 7180 with a stand-in Basecamp on 7182 and drives it with signed commands against the real daemon: `/pull` answers the daemon's own image id, `/deploy` runs that digest on 7183 with its env and the 10m log cap and answers HTTP, a second deploy replaces the first, `/stop` removes it, and the heartbeat, volume report and disk report arrive signed and holding what the daemon holds. It never calls a prune or a volume route — on a workstation those remove somebody's things. It found **every volume reported as 0 bytes with no mountpoint**: `volume ls` answers `Size: "N/A"` and `volume inspect` answers an array on one line. Sizes now come from `docker system df -v`, and the line reader flattens an array.
+
 ## 2026-09-26 — a disk report reads Docker's sizes as decimal, and the volume sweep removes volumes (`FJS-257`)
 
 The inspector had only ever met canned text, and the first real daemon it met disagreed with it

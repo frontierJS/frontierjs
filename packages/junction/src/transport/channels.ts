@@ -35,8 +35,9 @@
 import { createPresenceTracker } from './presence.ts'
 import { AUTO_EVENT_MAP, REMOVAL_EVENTS, markPublishHook } from '../core/events.ts'
 import { unwrapResult }         from '../core/envelope.ts'
-import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel } from '../core/litestone.ts'
+import { resolveAccessor, toDataPrincipal, readGateLevel, principalGateLevel, declaredCallHeaders } from '../core/litestone.ts'
 import { wsSend }               from './send-queue.ts'
+import { logSocketCall }        from './middleware.ts'
 import type { ServiceContext } from './bridge.ts'
 import type { IAuth }          from '../auth/types.ts'
 import type { App, Plugin }    from '../core/app.ts'
@@ -1331,6 +1332,8 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
               // no per-call headers, so the frame carries the two values it
               // needs under `meta`, the same place it carries the id and the
               // workspace, and they are stated rather than derived.
+              const started = Date.now()
+              let status = 200
               try {
                 await _enterRequest!({
                   origin:         'websocket',
@@ -1346,7 +1349,14 @@ export function channels(setup?: ChannelSetupFn, opts: ChannelsOptions = {}): Pl
                 ctx.send({ type: 'service_result', id: callId, result: unwrapResult(svcCtx.result) })
               } catch (err: unknown) {
                 const fe = _toErr(err)
+                status = fe.code
                 ctx.send({ type: 'service_error', id: callId, error: fe.toJSON() })
+              } finally {
+                logSocketCall(app, {
+                  service: svc.name, method: method as string, id: svcCtx.id == null ? null : String(svcCtx.id),
+                  status, ms: Date.now() - started, ip: ctx.ip,
+                  correlationId: extra.correlationId as string | undefined,
+                })
               }
             })().catch(() => {})
 
@@ -1552,8 +1562,7 @@ function _mergeCallHeaders(
   workspaceId: unknown,
   app:         App,
 ): Record<string, string> {
-  const declared = ((app.config?.http as Record<string, unknown> | undefined)
-                     ?.callHeaders as string[] | undefined) ?? []
+  const declared = declaredCallHeaders(app)
   const allowed  = new Set([...PROTOCOL_CALL_HEADERS, ...declared.map(h => h.toLowerCase())])
 
   let merged: Record<string, string> | null = null

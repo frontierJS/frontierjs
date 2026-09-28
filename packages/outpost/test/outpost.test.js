@@ -442,6 +442,27 @@ describe('what this machine tells basecamp', () => {
     expect(Math.abs(body.images.size_bytes - 13_808_647_133) / 13_808_647_133).toBeLessThan(0.001)
   })
 
+  test('a volume report reads the shapes a real daemon prints', async () => {
+    // Captured from Docker 29.8. `volume ls` never computes a size and says
+    // `N/A`; `volume inspect` answers an ARRAY on one line; `system df -v` is
+    // where the size is. Read as the shapes this file used to imagine, every
+    // volume reported 0 bytes and no mountpoint.
+    const mount = '/var/snap/docker/common/var-lib-docker/volumes/tacc_vesselredis/_data'
+    const { reporter, sent } = reporterWith({
+      'docker volume ls':      { stdout: JSON.stringify({ Driver: 'local', Mountpoint: mount, Name: 'tacc_vesselredis', Scope: 'local', Size: 'N/A' }) + '\n' },
+      'docker volume inspect': { stdout: JSON.stringify([{ CreatedAt: '2026-09-27T11:54:43-07:00', Driver: 'local', Mountpoint: mount, Name: 'tacc_vesselredis', Scope: 'local' }]) + '\n' },
+      'docker system df':      { stdout: JSON.stringify({ Images: [], Containers: [], BuildCache: [],
+        Volumes: [{ Driver: 'local', Links: '1', Mountpoint: mount, Name: 'tacc_vesselredis', Scope: 'local', Size: '612.4MB' }] }) + '\n' },
+      'docker ps -a':          { stdout: 'tacc_redis_1\n' },
+    })
+    await reporter.reportVolumes()
+
+    expect(sent[0].body.volumes).toEqual([{
+      name: 'tacc_vesselredis', driver: 'local', mountpoint: mount, size_bytes: 612_400_000,
+      in_use: true, containers: ['tacc_redis_1'], created_at: '2026-09-27T11:54:43-07:00',
+    }])
+  })
+
   test('a volume sweep names what the daemon deleted', async () => {
     // The block a real `docker volume prune -f` prints. Asked for `--format`
     // the same daemon exits 125 having removed nothing.

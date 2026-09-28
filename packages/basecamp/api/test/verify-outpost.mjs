@@ -24,9 +24,13 @@
  *     back at the end, or a run erases the identity their laptop enrolled as.
  *   - SIGTERM, then SIGKILL after a grace. A graceful shutdown that hangs
  *     leaves the port held for the next run, which then reports on it.
+ *   - The container release runs on the developer's REAL daemon. It removes
+ *     only the container it started and the image only if it pulled it, and
+ *     never calls a prune or volume route: on a workstation those delete
+ *     somebody else's images.
  */
 
-import { spawn }                                              from 'node:child_process'
+import { spawn, spawnSync }                                   from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync } from 'node:fs'
 import { tmpdir }                                             from 'node:os'
 import { dirname, join }                                      from 'node:path'
@@ -39,6 +43,11 @@ const SCRATCH  = mkdtempSync(join(tmpdir(), 'basecamp-outpost-'))
 const OWN      = join(ROOT, '.outpost')
 const ASIDE    = join(ROOT, `.outpost.aside-${process.pid}`)
 const MACHINE  = join(OWN, 'machine.json')
+const APP_PORT = 7126
+const IMAGE    = 'traefik/whoami:v1.10.3'
+const sh       = (...argv) => spawnSync(argv[0], argv.slice(1), { encoding: 'utf8' })
+const hadImage = sh('docker', 'image', 'inspect', IMAGE).status === 0
+let container  = null
 
 const ENV = {
   ...process.env,
@@ -107,6 +116,8 @@ async function cleanup() {
   for (const c of children) { try { process.kill(-c.pid, 'SIGTERM') } catch {} }
   await sleep(3000)
   for (const c of children) { try { process.kill(-c.pid, 'SIGKILL') } catch {} }
+  if (container) sh('docker', 'rm', '-f', container)
+  if (!hadImage) sh('docker', 'rmi', IMAGE)
   rmSync(OWN, { recursive: true, force: true })
   if (existsSync(ASIDE)) renameSync(ASIDE, OWN)
   rmSync(SCRATCH, { recursive: true, force: true })
@@ -120,9 +131,11 @@ for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'])
 console.log('\nBasecamp — dev:outpost\n')
 
 try {
-  for (const port of [API_PORT, 8180, 8181])
+  for (const port of [API_PORT, 8180, 8181, APP_PORT])
     if (await answers(port))
       throw new Error(`port ${port} is already held — this would test a process it did not start`)
+  if (sh('docker', 'info').status !== 0)
+    throw new Error('no docker daemon answers — the container release needs one')
 
   if (existsSync(OWN)) renameSync(OWN, ASIDE)
 
@@ -211,6 +224,38 @@ try {
   // re-enrollment is signed with a key the machine no longer holds.
   const after = await released(app.id, auth)
   check('a release after re-enrolling still reaches the machine', after?.status === 'success')
+
+  // ── A container app, released the way the app screen releases one ──
+  // `{ appId }` and nothing else: the image is the one its SOURCE names, and
+  // the release carries it to /pull, /deploy and /health-check on this
+  // laptop's own daemon.
+  const name = `whoami-${process.pid}`
+  const box  = await call('/apps', { ...auth, body: {
+    environmentId: environment?.id, name, slug: name, type: 'container',
+    source: { kind: 'image', image: IMAGE },
+    config: { port: APP_PORT, containerPort: 80, env: { WHOAMI_NAME: name } },
+  } })
+  container = `fjs-${box?.id}`
+  await call(`/apps/${box?.id}`, { ...auth, serviceMethod: 'place', body: { serverId: first.serverId, replicaIndex: 0 } })
+
+  const ran   = await released(box?.id, auth)
+  const steps = ran?.steps ?? []
+  if (ran?.status !== 'success')
+    console.log(`\n${ran?.error ?? ''}\n${steps.map(s => `    ${s.status.padEnd(8)} ${s.name}  ${s.output ?? ''}`).join('\n')}\n`)
+  check('a container app releases through the real daemon', ran?.status === 'success')
+  check('…recording the image its source names', ran?.toImage === IMAGE)
+  check('…which a step PULLED', steps.some(s => /pull/i.test(s.name) && s.status === 'success'))
+
+  const imageId = sh('docker', 'image', 'inspect', '--format', '{{.Id}}', IMAGE).stdout.trim()
+  const running = sh('docker', 'inspect', '--format', '{{.Image}}', container).stdout.trim()
+  check('…and the digest it records is the bytes the daemon holds', !!imageId && ran?.builtImage === imageId)
+  check('…the bytes the container named for the app is running', !!imageId && running === imageId)
+  check('…answering on the port its config names, with its env',
+    (await fetch(`http://localhost:${APP_PORT}/`).then(r => r.text(), () => '')).includes(`Name: ${name}`))
+
+  const again = await released(box?.id, auth)
+  const held  = sh('docker', 'ps', '-a', '--filter', `name=^${container}$`, '--format', '{{.ID}}').stdout.trim().split('\n').filter(Boolean)
+  check('a second release replaces the container rather than adding one', again?.status === 'success' && held.length === 1)
 } catch (err) {
   console.log(`\n  ✗ ${err.message}`)
   failed++

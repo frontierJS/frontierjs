@@ -996,11 +996,10 @@ model Server {
   /// The `Secret` holding THIS machine's own Outpost credential, minted at
   /// enrollment. A bare id for `Domain.certSecretId`'s reason.
   ///
-  /// Null means the machine still signs with the fleet-wide `OUTPOST_SECRET`,
-  /// which every machine shares — so one compromised box can forge any other's
-  /// check-in (`core/hooks.ts` says so at the verification). Per-server
-  /// credentials are what make that column non-null; deleting the fallback is
-  /// phase 3, and it can only happen once every machine in a fleet has one.
+  /// Null means the machine has not enrolled, and every signed request about
+  /// it is refused (`outpostSecretFor` in `core/hooks.ts`) — there is no fleet
+  /// key to fall back to. Nullable because the row exists before the machine
+  /// does: provisioned or imported, it is created first and enrolls after.
   outpostSecretId  String?
 
   plan             Json         @default("{}")

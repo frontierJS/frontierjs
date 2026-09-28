@@ -64,7 +64,7 @@ const LOG     = join(LOG_DIR, 'fix-loop.jsonl')
 const OUTLINE = import(pathToFileURL(join(ROOT, 'packages', 'cli', 'core', 'outline.js')).href).catch(() => null)
 
 const args       = parseArgs(process.argv.slice(2))
-const rows       = Number(args.rows ?? 5)
+const rows = Number(args.rows ?? 4)
 const budget     = Number(args.budget ?? 5)
 const permission = args['permission-mode'] ?? 'auto'
 const dryRun     = Boolean(args['dry-run'])

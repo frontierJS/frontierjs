@@ -101,6 +101,25 @@ export function findMesaFile(file, root) {
 }
 
 /**
+ * The source Mesa is handed for a `.mesa` file, before auto-imports.
+ *
+ * Two callers compile a `.mesa`: this plugin in a build, and `checkMesaFiles`
+ * under `fli check`. A checker compiling the raw file would report a route's
+ * frontmatter and a page's `<mesa:slot>` as errors no build ever sees.
+ *
+ * @returns {{ frontmatter: object, content: string|null }} `content` is null
+ *   for a redirect-only route, which is never compiled.
+ */
+export function prepareMesaSource(source, id) {
+  const { frontmatter, content: raw } = parseFrontmatter(source)
+  if (frontmatter?.redirect && raw.trim() === '') return { frontmatter, content: null }
+  // A fenced block is escaped only under frontmatter, where a route is prose.
+  const body = Object.keys(frontmatter).length > 0 ? _escapeFencedCodeBlocks(raw) : raw
+  const content = isLayoutFile(id) ? rewriteLayoutSlots(body) : rewriteMesaSlots(body)
+  return { frontmatter, content }
+}
+
+/**
  * @param {object} mesaOptions — passed through to @frontierjs/mesa/compiler
  * @param {object} sierraContext — shared state between plugins
  * @returns {import('vite').Plugin}
@@ -325,35 +344,15 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
       // Dev survives, so it lands at the first build a real user runs.
       if (id.includes('/node_modules/') && !id.includes(FJS_SCOPE)) return null
 
-      // Strip frontmatter before passing to Mesa compiler
-      const { frontmatter, content: rawContent } = parseFrontmatter(source)
-
-      // Short-circuit: redirect-only routes (frontmatter has `redirect:` and no body)
-      // never render — the router intercepts them before the component loads.
-      // Emit a minimal no-op component so the build doesn't try to compile empty source.
-      if (frontmatter?.redirect && rawContent.trim() === '') {
+      // A redirect-only route never renders — the router intercepts it before
+      // the component loads — so it becomes a no-op component.
+      const { content: slotRewritten } = prepareMesaSource(source, id)
+      if (slotRewritten === null) {
         return {
           code: `export default function Component() {}`,
           map: null,
         }
       }
-
-      // Pre-process fenced code blocks when frontmatter is present.
-      // ``` blocks have their content escaped so Mesa doesn't parse it as template syntax.
-      const hasFrontmatter = Object.keys(frontmatter).length > 0
-      const processedContent = hasFrontmatter
-        ? _escapeFencedCodeBlocks(rawContent)
-        : rawContent
-
-      // Rewrite <mesa:slot name="X">…</mesa:slot> to snippet + provideSlot() pattern.
-      // This happens before autoImport injection and before compileSource so Mesa
-      // only ever sees valid Mesa syntax.
-      // For layout files (_module.mesa): rewrite <slot name="X"> and <slot /> 
-      // For page files: rewrite <mesa:slot name="X"> to snippet + provideSlot()
-      const isLayout = isLayoutFile(id)
-      const slotRewritten = isLayout
-        ? rewriteLayoutSlots(processedContent)
-        : rewriteMesaSlots(processedContent)
 
       // Inject auto-imports for any PascalCase components used in this file
       const content = sierraContext?.autoImportMap?.size > 0

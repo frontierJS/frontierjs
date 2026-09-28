@@ -248,13 +248,13 @@ built.
     compiles, and portability is whatever the table covers.
   - **B** — abstract vocabulary only, with raw tags as a web-only escape node.
     Cleaner, but every raw `<div>` in the corpus becomes an escape.
-  - **Recommend A.** The portability report makes the gap visible without
+  - **Recommend A** — the portability report makes the gap visible without
     rewriting 461 files first, and B can be reached later by shrinking the table.
 - **Does step 1 run before the terminal backend exists?**
   - **A** — yes, as a refactor graded by the byte-identical corpus.
   - **B** — no. Extract the IR in the same piece of work as the first non-DOM
     backend, so the seam is placed by a real second consumer rather than a guess.
-  - **Recommend B.** An IR with one consumer is a guess about where the second
+  - **Recommend B** — an IR with one consumer is a guess about where the second
     one needs the cut (`cut-one-level-simpler`). The byte-identical check is just
     as available when the terminal backend starts.
 - **Is a handler's event name a DOM event or a Gesture?** `on:click` and

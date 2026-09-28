@@ -4,6 +4,7 @@ description: Working tree grouped by package and by what each file is
 alias: gs
 examples:
   - fli gs
+  - fli gs --all
   - fli gs --with-new
   - fli gs --short
   - fli gs --hubs
@@ -13,6 +14,11 @@ flags:
     char: s
     type: boolean
     description: Hand over to plain `git status -s`
+    defaultValue: false
+  all:
+    char: a
+    type: boolean
+    description: Every row — tests, records, snapshots, docs and untracked files too
     defaultValue: false
   with-new:
     type: boolean
@@ -54,6 +60,11 @@ everyone, and it cannot be narrowed by target.
 
 Untracked files are counted in the summary but not listed — a scaffold or a
 generated tree drowns the edits the scan is for. `--with-new` lists them.
+
+Rows whose role is `test`, `record`, `snapshot` or `docs` are hidden too — they
+ride along with the code change and are what the eye skips anyway. A place left
+with no row is dropped, and the summary still counts everything. `--all` (`-a`)
+lists every row, untracked included.
 
 `--hubs` prints only the amber rows — edited files named by more than fifteen
 others — as bare paths, one per line, most reach first. Nothing else is printed,
@@ -107,9 +118,19 @@ console.log('')
 // The bar is proportional to the heaviest place, not to an absolute scale: the
 // question it answers is *which of these is the big one*, which is the only one
 // a ten-cell bar can answer honestly.
-const shown = flag['with-new'] ? model.zones : model.zones
-  .map(z => ({ ...z, files: z.files.filter(f => !f.untracked) }))
+const QUIET   = new Set(['test', 'record', 'snapshot', 'docs'])
+const withNew = flag.all || flag['with-new']
+const visible = (f) => (withNew || !f.untracked) && (flag.all || !QUIET.has(f.role))
+const sum     = (fs, k) => fs.reduce((a, f) => a + (f[k] || 0), 0)
+const shown = model.zones
+  .map(z => {
+    const files = z.files.filter(visible)
+    if (files.length === z.files.length) return z
+    const added = sum(files, 'added'), deleted = sum(files, 'deleted')
+    return { ...z, files, added, deleted, churn: added + deleted, hidden: z.files.length - files.length }
+  })
   .filter(z => z.files.length)
+const hiddenRows = model.zones.reduce((a, z) => a + z.files.length, 0) - shown.reduce((a, z) => a + z.files.length, 0)
 const peak = Math.max(...shown.map(z => z.churn), 1)
 const BAR  = 12
 
@@ -149,6 +170,7 @@ for (const z of shown) {
     z.conflicts && chalk.red(`!${z.conflicts}`),
     z.staged    && chalk.green(`●${z.staged}`),
     z.untracked && chalk.cyan(`?${z.untracked}`),
+    z.hidden    && chalk.dim(`…${z.hidden}`),
   ].filter(Boolean).join(' ')
 
   console.log([
@@ -206,6 +228,7 @@ console.log([
 ].join(chalk.dim('  ·  ')))
 const marked = model.zones.flatMap(z => z.files).filter(f => f.blast && f.blast.band >= 2).length
 const legend = [
+  hiddenRows && chalk.dim(`…n = ${hiddenRows} test/record/snapshot/docs/new row(s) hidden, -a lists them`),
   t.staged && chalk.dim('bold = staged'),
   marked   && chalk.dim('↑n = named by n other file(s), ') + chalk.yellow('amber') + chalk.dim(` past 15 — ${marked} marked here`),
 ].filter(Boolean)

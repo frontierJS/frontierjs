@@ -857,12 +857,12 @@ db.sql`SELECT * FROM user WHERE id = ${1}`
   else as `error`; its first run on basecamp was 23 such rows, none about
   basecamp. Three separate guards keep them out — see the comment there before
   changing how it creates rows.
-- **There is no `litestone restore`, and the asymmetry is the trap** (`ISSUES.md`
-  `FJS-552`): the outbound side reads the schema and covers every database, while
-  coming back is `litestream restore -o ./main.db <url>/<name>` typed once per
-  SQLite database plus a directory copy for the jsonl/logger ones. A two-database
-  app that restores `main` alone starts, and looks fine. `docs/replication.md`
-  § Restoring is the checklist until the command exists.
+- **`backup`, `replicate` and `restore` resolve their targets without a client**
+  (`copyTargets` in `tools/cli.js`). Opening one creates every missing declared
+  file and its directory, so a restore found its destinations already occupied
+  and a replica of a mistyped path streamed the empty database it had just made.
+  Under `strategy database` the targets include `tenant-files` and
+  `tenant-registry`, which no `database { }` block names (`FJS-1389`).
 
 ## The two grids
 

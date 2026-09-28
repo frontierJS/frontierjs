@@ -166,6 +166,14 @@ export function isInline(raw: unknown): boolean {
   return sourceKindOf(raw) === 'inline'
 }
 
+/** The image a release of this source pulls, or null for a source that names
+ *  none. A release created with only `{ appId }` records this as its `toImage`,
+ *  or the runner falls back to the app's NAME and asks the daemon for an image
+ *  nobody built. */
+export function imageOf(raw: unknown): string | null {
+  return sourceKindOf(raw) === 'image' ? String((raw as { image: string }).image) : null
+}
+
 /** The files as the wire carries them to a machine. Text only here — anything
  *  that is not text reaches an Outpost as `content_base64`, and nothing in this
  *  app writes one yet. */

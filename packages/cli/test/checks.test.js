@@ -6,7 +6,7 @@
 // the failure this whole file exists to prevent, because it passes.
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test'
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs'
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from 'fs'
 import { join }   from 'path'
 import { tmpdir } from 'os'
 
@@ -343,6 +343,9 @@ afterAll(()  => { rmSync(ROOT, { recursive: true, force: true }) })
 describe('the clean app', () => {
   test('every app rule runs, and none of them fires', () => {
     const root = tree('clean', CLEAN)
+    // Installed, so `mesa-compiles` runs over CLEAN's .mesa rather than skipping.
+    mkdirSync(join(root, 'node_modules', '@frontierjs'), { recursive: true })
+    symlinkSync(join(import.meta.dir, '..', '..', 'sierra'), join(root, 'node_modules', '@frontierjs', 'sierra'))
     const { findings, ran, skipped } = runChecks({ root })
 
     expect(findings).toEqual([])
@@ -1733,14 +1736,24 @@ describe('service-model', () => {
   const base = (body = '{}') =>
     `import { createBaseService } from '@frontierjs/junction'\nexport default () => createBaseService(${body})\n`
 
-  test('a hyphenated service name resolves to no model and is an error', () => {
+  test('a hyphenated service name resolves — junction registers the file camelised (FJS-1218)', () => {
+    // `product-variants.service.ts` is the service `productVariants`, which
+    // singularizes to `productVariant`, the accessor of `ProductVariant`.
     const root = tree('sm-kebab', {
       ...CLEAN, 'db/schema.lite': SCHEMA2,
       'api/src/services/product-variants.service.ts': base(),
     })
+    expect(only(root, 'service-model').findings).toEqual([])
+  })
+
+  test('a service name reaching no model is an error', () => {
+    const root = tree('sm-kebab-miss', {
+      ...CLEAN, 'db/schema.lite': SCHEMA2,
+      'api/src/services/order-lines.service.ts': base(),
+    })
     const { findings } = only(root, 'service-model')
     expect(findings).toHaveLength(1)
-    expect(findings[0].message).toMatch(/product-variant/)
+    expect(findings[0].message).toMatch(/orderLine/)
     expect(findings[0].message).toMatch(/fails open/)
   })
 
@@ -2761,38 +2774,6 @@ describe('applyFixes', () => {
     expect(src).toContain("// app.get('/left/:alone')")
   })
 
-  test('an empty options object takes the key and no comma', () => {
-    const root = tree('fx-empty', {
-      ...CLEAN,
-      'db/schema.lite': SCHEMA + '\nmodel ProductVariant { id Int @id }\n',
-      'api/src/services/product-variants.service.ts':
-        "import { createBaseService } from '@frontierjs/junction'\n" +
-        'export default () => createBaseService({})\n',
-    })
-    const { after } = fixAll(root, 'service-model')
-    expect(after).toEqual([])
-    expect(read(root, 'api/src/services/product-variants.service.ts'))
-      .toContain("createBaseService({ model: 'ProductVariant' })")
-  })
-
-  test('an object opened on its own line takes a line, indented like its neighbor', () => {
-    // The alternative is one canonical form, which reformats somebody's file to
-    // add a missing key — how a --fix gets a reputation.
-    const root = tree('fx-block', {
-      ...CLEAN,
-      'db/schema.lite': SCHEMA + '\nmodel ProductVariant { id Int @id }\n',
-      'api/src/services/product-variants.service.ts':
-        "import { createBaseService } from '@frontierjs/junction'\n" +
-        'export default () => createBaseService({\n' +
-        "    channel: 'variants',\n" +
-        '  })\n',
-    })
-    const { after } = fixAll(root, 'service-model')
-    expect(after).toEqual([])
-    expect(read(root, 'api/src/services/product-variants.service.ts'))
-      .toContain("createBaseService({\n    model: 'ProductVariant',\n    channel: 'variants',\n  })")
-  })
-
   test('a resource with no options gets the whole option, one with options gets the key', () => {
     const root = tree('fx-resource', {
       ...CLEAN,
@@ -3573,5 +3554,50 @@ describe('the seams index reads the tree, not the disk', () => {
     try {
       expect(buildIndex(root).map(f => f.path)).toEqual(['packages/a/src/x.js'])
     } finally { rmSync(root, { recursive: true, force: true }) }
+  })
+})
+
+// ─── mesa-compiles ────────────────────────────────────────────────────────────
+
+describe('mesa-compiles', () => {
+  // The fixture links this repo's sierra in, as an installed app would have it:
+  // the rule resolves `@frontierjs/sierra/check` from the surface, and a tmp
+  // tree resolves nothing.
+  const withSierra = (name, files) => {
+    const root = tree(name, { ...CLEAN, ...files })
+    mkdirSync(join(root, 'node_modules', '@frontierjs'), { recursive: true })
+    symlinkSync(join(import.meta.dir, '..', '..', 'sierra'), join(root, 'node_modules', '@frontierjs', 'sierra'))
+    return root
+  }
+
+  test('a route that does not compile is a finding naming the file and Mesa\'s error', () => {
+    // The two errors FJS-1228 measured passing the whole `bun run check`.
+    const root = withSierra('mc-broken', {
+      'web/src/routes/index.mesa':
+        '---\ntitle: Home\n---\n<script>\n  let n = 0\n  function begin() {}\n  $: n, begin()\n</script>\n{#if n}\n  <p>{n}</p>\n',
+      'web/src/routes/ok.mesa': '---\ntitle: Ok\n---\n<p>fine</p>\n',
+    })
+    const { findings } = only(root, 'mesa-compiles')
+    expect(findings).toHaveLength(1)
+    expect(findings[0].file).toBe(join(root, 'web/src/routes/index.mesa'))
+    expect(findings[0].message).toMatch(/does not compile/)
+  })
+
+  test('frontmatter, a fenced block and a slot compile as the build compiles them', () => {
+    const root = withSierra('mc-clean', {
+      'web/src/routes/index.mesa':
+        '---\ntitle: Home\n---\n```js\nconst x = {a}\n```\n<mesa:slot name="aside"><p>hi</p></mesa:slot>\n',
+      'web/src/routes/_module.mesa': '<nav></nav>\n<slot />\n',
+    })
+    const out = only(root, 'mesa-compiles')
+    expect(out.skipped).toEqual([])
+    expect(out.findings).toEqual([])
+  })
+
+  test('a surface that cannot resolve sierra is skipped, not failed', () => {
+    const root = tree('mc-nosierra', { ...CLEAN, 'web/src/routes/index.mesa': '{#if x}\n' })
+    const out = only(root, 'mesa-compiles')
+    expect(out.findings).toEqual([])
+    expect(out.skipped[0].why).toMatch(/Sierra surface/)
   })
 })

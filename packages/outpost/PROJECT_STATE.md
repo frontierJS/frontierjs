@@ -17,10 +17,13 @@ resolved no executor and every step passed having issued nothing.
 
 ## What is not
 
-- **Nothing has run it against a real Docker daemon.** The tests inject the
-  runner, which is what makes them exist at all; what they cannot prove is that
-  `docker system df --format json` answers the keys parsed here on the version
-  installed on somebody's machine.
+- **Run against a real Docker daemon, but not yet from a real Basecamp
+  release.** `bun run verify:docker` drives the process itself — signed
+  commands, a pulled image started by digest and answering HTTP, a redeploy that
+  replaces, the three reports received and verified — and `docker-live.test.js`
+  grades the inspector against the daemon's API. What is still unrun is a
+  Basecamp `Deployment` of a container app reaching it: basecamp's
+  `verify:outpost` releases an inline app, which touches no container.
 - **Ring 1 — installing it.** Built now: basecamp's `Server` model carries the
   `pending → provisioning → installing → ready` walk and an enrollment token,
   and a minted `outpostSecretId` is a per-server credential. What remains is

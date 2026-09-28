@@ -1,5 +1,21 @@
 # Changes — example
 
+## 2026-09-27 — `verify:replicate`: a missing key nobody stated is refused (`FJS-D501`)
+
+`verify.refusesAMissingKeyNobodyStated` — no key, no terminal, no `--without-key` — exits 1 naming the flag and creates nothing; the keyless pass now says `--without-key`. 33 assertions.
+
+## 2026-09-27 — `verify:replicate` drives `restore --verify` (`FJS-1395`)
+
+Seven rows over a copy holding one `@secret` value, sealed through the app's own tenant client: without a key the verify passes and names `Credential.accessToken` among the columns it could not read, with the key it passes, under another key it fails naming the model and keeps the copy, a kept copy's directory is refused as a destination, and no live path is created by any of it. 32 assertions.
+
+## 2026-09-27 — `verify:replicate` restores with `litestone restore` (`FJS-552`)
+
+The restore half is one command now, onto an empty disk, with the audit trail from a `litestone backup`. Four refusals are driven, each asserting nothing was written — an empty replica, files already in place, a logger with no backup, a tenant whose replica was deleted — plus `--force`, `--at` an instant between two writes, and the time-travel window read off litestream's own startup line.
+
+## 2026-09-27 — `verify:replicate`: stream every file, lose the disk, restore, compare (`FJS-1389`)
+
+A drive over copies of the seeded shop: SeaweedFS's S3 gateway on 7116 in docker, `litestone replicate` against it, a tenant created mid-run through `litestone tenant create`, a write a moment before a graceful stop, then the registry and every tenant restored with `litestream restore` and compared to the source table by table, and `litestone backup` graded the same way. Needs litestream v0.5 or newer — `LITESTREAM_BIN` when PATH has the 0.3.x distributions ship. It found `FJS-1389` (tenant files uncopied), `FJS-1390`, and `FJS-1391`: `jobs.db` and `db/public/storage/` are outside both commands.
+
 ## 2026-09-26 — the boot imports put the ledger before the variants (`FJS-1279`)
 
 The warm no longer writes in declaration order, so `web/src/main.js` imports

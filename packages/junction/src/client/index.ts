@@ -1504,6 +1504,12 @@ export class JunctionClient extends EventEmitter {
     // not leave its query behind any more than it leaves its rows.
     let lastQuery: Record<string, unknown> | null = null
     let lastParams: QueryDirectives = {}
+    // A REFETCH asks the query the store is moving to, which is the newest one
+    // issued rather than the newest one answered. Re-asking the answered query
+    // while a newer load was in flight made the superseded question the newest
+    // load, so it won the store (`FJS-1419`).
+    let issuedQuery: Record<string, unknown> | null = null
+    let issuedParams: QueryDirectives = {}
 
     const verdict = (record: T): boolean | null => {
       if (!opts.match || lastQuery === null) return true
@@ -1518,11 +1524,11 @@ export class JunctionClient extends EventEmitter {
     // together are one question, not N.
     let refetchQueued = false
     const refetch = (delayMs = 0): void => {
-      if (refetchQueued || lastQuery === null) return
+      if (refetchQueued || issuedQuery === null) return
       refetchQueued = true
       setTimeout(() => {
         refetchQueued = false
-        void load(lastQuery ?? {}, lastParams).catch(() => {})
+        void load(issuedQuery ?? {}, issuedParams).catch(() => {})
       }, delayMs)
     }
 
@@ -1719,6 +1725,8 @@ export class JunctionClient extends EventEmitter {
       params: QueryDirectives = {}
     ): Promise<T[]> => {
       const stamp = ++issued
+      issuedQuery  = query
+      issuedParams = params
       const res  = await svc.find(query, params)
       const rows = res.data
       if (stamp === issued) {

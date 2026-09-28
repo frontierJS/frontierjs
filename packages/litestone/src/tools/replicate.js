@@ -9,7 +9,7 @@
 
 import { spawn, spawnSync } from 'child_process'
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'fs'
-import { resolve } from 'path'
+import { resolve, dirname } from 'path'
 import { openDatabase } from '../core/engine.js'
 
 // ─── Colors ───────────────────────────────────────────────────────────────────
@@ -81,19 +81,27 @@ export const replicaUrl = (base, name) => `${base.replace(/\/+$/, '')}/${name}`
 // pulling in a YAML library. No nested unknowns here.
 
 function buildYaml(targets, opts) {
-  const lines = ['dbs:']
+  // l0-retention is the STORE's setting in v0.5: read at the top of the file
+  // and ignored, without a word, on a replica — where it was written, which
+  // left every replica on the 5m default while this said 24h.
+  const l0    = opts.l0Retention ?? '24h'
+  const lines = [...(l0 ? [`l0-retention: ${l0}`] : []), 'dbs:']
 
   for (const t of targets) {
-    lines.push(`  - path: ${t.path}`)
+    // A directory target is every file matching the pattern, and `watch`
+    // covers one created after litestream started — a tenant signing up
+    // mid-run. Each file replicates to `<url>/<filename>`.
+    if (t.dir) {
+      lines.push(`  - dir: ${t.dir}`)
+      lines.push(`    pattern: "${t.pattern}"`)
+      lines.push(`    watch: true`)
+    } else {
+      lines.push(`  - path: ${t.path}`)
+    }
     lines.push(`    replicas:`)
     lines.push(`      - url: ${t.url}`)
     if (opts.syncInterval)    lines.push(`        sync-interval: ${opts.syncInterval}`)
     if (opts.retentionPeriod) lines.push(`        retention: ${opts.retentionPeriod}`)
-
-    // l0-retention enables time-travel queries via the VFS extension.
-    // Default to 24h unless the caller opts out explicitly.
-    const l0 = opts.l0Retention ?? '24h'
-    if (l0) lines.push(`        l0-retention: ${l0}`)
   }
 
   return lines.join('\n') + '\n'
@@ -115,17 +123,11 @@ function checkWalMode(dbPath) {
   }
 }
 
-// ─── Main export ──────────────────────────────────────────────────────────────
-// targets: [{ name, path }] — SQLite only, already filtered by the caller
-// options: { url, syncInterval, retentionPeriod, l0Retention }
-// dir:     where .litestone/litestream.yml is written (the schema's directory)
+// ─── The binary, or a refusal ─────────────────────────────────────────────────
+// Every command that drives litestream asks this first, so the version floor
+// is enforced in one place for the way out and the way back alike.
 
-export async function replicate({ targets, options, dir, verbose = true }) {
-  if (!targets?.length) {
-    console.error(`${c.red}❌ No databases to replicate${c.reset}`)
-    process.exit(1)
-  }
-
+export function requireLitestream() {
   const binary = findLitestream()
 
   if (!binary) {
@@ -172,19 +174,40 @@ export async function replicate({ targets, options, dir, verbose = true }) {
     process.exit(1)
   }
 
+  return binary
+}
+
+// ─── Main export ──────────────────────────────────────────────────────────────
+// targets: [{ name, path } | { name, dir, pattern }] — SQLite only, already filtered by the caller
+// options: { url, syncInterval, retentionPeriod, l0Retention }
+// dir:     where .litestone/litestream.yml is written (the schema's directory)
+
+export async function replicate({ targets, options, dir, verbose = true }) {
+  if (!targets?.length) {
+    console.error(`${c.red}❌ No databases to replicate${c.reset}`)
+    process.exit(1)
+  }
+
+  const binary = requireLitestream()
+
   const resolved = targets.map(t => ({
     ...t,
-    path: resolve(t.path),
+    ...(t.dir ? { dir: resolve(t.dir) } : { path: resolve(t.path) }),
     url:  replicaUrl(options.url, t.name),
   }))
 
   // ── Guard: every database file must exist ────────────────────────────────
   // Litestream would create the replica and stream nothing. Named per database,
   // because with several of them "database not found" does not say which.
-  const missing = resolved.filter(t => !existsSync(t.path))
+  // A directory target may be empty — no tenant yet — but it has to be there
+  // to be watched, and it is created only where its parent already is, so an
+  // unmounted volume is still reported rather than papered over.
+  for (const t of resolved)
+    if (t.dir && !existsSync(t.dir) && existsSync(dirname(t.dir))) mkdirSync(t.dir, { recursive: true })
+  const missing = resolved.filter(t => !existsSync(t.dir ?? t.path))
   if (missing.length) {
     console.error(`${c.red}❌ Database file not found:${c.reset}`)
-    for (const t of missing) console.error(`   ${c.cyan}${t.name}${c.reset}  ${t.path}`)
+    for (const t of missing) console.error(`   ${c.cyan}${t.name}${c.reset}  ${t.dir ?? t.path}`)
     console.error(`\n   ${c.dim}Paths resolve against the current directory. Run migrations first, or cd into the project.${c.reset}\n`)
     process.exit(1)
   }
@@ -192,7 +215,7 @@ export async function replicate({ targets, options, dir, verbose = true }) {
   // ── WAL mode advisory ────────────────────────────────────────────────────
   if (verbose) {
     for (const t of resolved) {
-      if (checkWalMode(t.path) === false) {
+      if (t.path && checkWalMode(t.path) === false) {
         console.warn(`${c.yellow}⚠️  ${t.name} is not in WAL mode — litestream will enable it automatically.${c.reset}`)
         console.warn(`   ${c.dim}This will create ${t.path}-wal and ${t.path}-shm.${c.reset}`)
       }
@@ -215,7 +238,8 @@ export async function replicate({ targets, options, dir, verbose = true }) {
     console.log(`\n${c.bold}🔁 Litestone Replication${c.reset}`)
     for (const t of resolved) {
       console.log(`   ${c.cyan}${t.name}${c.reset}`)
-      console.log(`     ${c.dim}database:${c.reset} ${t.path}`)
+      if (t.dir) console.log(`     ${c.dim}files:${c.reset}    ${t.dir}/${t.pattern} ${c.dim}(watched)${c.reset}`)
+      else       console.log(`     ${c.dim}database:${c.reset} ${t.path}`)
       console.log(`     ${c.dim}replica:${c.reset}  ${t.url}`)
     }
     if (options.syncInterval)    console.log(`   ${c.dim}interval:${c.reset}     ${options.syncInterval}`)
@@ -261,4 +285,34 @@ export async function replicate({ targets, options, dir, verbose = true }) {
     console.error(`${c.red}❌ Failed to start litestream: ${err.message}${c.reset}`)
     process.exit(1)
   })
+}
+
+// ─── Restore ──────────────────────────────────────────────────────────────────
+// One replica to one file. `dryRun` asks whether the replica can be reached
+// without writing; litestream exits 1 on a replica with no backup in it, and on
+// a timestamp before its first one.
+
+// `at` is one instant for every file of a restore, and litestream refuses a
+// timestamp later than a replica's last write — which a registry that has not
+// changed since morning always is. Past the last write, the latest IS that
+// instant's state, so the timestamp is dropped rather than refused.
+export function lastWrite(binary, url) {
+  const r = spawnSync(binary, ['ltx', '-json', '-level', 'all', url], { encoding: 'utf8' })
+  if (r.status !== 0) return null
+  try {
+    const times = JSON.parse(r.stdout).map(f => Date.parse(f.timestamp)).filter(Number.isFinite)
+    return times.length ? Math.max(...times) : null
+  } catch { return null }
+}
+
+export function restoreFile(binary, { url, out, at = null, dryRun = false }) {
+  const args = ['restore', '-o', out]
+  const last = at ? lastWrite(binary, url) : null
+  if (at && !(last != null && Date.parse(at) >= last)) args.push('-timestamp', at)
+  if (dryRun) args.push('-dry-run')
+  else        args.push('-integrity-check', 'quick')
+  args.push(url)
+  const r = spawnSync(binary, args, { encoding: 'utf8' })
+  const said = `${r.stderr ?? ''}${r.stdout ?? ''}`.trim().split('\n').filter(l => /error/i.test(l)).pop()
+  return { ok: r.status === 0, error: r.status === 0 ? null : (said ?? `litestream exited ${r.status}`).replace(/^Error:\s*/, '') }
 }

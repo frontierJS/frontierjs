@@ -201,17 +201,32 @@ describe('the release pipeline an inline app runs', () => {
     expect(await stepNames(release.id)).toEqual(['Validate', 'Upload files', 'Activate', 'Health check'])
   })
 
-  test('a container app still gets the container list', async () => {
-    const sys  = env.system as any
+  const aContainerApp = async (source: unknown) => {
     const slug = `c-${uniq()}`
     const target: any = await apps().create({
-      workspaceId: ws.id, environmentId: environment.id, name: slug, slug,
-      type: 'container', source: { kind: 'image', image: 'nginx:alpine' },
+      workspaceId: ws.id, environmentId: environment.id, name: slug, slug, type: 'container', source,
     })
-    await sys.appServer.create({ data: { appId: target.id, serverId: box.id, replicaIndex: 0 } })
+    await (env.system as any).appServer.create({ data: { appId: target.id, serverId: box.id, replicaIndex: 0 } })
+    return target
+  }
 
+  test('an image app PULLS the image its source names, and builds nothing', async () => {
+    const target = await aContainerApp({ kind: 'image', image: 'nginx:alpine' })
     const release: any = await deployments().create({ appId: target.id, workspaceId: ws.id })
-    expect(await stepNames(release.id)).toContain('Start container')
+
+    expect(await stepNames(release.id)).toEqual(
+      ['Validate', 'Pull image', 'Stop previous', 'Start container', 'Health check'])
+    // Released the way the app screen releases one, `{ appId }` alone — the
+    // runner asks the machine for `toImage`, and the app's name otherwise.
+    expect(release.toImage).toBe('nginx:alpine')
+  })
+
+  test('a git app still builds', async () => {
+    const target = await aContainerApp({ kind: 'git', repo: 'git@host:a/b.git' })
+    const release: any = await deployments().create({ appId: target.id, workspaceId: ws.id })
+
+    expect(await stepNames(release.id)).toContain('Build image')
+    expect(release.toImage ?? null).toBeNull()
   })
 
   test('the release records the files that were live when it was queued, not the ones there now', async () => {

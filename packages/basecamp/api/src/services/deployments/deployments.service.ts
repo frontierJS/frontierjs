@@ -18,7 +18,7 @@ import { resolveExecutor, isExecutor } from '../../providers/executor.ts'
 import type { BasecampApp }    from '../../basecamp.types.ts'
 import deploymentRun from '../../jobs/deployment-run.job.ts'
 import { announce } from '../../channels.ts'
-import { isInline } from '../../core/app-source.ts'
+import { isInline, imageOf } from '../../core/app-source.ts'
 
 // `environment` is the DEPLOYMENT's own, which is not the app's: an app has a
 // current environment and a deployment records the one it went to, and those
@@ -43,7 +43,10 @@ const WITH_APP = { app: { include: { environment: true } }, environment: true }
 function buildInitialSteps(target: { type: string; source?: unknown }): string[] {
   if (isInline(target.source))
     return ['Validate', 'Upload files', 'Activate', 'Health check']
-  if (target.type === 'container' || target.type === 'function')
+  // An image somebody else built has nothing to build or push, and every
+  // container word but those two still applies: a build list here sends no
+  // /pull at all and reports the build as done.
+  if ((target.type === 'container' || target.type === 'function') && !imageOf(target.source))
     return ['Validate', 'Build image', 'Push image', 'Stop previous', 'Start container', 'Health check']
   if (target.type === 'database')
     return ['Validate', 'Run migrations', 'Verify connectivity']
@@ -136,6 +139,7 @@ export function createDeploymentsService(app: BasecampApp) {
       // What the app looked like at release time. `source`/`config` are Json
       // columns, so these are already objects — the old code JSON.parse'd them.
       data.configSnapshot = { source: target.source ?? {}, config: target.config ?? {} }
+      data.toImage      ??= imageOf(target.source)
       data.environmentId  = target.environmentId
       data.triggeredBy    = actor() === 'system' ? null : actor()
 

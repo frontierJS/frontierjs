@@ -1,5 +1,14 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-27 — `@frontierjs/sierra/check` compiles `.mesa` files the way the build does (`FJS-1228`)
+
+`checkMesaFiles(files, { root })` answers which files fail to compile and with
+which Mesa errors, for `fli check`'s `mesa-compiles`. What the plugin does to a
+file before Mesa sees it — frontmatter, fenced blocks, slot rewriting, the
+redirect-only no-op — moved into `prepareMesaSource(source, id)` in
+`mesa-plugin.js`, which both callers use, so the gate cannot judge a file the
+build would not. Auto-imports are not applied: an undefined name compiles.
+
 ## 2026-09-27 — held bytes drain in the workspace they were saved in (`FJS-1372`)
 
 `attachmentQueue().add` now records the call headers of the save — the same set the held row carries — and `_send` states them on both the version read and the patch, so a photograph queued in Acme and drained after its author opened Globex lands in Acme. Proved in `test/attachment-queue.test.js`.

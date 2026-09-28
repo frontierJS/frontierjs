@@ -414,7 +414,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
         ).get(...cols.map(c => row[c] ?? null)) } catch { return err }
         if (!hit) continue
         const idField = ctx.models[modelName]?.fields.find(f => f.attributes.some(a => a.kind === 'id'))?.name ?? 'id'
-        return new SoftDeletedUniqueError(modelName, cols, cols.map(c => row[c]), hit[idField], idField)
+        return new SoftDeletedUniqueError(modelName, cols, cols.map(c => redactValue(c, row[c])), hit[idField], idField)
       }
     }
     // A live row holds the value, which is the ordinary case and the one that
@@ -1596,9 +1596,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
   //
   // null is preserved rather than redacted: it holds nothing to leak, and
   // keeping it means a null → value transition is still visible in the trail.
+  //
+  // A @hashed digest is redacted too: it is the value every read path refuses
+  // to hand back, and a stable keyed identifier, so a digest in a 409 lets a
+  // caller ask whose value matches whose (FJS-1250).
   const REDACTED = '[redacted]'
   const protectedLogFields = new Set(
-    Object.keys(fieldPolicy).filter(f => fieldPolicy[f].encrypted || fieldPolicy[f].guarded)
+    Object.keys(fieldPolicy).filter(f => fieldPolicy[f].encrypted || fieldPolicy[f].guarded || fieldPolicy[f].hashed)
   )
   const hasProtectedLogFields = protectedLogFields.size > 0
 

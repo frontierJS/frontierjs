@@ -45,15 +45,19 @@ const ALL = (rows, failing) => rows > 0 && rows === failing
  * @param {object} [opts]
  * @param {string[]} [opts.models]  only these models (PascalCase names)
  * @param {number} [opts.limit]     stop after this many findings per model
+ * @param {boolean} [opts.keyless]  the client holds no real key: read around
+ *                                  every `@encrypted`/`@secret` column and name them
  * @returns {Promise<{
  *   ok: boolean,
  *   checked: {model: string, rows: number, failing: number}[],
  *   findings: {model: string, id: unknown, errors: {path: string[], message: string}[]}[],
  *   models: {model: string, rows: number, failing: number, errors: object[]}[],
  *   skipped: {model: string, reason: string}[],
+ *   unreadable: {model: string, error: string}[],
+ *   notChecked: string[],
  * }>}
  */
-export async function validateRows(db, { models = null, limit = 100 } = {}) {
+export async function validateRows(db, { models = null, limit = 100, keyless = false } = {}) {
   const schema = db.$schema
   const dbs    = db.$databases
 
@@ -68,10 +72,13 @@ export async function validateRows(db, { models = null, limit = 100 } = {}) {
   // pass loudest on exactly the models whose rows are most protected.
   const sys = db.asSystem()
 
-  const checked  = []
-  const findings = []
-  const modelRows = []
-  const skipped  = []
+  const checked    = []
+  const findings   = []
+  const modelRows  = []
+  const skipped    = []
+  const unreadable = []
+  const notChecked = []
+  const models_    = new Set(schema.models.map(m => m.name))
 
   for (const model of schema.models) {
     if (models && !models.includes(model.name)) continue
@@ -85,9 +92,30 @@ export async function validateRows(db, { models = null, limit = 100 } = {}) {
     const accessor = modelToAccessor(model.name)
     if (!sys[accessor]) continue
 
+    // Without the key a value under `@encrypted` or `@secret` cannot be read
+    // at all, so the read names every other column and the rest are reported
+    // as not checked — a pass over them would be a claim nothing made.
+    const sealed = keyless
+      ? model.fields.filter(f => f.attributes.some(a => a.kind === 'encrypted' || a.kind === 'secret'))
+      : []
+    notChecked.push(...sealed.map(f => `${model.name}.${f.name}`))
+    const select = sealed.length
+      ? Object.fromEntries(model.fields
+          .filter(f => !sealed.includes(f) && !models_.has(f.type.name))
+          .map(f => [f.name, true]))
+      : undefined
+
     // Soft-deleted and template rows are in: a restore and a
     // `withTemplates` update are both writes, and both would be refused.
-    const rows = await sys[accessor].findMany({ withDeleted: true, withTemplates: true })
+    // A model that cannot be read at all — a value under a key this client
+    // does not hold — is a finding of its own rather than the end of the walk.
+    let rows
+    try {
+      rows = await sys[accessor].findMany({ withDeleted: true, withTemplates: true, ...(select ? { select } : {}) })
+    } catch (e) {
+      unreadable.push({ model: model.name, error: e.message })
+      continue
+    }
 
     // The id as the row reports it, so a finding is addressable. A model with a
     // tuple key has no single one and is named by its whole key.
@@ -129,10 +157,12 @@ export async function validateRows(db, { models = null, limit = 100 } = {}) {
   }
 
   return {
-    ok: findings.length === 0 && modelRows.length === 0,
+    ok: findings.length === 0 && modelRows.length === 0 && unreadable.length === 0,
     checked,
     findings,
     models: modelRows,
     skipped,
+    unreadable,
+    notChecked,
   }
 }

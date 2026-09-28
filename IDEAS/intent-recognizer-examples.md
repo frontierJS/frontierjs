@@ -8,7 +8,9 @@ dated: 2026-09-12
 
 **Status: ASSESSMENT.** Dated 2026-09-12. A corpus of invented messages — who sent
 it, over which channel, and what they wrote — for the intent recognizer to resolve
-(`intent-recognizer.md`). Input to a run, never cited as behavior.
+(`intent-recognizer.md`). Input to a run, never cited as behavior. Message 26 of
+the first set was repaired 2026-09-27 — messages 28 and 29 had been pasted into its
+middle — so runs 2 and 3 graded the spliced text and their `26.*` asks are not this one's.
 
 1
 
@@ -165,7 +167,7 @@ We need to know who changed an order and when. We've had a couple of cases where
 Person: 5 — Shop owner's teenage kid who “does the website”
 Channel: chat
 Message:
-We have two shops under the same account. Can you make one login automatically open Shop A and another login automatically open Shop B? Right now people keep adding stuff to the wrong shop because they have to to add a new employee who started Monday, but I can't find anywhere to enter their bank details for payroll. I have their tax information and everything else. Where am I supposed to put the bank account? Also will they automatically get added to the next pay we have. We sell a few things that are made in small batches and the website let three customers buy the last two yesterday. Then I had to email one of them and explain we couldn't fulfill it. Please don't tell me to “keep an eye on inventory” because that's exactly what I am trying to avoid. If two pick it, which is obviously not ideal. Maybe just remember their last one?
+We have two shops under the same account. Can you make one login automatically open Shop A and another login automatically open Shop B? Right now people keep adding stuff to the wrong shop because they have to pick it, which is obviously not ideal. Maybe just remember their last one?
 27
 
 Person: 6 — Annoyed shop owner

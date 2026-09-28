@@ -5512,6 +5512,46 @@ this flag existed to escalate, so there is nothing left for it to do.
 
 ## Migrations (Litestone)
 
+### <a id="fjs-d501"></a>2026-09-27 · `FJS-D501` — Q5 — Who decides that a verify runs without the key — The operator, every time: in a terminal it asks; with no terminal it refuses unless the command says `--without-key`. A key present asks nothing, and a schema with no `@encrypted`/`@secret` column needs no key.
+
+Asked in [`IDEAS/restore-verify.md`](IDEAS/restore-verify.md) § Open questions. **A** was picked over **B** (Detect it: run keyless only when the environment looks like a test (`NODE_ENV`, a hostname, a marker file)), **C** (As ruled: keyless is allowed and warned about).
+
+The paper's recommendation, taken as written: nothing in an environment reliably says *this run is ours*, and any variable B reads is one anybody sets; a flag typed into the cron line is the statement, and its absence cannot be mistaken for it.
+
+### <a id="fjs-d500"></a>2026-09-27 · `FJS-D500` — Q4 — Who runs the verify on a schedule and raises the alarm — Nobody yet: the command, its exit code and its JSON report; scheduling and alerting arrive with Basecamp's per-app backups (frontier-cloud step 5), and until then a cron line.
+
+Asked in [`IDEAS/restore-verify.md`](IDEAS/restore-verify.md) § Open questions. **A** was picked over **B** (Each app, as a Caravan cron job that notifies), **C** (Outpost, reporting to Basecamp).
+
+The paper's recommendation, taken as written: B hands every app bucket credentials and a download it does not otherwise need; C is the right home but waits on Outpost's first run on a real machine (step 4).
+
+### <a id="fjs-d499"></a>2026-09-27 · `FJS-D499` — Q3 — Under database tenancy, which tenants does each verify restore — All of them, every run.
+
+Asked in [`IDEAS/restore-verify.md`](IDEAS/restore-verify.md) § Open questions. **A** was picked over **B** (The registry plus a rotating sample, covering every tenant within a cycle), **C** (The registry plus one tenant).
+
+The paper's recommendation, taken as written: a complete proof at the scale every current app is at; the cost is one download per tenant, revisited past hundreds of them.
+
+### <a id="fjs-d498"></a>2026-09-27 · `FJS-D498` — Q2 — Does the verify need the real encryption key — Optional: with it every `@encrypted` column is decrypted; without it the report names those columns as not checked, as a warning and never a pass.
+
+**Status:** amended-by [`FJS-D501`](#fjs-d501) — keyless is still a warning and never a pass, but it runs only when the operator states it: asked in a terminal, `--without-key` otherwise.
+
+Asked in [`IDEAS/restore-verify.md`](IDEAS/restore-verify.md) § Open questions. **A** was picked over **B** (Required: no key, no verify), **C** (Never: encrypted columns are skipped).
+
+The paper's recommendation, taken as written: a lost key makes every backup useless, so the proof has to be available, but whether a drill host holds the production key is the operator's call, and absence must be loud rather than silent.
+
+### <a id="fjs-d497"></a>2026-09-27 · `FJS-D497` — Q1 — What proves a restored copy is good, given an app suite cannot run on real data — Derived checks only: integrity, foreign keys, schema match, `validateRows`, a client read of every model, and replica lag reported.
+
+Asked in [`IDEAS/restore-verify.md`](IDEAS/restore-verify.md) § Open questions. **A** was picked over **B** (The derived checks, plus an optional app file of business facts (`db/drill.ts`) run after them), **C** (The app suite, in a new read-only mode that suites are rewritten to be data-agnostic for).
+
+The paper's recommendation, taken as written: it works for every app on the day it ships and adds no file convention; B stays open as a later addition once a real app wants a fact the schema cannot state.
+
+### <a id="fjs-d477"></a>2026-09-27 · `FJS-D477` — Is `litestone restore`'s verify half a flag on restore, its own command, or a separate row — Split: build `litestone restore` under FJS-552 now; file the verify half as its own row, which later becomes `restore --verify <dir>` restoring into a temp dir and running the suite with it as the env's database.
+
+**Status:** amended-by [`FJS-D497`](#fjs-d497) — the clause *running the suite with it as the env's database*. An app suite arranges its own rows and cannot run on restored data, so the verify runs checks derived from the schema instead (`IDEAS/restore-verify.md`). The split into two rows stands.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (One command, `litestone restore --verify`, built together; restoring without verifying stays possible but verify is the documented default), **C** (A separate `litestone restore:check` that restores into a temp dir only, never over the live files).
+
+The paper's recommendation, taken as written: the restore half is specified and owed in an emergency today; the verify half needs `createTestEnv` to accept an existing database file, which is its own design.
+
 ### <a id="fjs-d423"></a>2026-09-26 · `FJS-D423` — A generated index is named for its FIELDS, never for the `@map` columns it covers
 
 **`idx_<table>_<fields>` stays in field space while the column list is mapped.** The migrator treats an owned index matching on shape and differing on name as a rename, a drop and a create, so a name derived from the column would rebuild every index on a model the day it gains a `@map`. Lives in `packages/litestone/src/core/ddl.js` (`createIndexes`) and `src/core/migrate.js` (`diffIndexes`). Refused alternative: deriving the name from the column, which churns indexes over a change that moved no index.

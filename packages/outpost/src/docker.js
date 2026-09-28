@@ -265,10 +265,12 @@ export function createInspector({ run = spawnRun } = {}) {
   const json = async (argv) => {
     const { exitCode, stdout } = await run(argv)
     if (exitCode !== 0) return []
-    // `--format json` answers one object per LINE, not an array.
+    // `--format json` answers one object per LINE, not an array — except
+    // `volume inspect`, which answers an array on one line. Flattened, or the
+    // caller holds the array and reads `.Mountpoint` off it as undefined.
     return stdout.trim().split('\n').filter(Boolean).map(line => {
       try { return JSON.parse(line) } catch { return null }
-    }).filter(Boolean)
+    }).filter(Boolean).flat()
   }
 
   const bytes = (value) => {
@@ -285,6 +287,11 @@ export function createInspector({ run = spawnRun } = {}) {
   return {
     async volumes() {
       const rows = await json(['docker', 'volume', 'ls', '--format', 'json'])
+      // `volume ls` answers `Size: "N/A"` — it never computes one, so reading
+      // it reported every volume as empty. `system df -v` is the command that
+      // walks them, and one call answers every volume.
+      const [usage] = await json(['docker', 'system', 'df', '-v', '--format', 'json'])
+      const sizeOf  = new Map((usage?.Volumes ?? []).map(v => [v.Name, bytes(v.Size)]))
       const out  = []
       for (const row of rows) {
         const name = row.Name
@@ -301,7 +308,7 @@ export function createInspector({ run = spawnRun } = {}) {
           name,
           driver:      detail?.Driver ?? row.Driver ?? 'local',
           mountpoint:  detail?.Mountpoint ?? null,
-          size_bytes:  bytes(row.Size),
+          size_bytes:  sizeOf.get(name) ?? bytes(row.Size),
           in_use:      containers.length > 0,
           containers,
           created_at:  detail?.CreatedAt ?? null,

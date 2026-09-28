@@ -368,7 +368,34 @@ export function requestLogger(opts: RequestLoggerOptions = {}) {
     }
 
     patchRouterWithMiddleware(app, middleware)
+
+    // A socket call never passes the router, so without this a connected
+    // client — every screen after the first second — left no line for any
+    // read or write, a refused one included (`FJS-1301`).
+    socketCallLoggers.set(app, ({ service, method, id, status, ms, ip, correlationId }) => {
+      const path = id != null ? `${service}/${id}` : service
+      const data = { transport: 'websocket', method, path, status, ms, ip, correlationId }
+      if (format === 'json') log[level]('request', data)
+      else log[level](`WS ${method} ${path} ${status} ${ms}ms - ${ip}`, { correlationId })
+    })
   }
+}
+
+export interface SocketCallEntry {
+  service: string
+  method:  string
+  id:      string | null
+  status:  number
+  ms:      number
+  ip:      string | undefined
+  correlationId?: string
+}
+
+const socketCallLoggers = new WeakMap<App, (entry: SocketCallEntry) => void>()
+
+/** The socket transport's half of `requestLogger` — a no-op unless it is on. */
+export function logSocketCall(app: App, entry: SocketCallEntry): void {
+  socketCallLoggers.get(app)?.(entry)
 }
 
 // ─── Body size limiter ────────────────────────────────────────────────────

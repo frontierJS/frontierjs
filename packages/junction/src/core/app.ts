@@ -8,7 +8,7 @@ import { bridge, errorResponse } from '../transport/bridge.ts'
 import { freezeUser, enterRequest, requestMeta, currentCall, resolvePrincipal, inheritedCaller, withCallEffects, type ServiceContext, type ServiceMethod, type CallOptions } from './context.ts'
 import { ServiceRegistry, callService } from './service.ts'
 import { unwrapResult } from './envelope.ts'
-import { withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites, installLogContext, installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY, TENANT_CLIENT_OBSERVERS } from './litestone.ts'
+import { declaredCallHeaders, withLitestoneDb, withTenantDb, tenantClaimGuard, describeDataRealm, announceDataWrites, installLogContext, installQueryTelemetry, registerAuditMetrics, PRINCIPAL_RESOLVER, TENANT_REGISTRY, TENANT_CLIENT_OBSERVERS } from './litestone.ts'
 import { configFor, createTenantConfigStore } from './config-scope.ts'
 import type { TenantConfigOptions, TenantConfigStore } from './config-scope.ts'
 import { createEventBus }           from '../events/index.ts'
@@ -2104,16 +2104,15 @@ function applyConfiguredCors(app: App, config: AppConfig): void {
   const isEmpty = !origins || (Array.isArray(origins) && origins.length === 0)
   if (isEmpty) return
 
-  const callHeaders = (config.http as Record<string, unknown>)?.callHeaders as string[] | undefined
+  const callHeaders = declaredCallHeaders(app, config)
 
   app.configure(cors({
     origins,
     ...(c.methods     ? { methods:     c.methods }     : {}),
     ...(c.headers     ? { headers:     c.headers }     : {}),
-    // Declared once under http.callHeaders and read by both halves — see the
-    // note on the field. Without this an app's own header is allowed on the
-    // socket and refused at a cross-origin preflight.
-    ...(callHeaders   ? { callHeaders }                : {}),
+    // The same list the socket frame reads. Without it an app's own header is
+    // allowed on the socket and refused at a cross-origin preflight.
+    ...(callHeaders.length ? { callHeaders }           : {}),
     ...(c.credentials ? { credentials: c.credentials } : {}),
     ...(c.maxAge      ? { maxAge:      c.maxAge }      : {}),
   }))

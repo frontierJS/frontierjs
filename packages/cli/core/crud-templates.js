@@ -201,6 +201,7 @@ ${idFieldLine(o.res)}
   let error = null
 ${gateState}${removeFn}${SC}
 
+<div class="stack">
 <SectionHeader title="${o.heading}" level={1}>
   {#snippet action()}
     ${newButton}
@@ -237,7 +238,9 @@ ${gateState}${removeFn}${SC}
     reading this page.
   </p>
 {/if}
-${gateFootnote}`
+${gateFootnote}
+</div>
+`
 }
 
 // ─── create ───────────────────────────────────────────────────────────────────
@@ -274,6 +277,7 @@ ${o.gate ? '  ' + KIT.alert + '\n' : ''}  ${KIT.button}
 ${idFieldLine(o.res)}${watch}
 ${SC}
 
+<div class="stack">
 <SectionHeader title="${o.heading}" level={1}>
   {#snippet action()}
     <Button variant="ghost" href="${o.basePath}">${o.backLabel}</Button>
@@ -288,6 +292,7 @@ ${o.gate ? gateNotice(o.res, 'create') : ''}<${o.form}
   cancelHref="${o.basePath}"
   ondone={(created) => goto('${o.basePath}' + created[idField] + '/')}
 />
+</div>
 `
 }
 
@@ -421,6 +426,7 @@ ${kids.script}
   }
 ${SC}
 
+<div class="stack">
 <SectionHeader title={'${o.heading} ' + id} level={1}>
   {#snippet action()}
     <Button variant="ghost" href="${o.basePath}">${o.backLabel}</Button>
@@ -464,6 +470,7 @@ ${kids.markup}{#if record}
 {:else if !loaded}
   <Spinner label="Loading" />
 {/if}
+</div>
 `
 }
 

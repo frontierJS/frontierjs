@@ -177,7 +177,7 @@ async function enroll(): Promise<Machine> {
 
   const machine = { api: API, workspaceId: workspace.id, serverId: server.id, secret: exchanged.data.secret }
   mkdirSync(HOME, { recursive: true })
-  // The fleet secret for this machine: whoever reads it can sign as it.
+  // This machine's own key: whoever reads it can sign as it.
   writeFileSync(MACHINE_FILE, JSON.stringify(machine, null, 2) + '\n', { mode: 0o600 })
   return machine
 }

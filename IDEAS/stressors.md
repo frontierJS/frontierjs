@@ -46,14 +46,16 @@ than started.
 | 3 | **Linear / Plane** — issue tracker | *(premise struck — see below)* cross-model search; and a replay refusal with four mutations queued behind it | `homestead.md` · `tenant-authored-queries.md` |
 | 4 | **Notion** — collaborative documents | concurrent editing, and per-block sharing, which a ladder cannot express | `permission-sets.md` · `html-over-the-wire.md` |
 | 5 | **Chatwoot / Zendesk** — help desk | receiving mail; one person across channels that disagree who a person is | `inbound-integrations.md` · `stored-templates.md` · `chat-surface.md` |
-| 6 | **Lago / Stripe Billing** — metered invoicing | double-entry, per-row currency, and a rendered document | `declared-semantics.md` § money · `billing.md` |
-| 7 | **Vercel / a CI runner** | a cancellation that must interrupt work already in flight; log streaming; secrets at rest | `operational-edge.md` · `chat-surface.md` § Part 1 |
-| 8 | **PostHog** — product analytics | write rate, and a query a tenant wrote | `analytics-and-warehouse.md` · `tenant-declared-fields.md` |
-| 9 | **Moodle** — course platform | i18n as a declaration; media; a long-lived attempt | `lexicon.md` · `accessibility.md` |
-| 10 | **Etsy with payouts** — marketplace | split money and a phone; geo is no longer one of its unknowns | `declared-semantics.md` · `FJS-D38` |
-| 11 | **A status page** — the cheap one | cron precision against a public prerendered surface | — |
-| 12 | **JazzHR** — applicant tracking | a record the law says to forget, beside a report that must outlive it; a stranger who owns an application; and a hire that crosses into another app | `compliance-from-the-seed.md` · `bearer-access.md` · `state-machines.md` |
-| 13 | **remnant** — a maid.tech fork with a scripture study corpus beside it | read-only reference data that belongs to no tenant and ships with the app; relations keyed on natural keys; search over Greek and Hebrew | `conversion-maid-tech.md` (the CRM half) · `lexicon.md` |
+| 6 | **Portal** (codename) — a Kagi-shaped search shell over rented indexes, terminal first | a hedged fan-out (first N of M providers inside a deadline, cancel the rest); a result page that paints while a slow provider is still out; a query that must never be logged; a friend's topic-scoped lens applied to *your* read | `conduit` (per-target policy) · `compliance-from-the-seed.md` · `permission-sets.md` · `FJS-D38` |
+| 7 | **Lago / Stripe Billing** — metered invoicing | double-entry, per-row currency, and a rendered document | `declared-semantics.md` § money · `billing.md` |
+| 8 | **Vercel / a CI runner** | a cancellation that must interrupt work already in flight; log streaming; secrets at rest | `operational-edge.md` · `chat-surface.md` § Part 1 |
+| 9 | **PostHog** — product analytics | write rate, and a query a tenant wrote | `analytics-and-warehouse.md` · `tenant-declared-fields.md` |
+| 10 | **Moodle** — course platform | i18n as a declaration; media; a long-lived attempt | `lexicon.md` · `accessibility.md` |
+| 11 | **Etsy with payouts** — marketplace | split money and a phone; geo is no longer one of its unknowns | `declared-semantics.md` · `FJS-D38` |
+| 12 | **A status page** — the cheap one | cron precision against a public prerendered surface | — |
+| 13 | **JazzHR** — applicant tracking | a record the law says to forget, beside a report that must outlive it; a stranger who owns an application; and a hire that crosses into another app | `compliance-from-the-seed.md` · `bearer-access.md` · `state-machines.md` |
+| 14 | **remnant** — a maid.tech fork with a scripture study corpus beside it | read-only reference data that belongs to no tenant and ships with the app; relations keyed on natural keys; search over Greek and Hebrew | `conversion-maid-tech.md` (the CRM half) · `lexicon.md` |
+| 15 | **Ghost** — blog / publishing | a write that has to rebuild a prerendered page; a transition that fires at a future instant; a stranger's comment held for moderation | `state-machines.md` · `static-safety.md` · `bearer-access.md` |
 
 ### 1. Calendly — the smallest product that forces a made ruling to get built
 
@@ -162,7 +164,78 @@ the same human across all three under three different identities. `chat-surface.
 already argues the visitor-facing half and human handoff, so this exercise starts
 further along than the others.
 
-### 7. CI runner — and the one measured detail worth carrying
+### 6. Portal — the shell of a search engine, on top of somebody else's index
+
+**Codename: Portal.** The stressor, and the app if one gets built. Three other
+things in this tree already answer to the word — `<mesa:portal>` (a Mesa
+primitive), the customer *portal* in `bearer-access.md` (a stranger with a bearer
+link), and Basecamp's *Portal service* — so a search for the bare word finds all
+four. Say *Portal, the search stressor* where the sentence could be read as any of
+the others.
+
+Kagi rents most of what it searches — Google, Bing, Brave, Marginalia, plus two
+small indexes of its own — and sells the merge: dedupe, rerank, and a user who
+can push a domain up, down or out. The crawler is off-thesis for the same reason
+Figma's canvas is, so the stressor is the SHELL: accounts, plans, lenses, bangs,
+domain rules, a summarizer over fetched pages, and one hot read path that fans
+out to rented providers. A week to a personal engine, a month to one a friend
+pays for; the running cost is per-query provider spend, which is the whole reason
+Kagi charges.
+
+**V1 is a terminal.** `cli/` is a surface (Invariant 3) and `FJS-D38` says a
+`.mesa` file is every interface, so the first build is lynx-shaped: a query, a
+numbered result list, a key to open one, a key to push its domain up or down.
+That is the terminal backend's first real app rather than a demo, and it puts the
+read path under test before a single web page exists. `web/` is the second
+surface over the same schema, not the first.
+
+What it breaks, in the order a build meets them:
+
+- **Hedged fan-out.** Ask five providers, take whoever answers inside a
+  deadline, cancel the rest, return anyway. Conduit declares a policy per target;
+  whether it has any *first N of M* shape is a claim to probe, not one this file
+  makes.
+- **Progressive results.** The page must paint provider one while provider three
+  is still out. A service returns one envelope. Whether partials can stream over
+  the WS to a live store is the CI runner's log-streaming question in its
+  consumer-facing form, and it is unanswered here.
+- **A write that must never be recorded.** Kagi's pitch is zero query logging.
+  This framework announces every write and audits it. `compliance-from-the-seed`
+  covers *forget later*; this is *never know*, the inverse seam, and it has no
+  declaration.
+- **Read-time personalization.** Domain rules reshape another system's results
+  per user at read time. Not a gate, not a row policy, not a `@`-attribute — a
+  transform layer nothing here names.
+- **A cache that belongs to no tenant.** The cached result for a query is not
+  tenant data. Every cache here assumes it is.
+
+**Trusted sources — the part Kagi does not have.** A friend graph on the account,
+and a lens is something a friend can be trusted FOR. Joe knows golf and keeps ten
+ranked sites for club reviews; a query of mine for *best golf clubs* sees the
+edge and folds his ranking into my results. Bob's cooking lens never touches my
+kitchen searches because the trust is on the topic, not the person, and for
+cooking the edge points at Rachel. That is:
+
+- A relation between two users of the same app that is neither tenancy nor a
+  role — `permission-sets.md`'s question from the other side, where the grant is
+  *read my ranking* and it is scoped by a topic the schema did not know in
+  advance.
+- A read whose result depends on a second principal's data, applied under the
+  first principal's gate. `db.$readAs` reads one row as one principal; this
+  merges two principals' preferences into one answer and the audit trail must
+  say whose.
+- Topic matching: *best golf clubs* → Joe's golf lens is a classification, and
+  where that runs — a keyword table Joe named, or a model call — decides whether
+  the feature is a schema question or an AI battery question. Start with the
+  table; the model call is the upgrade, not the v1.
+
+Picturable, gradable (one query, merged results, under a second, a friend's site
+in the top ten when the topic matches and absent when it does not), and the
+deliverable is filed ids for the five seams above. Ranked below Connecteam because
+nothing here forces a made ruling, and above the runner because it reaches the
+same streaming seam through a page a person types into.
+
+### 8. CI runner — and the one measured detail worth carrying
 
 Caravan has `cancel(id)`, and `packages/caravan/src/db.ts` says what it does with
 precision: it allows cancelling a pending **or** running job, and *a running job
@@ -173,14 +246,14 @@ Caravan's problem or the app's? Pair it with log streaming, which is
 `chat-surface.md` § Part 1 paying for itself a second time, and with secrets at
 rest, already named as unowned.
 
-### 11. Status page — the one that fits in a week
+### 12. Status page — the one that fits in a week
 
 Cron precision (measured-correct and untested under DST), the `site/` prerendered
 surface, an incident as `@@transitions`, notification fan-out. Small enough to
 finish, and it exercises four realms with no new framework concept. The right
 exercise for someone with a week rather than a month.
 
-### 12. JazzHR — the one that has to forget
+### 13. JazzHR — the one that has to forget
 
 *Added 2026-09-22, from the pricing page and a read of connectteam. Nothing is
 measured yet, and the rank is only where it was appended.*
@@ -229,7 +302,7 @@ connectteam and let an accepted offer create the `User` and `Employee` there.
 Then the exercise asks what one FrontierJS app should call to create a principal
 in another. No record owns that question yet.
 
-### 13. remnant — the half of a real app that maid.tech does not have
+### 14. remnant — the half of a real app that maid.tech does not have
 
 *Added 2026-09-23, from a read of `~/code/Z/remnant/remnant` (schema at
 `db/prisma/schema.prisma`) and its production backups. Nothing is built yet, and
@@ -298,6 +371,34 @@ that as a cleared suspicion rather than open a row for it.
 maid.tech's, and build only the corpus and the `/bible` reader. The data is
 public (the app has a `tagnt` service, which points at STEPBible's tagged Greek
 NT, and Strong's lexicon), so the stressor needs no production copy.
+
+### 15. Ghost — the public half of the status page, taken seriously
+
+*Added 2026-09-27. Nothing is built, nothing measured, and the rank is only where
+it was appended.*
+
+**Most of it is the status page (#12) and Notion (#4) at once**, so it earns a slot
+only for what neither reaches:
+
+- **A write that must reach a prerendered page.** Publishing a post has to rebuild
+  its page, the index, the tag pages, the RSS feed and the sitemap. The `site/`
+  surface is prerendered at build time; nothing here names *which* pages a row
+  feeds, so the honest answer today is a full rebuild per publish. Measure it at
+  1,000 posts.
+- **A transition at a future instant.** *Publish at 9am Tuesday* is a
+  `draft → scheduled → published` `@@transitions` edge whose trigger is a clock,
+  not a caller. Whether that is a Caravan job the app writes by hand or something
+  the schema can declare is unruled.
+- **A stranger who writes.** Anonymous comments held for moderation: a row with no
+  principal, a gate that lets the author see their own pending comment and no one
+  else, and a spam refusal before the write lands. `bearer-access.md` is the
+  nearest record.
+- **A slug that must outlive itself.** Renaming a post keeps the old URL
+  answering with a redirect, forever. That is a history table nobody reads except
+  the router.
+
+Members-only posts and paid newsletters are Etsy's money question (#11) and add
+nothing here; leave them out.
 
 ---
 

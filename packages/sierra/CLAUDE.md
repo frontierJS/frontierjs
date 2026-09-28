@@ -67,7 +67,10 @@ src/
                          Litestone client `config.db` names, and a route's
                          `.meta.js` companion (`FJS-551`)
     static-data-plugin.js  dev only — a prerendered route's load(), run in Node
-    mesa-plugin.js       Mesa compilation + reactivity hints
+    mesa-plugin.js       Mesa compilation + reactivity hints; `prepareMesaSource`
+                         is what a .mesa becomes before Mesa sees it
+    mesa-check.js        `@frontierjs/sierra/check` — compile without building,
+                         for `fli check`'s `mesa-compiles` (`FJS-1228`)
     scanner-plugin.js    runs the scanner
     schema-plugin.js     .lite → client-side model schemas, and the DEVICE
                          schema litestone's `deviceSchema()` filters out of the

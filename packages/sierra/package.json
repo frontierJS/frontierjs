@@ -22,7 +22,8 @@
     "./devtools": "./src/devtools/index.js",
     "./widget": "./src/widget/index.js",
     "./widget/serve": "./src/widget/serve.js",
-    "./site/serve": "./src/site/serve.js"
+    "./site/serve": "./src/site/serve.js",
+    "./check": "./src/build/mesa-check.js"
   },
   "bin": {
     "sierra": "./src/tools/cli.js"

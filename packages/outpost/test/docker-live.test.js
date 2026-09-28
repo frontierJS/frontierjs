@@ -37,6 +37,24 @@ describe.skipIf(!df)('the inspector against a real daemon', () => {
     expect(disk.images.total).toBe(df.Images.length)
   }, 60_000)
 
+  test('a volume report agrees with the daemon about every volume', async () => {
+    // `volume ls` answers `Size: "N/A"` and `volume inspect` answers an ARRAY
+    // on one line, so a reading of either as the canned tests imagined it
+    // reported every volume as 0 bytes with no mountpoint — a full disk nothing
+    // could see.
+    const report = await createInspector().volumes()
+    const truth  = new Map((df.Volumes ?? []).map(v => [v.Name, v]))
+    expect(report.length).toBe(truth.size)
+    for (const v of report) {
+      const t = truth.get(v.name)
+      expect(v.mountpoint).toBe(t.Mountpoint)
+      expect(v.created_at).not.toBeNull()
+      expect(v.in_use).toBe((t.UsageData?.RefCount ?? 0) > 0)
+      const size = t.UsageData?.Size ?? 0
+      if (size >= 0) expect(Math.abs(v.size_bytes - size)).toBeLessThanOrEqual(Math.max(10_000, size * 0.005))
+    }
+  }, 120_000)
+
   test('a volume sweep names the volume the daemon deleted', async () => {
     // Scoped by label to a volume this test made: the sweep itself removes
     // every unused anonymous volume, which on a workstation is somebody's.

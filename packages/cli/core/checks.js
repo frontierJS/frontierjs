@@ -31,9 +31,10 @@
 // the thing that raises it, not here.
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, statSync } from 'fs'
+import { spawnSync }                                                  from 'child_process'
 import { join, relative, basename, extname }               from 'path'
 
-import { singularize, modelName } from '@frontierjs/toolbelt/inflect'
+import { singularize, modelName, camel } from '@frontierjs/toolbelt/inflect'
 
 // ─── the rule table ───────────────────────────────────────────────────────────
 //
@@ -87,6 +88,8 @@ export const RULES = [
     title: 'db/ at the app root, and each surface a directory beside it' },
   { id: 'surface-config',       scope: 'app',  severity: 'warn',  invariant: 3,
     title: 'a surface keeps its configuration in config/' },
+  { id: 'mesa-compiles',        scope: 'app',  severity: 'error', invariant: null,
+    title: 'every .mesa in a surface compiles' },
   { id: 'surface-src',          scope: 'app',  severity: 'warn',  invariant: 3,
     title: 'a surface keeps its source in src/, and only its entry beside it' },
   { id: 'widget-entry-name',    scope: 'app',  severity: 'error', invariant: 19,
@@ -1070,6 +1073,44 @@ const CHECKS = {
     return { findings }
   },
 
+  // The UI realm's only grader short of `vite build`. Lint cannot read a
+  // `.mesa` and tsc is told not to, so an unclosed `{#if}` or a RULE 7 watch
+  // passed the whole `bun run check` a scaffold's CI runs (`FJS-1228`).
+  //
+  // Sierra owns what a build does to a file before Mesa sees it, so the
+  // compile is `@frontierjs/sierra/check`, resolved from the SURFACE — the
+  // copy that surface builds with. The compiler is async and this runner is
+  // not, hence the child process. A surface that cannot resolve sierra is
+  // skipped rather than failed: it is not a Sierra surface, or not installed.
+  'mesa-compiles': ({ root }) => {
+    if (!existsSync(join(root, 'db', 'schema.lite'))) return { skipped: 'not an app root' }
+    const findings = []
+    let looked = 0
+    for (const surface of safeRead(root)) {
+      const dir = join(root, surface)
+      const files = mesaUnder(join(dir, 'src'))
+      if (!files.length) continue
+      const run = spawnSync(process.versions.bun ? process.execPath : 'bun', ['-e', MESA_CHECK_SCRIPT], {
+        cwd: dir, input: JSON.stringify(files), encoding: 'utf8', timeout: 120_000,
+        env: { ...process.env, BUN_BE_BUN: '1' },
+      })
+      const out = run.stdout?.trim().split('\n').pop()
+      if (run.status !== 0 || !out) continue
+      const verdict = JSON.parse(out)
+      if (verdict.unresolved) continue
+      looked += files.length
+      for (const { file, errors } of verdict.failed) {
+        findings.push({
+          file,
+          message: `does not compile — ${errors.length} Mesa error(s), which \`vite build\` ` +
+                   `would stop on:\n` + errors.map(e => `    ${e}`).join('\n'),
+        })
+      }
+    }
+    if (!looked) return { skipped: 'no .mesa files in a Sierra surface' }
+    return { findings }
+  },
+
   // Invariant 3's third question, and the one no rule was asking. `app-layout`
   // asks whether the surfaces sit beside `db/`; `surface-config` asks whether
   // each keeps its configuration in `config/`. Neither asks what is INSIDE a
@@ -1388,12 +1429,12 @@ const CHECKS = {
   // @@gate is found, so a gated model is served to anyone; no schema is found,
   // so autoValidate validates nothing.
   //
-  // The derivation is `singularize` from @frontierjs/toolbelt/inflect, the same
-  // module litestone derives a table name with, run the other way — so an
-  // irregular resolves and a HYPHENATED name never can: db.<accessor> is the
-  // model name with a lower first letter, and 'product-variant' is not
-  // 'productVariant'. Such a service states its model, and this rule is how it
-  // finds out it has to.
+  // The name judged is the one junction's registry gives the file —
+  // `product-variants.service.ts` registers `productVariants` — and the
+  // derivation is `singularize` from @frontierjs/toolbelt/inflect, the module
+  // litestone derives a table name with, so an irregular resolves too. Judging
+  // the raw file name reported every multi-word service as open when it was
+  // gated (FJS-1218).
   //
   // A service with no `model:` and no CRUD base is judged on nothing: a service
   // over no model is a whole kind of service — a hub, a webhook receiver — and
@@ -1409,7 +1450,7 @@ const CHECKS = {
     const findings = []
     for (const path of files) {
       const code    = readCode(path)
-      const service = basename(path).replace(/\.service\.[cm]?[jt]s$/, '')
+      const service = camel(basename(path).replace(/\.service\.[cm]?[jt]s$/, ''))
       const stated  = code.match(/\bmodel\s*:\s*['"`]([A-Za-z0-9_-]+)['"`]/)
 
       if (stated) {
@@ -1427,31 +1468,15 @@ const CHECKS = {
       if (!/\bcreateBaseService\b/.test(code)) continue
       if (resolves(service)) continue
 
-      // Name the model if the schema has one under that spelling — a rule that
-      // says which line to write beats one that says the line is missing.
-      const meant = modelNamed(modelName(service))
-
-      // The CALL, which is not the first mention: `import { createBaseService }`
-      // is one, and searching forward from it lands on the `(` of the arrow
-      // function beside it — so the options object came out after the paren
-      // that had already closed, and there was no fix and a line number
-      // pointing at the import.
-      const call  = code.match(/\bcreateBaseService\s*\(/)
-      const paren = call ? call.index + call[0].length - 1 : -1
-      const close = paren === -1 ? -1 : closingParen(code, paren)
-      const brace = paren === -1 ? -1 : code.indexOf('{', paren)
-      const edit  = meant && brace !== -1 && close !== -1 && brace < close
-        ? optionsInsert(code, brace, `model: '${meant}'`)
-        : null
-
+      // No edit: a model the schema holds under this name would have resolved,
+      // so there is nothing to name.
+      const call = code.match(/\bcreateBaseService\s*\(/)
       findings.push({
         file: path, line: lineOf(code, call ? call.index : 0),
-        ...(edit ? { edit } : {}),
         message: `createBaseService with no model:, and '${service}' resolves to none — it singularizes ` +
-                 `to '${singularize(service)}', while db.<accessor> is the model name with a lower first ` +
-                 `letter, so a hyphenated name never meets it. The miss is silent and fails open: the ` +
-                 `@@gate is not found and the model is served to anyone. State it — ` +
-                 (meant ? `model: '${meant}'.` : `model: '<Model>', naming one in db/schema.lite.`),
+                 `to '${singularize(service)}', and no model has that accessor. The miss is silent and ` +
+                 `fails open: the @@gate is not found and the model is served to anyone. State it — ` +
+                 `model: '<Model>', naming one in db/schema.lite.`,
       })
     }
     return { findings }
@@ -3892,9 +3917,8 @@ function declaredMoves({ text }) {
 
 // This was hand-rolled regex, and it was the fifth copy of a fact
 // `@frontierjs/toolbelt/inflect` already owns — the same drift `FJS-D197`
-// names, one package further along. The comment on `service-model` above says
-// the derivation is `singularize`, and for that rule it was; this one did it
-// again in ten lines of endings.
+// names, one package further along. `service-model` above derives with
+// `singularize`; this one did it again in ten lines of endings.
 //
 // The kit is strictly better on every case the copy answered differently.
 // `Series`, `Species` and `News` were FALSE POSITIVES — correctly-named models
@@ -4033,6 +4057,28 @@ function walk(dir, depth, fn) {
 function safeRead(dir) {
   try { return readdirSync(dir) } catch { return [] }
 }
+
+function mesaUnder(dir) {
+  const out = []
+  for (const name of safeRead(dir)) {
+    if (name === 'node_modules' || name.startsWith('.')) continue
+    const full = join(dir, name)
+    let st
+    try { st = statSync(full) } catch { continue }
+    if (st.isDirectory()) out.push(...mesaUnder(full))
+    else if (extname(name) === '.mesa') out.push(full)
+  }
+  return out
+}
+
+// Run in the surface's directory, so sierra resolves as that surface builds it.
+const MESA_CHECK_SCRIPT = `
+let checkMesaFiles
+try { ({ checkMesaFiles } = await import(Bun.resolveSync('@frontierjs/sierra/check', process.cwd() + '/'))) }
+catch { console.log(JSON.stringify({ unresolved: true })); process.exit(0) }
+const files = JSON.parse(await Bun.stdin.text())
+console.log(JSON.stringify({ failed: await checkMesaFiles(files, { root: process.cwd() }) }))
+`
 
 const lineOf = (text, index) => text.slice(0, index).split('\n').length
 

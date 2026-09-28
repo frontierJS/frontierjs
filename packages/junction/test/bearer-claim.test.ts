@@ -19,6 +19,7 @@ import { createClient } from '../../litestone/src/index.js'
 import { fingerprint } from '@frontierjs/toolbelt/bearer'
 import { createApp, createService, bearerClaim, BEARER, header, sessionGateLevel } from '../index.ts'
 import { enterRequest } from '../src/core/context.ts'
+import { declaredCallHeaders } from '../src/core/litestone.ts'
 import type { ServiceContext } from '../src/transport/bridge.ts'
 
 const KEY = 'test-app-secret'
@@ -191,5 +192,23 @@ describe('bearerClaim', () => {
     expect(d.subject).toBe('clientId')
     expect(d.claims).toEqual(['portalClientId', 'portalScope'])
     expect(d.namedBy).toBe('the x-portal-link header')
+  })
+})
+
+// The header a declared principal reads is on the source, so the preflight and
+// the socket frame allow-list learn it without the app restating it in
+// `http.callHeaders` (`FJS-1227`).
+describe('the header a principal reads reaches the call-header allow-list', () => {
+  test('header() carries its name, and describe() states it', () => {
+    expect(header('X-Portal-Link').headerName).toBe('X-Portal-Link')
+    expect(resolver.describe().headers).toEqual(['x-portal-link'])
+  })
+
+  test('declaredCallHeaders unions the config list with the resolver, once each', async () => {
+    const app = createApp({ db: await seeded(), principal: resolver })
+    expect(declaredCallHeaders(app, { http: { callHeaders: ['X-Other', 'X-Portal-Link'] } }))
+      .toEqual(['X-Other', 'X-Portal-Link'])
+    expect(declaredCallHeaders(app, { http: {} })).toEqual(['x-portal-link'])
+    expect(declaredCallHeaders(createApp({}), { http: {} })).toEqual([])
   })
 })

@@ -2,9 +2,9 @@
  * report.js — the Outpost's outbound half: what this machine tells Basecamp.
  *
  * Three calls, and they are exactly the three endpoints `FJS-349` found taking
- * no credential at all. Each is signed with the fleet secret, over the exact
- * bytes sent, by the same module basecamp verifies with — one definition, two
- * ends.
+ * no credential at all. Each is signed with this machine's own key, over the
+ * exact bytes sent, by the same module basecamp verifies with — one
+ * definition, two ends.
  *
  * PUSH rather than poll, on two clocks: the heartbeat is small and frequent
  * because `lastHeartbeatAt` is how basecamp decides a machine is reachable, and

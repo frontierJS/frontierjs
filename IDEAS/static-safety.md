@@ -188,11 +188,13 @@ Two cautions, both inherited from above rather than new:
     table names which data moved into islands
   - **Recommend A** — the exclusion needs no code; B only matters once the classifier
     table exists, and belongs to that work, not this rule
-- **What about `@guarded` columns reaching the marker?** An island marker carries its
+- **FJS-D504 — What about `@guarded` columns reaching the marker?** An island marker carries its
   props **as rendered** (`CLAUDE.md` § Bridge index). If a prerendered island is
   handed a record containing a guarded column, that column is now in the HTML
-  comment. Worth probing — this may already be a live defect rather than a
-  hypothetical.
+  comment. Probed 2026-09-27 and filed as [FJS-1411](../ISSUES.md#fjs-1411): a
+  gated model can only be published by reading through `asSystem()`, which
+  returns `@guarded` values, and nothing on the path looks at a column. Not live
+  in `example/`, whose static routes read no model with a `@guarded` column.
   - **A** — the build refuses: before a page is written, scan each island's serialized
     props (`packages/mesa/src/runtime.js:5481`) for any column `db.$protectedFields(accessor)`
     names, failing like a gate overrun; `publishes: N` does not lift it, since `@guarded`

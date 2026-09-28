@@ -240,6 +240,11 @@ litestone replicate [config.js]
 Start Litestream WAL replication. Runs as a managed subprocess — signal-forwarded, YAML config auto-generated.
 
 ```bash
+litestone restore [config.js] [--url=<url>] [--at=<instant>] [--from-backup=<dir>] [--force | --verify=<dir> [--without-key]] [--json]
+```
+Bring every database `replicate` streams back from its replica — all or nothing. `--verify` restores into `<dir>` instead and grades the copy. See `docs/replication.md` § Restoring and § Proving a copy.
+
+```bash
 litestone transform [config.js] [--preview] [--dry-run]
 ```
 Run the anonymize/shard pipeline (dev tool). `--preview` shows output without writing.

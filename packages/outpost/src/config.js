@@ -29,7 +29,9 @@ export function readConfig(env = process.env) {
   const config = {
     /** Which `Server` row this machine IS. Every report names it. */
     serverId:   need('OUTPOST_SERVER_ID'),
-    /** The fleet secret. Signs what this sends, verifies what arrives. */
+    /** THIS machine's own key, handed over at enrollment. Signs what this
+     *  sends, verifies what arrives. Basecamp holds no key that opens every
+     *  machine, so another machine's key is refused here too. */
     secret:     need('OUTPOST_SECRET'),
     /** Where Basecamp answers. No default — a wrong guess reports into a void. */
     basecampUrl: need('BASECAMP_URL')?.replace(/\/$/, ''),
@@ -67,7 +69,7 @@ export function readConfig(env = process.env) {
     throw new Error(
       `outpost: ${missing.join(', ')} must be set.\n` +
       `  OUTPOST_SERVER_ID  the id of this machine's Server row in Basecamp\n` +
-      `  OUTPOST_SECRET     the fleet secret Basecamp signs with\n` +
+      `  OUTPOST_SECRET     this machine's own key, from enrolling\n` +
       `  BASECAMP_URL       where Basecamp answers, e.g. https://basecamp.internal`
     )
   }

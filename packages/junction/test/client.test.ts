@@ -802,6 +802,38 @@ describe('client.resource()', () => {
     restore()
   })
 
+  // A refetch is the store asking its question again, and while a newer load
+  // is in flight the store's question is the newer one. Re-asking the query of
+  // the last load that ANSWERED issued the superseded one as the newest load,
+  // so it won: a search page moving to a new run held the old run's rows, and
+  // judged every push after against the old run (`FJS-1419`).
+  it('a changed event during a newer load re-asks the newer query', async () => {
+    const original = globalThis.fetch
+    const asked: string[] = []
+    stubbable.fetch = async (input: RequestInfo | URL) => {
+      const runId = new URL(String(input)).searchParams.get('runId')!
+      asked.push(runId)
+      // The newer load is the slow one, so the `changed` lands inside it.
+      if (asked.length === 2) await new Promise((r) => setTimeout(r, 30))
+      return new Response(
+        JSON.stringify({ kind: 'list', object: 'items', data: [{ id: runId }], errors: [], total: 1 }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+    const { service, store, load } = makeClient().resource('items')
+    await load({ runId: 'old' })
+
+    const moving = load({ runId: 'new' })
+    await new Promise((r) => setTimeout(r, 5))
+    service._receive('changed', { model: 'Item', operation: 'deleteMany', count: 3 })
+    await moving
+    await new Promise((r) => setTimeout(r, 40))
+
+    expect(asked).toEqual(['old', 'new', 'new'])
+    expect(store.get()).toEqual([{ id: 'new' }])
+    globalThis.fetch = original
+  })
+
   it('service() returns the same proxy as resource().service', () => {
     const c = makeClient()
     const r = c.resource('items')

@@ -70,7 +70,9 @@ interface LitestoneTable {
   removeMany:       (args:  Record<string, unknown>) => Promise<{ count: number }>
   delete:           (args:  Record<string, unknown>) => Promise<unknown>     // always hard
   deleteMany:       (args:  Record<string, unknown>) => Promise<{ count: number }>
+  upsert:           (args:  Record<string, unknown>) => Promise<unknown>
   restore:          (args:  Record<string, unknown>) => Promise<unknown>     // @@softDelete models only
+  transition:       (id: number | string, name: string, opts?: { system?: boolean }) => Promise<unknown>  // @@transitions models only
   search:           (query: string, args?: Record<string, unknown>) => Promise<unknown[]>  // @@fts models only — the ROWS, ranked
   // The two shapes the `aggregate` verb dispatches between (`FJS-D226`): with a
   // `by` it is a group-by and answers a row per group, without one it is a
@@ -3293,7 +3295,12 @@ export function membershipClaim(opts: MembershipClaimOptions): DescribedResolver
 
 /** Where the token is on the request. `header()` and `cookie()` are the two
  *  shipped readers; a path segment is deliberately not one (`FJS-D340`). */
-export type BearerSource = (ctx: ServiceContext) => string | null
+export type BearerSource = ((ctx: ServiceContext) => string | null) & {
+  /** The request header this source reads, where it reads one. The CORS
+   *  preflight and the socket frame allow-list both need it, and without it the
+   *  app restates the name in `http.callHeaders` or the preflight drops it. */
+  readonly headerName?: string
+}
 
 /**
  * Every place a request's headers can be, in the order they are authoritative.
@@ -3318,7 +3325,7 @@ function requestHeaders(ctx: ServiceContext): Record<string, string> {
 /** Read the token from a request header. */
 export function header(name: string): BearerSource {
   const lower = name.toLowerCase()
-  return (ctx) => {
+  const source = (ctx: ServiceContext) => {
     const headers = requestHeaders(ctx)
     // A header name is case-insensitive on the wire and two transports
     // normalize differently, so all three spellings are asked rather than
@@ -3326,6 +3333,7 @@ export function header(name: string): BearerSource {
     const raw = headers[lower] ?? headers[name] ?? headers[name.toUpperCase()]
     return typeof raw === 'string' && raw ? raw : null
   }
+  return Object.assign(source, { headerName: name })
 }
 
 /** Read the token from a cookie — what a redeemed link leaves behind. */
@@ -3461,6 +3469,7 @@ export function bearerClaim(opts: BearerClaimOptions): DescribedResolver {
     claims:   Object.keys(opts.claims),
     include:  [],
     namedBy:  opts.namedBy ?? null,
+    headers:  opts.from.headerName ? [opts.from.headerName] : [],
   })
 
   return described
@@ -3514,6 +3523,23 @@ export interface PrincipalDescription {
   include:  string[]
   /** How a caller names the tenant, as the app words it. Constant, so committable. */
   namedBy:  string | null
+  /** The request headers a caller names this principal with. */
+  headers?: string[]
+}
+
+/**
+ * The app's own per-call headers: `http.callHeaders` plus every header the
+ * declared principal reads. Read by the CORS allow-list and the socket frame
+ * allow-list, so a `header()` the resolver reads is never dropped by either.
+ */
+export function declaredCallHeaders(app: unknown, config?: { http?: unknown }): string[] {
+  const listed = ((config ?? (app as { config?: { http?: unknown } })?.config)?.http as
+    { callHeaders?: string[] } | undefined)?.callHeaders ?? []
+  const resolver = (app as Record<symbol, unknown> | null)?.[PRINCIPAL_RESOLVER] as
+    Partial<DescribedResolver> | undefined
+  const read = typeof resolver?.describe === 'function' ? resolver.describe().headers ?? [] : []
+  const seen = new Set<string>()
+  return [...listed, ...read].filter(h => !seen.has(h.toLowerCase()) && !!seen.add(h.toLowerCase()))
 }
 
 // ─── describePrincipalRealm ──────────────────────────────────────────────────

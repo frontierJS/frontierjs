@@ -96,7 +96,11 @@ Each declaration added alone to an otherwise bare schema, 20,000 inserts:
 **Gates and policies together cost 1.2 µs — about 4% of an `example`-schema write — and
 validators are free.** Any plan that trades the access guarantees for speed is trading
 the most load-bearing thing in the framework for nothing measurable. This closes the
-question; it does not need re-opening.
+question; it does not need re-opening. *Struck in part 2026-09-27: this is the WRITE
+side only. On a read the same declarations are measurable — `@@allow` +42%, a
+`check()` chain +62/+94/+121% at 1/2/3 hops, `@from(count)` on an unindexed FK 400×
+(`performance-regression-watch.md` § What Order (1) found). The conclusion that the
+guarantees are not what to trade holds; "nothing measurable" does not.*
 
 The two worth attention are both unglamorous:
 

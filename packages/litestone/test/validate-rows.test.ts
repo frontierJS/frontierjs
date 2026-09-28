@@ -215,3 +215,56 @@ describe('the walk itself', () => {
     expect(report.checked.map((r: any) => r.model)).toEqual(['User'])
   })
 })
+
+// A restored copy is graded by this walk (`restore --verify`), and the question
+// there includes the key: a copy written under a key nobody holds any more is
+// the backup that cannot be used, and a walk that threw on it would say nothing.
+describe('the key', () => {
+  const schema = `
+    model Secret {
+      id    Int     @id
+      label String  @length(1, 3)
+      token String? @encrypted
+    }
+  `
+  const K1 = 'a'.repeat(64)
+  const K2 = 'b'.repeat(64)
+
+  const sealed = async () => {
+    const db = tmp()
+    const w  = await createClient({ schema, db, encryptionKey: K1 })
+    await w.asSystem().secret.create({ data: { label: 'ok', token: 'hunter2' } })
+    w.$close()
+    return db
+  }
+
+  it('under another key the model is unreadable, and the walk fails naming it', async () => {
+    const db = await createClient({ schema, db: await sealed(), encryptionKey: K2 })
+    const report = await validateRows(db)
+    db.$close()
+    expect(report.ok).toBe(false)
+    expect(report.unreadable.map(u => u.model)).toEqual(['Secret'])
+    expect(report.unreadable[0].error).toMatch(/decrypt/i)
+  })
+
+  it('keyless, it reads around the sealed column, grades the rest, and names what it skipped', async () => {
+    const db = await createClient({ schema, db: await sealed(), encryptionKey: K2 })
+    const report = await validateRows(db, { keyless: true })
+    db.$close()
+    expect(report.ok).toBe(true)
+    expect(report.checked).toEqual([{ model: 'Secret', rows: 1, failing: 0 }])
+    expect(report.notChecked).toEqual(['Secret.token'])
+  })
+
+  it('keyless still refuses a row the readable columns break', async () => {
+    const path = await sealed()
+    const raw  = await createClient({ schema, db: path, encryptionKey: K1 })
+    raw.asSystem().sql`UPDATE secret SET label = 'toolong'`
+    raw.$close()
+    const db = await createClient({ schema, db: path, encryptionKey: K2 })
+    const report = await validateRows(db, { keyless: true })
+    db.$close()
+    expect(report.ok).toBe(false)
+    expect(report.findings[0].errors[0].path).toEqual(['label'])
+  })
+})
