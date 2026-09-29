@@ -6196,6 +6196,43 @@ tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
 
+### <a id="fjs-d551"></a>2026-09-29 · `FJS-D551` — A plugin's clock is `work()`, its own start phase, and a one-shot boot skips it: `boot()` makes a plugin callable, `work()` makes it act unasked.
+
+**Why.** `junction call` and the five snapshot tools boot an app to make one call or
+describe it and then exit. Every plugin's timers lived in `boot()`, so each of those
+processes started caravan's workers and cron, the outbox relay, the metrics scrape
+and orion's activation poll. Four calls against `example` queued four `orion.sweep`
+ticks, and a worker in the call's process could claim a job the serving process
+was owed.
+
+**What was picked.** The owner picked **A** over two others. **B** was a flag on
+the app that each plugin checks, which a plugin that forgets ignores in silence.
+**C** was to ship `fli call` as it was and file the gap.
+
+**The shape.**
+- `Plugin.work?(app)` runs in the `start-work` phase, after `compile-hook-pipelines`,
+  so a worker's first job runs through the hooks a request would.
+- There are three start modes. `start()` runs every phase. `_startForTest()` skips
+  `needsHost`. `_startOnce()` also skips `start-work`, and `tools/app-module.ts`
+  boots with it.
+- `app.scheduler` is created held. It registers and describes jobs, and
+  `start-work` arms it.
+- A standalone `createScheduler()` is armed from creation.
+
+**What stays in `boot()`.** Anything that makes the plugin callable: caravan loads
+its job files, so a dispatch routes to its queue and the row waits for the serving
+process. Orion's first `syncActivations()` stays too, because a flow's model trigger
+is an in-process tap and a write the call makes must still start its flows.
+
+**The name.** It went through `decision-rules`. *Run* is an open Vocabulary word for
+bounded work, *start* collides with `app.start()` and `caravan.start()`, and *ready*
+already means that the process holds a host.
+
+**Where it lives.** `junction/src/core/app.ts` (`Plugin.work`, `start-work`,
+`_startOnce`) and `junction/src/scheduler/index.ts` (`held`, `arm()`). Pinned by
+`junction test/start-work.test.ts` and `caravan test/junction-integration.test.ts`
+§ *_startOnce() queues and runs nothing*.
+
 ### <a id="fjs-d509"></a>2026-09-29 · `FJS-D509` — Should the transport gzip a raw route's own `new Response(readable)`, which it cannot tell from a string body — Keep the contract: a streamed body is built with `ctx.stream()` or names `content-encoding`. Put that in the raw-route docs and the api-hazards entry, and have dev mode warn when an `arrayBuffer()` for compression waits longer than N ms.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Compress through `CompressionStream('gzip')` whenever the length is unknown, dropping `MIN_COMPRESS_BYTES` for those bodies. That breaks the small-body threshold, and gzip still holds chunks until it flushes, so ndjson stays delayed), **C** (Read the first chunk and pass the rest through as streamed if the next read doesn't settle at once. Timing-dependent, so the same route behaves differently under load).

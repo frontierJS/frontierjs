@@ -58,7 +58,7 @@ export function renderPage(model, { css, theme, all = false, name }) {
   const data = {
     name, head: model.head, builtAt: model.builtAt, halfLife: HALF_LIFE_DAYS,
     commits: model.commits, sweeps: model.sweeps, sweepLimit: model.sweepLimit,
-    reports: model.reports, labels: bandLabels(), tones: TONES, kinds: KINDS, all, parser: model.parser ?? null,
+    reports: model.reports, timeline: model.timeline ?? null, labels: bandLabels(), tones: TONES, kinds: KINDS, all, parser: model.parser ?? null,
     core, uses: coreUses(model.uses, core), quadrants: QUADRANTS, strong: STRONG,
     more: MORE, testedBands: [...new Set(Object.values(TESTED_BAND))].sort(),
     cognitiveCuts: COGNITIVE,
@@ -161,7 +161,7 @@ export function renderPage(model, { css, theme, all = false, name }) {
         <div class="section-header"><h2 id="regions-h" class="h5">Packages</h2><button class="btn outlined" id="clear" hidden>show every package</button></div>
         <p class="text-xs text-muted">Select a row to isolate it on the map. Exposed is the share of the package's source complexity no test covers.</p>
         <div class="table-wrap"><table class="table striped dense" id="regions">
-          <thead><tr><th>Region</th><th class="cg-r">Files</th><th class="cg-r">Source</th><th class="cg-r">Exposed</th><th class="cg-r">Hotspots</th><th class="cg-r">Hot files</th></tr></thead><tbody></tbody>
+          <thead><tr><th>Region</th><th>Growth</th><th class="cg-r">Files</th><th class="cg-r">Source</th><th class="cg-r">Exposed</th><th class="cg-r">Hotspots</th><th class="cg-r">Hot files</th></tr></thead><tbody></tbody>
         </table></div>
       </section>
       <div class="stack">
@@ -247,6 +247,9 @@ const STYLE = `
 .cg-meter { display: inline-grid; grid-template-columns: 3.5rem auto; gap: var(--space-xs); align-items: center; }
 .cg-meter i { height: 0.375rem; background: var(--rule); position: relative; }
 .cg-meter i::after { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--w); background: var(--tile-exposure-${STRONG}); }
+.cg-growth { display: block; }
+.cg-growth polygon { fill: var(--ink); opacity: .12; }
+.cg-growth polyline { fill: none; stroke: var(--ink); stroke-width: 1.25; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
 #regions tbody tr, .cg-files tbody tr { cursor: pointer; }
 #regions tbody tr[aria-selected="true"] { box-shadow: inset 3px 0 0 var(--ink); }
 `
@@ -650,13 +653,28 @@ function renderTables() {
     return { name, n: fs.length, s: s.length, pct: cx ? ex / cx : 0, hot: s.filter(f => f.hot).length, warm: s.filter(f => f.bHeat >= D.strong - 1).length }
   }).sort((a, b) => b.n - a.n)
   $('regions').tBodies[0].innerHTML = rows.map(r =>
-    '<tr data-region="' + esc(r.name) + '" tabindex="0" aria-selected="false"><td class="cg-name">' + esc(r.name) + '</td><td class="cg-r">' + r.n + '</td><td class="cg-r">' + r.s + '</td>' +
+    '<tr data-region="' + esc(r.name) + '" tabindex="0" aria-selected="false"><td class="cg-name">' + esc(r.name) + '</td><td>' + growth(r.name) + '</td><td class="cg-r">' + r.n + '</td><td class="cg-r">' + r.s + '</td>' +
     '<td class="cg-r"><span class="cg-meter"><i style="--w:' + Math.round(r.pct * 100) + '%"></i>' + (r.s ? Math.round(r.pct * 100) + '%' : '–') + '</span></td>' +
     '<td class="cg-r">' + (r.hot || '–') + '</td><td class="cg-r">' + (r.warm || '–') + '</td></tr>').join('')
   $('hot').tBodies[0].innerHTML = scored.slice(0, 20).map(f =>
     '<tr data-file="' + f.i + '" tabindex="0"><td class="cg-name" title="' + esc(f.path) + '"><bdi>' + (f.hot ? '● ' : '') + esc(f.path) + '</bdi></td><td class="cg-r"><i class="cg-swatch" style="--c:var(--tile-score-' + f.bScore + ')"></i> ' + f.score.toFixed(1) + '</td><td class="cg-r">' + n(f.exposure) + '</td><td class="cg-r">' + f.heat.toFixed(1) + '</td><td class="cg-r">' + n(f.usedBy) + '</td></tr>').join('')
   $('used').tBodies[0].innerHTML = used.slice(0, 20).map(f =>
     '<tr data-file="' + f.i + '" tabindex="0"><td class="cg-name" title="' + esc(f.path) + '"><bdi>' + esc(f.path) + '</bdi></td><td class="cg-r">' + n(f.usedBy) + '</td><td class="cg-r">' + (f.exposure == null ? '–' : n(f.exposure)) + '</td><td class="cg-r">' + (f.level ?? '–') + '</td></tr>').join('')
+}
+
+// Line: source files born per slice. Area: edits per slice, for scale only.
+// Each series fits its own height; the x span is shared by every row.
+function growth(region) {
+  const t = D.timeline, r = t && t.regions[region]
+  if (!r) return ''
+  const W = 120, H = 22, dx = W / (t.steps - 1)
+  const pts = (ys, pad) => { const m = Math.max(1, ...ys); return ys.map((y, i) => (i * dx).toFixed(1) + ',' + (H - pad - y / m * (H - 2 * pad)).toFixed(1)) }
+  const [born, edits] = r
+  const d = new Date(t.start * 1000).toISOString().slice(0, 10)
+  return '<svg class="cg-growth" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" role="img" aria-label="' + born.reduce((a, b) => a + b, 0) + ' source files born, ' + edits.reduce((a, b) => a + b, 0) + ' edits since ' + d + '">' +
+    '<title>since ' + d + ' · ' + born.reduce((a, b) => a + b, 0) + ' src files · ' + edits.reduce((a, b) => a + b, 0) + ' edits</title>' +
+    '<polygon points="0,' + H + ' ' + pts(edits, 0).join(' ') + ' ' + W + ',' + H + '"/>' +
+    '<polyline points="' + pts(born, 1.5).join(' ') + '"/></svg>'
 }
 
 function syncControls() {

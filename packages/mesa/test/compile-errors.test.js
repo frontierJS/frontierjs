@@ -393,4 +393,12 @@ describe('a construct from another framework is refused by name', () => {
       '<script>let a = 1; const d = a * 2; function f() { let d = 0; d = 3 }</script><button onclick={f}>{d}</button>')
     expect(errors).toEqual([])
   })
+
+  // FJS-1570: a concise arrow returning a function has a `body.body` that is a
+  // BlockStatement, not a statement list, and the shadow check threw on it.
+  it('compiles a concise arrow that returns a function', async () => {
+    const { errors } = await cx(
+      '<script>let a = 1; const d = a * 2; const mk = (n) => () => { a = n }</script><button onclick={mk(2)}>{d}</button>')
+    expect(errors).toEqual([])
+  })
 })

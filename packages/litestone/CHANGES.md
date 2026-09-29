@@ -1,5 +1,27 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-29 — `@@exclude` is enforced on every write: two rows under one scope key may not overlap (`FJS-1528`)
+
+The write-path half of `FJS-D474`. A create, `createMany`, `upsert`, `upsertMany`,
+`restore`, or an update naming the key or an end of the range notes its key in
+a ledger that sits beside the cardinality ledger (`src/core/exclusion.js`). At the
+outermost commit, every member row under that key is read on every model citing
+the scope, and an overlap refuses the whole unit with `OverlapConflictError`,
+a 409 marked on the written model's start field. A SAVEPOINT rollback truncates
+the ledger to its mark. Deletes are never graded.
+
+The ruling spelled the lock as `$lock('<scope>:<key>')`. The grade runs with
+`BEGIN IMMEDIATE` held on every file, which already stops any other writer, in
+this process or another, from landing a row between the read and the commit, so
+no `_locks` row is taken. Members are read on the raw connection, not through the
+caller's row policy: a manager who cannot read an employee's leave is still
+refused by it. The refusal names the other row by model and id and nothing else.
+Ranges are half-open, a null end is *still going*, and an end before its start
+is refused. A day meets an instant at UTC midnight. `docs/concurrency.md`
+§ *No two may overlap* is the reader's copy. `test/exclude-scope.test.ts`
+§ *@@exclude on the write path*, 17 cases, 13 of which fail with the grade
+removed from `transaction.js`.
+
 ## 2026-09-29 — `litestone repl --eval`, and `--level` grades at the level typed (`FJS-1560`)
 
 `--eval '<expr>'` runs one line through the console's own evaluator and dot

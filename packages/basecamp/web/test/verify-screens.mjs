@@ -1414,7 +1414,8 @@ try {
   await typeIn('dialog[open] [name=description]', 'Edited by the drive')
   await click('#blueprint-save')
   const bpEdited = await eventually(async () => (await apiGet(`/blueprints/${bp?.id}`)).body, b => b?.description === 'Edited by the drive')
-  check('a blueprint is edited', bpEdited?.description === 'Edited by the drive')
+  check('a blueprint is edited', bpEdited?.description === 'Edited by the drive',
+    await evaluate(`document.querySelector('dialog[open]')?.textContent.replace(/\\s+/g, ' ').slice(0, 200) ?? 'drawer closed'`))
 
   // ─── Home, the palette's New entries, a release's own screen ───────────
   console.log('\n  home, ⌘K\'s New entries, the deployment screen')
@@ -1446,7 +1447,8 @@ try {
   ok('?new reached by the router on the open route opens it too')
 
   const releases = (await apiGet('/deployments?$limit=50')).body?.data ?? []
-  const release  = releases.find(d => d.previousDeploymentId) ?? releases[0]
+  // An app deleted by a section above leaves its releases with no app to link.
+  const release  = releases.find(d => d.app && d.previousDeploymentId) ?? releases.find(d => d.app)
   check('the seed has a release to open', !!release)
   await goto(`/deployments/${release?.id}/`)
   await until(`!!document.getElementById('deploy-breadcrumb')`, v => v, 'the deployment screen never rendered')
@@ -1458,21 +1460,28 @@ try {
   check('and links the release it replaced', !release?.previousDeploymentId || await evaluate(
     `!!document.querySelector('#deploy-previous a[href="/deployments/${release?.previousDeploymentId}/"]')`))
 
-  const stopped = (await apiGet('/deployments?status=failed')).body?.data?.[0]
-    ?? (await apiGet('/deployments?status=cancelled')).body?.data?.[0]
-  if (stopped) {
-    await goto(`/deployments/${stopped.id}/`)
-    await until(`!!document.getElementById('deploy-again')`, v => v, 'a stopped release offered no Deploy again')
-    ok('a failed or cancelled release offers Deploy again')
+  // The seed's statuses are drawn at random, so a release is STOPPED here
+  // rather than hoped for: one in flight, cancelled from its own screen.
+  const inFlight = releases.find(d => d.app && (d.status === 'building' || d.status === 'pending'))
+  check('the seed has a release in flight to stop', !!inFlight,
+    JSON.stringify(releases.reduce((n, d) => ({ ...n, [d.status]: (n[d.status] ?? 0) + 1 }), {})))
+  if (inFlight) {
+    await goto(`/deployments/${inFlight.id}/`)
+    await until(`!!document.getElementById('deploy-status')`, v => v, 'the in-flight release never rendered')
+    check('a release in flight does not offer Deploy again', !(await present('#deploy-again')))
+    await clickText('.section-header', 'Cancel')
+    await confirmIt()
+    await until(`document.getElementById('deploy-status')?.textContent.trim()`, t => t === 'cancelled',
+      'cancelling from the screen never landed')
+    await until(`!!document.getElementById('deploy-again')`, v => v, 'a cancelled release offered no Deploy again')
+    ok('once cancelled, it offers Deploy again')
     await click('#deploy-again')
     // Either a new release to watch, or the service's sentence on this screen;
     // a press that does neither is the silent failure.
-    const answered = await until(`location.pathname !== '/deployments/${stopped.id}/' ? 'moved'
+    const answered = await until(`location.pathname !== '/deployments/${inFlight.id}/' ? 'moved'
       : document.querySelector('.alert.danger')?.textContent.trim() || ''`, v => !!v,
       'Deploy again neither moved nor said why')
     check('and pressing it ships or says why not', !!answered, answered)
-  } else {
-    bad('the seed has no failed or cancelled release to retry')
   }
   await goto('/settings/')
   await until(`!!document.getElementById('notification-delivery')`, v => v, 'settings never rendered')

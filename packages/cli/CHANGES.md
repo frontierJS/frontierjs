@@ -1,5 +1,24 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-29 — `fli call <service>.<method>` (`FJS-1560`)
+
+`fli call orders.find '{"$limit":5}' --as alex@shop.test --tenant flagship` calls
+one service method as that person through the hook pipeline and prints the
+answer as JSON, with no dev server. It replaces the curl login, token copy, sleep
+and kill an agent wrapped around a server it started, and it is the second half
+of `FJS-1560`. The work is `junction call`'s. `callArgv` in `core/app-entry.js`
+decides which app and from where: `--app <module>` from the app root, or else the
+entry in the committed `surface.snapshot.md` header, run from that file's
+directory. Five of the six prototype apps have no snapshot, so the typed path is
+what makes it usable there. Junction is resolved through `resolveGenerator`,
+now exported from `core/snapshots.js`, and not with `bunx`, which fetches a
+stranger's `junction` on a machine without one.
+
+## 2026-09-29 — the scaffold starts auth cleanup from `work()` (`FJS-D551`)
+
+`fli new` and `fli auth:install` emit `async work() { authCleanup.start() }` in
+place of `boot()`, so a new app's one-shot boots run no session sweep.
+
 ## 2026-09-29 — `fli tinker -e '<expr>'` (`FJS-1560`)
 
 `fli tinker -e` evaluates one line and exits, over litestone's `repl --eval`. The

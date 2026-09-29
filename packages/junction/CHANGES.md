@@ -1,5 +1,46 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-29 — `junction call`: one service method, once, as somebody (`FJS-1560`)
+
+`junction call --app <module> <service>.<method> [id] [json] [--as <who>] [--tenant <id>]`
+boots the app with `_startOnce()`, runs the method through the app's own caller
+inside `app.runAs`, prints the answer as JSON on stdout and exits. The standing,
+the build's logs and a refusal go to stderr. A refusal prints the status
+`toFrameworkError` gives it and exits 1.
+
+- `--as` finds the row with litestone's `findPrincipal`, in the tenant the call
+  runs in. With no `--as` the call runs as no principal, because `runAs(null)` is
+  the app's system principal, and a stranger's call run that way passed every gate.
+- A `$` key in the query becomes a directive through toolbelt's table. A key that
+  table does not name is refused, and so are the hook-bypass twins (`_find`).
+- `test/call-tool.test.ts` runs the tool as a process against an app on disk. The
+  no-principal test fails with `reenterAs(null)` removed (it answers `"app"`).
+
+## 2026-09-29 — a plugin's clock is `work()`, and a one-shot boot skips it (`FJS-D551`)
+
+`junction call` and the snapshot tools booted with `_startForTest()`, which ran
+every plugin's `boot()`, and every loop lived there. Four calls against `example`
+queued four `orion.sweep` ticks, and a caravan worker in the call's process could
+claim a job the serving process was owed.
+
+- `Plugin.work?(app)` runs in a new `start-work` phase, after the hook pipelines
+  compile. A throw there fails the start, names the plugin and shuts every plugin
+  down.
+- `_startOnce()` runs everything `_startForTest()` does except `start-work`, and
+  `tools/app-module.ts` boots with it.
+- `app.scheduler` is created held (`createScheduler({ held: true })`). It registers
+  and describes jobs, `start-work` calls `arm()`, and a `once` delay counts from the
+  arm. A standalone `createScheduler()` is armed from creation, as before.
+- The outbox relay's first pass and timer moved to `work()`, and `boot()` keeps its
+  refusals. The post-commit kick still sends what the process's own call wrote.
+- The metrics store's scrape and rollup moved to `work()` whole.
+
+`example`'s jobs, surface and notifications snapshots are unchanged, and three
+`junction call`s now add no job row where each added one before. Pinned by
+`test/start-work.test.ts`, which is paired: every *nothing under `_startOnce()`*
+sits beside the same app under `_startForTest()` starting it. The scheduler and
+metrics cases go red with their fix removed.
+
 ## 2026-09-29 — AGENTS.md answers claims, bearers, idempotency and the outbox (`FJS-1550`)
 
 Two sections an app agent had been reading source for: *Who the caller is*

@@ -81,7 +81,7 @@ Detail: `references/api-internals.md`
 - `normalizePrefix()` — the one owner of `apiPrefix` — `junction/src/core/app.ts`
 - `ctx.enqueue(job, payload)` / `deliverOutbox(app)` — the durable effect, inside the call's transaction — `junction/src/core/outbox.ts`
 - `claimIdempotency(ctx, key, config)` — claimed once in `callService`, for both transports — `junction/src/core/idempotency.ts`
-- Plugin protocol `{ name, register, boot, ready, shutdown, requires }` — `register` is sync, async setup goes in `boot()` — `junction/src/core/app.ts`
+- Plugin protocol `{ name, register, boot, work, ready, shutdown, requires }` — `register` is sync, async setup goes in `boot()`, and anything on a clock (a worker, a poller, a timer) goes in `work()`, which `_startOnce()` skips so `junction call` and the snapshot tools start nothing (`FJS-D551`) — `junction/src/core/app.ts`
 - `runStartPhases(bindHost)` — the one startup list — `junction/src/core/app.ts`
 - `IAuth.verifySession(token)` — inbound auth; junction accepts `SessionVerifier` — `junction/src/auth/types.ts`
 - `app.withDb(fn)` / `app.onTenantClient(observer)` — `ctx.locals.db` for work that holds no ctx — `junction/src/core/app.ts`

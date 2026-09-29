@@ -1,5 +1,15 @@
 # Changes — @frontierjs/caravan
 
+## 2026-09-29 — workers start in `work()`, not `boot()` (`FJS-D551`)
+
+`boot()` now loads the job files and nothing else, so a dispatch routes to the job
+file's queue and the row waits. `work()` calls `start()`: the heartbeat, the owner
+and cleanup sweeps, the worker pool and cron. A one-shot boot (`junction call`,
+the snapshot tools) therefore runs no job, and a job it queues is left for the
+serving process's worker. The no-op `ready()` is gone. Pinned by
+`test/junction-integration.test.ts` § *_startOnce() queues and runs nothing*, and
+`test/caravan.test.ts`'s protocol case asserts `boot()` alone runs no job.
+
 ## 2026-09-28 — a payload JSON would change is refused at dispatch (`FJS-1514`, `FJS-D480`)
 
 `dispatch()` stored `JSON.stringify(data)`, so a `Date` reached the handler as a string, a `Map`, `Set` or `RegExp` as `{}`, `NaN` as null, and a `BigInt` threw a `TypeError` naming no job. Dispatch now walks the payload and throws naming the job, the key path (`data.order.when`) and what to store instead, and refuses an encoding over `PAYLOAD_MAX_BYTES` (256 KB, exported) with the bound in the message. The grading is `jsonLoss()` from `@frontierjs/toolbelt/json`, the same answer the junction cache gives. The type half of the ruling is not built and is filed separately. Proved in `test/payload.test.ts`.

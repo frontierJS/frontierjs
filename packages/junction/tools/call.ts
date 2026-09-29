@@ -2,9 +2,8 @@
 // tools/call.ts
 // One service method, once, as somebody — then exit.
 //
-//   junction call --app api/src/app.ts order.find '{"status":"paid","$limit":5}' --as sam@shop.test
-//   junction call --app api/src/app.ts order.patch 12 '{"note":"late"}' --as sam@shop.test
-//   junction call --app api/src/app.ts order.refund 12 --as ops@shop.test --tenant flagship
+//   junction call --app src/app.ts orders.find '{"status":"paid","$limit":5}' --as alex@shop.test --tenant flagship
+//   junction call --app src/app.ts orders.patch 12 '{"note":"late"}' --as alex@shop.test --tenant flagship
 //
 // Without this, calling a service as a person meant a dev server started in the
 // background, a login by curl, a token copied by hand, a sleep and a kill — and

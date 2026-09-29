@@ -102,6 +102,11 @@ A change to either transport's context also needs `@frontierjs/testing`'s
   `ctx.afterCommit(fn)`, and one that must not be lost in `ctx.enqueue(job, payload)`.
 - **`register` is sync.** Async setup and reading `junction.config.js` go in
   `boot()`; only a throw in `ready` lets the app start.
+- **A timer in `boot()` ticks in every one-shot process.** `junction call` and
+  the snapshot tools boot with `_startOnce()`, which runs `boot()` and skips
+  `work()`; a worker, poller or `setInterval` goes in `work()`, and
+  `app.scheduler` holds its jobs until then (`FJS-D551`,
+  `test/start-work.test.ts`).
 - **An internal caller's directives ride `{ directives }`** in the options, and
   filters are the first argument.
 - **`_find`/`_get`/`_create` skip junction's hooks and keep Litestone's gate.**

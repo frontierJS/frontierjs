@@ -148,6 +148,28 @@ export function parseGitLog(text, { known, sweepLimit }) {
   return { churn, last, lastAny, times, first, commits, sweeps }
 }
 
+/**
+ * Per region, source files born and source edits made in each of `steps`
+ * equal slices of one shared span — shared so a young package reads as young
+ * beside an old one. Survivors only: `first` knows nothing a commit deleted.
+ */
+export function timelineOf(files, history, { now, steps = 48 }) {
+  const code = files.filter(isCode)
+  const born = code.map(f => history.first.get(f.path)).filter(t => t != null)
+  if (!born.length) return null
+  const start = Math.min(...born), end = Math.round(now / 1000)
+  const span  = Math.max(1, end - start)
+  const at    = t => Math.min(steps - 1, Math.floor((t - start) / span * steps))
+  const regions = {}
+  for (const f of code) {
+    const r = regions[f.region] ??= [Array(steps).fill(0), Array(steps).fill(0)]
+    const b = history.first.get(f.path)
+    if (b != null) r[0][at(b)]++
+    for (const t of history.times.get(f.path) ?? []) if (t >= start) r[1][at(t)]++
+  }
+  return { start, end, steps, regions }
+}
+
 /** Commits decayed by age: each counts `0.5 ** (days ago / HALF_LIFE_DAYS)`. */
 export const heatOf = (times = [], nowSeconds) =>
   times.reduce((sum, at) => sum + 0.5 ** (Math.max(0, nowSeconds - at) / 86400 / HALF_LIFE_DAYS), 0)
@@ -598,6 +620,7 @@ export function collectCodegraph({ root, now = Date.now(), ts = null }) {
     parser: ts ? (ts.version ? 'typescript ' + ts.version : 'typescript') : null,
     reports,
     uses,
+    timeline: timelineOf([...files.values()], history, { now }),
     files: [...files.values()],
   }
 }

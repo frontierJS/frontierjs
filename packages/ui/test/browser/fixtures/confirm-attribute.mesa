@@ -7,6 +7,10 @@
   // re-fires with `el.click()` on the claim that one re-fire covers all of
   // them.
   import ConfirmProvider from '../../../components/overlay/ConfirmProvider.mesa'
+  import Input           from '../../../components/forms/Input.mesa'
+  import Button          from '../../../components/forms/Button.mesa'
+
+  let password = ''
 
   let ran      = []          // what actually happened
   let submits  = 0
@@ -28,6 +32,21 @@
 
 <form id="form" on:submit|preventDefault={() => { submits++; did('submit') }}>
   <button id="submit" type="submit" data-confirm="Send it?">Send</button>
+</form>
+
+<form id="beside" class="stack" novalidate onsubmit={e => e.preventDefault()}>
+  <Input id="beside-password" name="currentPassword" type="password" label="Your password"
+         hint="Needed for either of these" autocomplete="current-password"
+         value={password} oninput={e => password = e.target.value} />
+  <div class="cluster">
+    <Button variant="outlined" id="beside-regenerate" disabled={!password}
+            data-confirm="Every recovery code you saved stops working."
+            onclick={() => did('regenerate')}>New recovery codes</Button>
+    <Button variant="outlined" tone="danger" id="beside-off" disabled={!password}
+            data-confirm="Signing in asks for your password only."
+            data-confirm-title="Turn off two-step sign-in?" data-confirm-label="Turn off"
+            onclick={() => did('off')}>Turn it off</Button>
+  </div>
 </form>
 
 <output id="ran">{ran.join('|')}</output>

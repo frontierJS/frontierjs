@@ -1,5 +1,11 @@
 # Changes — @frontierjs/auth
 
+## 2026-09-29 — the cleanup sweep is started from `work()` (`FJS-D551`)
+
+`cleanup.ts`'s usage comment and the README start `createAuthCleanupJobs(db)` from a
+plugin's `work()` rather than `boot()`, so `junction call` and the snapshot tools
+run no sweep. The code is unchanged.
+
 ## 2026-09-29 — account recovery takes its own grader, `services.recoveryLevel`
 
 `account-recovery.resetTotp` graded both the operator and the person with `services.level`. That option also sets the level `account.me` publishes, which a browser gates its buttons on. An app whose level is per tenant had no honest value for both, so basecamp could not reach recovery. `recoveryLevel` grades recovery alone and falls back to `level`. `example`, which passes only `level`, is unchanged ([`FJS-D550`](../../DECISIONS.md#fjs-d550), amending `FJS-D264`).

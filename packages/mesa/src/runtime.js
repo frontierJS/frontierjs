@@ -4999,19 +4999,35 @@ let _devInstCount = 0
 let _devSigCount  = 0
 const _MAX_LOG    = 200
 
-function _serializeValue(v) {
+// Runs inside set(), on every write to a registered signal, so it must end.
+// A DOM node is named, not walked: its enumerable accessors lead to its form,
+// the form's indexed controls lead back, and an unbounded walk froze the page
+// on the click that stored a button (`FJS-1558`). The depth bound and `seen`
+// hold the same line for any other host object with a cycle in it.
+const _MAX_DEPTH = 3
+
+function _describeDomNode(v) {
+  if (v.nodeType !== 1) return `<${v.nodeName}>`
+  const cls = v.getAttribute('class')?.trim().split(/\s+/).filter(Boolean).join('.')
+  return `<${v.localName}${v.id ? '#' + v.id : ''}${cls ? '.' + cls : ''}>`
+}
+
+function _serializeValue(v, depth = 0, seen = new Set()) {
   if (v === null || v === undefined) return v
   if (typeof v === 'function')  return '[Function]'
   if (typeof v === 'symbol')    return v.toString()
   if (typeof v !== 'object')    return v
-  // Shallow clone — avoid circular refs
   try {
-    if (Array.isArray(v)) return v.slice(0, 20).map(_serializeValue)
+    if (typeof Node !== 'undefined' && v instanceof Node) return _describeDomNode(v)
+    if (seen.has(v)) return '[Circular]'
+    if (depth >= _MAX_DEPTH) return Array.isArray(v) ? '[Array]' : '[Object]'
+    seen.add(v)
+    if (Array.isArray(v)) return v.slice(0, 20).map((x) => _serializeValue(x, depth + 1, seen))
     const out = {}
     let n = 0
     for (const k in v) {
       if (n++ > 10) { out['…'] = true; break }
-      out[k] = _serializeValue(v[k])
+      out[k] = _serializeValue(v[k], depth + 1, seen)
     }
     return out
   } catch { return '[Object]' }

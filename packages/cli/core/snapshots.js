@@ -151,9 +151,10 @@ function describe(abs, root) {
 // neither answer can come from a global install or from the registry.
 //
 // `bun` runs it rather than process.execPath: junction's bin is a `.ts` file and
-// ci.mjs runs under node.
+// ci.mjs runs under node. `fli call` resolves junction through it for the same
+// reason, so it is exported.
 
-function resolveGenerator(bin, from) {
+export function resolveGenerator(bin, from) {
   const pkgName = SNAPSHOT_BINS.get(bin)
   const nested  = ['node_modules', ...pkgName.split('/'), 'package.json']
 

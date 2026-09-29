@@ -1,5 +1,12 @@
 # Changes — @frontierjs/orion
 
+## 2026-09-29 — the activation poll starts in `work()` (`FJS-D551`)
+
+The first `syncActivations()` stays in `boot()`. A flow's model trigger is an
+in-process tap on this process's client, so a write made through `junction call`
+must still start its flows. Only the re-read timer (`watch`) moved to `work()`, so
+a one-shot boot starts no poll.
+
 ## 2026-09-28 — a queued or running run can be cancelled (`FJS-1157`)
 
 `runs.cancel` ended only a waiting run, because a running job wrote its checkpoints and terminal record by id and so overwrote a cancellation written underneath it. Every run-path write in `LitestoneExecutionStore` is now an `update` whose where also says the run has not ended, selecting only the id so a miss answers null: a checkpoint that misses throws `RunEnded`, which the scheduler records as a failure, and that terminal write misses in turn and writes nothing. `store.cancel` ends any run that has not ended; a queued run's job re-reads it, finds it cancelled and returns, so Caravan's own `cancel` is not needed. Two `store.test.ts` cases, red before: a `cancels` node cancelling its own run mid-flow, and a queued run. 598 pass.

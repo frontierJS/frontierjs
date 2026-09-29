@@ -1,5 +1,29 @@
 # Changes — Basecamp
 
+## 2026-09-29 — Tier 3: stale text, ⌘K's New entries, the release screen, and toasts that never closed
+
+The UI audit's Tier 3, plus the one Tier 2 row left over.
+
+- **Home** had a *UI realm — Phase 2* subtitle, an `X-Workspace-Id` paragraph, Session and Workspace debug cards, and *Creating them is Phase 3* for an empty workspace. All are gone. It now has a New project button, each project row links to its project, and the empty state links to the create form.
+- **Callouts that had stopped being true.** Settings said notification preferences deliver nothing, but `core/notify.ts` reads them. It now says whether email can go out (`session.canMail`) and that in-app copies are recorded with no screen listing them yet. Hub workspaces sent people to the Projects screen to make a workspace; it now points at Admin → Workspace.
+- **⌘K's New entries opened the list, not the form.** Each now goes to `?new=1`, and the nine list screens behind them open their create form when `?new` is present. That covers a full load and a router navigation on the route already open. *New job* and *New secret* are new entries.
+- **Deployment detail** now shows:
+  - a breadcrumb, and linked App and Environment facts. The environment is the one the release went to, not the app's current one.
+  - branch, author, and the queued, started and finished times.
+  - the release it replaced, linked.
+  - *Deploy again* on a failed or cancelled release. It is `deployments.create` for the app as it is now, so a refusal is shown on this screen.
+- **Toasts with a second sentence never closed.** Fifteen calls passed a detail line where `@frontierjs/ui`'s toast store takes a duration. The line was never shown, and the toast stayed on screen. Each is now one message, and the store refuses a non-number duration.
+
+`verify:screens` 170/170 twice, with a new section:
+- home carries no phase or header-debug text, and its rows link.
+- `?new` opens a create form, both from another route and on the open one.
+- the release screen's breadcrumb and facts.
+- a release in flight is cancelled from its own screen, then offers Deploy again, and the press either ships or says why.
+
+The seed's statuses are random, so the drive stops a release rather than looking for a failed one. `verify:build` 8/8.
+
+Earlier runs of the same drive went red twice on *a blueprint is edited* and once on *renaming back never settled*. Neither reproduced in the last two runs, and the blueprint check now prints the open drawer's text when it fails.
+
 ## 2026-09-29 — Tier 2, the rest: forgot password, 2FA, and the missing writes on fifteen screens
 
 The second and last batch of the UI audit's Tier 2. Most rows were a method the API already had and no screen called.

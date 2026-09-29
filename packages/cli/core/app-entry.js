@@ -28,6 +28,8 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve, dirname }         from 'node:path'
 import { spawnSync }                from 'node:child_process'
 
+import { resolveGenerator }         from './snapshots.js'
+
 export const SURFACE_FILE = 'surface.snapshot.md'
 
 // In order. A snapshot belongs in the surface it describes, so `api/` is the
@@ -240,5 +242,54 @@ export function readAppAtlas(root, { run: runner = spawnSync } = {}) {
     return { entry, model: JSON.parse(run.stdout) }
   } catch {
     return { entry, error: 'junction atlas did not answer JSON — something wrote to its stdout' }
+  }
+}
+
+// ─── callArgv ─────────────────────────────────────────────────────────────────
+//
+// `fli call` names the app the same way `app:atlas` does — the snapshot header —
+// and one more: a module typed with `--app`. Most apps `fli new` scaffolds have
+// no surface snapshot, and those are the ones a person calls by hand, so a
+// snapshot-only lookup refused almost everyone it was for. A typed path is the
+// caller's word, not a guess, which is why it is allowed where a probe is not.
+//
+// Built here and spawned by the command, so the part that decides WHICH app and
+// FROM WHERE is tested without bun or a boot.
+
+/**
+ * `{ cwd, argv }` for `bun <junction's bin> call …`, or `{ error }`.
+ *
+ * `app` resolves against `cwd` and runs from the app `root`, where a scaffolded
+ * app's own scripts run; without it the header's flags run from the header's
+ * directory, as the `snapshots` phase reruns them. Junction is resolved from
+ * that directory the way the app's own imports resolve it, never with `bunx`,
+ * which on a machine with no install fetches a stranger's `junction`.
+ */
+export function callArgv(root, { app, exportName, words = [], as, tenant, cwd = process.cwd() }) {
+  let base
+  if (app) {
+    const module = resolve(cwd, app)
+    if (!existsSync(module)) return { error: `no module at ${module}` }
+    base = { dir: root, args: ['--app', module, ...(exportName ? ['--export', exportName] : [])] }
+  } else {
+    let entry
+    try { entry = appEntry(root) } catch (err) { return { error: err.message } }
+    if (!entry) {
+      return { error: `name the app module with --app (a scaffolded app's is api/src/app.ts), or commit a ${SURFACE_FILE} whose header names it — ${surfaceMissingHint(root)}` }
+    }
+    base = entry
+  }
+
+  const junction = resolveGenerator('junction', base.dir)
+  if (!junction) return { error: `@frontierjs/junction is not installed where ${base.dir} can reach it` }
+
+  return {
+    cwd:  base.dir,
+    argv: [
+      junction, 'call', ...base.args,
+      ...words.filter(w => w !== undefined && w !== '').map(String),
+      ...(as     ? ['--as', as]         : []),
+      ...(tenant ? ['--tenant', tenant] : []),
+    ],
   }
 }

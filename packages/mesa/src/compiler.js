@@ -7339,7 +7339,7 @@ function _checkDerivedAssigned(ctx) {
       else if (p.type === 'ArrayPattern') p.elements.forEach(collect)
     }
     fn.params.forEach(collect)
-    for (const s of fn.body?.body ?? [])
+    for (const s of fn.body?.type === 'BlockStatement' ? fn.body.body : [])
       if (s.type === 'VariableDeclaration') s.declarations.forEach((d) => collect(d.id))
     return names.includes(name)
   }

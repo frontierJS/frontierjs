@@ -195,9 +195,10 @@ without one, and refuses under `NODE_ENV=production` unless given `--force`.
 
 ## What it is not, yet
 
-`db` and nothing above it. A console over the app's **services** — hooks, the
-result envelope, custom methods — is `@frontierjs/testing`'s `as(user).service(name)`
-handed to this prompt, and it needs the app booted rather than the schema read.
+`db` and nothing above it. One call to a **service** — hooks, the result
+envelope, custom methods — is `fli call`; a console over them is
+`@frontierjs/testing`'s `as(user).service(name)` handed to this prompt, and it
+needs the app booted rather than the schema read.
 `asSystem()` is also not attributed to the operator here; that is the same
 question `IDEAS/compliance-from-the-seed.md` asks about support mode, and it
 should be answered once for both.

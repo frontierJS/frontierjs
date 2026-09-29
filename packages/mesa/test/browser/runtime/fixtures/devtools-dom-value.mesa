@@ -1,0 +1,18 @@
+<script>
+  // devtools-dom-value.mesa — a signal written with an ELEMENT inside it.
+  //
+  // A dev build logs every write's value for the panel. The button sits in a
+  // form beside inputs, so its properties lead to the form, the form's indexed
+  // controls lead back to the form, and a walk of the value that follows
+  // properties has a cycle at every step and no end (FJS-1558).
+  let held = null
+</script>
+
+<form id="card">
+  <input id="first" name="first" value="a" />
+  <input id="second" name="second" value="b" />
+  <button type="button" id="hold" class="btn danger"
+          on:click={(e) => held = { el: e.currentTarget, note: 'held' }}>Hold</button>
+</form>
+
+<output id="held">{held ? held.note : ''}</output>

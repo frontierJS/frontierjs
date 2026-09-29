@@ -73,4 +73,23 @@ export async function run(t) {
   await t.clickAt('[role=dialog] .btn.danger')
   await t.eventually(`document.querySelector('#submits').textContent`, '1',
     'confirming submits it — one re-fire covers the shape a handler does not')
+
+  /* ── a type=button beside inputs, in a form ───────────────────────────── */
+
+  // basecamp's two-step card: a plain form holding kit Inputs and two guarded
+  // kit Buttons, pressed with el.click() the way an app's drive presses one.
+  // It froze a DEV build, where the button reached mesa's write log and the
+  // log walked the form without end (FJS-1558) -- this drive serves production
+  // output, so mesa's devtools-dom-value spec is the one that holds that.
+  await t.evaluate(`const el = document.querySelector('#beside-password'); el.value = 'hunter2';
+    el.dispatchEvent(new Event('input', { bubbles: true })); return true;`)
+  await t.eventually(`document.querySelector('#beside-off').disabled`, false,
+    'typing the password enables the guarded buttons')
+  await t.evaluate(`document.querySelector('#beside-off').click(); return true;`)
+  await t.eventually(`${panel}?.textContent.includes('Turn off two-step sign-in?')`, true,
+    'a guarded type=button inside a form asks')
+  t.is(await t.evaluate(`return ${ran};`), 'delete|delete|plain|submit',
+    'and its handler has not run')
+  await t.evaluate(`document.querySelector('[role=dialog][aria-modal=false] .cluster button:last-child').click(); return true;`)
+  await t.eventually(ran, 'delete|delete|plain|submit|off', 'confirming runs it, once')
 }

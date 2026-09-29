@@ -1,5 +1,13 @@
 # Changes
 
+## 2026-09-29 — `data-confirm` on a `type=button` inside a form is covered (`FJS-1558`)
+
+The freeze that FJS-1558 recorded in basecamp's two-step card was not the kit's. `ConfirmProvider` writes the clicked element into a signal. In a dev build mesa's write log walked that element's `form` without end, and that is fixed in mesa. The confirm-attribute fixture now has the card's shape: a plain form holding a kit `Input` and two guarded kit `Button`s, pressed with `el.click()`. The spec asserts the panel asks, the handler waits, and the handler runs once on confirm. The ui suite has 1076 passing. The 2 failures are the `dnd` and `palette-modes` fixture compiles, now filed as `FJS-1570`.
+
+## 2026-09-29 — a toast refuses a duration that is not a number
+
+`toasts.success(message, duration)` read a second sentence as the duration. That sentence was never shown, and `'text' > 0` is false, so no timer was set and the toast stayed on screen until someone closed it. basecamp had 15 calls written as `success(title, detail)`. `add()` and `update()` now throw a `TypeError` naming the value; an omitted or `undefined` duration still takes the default. The notifiers spec asserts both paths refuse and that nothing is queued. The suite has 1072 passing; the 2 failures are the `dnd` and `palette-modes` fixture compiles, which were already failing.
+
 ## 2026-09-29 — `<Form>` checks the record it would send, blanks nulled
 
 `<Form>`'s live check validated `resource.coerce(record)` and skipped the blank-to-null step that the resource's own send pipeline runs next. An optional box left empty is `''`, and `@length(1, …)` refuses that. The send would have carried `null`, so a create was blocked in the browser that the server would have accepted. basecamp's new-blueprint form showed it: *icon must be at least 1 characters* on a field nobody had touched. The check now runs `resource.normalize` after `coerce`, in the pipeline's order. It was found and proved by basecamp's `verify:screens` blueprint section. The ui suite has 1070 passing; the 2 failures are the `dnd` and `palette-modes` fixture compiles, which were already failing.
