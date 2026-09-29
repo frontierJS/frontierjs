@@ -639,9 +639,9 @@ const pushSchema = (context) =>
 // established once, when it is made, and a frame that could name its own
 // principal would be a frame that could name anybody's.
 const openSocket = async (context, { token, channels, settleMs = 250 }) => {
-  const url    = `ws://127.0.0.1:${context.config.apiPort}/ws${token ? `?token=${token}` : ''}`
+  const url    = `ws://127.0.0.1:${context.config.apiPort}/ws`
   const frames = []
-  const ws     = new WebSocket(url)
+  const ws     = new WebSocket(url, token ? ['fjs', `fjs.bearer.${token}`] : ['fjs'])
 
   const connected = await new Promise((resolve) => {
     const give = setTimeout(() => resolve(false), 5000)

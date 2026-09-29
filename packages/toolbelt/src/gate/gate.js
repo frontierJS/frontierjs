@@ -84,6 +84,20 @@ export function levelPasses(required, userLevel) {
   return userLevel >= required
 }
 
+// ─── identity ─────────────────────────────────────────────────────────────────
+
+/**
+ * Does this principal name somebody? A guest holding only claims is handed to
+ * the Data boundary as `{ ...claims }`, and a grader that asked only *is there
+ * an object* ranked that stranger CREATOR (`FJS-1462`). No `id` cannot satisfy
+ * a single `auth().id` policy, so it is a stranger whatever else it carries
+ * (`FJS-D515`). `userId` counts because Junction's sessions carry it before
+ * `toDataPrincipal` copies it to `id`.
+ */
+export function isIdentified(user) {
+  return !!user && (user.id != null || user.userId != null)
+}
+
 // ─── the grader ───────────────────────────────────────────────────────────────
 
 /**
@@ -112,7 +126,7 @@ export function levelPasses(required, userLevel) {
  * `role` and `emailVerified`.
  */
 export function gradeStanding(user) {
-  if (!user) return LEVELS.STRANGER
+  if (!isIdentified(user)) return LEVELS.STRANGER
 
   if (user.isSystemAdmin) return LEVELS.SYSADMIN
   if (user.isOwner)       return LEVELS.OWNER

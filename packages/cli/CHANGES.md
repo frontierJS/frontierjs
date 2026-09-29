@@ -1,5 +1,29 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-28 — `tutor:live` opens its socket with the token as a subprotocol (`FJS-D486`)
+
+Junction no longer reads `?token=` on the upgrade, so the lesson's raw socket would have connected as anonymous and the signed-in half of the lesson would have measured nothing. `openSocket` now offers `fjs` and `fjs.bearer.<token>`, and step 03 teaches that header in place of the URL.
+
+## 2026-09-28 — the app's AGENTS.md names the guide a change needs, not all six
+
+`fli new` wrote *Read before writing* over every framework AGENTS.md plus `catalog.snapshot.md` and `vocabulary.json`, about 136KB and 34k tokens an obedient agent paid before a one-line fix. The section is now a table from the kind of change to the one guide it needs, and the two generated files are named as lookups to search for one word, never read whole. `AGENT_DOCS` carries `when` and `lookup` in place of `covers` and `beside`. The stressor apps `remnant`, `portal`, `linear`, `connectteam` and `calendly` were regenerated from it.
+
+## 2026-09-28 — `static-publishes-0` is deleted, and the site tutor declares columns (`FJS-D496`)
+
+`publishes:` is a map of model to columns now, and Sierra's build refuses a number by type, so a rule warning about `publishes: 0` had nothing left to find. `FJS-1113`, which reported its message as wrong, closes with it. `static-publish-db` no longer says a declaration gets a route past a missing client, since none does. The site tutor's companion selects `id` and `title`, the one column its page renders plus the key, and step 06 declares `Note: [id, title]` in place of `publishes: 4`.
+
+## 2026-09-28 — `ksite:serve` finds its sidecar again
+
+When the command group moved from `commands/site/` to `commands/ksite/`, `serve.md` still built the sidecar path as `commands/site/serve.bun.js`, so every run failed with *Module not found*. The path now names `commands/ksite/`.
+
+## 2026-09-28 — the fix loop's pre-brief carries the hazards, and a row found busy stays skipped while its collision lasts
+
+Read back through `loop:review` over 30 attempts. Every high-effort session opened with the Explore brief `fix-next` §2 asked for, a quarter of the attempt's cost, and then oriented for 11–26 calls anyway. The pre-brief now quotes the realm hazard entries that name the row's specific identifiers, `@`-attributes and paths (and the bridge-index seams for a row across packages), and the skill sends no agent when a pre-brief is present. A busy attempt logs the row's dirty files, and a later run skips the row while that set is unchanged: FJS-1157 was found busy three runs running. An attempt that failed on the auto-mode check giving no verdict, with nothing edited, reruns on the same rung once instead of climbing to high; FJS-1430 paid $3 for that. An attempt that edited nothing no longer tells the next one the tree's dirty files are its own. The pre-brief's headless notes add single-quoting a pattern that holds a backtick, and `fix-next` §4 says how to mark a row blocked by a ruling that is already open, which a low session skipped and a high one was paid to write. `loop:review` no longer reads the next line's command as the file a `| head` printed.
+
+## 2026-09-28 — the scaffolded `getLevel` grades a guest holding only a claim STRANGER (`FJS-1447`)
+
+A resolver's claims reach the Data boundary as `$setAuth({ ...claims })`, an object with no `id`, and both scaffolded `getLevel`s (`fli new`'s `api/src/core/gate.ts` and `auth:install`'s `GatePlugin`) tested only `!user`, so a guest graded USER and a `gate: 0` method wrote as them past every `@@gate` at 4, stamping a null `@system` owner. Each now answers STRANGER for a principal whose `id` is null; every session reaches Litestone through `toDataPrincipal`, which carries one. `test/app-config.test.js` runs both generated functions rather than matching their text.
+
 ## 2026-09-28 — `css-raw-literal` sees a named color (`FJS-1432`)
 
 The rule matched hex and color functions only, so `background: blue` passed. It now also reads each declaration value for the CSS named colors, case-insensitive; a selector's `.blue` is a class and is not read, and `transparent` and `currentColor` are not colors a theme owns. A fourth test in `test/checks.test.js` pins both halves.

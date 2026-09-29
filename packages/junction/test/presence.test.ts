@@ -29,8 +29,7 @@ let app: any
 
 /** A WS client that records every frame, so tests assert on what arrived. */
 function client(token?: string) {
-  const url    = token ? `${WS}?token=${token}` : WS
-  const ws     = new WebSocket(url)
+  const ws     = new WebSocket(WS, token ? ['fjs', `fjs.bearer.${token}`] : ['fjs'])
   const frames: any[] = []
 
   ws.onmessage = (e: any) => {

@@ -2,7 +2,6 @@
 title: "FrontierJS — the journey"
 description: "A single POST /api/leads, and every seam it crosses — seventeen named handoffs from the transport to the reactive UI."
 render: static
-publishes: 0
 ---
 <!--
   The journey. The board, the two nodes, the legend and all seventeen

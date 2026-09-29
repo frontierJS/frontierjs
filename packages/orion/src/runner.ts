@@ -741,7 +741,7 @@ export function createRunner(opts: RunnerOptions) {
     return compiler.compile({ ...(definition as Flow), id: "check", version: "check" })
   }
 
-  /** Ends a waiting run. False when it is not waiting, or a resume got there first. */
+  /** Ends a run as cancelled. False when it had already ended, or a resume got there first. */
   function cancel(runId: string, reason: string, cancelOpts: InTenant = {}): Promise<boolean> {
     const tenant = cancelOpts.tenant ?? null
     return withSystem(host, tenant, (db) => new LitestoneExecutionStore(db, { tenant }).cancel(runId, now(), reason))

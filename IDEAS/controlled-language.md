@@ -115,19 +115,19 @@ no construct is a promise.
 
 ## Open questions
 
-- **Where do verbs live?**
+- ~~**Where do verbs live?**~~ **Answered 2026-09-28 (`FJS-D528`): A — a *Verbs* column on `VOCABULARY.md`'s existing rows, so a noun and its verbs are one row.**
   - **A** — a *Verbs* column on `VOCABULARY.md`'s existing rows, so a noun and
     its verbs are one row
   - **B** — a separate verb register beside `VOCABULARY.md`
   - **Recommend A** — a verb only makes sense under its noun, which is what
     **Under** already models, and a second register is a second place to look
-- **What is built first?**
+- ~~**What is built first?**~~ **Answered 2026-09-28 (`FJS-D529`): A — the coverage table of § 4, over `example/`, measured and not gated.**
   - **A** — the coverage table of § 4, over `example/`, measured and not gated
   - **B** — a checker: `fli check` grading code against written sentences
   - **C** — a generator: `fli make` taking a sentence
   - **Recommend A** — it is the only one that can say whether the shapes in § 3
     are the right ones, and B and C both build on shapes nobody has measured
-- **Does an app ever hold sentences of its own?**
+- ~~**Does an app ever hold sentences of its own?**~~ **Answered 2026-09-28 (`FJS-D530`): A — not yet. The language is for the framework's docs, for agents and for the intent resolver; an app's truth stays its seed and its code.**
   - **A** — not yet. The language is for the framework's docs, for agents and
     for the intent resolver; an app's truth stays its seed and its code
   - **B** — yes, a sentences file per app that `fli check` grades

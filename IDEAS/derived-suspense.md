@@ -236,7 +236,8 @@ Open, and the reason this is a note rather than a proposal:
   - **A** — the lowest node per value, as § *The idea* states.
   - **B** — the lowest node, but boundaries in one component reveal together.
   - **C** — the component root: derive the watch set, never the placement.
-  - **Recommend B** — if C above lands. A gives the pending region the data region's
+  - **Recommend B** — if placement is derived at all (the first question's C, which it
+    recommends only later). A gives the pending region the data region's
     exact shape, and a page whose regions pop in one at a time, shifting layout at
     each arrival. That is right about correctness and wrong about what a person sees.
 - **Where does a derived boundary's fallback come from?**
@@ -373,7 +374,9 @@ Open, and the reason this is a note rather than a proposal:
   - **A** — silent.
   - **B** — a `--explain` listing what was placed where, the same reporting surface
     item 5 of `IDEAS/static-safety.md` wants.
-  - **Recommend B** — if derived placement is built at all.
+  - **Recommend B** — a compiler whose output differs from the source owes a report of
+    the difference, and one reporting surface already wanted by `static-safety.md` costs
+    less than a second. Moot unless derived placement is built.
 
 ## See also
 

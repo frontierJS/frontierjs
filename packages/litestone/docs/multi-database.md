@@ -91,6 +91,14 @@ model active_users {
 
 Common uses: SQLite views, FTS5 virtual tables, legacy tables from another tool, cross-database `ATTACH`ed tables. See [querying.md#external](querying.md) for the view pattern.
 
+## Transactions across databases
+
+A write is inside the transaction whichever database its model is in. A bulk write (`createMany`, `updateMany`, `upsertMany`, …) that is refused writes none of its rows, and a `$transaction` that throws rolls back every database it wrote to.
+
+The COMMIT is the one thing that is not shared. Each database FILE commits on its own, one after another with `main` last, because SQLite makes a commit atomic within one connection and never across two. A commit that fails part way throws, naming the databases that committed and the ones that rolled back (`err.committed`, `err.rolledBack`). Two `database` blocks on one path are one file and one commit, so under `strategy database`, which puts every sqlite database into the tenant's own file, a `$transaction` is atomic outright (`FJS-D232`).
+
+A transaction takes a write lock on every sqlite file the client writes to, not only the ones it touches. Another process writing one of those files waits for it, up to that database's `busyTimeout`.
+
 ## Raw SQL across databases
 
 ```js

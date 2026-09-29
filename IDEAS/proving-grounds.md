@@ -119,7 +119,7 @@ framework put its name on.
 **Why it suits this framework specifically.** It grows the Testing realm, which is the
 most differentiated thing here: `verifyGateLadder`, `verifyRowPolicies` and
 `verifyTenantIsolation` already exist and already report honestly (`unscoped`,
-`unparented`, `unreachable`). A clinical app wants `verifyConsent` and
+`unreachable`). A clinical app wants `verifyConsent` and
 `verifyRelationshipAccess` in the same shape, and the shape is proved. It also forces
 the **negative** assertion everywhere — every feature is *this person cannot see this*,
 and `FJS-351`'s discipline (a refusal must be shown to come from the rule it names)

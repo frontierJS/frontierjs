@@ -723,9 +723,13 @@ function makeApiCoreGateTs() {
   return `// api/src/core/gate.ts
 // Who a caller IS, as a level on Litestone's ladder — what every @@gate in
 // db/schema.lite is compared against:
-//   no user           → STRANGER (0)
+//   no user, or no id → STRANGER (0)
 //   isAdmin standing  → ADMINISTRATOR (5)
 //   anyone else       → USER (4)
+//
+// A principal with no id is a guest holding only a claim (a cart token, a
+// pass): Junction hands its claims to the Data boundary as an object, so a
+// test for null alone would grade it USER and let it write as nobody.
 //
 // STANDING, not a role string: isAdmin / isOwner / isSystemAdmin are what
 // Litestone's own resolver reads and what schema.lite's @@allow and field
@@ -741,11 +745,11 @@ function makeApiCoreGateTs() {
 import { GatePlugin, LEVELS } from '@frontierjs/litestone'
 
 export function getLevel(user: unknown) {
-  const u = user as { isAdmin?: boolean; isOwner?: boolean; isSystemAdmin?: boolean } | null
-  if (!u)               return LEVELS.STRANGER
-  if (u.isSystemAdmin)  return LEVELS.SYSADMIN
-  if (u.isOwner)        return LEVELS.OWNER
-  if (u.isAdmin)        return LEVELS.ADMINISTRATOR
+  const u = user as { id?: unknown; isAdmin?: boolean; isOwner?: boolean; isSystemAdmin?: boolean } | null
+  if (!u || u.id == null) return LEVELS.STRANGER
+  if (u.isSystemAdmin)    return LEVELS.SYSADMIN
+  if (u.isOwner)          return LEVELS.OWNER
+  if (u.isAdmin)          return LEVELS.ADMINISTRATOR
   return LEVELS.USER
 }
 

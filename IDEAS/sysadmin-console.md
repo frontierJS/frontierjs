@@ -172,7 +172,7 @@ every app's catalog is spelled.
 
 ## Open questions
 
-- **What is the message called?** *Announcement* is the obvious word and it is
+- ~~**What is the message called?**~~ **Answered 2026-09-28 (`FJS-D534`): A — `Notice`: free in the tree, and says what it is without a medium.** *Announcement* is the obvious word and it is
   taken: an Event is junction's announcement of a mutation (`ARCHITECT.md` §2,
   Invariant 4), so `Announcement` as a model puts two meanings on one word in the
   API realm. *Broadcast* is taken the same way, by a channel.
@@ -180,7 +180,7 @@ every app's catalog is spelled.
   - **B** — `Bulletin`: also free, reads more like a board than a banner.
   - **Recommend A** — shorter, and the banner component reads naturally as
     `<Notices>`.
-- **Its own package, or part of auth?** Auth already owns the level-7 standing and
+- ~~**Its own package, or part of auth?**~~ **Answered 2026-09-28 (`FJS-D535`): B — fold into `@frontierjs/auth` as a second plugin.** Auth already owns the level-7 standing and
   support mode.
   - **A** — `@frontierjs/sysadmin`, orion-shaped, depending on auth.
   - **B** — fold into `@frontierjs/auth` as a second plugin.

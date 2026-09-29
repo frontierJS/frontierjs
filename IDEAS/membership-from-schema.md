@@ -52,7 +52,7 @@ declarations and run `packages/basecamp`: `bun run test` and `bun run verify`.
 
 ## Open questions
 
-- **`FJS-D361` — May a membership row decide a framework claim?** `FJS-D359`
+- ~~**`FJS-D361` — May a membership row decide a framework claim?**~~ **Answered 2026-09-28 (`FJS-D361`): A — Yes, for one shape only: a `@@relator([<tenant column>, <subject>], once)` under `strategy row`. Everywhere else the refusal stands.** `FJS-D359`
   refuses `capabilities`, `role` and the rest of the framework's nine as the
   name of a claim read off a row, because a row may not decide who the caller is
   or how they are graded. A membership row does exactly that, per tenant — it is

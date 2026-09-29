@@ -1164,7 +1164,7 @@ test/     one file per module under core/, plus the deploy pipeline's own
   they are usable.** `raw-route-param`, `ctx-params`, `set-auth-discarded`,
   `call-header-declared`, `service-model`, `resource-model-miss`,
   `service-module-db`, `scheduler-dispatch`, `gate-unreachable`,
-  `transition-methods`, `commitment-swept`, `static-publish-db` and `static-publishes-0` match text — so they match the
+  `transition-methods`, `commitment-swept` and `static-publish-db` match text — so they match the
   paragraphs that DESCRIBE those hazards too, and this repo's own `api/` files
   are full of them. Comments are blanked (to spaces, so every line number
   survives) before a rule sees a byte. **A statement is judged, never a
@@ -1205,10 +1205,8 @@ test/     one file per module under core/, plus the deploy pipeline's own
   switched on — never whether it passes.** Sierra's static-safety check taps what
   a route's `load()` read and grades it against `@@gate`, fail-closed; nothing
   textual can reach that question. What is decidable is a `target: 'static'`
-  config wiring no `db:` (the tap has no client, so every route is refused until
-  it declares `publishes:`) and a `publishes: 0` (the default bar, so it raises
-  nothing and silences the two fail-closed branches — measured by calling
-  `checkRoute`, not read off the source). That boundary is the general rule for
+  config wiring no `db:` (the tap has no client, so every route with a companion
+  is refused whatever it declares). That boundary is the general rule for
   the next one of these: **the build owns the verdict, this owns the wiring.**
 - **`check-baseline.json` is the ratchet and it is not the allowance mechanism.**
   One number per rule id at the app root, absent = 0, `--update` cannot raise and

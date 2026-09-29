@@ -308,6 +308,54 @@ describe('a delegated child whose parent is optional', () => {
   })
 })
 
+// A row whose EVERY scoping parent is null belongs to no tenant, and is
+// `asSystem()`'s alone — the answer a null claim column gives (FJS-D141). Each
+// per-parent deny lets its null through, which is right for the widget above
+// and made this row every tenant's, the anonymous caller's included.
+describe('a delegated row that names no parent at all (FJS-D481)', () => {
+  const SCHEMA = `
+    tenancy { strategy row  column workspaceId  claim workspaceId }
+    model Doc   { id Int @id @default(autoincrement())  workspaceId Int  notes Note[] }
+    model Note  {
+      id      Int    @id @default(autoincrement())
+      docId   Int?   doc Doc? @relation(fields: [docId], references: [id])
+      label   String
+      replies Reply[]
+    }
+    model Reply { id Int @id @default(autoincrement())  noteId Int  note Note @relation(fields: [noteId], references: [id])  body String }
+  `
+
+  const seeded = async () => {
+    const db: any = await createClient({ db: ':memory:', schema: SCHEMA })
+    const sys = db.asSystem()
+    await sys.doc.create({ data: { workspaceId: 1 } })
+    await sys.note.create({ data: { docId: 1, label: 'a-note' } })
+    await sys.note.create({ data: { label: 'orphan-note' } })
+    await sys.reply.create({ data: { noteId: 2, body: 'on the orphan' } })
+    return db
+  }
+
+  test('is read by asSystem() and by no tenant, and a grandchild follows it', async () => {
+    const db = await seeded()
+    const a  = db.$setAuth({ id: 'u1', workspaceId: 1 })
+    expect((await a.note.findMany({})).map((r: any) => r.label)).toEqual(['a-note'])
+    expect(await db.$setAuth({ id: 'u2', workspaceId: 2 }).note.findMany({})).toEqual([])
+    expect(await db.$setAuth(null).note.findMany({})).toEqual([])
+    expect(await a.reply.findMany({})).toEqual([])
+    expect((await db.asSystem().note.findMany({})).map((r: any) => r.label).sort()).toEqual(['a-note', 'orphan-note'])
+    db.$close()
+  })
+
+  test('a tenant can neither create one nor detach a row into one', async () => {
+    const db = await seeded()
+    const a  = db.$setAuth({ id: 'u1', workspaceId: 1 })
+    await expect(a.note.create({ data: { label: 'unfiled' } })).rejects.toThrow('Outside your workspaceId')
+    await expect(a.note.update({ where: { id: 1 }, data: { docId: null } })).rejects.toThrow('Outside your workspaceId')
+    expect((await a.note.create({ data: { docId: 1, label: 'filed' } })).label).toBe('filed')
+    db.$close()
+  })
+})
+
 // The generated deny asks whether the parent is in YOUR TENANT, not whether you
 // may READ it. Delegating to the parent's whole read rule made every visibility
 // rule the parent has a tenancy rule of the child, reported as one: a private

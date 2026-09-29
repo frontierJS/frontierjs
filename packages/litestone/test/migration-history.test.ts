@@ -315,3 +315,28 @@ describe('a generated migration builds what the schema builds', () => {
     applied.close(); pushed.close(); p.cleanup()
   })
 })
+
+// `FJS-1455`: a fresh clone has the files and no database. That database is
+// BEHIND its history, which `migrate dev` must apply, not refuse as drift.
+describe('drift against what was APPLIED — a database behind its history', () => {
+  it('is clean with pending files, and names them', () => {
+    const p  = project(S2)
+    const db = p.db()
+    create(null, parse(S1), 'init', p.migrations)
+    create(null, parse(S2), 'name', p.migrations)
+    const drift = driftAgainstLive(db, parse(S2), p.migrations, { appliedOnly: true })
+    expect(drift.ok).toBe(true)
+    expect(drift.pending).toHaveLength(2)
+    db.close(); p.cleanup()
+  })
+
+  it('still sees a pushed change past the applied prefix', () => {
+    const p  = project(S2)
+    const db = p.db()
+    create(null, parse(S1), 'init', p.migrations)
+    apply(db, p.migrations)
+    db.run('ALTER TABLE "user" ADD COLUMN "name" TEXT')
+    expect(driftAgainstLive(db, parse(S2), p.migrations, { appliedOnly: true }).ok).toBe(false)
+    db.close(); p.cleanup()
+  })
+})

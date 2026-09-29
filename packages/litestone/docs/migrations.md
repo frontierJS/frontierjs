@@ -162,7 +162,7 @@ and leave a database that looks restored.
 The reversal on offer is a copy of the database taken before the run:
 
 ```bash
-litestone migrate apply --backup              # → ./backups/2026-08-16_120000/main.db
+litestone migrate apply --backup              # → db/backups/2026-08-16_120000/main.db
 litestone migrate apply --backup=./snapshots  # explicit destination
 ```
 

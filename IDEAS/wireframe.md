@@ -147,7 +147,7 @@ module and one command, removable without touching anything else.
 
 ## Open questions
 
-1. **Who writes the wireframe from a screenshot?**
+1. ~~**Who writes the wireframe from a screenshot?**~~ **Answered 2026-09-28 (`FJS-D523`): B — out of band: a skill or an agent writes the JSON and `fli` only reads it, as `fli intent` reads a candidate a translator wrote.**
    - **A** — a vision call inside `fli`, with a JSON schema whose `term` is the
      vocabulary's enum, so an invented term cannot be emitted at all.
    - **B** — out of band: a skill or an agent writes the JSON and `fli` only reads
@@ -156,26 +156,26 @@ module and one command, removable without touching anything else.
      `intent-recognizer.md` holds, and the schema that would constrain A is
      `readWireframe`'s refusal already. A is a later convenience over B, not a
      different design.
-2. **A colored region with no term — the kanban lane.**
+2. ~~**A colored region with no term — the kanban lane.**~~ **Answered 2026-09-28 (`FJS-D524`): A — coin a term in `vocabulary.js` (a Lane or a Board).**
    - **A** — coin a term in `vocabulary.js` (a Lane or a Board).
    - **B** — let Section or Pane take a tone.
    - **C** — nothing yet; the `✗` is the answer until a second screen shows it.
    - **Recommend C** — one screen is an edge case and the same workaround in the
      same place is a measurement of the road (`PHILOSOPHY.md` § IV). Coining from
      one sample is how a vocabulary grows a term per client.
-3. **A repeated card over a model is a Resource view (Invariant 18), not a free component.**
+3. ~~**A repeated card over a model is a Resource view (Invariant 18), not a free component.**~~ **Answered 2026-09-28 (`FJS-D525`): A — write every component to `components/<Screen>/`, as now.**
    - **A** — write every component to `components/<Screen>/`, as now.
    - **B** — where the draft's record matches a model already in
      `db/schema.lite`, write that component beside its Resource instead.
    - **Recommend A** — until the schema half is adopted: B needs a model to match
      against, and on a new app the model is the draft this same run wrote.
-4. **Two near-shapes** — the board's call row and its reminder row differ in one
+4. ~~**Two near-shapes**~~ **Answered 2026-09-28 (`FJS-D526`): B — keep them apart and say so, as now.** — the board's call row and its reminder row differ in one
    leading slot (an icon against an avatar).
    - **A** — merge them into one component with a variable slot.
    - **B** — keep them apart and say so, as now.
    - **Recommend B** — the note costs a line and a wrong merge costs a component
      whose props lie about half its copies.
-5. **The verb.** Every other `make:` makes the thing it names; this one makes FROM
+5. ~~**The verb.**~~ **Answered 2026-09-28 (`FJS-D527`): A — keep `make:wireframe`; `make:scaffold` already makes from a model.** Every other `make:` makes the thing it names; this one makes FROM
    a wireframe.
    - **A** — keep `make:wireframe`; `make:scaffold` already makes from a model.
    - **B** — `wireframe:build`, a namespace of its own.

@@ -22,15 +22,19 @@ runs, compares every model it read against that model's `@@gate`, and refuses to
 write a file containing data the model says needs a session. It fails **closed**:
 a route it cannot decide about is refused, not assumed safe.
 
-Then the override, in the route's own frontmatter:
+Then the override, in the route's own frontmatter — the columns this page may
+publish, which are the two its `load()` selects:
 
 ```text
-publishes: 4
+publishes:
+  Note: [id, title]
 ```
 
-*I know, and I mean it.* The build goes through. It is a line in the page rather
-than a flag on the command for a reason — a reviewer reading this route sees the
-claim, and it is in the committed route snapshot.
+*These columns, and I mean it.* The build goes through. It is a line in the page
+rather than a flag on the command for a reason — a reviewer reading this route
+sees exactly what goes public, and it is in the committed route snapshot. Add
+`body` to the `select` later and the build stops again, because `body` is not on
+the list.
 
 ```js
 if (!await narrate(context)) return
@@ -83,17 +87,17 @@ if (!src.includes('publishes:')) {
     await must(context, {
       ok: false, name: 'the page has frontmatter to add the override to',
       asked: 'a --- block at the top of index.mesa', got: 'no frontmatter',
-    }, { likely: 'the page was rewritten by hand — add `publishes: 4` to its frontmatter' })
+    }, { likely: 'the page was rewritten by hand — add `publishes:` naming `Note: [id, title]` to its frontmatter' })
     return
   }
-  writeFileSync(page, src.replace('render: static', 'render: static\npublishes: 4'), 'utf8')
+  writeFileSync(page, src.replace('render: static', 'render: static\npublishes:\n  Note: [id, title]'), 'utf8')
 }
 
 context.exec({ command: `${context.fli} site:build`, cwd: app })
 
 if (!await must(context, probe.fileExists({
   path: join(site, 'dist', 'notes', 'index.html'),
-  name: 'with publishes: 4 declared, it builds',
+  name: 'with publishes: naming Note\'s id and title, it builds',
 }), {
   likely:    'the override is in the wrong file — it belongs in the ROUTE, not the config',
   reproduce: `sed -n '1,8p' ${page}`,

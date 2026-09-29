@@ -407,7 +407,7 @@ is which subset earns a name.
   is a subpath rather than a package — `@frontierjs/toolbelt/datetime`. See
   `IDEAS/datetime-kit.md` for the scope and `DECISIONS.md` § Repo conventions for why
   it is not its own folder.
-- **Should `app.scheduler` take a cron expression at all? (`FJS-D312`)** Caravan's
+- ~~**Should `app.scheduler` take a cron expression at all? (`FJS-D312`)**~~ **Answered 2026-09-29 (`FJS-D312`): B — remove `cron()` from `app.scheduler`. The scheduler keeps `every()` and `once()`, which measure ELAPSED time, and a schedule on the CALENDAR is Caravan's (`handle({ cron, timeZone })`). `FJS-D36`'s boundary becomes something the API shows rather than a paragraph: a timer on elapsed time, or a job on a calendar.** Caravan's
   `cron` reads a stated `timeZone` through `@frontierjs/toolbelt/datetime`;
   junction's `app.scheduler.cron()` states no zone and reads UTC (`FJS-1150`), so
   `0 9 * * *` has two meanings in one app and the call site does not say which.
@@ -435,8 +435,7 @@ is which subset earns a name.
     calls what B removes, and the enforcer is a junction test asserting
     `app.scheduler` offers no `cron`, with the `scheduler-dispatch` fixture moved to
     `every()`.
-- **FJS-D512 — What does the zone binding spell when the wall clock's zone lives on
-  another model, and is the zone column refused by a new `@zone` validator?**
+- **FJS-D512 — What does the zone binding spell when the wall clock's zone lives on another model, and is the zone column refused by a new `@zone` validator?**
   `FJS-1214`: `FJS-D143` ruled the form `DateTime @zoned(field)`, but both stressors'
   central object is `startLocal String @time` whose zone is `site.timeZone` (connectteam)
   or `schedule.timeZone` (calendly), one relation away. Today `Site.timeZone String`
@@ -454,7 +453,7 @@ is which subset earns a name.
     changes, so a zone correction cannot leave a stale instant.
   - **C** — sibling-column only (`@zoned(timeZone)` on the same model), and the app
     copies the zone down; fewest new rules, but it keeps the copy that drifts.
-  - **Recommend A now, B as the follow-up row** — A closes the `"banana"` hole and makes
+  - **Recommend A** — and B as its own follow-up row. A closes the `"banana"` hole and makes
     the pairing declared rather than remembered at the cost of one validator and one
     path argument; B's recompute-on-write is the real fix for the Azores case, but it
     is a derived-column mechanism the language does not yet have, and deserves its own

@@ -434,7 +434,7 @@ few µs, a single-row write is ~30 µs, and the round-to-round spread here is 2�
 
 ## Open questions
 
-- **Where does Mesa's gated bench run?** `bun run bench -- --gate` is bytes and DOM
+- ~~**Where does Mesa's gated bench run?**~~ **Answered 2026-09-28 (`FJS-D532`): A — Inside mesa's `test` script, after the browser drives. No new phase; the `tests` phase runs it, and a DOM count is a design fact, which this record already says is a test.** `bun run bench -- --gate` is bytes and DOM
   mutations only, about 20 s, and needs Chrome, which the `tests` phase already has for
   mesa's own browser drives. A byte count moves with the bundler, so a Vite upgrade can
   redden it with nothing wrong, and `--adopt` is the answer then.

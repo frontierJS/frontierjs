@@ -1,5 +1,9 @@
 # Changes — @frontierjs/orion
 
+## 2026-09-28 — a queued or running run can be cancelled (`FJS-1157`)
+
+`runs.cancel` ended only a waiting run, because a running job wrote its checkpoints and terminal record by id and so overwrote a cancellation written underneath it. Every run-path write in `LitestoneExecutionStore` is now an `update` whose where also says the run has not ended, selecting only the id so a miss answers null: a checkpoint that misses throws `RunEnded`, which the scheduler records as a failure, and that terminal write misses in turn and writes nothing. `store.cancel` ends any run that has not ended; a queued run's job re-reads it, finds it cancelled and returns, so Caravan's own `cancel` is not needed. Two `store.test.ts` cases, red before: a `cancels` node cancelling its own run mid-flow, and a queued run. 598 pass.
+
 ## 2026-09-28 — an activation that cannot register rolls its move back (`FJS-D502`, `FJS-D470`)
 
 `flows.activate` made the `activate` move, and when a trigger could not register (a webhook path another flow holds) it wrote the old status back through the system client. `active -> draft` is no declared move, and `asSystem()` now holds the machine, so the write-back was refused and the flow stayed `active` with nothing registered. The move and `runner.activate` are now one `$transaction`, and the Conflict thrown inside it is the rollback. Flow's `@@deny('create', status != null && status != 'draft')` is gone: a flow starts at its `@default`, `draft`, for every creator, so the deny restated the machine. `store.test.ts` asserts the machine's refusal instead. 596 pass.

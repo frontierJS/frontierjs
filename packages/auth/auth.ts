@@ -10,6 +10,7 @@ import {
   hashPassword,
   verifyPassword,
   payPasswordCost,
+  passwordNeedsRehash,
   generateApiKey,
   hashApiKey,
   generateToken,
@@ -666,8 +667,18 @@ export function createLitestoneAuth(
         throw await refuse('no-password-credential', user.id)
       }
 
+      // A stored hash cheaper than BCRYPT_COST refuses faster than the other
+      // branches do, so the refusal pays the shortfall and the success rewrites
+      // the hash (FJS-1457). The rewrite is the same password, so it is no
+      // credential change and announces nothing.
       const valid = await verifyPassword(password, cred.value)
-      if (!valid) throw await refuse('bad-password', user.id)
+      if (!valid) {
+        await payPasswordCost(password, cred.value)
+        throw await refuse('bad-password', user.id)
+      }
+      if (passwordNeedsRehash(cred.value)) {
+        await sys.credential.update({ where: { id: cred.id }, data: { value: await hashPassword(password) } })
+      }
 
       // The password is right. Whether that is enough is the next question, and
       // a `totp` credential existing IS the answer — enrollment writes

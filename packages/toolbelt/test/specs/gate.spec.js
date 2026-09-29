@@ -71,48 +71,57 @@ test('gate: no session is a stranger', function () {
   assert.equal(gradeStanding(undefined), LEVELS.STRANGER)
 })
 
+test('gate: no identity is a stranger, whatever it carries', function () {
+  // A claims-only guest reaches the Data boundary as `{ ...claims }`; graded on
+  // anything but identity it was CREATOR (`FJS-1462`, ruled `FJS-D515`).
+  assert.equal(gradeStanding({ cartToken: 'x' }), LEVELS.STRANGER)
+  assert.equal(gradeStanding({ role: 'user', isAdmin: true }), LEVELS.STRANGER)
+  assert.equal(gradeStanding({ userId: 7 }), LEVELS.CREATOR)
+  assert.equal(gradeStanding({ id: 0 }), LEVELS.CREATOR)
+})
+
 test('gate: standing outranks the lifecycle', function () {
   // An owner who never completed an activation step is still the owner. The
   // role check running first is what made this grade CREATOR once.
-  assert.equal(gradeStanding({ isOwner: true, verifiedAt: null }), LEVELS.OWNER)
-  assert.equal(gradeStanding({ isSystemAdmin: true, activatedAt: null }), LEVELS.SYSADMIN)
-  assert.equal(gradeStanding({ isAdmin: true, role: undefined }), LEVELS.ADMINISTRATOR)
+  assert.equal(gradeStanding({ id: 1, isOwner: true, verifiedAt: null }), LEVELS.OWNER)
+  assert.equal(gradeStanding({ id: 1, isSystemAdmin: true, activatedAt: null }), LEVELS.SYSADMIN)
+  assert.equal(gradeStanding({ id: 1, isAdmin: true, role: undefined }), LEVELS.ADMINISTRATOR)
 
   // And the order among the three.
-  assert.equal(gradeStanding({ isSystemAdmin: true, isOwner: true, isAdmin: true }), LEVELS.SYSADMIN)
-  assert.equal(gradeStanding({ isOwner: true, isAdmin: true }), LEVELS.OWNER)
+  assert.equal(gradeStanding({ id: 1, isSystemAdmin: true, isOwner: true, isAdmin: true }), LEVELS.SYSADMIN)
+  assert.equal(gradeStanding({ id: 1, isOwner: true, isAdmin: true }), LEVELS.OWNER)
 })
 
 test('gate: absent is not null, and only null grades down', function () {
   // The pair is the test. An app with no verifiedAt column must not have every
   // one of its callers graded VISITOR, and an app that has the column must have
   // the caller who has not reached it graded exactly that.
-  assert.equal(gradeStanding({ role: 'user' }), LEVELS.USER)
-  assert.equal(gradeStanding({ role: 'user', verifiedAt: undefined }), LEVELS.USER)
-  assert.equal(gradeStanding({ role: 'user', verifiedAt: null }), LEVELS.VISITOR)
+  assert.equal(gradeStanding({ id: 1, role: 'user' }), LEVELS.USER)
+  assert.equal(gradeStanding({ id: 1, role: 'user', verifiedAt: undefined }), LEVELS.USER)
+  assert.equal(gradeStanding({ id: 1, role: 'user', verifiedAt: null }), LEVELS.VISITOR)
 
-  assert.equal(gradeStanding({ role: 'user', activatedAt: null }), LEVELS.READER)
-  assert.equal(gradeStanding({ role: 'user', verifiedAt: 'x', activatedAt: null }), LEVELS.READER)
+  assert.equal(gradeStanding({ id: 1, role: 'user', activatedAt: null }), LEVELS.READER)
+  assert.equal(gradeStanding({ id: 1, role: 'user', verifiedAt: 'x', activatedAt: null }), LEVELS.READER)
 
   // verifiedAt is asked first: a caller who has reached neither is a VISITOR.
-  assert.equal(gradeStanding({ verifiedAt: null, activatedAt: null }), LEVELS.VISITOR)
+  assert.equal(gradeStanding({ id: 1, verifiedAt: null, activatedAt: null }), LEVELS.VISITOR)
 })
 
 test('gate: role is read for PRESENCE and no role is CREATOR', function () {
   // This is the branch the two copies disagreed on — 8 of 216 combinations,
   // every one of them this shape (`FJS-520`, ruled `FJS-D197`).
-  assert.equal(gradeStanding({}), LEVELS.CREATOR)
-  assert.equal(gradeStanding({ role: 'user' }), LEVELS.USER)
+  assert.equal(gradeStanding({ id: 1 }), LEVELS.CREATOR)
+  assert.equal(gradeStanding({ id: 1, role: 'user' }), LEVELS.USER)
 
   // The ladder cannot rank what is IN the column, only whether the app gave the
   // caller one — so every non-empty value is the same answer, including the
   // ones that read like standing.
-  assert.equal(gradeStanding({ role: 'admin' }), LEVELS.USER)
-  assert.equal(gradeStanding({ role: 'guest' }), LEVELS.USER)
+  assert.equal(gradeStanding({ id: 1, role: 'admin' }), LEVELS.USER)
+  assert.equal(gradeStanding({ id: 1, role: 'guest' }), LEVELS.USER)
 
   // Empty, null and absent are one answer here, unlike the lifecycle fields.
-  assert.equal(gradeStanding({ role: '' }), LEVELS.CREATOR)
-  assert.equal(gradeStanding({ role: null }), LEVELS.CREATOR)
+  assert.equal(gradeStanding({ id: 1, role: '' }), LEVELS.CREATOR)
+  assert.equal(gradeStanding({ id: 1, role: null }), LEVELS.CREATOR)
 })
 
 test('gate: the grid the three copies disagreed over', function () {
@@ -134,7 +143,7 @@ test('gate: the grid the three copies disagreed over', function () {
     if (i === keys.length) { rows.push(acc); return }
     for (const v of vals[keys[i]]) walk(i + 1, v === undefined ? acc : { ...acc, [keys[i]]: v })
   }
-  walk(0, {})
+  walk(0, { id: 1 })
 
   assert.equal(rows.length, 216)
 

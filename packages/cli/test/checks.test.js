@@ -2961,9 +2961,7 @@ describe('the baseline', () => {
 //
 // Sierra proves a prerendered page at BUILD time — reads tapped around the
 // route's companion, graded against @@gate, fail-closed — and no text rule can
-// replace that. What text can see is whether the proof is switched on, and both
-// rules below were measured by running `checkRoute` rather than read off the
-// source: `publishes: 0` turns two refusals into passes.
+// replace that. What text can see is whether the proof is switched on.
 
 describe('log-db-unbound', () => {
   const DEPLOY = "export default { deploy: { server: 'x.test', path: '/apps/x' } }\n"
@@ -3064,52 +3062,6 @@ describe('static-publish-db', () => {
     expect(only(tree('sp-ok', CLEAN), 'static-publish-db').findings).toEqual([])
   })
 })
-
-describe('static-publishes-0', () => {
-  test('publishes: 0 in a route’s frontmatter is a warning', () => {
-    const root = tree('pz-mesa', {
-      ...CLEAN,
-      'site/src/routes/index.mesa': '---\nrender: static\npublishes: 0\n---\n<h1>x</h1>\n',
-    })
-    const { findings } = only(root, 'static-publishes-0')
-    expect(findings).toHaveLength(1)
-    // The line in the FILE, not in the frontmatter block — and the keyword's
-    // line, not the newline the match opens on.
-    expect(findings[0].line).toBe(3)
-    expect(findings[0].severity).toBe('warn')
-    expect(findings[0].message).toMatch(/turn off the two refusals/)
-  })
-
-  test('a companion exporting the word is not a declaration', () => {
-    // The build reads `r.meta.publishes`, which is the page's own frontmatter.
-    // A companion export of that name is a variable nothing consults, and
-    // reporting it would be this rule inventing a mechanism.
-    const root = tree('pz-meta', {
-      ...CLEAN,
-      'site/src/routes/index.meta.js': 'export const publishes = 0\nexport async function load() { return {} }\n',
-    })
-    expect(only(root, 'static-publishes-0').findings).toEqual([])
-  })
-
-  test('a declared LEVEL is the mechanism working and is not reported', () => {
-    const root = tree('pz-level', {
-      ...CLEAN,
-      'site/src/routes/index.mesa': '---\nrender: static\npublishes: 4\n---\n<h1>x</h1>\n',
-    })
-    expect(only(root, 'static-publishes-0').findings).toEqual([])
-  })
-
-  test('the word in a comment or in prose is not a declaration', () => {
-    const root = tree('pz-prose', {
-      ...CLEAN,
-      'site/src/routes/index.mesa':
-        '---\nrender: static\n---\n<!-- There is no publishes: 0 here, which is a claim -->\n',
-      'site/src/routes/index.meta.js': 'export async function load() { return {} }\n',
-    })
-    expect(only(root, 'static-publishes-0').findings).toEqual([])
-  })
-})
-
 
 // ─── test-files-run ───────────────────────────────────────────────────────────
 //

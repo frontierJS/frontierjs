@@ -69,7 +69,7 @@ import { collectNestedOps, collectIncludedModels } from './reach.js'
 // was a hand copy at four places and drifted (`FJS-520`, ruled `FJS-D197`).
 // The kit is substrate, below the graph, so litestone, junction and sierra may
 // all import it and there is one definition again.
-import { LEVELS, levelPasses, levelName, gradeStanding } from '@frontierjs/toolbelt/gate'
+import { LEVELS, levelPasses, levelName, gradeStanding, isIdentified } from '@frontierjs/toolbelt/gate'
 
 export { LEVELS, levelPasses, levelName }
 
@@ -246,7 +246,13 @@ export class GatePlugin extends Plugin {
     const key = ctx._flavor ?? ctx
     let resolver = this._resolvers.get(key)
     if (!resolver) {
-      resolver = makeLevelCache(this._getLevel, ctx.auth ?? null)
+      // An app's getLevel is never asked about a principal with no identity:
+      // three hand-written ones graded a claims-only guest above STRANGER
+      // (`FJS-D515`).
+      const auth = ctx.auth ?? null
+      resolver = isIdentified(auth)
+        ? makeLevelCache(this._getLevel, auth)
+        : () => LEVELS.STRANGER
       this._resolvers.set(key, resolver)
     }
     return resolver

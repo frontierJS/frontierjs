@@ -416,7 +416,7 @@ try {
   // the anonymous one.
   {
     const raw = async (token) => {
-      const ws = new WebSocket(`${API.replace('http', 'ws')}/ws${token ? `?token=${token}` : ''}`)
+      const ws = new WebSocket(`${API.replace('http', 'ws')}/ws`, token ? ['fjs', `fjs.bearer.${token}`] : ['fjs'])
       const frames = []
       await new Promise((res, rej) => {
         ws.onmessage = e => {

@@ -331,8 +331,8 @@ class TenantRegistry {
     // not shared between tenants, it stops being a separate FILE. Every one of
     // them is redirected into the tenant's own file below, so its declared
     // `path` is never read here and the two names address one database — which
-    // is why a `$transaction` spanning them is atomic under tenancy and is not
-    // outside it (`FJS-D35`). Said rather than left to be discovered, because
+    // is why a `$transaction` spanning them commits once under tenancy and once
+    // per file outside it (`FJS-D35`, `FJS-1459`). Said rather than left to be discovered, because
     // nothing else reports an input the system ignores.
     const extraSqlite = parseResult.schema.databases.filter(
       d => (!d.driver || d.driver === 'sqlite') && d.name !== 'main'

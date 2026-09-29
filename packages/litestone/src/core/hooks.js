@@ -54,7 +54,10 @@ export function checkAnnounce(value, where) {
 // an observer, so a listener that fails must not fail the read it is watching.
 export function emitQuery(ctx, model, database, event) {
   if (!ctx.onQuery && !ctx._queryListeners.size) return
-  const e = { model, database, actorId: ctx.auth?.id ?? null, ...event }
+  // `system` because `actorId` cannot say it: a bare client and `asSystem()`
+  // both report null, and only the second returns @guarded and @encrypted
+  // values — so a watcher grading what a read EXPOSED could not tell them apart.
+  const e = { model, database, actorId: ctx.auth?.id ?? null, system: !!ctx.isSystem, ...event }
   if (ctx.onQuery) { try { const r = ctx.onQuery(e); if (r?.catch) r.catch(() => {}) } catch {} }
   if (ctx._queryListeners.size) for (const fn of ctx._queryListeners) { try { const r = fn(e); if (r?.catch) r.catch(() => {}) } catch {} }
 }

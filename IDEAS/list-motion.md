@@ -115,7 +115,7 @@ from Svelte, and the word is the open question below.
 
 ## Open questions
 
-- **What is the helper called?** Svelte's word is `flip`, the name of the
+- ~~**What is the helper called?**~~ **Answered 2026-09-28 (`FJS-D531`): B — `$.flip`, for the developer who arrives searching for that word.** Svelte's word is `flip`, the name of the
   technique; in plain English it half-fits (a card flip is a rotation), while
   `fade`, `slide` and `fly` each name the motion a reader will see.
   - **A** — `$.move`, and the compiler refuses `animate:flip` by name, pointing

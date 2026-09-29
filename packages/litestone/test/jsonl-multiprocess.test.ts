@@ -57,7 +57,10 @@ function runWriters(dir: string, tags: string[], n: number) {
   })
   // Spawned together, then all awaited — `spawnSync` per file would serialize
   // them and prove nothing, which is the whole point of the file.
-  const script = files.map(f => `bun ${JSON.stringify(f)} &`).join('\n') + '\nwait\n'
+  // A bare `wait` exits 0 whatever the children did, so a writer killed at boot
+  // read as a lost quarter of the trail rather than as its own error.
+  const script = 'pids=""\n' + files.map(f => `bun ${JSON.stringify(f)} & pids="$pids $!"`).join('\n')
+    + '\ns=0; for p in $pids; do wait $p || s=1; done; exit $s\n'
   const sh = join(dir, 'run.sh')
   writeFileSync(sh, script)
   return spawnSync('bash', [sh], { encoding: 'utf8', timeout: 120_000 })

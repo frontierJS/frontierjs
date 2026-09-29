@@ -4,6 +4,7 @@
 //
 // Works in the browser with no bundler — import as ESM or compile to a
 import { BUILD_HEADER, BUILD_FIELD } from '../core/build-id.ts'
+import { WS_PROTOCOL, WS_BEARER, WS_TOKEN_SAFE } from '../core/ws-auth.ts'
 // single file with `bun build framework/client/index.ts --outfile hub/ui/public/junction-client.js`
 //
 // Usage:
@@ -2050,9 +2051,12 @@ export class JunctionClient extends EventEmitter {
     this._intentionalClose = false
     const proto = this._url.startsWith('https') ? 'wss' : 'ws'
     const host = this._url.replace(/^https?/, '')
-    const url = `${proto}${host}/ws?token=${encodeURIComponent(this.token ?? '')}`
-
-    const ws = new WebSocket(url)
+    // The token rides the subprotocol list, never the URL a log records (`FJS-D486`).
+    const token = this.token
+    if (token && !WS_TOKEN_SAFE.test(token)) {
+      throw new Error('This session token cannot open a socket: a WebSocket subprotocol carries only RFC 7230 token characters, and it has others')
+    }
+    const ws = new WebSocket(`${proto}${host}/ws`, token ? [WS_PROTOCOL, WS_BEARER + token] : [WS_PROTOCOL])
     this._ws = ws
 
     ws.onopen = () => {

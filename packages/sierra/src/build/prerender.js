@@ -61,8 +61,7 @@ import { appSrcDir } from './app-alias-plugin.js'
 import { explainModuleInitFailure } from './warnings.js'
 import { importAppModule }           from './app-import.js'
 import {
-  installSchemas, createReadRecorder, checkRoute,
-  declaredPublishLevel, formatReport,
+  installSchemas, createReadRecorder, checkRoute, formatReport,
 } from './static-safety.js'
 
 /** Walk a route tree into a flat list. */
@@ -606,6 +605,9 @@ export async function prerenderRoutes(opts) {
           meta:       node.meta,
           models:     recorder.models,
           unresolved: recorder.unresolved,
+          columns:    recorder.columns,
+          exposed:    recorder.exposed,
+          columnsOf:  recorder.columnsOf,
           taps:       recorder.taps,
           readsData:  _readsData,
         })
@@ -620,7 +622,6 @@ export async function prerenderRoutes(opts) {
                `was not given, and what it publishes has not been checked.`)
         safetyRows.push({
           route:     node.path ?? node.id,
-          allowed:   declaredPublishLevel(node.meta).level,
           published: verdict.published,
         })
       }

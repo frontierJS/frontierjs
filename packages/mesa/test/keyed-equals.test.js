@@ -141,6 +141,12 @@ describe('the compiler lifts a keyed comparison out of a row', () => {
 })
 
 describe('the compiler leaves alone what it cannot lift', () => {
+  it('a guarded bare read or optional chain still lifts', async () => {
+    const js = await compile(table('let selected = null',
+      '<tr class:a={selected && selected?.id === row.id}></tr>'))
+    expect(js).toContain('createKeyedEquals(() => $$runtime.get($$sig_selected)?.id)')
+  })
+
   it('a derived name a row header declares again', async () => {
     const js = await compile(table('let n = 0\n  const cur = n + 1',
       '{@const cur = row.id}<tr class:a={cur === row.id}></tr>'))
@@ -161,6 +167,17 @@ describe('the compiler leaves alone what it cannot lift', () => {
     const js = await compile(table('let selected = 0',
       '<button onclick={() => rows.find((row) => selected === row.id)}>x</button>'))
     expect(js).not.toContain('createKeyedEquals')
+  })
+
+  // The lifted side runs outside the row with no guard around it, so
+  // `selected.id` behind `selected &&` threw on null and took the page down
+  // (basecamp's /infra-graph/, `FJS-1445`).
+  it('a member read the expression guards', async () => {
+    for (const expr of ['selected && row.id !== selected.id', 'selected ? selected.id === row.id : false',
+      'selected == null || row.id === selected.id']) {
+      const js = await compile(table('let selected = null', `<tr class:a={${expr}}></tr>`))
+      expect(js).not.toContain('createKeyedEquals')
+    }
   })
 
   it('== is not ===', async () => {

@@ -1,5 +1,48 @@
 # Changes — @frontierjs/auth
 
+## 2026-09-28 — an API key with scopes cannot manage its owner's credentials (`FJS-1446`)
+
+A scope narrows a key at the app's own checks (`FJS-D407`), and no scope an app
+declares names auth's services, so a key scoped to `['search']` had its owner's
+whole standing at them. It could mint an unscoped key through `api-keys.create`
+and write the owner's user row with it. It could list sessions and call
+`revokeOthers`, which signed the owner out everywhere because a key has no
+`sessionId`. It could also revoke the owner's other keys. `caller()` in
+`services.ts` now answers 403 to a caller whose `scopes` is non-empty, so every
+method of `account`, `sessions`, `api-keys`, `connections` and
+`account-recovery` refuses one. `account.get` is the exception: it reads the
+caller through `identify()`, so a key can still ask who holds it. A session and
+an unscoped key are unaffected. `test/services.test.ts`, *a scoped key reaches
+none of the credential services*, asserts each refusal and asserts the same
+request succeeding from a session or an unscoped key beside it.
+
+## 2026-09-28 — an address with a capital letter signs in and can reset its password (`FJS-1456`)
+
+`User.email` is `@lower`, so it is stored lowercased, but `login` and
+`requestPasswordReset` looked it up exactly as typed. `Mixed.Case@Example.test`
+got `InvalidCredentialsError`, and a reset request silently took the
+no-such-user branch. The fix is in litestone, not here: an equality `where` on a
+transformed field now runs the field's transforms, so this package's lookups and
+every app's own lookups agree with what the write stored. Nothing in `auth.ts`
+changed. `test/mixed-case-email.test.ts` signs in with three different casings
+and completes a reset requested with a mixed-case address.
+
+## 2026-09-28 — a cheaper password hash is rewritten at sign-in, and costs full price to refuse (`FJS-1457`)
+
+A hash imported from another app (every legacy port brings `$2a$10$`) or written
+before `BCRYPT_COST` was raised verified correctly and was never upgraded. While
+it stood, a wrong password against it answered in about a quarter of the time
+every other refusal took, so the clock showed which addresses were real accounts
+([`FJS-1457`](../../ISSUES.md#fjs-1457)). `login` now rewrites the hash with
+`hashPassword` once the password is proven (`passwordNeedsRehash`: another
+algorithm, or bcrypt at another cost). This is not a credential change, so it
+announces nothing. On a wrong password, `payPasswordCost(password, spent)` pays
+what the stored hash's cost fell short of: one bcrypt hash at each cost from the
+stored cost up to `BCRYPT_COST - 1`, which adds up to the missing work because
+each step doubles. Two rows in `test/flows.test.ts` cover it: a cost-4 hash reads
+back as `$2b$12$` after sign-in, and a wrong password against a cost-4 hash takes
+between 0.5× and 2× an unknown address's refusal (it measured 1 ms before the fix).
+
 ## 2026-09-23 — `sessionFields` returning a promise is refused
 
 A promise has no own enumerable keys, so an async `sessionFields` spread to

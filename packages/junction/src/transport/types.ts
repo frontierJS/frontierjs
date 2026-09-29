@@ -252,6 +252,8 @@ export interface WsData {
   // Resolved during _wsOpen after async auth — null until then.
   // Always set before any user-facing handler is called.
   user:     SessionContext | null
+  // The credential read at upgrade, held only until _wsOpen verifies it.
+  credential?: string | null
   // Reference to the matched handler set — set at upgrade time so
   // _wsOpen/_wsMessage/_wsClose don't need to re-run route lookup.
   handlers: WsHandlerSet

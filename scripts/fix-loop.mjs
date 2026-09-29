@@ -17,8 +17,9 @@
 //
 // Every turn re-reads the whole context, so a session costs roughly turns ×
 // context. Both are cut before the session starts: the prompt carries a
-// pre-brief (the row, what it cites, where its identifiers live), which is
-// the work the first third of an unbriefed run spends turns finding; and the
+// pre-brief (the row, what it cites, where its identifiers live, the hazards
+// naming them), which is the work the first third of an unbriefed run spends
+// turns finding, and which stands in for the skill's Explore brief; and the
 // session loads project settings only, with no MCP servers — a user plugin's
 // skills and a connector's tools are context every turn pays for and no fix
 // uses.
@@ -49,19 +50,30 @@
 // attempt at that row is told so rather than handed a clean tree — the partial
 // work is usually most of the fix. Untold, the skill reads those edits as
 // another session's and stops (\`busy\`), which is right for a real collision:
-// a busy row is skipped, never retried at high effort. What counts as an
-// earlier attempt is the log — an entry for the id whose outcome is not closed. Rows run serially; a second loop in the same tree picks the
-// same top row.
+// a busy row is skipped, never retried at high effort, and a later run skips
+// it too while the files that made it busy are unchanged. What counts as an
+// earlier attempt is the log — an entry for the id whose outcome is not closed
+// and which edited something. Rows run serially; a second loop in the same
+// tree picks the same top row.
 // ============================================================
 
+import { spawnSync }                from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join }                     from 'node:path'
 import { pathToFileURL }            from 'node:url'
 
-import { ROOT, LOG_DIR, LADDER, runSession, printAttempt, appendLog, lastEntry, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage } from './headless.mjs'
+import { ROOT, LOG_DIR, LADDER, runSession, printAttempt, appendLog, lastEntry, readLog, fli, rg, citation, parseArgs, printHelp, trace, planUsage, printPlanUsage } from './headless.mjs'
 
 const LOG     = join(LOG_DIR, 'fix-loop.jsonl')
 const OUTLINE = import(pathToFileURL(join(ROOT, 'packages', 'cli', 'core', 'outline.js')).href).catch(() => null)
+
+// The realm catalog a package's hazards are filed under. An app crosses all three.
+const REALMS = {
+  litestone: ['data'],
+  junction: ['api'], auth: ['api'], caravan: ['api'], conduit: ['api'], notifications: ['api'], mcp: ['api'], orion: ['api'], outpost: ['api'], testing: ['api'],
+  mesa: ['ui'], sierra: ['ui'], ui: ['ui'], css: ['ui'], jetty: ['ui'], 'email-kit': ['ui'],
+  example: ['data', 'api', 'ui'], basecamp: ['data', 'api', 'ui'],
+}
 
 const args       = parseArgs(process.argv.slice(2))
 const rows = Number(args.rows ?? 4)
@@ -92,7 +104,9 @@ for (let n = 0; n < rows; n++) {
   let outcome
   // An S1 or S2 that fails low is retried high anyway, so the low attempt is spend with no row at the end of it.
   const ladder = /^S[12]$/.test(row.severity) ? LADDER.slice(1) : LADDER
-  for (const { model, effort } of ladder) {
+  let retried = false
+  for (let rung = 0; rung < ladder.length; rung++) {
+    const { model, effort } = ladder[rung]
     const prompt = attemptedBefore(row.id)
       ? `/fix-next ${row.id} — an earlier fix-loop attempt at this row did not close it; the edits under its packages in the working tree are that attempt's, so read git diff and build on them`
       : `/fix-next ${row.id}`
@@ -106,9 +120,17 @@ for (let n = 0; n < rows; n++) {
     outcome   = isClosed(row.id) ? 'closed' : isBlocked(row.id) ? 'blocked' : status === 'blocked' ? 'failed' : status ?? 'failed'
     spent    += run.cost
 
-    appendLog(LOG, { id: row.id, severity: row.severity, model, effort, cost: run.cost, turns: run.turns, minutes: run.minutes, phases: run.phases, outcome, stop: run.stop, denied: run.denied , ...trace(run) })
+    const dirty = outcome === 'busy' ? dirtyUnder(row) : undefined
+    appendLog(LOG, { id: row.id, severity: row.severity, model, effort, cost: run.cost, turns: run.turns, minutes: run.minutes, phases: run.phases, outcome, stop: run.stop, denied: run.denied, edited: run.edited, transient: run.transient, dirty, ...trace(run) })
     printAttempt('fix-loop', { model, effort }, outcome, run)
 
+    // A safety check that gave no verdict failed the attempt, not the row, and the next rung costs five times as much.
+    if (outcome === 'failed' && run.transient && !run.edited && !retried) {
+      retried = true
+      rung--
+      console.log(`[fix-loop] ${row.id} failed on ${run.transient} unanswered safety check(s) with nothing edited — same rung once more`)
+      continue
+    }
     if (outcome !== 'failed') break
   }
 
@@ -131,7 +153,32 @@ if (usageAtStart) printPlanUsage('fix-loop', 'end', await planUsage(), usageAtSt
 function nextRow() {
   const argv = ['next', '--json', '--limit', String(rows + skipped.size + 5)]
   if (args.pkg) argv.push('--pkg', args.pkg)
-  return JSON.parse(fli(argv)).ready.find(r => !skipped.has(r.id) && !r.byHand)
+  const log = readLog(LOG)
+  for (const r of JSON.parse(fli(argv)).ready) {
+    if (skipped.has(r.id) || r.byHand) continue
+    if (stillBusy(r, log)) { console.log(`[fix-loop] ${r.id} skipped — busy last time, and the files that made it so are still dirty`); skipped.add(r.id); continue }
+    return r
+  }
+}
+
+// `skipped` forgets between runs, so a row whose package another session holds
+// was re-picked every run and paid a session to find it busy again (FJS-1157, ×3).
+// The same dirty set means the same collision; any change to it earns a new look.
+function stillBusy(row, log) {
+  const last = log.filter(e => e.id === row.id && e.cost !== undefined).at(-1)
+  return last?.outcome === 'busy' && last.dirty?.length > 0 && last.dirty.join('\n') === dirtyUnder(row).join('\n')
+}
+
+function dirtyUnder(row) {
+  const dirs = packageDirs(row)
+  if (!dirs.length) return []
+  const out = spawnSync('git', ['status', '--porcelain', '--', ...dirs], { cwd: ROOT, encoding: 'utf8' })
+  return (out.stdout ?? '').split('\n').filter(Boolean).sort()
+}
+
+// `example` sits at the root, every other area under packages/.
+function packageDirs(row) {
+  return row.pkg.map(p => [join('packages', p), p].find(d => existsSync(join(ROOT, d)))).filter(Boolean)
 }
 
 // Located, not read: a location is cheap to find by script and costs a turn
@@ -146,7 +193,7 @@ async function preBrief(row) {
   const said  = cited.map(id => `- ${id}: ${citation(id) ?? 'not found in DECISIONS.md, ISSUES.md or ISSUES_ARCHIVE.md'}`)
   if (said.length) out.push('', 'Cited:', ...said)
 
-  const dirs  = row.pkg.map(p => join('packages', p)).filter(d => existsSync(join(ROOT, d)))
+  const dirs  = packageDirs(row)
   const src   = dirs.map(d => join(d, 'src'))
   const found = [...new Set([...text.matchAll(/`([^`\s]{4,60})`/g)].map(m => m[1]))]
     .filter(t => /^[@$]?[A-Za-z_][\w.$]*$/.test(t) && /[A-Z_.$@]/.test(t) && !/^FJS-/.test(t))
@@ -167,14 +214,44 @@ async function preBrief(row) {
   const tests = [...tally].sort((a, b) => b[1] - a[1]).slice(0, 6)
   if (tests.length) out.push('', 'Tests naming the most of them:', ...tests.map(([file, n]) => `- ${file} (${n})`))
 
-  out.push('', 'Start from this rather than re-finding it; the hazards, whether it still reproduces and the red test are still yours.')
+  const hazards = hazardsFor(row, text)
+  out.push('', `Hazards (by script: the realm entries naming the row's identifiers or files${row.pkg.length > 1 ? ', and the bridge-index seams' : ''}; each rule's full entry is at its line):`,
+    ...(hazards.length ? hazards : ['- none: no realm catalog covers this area']))
+
+  out.push('', 'Start from this rather than re-finding it, and send no Explore brief: it is this. Whether it still reproduces and the red test are yours.')
   // Each line is a detour loop-review found in more than one transcript.
   out.push('', 'Headless, so:',
     '- Run every command in the foreground under `timeout`. The session ends when it stops calling tools, so a background run is never read back and the row fails with it still going.',
     '- Search a tree with `rg`; a recursive `grep` is refused by a hook and costs the turn.',
+    '- Single-quote a pattern holding a backtick: inside double quotes bash reads it as a command substitution and the whole call fails to parse.',
     '- Change a file with Edit or Write, never a `python3` or `sed -i` replace: a replace whose old text does not match changes nothing and exits 0, so the fix you prove may not be in the file. Edit fails on a mismatch. `cat >>` onto the end of a file is fine.',
     '- A drive that fails outside your diff is checked with `fli prove` and its `open: FJS-###` tag before anything is rebuilt to test it.')
   return out.join('\n')
+}
+
+// The entries of the row's realm catalogs that name one of its backticked
+// identifiers or files, most names first. An entry's bold lead is its rule; the
+// line it sits on is the rest, read only when the fix touches it.
+function hazardsFor(row, text) {
+  // A row writes `@map` bare as often as backticked, and an attribute is what a hazard is filed under.
+  const attributes = text.match(/(?<![\w.])@@?[A-Za-z]\w*/g) ?? []
+  const terms = [...new Set([...[...text.matchAll(/`([^`\s]{4,80})`/g)].map(m => m[1]), ...attributes])]
+    // A bare noun (`User`, `Credential`) names a model in half the catalog and picks nothing out.
+    .filter(t => /^[@$]*[\w.$/-]+$/.test(t) && /[.$@_]|[a-z][A-Z]|\/\w/.test(t) && !/^FJS-/.test(t))
+  const realms = [...new Set(row.pkg.flatMap(p => REALMS[p] ?? []))]
+  const where = realms.map(r => join('.claude', 'skills', `${r}-hazards`, 'references'))
+  if (row.pkg.length > 1) where.push(join('.claude', 'skills', 'bridge-index', 'SKILL.md'))
+  const entries = new Map()
+  for (const term of terms) for (const hit of rg(['-n', '-F', term, ...where.filter(w => existsSync(join(ROOT, w)))])) {
+    const [, file, line, body] = /^([^:]+):(\d+):(.*)$/.exec(hit) ?? []
+    if (!body?.startsWith('- ')) continue
+    const key = `${file}:${line}`
+    const lead = /^- \*\*(.+?)\*\*/.exec(body)?.[1] ?? body.slice(2)
+    entries.set(key, { lead: lead.length > 200 ? `${lead.slice(0, 200)}…` : lead, n: (entries.get(key)?.n ?? 0) + 1 })
+  }
+  const found = [...entries].sort((a, b) => b[1].n - a[1].n).slice(0, 8).map(([key, e]) => `- ${e.lead} — ${key}`)
+  if (found.length || !realms.length) return found
+  return [`- none matched; the one-line index is ${realms.map(r => `.claude/skills/${r}-hazards/SKILL.md`).join(', ')}`]
 }
 
 // Definition-shaped lines first — the declaration is the line the session opens.
@@ -215,9 +292,11 @@ function phaseOf(part, edited) {
   return edited ? 'fix' : 'orient'
 }
 
+// An attempt that edited nothing left nothing to build on, and telling the next
+// one otherwise hands it another session's dirty files as its own.
 function attemptedBefore(id) {
   const last = lastEntry(LOG, id)
-  return Boolean(last) && !['closed', 'corrected', 'busy'].includes(last.outcome)
+  return Boolean(last) && !['closed', 'corrected', 'busy'].includes(last.outcome) && last.edited !== false
 }
 
 // The register is the authority: an anchor below the § Closed heading is closed.

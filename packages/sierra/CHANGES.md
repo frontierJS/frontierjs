@@ -1,5 +1,17 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-28 — `publishes:` names columns per model, and a gate level is refused (`FJS-1222`, `FJS-D496`)
+
+`publishes: 4` covered every column of every model gated at 4 or below, including a column added after the line was written. A page declared for a host's name could then add the host's email to the same read and ship it, with no new refusal and nothing in the frontmatter diff. `publishes:` is now `{ Model: [columns] }`. The recorder collects every column read by model: `collectColumns` walks `select`/`include`, a read with no `select` counts as every column (`client.$schema` fields minus `@omit(all)`), and `aggregate`/`groupBy` count their `by` and value keys. `checkRoute` refuses any column of a gated model that the list does not name, and prints the declaration covering what was read. A model gated at 0 needs no entry, and a count is `Model: []`. A number, `true` or a bare list is refused by type, and so is a misspelt model or column. `formatReport` drops the `max` column, and `routes.snapshot.md` prints the column lists. Proved in `test/static-safety-real.mjs` § FJS-1222 and `test/static-safety.test.js`.
+
+## 2026-09-28 — a static page that reads through raw SQL fails the build (`FJS-1471`)
+
+A raw `db.sql` read taps with `model: null`, and `createReadRecorder` returned on a null model, so a route reading `asSystem().sql` was graded for nothing — no gate, no protected column, and not even the observed-nothing warning. The recorder now adds each `operation: 'sql'` event to `unresolved` as `sql: <query>`, which `checkRoute` already refuses whatever `publishes:` says: SQL names no model, so there is nothing to grade it against. Proved in `test/static-safety.test.js` § createReadRecorder.
+
+## 2026-09-28 — a static page that reads a protected column through `asSystem()` fails the build (`FJS-1411`, `FJS-D504`)
+
+The gate check graded models and never columns, and `asSystem()` — the flavor a gated catalog is built through — returns `@guarded` and `@encrypted` values. A system read of `Account` gated at 0 handed `token` to the page with nothing on the path looking. `createReadRecorder` now collects `exposed`: for each read whose event states `system`, `collectExposed` walks the `select`/`include` tree against `db.$protectedFields()`. No `select` counts as every column, `true` on a relation as the whole child row, and `aggregate`/`groupBy` count their `by` and `_min`/`_max`/`_sum`/`_avg` keys. `checkRoute` refuses any hit whatever `publishes:` says, naming each `Model.column (@kind)` and asking for a `select`. Bare and `$setAuth` reads are not graded, because both strip the values. Proved in `test/static-safety-real.mjs` § FJS-1411 against a real client.
+
 ## 2026-09-27 — `@frontierjs/sierra/check` compiles `.mesa` files the way the build does (`FJS-1228`)
 
 `checkMesaFiles(files, { root })` answers which files fail to compile and with

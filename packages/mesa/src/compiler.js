@@ -1003,13 +1003,19 @@ function liftKeyedEquals(code, frame) {
     return found
   }
 
+  // The lifted side is evaluated eagerly, outside whatever short-circuit the
+  // author wrote: `selected && selected.id === row.id` would read `.id` off
+  // null. Behind a guard, only a side that cannot throw is lifted.
+  const cannotThrow = (n) => n.type === 'ChainExpression' || isRuntimeGet(n)
+  const liftable = (n, guarded) => hoistable(n) && (!guarded || cannotThrow(n))
+
   const patches = []
-  const walk = (n) => {
+  const walk = (n, guarded = false) => {
     if (!n || typeof n.type !== 'string') return
     if (n.type === 'BinaryExpression' && (n.operator === '===' || n.operator === '!==')) {
       const [outer, row] =
-        hoistable(n.left) && !readsRow(n.left) && readsRow(n.right) ? [n.left, n.right]
-        : hoistable(n.right) && !readsRow(n.right) && readsRow(n.left) ? [n.right, n.left]
+        liftable(n.left, guarded) && !readsRow(n.left) && readsRow(n.right) ? [n.left, n.right]
+        : liftable(n.right, guarded) && !readsRow(n.right) && readsRow(n.left) ? [n.right, n.left]
         : [null, null]
       if (outer) {
         const src = code.slice(outer.start, outer.end)
@@ -1025,8 +1031,12 @@ function liftKeyedEquals(code, frame) {
     for (const k of Object.keys(n)) {
       if (k === 'start' || k === 'end' || k === 'type') continue
       const v = n[k]
-      if (Array.isArray(v)) v.forEach(walk)
-      else if (v && typeof v === 'object') walk(v)
+      const g = guarded ||
+        (n.type === 'LogicalExpression' && k === 'right') ||
+        (n.type === 'ConditionalExpression' && k !== 'test') ||
+        /Function/.test(n.type)
+      if (Array.isArray(v)) v.forEach(x => walk(x, g))
+      else if (v && typeof v === 'object') walk(v, g)
     }
   }
   walk(ast)
@@ -7607,9 +7617,13 @@ export function emitScript(ctx) {
       .filter((d) => !d.includes('.') && proxyRoots.has(d)),
   ]
 
-  // Split into local-let roots and import roots
+  // Split into local-let roots and import roots. A prop is a signal the
+  // component owns exactly as a local `let` is, so its root is proxied the same
+  // way, after its signal; left to the import set, `$: verse.verseId` on
+  // `export let verse` emitted `watchProxy(verse)` in the head, above anything
+  // named `verse`, and threw a ReferenceError at mount (`FJS-1469`).
   const localProxyRoots = new Set(
-    [...proxyRoots].filter((r) => vars[r]?.kind === 'let' && !vars[r]?.isProp)
+    [...proxyRoots].filter((r) => vars[r]?.kind === 'let' || (vars[r]?.isProp && vars[r]?.kind === 'const'))
   )
 
   // ── A deep watch on something that cannot be deep ────────────────────────
@@ -7650,7 +7664,8 @@ export function emitScript(ctx) {
   for (const p of watchPaths) {
     const root = p.path.replace(/\?\.|\./g, '.').split('.')[0]
     if (root !== p.path.replace(/\?\./g, '.')) continue   // dotted — a real deep watch
-    if (!localProxyRoots.has(root) || !primitiveInit(vars[root])) continue
+    // A prop's fallback says nothing about what the parent passes.
+    if (!localProxyRoots.has(root) || vars[root]?.isProp || !primitiveInit(vars[root])) continue
     ctx.analysis.errors.push(
       `'$: ${root}' watches a value that has no depth. '${root}' is a local \`let\`, which is ` +
       `already reactive on its own — the bare form is the DEEP-watch opt-in, and on a ` +
@@ -7834,6 +7849,55 @@ export function emitScript(ctx) {
   // Expose localVarProxyPaths on ctx so step 5 can emit proxy setup after const/var decls
   ctx.localVarProxyPaths = localVarProxyPaths
 
+  // A signal-backed root with `$:` path watches — a local `let` or a prop.
+  const emitLocalWatchProxy = (v, sigR, out) => {
+    // Option B — local let with $: path watches.
+    // Create standalone signals per path (keyed to variable, not object).
+    // localWatchProxy calls readFn() on property access (subscribing the
+    // current effect) and fireFn() on mutation (notifying subscribers).
+    // When the signal is replaced, re-proxy the new object with the SAME
+    // signal pairs so existing subscriptions stay live.
+    const paths = ctx.localProxyPaths?.[v.name]
+    if (!paths?.length) return
+    // Standalone signal per watched path — always-notify equality
+    const pathDecls = paths.map(({ sigVar, dotPath }) =>
+      `const ${sigVar} = $$runtime.track(undefined, void 0, void 0, __block, true);\nconst $fire_${v.name}_${sigVar} = () => $$runtime.set(${sigVar}, undefined);`
+    ).join('\n')
+    out.push(xNode.raw(pathDecls))
+
+    // signalMap: dotPath → [readFn, fireFn]
+    const signalMapEntries = paths.map(({ sigVar, dotPath }) =>
+      `'${dotPath}': [${sigVar}, $fire_${v.name}_${sigVar}]`
+    ).join(', ')
+
+    // Mutable proxy variable — re-assigned on signal replacement
+    out.push(xNode.raw(
+      `let $$proxy_${v.name} = $$runtime.localWatchProxy($$runtime.get(${sigR}), { ${signalMapEntries} });`
+    ))
+    ctx.accessors[v.name] = `$$proxy_${v.name}`
+
+    // Register the whole-object fire fn so rewriteAssignments can rewrite
+    // self-assignments (`connectedArr = connectedArr`) inside watch+handler
+    // bodies and regular functions the same way.
+    const wholePath = paths.find(({ dotPath }) => dotPath === '')
+    if (wholePath) {
+      ctx.proxyFireFns = ctx.proxyFireFns || {}
+      ctx.proxyFireFns[v.name] = `$fire_${v.name}_${wholePath.sigVar}`
+    }
+
+    // Re-proxy effect: runs when the let signal is replaced.
+    const fireCalls = paths.map(({ sigVar }) =>
+      `$fire_${v.name}_${sigVar}();`
+    ).join(' ')
+    out.push(xNode.raw(
+      `$$runtime.createEffect(() => {` +
+      ` const $$obj = $$runtime.get(${sigR});` +
+      ` $$proxy_${v.name} = $$runtime.localWatchProxy($$obj, { ${signalMapEntries} });` +
+      ` ${fireCalls}` +
+      ` });`
+    ))
+  }
+
   // ── 3. Props (export let) — reactive, two-way bindable ────────────────────
   // Props are declared in mod.head so they're available for dependency sorting.
   // However, if a prop's default expression references reactive vars (signals,
@@ -7886,6 +7950,7 @@ export function emitScript(ctx) {
     }
     ctx.accessors[v.name] = `$$runtime.get(${sigR})`
     ctx.setters[v.name] = sigW
+    emitLocalWatchProxy(v, sigR, mod.head)
   })
 
   // export const props — what `export let` compiles to, minus the setter
@@ -7925,6 +7990,7 @@ export function emitScript(ctx) {
       mod.head.push(xNode.raw(`$$runtime.__dev?.r(${sigR}, '${v.name}', 'prop');`))
     }
     ctx.accessors[v.name] = `$$runtime.get(${sigR})`
+    emitLocalWatchProxy(v, sigR, mod.head)
   })
   declareReadonlyProps(ctx.accessors, constProps.map((v) => v.name))
 
@@ -8209,52 +8275,7 @@ export function emitScript(ctx) {
       ctx.accessors[v.name] = `$$runtime.get(${sigR})`
       ctx.setters[v.name] = sigW
 
-      // Option B — local let with $: path watches.
-      // Create standalone signals per path (keyed to variable, not object).
-      // localWatchProxy calls readFn() on property access (subscribing the
-      // current effect) and fireFn() on mutation (notifying subscribers).
-      // When the signal is replaced, re-proxy the new object with the SAME
-      // signal pairs so existing subscriptions stay live.
-      const paths = ctx.localProxyPaths?.[v.name]
-      if (paths?.length) {
-        // Standalone signal per watched path — always-notify equality
-        const pathDecls = paths.map(({ sigVar, dotPath }) =>
-          `const ${sigVar} = $$runtime.track(undefined, void 0, void 0, __block, true);\nconst $fire_${v.name}_${sigVar} = () => $$runtime.set(${sigVar}, undefined);`
-        ).join('\n')
-        mod.code.push(xNode.raw(pathDecls))
-
-        // signalMap: dotPath → [readFn, fireFn]
-        const signalMapEntries = paths.map(({ sigVar, dotPath }) =>
-          `'${dotPath}': [${sigVar}, $fire_${v.name}_${sigVar}]`
-        ).join(', ')
-
-        // Mutable proxy variable — re-assigned on signal replacement
-        mod.code.push(xNode.raw(
-          `let $$proxy_${v.name} = $$runtime.localWatchProxy($$runtime.get(${sigR}), { ${signalMapEntries} });`
-        ))
-        ctx.accessors[v.name] = `$$proxy_${v.name}`
-
-        // Register the whole-object fire fn so rewriteAssignments can rewrite
-        // self-assignments (`connectedArr = connectedArr`) inside watch+handler
-        // bodies and regular functions the same way.
-        const wholePath = paths.find(({ dotPath }) => dotPath === '')
-        if (wholePath) {
-          ctx.proxyFireFns = ctx.proxyFireFns || {}
-          ctx.proxyFireFns[v.name] = `$fire_${v.name}_${wholePath.sigVar}`
-        }
-
-        // Re-proxy effect: runs when the let signal is replaced.
-        const fireCalls = paths.map(({ sigVar }) =>
-          `$fire_${v.name}_${sigVar}();`
-        ).join(' ')
-        mod.code.push(xNode.raw(
-          `$$runtime.createEffect(() => {` +
-          ` const $$obj = $$runtime.get(${sigR});` +
-          ` $$proxy_${v.name} = $$runtime.localWatchProxy($$obj, { ${signalMapEntries} });` +
-          ` ${fireCalls}` +
-          ` });`
-        ))
-      }
+      emitLocalWatchProxy(v, sigR, mod.code)
     }
     } finally {
       // Both in the `finally`: the class branch RETURNS out of the try, so a

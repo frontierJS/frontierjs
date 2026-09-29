@@ -55,7 +55,7 @@ async function serve(port: number, room: string, opts: Record<string, unknown> =
 }
 
 function client(port: number, token: string) {
-  const ws = new WebSocket(`ws://localhost:${port}/ws?token=${token}`)
+  const ws = new WebSocket(`ws://localhost:${port}/ws`, ['fjs', `fjs.bearer.${token}`])
   const frames: any[] = []
   ws.onmessage = (e: any) => { try { frames.push(JSON.parse(String(e.data))) } catch {} }
   const ready = new Promise<void>((resolve, reject) => {

@@ -42,7 +42,7 @@ if (flag.dry) {
 
 // Sidecar Bun script lives beside this command. It runs `Bun.serve` so the
 // command works whether FLI itself is running under Node or Bun.
-const sidecar = path.join(global.fliRoot, 'commands/site/serve.bun.js')
+const sidecar = path.join(global.fliRoot, 'commands/ksite/serve.bun.js')
 
 // Quick sanity check — give a useful error if `bun` isn't on PATH.
 try {

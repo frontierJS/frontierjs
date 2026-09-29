@@ -686,12 +686,19 @@ async function cmdDryRun(label, cfg) {
 // `irreversibleMigrations` names what is about to happen when nobody asked for
 // one.
 
+// Beside the schema, so an app's `db/schema.lite` backs up into `db/backups/`,
+// the path its `.gitignore` covers. At the working directory the copy (users,
+// password hashes) was one `git add .` from a commit (FJS-1465).
+function defaultBackupRoot(cfg) {
+  return cfg?.schema ? join(dirname(resolve(cfg.schema)), 'backups') : './backups'
+}
+
 // Every database is copied before the FIRST one is migrated. A run that fails
 // on the second database has already changed the first, so a per-database
 // backup taken inside the loop is a backup of a half-migrated fleet.
-async function preApplyBackup(dbs) {
+async function preApplyBackup(dbs, cfg) {
   const stamp   = new Date().toISOString().replace('T', '_').replace(/:/g, '').slice(0, 15)
-  const destDir = resolve(getFlag('backup') ?? join('./backups', stamp))
+  const destDir = resolve(getFlag('backup') ?? join(defaultBackupRoot(cfg), stamp))
 
   mkdirSync(destDir, { recursive: true })
 
@@ -871,6 +878,7 @@ async function cmdDev(label, cfg) {
   const multi       = parseResult.schema.databases.some(db => !db.driver || db.driver === 'sqlite')
   let   created     = 0
   let   drifted     = false
+  let   pending     = 0
 
   try {
     for (const { name, rawDb, migrationsDir } of dbs) {
@@ -878,8 +886,9 @@ async function cmdDev(label, cfg) {
 
       // Asked BEFORE anything is written: a drifted database cannot apply what
       // create is about to produce, and a file written and not applied leaves
-      // the developer in a state neither command explains.
-      const drift = driftAgainstLive(rawDb, parseResult, migrationsDir, { pluralize: cfg.pluralize, dbName: name })
+      // the developer in a state neither command explains. Asked of the APPLIED
+      // files, so a teammate's fresh clone is behind, not drifted (`FJS-1455`).
+      const drift = driftAgainstLive(rawDb, parseResult, migrationsDir, { pluralize: cfg.pluralize, dbName: name, appliedOnly: true })
       if (drift.unknown) { console.error(`\n  ${red('✗')}  ${drift.message}\n`); process.exit(1) }
       if (!drift.ok) {
         drifted = true
@@ -892,6 +901,10 @@ async function cmdDev(label, cfg) {
           `\n     Start clean:     ${cyan('litestone db reset')}${dim('  then ')}${cyan('litestone migrate dev')}\n`
         )
         continue
+      }
+      if (drift.pending.length) {
+        pending += drift.pending.length
+        console.log(`  ${dim(`${drift.pending.length} migration${drift.pending.length === 1 ? '' : 's'} pending`)}`)
       }
 
       const result = createAgainstHistoryCli(parseResult, name, label, migrationsDir, cfg)
@@ -908,7 +921,7 @@ async function cmdDev(label, cfg) {
   }
 
   if (drifted) process.exit(1)
-  if (created) await cmdApply(cfg)
+  if (created || pending) await cmdApply(cfg)
   else console.log(`  ${dim('nothing to apply')}\n`)
 }
 
@@ -931,7 +944,7 @@ async function cmdApply(cfg) {
   const missingByDb = []
 
   try {
-    if (wantsBackup) backupDir = await preApplyBackup(dbs)
+    if (wantsBackup) backupDir = await preApplyBackup(dbs, cfg)
 
     for (const { name, rawDb, migrationsDir } of dbs) {
       if (multi) console.log(`  ${dim(`database: ${cyan(name)}`)}`)
@@ -953,12 +966,14 @@ async function cmdApply(cfg) {
       }
 
       // Create Litestone client if any JS migrations are pending
-      // (needed so JS migrations receive full ORM access)
+      // (needed so JS migrations receive full ORM access). `db` is main's PATH;
+      // handed the raw handle, every pending .js file died in `resolve` (FJS-1472).
       const hasPendingJs = pending.some(f => f.endsWith('.js'))
       let lsClient = null
       if (hasPendingJs) {
         const { createClient } = await import('../core/client.js')
-        lsClient = await createClient({ parsed: parseResult, path: cfg.schema, resolveFrom: 'schema', db: rawDb, encryptionKey: getEncKey() })
+        const mainPath = dbs.find(d => d.name === 'main')?.path
+        lsClient = await createClient({ parsed: parseResult, path: cfg.schema, resolveFrom: 'schema', db: mainPath, encryptionKey: getEncKey() })
       }
 
       const result = await apply(rawDb, migrationsDir, lsClient)
@@ -6308,7 +6323,7 @@ async function cmdOptimize(targetTable, cfg) {
 //   SQLite databases      → hot backup via $backup (safe during active writes)
 //   JSONL/logger dirs     → directory copy via cpSync
 //
-//   litestone backup                   → ./backups/2026-04-21_120000/
+//   litestone backup                   → <schema dir>/backups/2026-04-21_120000/
 //   litestone backup ./my-backup/      → explicit destination directory
 //   litestone backup --vacuum          → compact SQLite files during backup
 //   litestone backup --zip             → zip the backup directory with timestamp
@@ -6333,9 +6348,9 @@ async function cmdBackup(dest, cfg) {
   // When zipping, we still write to a temp dir first, then zip it
   const resolvedDest = dest
     ? (zip ? resolve(dest.replace(/\.zip$/, '')) : resolve(dest))
-    : resolve('./backups', stamp)
+    : resolve(defaultBackupRoot(cfg), stamp)
   const zipPath      = zip
-    ? (dest ? resolve(dest.endsWith('.zip') ? dest : dest + '.zip') : resolve('./backups', `${stamp}.zip`))
+    ? (dest ? resolve(dest.endsWith('.zip') ? dest : dest + '.zip') : resolve(defaultBackupRoot(cfg), `${stamp}.zip`))
     : null
 
   mkdirSync(resolvedDest, { recursive: true })

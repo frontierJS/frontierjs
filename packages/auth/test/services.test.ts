@@ -371,6 +371,63 @@ describe('api-keys', () => {
 
 // ─── registration ─────────────────────────────────────────────────────────
 
+// ─── a scoped key ─────────────────────────────────────────────────────────
+//
+// A scope list narrows a key at the app's own checks, and nothing here reads
+// one — so without a refusal a key scoped to `search` minted an unscoped key,
+// listed and revoked every session and revoked its owner's other keys
+// (`FJS-1446`). The same requests from a session and from an unscoped key are
+// asserted beside each refusal, because a guard that refused everybody would
+// look identical from the refused side (`FJS-351`).
+
+describe('a scoped key reaches none of the credential services', () => {
+  const email = 'scoped@example.com'
+  let session: string
+  let scoped:  string
+  let whole:   string
+
+  beforeAll(async () => {
+    await request(app).post('/auth/register').send({ email, password: PW })
+    session = ((await request(app).post('/auth/login').send({ email, password: PW })).body as any).token
+    scoped  = ((await request(app).post('/api-keys').auth(session).send({ name: 'search', scopes: ['search'] })).body as any).key
+    whole   = ((await request(app).post('/api-keys').auth(session).send({ name: 'whole' })).body as any).key
+  })
+
+  test('it may still ask who holds it', async () => {
+    const res = await request(app).get('/account/me').auth(scoped)
+    expect(res.status).toBe(200)
+    expect((res.body as any).scopes).toEqual(['search'])
+  })
+
+  test('it cannot mint a key, scoped or not', async () => {
+    expect((await request(app).post('/api-keys').auth(scoped).send({ name: 'escape' })).status).toBe(403)
+    expect((await request(app).post('/api-keys').auth(scoped).send({ name: 'same', scopes: ['search'] })).status).toBe(403)
+    expect((await request(app).post('/api-keys').auth(whole).send({ name: 'fine' })).status).toBe(201)
+  })
+
+  test('it cannot list or revoke sessions, and its owner stays signed in', async () => {
+    expect((await request(app).get('/sessions').auth(scoped)).status).toBe(403)
+    const res = await request(app).post('/sessions').set('x-service-method', 'revokeOthers').auth(scoped).send({})
+    expect(res.status).toBe(403)
+    expect((await request(app).get('/account/me').auth(session)).status).toBe(200)
+    expect((await request(app).get('/sessions').auth(whole)).status).toBe(200)
+  })
+
+  test('it cannot list or revoke keys, connections or the second factor', async () => {
+    const list = await request(app).get('/api-keys').auth(session)
+    const id   = (list.body as any).data.find((k: any) => k.name === 'whole').id
+
+    expect((await request(app).get('/api-keys').auth(scoped)).status).toBe(403)
+    expect((await request(app).delete(`/api-keys/${id}`).auth(scoped)).status).toBe(403)
+    expect((await request(app).get('/account/me').auth(whole)).status).toBe(200)
+
+    expect((await request(app).get('/connections').auth(scoped)).status).toBe(403)
+    expect((await request(app).delete('/connections/github').auth(scoped)).status).toBe(403)
+    expect((await request(app).post('/account').set('x-service-method', 'confirmTotp').auth(scoped).send({ code: '000000' })).status).toBe(403)
+    expect((await request(app).get('/connections').auth(whole)).status).toBe(200)
+  })
+})
+
 describe('how the three are registered', () => {
   test('a name the app already uses is refused at boot, naming the option', async () => {
     const scoped = await makeAuth()

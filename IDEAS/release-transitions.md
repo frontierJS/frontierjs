@@ -1482,8 +1482,8 @@ Compose has no traffic layer at all and stops the old container before starting 
   `generateEnvExample` reads.
 - **Retention economics.** Nobody publishes the storage and routing cost of keeping N
   Releases addressable for a week. We would be finding out.
-- **FJS-D503 — Is `IDEAS/overview.md` 4.19 one durable-run primitive, or several uses
-  of `occurrenceKey`?** Who owns a backfill is settled (FJS-D157: a durable row plus a
+- ~~**FJS-D503 — Is `IDEAS/overview.md` 4.19 one durable-run primitive, or several uses of `occurrenceKey`?**~~ **Answered 2026-09-28 (`FJS-D503`): A — several uses of `occurrenceKey`, and 4.19 is withdrawn as a primitive. The discipline becomes graded: every durable dispatch id goes through `occurrenceKey`, orion's three hand-built ids are the first to move, and `toolbelt/history`'s header states the moving term (attempt, generation, fire minute) as part of an occurrence's contract. It reopens when a second realm needs claimed, ordered steps resumed after a crash.**
+  Who owns a backfill is settled (FJS-D157: a durable row plus a
   Caravan job). What remained is 4.19 itself, and this paper both defers it (§ The
   hole) and says there is "enough to rule" it. Surveyed 2026-09-27 across six
   mechanisms. **Shared by all six:** a namespaced key used as the primary key, so a

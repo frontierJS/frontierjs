@@ -207,14 +207,20 @@ leak and a feature would look identical. Sharing is a property of a MODEL and
 is declared — `@@tenant(none)`, checked at parse — and a table holding both
 kinds is two models wearing one name (`FJS-D141`).
 
-**The DELEGATED form answers the opposite, deliberately.** `@@tenant(via: rel)`
-over an OPTIONAL relation compiles to `check(rel)`, which is
-`FK IS NULL OR EXISTS (…)` — so a child with no parent is visible to every
-tenant rather than to none (`FJS-382`). The two are defensible apart: a column
-is the row's own claim, where a null relation is a row nobody has filed yet.
-They have not been reconciled, and `verifyTenantIsolation` reports the
-delegated case as `unparented` rather than grading it, which is the honest
-position for something nobody has settled (`FJS-528`).
+**The DELEGATED form gives the same answer** (`FJS-D481`). A model scoped
+through a parent carries one generated deny per scoped parent, and each lets a
+null key through — a widget on a board with no server is still the board's
+tenant's (`FJS-382`). A row whose EVERY scoping parent is null belongs to no
+tenant, so where every scoping relation is optional the desugar adds one more
+deny:
+
+```
+@@deny('all', doc == null && srv == null)   // generated, "Outside your workspaceId"
+```
+
+A tenant cannot read one, create one, or detach a row into one; `asSystem()`
+reads it, and a grandchild of one follows it. `verifyTenantIsolation` seeds the
+orphan and reports a read by another tenant or a claimless caller as `leaked`.
 
 ### Models that carry no column
 

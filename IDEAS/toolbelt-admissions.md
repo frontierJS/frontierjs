@@ -107,7 +107,7 @@ it as an oversight.
 
 ## Open questions
 
-- **What does a frontmatter block mean here?** § 4 is the measurement: two parsers,
+- ~~**What does a frontmatter block mean here?**~~ **Answered 2026-09-28 (`FJS-D533`): A — a toolbelt kit holding a declared subset; sierra drops js-yaml and both callers agree by construction.** § 4 is the measurement: two parsers,
   and a nested map silently becomes a null plus a stray top-level key on one side.
   - **A** — a toolbelt kit holding a declared subset; sierra drops js-yaml and both callers agree by construction.
   - **B** — full YAML is the meaning; the parser stays sierra's, and mesa's hand-rolled reader is the defect to close rather than the shape to standardize.

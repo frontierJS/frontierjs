@@ -103,7 +103,8 @@ contract — `FJS-D149`'s `@@actions` and `declared-method-contract.md`'s `metho
 and neither cites the other.
 
 Read together, Invariant 6's *"No exceptions"* is today a goal: `owed-rulings.md`
-carries `D470` (create skips the transition gate), `D472`, `D473` and `D481`.
+carries `D470` (create skips the transition gate), `D472` and `D473`; `D481` (a delegated orphan read by every
+tenant) was ruled closed.
 
 **The move.** A system principal drops authority and never integrity, and takes a
 declared reach (`asSystem()` minus one rule) for the authority half. `@@check` is the

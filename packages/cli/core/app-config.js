@@ -245,17 +245,21 @@ jobs:
 // registry. The `scaffold` CI phase asks the installed app whether each pointer
 // resolves, which is the only place the published bytes are read.
 
-// The packages whose TARBALL carries an AGENTS.md, and what else it ships that
-// the file tells a reader to open. Asserted against the packer's own listing in
-// both directions — a package that starts shipping one and is missing here is a
-// reference no app is pointed at.
+// The packages whose TARBALL carries an AGENTS.md: the change that needs each
+// one, and what else it ships as a LOOKUP. Asserted against the packer's own
+// listing in both directions — a package that starts shipping one and is
+// missing here is a reference no app is pointed at. A reader told to "read"
+// every file here pays ~34k tokens for a one-line fix, so each is gated on the
+// change and a lookup file is searched, never read whole.
 export const AGENT_DOCS = {
-  '@frontierjs/litestone': { covers: '`db/schema.lite` and every query',                beside: ['catalog.snapshot.md'] },
-  '@frontierjs/junction':  { covers: 'services, hooks, `$` and raw routes',              beside: [] },
-  '@frontierjs/sierra':    { covers: 'routes, resources, forms and prerendered pages', beside: [] },
-  '@frontierjs/mesa':      { covers: 'the `.mesa` component language',                  beside: [] },
-  '@frontierjs/ui':        { covers: 'the component kit — forms, tables, overlays',     beside: [] },
-  '@frontierjs/css':       { covers: 'markup and styling',                              beside: ['vocabulary.json'] },
+  '@frontierjs/litestone': { when: 'a change to `db/schema.lite`, or a query',
+    lookup: [{ file: 'catalog.snapshot.md', use: 'every schema word; `fli db:explain <word>` answers one live' }] },
+  '@frontierjs/junction':  { when: 'a service, a hook, a job or a raw route', lookup: [] },
+  '@frontierjs/sierra':    { when: 'a route, a Resource, page data or a prerendered page', lookup: [] },
+  '@frontierjs/mesa':      { when: 'any `.mesa` file', lookup: [] },
+  '@frontierjs/ui':        { when: 'a screen with forms, tables or overlays', lookup: [] },
+  '@frontierjs/css':       { when: 'a class list or a `<style>` block',
+    lookup: [{ file: 'vocabulary.json', use: 'one term\'s prose; the term list itself is in the AGENTS.md' }] },
 }
 
 // A rule is written here only when a generic habit breaks it. `needs` is the
@@ -307,10 +311,9 @@ export function appAgentsMd({ name, packages }) {
   const wants = (row) => row.needs === null || has.has(row.needs)
 
   const docs = Object.entries(AGENT_DOCS).filter(([pkg]) => has.has(pkg))
-  const docLines = docs.flatMap(([pkg, { covers, beside }]) => [
-    `- \`node_modules/${pkg}/AGENTS.md\` — ${covers}`,
-    ...beside.map(f => `  - \`node_modules/${pkg}/${f}\` beside it`),
-  ])
+  const docLines = docs.map(([pkg, { when }]) => `| ${when} | \`node_modules/${pkg}/AGENTS.md\` |`)
+  const lookupLines = docs.flatMap(([pkg, { lookup }]) =>
+    lookup.map(l => `- \`node_modules/${pkg}/${l.file}\` — ${l.use}`))
 
   const ruleLines = AGENT_RULES.filter(wants).map(r =>
     `- ${r.text} ${r.rules.length ? `[${r.rules.map(id => `\`${id}\``).join(', ')}]` : '[not graded]'}`)
@@ -329,9 +332,18 @@ Everything derives from \`db/schema.lite\`: **Data (Model) → API (Service) →
 forms and the migrations at once; the same rule written in code reaches one
 caller. Change the schema first, then let a generator write what follows from it.
 
-## Read before writing
+## Read the guide your change touches
 ${docLines.length ? `
+Only the rows your change touches — each guide is 3-5k tokens. A \`.mesa\`
+screen is mesa, plus ui and css when it draws with the kit.
+
+| Changing | Read |
+| --- | --- |
 ${docLines.join('\n')}
+` : ''}${lookupLines.length ? `
+Search these for the one word you need; never read one whole:
+
+${lookupLines.join('\n')}
 ` : ''}
 A framework package added later ships its own at \`node_modules/<package>/AGENTS.md\`
 when it has one. Never guess a schema word — \`fli db:explain @guarded\` answers

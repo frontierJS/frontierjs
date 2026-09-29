@@ -45,6 +45,8 @@ export function levelPasses(required: number, userLevel: number): boolean
  * would stop being assignable.
  */
 export interface GradableUser {
+  id?:            unknown
+  userId?:        unknown
   verifiedAt?:    Date | string | null
   activatedAt?:   Date | string | null
   isAdmin?:       boolean
@@ -52,6 +54,9 @@ export interface GradableUser {
   isSystemAdmin?: boolean
   role?:          string | null
 }
+
+/** Does this principal name somebody — an `id` or a `userId`? No identity grades STRANGER (`FJS-D515`). */
+export function isIdentified(user?: GradableUser | null): boolean
 
 /** A caller's standing. Explicit standing first, then lifecycle, then `role`. */
 export function gradeStanding(user?: GradableUser | null): number

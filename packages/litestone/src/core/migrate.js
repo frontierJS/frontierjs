@@ -266,6 +266,20 @@ export function introspect(db) {
     schema.__triggers[t.name] = { table: t.tbl_name, sql: t.sql }
   }
 
+  // The `@@fts` index of each table, read apart from the tables because INTERNAL
+  // hides it there. Hidden from both sides, a diff could see neither a missing
+  // index nor a changed one: adding `@@fts` to a table with rows emitted the
+  // triggers alone, and every write to the model then failed on a table that
+  // did not exist (FJS-1463).
+  schema.__fts = {}
+  const ftsRows = db
+    .prepare(`SELECT name, sql FROM sqlite_master WHERE type='table' AND sql LIKE 'CREATE VIRTUAL TABLE%'`)
+    .all()
+    .filter(r => r.name.endsWith('_fts'))
+  for (const r of ftsRows) {
+    schema.__fts[r.name] = { table: r.name.slice(0, -'_fts'.length), sql: r.sql }
+  }
+
   // Everything above reads a NAMED dimension. This reads the statements whole,
   // so the residue tripwire below has something to compare that no reader here
   // had to remember to write. An object SQLite keeps no statement for — an
@@ -854,7 +868,7 @@ function fksEqual(a, b) {
 
 // ─── Full diff ────────────────────────────────────────────────────────────────
 
-const META_KEYS = new Set(['__views', '__triggers', '__sql'])
+const META_KEYS = new Set(['__views', '__triggers', '__fts', '__sql'])
 
 export function diffSchemas(pristine, live, parseResult, dbName = 'main', { pluralize = false } = {}) {
   // Filter the meta buckets out of the table name sets
@@ -1030,6 +1044,22 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
                            inScope(l.table) && !rebuilding.has(l.table))
     .map(([name, l]) => ({ name, table: l.table }))
 
+  // An external-content FTS5 index holds only what a trigger handed it, so a
+  // CREATE alone answers nothing for the rows already there, and the first
+  // UPDATE of one deletes a docid the index never held — `database disk image
+  // is malformed`. Every index that is new or different is therefore dropped,
+  // created and rebuilt. So is one over a rebuilt table: the copy does not
+  // carry `rowid`, which is the docid, unless an Int id aliases it.
+  const pristineFts = pristine.__fts ?? {}
+  const liveFts     = live.__fts ?? {}
+  const changedFts  = Object.entries(pristineFts)
+    .filter(([name, p]) => inScope(p.table) && (rebuilding.has(p.table) || !liveFts[name] ||
+                           normalizeDdl(liveFts[name].sql) !== normalizeDdl(p.sql)))
+    .map(([name, p]) => ({ name, table: p.table, sql: p.sql }))
+  const droppedFts = Object.entries(liveFts)
+    .filter(([name, l]) => !pristineFts[name] && inScope(l.table))
+    .map(([name, l]) => ({ name, table: l.table }))
+
   // A rebuild drops the table, and a trigger the app wrote exists only in the
   // live database — there is nothing to restate it from. Litestone does not
   // support carrying one through a rebuild (FJS-183); what it can do is say so
@@ -1133,11 +1163,14 @@ export function diffSchemas(pristine, live, parseResult, dbName = 'main', { plur
     tableDiffs,
     changedTriggers,
     droppedTriggers,
+    changedFts,
+    droppedFts,
     residue,
     hasChanges: newTables.length > 0 || newMatViews.length > 0 ||
                 newViews.length > 0   || changedViews.length > 0 ||
                 droppedTables.length  > 0 || tableDiffs.length > 0 ||
-                changedTriggers.length > 0 || droppedTriggers.length > 0,
+                changedTriggers.length > 0 || droppedTriggers.length > 0 ||
+                changedFts.length > 0 || droppedFts.length > 0,
   }
 }
 
@@ -1231,7 +1264,7 @@ function rebuildSQL(model, parseResult, pluralize = false, diff = null) {
 
 export function generateMigrationSQL(diffResult, parseResult, { pluralize = false } = {}) {
   const { newTables, newMatViews, newViews, changedViews, droppedTables, tableDiffs,
-          changedTriggers, droppedTriggers } = diffResult
+          changedTriggers, droppedTriggers, changedFts, droppedFts } = diffResult
   const lines = []
 
   lines.push(`PRAGMA foreign_keys = OFF;`)
@@ -1445,6 +1478,20 @@ export function generateMigrationSQL(diffResult, parseResult, { pluralize = fals
     }
   }
 
+  // After the tables, so a rebuild reads every column it indexes and a copied
+  // table's final rowids.
+  if (changedFts?.length || droppedFts?.length) {
+    lines.push(`-- ─── full-text indexes (drop + create + rebuild) ${'─'.repeat(18)}`)
+    lines.push(``)
+    for (const f of droppedFts ?? []) lines.push(`DROP TABLE IF EXISTS "${f.name}";`)
+    for (const f of changedFts ?? []) {
+      lines.push(`DROP TABLE IF EXISTS "${f.name}";`)
+      lines.push(f.sql.trim().replace(/;?$/, ';'))
+      lines.push(`INSERT INTO "${f.name}"("${f.name}") VALUES('rebuild');`)
+    }
+    lines.push(``)
+  }
+
   if (changedTriggers?.length || droppedTriggers?.length) {
     lines.push(`-- ─── generated triggers (drop + recreate) ${'─'.repeat(26)}`)
     lines.push(``)
@@ -1520,6 +1567,10 @@ export function summarizeDiff(diffResult) {
     lines.push(`  ~ ${t.table}  trigger ${t.name}  (recreate)`)
   for (const t of diffResult.droppedTriggers ?? [])
     lines.push(`  - ${t.table}  trigger ${t.name}  (retired)`)
+  for (const f of diffResult.changedFts ?? [])
+    lines.push(`  ~ ${f.table}  full-text index ${f.name}  (recreate + rebuild)`)
+  for (const f of diffResult.droppedFts ?? [])
+    lines.push(`  - ${f.table}  full-text index ${f.name}  (retired)`)
 
   return [...lines, ...leftovers].join('\n')
 }

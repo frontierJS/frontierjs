@@ -255,14 +255,16 @@ export function evaluate(node, env = {}) {
       // Without this branch the presence test propagates its own subject and
       // there is no way to write "the caller carries no such claim" at all.
       // It reads a FIELD as well as a claim: `ownerId == null` compiles to
-      // `ownerId IS NULL`, and the two halves have to agree about that.
+      // `ownerId IS NULL`, and the two halves have to agree about that — on a
+      // `belongsTo` too, where `owner == null` compiles to the foreign key and
+      // reading the relation's own name found nothing on every row.
       const nullTest = (probe, other) =>
         other.type === 'literal' && other.value === null ? probe : null
       const probe = nullTest(left, right) ?? nullTest(right, left)
       if (probe) {
-        const v = probe.type === 'auth'
-          ? (probe.field ? claimOf(probe.field) : auth)
-          : ev(probe)
+        const v = probe.type === 'auth'  ? (probe.field ? claimOf(probe.field) : auth)
+                : probe.type === 'field' ? read(probe.name)
+                : ev(probe)
         const absent = v === null || v === undefined
         return op === '==' ? absent : !absent
       }

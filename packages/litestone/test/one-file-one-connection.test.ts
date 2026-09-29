@@ -2,17 +2,16 @@
 //
 // Under `strategy database` every sqlite database is redirected into the
 // tenant's own file, and a literal path can be repeated outside tenancy too.
-// SQLite allows one writer per file and there is one transaction manager, over
-// main's connection — so a second connection to that file writes inside a
-// transaction it does not hold, waits for a lock the caller itself is holding,
-// and answers `database is locked` forever (`FJS-958`). Reads succeed
-// throughout, which is why it looked correct until something wrote.
+// SQLite allows one writer per file, so a second connection to that file writes
+// inside a transaction another connection holds, waits for a lock the caller
+// itself is holding, and answers `database is locked` forever (`FJS-958`).
+// Reads succeed throughout, which is why it looked correct until something
+// wrote.
 //
 // Every claim here is PAIRED with the same schema on two paths, because a fix
 // that collapsed every database onto one connection would pass any test that
-// only asked about the shared-file case — and it would delete `FJS-D35`, whose
-// measured split (a rolled-back main leaving the second database's row
-// standing) is what puts the outbox in main.
+// only asked about the shared-file case — and two files are still two COMMITs,
+// which is what keeps the outbox in main (`FJS-D35`).
 
 import { describe, it, expect, afterAll } from 'bun:test'
 import { mkdtempSync, rmSync } from 'fs'
@@ -80,8 +79,10 @@ describe('two database blocks on one file', () => {
   })
 
   // The negative control. Without it, collapsing everything onto main's
-  // connection passes every assertion above.
-  it('stay two connections on two paths, and the split FJS-D35 measured survives', async () => {
+  // connection passes every assertion above. The rollback reaches both
+  // connections (`FJS-1459`); what stays split is the COMMIT, one per file,
+  // which second-database-tx.test.ts pins.
+  it('stay two connections on two paths, and a rollback still reaches both', async () => {
     const d = tmp()
     const db: any = await createClient({ schema: schema('./app.db', './analytics.db'), resolveFrom: d })
     expect(db.$databases.main.path).not.toBe(db.$databases.analytics.path)
@@ -93,7 +94,7 @@ describe('two database blocks on one file', () => {
       throw new Error('rollback')
     }).catch(() => {})
     expect(await db.widget.count()).toBe(0)
-    expect(await db.hit.count()).toBe(1)
+    expect(await db.hit.count()).toBe(0)
     await db.$close()
   })
 

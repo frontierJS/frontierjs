@@ -208,6 +208,13 @@ test('predicate: columnOf is how a belongsTo field finds its foreign key', funct
   assert.equal(evaluate(node, { record: { ownerId: 7 }, auth: { id: 7 } }), null)
 })
 
+test('predicate: `owner == null` reads the foreign key, as the SQL half compiles it', function () {
+  const env = { columnOf: (n) => (n === 'owner' ? 'ownerId' : n) }
+  assert.equal(evaluate(cmp(fld('owner'), '==', lit(null)), { ...env, record: { ownerId: 7 } }), false)
+  assert.equal(evaluate(cmp(fld('owner'), '==', lit(null)), { ...env, record: { ownerId: null } }), true)
+  assert.equal(evaluate(cmp(lit(null), '!=', fld('owner')), { ...env, record: { ownerId: 7 } }), true)
+})
+
 // ── the two nodes that read another model ────────────────────────────────────
 //
 // Each opens a database on the server, which is why neither could move. Their

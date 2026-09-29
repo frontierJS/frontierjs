@@ -483,6 +483,16 @@ export async function createTestEnv(opts = {}) {
         const guardedRequired = guarded.filter(f =>
           !f.type.optional && !f.attributes.some(a => a.kind === 'default'))
         const guardedOptional = guarded.filter(f => !guardedRequired.includes(f))
+        // A `@system` column is written the way the application writes it,
+        // named through `system: [...]`. Passed as ordinary data it is refused
+        // with an AccessDeniedError, which below reads as the gate's deny at
+        // every level (`FJS-1212`).
+        const systemCols = (schema.models.find(x => x.name === modelName)?.fields ?? [])
+          .filter(f => f.attributes?.some(a => a.kind === 'system')).map(f => f.name)
+        const named = (data) => {
+          const cols = systemCols.filter(c => c in data)
+          return cols.length ? { system: cols } : {}
+        }
 
         for (const row of modelRows) {
           const acc    = modelToAccessor(row.model)
@@ -534,7 +544,7 @@ export async function createTestEnv(opts = {}) {
               // it would fail the required check instead, which says nothing
               // about either lock. Level 8 IS asSystem() and writes them all.
               if (row.level < 8) for (const f of guardedOptional) delete data[f.name]
-              run = () => client[acc].create({ data })
+              run = () => client[acc].create({ data, ...named(data) })
             } else if (row.op !== 'read') {
               // Update and delete need a row that is already there, made as
               // SYSTEM so a gate refusing the principal cannot refuse the setup.
@@ -543,7 +553,7 @@ export async function createTestEnv(opts = {}) {
               const patch = _touch(schema, row.model, seeded)
               if (row.level < 8) for (const f of guarded) delete patch[f.name]   // an update names only what it changes
               run = row.op === 'update'
-                ? () => client[acc].update({ where, data: patch })
+                ? () => client[acc].update({ where, data: patch, ...named(patch) })
                 : () => client[acc].delete({ where })
             }
           } catch (err) {
@@ -985,20 +995,14 @@ export async function createTestEnv(opts = {}) {
           }
 
 
-          // ── the unparented row ──────────────────────────────────────────────
+          // ── the orphan ──────────────────────────────────────────────────────
           //
-          // A delegated rule is `!check(rel)`, and `check()` answers TRUE for a
-          // null foreign key — a row naming no parent is not a row naming
-          // somebody else's (`FJS-382`, and the JS half is the one that matches
-          // what the declaration says). So where the scoping relation is
-          // OPTIONAL, a row that never got a parent belongs to no tenant and
-          // every tenant can reach it.
-          //
-          // Reported under its own name rather than as a leak, because it is
-          // the ruled behavior and the fix is a schema decision: make the
-          // relation required, or give the model the column. A verdict here
-          // would be this checker overruling a decision record; silence would
-          // be the same hole `unscoped` exists to close.
+          // Where every scoping relation is OPTIONAL a row can name no parent,
+          // and such a row belongs to no tenant — `asSystem()`'s alone, as a
+          // null claim column is (`FJS-D481`). Seeded once, unparented, and
+          // graded like any other row: a tenant or a claimless caller reading
+          // it is a leak. Where one scoping relation is required the seed still
+          // anchors the row through it, and the check costs one read.
           if (kind === 'delegated' && wanted.has('read') && (!gate || gate.read <= 7)) {
             const optionalScoped = model.fields.filter(f => {
               if (f.type.kind !== 'relation' || f.type.array) return false
@@ -1010,16 +1014,25 @@ export async function createTestEnv(opts = {}) {
 
             if (optionalScoped.length) {
               let orphan = null
+              // A refused seed is either a schema that forbids the orphan or a
+              // fixture that failed for an unrelated reason, and only the error
+              // tells them apart — silent, the second passes a check that ran
+              // against nothing.
               try { orphan = await _seedForTenant(schema, model.name, va, chain, new Map(), { optional: false, actor: A }) }
-              catch { /* it cannot exist unparented, which is the answer this asks for */ }
+              catch (err) {
+                out.push({ model: model.name, op: 'read', actor: null, got: 'uncheckable',
+                  message: `${model.name} — a row naming no ${optionalScoped.map(r => `'${r}'`).join(' or ')} could not be seeded, so the orphan rule was not exercised: ${err?.message ?? err}` })
+              }
 
               if (orphan) {
-                let seenB = null
-                try { seenB = new Set((await clientB[acc].findMany({ limit: 50 })).map(r => _rowId(schema, model.name, r))) }
-                catch (err) { if (!(err instanceof AccessDeniedError || err?.name === 'AccessDeniedError')) throw err }
-
-                if (seenB?.has(_rowId(schema, model.name, orphan))) out.push({ model: model.name, op: 'read', actor: 'B', got: 'unparented',
-                  message: `${model.name} is scoped through ${optionalScoped.map(r => `'${r}'`).join(' + ')}, which is optional — a row created without one belongs to no tenant and every tenant reads it. Make the relation required, or give ${model.name} the '${t.column}' column` })
+                const orphanId = _rowId(schema, model.name, orphan)
+                for (const [actor, client, who] of [['B', clientB, 'a caller in tenant B'], ['nobody', clientN, `a caller holding no '${t.claim}' at all`]]) {
+                  let seen = null
+                  try { seen = new Set((await client[acc].findMany({ limit: 50 })).map(r => _rowId(schema, model.name, r))) }
+                  catch (err) { if (!(err instanceof AccessDeniedError || err?.name === 'AccessDeniedError')) throw err }
+                  if (seen?.has(orphanId)) out.push({ model: model.name, op: 'read', actor, got: 'leaked',
+                    message: `${model.name}#${orphanId} names no ${optionalScoped.map(r => `'${r}'`).join(' or ')}, so it belongs to no tenant, and ${who} read it` })
+                }
               }
 
               restore(built.db, before)
@@ -2930,12 +2943,10 @@ async function _seedForTenant(schema, modelName, tenant, chain, parents = new Ma
 
     // An OPTIONAL scoping relation is filled by default, and that is the whole
     // difference between grading a delegated model and grading a degenerate
-    // case of one. A delegated rule reads `check(rel)`, and a row whose `rel` is
-    // null is in no tenant at all (`FJS-382`) — so seeding it unparented tests
-    // the one shape the rule deliberately does not cover, reports every tenant
-    // reaching it, and says nothing about the rows the app actually holds.
-    // `optional: false` seeds that shape on purpose, once, to report it as what
-    // it is.
+    // case of one. A row whose every scoping `rel` is null is in no tenant at
+    // all and `asSystem()`'s alone (`FJS-D481`) — so seeding it unparented
+    // grades the orphan rule and says nothing about the rows the app actually
+    // holds. `optional: false` seeds that shape on purpose, once.
     if (!optional && model.fields.find(f => f.name === fk)?.type.optional) continue
 
     // Only a SCOPED parent has to be in this tenant. An exempt or unscoped one

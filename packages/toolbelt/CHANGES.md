@@ -1,5 +1,9 @@
 # Changes — @frontierjs/toolbelt
 
+## 2026-09-28 — `owner == null` reads the foreign key (`FJS-D481`)
+
+The `== null` / `!= null` probe evaluated a field node as `record[name]`, skipping `columnOf`, so on a `belongsTo` it read the relation's name, which is never on a row: `owner == null` was `true` for every row in JS while SQL compiled it to `"ownerId" IS NULL`. The probe now reads through `columnOf`, as the `field == auth()` branch already did. Only litestone passes `columnOf`, and no shipped policy spelled the relation, so no answer changes outside the case this fixes. Proved in `predicate.spec.js`.
+
 ## 2026-09-28 — `omitBy`, and a shared value is not a cycle (`FJS-D473`)
 
 `omitBy` is `redactBy` with a matching key dropped rather than replaced, for junction's success bodies. Both now run over one walk whose cycle guard holds ANCESTORS only: the old `seen` set never forgot, so an object named in two places read `[circular]` the second time. Proved in `redact.spec.js`.

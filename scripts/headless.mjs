@@ -71,6 +71,7 @@ export function runSession(prompt, { model, effort, cap, permission, tag, phases
   let session  = null
   let edited   = false
   const errors = {}                       // tool name → failed calls
+  let transient = 0                       // calls the auto-mode check answered with no verdict
   const tally  = { ...phases }
 
   // A silent stretch is either a tool running, which costs nothing, or the
@@ -102,6 +103,7 @@ export function runSession(prompt, { model, effort, cap, permission, tag, phases
       if (part.type !== 'tool_result' || !pending.has(part.tool_use_id)) continue
       const s = Math.round((Date.now() - pending.get(part.tool_use_id).at) / 1000)
       if (part.is_error) errors[pending.get(part.tool_use_id).name] = (errors[pending.get(part.tool_use_id).name] ?? 0) + 1
+      if (part.is_error && NO_VERDICT.test(resultText(part))) transient++
       pending.delete(part.tool_use_id)
       if (s >= 5) console.log(`[${tag}]       ↳ ${where ? `${where} - ` : ''}${clock(s)}${part.is_error ? ' · error' : ''}`)
       if (!pending.size) turnAt = Date.now()
@@ -129,6 +131,8 @@ export function runSession(prompt, { model, effort, cap, permission, tag, phases
       sessionId:   result.session_id ?? session,
       deniedTools: (result.permission_denials ?? []).map(d => d.tool_name),
       errors,
+      transient,
+      edited,
       usage:   result.usage && {
         input:      result.usage.input_tokens,
         cacheWrite: result.usage.cache_creation_input_tokens,
@@ -147,6 +151,13 @@ export function runSession(prompt, { model, effort, cap, permission, tag, phases
 export function writes(part) {
   if (['Edit', 'Write', 'NotebookEdit'].includes(part.name)) return true
   return part.name === 'Bash' && /\bsed -i\b|python3? - <<|\btee\b|(^|[^0-9&>])>\s*[^&\s/][^\s]*\.(m?[jt]s|md|lite|mesa|json)\b/.test(part.input?.command ?? '')
+}
+
+// The auto-mode classifier failing to answer, which says nothing about the call.
+const NO_VERDICT = /classifier gave no verdict|transient failure of the check/i
+
+function resultText(part) {
+  return typeof part.content === 'string' ? part.content : (part.content ?? []).map(c => c.text ?? '').join(' ')
 }
 
 function clock(s) {

@@ -764,3 +764,66 @@ describe('create — a destructive migration is banner-marked in the file', () =
     expect(readFileSync(join(dir, files[files.length - 1]), 'utf8')).not.toContain('DESTRUCTIVE')
   })
 })
+
+describe('apply — a migration that moves a key without a rebuild', () => {
+  // A natural key is corrected by UPDATE, and with foreign_keys OFF nothing
+  // raises on the children it strands, so a check scoped to rebuild statements
+  // committed them and the NEXT migration was refused for them (FJS-1473).
+  const V_REL = `
+model Author {
+  id    Int    @id
+  name  String
+  posts Post[]
+}
+model Post {
+  id       Int    @id
+  authorId Int
+  author   Author @relation(fields: [authorId], references: [id])
+}
+`
+  const seeded = async () => {
+    const { dir, db } = freshLab()
+    create(db, parse(V_REL), 'initial', dir)
+    await apply(db, dir)
+    db.run(`INSERT INTO author (id, name) VALUES (1, 'Ada')`)
+    db.run(`INSERT INTO post (id, authorId) VALUES (10, 1)`)
+    return { dir, db }
+  }
+
+  for (const [label, stmt] of [
+    ['an UPDATE of the parent key', `UPDATE "author" SET "id" = 9 WHERE "id" = 1;`],
+    ['an UPDATE of the child key to a value nothing holds', `UPDATE "post" SET "authorId" = 7 WHERE "id" = 10;`],
+    ['a REPLACE INTO that repoints the child', `REPLACE INTO "post" (id, authorId) VALUES (10, 7);`],
+    ['an INSERT OR REPLACE that repoints the child', `INSERT OR REPLACE INTO "post" (id, authorId) VALUES (10, 7);`],
+    ['a CTE-led UPDATE', `WITH k AS (SELECT 1 AS id) UPDATE "author" SET "id" = 9 WHERE "id" IN (SELECT id FROM k);`],
+  ] as const) {
+    it(`${label} is refused and rolled back`, async () => {
+      const { dir, db } = await seeded()
+      writeFileSync(join(dir, '20990101000001_move.sql'), stmt)
+      const res = await apply(db, dir)
+      expect(res.failed).toBe('20990101000001_move.sql')
+      expect(String(res.error)).toContain('foreign key violation')
+      expect(String(res.error)).not.toContain('A rebuild copies')
+      expect(String(res.error)).toMatch(/This migration ran (UPDATE|REPLACE|INSERT|WITH)/)
+      expect(db.query('PRAGMA foreign_key_check').all()).toEqual([])
+    })
+  }
+
+  it('an INSERT naming a parent the database does not hold is not blamed on a rebuild', async () => {
+    const { dir, db } = await seeded()
+    writeFileSync(join(dir, '20990101000001_load.sql'), `INSERT INTO "post" (id, authorId) VALUES (11, 99);`)
+    const res = await apply(db, dir)
+    expect(res.failed).toBe('20990101000001_load.sql')
+    expect(String(res.error)).not.toContain('A rebuild copies')
+  })
+
+  it('an additive migration still skips the whole-database walk', async () => {
+    // The walk is the cost the kind-scoping exists to avoid, so a stranded row
+    // left by some earlier raw write does not refuse an ADD COLUMN.
+    const { dir, db } = await seeded()
+    db.run('PRAGMA foreign_keys = OFF')
+    db.run(`INSERT INTO post (id, authorId) VALUES (12, 404)`)
+    writeFileSync(join(dir, '20990101000001_add.sql'), `ALTER TABLE "post" ADD COLUMN "note" TEXT;`)
+    expect((await apply(db, dir)).failed).toBeUndefined()
+  })
+})

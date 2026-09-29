@@ -42,7 +42,7 @@ const USERS: Record<string, { userId: string; userType: string; authMethod: 'ses
 let app: any
 
 function client(token?: string) {
-  const ws = new WebSocket(token ? `${WS()}?token=${token}` : WS())
+  const ws = new WebSocket(WS(), token ? ['fjs', `fjs.bearer.${token}`] : ['fjs'])
   const frames: any[] = []
   let closed: { code: number; reason: string } | null = null
 

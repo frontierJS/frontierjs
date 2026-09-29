@@ -63,9 +63,7 @@ built page (`tutor.transcripts`), because a sample rewritten into nicer prose
 looks identical from every other angle.
 
 It carries no `publishes:` line and should not gain one: it reads no data, so
-there is nothing for the build's publish check to fail closed on, and
-`publishes: 0` would silence a proof rather than raise a bar (`fli check`'s
-`static-publishes-0`).
+there is nothing for the build's publish check to grade.
 
 ## Principles for anything added here
 

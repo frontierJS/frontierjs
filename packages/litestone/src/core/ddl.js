@@ -698,10 +698,11 @@ function createFts(model, tableName) {
   if (!fts) return null
 
   const cmap = columnMapFor(model)
-  // The FTS table's own columns are litestone's and stay FIELD names — search()
-  // reads them back and they are never the source table's. What the triggers
-  // reference through `new.`/`old.` is the source row, which is columns.
-  const contentCols   = fts.fields.join(', ')
+  // COLUMN names, not field names: external content reads the source table by
+  // the FTS table's own column names, so a field name under @map failed every
+  // read and every rebuild with `no such column: T.<field>` (FJS-1467).
+  // search() addresses the index by position and rowid, never by name.
+  const contentCols   = fts.fields.map(f => mapCol(cmap, f)).join(', ')
   // Keyed on the source row's real rowid, never on `id`: an FTS5 rowid is an
   // integer, so a String id (uuid/ulid, which @@sync needs) failed every INSERT
   // with `datatype mismatch`. Holds because litestone emits no WITHOUT ROWID table.

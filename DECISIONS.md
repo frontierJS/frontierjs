@@ -27,6 +27,42 @@ CI runs the same engine.
 
 ## Naming & vocabulary
 
+### <a id="fjs-d474"></a>2026-09-29 · `FJS-D474` — How does the no-overlap declaration name the scope it serializes — A named scope declared once at schema level (`scope person(employeeId)`), each model's `@@exclude(person, range: [a, b])` naming it; litestone compiles every write on any model citing the scope to `$lock('person:…')` plus a check of all its members.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (per-model `@@exclude([employeeId], range: […], against: [LeaveRequest, …])`, each model listing its siblings; no new noun, but the fact is stated on every write path and the one nobody wrote is the one that runs (drive finding 2)).
+
+The paper's recommendation, taken as written: one declaration per fact answers finding 2 by construction, and the scope is exactly the lock key the drive found every service already hand-wrote.
+
+### <a id="fjs-d534"></a>2026-09-28 · `FJS-D534` — What is the message called — `Notice`: free in the tree, and says what it is without a medium.
+
+Asked in [`IDEAS/sysadmin-console.md`](IDEAS/sysadmin-console.md) § Open questions. **A** was picked over **B** (`Bulletin`: also free, reads more like a board than a banner).
+
+The paper's recommendation, taken as written: shorter, and the banner component reads naturally as `<Notices>`.
+
+### <a id="fjs-d530"></a>2026-09-28 · `FJS-D530` — Does an app ever hold sentences of its own — Not yet. The language is for the framework's docs, for agents and for the intent resolver; an app's truth stays its seed and its code.
+
+Asked in [`IDEAS/controlled-language.md`](IDEAS/controlled-language.md) § Open questions. **A** was picked over **B** (yes, a sentences file per app that `fli check` grades).
+
+The paper's recommendation, taken as written: a second source of truth beside the seed breaks the one mental model (everything traces back to `db/schema.lite`) until the coverage table shows the sentences carry something the seed cannot.
+
+### <a id="fjs-d529"></a>2026-09-28 · `FJS-D529` — What is built first — The coverage table of § 4, over `example/`, measured and not gated.
+
+Asked in [`IDEAS/controlled-language.md`](IDEAS/controlled-language.md) § Open questions. **A** was picked over **B** (a checker: `fli check` grading code against written sentences), **C** (a generator: `fli make` taking a sentence).
+
+The paper's recommendation, taken as written: it is the only one that can say whether the shapes in § 3 are the right ones, and B and C both build on shapes nobody has measured.
+
+### <a id="fjs-d528"></a>2026-09-28 · `FJS-D528` — Where do verbs live — A *Verbs* column on `VOCABULARY.md`'s existing rows, so a noun and its verbs are one row.
+
+Asked in [`IDEAS/controlled-language.md`](IDEAS/controlled-language.md) § Open questions. **A** was picked over **B** (a separate verb register beside `VOCABULARY.md`).
+
+The paper's recommendation, taken as written: a verb only makes sense under its noun, which is what **Under** already models, and a second register is a second place to look.
+
+### <a id="fjs-d527"></a>2026-09-28 · `FJS-D527` — The verb — Keep `make:wireframe`; `make:scaffold` already makes from a model.
+
+Asked in [`IDEAS/wireframe.md`](IDEAS/wireframe.md) § Open questions. **A** was picked over **B** (`wireframe:build`, a namespace of its own).
+
+The paper's recommendation, taken as written: the one sibling that reads an input is the precedent, and a namespace of one command is a concept for nothing.
+
 ### <a id="fjs-d405"></a>2026-09-25 · `FJS-D405` — How is the tenant switch spelled — `use <tenant>`, the program's own verb, one spelling in every app.
 
 Asked in [`IDEAS/app-cli.md`](IDEAS/app-cli.md) § Open questions. **A** was picked over **B** (`cli/config/` names the noun (`tenant: { header, noun: 'workspaces' }`) and the command is `<noun> use <id>`, beside that service's own methods).
@@ -993,6 +1029,100 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d492"></a>2026-09-29 · `FJS-D492` — How does a create policy that pins a column to `auth()` reach the generated form — Litestone derives `x-determined: { hostId: 'auth().id' }` from any create policy of the form `<column> == auth().<claim>`. Sierra's field rules drop the field from `required` and from the form, and the client seeds it from the session. That makes the scaffolded `before.create` hook redundant.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Leave the schema as it is. Add an `fli advise` rule that names a required column a create policy pins to `auth()`, and document the `record` + `except` pattern).
+
+The paper's recommendation, taken as written: the fact is derivable and belongs beside `x-gate`, the same way the gate's other facts cross. B leaves every app doing two undocumented things for each such column.
+
+### <a id="fjs-d478"></a>2026-09-28 · `FJS-D478` — What spells a server-verified credential: one-way, matchable in a `where`, logged, rotatable by reissue — Allow `@hashed` beside `@secret`: the digest replaces the `@encrypted` half, `$rotateKey` skips it the way it skips `@secret(rotate: false)`, and `@guarded` plus logging stay. No new word.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`@hashed(logged: true)`, which adds only the audit half to `@hashed`. It's an option on an existing word), **C** (A new attribute (e.g. `@credential`). It's a new noun for a combination the two existing words can already express).
+
+The paper's recommendation, taken as written: both words already mean exactly their halves. Today the refusal protects a reversibility the author is choosing to give up, so lifting it composes two existing words and adds no new one.
+
+### <a id="fjs-d491"></a>2026-09-28 · `FJS-D491` — Should `@@gate`'s non-decreasing rule be per-pair rather than global, so create may sit below read — Per-pair: require `read ≤ update ≤ delete`; create is free relative to read but still `create ≤ delete`, since removing a row should never be easier than adding one. A drop box states itself as a gate and refuses by name.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Keep global order; add a model-level declaration (e.g. `@@dropbox` / tie to FJS-1247's anonymity attribute) that permits create below read only when declared).
+
+The paper's recommendation, taken as written: the monotonic argument never covered create, and B coins a noun to excuse a rule that was over-applied.
+
+### <a id="fjs-d540"></a>2026-09-28 · `FJS-D540` — Can an act be attested by somebody who holds no session — The device is the principal, and `app.runAs(userId, fn)` is the seam that already exists: the kiosk service grades a weak factor against a `@guarded` column on `Employee` and runs one call as that person. No session is ever minted, and the audit trail attributes the row correctly.
+
+Asked in [`IDEAS/field-workforce.md`](IDEAS/field-workforce.md) § Open questions. **A** was picked over **B** (a real session per clock-in, short-lived), **C** (out of scope; a kiosk is the app's concern).
+
+The paper's recommendation, taken as written: the seam is built and named (`app.runAs`, `reenterAs`), so the question is whether a weak factor may open it, not whether a mechanism exists. B hands a credential to somebody who by construction cannot keep one safe, on a device forty people touch.
+
+### <a id="fjs-d538"></a>2026-09-28 · `FJS-D538` — `@encrypted` columns — Omit them from the view, and report the omission to the caller.
+
+Asked in [`IDEAS/scoped-sql.md`](IDEAS/scoped-sql.md) § Open questions. **A** was picked over **B** (expose the ciphertext as it is stored).
+
+The paper's recommendation, taken as written: ciphertext in a result is useless to a reader and looks like data, while a reported omission says exactly what was withheld and why.
+
+### <a id="fjs-d537"></a>2026-09-28 · `FJS-D537` — 26 — Should a flow be READABLE below the level that edits it — Leave it at 4. A flow is an editor's object and a run is where everyone else looks.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (read at 3, keeping create/update/delete where they are, so a restricted member can open a flow and read its definition), **C** (read at 3 for `Flow` and leave `FlowLayout` at 4, since a canvas position is an editing artefact).
+
+The paper's recommendation, taken as written: for now: `Run` already reads at 4 through its own policy, so B would show a viewer the flow and not its history, which is the half they actually want; revisit once somebody asks for it against a real host.
+
+### <a id="fjs-d536"></a>2026-09-28 · `FJS-D536` — 25 — Should `signedIn()` declare a gate at all, when it states the model's own read gate a second time — Drop the gate and keep the bare method names, so the surface is still narrowed and the floor is the one statement of the level.
+
+Asked in [`IDEAS/orion-port.md`](IDEAS/orion-port.md) § Open questions. **A** was picked over **B** (keep the declaration and add a test asserting it equals the model's read gate, so a divergence is loud rather than silent), **C** (keep it as written: an explicit refusal for a stranger is worth one restatement).
+
+The paper's recommendation, taken as written: the floor is derived from the gate, so the declaration is a second origin for a number that already has one, and the comment defending it describes what the floor already does. B buys the same safety by adding a test to hold two things equal that need not be two.
+
+### <a id="fjs-d361"></a>2026-09-28 · `FJS-D361` — May a membership row decide a framework claim — Yes, for one shape only: a `@@relator([<tenant column>, <subject>], once)` under `strategy row`. Everywhere else the refusal stands.
+
+Asked in [`IDEAS/membership-from-schema.md`](IDEAS/membership-from-schema.md) § Open questions. **A** was picked over **B** (No. `capabilities` and a standing stay `membershipClaim` options, and a derivation stops at the model, subject and tenant), **C** (Yes, generally: drop the refusal from `FJS-D359`).
+
+The paper's recommendation, taken as written: the refusal guards against a row deciding standing by accident, and the membership relator is the one shape where the row IS the standing by construction. B leaves the derivation half done on exactly the fields basecamp most needs; C reopens the accident.
+
+### <a id="fjs-d472"></a>2026-09-28 · `FJS-D472` — May a `channels({ claims })` resolver read the database, and if so, is its answer recomputed per frame or cached per (connection, channel) — `ChannelClaimsFn` may return a Promise. `gradeRecipients` awaits it for each frame, once per distinct (principal, channel) cohort, with no cache. This is the request path's rule carried over to a broadcast. The cost is one resolver call per recipient principal per frame.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (A, plus a cache per (connection, channel). The resolver declares the models it read (`claims: { reads: ['TeamMember'], resolve }`), and a `$tapEvents` write to any of those models invalidates the cache. This adds an option, and the declared list is a second origin for what the resolver's body already says), **C** (no database reads in the resolver. Extend the schema's `claim … from` so it can yield a list and so it can be keyed by the channel's tenant. `gradeRecipients` then calls `db.$claimsFor(who)` for each frame. The claim becomes derived and also closes `FJS-1291`'s resolver half, but it is a litestone language change that a junction row cannot make).
+
+The paper's recommendation, taken as written: it matches the request path (per call, uncached), adds no option and no noun, and turns today's silent drop of an async answer into a supported shape. B's cache can arrive when a measurement asks for it, and C can land later as an addition that A's resolver then no longer needs.
+
+### <a id="fjs-d519"></a>2026-09-28 · `FJS-D519` — Islands complicate it in the right direction — As built: the read set is what the tapped build client sees during prerender (`static-safety.js:204`); an island's runtime fetch never touches that client, so it is excluded by construction, and props handed to a prerendered island ARE counted, correctly, since they are in the HTML.
+
+Asked in [`IDEAS/static-safety.md`](IDEAS/static-safety.md) § Open questions. **A** was picked over **B** (record island reads explicitly (a third bucket per island) so the classifier table names which data moved into islands).
+
+The paper's recommendation, taken as written: the exclusion needs no code; B only matters once the classifier table exists, and belongs to that work, not this rule.
+
+### <a id="fjs-d517"></a>2026-09-28 · `FJS-D517` — Does this belong in Sierra's build or in a shared checker that `marshal` also uses — Stays in Sierra's build: `static-safety.js` over `buildGate()` and the schema registry, which `DECISIONS.md:1451` already names as the owner of *what may reach a public file*; marshal, when built, reads the same `buildGate()`.
+
+Asked in [`IDEAS/static-safety.md`](IDEAS/static-safety.md) § Open questions. **A** was picked over **B** (lift the gate-vs-surface comparison into a shared checker (toolbelt or litestone tools) that both the build and `fli marshal:map` call).
+
+The paper's recommendation, taken as written: the shared part already has one owner (`buildGate()`); marshal is unbuilt, and B extracts an abstraction for a second caller that does not exist yet.
+
+### <a id="fjs-d516"></a>2026-09-28 · `FJS-D516` — Is level 0 the right bar, or should it be "the gate the build ran as" — Keep what shipped: a model gated at 0 is public and needs no declaration, and a column of a gated model fails the build unless the route's `publishes:` names it (`FJS-D496`); an `asSystem()` catalog names its columns once, visible in `routes.snapshot.md` (`FJS-D464`).
+
+Asked in [`IDEAS/static-safety.md`](IDEAS/static-safety.md) § Open questions. **A** was picked over **B** (derive the bar from the standing the build client runs as, so an `asSystem()` build clears any gate with nothing written in the route).
+
+The default must cost a new app nothing: fli scaffold writes @@gate("0.4.4.6") and an ungated model reads at 0, so a static page over a freshly scaffolded model builds with no publishes: line. The bar rises only when the schema author raises a gate, and then the page names the columns it publishes (FJS-D496). B would make publishing gated data a thing that happened rather than a thing written down.
+
+### <a id="fjs-d481"></a>2026-09-28 · `FJS-D481` — A delegated child whose OPTIONAL parent is null: invisible to every tenant, like a null claim column, or visible to all — Invisible: a row whose EVERY scoping parent is null belongs to no tenant and is `asSystem()`'s alone, as a null claim column is (`FJS-D141`). A null in ONE of several scoping relations still passes, since the row is anchored through another (`FJS-382`).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Keep both behaviors and write down why they differ: a column is the row's own claim, and a null relation is a row nobody has filed yet. The docs in multi-tenancy.md say so, and `verifyTenantIsolation` warns on `unparented`).
+
+The paper's A, amended in its mechanism. As written, `check(rel)` failing on a null key re-breaks `FJS-382`: a `Widget` scoped through a required `board` and an optional `srv` gets one deny per parent, so a widget on a board with no server would vanish from its own tenant. So the per-parent denies keep allowing a null, and the desugar adds one deny, `doc == null && srv == null`, over the same five operations, emitted only where every scoping relation is optional (a required key cannot be null). Measured: a tenant cannot read, create or detach into an orphan; `asSystem()` reads it; a grandchild of one follows through `check(rel, tenancy)`, and the claimless caller who read it before is refused too. `verifyTenantIsolation` seeds the orphan and grades a read by tenant B or a claimless caller as `leaked`; the `unparented` verdict is gone. The desugar exposed a second defect, fixed with it: the JS evaluator read `rel == null` off the relation's own name, always absent, where the SQL half reads the foreign key. No schema in the repo or `fjs-prototypes` has an all-optional delegated model, and all 28 snapshots are unchanged.
+
+*Lives in:* `packages/litestone/src/core/parser.js` (`expandTenancy`, the delegation pass) · `packages/litestone/src/testing.js` (`verifyTenantIsolation` § the orphan) · `packages/toolbelt/src/predicate/predicate.js` (the `== null` probe) · tests in `packages/litestone/test/tenancy-delegation.test.ts`, `tenant-isolation.test.ts`, `policy-interpreters.test.ts`.
+
+### <a id="fjs-d496"></a>2026-09-28 · `FJS-D496` — Is a static page's `publishes:` a gate level per model or a set of columns — `publishes:` names columns per model (`publishes: { User: [id, name, timeZone] }`). The check compares the columns a page read against that set and refuses any column outside it by name. A read with no `select` counts as every column.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (Keep the level, and have the verdict name the columns it saw. A reviewer sees them, but `publishes: 4` still covers every column, and a later column still ships without a new refusal), **C** (Keep the level, and have the build write the columns each page read to a snapshot that a diff shows. It re-fires only at review, and it adds a generated file).
+
+Two clauses beyond the option. The level form is REMOVED, not kept beside the list: a number still covers every column including later ones, which is the silence FJS-1222 names, and two spellings for one declaration is a second origin. There is no wildcard: a whole-row read of a gated model lists every column, since a '*' would let a column added later ship with no refusal. A model gated at 0 needs no entry; a gated model read for a count alone is declared with an empty list. Protected columns stay refused whatever the list says (FJS-D504). The fli check static-publishes-0 is deleted, since the build now refuses a number by type.
+*Lives in:* `packages/sierra/src/build/static-safety.js` (`declaredPublishes`, `collectColumns`, `checkRoute`) · `packages/sierra/src/tools/routes-snapshot.js` · `packages/sierra/test/static-safety-real.mjs` § FJS-1222 · `packages/cli/commands/tutor/_steps-site/06-publish.md`.
+
+### <a id="fjs-d504"></a>2026-09-28 · `FJS-D504` — What about `@guarded` columns reaching the marker — Refuse at the READ: the tap event states `system`, and a system read whose columns include one `db.$protectedFields()` names fails the build — no `select` counts as every column, and the walk follows `include`/`select` into each relation; `publishes: N` does not lift it.
+
+Asked in [`IDEAS/static-safety.md`](IDEAS/static-safety.md) § Open questions. **D** was picked over **A** (the build refuses: before a page is written, scan each island's serialized props (`packages/mesa/src/runtime.js:5481`) for any column `db.$protectedFields(accessor)` names, failing like a gate overrun; `publishes: N` does not lift it, since `@guarded` takes no level), **B** (refuse an `asSystem()` build client in the tap, so litestone's own read path strips `@guarded` and the marker can never see one), **C** (leave it, documented as the author's responsibility under `publishes:`).
+
+A scans island props by NAME, so a column renamed into a prop, or interpolated into plain markup with no island at all, reaches the page unseen, and props carry no model so a harmless key collides. The read is the one place that knows a protected value was returned: probed, asSystem() returns @guarded and @encrypted values and a bare or $setAuth read strips both, so the check fires only on event.system. It also covers every @encrypted, @hashed and @secret column, since $protectedFields names them all, and it is the per-column read set FJS-D496 will want. Its cost is that a system read of a model with a protected column must write select, which is the declaration the page owed anyway.
+*Lives in:* `packages/sierra/src/build/static-safety.js` (`collectExposed`) · `packages/litestone/src/core/hooks.js` (`emitQuery`, `QueryEvent.system`) · `packages/sierra/test/static-safety-real.mjs` § FJS-1411 · `packages/litestone/test/query-tap.test.ts`.
+
 ### <a id="fjs-d470"></a>2026-09-28 · `FJS-D470` — Where may a row under an enum `@@transitions` START: is `@default` the one entry a caller may name, or does the machine declare its entries — `@default` is the only entry, for every principal. A create that names any other state is refused with `TransitionViolationError`, and the message names the default. `asSystem()` is held too (`FJS-D502`): a row that genuinely starts elsewhere is created at the default and walked there by its declared moves, or is put there by `sys.sql`. Nothing new to spell: the entry is derived from a declaration that already exists, and `IDEAS/state-machines.md`'s *a create is not graded* is struck.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (the machine declares its entries as moves with no `from`: `@@transitions(status, start: -> draft, rush: -> urgent @gate(5), …)`. A create must land on an entry that the caller's level reaches. With no entry declared, `@default` is the only one (A's rule), and a declared `@default` that is not an entry is refused at parse. This is the spelling `IDEAS/tenant-authored-workflows.md` gives the enum form, next to D365 B's `fromId: null` row), **C** (no Data-boundary rule. The kit leaves a `@@transitions` column out of a generated create form, and apps keep a hook per machine (`example`'s `checkOrderRules`). A direct `create()` still skips the gate, against Invariant 6).
@@ -1873,6 +2003,10 @@ is the honest position for something nobody had settled. **Not reversed here.**
 Reversing it is a behavior change with two tests pinning the current answer and
 nothing waiting on it; filed as `FJS-528` so the next person meets the
 disagreement in the register instead of in a query.
+
+*Amended 2026-09-28:* reconciled by [`FJS-D481`](#fjs-d481). A delegated row
+whose every scoping parent is null is now `asSystem()`'s alone, as the null
+column row is, so the two spellings give one answer.
 
 **What it costs basecamp**: `AuditEvent` drops `@@tenant(none)` and takes the
 declared tenancy, so the trail is scoped at the Data boundary rather than by one
@@ -2793,6 +2927,18 @@ tests in `test/elegance-fixes.test.ts`.
 
 ## Query & write semantics (Litestone)
 
+### <a id="fjs-d365"></a>2026-09-28 · `FJS-D365` — Q1 — should `@@transitions` grow `declaredBy:`, so a machine's moves can be rows a tenant edits? (`FJS-D365`) — `@@transitions(field, declaredBy: Model, scope: column)` over a foreign key, with a fixed declarer shape (`fromId?`, `toId`, `gate?`), enforced in the UPDATE's own `WHERE`; entries and the default come with it.
+
+Asked in [`IDEAS/tenant-authored-workflows.md`](IDEAS/tenant-authored-workflows.md) § Open questions. **B** was picked over **A** (no. Workflow-as-data is an app pattern; document the plugin shape (and make `ctx.tables`, or a real client, part of the `Plugin` contract) and leave `@@transitions` to closed columns), **C** (B, plus a schema-level machine over the target's CLOSED category (`scope` + `category:`) that every tenant's rows must also respect, so *nothing leaves `completed` except by reopening* is declared once and no team can remove it).
+
+The paper's recommendation, taken as written: it is `@@extensible`'s own argument, where the schema owns the shape and the tenant owns the members, and every cost measured above is a derivation the enum machine already has and the plugin had to give up. C is attractive and can follow B without changing it: layering a fixed machine over a tenant's one is a second question with no product asking it yet. A leaves FJS-1257's start state and FJS-1255's buttons unsolvable for every tenant-edited workflow.
+
+### <a id="fjs-d488"></a>2026-09-28 · `FJS-D488` — How does a model declare it may be HELD on a device but never written offline — An argument on the existing word: `@@sync(read)`, a held, never-written model. The offline queue refuses writes to it, and no client-mintable id is exposed.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a separate word, e.g. `@@held`, for the read direction, with `@@sync` staying write-only and implying `@@held`).
+
+The paper's recommendation, taken as written: it keeps one word for "rows live on a device", as FJS-D298 wanted. The policy set gains a member that states the direction, which `db:explain` already says is the missing question.
+
 ### <a id="fjs-d420"></a>2026-09-26 · `FJS-D420` — The parser refuses only a schema that cannot be BUILT, asked of one facet; a schema that builds and is wrong belongs to `litestone advise`, never to both
 
 **Attribute legality is asked of what a column physically holds (`plain`, `ciphertext`, `expression`, `none`), and each rule reads that answer** rather than one rule per attribute pair: a constraint over no column, a fractional default on `@scale`/`@money`, a relation across two databases. Legal-but-wrong goes to `advise`, whose every case must parse, so a rule in both is an `advise` rule nothing reaches. Lives in `packages/litestone/src/core/parser.js` (`fieldStorage`) and `src/core/advise.js`. Refused alternative: a rule per pair, which somebody has to remember to write across a hundred-word surface.
@@ -3647,6 +3793,12 @@ wrapper, because each has its own throw to arm.
 *Measured:* `test/one-file-one-connection.test.ts`, 7 rows, every claim paired
 with the same schema on two paths — a fix that collapsed every database onto
 main's connection passes the shared-file half and deletes `FJS-D35`.
+
+*Since (2026-09-28, `FJS-1459`):* "not atomic outside it" means the COMMIT
+alone. The transaction manager holds every write connection, so a throw rolls
+back every file; the files then commit one at a time with main last, and a
+refusal part way is thrown naming what committed and what rolled back
+(`test/second-database-tx.test.ts`). Main last is `FJS-D35`'s outbox reason.
 
 *Lives in:* `packages/litestone/src/core/client.js` (`buildDbRegistry`,
 `_closeAll`, `startCrossProcessWatch`, the auto-DDL block),
@@ -5524,6 +5676,12 @@ this flag existed to escalate, so there is nothing left for it to do.
 
 ## Migrations (Litestone)
 
+### <a id="fjs-d493"></a>2026-09-28 · `FJS-D493` — Who hands `litestone replicate`/`backup` the files the schema cannot name — Caravan's `jobs.db` and a `local` storage provider's bytes — The layout is the list. Everything an app persists lives under `db/` (Invariant 3), because deploy already mounts `/db` as the one volume (`CONTAINER_DB_DIR`), and `jobsVolumeVerdict` ([pause.js:347](packages/cli/core/pause.js)) and the `log-db-unbound` check already refuse a path outside it. `replicate`/`backup` cover every `*.db` under `db/` as a litestream directory target and copy every other file under `db/` byte for byte, skipping jsonl/logger directories as they do today. They name anything they cannot copy. A path outside `db/` is refused by the existing volume checks, not listed here.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked over **A** (`litestone.config.js` gains `replicate.include: [paths]`, and the app lists `db/jobs.db` and `db/public/storage/` there. This is the smallest change, but every path is written twice: once where Caravan or `FileStorage` is configured and again here. When one of them moves, the restore drops files and nothing reports it), **B** (Junction owns the list. A battery that writes a file registers it at boot, next to `registerHealthCheck`; Caravan registers its db and `FileStorage` its root. The manifest exposes the list, and a `fli`-level `replicate`/`backup` hands litestone's `replicate()` the union. This derives the list, but it coins a registry and needs the app booted before anything can be backed up).
+
+The paper's recommendation, taken as written: "what persists" already has an owner, one that is enforced (the deploy volume), so C adds no origin and no noun. A restates paths, B builds a second owner beside the volume, and only C covers the next battery without that battery doing anything.
+
 ### <a id="fjs-d501"></a>2026-09-27 · `FJS-D501` — Q5 — Who decides that a verify runs without the key — The operator, every time: in a terminal it asks; with no terminal it refuses unless the command says `--without-key`. A key present asks nothing, and a schema with no `@encrypted`/`@secret` column needs no key.
 
 Asked in [`IDEAS/restore-verify.md`](IDEAS/restore-verify.md) § Open questions. **A** was picked over **B** (Detect it: run keyless only when the environment looks like a test (`NODE_ENV`, a hostname, a marker file)), **C** (As ruled: keyless is allowed and warned about).
@@ -5911,6 +6069,120 @@ generated BLOCKED (commented out, with fix options); `autoMigrate` reports
 tests in `test/migrations-fixes.test.ts`.
 
 ## API design (Junction)
+
+### <a id="fjs-d487"></a>2026-09-29 · `FJS-D487` — How does a tenant's declared custom-field list for an @@extensible model reach a generated list's columns and filters — Junction serves a built-in `declaredFields` custom method on each @@extensible model's service, gated like its `find`. The resource fetches it once per tenant and merges `fields.<key>` into columns and filters.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (each tenant gets its own JSON Schema from the schema endpoint, with the declared fields written in as `x-declared` properties. There is one channel, but it has to be cached per tenant).
+
+The paper's recommendation, taken as written: the per-tenant fact stays a per-tenant call through the gate, and the shared schema stays tenant-free.
+
+### <a id="fjs-d312"></a>2026-09-29 · `FJS-D312` — Should `app.scheduler` take a cron expression at all? (`FJS-D312`) — Remove `cron()` from `app.scheduler`. The scheduler keeps `every()` and `once()`, which measure ELAPSED time, and a schedule on the CALENDAR is Caravan's (`handle({ cron, timeZone })`). `FJS-D36`'s boundary becomes something the API shows rather than a paragraph: a timer on elapsed time, or a job on a calendar.
+
+Asked in [`IDEAS/time-and-recurrence.md`](IDEAS/time-and-recurrence.md) § Open questions. **B** was picked over **A** (keep both as they are. `app.scheduler.cron()` stays UTC and its doc says so; Caravan's stays zoned), **C** (give `app.scheduler.cron()` a `timeZone` option read through the same `partsIn`, so the two owners agree on what an expression means).
+
+The paper's recommendation, taken as written: one concept, one owner, and the owner `FJS-D36` already named. C makes two implementations agree today and leaves two places for the next clock rule to land in, and A keeps the ambiguity the row was filed for. B's cost is real and small: an app with no Caravan that wants *every night at 02:00* has to add Caravan or write `every('24 hours')`, which drifts from the wall clock. That is the *batteries vs. smallness* adjudication — calendar scheduling stays in the battery that owns durability, and the core keeps a timer. Nothing in the tree calls what B removes, and the enforcer is a junction test asserting `app.scheduler` offers no `cron`, with the `scheduler-dispatch` fixture moved to `every()`.
+
+### <a id="fjs-d479"></a>2026-09-29 · `FJS-D479` — Should a stopped Junction app be restartable, or is one-start-per-app the contract — Keep one start per app; the refusal is the contract, and a config reload builds a new app with `createApp()`. FJS-949 closes as by-design.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Make restart real: rebuild the router per `start()` and make plugin `boot()` route registration idempotent (or reset routes on `stop()`)).
+
+The paper's recommendation, taken as written: no caller exists yet, `createApp()` already covers the embedder, and B makes every plugin carry a re-entrance duty.
+
+### <a id="fjs-d480"></a>2026-09-29 · `FJS-D480` — How does Caravan refuse a payload JSON cannot carry honestly — Refuse at dispatch: walk the payload, throw naming the job and the key path for any non-JSON-plain value, and refuse over a fixed byte bound (e.g. 256 KB) with the bound in the message; type `defineJob<T>` so `T` must be JSON-plain.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (encode honestly: a tagged codec (Date, Map, Set, BigInt round-trip) plus the size bound; handlers get what they typed), **C** (A, with the bound declared per job beside `maxAttempts`).
+
+The paper's recommendation, taken as written: a job payload is an id-and-scalars receipt, not a store; refusing by name costs no new noun or option, and a large value belongs in a row the job reads.
+
+### <a id="fjs-d471"></a>2026-09-29 · `FJS-D471` — Does a transactional service method get a bounded wait on SQLite's write lock — No option. The docs and `api-hazards` say that an after-hook doing slow work belongs in `ctx.enqueue` (the outbox), where it runs after the commit.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (`transactional: { timeout }`: a caller that waits longer than the timeout is refused with a retryable 503, and nothing is written).
+
+The paper's recommendation, taken as written: the lock is held by work the author put inside the transaction, so the fix is to move that work out rather than add a knob. It adds no option and reuses an owner that already exists (the outbox).
+
+### <a id="fjs-d482"></a>2026-09-29 · `FJS-D482` — How do a `type`'s transforms reach a declared custom-method input without the two boundaries disagreeing on what is valid — Three moves: litestone emits an `x-transforms` keyword into JSON Schema (the snapshot and its three readers move with it), junction adds a PRE-validation transform slot, and one `@frontierjs/toolbelt/transforms` subpath holds the implementations that litestone, junction and sierra all read.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Refuse it: a `type` used as a method `input` that declares a transform is a schema error at boot, so the gap can't be hit silently).
+
+The paper's recommendation, taken as written: one owner for the implementations (Invariant 4), the same order at both boundaries, and sierra gets client-side transforms for free. B stays the fallback if A's cost can't be paid yet.
+
+### <a id="fjs-d483"></a>2026-09-29 · `FJS-D483` — Where does each `junction.config.js` section's known-key list live, so a misspelled nested key is refused at `start()` — Each consuming subsystem exports its keys (caravan `CARAVAN_CONFIG_KEYS`, conduit, attachments, …), and a check in `config/index.ts` reads them and reports at `start()` the way FJS-D199 does. For `middleware:`/`plugins:`, the list is derived from `loadConfig`'s key-by-key map.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (One table in `config/index.ts` maps each section to its keys, graded both directions by `config-surface.test.ts`. That puts every list in one place, away from the subsystems that read the keys), **C** (Refuse nested keys only in `middleware:`/`plugins:`, where FJS-D256 already made `loadConfig` the owner. The other four sections keep failing silently, and that gap is recorded as `none` in `invariants.snapshot.md`).
+
+The paper's recommendation, taken as written: The reader is the only honest owner of what it reads, as the row itself argues. B is a second origin, and C leaves most of the row open.
+
+### <a id="fjs-d475"></a>2026-09-29 · `FJS-D475` — Where does a non-bearer inbound credential (a signed request) become a principal in junction — `createApp({ credentials: [signedRequest({ keyFor, window })] })`: an ordered list of verifiers `(req, rawBody) => SessionContext | null | refuse`, tried by transport before the bearer path. Bearer becomes the list's default last entry, and `verifyApiKey` goes into it as well, which ends the one-door hazard.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (an optional `IAuth.verifyRequest(req, rawBody)` beside `verifySession`. There are fewer nouns, but every auth provider now owns machine identity, and a signature scheme has nothing to do with the session store).
+
+The paper's recommendation, taken as written: a credential kind is not an auth provider's concern. A declared list is one owner (transport) with one order, and the app states its machine identity once instead of guarding each route.
+
+### <a id="fjs-d490"></a>2026-09-28 · `FJS-D490` — How does a non-User attester (a kiosk device) reach the audit trail's `actorId`/`subjectId` pair, and narrow the standing of the principal it vouches for — `app.runAs(userId, fn, { tenant, attestedBy: { id, type, method } })`: junction keeps it in the call scope, and `installLogContext` reads it into `operatorId`/`actorType`, so litestone's existing support branch files `actorId` = device and `subjectId` = person. `method` feeds the principal's `authMethod`, so a gate can grade it. The standing is still re-resolved through `sessionFor`.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (A composable `$logContext` (a stack of providers per call): litestone gains a general layering mechanism for one caller, and the standing half is still unanswered).
+
+The paper's recommendation, taken as written: it rides on the support branch `buildLogEntry` already has, keeps one owner of the log context (Invariant 4), and answers both halves at the one call site the kiosk already uses.
+
+### <a id="fjs-d539"></a>2026-09-28 · `FJS-D539` — Does a create on a repeatable relator have to carry an idempotency key, and what says so — An advisory rule. `opportunities.js` or `fli check` asks it: *this service creates a model declaring `@@relator(…, many)` and no idempotency config, so a retry writes a second occurrence*. Confidence, never severity. Costs nothing to anyone who ignores it.
+
+Asked in [`IDEAS/relators.md`](IDEAS/relators.md) § Open questions. **A** was picked over **B** (enforcement at the boundary. A create on a `many` relator with no key is refused. Correct and unshippable as stated: every existing caller breaks, and the framework would be demanding a header for a write the app may legitimately want to repeat), **C** (nothing, until an app is bitten. The word makes the hazard nameable; a reader who knows what `many` means can reach for a key).
+
+The paper's recommendation, taken as written: cheap, and it satisfies `opportunities.js`'s own contract that *every finding names the WORD it is about*, which `@@relator` now does. It is the good kind of recognizer rather than the `FreeRole` kind warned about below, because it fires on a narrow declared shape instead of on every unmarked pair. **Held rather than built**: nothing in this workspace creates a `many` relator from a retryable path, so the rule would ship with no true positive to point at, and a rule whose first firing is hypothetical is one nobody trusts when it finally fires.
+
+### <a id="fjs-d503"></a>2026-09-28 · `FJS-D503` — Is `IDEAS/overview.md` 4.19 one durable-run primitive, or several uses of `occurrenceKey` — Several uses of `occurrenceKey`, and 4.19 is withdrawn as a primitive. The discipline becomes graded: every durable dispatch id goes through `occurrenceKey`, orion's three hand-built ids are the first to move, and `toolbelt/history`'s header states the moving term (attempt, generation, fire minute) as part of an occurrence's contract. It reopens when a second realm needs claimed, ordered steps resumed after a crash.
+
+Asked in [`IDEAS/release-transitions.md`](IDEAS/release-transitions.md) § Open questions. **A** was picked over **B** (extract the journal's decision half into toolbelt (`resumeDecision`, `attemptDecision`, the claim, `formatVersion` plus `migrationPlan`, all pure `{ sql, params }`). Deploy is the first consumer, and orion moves `RunStep` to claimed-per-step to become the second), **C** (the full noun: run, step, compensation and pivot as one package, with orion's engine as the host and the journal and the backfill migrating onto it).
+
+The paper's recommendation, taken as written: the part that crosses realms is the key, and it is already extracted. B has one consumer and makes the second by changing orion's run model to fit, and C builds compensation that no realm executes. `corpus-synthesis.md` § 3 argued for B from the number of realms. Counted per property, it is the key that crosses realms, not the journal.
+
+### <a id="fjs-d369"></a>2026-09-28 · `FJS-D369` — Q1 — does `FJS-D71` hold for a product whose views ARE stored filters? (`FJS-D369`) — Amend D71 to its reason: a view MAY store a filter, in the list's own query-string grammar, and it is only ever executed as the person it is for (the reader's own read, or each subscriber through `app.runAs` and a service read), never as its author and never as the system. The framework ships the ruling and the recipe, nothing new.
+
+Asked in [`IDEAS/tenant-authored-queries.md`](IDEAS/tenant-authored-queries.md) § Open questions. **B** was picked over **A** (D71 stands as written. A view is a kind; a clicked-together filter lives only in the URL (a bookmark), and there is no shared filtered view and no subscription on a filter), **C** (B, plus a framework-owned subscription (`service.watch(filter)`): durable, decided as each subscriber off the request in a job, and on update as well as create, so an issue that ENTERS a view is matched).
+
+The paper's recommendation, taken as written: the read half needs nothing the framework lacks, and the subscription half is `runAs` plus one service read, both already shipped and measured leak-free. C is the right shape once a second app needs a subscription, but its hard part (entered/left on every update, per subscriber) is a matcher design of its own (FJS-011's live matcher is the precedent, and `$search` is already undecidable there). A holds a ruling against the product it was meant to protect, and leaves Linear's views unbuildable.
+
+### <a id="fjs-d484"></a>2026-09-28 · `FJS-D484` — What public surface reports the offline warm's result and what a device holds — `offlineStatus()`, a status object beside `pendingQueue`: last warm's report (per service: rows written, error) plus when it ran. One noun an app reads; mirrors the existing queue status.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`lastWarmReport()` returning `warmOffline()`'s answer verbatim, plus exporting `warmOffline` for an app to await itself).
+
+The paper's recommendation, taken as written: one status surface in the shape already coined for the queue, rather than a second noun for the raw report.
+
+### <a id="fjs-d489"></a>2026-09-28 · `FJS-D489` — Where does the clock that re-grades a held `@@effective` row live — Client tick in the live store (sierra/junction client): the store reads each held row's `to:` bound, schedules one timer for the soonest, and drops the row via `@frontierjs/toolbelt/match` re-grading when it fires. No server work; needs `x-effective` in the JSON Schema so the client knows the field.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Server-side expiry frame: junction schedules a `removed` frame at each broadcast row's `to:` for its subscribers. Contradicts FJS-D351's "never scheduled", and one timer per held row per server).
+
+The paper's recommendation, taken as written: the store already owns what it holds and the clock is local; B re-opens the "never scheduled" half of FJS-D351.
+
+### <a id="fjs-d485"></a>2026-09-28 · `FJS-D485` — Does a device's local db, which holds a partial window, enforce foreign keys on write-through — The device is a cache, not the source of truth: open the local db with `foreign_keys = OFF` (or declare device tables without FK constraints). The server already enforced them; a partial window cannot satisfy them by construction.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (Keep FKs; on a batch refusal fall back to per-row upserts and drop (or defer and retry) the rows whose parent is absent. Every child outside its parent's window stays off the device, so an offline read of it misses).
+
+The paper's recommendation, taken as written: a partial window can never be referentially closed, so B loses rows permanently and costs a row-at-a-time OPFS write on every miss; integrity is the server's (Invariant 6's boundary), not the replica's.
+
+### <a id="fjs-d364"></a>2026-09-28 · `FJS-D364` — Q11 — when the server refuses a replayed write, what happens to the writes queued behind it? (`FJS-D364`) — A refusal HOLDS every later entry that names the refused row by key — its own id, or a relation column holding it — and lets the rest go. Held entries surface with the refusal as one item, and are released or discarded with it.
+
+Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **B** was picked over **A** (send everything, as now, and make the refusal visible (`FJS-1302`). A dependent write fails on its own and is shown on its own), **C** (a refusal holds the whole queue behind it until a person decides), **D** (each entry records at enqueue which earlier entries it depends on, and the drain honours the graph).
+
+The paper's recommendation, taken as written: it derives, from two things the queue already holds (the ids it minted and the relation map the schema ships), exactly the set D would make every write declare, and it costs no enqueue-time bookkeeping. A sends writes it knows will fail and reports each with the wrong reason (#1's *Outside your workspaceId* is what a comment on a missing issue gets). C holds #3 and every other independent write of the day hostage to one private team, which on a train is the whole morning's work. None of the four helps #4, so B lands only with `FJS-1302`'s artifact, the way D300 was meant to.
+
+### <a id="fjs-d468"></a>2026-09-28 · `FJS-D468` — Which rows does a resource keep the read `@version` of, and what does a patch of a row it holds none for do — A's eviction and first-sight rule, plus B's refusal for whatever still misses (an unheld `find()` row past the cap). No screen showing a live row is ever refused, and no miss reaches the server or the queue.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **C** was picked over **A** (Evict only rows no view holds (`client.nodes.peek(model, id)?.held`), and treat the first sight of a never-read row in a held view as its read (a `store.subscribe` / `record()` watch that calls `_remember` only when the id is absent). This amends the doctrine's *never from the store* to *never over a read*. It leaves a `find()` read into a plain array, as in the lab, still forgetting silently), **B** (Keep the cap and the rule as they are, and add a device-side refusal. A patch on a `@version` model with no remembered version and no explicit one throws a `ResourceError` naming the row, *read too long ago, or never read, to edit safely — reload it*, before anything is queued. The pushed-row case then becomes a refusal too, and linear's board has to re-read before every drag).
+
+The paper's recommendation, taken as written: the push case is what the person saw, so refusing it (B) punishes the ordinary live screen. A alone keeps a silent 400 for `find()` readers, and the offline drain is where that miss is destructive.
+
+### <a id="fjs-d469"></a>2026-09-28 · `FJS-D469` — does a replayed write carry the moment it was made to the boundary, and does the server's `now()` resolve to it — A, and every `now()` litestone resolves inside that call — `@default(now())`, `@updatedAt` — resolves to `ctx.madeAt` as well. The audit trail keeps the server's landing time, which is what an audit records.
+
+Asked in [`IDEAS/homestead.md`](IDEAS/homestead.md) § Open questions. **B** was picked over **A** (per call: the drain sends the entry's time and its own clock at send (`sentAt`) as call options, beside `base`. The boundary derives the device's offset from `sentAt` against its own clock, corrects the made-at by it, refuses one later than the server's now, and hands the result to the service as `ctx.madeAt` — arrival time on a live call, so it is always set. Services read `$.madeAt` where they stamp a time; litestone's defaults are untouched), **C** (a column-level declaration (`@madeAt` or `@default(made())`): only a column that says so is stamped with the device's time, and every other `now()` stays the landing time).
+
+The paper's recommendation, taken as written: on a live call made-at and landed-at are one instant, so `now()` meaning *when the write was made* changes nothing there and is what every domain column on a replay meant; C coins a word in the grammar for a distinction the author would otherwise have to remember on every time column of every `@@sync` model, and A leaves `@default(now())` wrong on exactly the append-only models `@@sync(append)` exists for. The offset from `sentAt` is the reason the framework rather than the app owns this: a device clock wrong by a constant is corrected exactly, and only one changed between press and drain escapes it.
+
+### <a id="fjs-d486"></a>2026-09-28 · `FJS-D486` — How does the browser client authenticate its WebSocket without the session token in the URL — The token rides the handshake's subprotocol list: `new WebSocket(url, ['fjs', 'fjs.bearer.' + token])`. `extractToken`, the one owner of *where does this request's credential come from*, learns the `fjs.bearer.` entry beside `Authorization` and the cookie, and the upgrade selects `fjs` explicitly. `?token=` stops being read anywhere, with no fallback, and the test and drive callers that still use it move in the same change. A token outside the header-token alphabet is refused by the client by name, never sent mangled. It is a header, so it is as visible as `Authorization` already is, and no more.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (a connect ticket. `POST /ws/ticket` with the bearer header answers a short-lived, single-use value, and the URL carries that. A logged ticket is already spent. The cost is a new route, a ticket store that a second instance does not share, and an HTTP round trip before every reconnect), **C** (the first frame. The socket opens anonymous and sends `{ type: 'auth', token }`. This contradicts *never a frame*, and it moves channel joins, the `connected` message and the connection caps to after a frame that may never come).
+
+The paper's recommendation, taken as written: no new route, store or round trip, and no new owner: the credential joins the list `extractToken` already reads. A has the store to make multi-instance and still puts a credential in the URL. C breaks a stated rule and reshapes the connection lifecycle to do it.
 
 ### <a id="fjs-d473"></a>2026-09-28 · `FJS-D473` — Who strips a `@guarded`/`@encrypted` column from a service's SUCCESS result before it reaches the wire — The bridge strips, at every wire. On the HTTP body, the WS `service_result` frame and an MCP tool result, the key is DROPPED (not `[redacted]`) for every name `protectedFieldsFor(ctx)` returns, through one bridge export, `withholdProtected(value, ctx)`, over toolbelt's `omitBy`. Nothing is added: this is FJS-686's owner and list extended from `fe.data` to the result. A success body then has the shape a caller-scoped read already has. An in-process `app.service(x).method()` stays ungraded, since that caller is the app — which is why `mcpPlugin` calls the export itself: it dispatches through `app.service()` and its caller is an agent. Measured while building it, the WS `service_error` frame had never been through `sanitizeError` (FJS-686 closed HTTP only) and sent the attached row's secret; it now goes through the same bridge. The gap is the error path's gap: a protected column on an `include`d relation of a DIFFERENT model is not in the list.
 
@@ -9067,6 +9339,12 @@ package boundary: `AccessDeniedError` → 403, `ValidationError` → 400.
 
 ## UI substrate (Mesa)
 
+### <a id="fjs-d531"></a>2026-09-28 · `FJS-D531` — What is the helper called — `$.flip`, for the developer who arrives searching for that word.
+
+Asked in [`IDEAS/list-motion.md`](IDEAS/list-motion.md) § Open questions. **B** was picked over **A** (`$.move`, and the compiler refuses `animate:flip` by name, pointing at `{@attach $.move()}`).
+
+flip is the word a developer arrives searching for, and the ecosystem already reads it as the technique rather than a rotation.
+
 ### <a id="fjs-d453"></a>2026-09-26 · `FJS-D453` — the theme is a `theme-*` class on `<html>`, and Sierra owns the switch.
 
 **`@frontierjs/css` owns the vocabulary (one `theme-*` class per theme) and ships no JavaScript; Sierra owns the switch through `theme: { themes, default, system, persist, key, apply }` in `sierra.config.js`, and `setTheme` refuses a name the app did not declare.** Beating first paint needs a `<head>` script only the build writes, so neither the CSS package nor the ui kit can own it. `apply` picks class or attribute, never the element. Where it lives: `packages/sierra/src/theme/index.js`. Refused alternative: a configurable target element, since `<body>` does not exist when the `<head>` script runs and a body target brings the flash back.
@@ -10396,6 +10674,12 @@ hash is the only thing keeping one component's rules off another's markup.
 
 ## Design system (`@frontierjs/css`)
 
+### <a id="fjs-d524"></a>2026-09-28 · `FJS-D524` — A colored region with no term — the kanban lane — Coin a term in `vocabulary.js` (a Lane or a Board).
+
+Asked in [`IDEAS/wireframe.md`](IDEAS/wireframe.md) § Open questions. **A** was picked over **B** (let Section or Pane take a tone), **C** (nothing yet; the `✗` is the answer until a second screen shows it).
+
+the term is Lane, the vertical counterpart of the horizontal Bar the vocabulary already has — a pair completed, not a term coined per client.
+
 ### <a id="fjs-d252"></a>2026-09-08 · `FJS-D252` — Bar is the strip and Group is what goes inside it. Group was already a term with no CSS, and giving it CSS answers both halves of the question.
 
 `FJS-D24` asked two things: is there a term for a horizontal group that does not
@@ -10940,6 +11224,42 @@ verified admin 5. Invariant 6 has no exceptions. Basecamp's gates are outstandin
 work, not a decision.)*
 
 ## Repo conventions
+
+### <a id="fjs-d476"></a>2026-09-29 · `FJS-D476` — Which CI tier runs `litestone mutate` over `example` and `basecamp`, and is its score ratcheted by a baseline — Full tier: `example` whole, `basecamp` under a `--kinds` subset sized to minutes; per-app score in a `scripts/mutate-baselines.json` that ratchets like `typecheck-baselines.json` (Invariant 14).
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (a nightly job running both apps whole against the same baseline file; nothing on push), **C** (fast tier runs `example` with a `--kinds` subset; full tier runs both whole; same baseline).
+
+The paper's recommendation, taken as written: CI tiers already exist and a nightly is a new runner nobody watches; the baseline is the ratchet either way.
+
+### <a id="fjs-d495"></a>2026-09-29 · `FJS-D495` — How do an app's generated `db/schema.d.ts` types reach `createClient()`'s `db` — Module augmentation: typegen `--audience system` emits `declare module '@frontierjs/litestone' { interface Register { client: LitestoneClient } }`, and `createClient`'s default resolves through `Register`. No call site changes; mirrors the existing `--augment junction`. Still needs `fli new` to generate the file.
+
+Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **B** was picked over **A** (Scaffold the generic: `fli new` generates `db/schema.d.ts` at scaffold time and `core/db.ts` writes `createClient<LitestoneClient>` importing it (basecamp's shape). Per-app, explicit; an existing app like connectteam edits one line).
+
+The paper's recommendation, taken as written: the types reach every `createClient()` and `asSystem()` without a copy at each call site, the same seam `--augment junction` already set for the browser half (FJS-018).
+
+### <a id="fjs-d532"></a>2026-09-28 · `FJS-D532` — Where does Mesa's gated bench run — Inside mesa's `test` script, after the browser drives. No new phase; the `tests` phase runs it, and a DOM count is a design fact, which this record already says is a test.
+
+Asked in [`IDEAS/performance-regression-watch.md`](IDEAS/performance-regression-watch.md) § Open questions. **A** was picked over **B** (Its own CI phase, beside `typecheck`, since it is a baseline with a ratchet like typecheck's), **C** (Stays manual until a second package has a slice, then one phase for all).
+
+The paper's recommendation, taken as written: one owner (mesa's suite), no CI edit, and a rise is caught the day it lands. B and C are the shape once litestone's counts join, per Order (2).
+
+### <a id="fjs-d526"></a>2026-09-28 · `FJS-D526` — Two near-shapes — Keep them apart and say so, as now.
+
+Asked in [`IDEAS/wireframe.md`](IDEAS/wireframe.md) § Open questions. **B** was picked over **A** (merge them into one component with a variable slot).
+
+The paper's recommendation, taken as written: the note costs a line and a wrong merge costs a component whose props lie about half its copies.
+
+### <a id="fjs-d525"></a>2026-09-28 · `FJS-D525` — A repeated card over a model is a Resource view (Invariant 18), not a free component — Write every component to `components/<Screen>/`, as now.
+
+Asked in [`IDEAS/wireframe.md`](IDEAS/wireframe.md) § Open questions. **A** was picked over **B** (where the draft's record matches a model already in `db/schema.lite`, write that component beside its Resource instead).
+
+The paper's recommendation, taken as written: until the schema half is adopted: B needs a model to match against, and on a new app the model is the draft this same run wrote.
+
+### <a id="fjs-d523"></a>2026-09-28 · `FJS-D523` — Who writes the wireframe from a screenshot — Out of band: a skill or an agent writes the JSON and `fli` only reads it, as `fli intent` reads a candidate a translator wrote.
+
+Asked in [`IDEAS/wireframe.md`](IDEAS/wireframe.md) § Open questions. **B** was picked over **A** (a vision call inside `fli`, with a JSON schema whose `term` is the vocabulary's enum, so an invented term cannot be emitted at all).
+
+The paper's recommendation, taken as written: it keeps `fli` model-free, the same line `intent-recognizer.md` holds, and the schema that would constrain A is `readWireframe`'s refusal already. A is a later convenience over B, not a different design.
 
 ### <a id="fjs-d443"></a>2026-09-26 · `FJS-D443` — No suite bun runs calls `mock.module()`; a test injects the transport or uses the real implementation
 
@@ -12913,6 +13233,18 @@ the file puts the judgement where judgement lives.
 — `packages/cli/core/checks.js`, `CLAUDE.md` Invariant 17.
 
 ## Dependencies & the ecosystem
+
+### <a id="fjs-d535"></a>2026-09-28 · `FJS-D535` — Its own package, or part of auth — Fold into `@frontierjs/auth` as a second plugin.
+
+Asked in [`IDEAS/sysadmin-console.md`](IDEAS/sysadmin-console.md) § Open questions. **B** was picked over **A** (`@frontierjs/sysadmin`, orion-shaped, depending on auth).
+
+auth already owns the level-7 standing and support mode, so the console is that standing's second plugin rather than a new package depending on it.
+
+### <a id="fjs-d533"></a>2026-09-28 · `FJS-D533` — What does a frontmatter block mean here — A toolbelt kit holding a declared subset; sierra drops js-yaml and both callers agree by construction.
+
+Asked in [`IDEAS/toolbelt-admissions.md`](IDEAS/toolbelt-admissions.md) § Open questions. **A** was picked over **B** (full YAML is the meaning; the parser stays sierra's, and mesa's hand-rolled reader is the defect to close rather than the shape to standardize).
+
+The paper's recommendation, taken as written: a frontmatter block is configuration written by hand into a route file, and anchors, aliases and merge keys are the part of YAML that produced `FJS-821` in the first place, so dropping them removes the mitigation along with the feature. **B is the honest answer if an app is found relying on nesting**, which nothing in this repo does — every `.md` and `.mesa` frontmatter here is flat.
 
 ### <a id="fjs-d339"></a>2026-09-20 · `FJS-D339` — Where does the token HMAC live — A `@frontierjs/toolbelt` kit (WebCrypto only; `/signature` already has a private `hmacHex`).
 

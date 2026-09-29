@@ -340,8 +340,8 @@ src/
   `routes.snapshot.md` — every URL with the file behind it, the layout the
   scanner resolved (or none, where the page declared `reset`), the meta a layout
   pushed onto every page under it, and on a `static` target `publishes:` in its
-  own section ahead of the routes, because that is the line that turns the
-  publish check off. `--check` is the CI half (`snapshots` phase). **Run it from
+  own section ahead of the routes, because that is the line that lets gated
+  columns into a public file. `--check` is the CI half (`snapshots` phase). **Run it from
   the app's WEB ROOT** — `routesDir` is relative to Vite's root, never to where
   the config file sits (Invariant 3), and CI reruns the command from the
   snapshot's own directory. One config is one target, and the config's name
@@ -627,8 +627,9 @@ src/
   message by hand — passes forever against a hook nothing calls.
 
 - **A prerendered route must prove its data is publishable.** Reads are tapped
-  around `load()` and compared to `@@gate`, fail-closed; the escape is per-route
-  `publishes: N` (FJS-081).
+  around `load()` and graded per COLUMN against `@@gate`, fail-closed. The escape
+  is per route, `publishes: { Model: [columns] }` (`FJS-D496`), and it never
+  lifts a protected column read through `asSystem()` (`FJS-D504`).
 - **A mounted ancestor is authoritative** for nested islands — test a marker with
   `isConnected`, not `parentNode`.
 - **Sierra exports no module-level signal, and the `externalSignals` map is

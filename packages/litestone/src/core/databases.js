@@ -362,9 +362,9 @@ export function resolveAccessConfig(accessConfig, readOnly, schema) {
 //
 // Two declarations can name one file. Under `strategy database` every sqlite
 // database is redirected to the tenant's own file, and a literal path can also
-// be repeated. SQLite allows one writer per file and there is one transaction
-// manager, over main's connection — so a second connection writing inside that
-// transaction waits for a lock the caller itself is holding, answers
+// be repeated. SQLite allows one writer per file and the transaction manager
+// takes a write lock on each connection — so a second connection to one file
+// waits for a lock the caller itself is holding, answers
 // `database is locked` and cannot ever get it (`FJS-958`). Reads succeed
 // throughout, so the shape looks correct until something writes.
 //

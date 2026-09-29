@@ -189,7 +189,7 @@ wrong, for this product, is *never stored*.
 
 ## Open questions
 
-- **Q1 — does `FJS-D71` hold for a product whose views ARE stored filters? (`FJS-D369`)**
+- ~~**Q1 — does `FJS-D71` hold for a product whose views ARE stored filters? (`FJS-D369`)**~~ **Answered 2026-09-28 (`FJS-D369`): B — Amend D71 to its reason: a view MAY store a filter, in the list's own query-string grammar, and it is only ever executed as the person it is for (the reader's own read, or each subscriber through `app.runAs` and a service read), never as its author and never as the system. The framework ships the ruling and the recipe, nothing new.**
   Measured in linear Phase 5 (table above): a declared kind carries one or two of
   a real view's four terms; a stored filter in the list's own query grammar,
   executed only as its reader or as each subscriber, leaked nothing; the same

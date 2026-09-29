@@ -105,6 +105,47 @@ describe('login', () => {
     expect(DUMMY_HASH.startsWith(`$2b$${BCRYPT_COST}$`)).toBe(true)
   })
 
+  // FJS-1457. A hash imported from another app, or written before BCRYPT_COST
+  // was raised, verifies correctly at its own cost. The dummy hash only prices
+  // the branches that never reach a real hash, so a wrong password against a
+  // cost-4 hash answered 4× faster than every other refusal, and a stopwatch
+  // told which addresses were real accounts.
+  const plantCheapHash = async (name: string) => {
+    const u = await freshUser(name)
+    const user = await h.sys.user.findFirst({ where: { email: u.email } })
+    const cheap = await Bun.password.hash(u.password, { algorithm: 'bcrypt', cost: 4 })
+    await h.sys.credential.updateMany({ where: { userId: user.id, type: 'password' }, data: { value: cheap } })
+    return { ...u, userId: user.id }
+  }
+
+  test('a hash cheaper than BCRYPT_COST is rewritten at it by the login that proves it', async () => {
+    const u = await plantCheapHash('login-rehash')
+    signedIn(await h.auth.login(u.email, u.password))
+
+    const cred = await h.sys.credential.findFirst({ where: { userId: u.userId, type: 'password' } })
+    expect(cred.value.startsWith(`$2b$${BCRYPT_COST}$`)).toBe(true)
+    signedIn(await h.auth.login(u.email, u.password))
+  })
+
+  test('a wrong password against a cheaper hash costs what every other refusal does', async () => {
+    const u = await plantCheapHash('login-cheap-timing')
+    const floorOf = async (fn: () => Promise<unknown>) => {
+      let min = Infinity
+      for (let i = 0; i < 3; i++) {
+        const t0 = performance.now()
+        await fn().catch(() => {})
+        min = Math.min(min, performance.now() - t0)
+      }
+      return min
+    }
+
+    const cheap        = await floorOf(() => h.auth.login(u.email, 'not-the-password'))
+    const unknownEmail = await floorOf(() => h.auth.login(email('cheap-timing-ghost'), 'x'))
+
+    expect(cheap).toBeGreaterThan(unknownEmail * 0.5)
+    expect(cheap).toBeLessThan(unknownEmail * 2)
+  })
+
   test('apikey: revoke is scoped to an owner, and both mutations leave a trail', async () => {
     const h = await makeAuth({ encryptionKey: TEST_KEY })
     const mine   = await h.auth.createUser({ email: 'mine@x.test',   password: 'Passw0rd!aaa' })

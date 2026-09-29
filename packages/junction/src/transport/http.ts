@@ -6,6 +6,7 @@
 
 import { Router }                         from './router.ts'
 import { BUILD_HEADER } from '../core/build-id.ts'
+import { WS_PROTOCOL, bearerFromProtocols, withoutBearer } from '../core/ws-auth.ts'
 import { parsePathSegments, matchPathDirect } from './router.ts'
 import { parseBody, parseQuery, parseCookies, extractIP, BodyTooLargeError } from './body.ts'
 import { serveStatic }                    from './static.ts'
@@ -1152,6 +1153,15 @@ export class HttpTransport {
 
     const query   = parseQuery(url.search)   // reuse the URL already parsed in _handle
     const headers = Object.fromEntries(req.headers.entries())
+
+    // Read once here and taken off the headers the socket keeps: those become
+    // every frame's `ctx.caller.headers`, and the logger redacts by name, which
+    // `sec-websocket-protocol` is not.
+    const credential = this._opts.auth ? extractToken(headers, this._opts.authCookie ?? null) : null
+    const offered    = headers['sec-websocket-protocol']
+    const rest       = withoutBearer(offered)
+    if (rest === undefined) delete headers['sec-websocket-protocol']
+    else headers['sec-websocket-protocol'] = rest
     const ip      = extractIP(
       req,
       (server as { requestIP?: (r: Request) => { address: string } | null }).requestIP?.(req)?.address,
@@ -1167,6 +1177,7 @@ export class HttpTransport {
       headers,
       ip,
       user:     null,
+      credential,
       handlers: matchedHandlers,
     }
 
@@ -1180,7 +1191,12 @@ export class HttpTransport {
     if (perIp > 0 && (this._wsPerIp.get(ip) ?? 0) >= perIp)
       return new Response('Too many connections from this address', { status: 503 })
 
-    const upgraded = server.upgrade(req, { data: wsData })
+    // Selected by name: Bun would otherwise echo the FIRST offer, and an app's
+    // own client may offer its protocols in any order.
+    const selected = rest?.split(',').some(p => p.trim() === WS_PROTOCOL)
+      ? { 'Sec-WebSocket-Protocol': WS_PROTOCOL }
+      : undefined
+    const upgraded = server.upgrade(req, { data: wsData, headers: selected })
 
     return upgraded
       ? undefined as unknown as null   // Bun owns the response
@@ -1216,17 +1232,13 @@ export class HttpTransport {
     this._sockets.add(ws)
     this._wsPerIp.set(ws.data.ip, (this._wsPerIp.get(ws.data.ip) ?? 0) + 1)
 
-    // Resolve auth from token in headers or query — same logic as HTTP.
-    // We do this here rather than at upgrade time because verifySession is async
-    // and Bun's upgrade() call is synchronous.
+    // Verified here rather than at upgrade because verifySession is async and
+    // Bun's upgrade() is synchronous. The credential was read there, from the
+    // same places an HTTP request's is — the cookie included, or a
+    // cookie-authenticated app connects as anonymous.
     if (this._opts.auth) {
-      const token =
-        (ws.data.query?.token === undefined ? undefined : String(ws.data.query.token)) ??
-        // The upgrade request is an ordinary browser request and carries the
-        // cookie, so cookie mode has to work for the socket too — otherwise a
-        // cookie-authenticated app connects as anonymous and every channel
-        // scoped to the user stays silent.
-        extractToken(ws.data.headers, this._opts.authCookie ?? null)
+      const token = ws.data.credential ?? null
+      ws.data.credential = null
       if (token) {
         // The UPGRADE request's headers — the only ones a socket ever has, and
         // the same ones `withTenantDb` reads off a frame's context.
@@ -1454,6 +1466,10 @@ function extractToken(
 
   const apiKey = headers['x-api-key']
   if (apiKey) return apiKey
+
+  // A browser socket's bearer, which cannot ride Authorization (`FJS-D486`).
+  const offered = bearerFromProtocols(headers['sec-websocket-protocol'])
+  if (offered) return offered
 
   if (cookieName) {
     const raw = headers['cookie']

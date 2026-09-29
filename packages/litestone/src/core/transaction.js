@@ -41,7 +41,22 @@ const _txOwned = new AsyncLocalStorage()
 // owning context and this can be asked instead of the counter.
 const ownsTx = (state) => _txOwned.getStore()?.has(state) ?? false
 
-export function makeTxManager(db, state = { depth: 0 }, ledger = null) {
+// ── Every file a write can reach, not main's alone ───────────────────────────
+//
+// `conns` is `[{ name, db }]`, main first, one entry per write CONNECTION — two
+// declarations on one file are one entry (`FJS-D232`). Holding main's alone left
+// a second file's statements outside every transaction: a refused createMany
+// there kept the rows before the bad one, and a throwing `$transaction` rolled
+// back main and left the other file's writes standing (`FJS-1459`).
+//
+// A rollback reaches every file. The COMMIT cannot be one act across two
+// connections, so it runs file by file with main last — main holds the outbox
+// (`FJS-D35`), so a refusal anywhere before it leaves the durable effects
+// unwritten — and a refusal part way is thrown naming what committed and what
+// rolled back, the one thing a caller cannot find out afterwards.
+export function makeTxManager(conns, state = { depth: 0 }, ledger = null) {
+  const db = conns[0].db
+  const each = (sql) => { for (const c of conns) c.db.run(sql) }
   let spCount = 0
 
   // Lock as a promise chain. `tail` always resolves when the current holder
@@ -100,30 +115,68 @@ export function makeTxManager(db, state = { depth: 0 }, ledger = null) {
     // BEGIN IMMEDIATE (matching the $transaction doc comment): take the write
     // lock up front. A deferred BEGIN upgrades to a write lock mid-transaction,
     // which under concurrency surfaces as avoidable SQLITE_BUSY retries.
-    if (state.depth === 0) { db.run('BEGIN IMMEDIATE') }
-    else { spCount++; db.run(`SAVEPOINT sp_${spCount}`) }
+    if (state.depth === 0) {
+      // A file that refuses its BEGIN (another process holds it past the busy
+      // timeout) must not leave the ones before it holding a write lock.
+      conns.forEach((c, i) => {
+        try { c.db.run('BEGIN IMMEDIATE') }
+        catch (e) { for (const o of conns.slice(0, i)) o.db.run('ROLLBACK'); throw e }
+      })
+    }
+    else { spCount++; each(`SAVEPOINT sp_${spCount}`) }
     state.depth++
     return { sp: state.depth === 1 ? null : spCount, mark: pending.length, cmark: ledger?.length ?? 0, wmark: wrote.length }
   }
 
-  function commit({ sp }) {
+  function commit(frame) {
+    const { sp } = frame
     // Graded BEFORE the depth moves. A refusal here is thrown to the caller's
     // own catch, which calls rollback() — and rollback decrements too, so a
     // grade after the decrement would take the counter negative on every
     // refusal.
     if (sp == null && ledger) { ledger.grade(db); ledger.truncate(0) }
     state.depth--
-    if (sp == null) { db.run('COMMIT'); wrote.length = 0; flushPending() }
-    else            db.run(`RELEASE sp_${sp}`)
+    if (sp != null) { each(`RELEASE sp_${sp}`); return }
+    const order = [...conns.slice(1), conns[0]]
+    for (let i = 0; i < order.length; i++) {
+      try { order[i].db.run('COMMIT') }
+      catch (e) {
+        // Settled here, not by the caller's rollback(): the depth has already
+        // moved, and the files committed before this one cannot be rolled back.
+        frame.settled = true
+        pending.length = frame.mark
+        wrote.length = 0
+        for (const c of order.slice(i)) { try { c.db.run('ROLLBACK') } catch {} }
+        if (conns.length === 1) throw e
+        const names = (cs) => cs.map(c => c.name).join(', ') || 'none'
+        throw Object.assign(new Error(
+          `Transaction could not commit in database '${order[i].name}': ${e.message}. ` +
+          `Each database file commits on its own, so a transaction spanning files is not atomic at its commit — ` +
+          `committed: ${names(order.slice(0, i))} · rolled back: ${names(order.slice(i))}`,
+          { cause: e }), { committed: order.slice(0, i).map(c => c.name), rolledBack: order.slice(i).map(c => c.name) })
+      }
+    }
+    wrote.length = 0
+    flushPending()
   }
 
-  function rollback({ sp, mark, cmark, wmark }) {
+  function rollback(frame) {
+    if (frame.settled) return
+    const { sp, mark, cmark, wmark } = frame
     state.depth--
     pending.length = mark
     wrote.length = wmark
     if (ledger) ledger.truncate(cmark)
-    if (sp == null) db.run('ROLLBACK')
-    else { db.run(`ROLLBACK TO sp_${sp}`); db.run(`RELEASE sp_${sp}`) }
+    // Every file is rolled back even when one refuses, then the first refusal
+    // is thrown — stopping at it would leave the rest holding their writes.
+    let failed = null
+    for (const c of conns) {
+      try {
+        if (sp == null) c.db.run('ROLLBACK')
+        else { c.db.run(`ROLLBACK TO sp_${sp}`); c.db.run(`RELEASE sp_${sp}`) }
+      } catch (e) { failed ??= e }
+    }
+    if (failed) throw failed
   }
 
   function wrap(fn) {

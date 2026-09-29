@@ -352,9 +352,8 @@ export function createOrionServices(deps: {
     },
 
     /**
-     * Ends a waiting run, for the flow's owner or an administrator. A run that
-     * is queued or running is refused: its job would write over the
-     * cancellation (`FJS-1157`). Pausing the flow stops new ones.
+     * Ends a run that has not ended, for the flow's owner or an administrator.
+     * A running one stops at its next checkpoint (`FJS-1157`).
      */
     async cancel(ctx: ServiceContext) {
       const run = await clientOf(ctx).run.findFirst({
@@ -363,9 +362,8 @@ export function createOrionServices(deps: {
       })
       if (!run) throw new NotFound(`No run '${ctx.id}'`)
       writerFor(ctx, run.flowVersion.flow, "cancel its runs")
-      if (run.status !== "waiting") throw new Conflict(`Run '${run.id}' is ${run.status}; only a waiting run can be cancelled`)
       if (!(await runner.cancel(run.id, `cancelled by ${caller(ctx).userId}`, tenantOf(ctx)))) {
-        throw new Conflict(`Run '${run.id}' is no longer waiting`)
+        throw new Conflict(`Run '${run.id}' has already ended`)
       }
       const row = await clientOf(ctx).run.findFirst({ where: { id: run.id } })
       ctx.dispatch = row

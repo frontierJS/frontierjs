@@ -1,5 +1,13 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-28 — a socket's credential rides the subprotocol list, never the URL (`FJS-1322`, `FJS-D486`)
+
+The browser client opened `/ws?token=<session token>`, because a browser `WebSocket` cannot set `Authorization`, and a URL is what gets logged: Firefox printed the whole token on every failed reconnect, and nginx's default `$request` and any APM that records upgrade URLs keep it. The client now opens a bare `/ws` and offers the subprotocols `fjs` and `fjs.bearer.<token>` (`core/ws-auth.ts`, which both halves read). `extractToken` reads the bearer entry after `Authorization` and `x-api-key` and before the cookie. The upgrade resolves the credential and then takes it off the headers the socket keeps, since those headers become every frame's `ctx.caller.headers` and the logger redacts by name. It selects `fjs` by name. `?token=` is read nowhere and has no fallback, so a query token now connects as anonymous instead of being refused. A token outside RFC 7230's `token` alphabet throws in the client by name instead of being sent mangled. A non-browser client may still send `Authorization`, `x-api-key` or the cookie on the upgrade. Pinned by `test/ws-credential.test.ts`. The four socket tests that built `?token=` URLs now offer the subprotocols.
+
+## 2026-09-28 — `mergeClaims` says which gate grades a guest STRANGER (`FJS-1447`)
+
+Its comment said a claims-only object falls through `sessionGateLevel` to USER, where the code gives CREATOR, and that *the gate* grades STRANGER — true of Junction's gate only. The Data boundary grades the same guest with the app's `getLevel`, which the scaffold wrote to answer USER for it. The comment now names both and the `id` a `getLevel` must test; the scaffold fix is in `@frontierjs/cli`. Comments only.
+
 ## 2026-09-28 — `publish-grading` typechecks again
 
 `FJS-1425` made a refused reader of a patch receive a removal frame, and its tests assert the whole frame, `{ type: 'event', … }`. The `subscriber` helper cast each parsed frame to `{ event?, data? }`, so `tsc` refused `type` as an unknown key and the package's typecheck failed CI. The cast now names `type`. Tests only; no runtime change.

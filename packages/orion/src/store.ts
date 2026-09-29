@@ -64,6 +64,18 @@ export interface OrionSystemClient {
 
 const TERMINAL = new Set<ExecutionStatus>(["completed", "failed", "cancelled"])
 
+// Every run-path write is conditioned on the run not having ended, so a
+// cancellation written underneath a running job is not overwritten by its next
+// stage (`FJS-1157`).
+// `update` answers null when the where matched nothing, so the id is selected.
+const LIVE = (id: string) => ({ id, status: { notIn: [...TERMINAL] } })
+const KEY  = { id: true }
+
+/** Thrown by a checkpoint whose run ended underneath it, so the scheduler stops. */
+export class RunEnded extends Error {
+  constructor(runId: string) { super(`Run "${runId}" ended while it was running`) }
+}
+
 // What the context column holds. Everything else a context carries is a column
 // of its own, and re-encrypting a column that did not change is the cost this
 // shape avoids.
@@ -103,7 +115,7 @@ export class LitestoneExecutionStore implements IExecutionStore {
       data.startedAt = iso(ctx.startedAt)
     }
 
-    // `select: false` skips RETURNING. Without it every checkpoint parses (and
+    // `select: KEY` returns only the id. Without it every checkpoint parses (and
     // decrypts) the context it just wrote, which is most of what one costs.
     if (status === "waiting") {
       const wait = ctx.waitingOn ? ctx.nodeStates[ctx.waitingOn]?.output as WaitSentinel | undefined : undefined
@@ -112,7 +124,7 @@ export class LitestoneExecutionStore implements IExecutionStore {
       // below and a step's output is where a flow reads the key from.
       wait.resumeKey = tagKey(this.opts.tenant ?? null, wait.resumeKey)
       await this.db.$transaction(async (tx) => {
-        await tx.run.update({ where: { id: ctx.executionId }, data, select: false })
+        if (!await tx.run.update({ where: LIVE(ctx.executionId), data, select: KEY })) throw new RunEnded(ctx.executionId)
         await tx.wait.create({
           select: false,
           data:   {
@@ -124,7 +136,7 @@ export class LitestoneExecutionStore implements IExecutionStore {
         })
       })
     } else {
-      await this.db.run.update({ where: { id: ctx.executionId }, data, select: false })
+      if (!await this.db.run.update({ where: LIVE(ctx.executionId), data, select: KEY })) throw new RunEnded(ctx.executionId)
     }
 
     if (status === "waiting") this.written.delete(ctx.executionId)
@@ -160,7 +172,8 @@ export class LitestoneExecutionStore implements IExecutionStore {
     this.written.delete(record.executionId)
   }
 
-  private async writeTerminal(tx: OrionSystemClient, record: ExecutionRecord): Promise<void> {
+  // False, writing nothing, when the run had already ended.
+  private async writeTerminal(tx: OrionSystemClient, record: ExecutionRecord): Promise<boolean> {
     const steps = Object.entries(record.nodeStates).map(([nodeId, s]) => ({
       runId:      record.executionId,
       nodeId,
@@ -174,9 +187,9 @@ export class LitestoneExecutionStore implements IExecutionStore {
       logs:       s.logs.length > 0 ? s.logs : null,
     }))
 
-    await tx.run.update({
-      select: false,
-      where:  { id: record.executionId },
+    const ended = await tx.run.update({
+      select: KEY,
+      where:  LIVE(record.executionId),
       data:   {
         status:    record.status,
         startedAt: iso(record.startedAt),
@@ -185,7 +198,22 @@ export class LitestoneExecutionStore implements IExecutionStore {
         context:   null,
       },
     })
+    if (!ended) return false
     if (steps.length > 0) await tx.runStep.createMany({ data: steps })
+    return true
+  }
+
+  // A run with no checkpoint yet: queued, or ended.
+  private async unstarted(runId: string, now: number): Promise<ExecutionContext | undefined> {
+    const run = await this.db.run.findFirst({
+      where:   { id: runId },
+      include: { flowVersion: { select: { flowId: true, version: true } } },
+    })
+    if (!run) return undefined
+    return {
+      executionId: runId, flowId: run.flowVersion.flowId, version: String(run.flowVersion.version), trigger: run.trigger,
+      nodes: {}, nodeStates: {}, status: run.status, startedAt: ms(run.startedAt) ?? now, currentStage: 0,
+    }
   }
 
   async resume(resumeKey: string, payload: unknown): Promise<ExecutionContext | undefined> {
@@ -243,20 +271,22 @@ export class LitestoneExecutionStore implements IExecutionStore {
   }
 
   /**
-   * Ends a waiting run as cancelled. Its `Wait` rows are consumed in the same
-   * transaction, so a cancel and a resume or a deadline cannot both win: false
-   * when one of them got there first, or the run is not waiting.
+   * Ends a run that has not ended as cancelled; false when it had. A waiting
+   * run's `Wait` rows are consumed in the same transaction, so a cancel and a
+   * resume or a deadline cannot both win. A queued run's job finds it ended and
+   * returns, and a running one's next checkpoint throws `RunEnded`.
    */
   async cancel(runId: string, now: number, reason: string): Promise<boolean> {
-    const ctx = await this.getContext(runId)
-    if (!ctx || ctx.status !== "waiting") return false
+    const ctx = await this.getContext(runId) ?? await this.unstarted(runId, now)
+    if (!ctx || TERMINAL.has(ctx.status)) return false
     const record = buildRecord({ ...ctx, status: "cancelled", endedAt: now, error: reason })
 
     const cancelled = await this.db.$transaction(async (tx) => {
-      const { count } = await tx.wait.deleteMany({ where: { runId } })
-      if (count === 0) return false
-      await this.writeTerminal(tx, record)
-      return true
+      if (ctx.status === "waiting") {
+        const { count } = await tx.wait.deleteMany({ where: { runId } })
+        if (count === 0) return false
+      }
+      return this.writeTerminal(tx, record)
     })
     this.written.delete(runId)
     return cancelled

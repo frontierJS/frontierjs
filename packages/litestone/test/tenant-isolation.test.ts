@@ -142,12 +142,11 @@ describe('verifyTenantIsolation', () => {
     expect(leaks(rows)).toEqual([])
   })
 
-  test('a delegated model scoped through an OPTIONAL relation reports the unparented row', async () => {
-    // `check(rel)` answers true for a null foreign key — a row naming no parent
-    // is not a row naming somebody else's (`FJS-382`). So an optional scoping
-    // relation means a row can exist in no tenant, and every tenant reads it.
-    // Ruled behavior, so it is named rather than called a leak — and it is not
-    // silent, which is the whole point.
+  test('a delegated row that names no parent is graded, and isolated (FJS-D481)', async () => {
+    // Every scoping relation optional, so a row can exist in no tenant. It is
+    // `asSystem()`'s alone, as a null claim column is — so the checker seeds it
+    // and grades it like any other row, where it used to name it `unparented`
+    // because every tenant read it.
     const env = await createTestEnv({ schema: `
       ${CLEAN}
       model Card {
@@ -160,15 +159,28 @@ describe('verifyTenantIsolation', () => {
 
     const rows = await env.verifyTenantIsolation()
     const card = of(rows, 'Card')
-
-    // The PARENTED row is properly isolated — that is what the default seeding
-    // now proves, and what an unparented-only seed could never have shown.
+    expect(card.some(r => r.got === 'graded')).toBe(true)
     expect(leaks(card)).toEqual([])
+  })
 
-    const orphan = card.filter(r => r.got === 'unparented')
-    expect(orphan).toHaveLength(1)
-    expect(orphan[0].message).toMatch(/belongs to no tenant and every tenant reads it/)
-    expect(orphan[0].message).toMatch(/Make the relation required/)
+  test('an orphan the schema refuses to seed is reported, never passed in silence', async () => {
+    const env = await createTestEnv({ schema: `
+      ${CLEAN}
+      model Card {
+        id      Int    @id @default(autoincrement())
+        title   String
+        boardId Int?
+        board   Board? @relation(fields: [boardId], references: [id])
+        @@check("boardId IS NOT NULL", "a card sits on a board")
+      }
+    ` })
+
+    const card = of(await env.verifyTenantIsolation(), 'Card')
+    const skipped = card.filter(r => r.got === 'uncheckable')
+    expect(skipped).toHaveLength(1)
+    expect(skipped[0].message).toMatch(/row naming no 'board' could not be seeded/)
+    expect(skipped[0].message).toMatch(/a card sits on a board/)
+    expect(leaks(card)).toEqual([])
   })
 
   test('the leak path fires — a client with no denies is caught against a schema that has them', async () => {

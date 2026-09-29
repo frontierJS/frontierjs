@@ -69,6 +69,21 @@ model Invoice {
   customer   Customer? @relation(fields: [customerId], references: [id])
   @@gate("4.4.4.5")
 }
+
+model Account {
+  id    String  @id @default(cuid())
+  name  String
+  token String? @guarded
+  cards Card[]
+}
+
+model Card {
+  id        String   @id @default(cuid())
+  last4     String
+  pan       String?  @encrypted
+  accountId String?
+  account   Account? @relation(fields: [accountId], references: [id])
+}
 `
 
 /**
@@ -77,14 +92,14 @@ model Invoice {
  * `read` is the BODY of the read, so a test can write the query it means —
  * `include:` included, which is the whole of `FJS-781`.
  */
-async function realApp(read, frontmatter = 'render: static') {
+async function realApp(read, frontmatter = 'render: static', flavor = '.asSystem()') {
   const body = read.includes('.') ? read : `${read}.findMany({ limit: 1 })`
   const root = tmpDir('sierra-real-')
   mkdirSync(resolve(root, 'db'), { recursive: true })
   const schemaPath = resolve(root, 'db/schema.lite')
   writeFileSync(schemaPath, SCHEMA)
 
-  const db = await createClient({ schema: schemaPath, db: ':memory:' })
+  const db = await createClient({ schema: schemaPath, db: ':memory:', encryptionKey: 'a'.repeat(64) })
   autoMigrate(db)
 
   // The build's own path to the gate table — the same two calls schema-plugin
@@ -98,7 +113,7 @@ async function realApp(read, frontmatter = 'render: static') {
     `---\n${frontmatter}\n---\n<script>export let data = null</script>\n<h1>{data?.n ?? 0}</h1>\n`)
   writeFileSync(resolve(root, 'src/routes/report/index.meta.js'),
     `export async function load() {\n` +
-    `  const rows = await globalThis.__REALDB__.asSystem().${body}\n` +
+    `  const rows = await globalThis.__REALDB__${flavor}.${body}\n` +
     `  return { n: rows.length }\n` +
     `}\n`)
 
@@ -156,7 +171,7 @@ await check('a GATED read fails the build, end to end, nothing faked', async () 
 })
 
 await check('an acknowledged route publishes it deliberately', async () => {
-  const res = await run(await realApp('invoice', 'render: static\npublishes: 4'))
+  const res = await run(await realApp('invoice', 'render: static\npublishes:\n  Invoice: [id, total, customerId]'))
   assert(res.written.includes('report/index.html'), 'an acknowledged route was still refused')
   const got = JSON.stringify(res.safety.rows[0].published)
   assert(got === '[{"model":"Invoice","level":4}]', `published was ${got}`)
@@ -184,7 +199,7 @@ await check('the included child is in the REPORT, not only in the refusal', asyn
   // proven.
   const res = await run(await realApp(
     'customer.findMany({ limit: 1, include: { invoices: true } })',
-    'render: static\npublishes: 4'))
+    'render: static\npublishes:\n  Invoice: [id, total, customerId]'))
   const got = JSON.stringify(res.safety.rows[0].published)
   assert(/"model":"Invoice"/.test(got), `the report did not carry the child: ${got}`)
   assert(/"model":"Customer"/.test(got), `the report lost the parent: ${got}`)
@@ -218,10 +233,11 @@ await check('an unobservable route is refused', async () => {
   assert(/could not observe/.test(threw.message), `wrong refusal: ${threw.message}`)
 })
 
-await check('…and `publishes: 0` does not waive it — the escape that looked most conservative', async () => {
+await check('…and a `publishes:` declaration does not waive it', async () => {
   // The measured escape: the same app, the same unobservable loader, refused
-  // without the key and published with `publishes: 0`.
-  for (const declared of ['publishes: 0', 'publishes: 4']) {
+  // without the key and published with it. A declaration, however narrow or
+  // wide, is a claim about what the page read and cannot stand in for seeing it.
+  for (const declared of ['publishes:\n  Product: [id]', 'publishes:\n  Invoice: [id, total, customerId]']) {
     let threw = null
     try {
       await run(await realApp('product', `render: static\n${declared}`), { wireDb: false })
@@ -265,6 +281,125 @@ await check('…and a load() that DID read is not reported', async () => {
   await run(await realApp('product'), { warnings })
   assert(!warnings.some(w => /observed no model read/.test(w)),
     `an ordinary read was reported: ${JSON.stringify(warnings)}`)
+})
+
+// ── FJS-1411 — a protected column read through asSystem() ─────────────────
+//
+// The gate check grades a MODEL. `Account` is gated at 0, so a system read of
+// it passed — and `asSystem()` returns `token` as its value, which the page was
+// free to render. The refusal is at the read, so a column renamed into a prop
+// or interpolated into markup is caught the same as one passed through whole.
+
+async function refused(app, pattern) {
+  let threw = null
+  try { await run(app) } catch (e) { threw = e }
+  assert(threw, 'the build succeeded — a protected column was readable by a public page')
+  assert(pattern.test(threw.message), `message did not name the column: ${threw.message}`)
+  return threw
+}
+
+async function builds(app) {
+  const res = await run(app)
+  assert(res.written.includes('report/index.html'),
+    `written was ${JSON.stringify(res.written)}; skipped: ${JSON.stringify(res.skipped)}`)
+}
+
+await check('a whole-row system read of a model with a @guarded column is refused', async () => {
+  await refused(await realApp('account'), /Account\.token \(@guarded\)/)
+})
+
+await check('…and `publishes:` does not lift it', async () => {
+  const e = await refused(await realApp('account', 'render: static\npublishes:\n  Account: [id, name, token]'), /Account\.token/)
+  assert(/does not lift/.test(e.message), `the refusal did not say publishes cannot lift it: ${e.message}`)
+})
+
+await check('a select naming the guarded column is refused', async () => {
+  await refused(await realApp('account.findMany({ select: { name: true, token: true } })'), /Account\.token/)
+})
+
+await check('a select leaving it out builds', async () => {
+  await builds(await realApp('account.findMany({ select: { id: true, name: true } })'))
+})
+
+await check('the walk follows include: a whole child row exposes its @encrypted column', async () => {
+  await refused(
+    await realApp('account.findMany({ select: { name: true, cards: true } })'),
+    /Card\.pan \(@encrypted\)/)
+  await refused(
+    await realApp('card.findMany({ select: { last4: true }, include: { account: true } })'),
+    /Account\.token/)
+})
+
+await check('…and a nested select that leaves both out builds', async () => {
+  await builds(await realApp(
+    'account.findMany({ select: { name: true, cards: { select: { last4: true } } } })'))
+})
+
+await check('an aggregate or groupBy returning a protected value is refused', async () => {
+  const e = await refused(await realApp('account.groupBy({ by: [\'token\'] })'), /Account\.token \(@guarded\)/)
+  assert(/through asSystem/.test(e.message), `refused by something other than the check: ${e.message}`)
+})
+
+await check('the same whole-row read through the bare client builds — it strips both', async () => {
+  // The negative control: a non-system read never carries the value, so
+  // refusing it would force a select onto every page for nothing (`FJS-351`).
+  await builds(await realApp('account.findMany({ include: { cards: true } })', 'render: static', ''))
+})
+
+// ── FJS-1222 / FJS-D496 — `publishes:` is a set of columns ─────────────────
+//
+// A level covered every column of a model, so the booking page that published
+// a host's name had to declare `publishes: 4`, and a later edit adding the
+// host's email shipped it with no new refusal and no change in the diff.
+
+const withPublishes = (lines) => `render: static\npublishes:\n${lines.map(l => `  ${l}`).join('\n')}`
+
+await check('a narrowed read of a gated model is refused, and the fix it prints names exactly those columns', async () => {
+  const e = await refused(await realApp('invoice.findMany({ select: { id: true, total: true } })'), /Invoice/)
+  assert(/Invoice: \[id, total\]/.test(e.message), `the suggested declaration was not the columns read: ${e.message}`)
+  assert(!/counts as every column/.test(e.message), `a narrowed read was told it read every column: ${e.message}`)
+})
+
+await check('…and declaring those columns builds', async () => {
+  await builds(await realApp('invoice.findMany({ select: { id: true, total: true } })',
+    withPublishes(['Invoice: [id, total]'])))
+})
+
+await check('the FJS-1222 edit: a column added to the read and not to publishes: is refused by name', async () => {
+  await refused(await realApp('invoice.findMany({ select: { id: true, total: true, customerId: true } })',
+    withPublishes(['Invoice: [id, total]'])), /`Invoice\.customerId`, which `publishes:` does not name/)
+})
+
+await check('a whole-row read counts as every column, and the refusal says so', async () => {
+  const e = await refused(await realApp('invoice', withPublishes(['Invoice: [id, total]'])), /Invoice\.customerId/)
+  assert(/counts as every column/.test(e.message), `the whole-row hint was missing: ${e.message}`)
+})
+
+await check('an included child is graded column by column too', async () => {
+  const read = 'customer.findMany({ select: { name: true, invoices: { select: { total: true } } } })'
+  await refused(await realApp(read), /Invoice/)
+  await builds(await realApp(read, withPublishes(['Invoice: [total]'])))
+})
+
+await check('a count of a gated model returns no column and is declared with an empty list', async () => {
+  await refused(await realApp('invoice.count()'), /Invoice/)
+  await builds(await realApp('invoice.count()', withPublishes(['Invoice: []'])))
+})
+
+await check('a gate level is refused by type — there is no level form', async () => {
+  for (const v of ['4', '0', 'true']) {
+    let threw = null
+    try { await run(await realApp('product', `render: static\npublishes: ${v}`)) } catch (e) { threw = e }
+    assert(threw, `publishes: ${v} was accepted`)
+    assert(/names the columns this page may publish/.test(threw.message), `wrong refusal for ${v}: ${threw.message}`)
+  }
+})
+
+await check('a misspelt model or column in the declaration is refused by name', async () => {
+  await refused(await realApp('invoice.findMany({ select: { id: true } })',
+    withPublishes(['invoice: [id]'])), /write `Invoice`/)
+  await refused(await realApp('invoice.findMany({ select: { id: true } })',
+    withPublishes(['Invoice: [id, totl]'])), /`totl`, which is not a column of Invoice/)
 })
 
 console.log(`\n  ${passed}/${passed + failures.length} passed\n`)

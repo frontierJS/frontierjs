@@ -1,5 +1,9 @@
 # Changes — Basecamp
 
+## 2026-09-28 — the tenant-isolation test drops the `unparented` verdict (`FJS-D481`)
+
+`verifyTenantIsolation` no longer reports `unparented`. A delegated row that names no parent is now graded, and a read by another tenant is `leaked`, so `db/test/schema.test.ts` counts it among the findings it already refuses. Basecamp has no model whose every scoping relation is optional, so its access is unchanged and its snapshots are current.
+
 ## 2026-09-28 — `verify:screens` counts notification kinds from `kinds.ts` (`FJS-1082`)
 
 The `/settings/` section had typed the number of notification kinds into five places: the `until` predicate, the `ok()` sentence and the two `N of M chosen` checks. It now imports `NOTIFICATION_KIND_NAMES`, which `db/test/schema.test.ts` holds equal to the `NotificationKind` enum, so adding a kind updates the drive with it. That section passes again. The run now stops later, at `/infra-graph/`, which is filed as `FJS-1445`.

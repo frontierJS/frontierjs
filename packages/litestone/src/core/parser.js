@@ -4072,7 +4072,8 @@ function expandTenancy(schema) {
     if (f.type.array || !modelNames.has(f.type.name)) return []
     const rel = f.attributes.find(a => a.kind === 'relation' && a.fields)
     if (!rel) return []
-    return [{ field: f.name, target: f.type.name }]
+    const optional = rel.fields.every(k => model.fields.find(x => x.name === k)?.type.optional)
+    return [{ field: f.name, target: f.type.name, optional }]
   })
 
   const scopedSet = new Set(scoped)
@@ -4108,6 +4109,21 @@ function expandTenancy(schema) {
           kind: 'deny', operations: ['read', 'update', 'delete', 'create', 'post-update'], generated: 'tenancy',
           claim, message: `Outside your ${t.column}`,
           expr: { type: 'not', expr: { type: 'check', field: r.field, operation: 'read', tenancy: true } },
+        })
+
+      // Each deny above lets a null parent through, and must: a widget on a
+      // board with no server is the board's tenant's (FJS-382). But a row whose
+      // EVERY scoping parent is null belongs to no tenant, and passing each deny
+      // made it every tenant's — the answer a null claim column never gave
+      // (FJS-D141). So a row naming no parent is `asSystem()`'s alone (FJS-D481).
+      // A required key cannot be null, so one of them is enough to omit this.
+      if (usable.every(r => r.optional))
+        p.model.attributes.push({
+          kind: 'deny', operations: ['read', 'update', 'delete', 'create', 'post-update'], generated: 'tenancy',
+          claim, message: `Outside your ${t.column}`,
+          expr: usable
+            .map(r => ({ type: 'compare', op: '==', left: { type: 'field', name: r.field }, right: { type: 'literal', value: null } }))
+            .reduce((left, right) => ({ type: 'and', left, right })),
         })
 
       p.done = true
@@ -6227,6 +6243,32 @@ function validate(schema) {
             `Name which one with @relation("…") on both ends`
           : `'${target.name}' holds no foreign key to '${model.name}'. A many-to-many keeps its rows in ` +
             `a join table, so declare that model explicitly and put the bound on its list field`))
+    }
+  }
+
+  // A list whose foreign key is unique on the child can hold one row, so the
+  // schema says one-to-many and one-to-one at once and the second child is
+  // refused as a unique conflict at load time (`FJS-1451`). A warning rather
+  // than an error: which half is wrong is the data's to say, not the parser's.
+  for (const model of schema.models) {
+    for (const field of model.fields) {
+      if (field.type?.array !== true) continue
+      const target = schema.models.find(m => m.name === field.type?.name)
+      if (!target) continue
+      const fk = inferFromFk(model, target, field.attributes.find(a => a.kind === 'relation')?.name ?? null)
+      if (!fk?.fkCols?.length) continue
+      const cols = fk.fkCols
+      const colName = c => c?.name ?? c
+      const ids = target.fields.filter(f => f.attributes.some(a => a.kind === 'id')).map(f => f.name)
+      const single = cols.length === 1 && target.fields.find(f => f.name === cols[0])?.attributes
+        .some(a => a.kind === 'unique' || (a.kind === 'id' && ids.length === 1))
+      const composite = target.attributes.some(a => a.kind === 'uniqueIndex' && a.fields?.length === cols.length &&
+        a.fields.every(f => cols.includes(colName(f))))
+      if (!single && !composite) continue
+      const key = cols.length === 1 ? `'${target.name}.${cols[0]}' is @unique` : `'${target.name}' has @@unique([${cols.join(', ')}])`
+      warnings.push(
+        `'${model.name}.${field.name}' is a list, but ${key}, so it holds at most one row — ` +
+        `drop the unique, or make it '${target.name}?'`)
     }
   }
 

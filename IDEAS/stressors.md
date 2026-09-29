@@ -140,6 +140,20 @@ a mutation but **what happens to the four behind it when the first is refused at
 replay** (`FJS-D300` grades one, and says nothing about its successors).
 Per-workspace custom fields 4.29 already built and measured.
 
+**Cross-model search, second caller (remnant Q3, 2026-09-28): linear's answer
+holds.** linear's PLAN.md Q4 answered it on 2026-09-22: N per-model `search()`
+calls, grouped by kind, because bm25 does not compare across indexes. Remnant's
+one search box spans `Verse`, `Word` and `Lemma` over 495k rows, and it came
+out the same: three calls in one service, with `db.query` refusing a `search`
+key by name (FJS-1310's fix, measured). Verses are listed in book order and
+lemmas as their own group, 1–8 ms median over HTTP. What the second caller adds
+is the easy case linear lacked: the corpus has no row policies, so `search()`
+through `$.db` is the whole of it, with no `$raw` + bm25 two-step. **The
+spanning verb is still not owed.** What remnant did need that linear did not was
+a fold on both sides of the index, [`FJS-1466`](../ISSUES.md#fjs-1466), and
+adding `@@fts` to a table that already held rows broke every write to it,
+[`FJS-1463`](../ISSUES.md#fjs-1463).
+
 **Somebody should re-rank this row against what remains** rather than trust the
 position it holds, which was earned by a break that is now closed.
 
@@ -371,6 +385,35 @@ that as a cleared suspicion rather than open a row for it.
 maid.tech's, and build only the corpus and the `/bible` reader. The data is
 public (the app has a `tagnt` service, which points at STEPBible's tagged Greek
 NT, and Strong's lexicon), so the stressor needs no production copy.
+
+**The data release, measured (remnant Q2, 2026-09-28; `fjs-prototypes/remnant/PLAN.md`
+Phase 4).** Corpus v2 is 40 corrected glosses, 3 John 1:14 split in two, and two
+verses v1 lost, restored. That is 86 changes, each naming the value it expects to
+find. Applied as the system in one transaction it took 42 ms on the full corpus.
+930 reads over HTTP during it each saw all of v1 or all of v2. A second run is a
+12 ms no-op, and one drifted row refuses the whole release. What ships it is the
+app's own `db:migrate` script, `migrate apply && bun db/corpus/release.ts`, because
+**`fli deploy` has no data step**: the image's only command before it serves is
+`db:migrate && start`, and a swap stops the old container first (read, not run),
+so under a deploy the release does not run beside live reads at all. The migration history
+cannot hold it. A `.sql` data migration works on a database already holding the
+corpus, then fails a fresh one, where the history never created the rows it
+corrects, and blocks every migration after it. A `.js` one crashes the CLI
+([FJS-1472](../ISSUES.md#fjs-1472)), and by design stops `migrate create` for
+good ([FJS-1474](../ISSUES.md#fjs-1474), which wants a ruling). An `UPDATE` that
+moves a natural key commits its orphans ([FJS-1473](../ISSUES.md#fjs-1473)).
+**`FJS-D164` does not stretch, and no second record is owed.** One question
+separates the two: was the old value true in its day? A price that changed was,
+so it gets a window, and the consumer names the version. A gloss that was wrong
+never was, so it is replaced in place, and the consumer (a study note) names the
+row by its natural key. What neither can say is the split: a note on 3 John 1:14
+about the greeting that v2 moved to 1:15 is not refused, not dangling and not
+re-pointed. It stays on 1:14 and silently means half. Only its author knows which
+half it meant, so the release owns recording what split and the app owns telling
+the author; nothing enforces it today. The `9` on delete turned out right rather
+than a problem: a release that must remove a verse a note names should not
+delete it. This is one caller, so a data step in `fli deploy` is not owed yet;
+a second app chaining a release into `db:migrate` would be the measurement.
 
 ### 15. Ghost — the public half of the status page, taken seriously
 

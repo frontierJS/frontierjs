@@ -145,7 +145,7 @@ declared SHAPE and never writes an expression.
 
 ## Open questions
 
-- **Q1 — should `@@transitions` grow `declaredBy:`, so a machine's moves can be rows a tenant edits? (`FJS-D365`)**
+- ~~**Q1 — should `@@transitions` grow `declaredBy:`, so a machine's moves can be rows a tenant edits? (`FJS-D365`)**~~ **Answered 2026-09-28 (`FJS-D365`): B — `@@transitions(field, declaredBy: Model, scope: column)` over a foreign key, with a fixed declarer shape (`fromId?`, `toId`, `gate?`), enforced in the UPDATE's own `WHERE`; entries and the default come with it.**
   Measured in linear Phase 3: the schema can say *the state is one of this
   team's* and nothing else about the machine. Everything else is an app plugin
   that `fli check`, the JSON Schema, `transitions()` and the browser cannot see,

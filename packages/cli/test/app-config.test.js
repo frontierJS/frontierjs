@@ -180,6 +180,41 @@ describe('what fli new actually writes', () => {
   })
 })
 
+// ─── a principal with no id is a stranger (FJS-1447) ─────────────────────────
+//
+// A guest's resolver claims reach the Data boundary as `$setAuth({ ...claims })`
+// — an object, so a `getLevel` that tests only `!user` graded every guest USER
+// and a `gate: 0` method wrote as them past every `@@gate` at 4, stamping a null
+// owner. Each scaffolded `getLevel` is RUN here, not matched as text.
+describe('the scaffolded getLevel grades a claims-only guest STRANGER', () => {
+  const LEVELS = { STRANGER: 0, USER: 4, ADMINISTRATOR: 5, OWNER: 6, SYSADMIN: 7 }
+
+  function scaffoldedGetLevel(file) {
+    const text  = readFileSync(join(CLI, 'commands', ...file), 'utf8')
+    const start = text.indexOf('getLevel(user')
+    let depth = 0, end = text.indexOf('{', start)
+    for (let i = end; i < text.length; i++) {
+      if (text[i] === '{') depth++
+      if (text[i] === '}' && --depth === 0) { end = i + 1; break }
+    }
+    const js = new Bun.Transpiler({ loader: 'ts' })
+      .transformSync(`export function ${text.slice(start, end)}`)
+      .replace('export function', 'function')
+    return new Function('LEVELS', `${js}; return getLevel`)(LEVELS)
+  }
+
+  for (const file of [['project', 'new.md'], ['auth', 'install.md']]) {
+    test(file.join('/'), () => {
+      const getLevel = scaffoldedGetLevel(file)
+      expect(getLevel(null)).toBe(LEVELS.STRANGER)
+      expect(getLevel({ passId: 'x' })).toBe(LEVELS.STRANGER)
+      expect(getLevel({ passId: 'x', isAdmin: true })).toBe(LEVELS.STRANGER)
+      expect(getLevel({ id: 1 })).toBe(LEVELS.USER)
+      expect(getLevel({ id: 1, isAdmin: true })).toBe(LEVELS.ADMINISTRATOR)
+    })
+  }
+})
+
 // ─── a package a GENERATOR imports is not a product decision (FJS-1045) ──────
 //
 // `FJS_PACKAGES` is what an app is OFFERED, and that half genuinely is a
@@ -295,9 +330,9 @@ describe('the agent guidance', () => {
     const shipped = shippedByPackage()
     expect(shipped.size).toBeGreaterThan(10)
 
-    for (const [pkg, { beside }] of Object.entries(AGENT_DOCS)) {
+    for (const [pkg, { lookup }] of Object.entries(AGENT_DOCS)) {
       expect(shipped.get(pkg), `${pkg} is not in exports.snapshot.md`).toBeDefined()
-      for (const file of ['AGENTS.md', ...beside])
+      for (const file of ['AGENTS.md', ...lookup.map(l => l.file)])
         expect(shipped.get(pkg), `${pkg} does not ship ${file}`).toContain(file)
     }
     const carrying = [...shipped].filter(([, files]) => files.has('AGENTS.md')).map(([pkg]) => pkg).sort()

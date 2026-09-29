@@ -2,7 +2,6 @@
 title: "FrontierJS — the showroom"
 description: "One model, and everything derived from it: seventeen things the schema produces, each pointing back at the lines it came from."
 render: static
-publishes: 0
 ---
 <!--
   The showroom. The seed on the left, the seventeen derived things on the right,

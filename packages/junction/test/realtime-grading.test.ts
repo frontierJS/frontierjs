@@ -104,7 +104,7 @@ async function mkApp(opts: { telemetry?: boolean; second?: boolean; schema?: str
 interface Sock { frames: any[]; events: any[]; closed: Promise<{ code: number; reason: string }>; ws: WebSocket }
 
 function open(port: number, token?: string): Sock {
-  const ws = new WebSocket(`ws://localhost:${port}/ws${token ? `?token=${token}` : ''}`)
+  const ws = new WebSocket(`ws://localhost:${port}/ws`, token ? ['fjs', `fjs.bearer.${token}`] : ['fjs'])
   const frames: any[] = []
   const events: any[] = []
   let done: (v: { code: number; reason: string }) => void

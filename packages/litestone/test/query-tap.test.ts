@@ -239,3 +239,28 @@ describe('raw SQL reaches the tap (FJS-1312)', () => {
     expect(typeof raw[0].duration).toBe('number')
   })
 })
+
+// `actorId` is null for a bare client and for `asSystem()` alike, and only the
+// second returns @guarded and @encrypted values — so a watcher grading what a
+// read EXPOSED (Sierra's static-safety, `FJS-1411`) needs the flavor stated.
+describe('the event says whether the read ran as system', () => {
+  test('bare, $setAuth and asSystem — table reads, a transaction, raw SQL', async () => {
+    const db: any = await createClient({ db: ':memory:', schema: SCHEMA })
+    const sys = db.asSystem()
+    await sys.author.create({ data: { id: 1, name: 'a' } })
+    const events: any[] = []
+    db.$tapQuery((e: any) => events.push(e))
+    await db.author.findMany({ include: { books: true } })
+    await db.$setAuth({ id: 'u1' }).author.findMany({})
+    await sys.author.findMany({ include: { books: true } })
+    await sys.$transaction(async (tx: any) => tx.author.findMany({}))
+    await sys.sql`SELECT name FROM author`
+    expect(events.map(e => [e.operation, e.system])).toEqual([
+      ['findMany', false], ['include', false],
+      ['findMany', false],
+      ['findMany', true], ['include', true],
+      ['findMany', true],
+      ['sql', true],
+    ])
+  })
+})

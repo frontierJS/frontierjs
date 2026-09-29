@@ -220,3 +220,22 @@ describe('what the client is told', () => {
     expect(() => db.sql`SELECT 1`).toThrow(/access rules/)
   })
 })
+
+// `FJS-1212`. The ladder writes the fixture as its caller would, and the
+// application names a `@system` column through `system: [...]`. Passed as
+// ordinary data it is refused with an AccessDeniedError — which the ladder
+// then counted as the gate's deny at every level.
+describe('a required @system column on the gate ladder', () => {
+  it('the ladder is clean', async () => {
+    const { createTestEnv } = await import('../src/testing.js')
+    const env = await createTestEnv({ schema: `
+model Booking {
+  id     Int    @id
+  hostId Int    @system
+  note   String
+  @@gate("0")
+}
+` })
+    expect(await env.verifyGateLadder()).toEqual([])
+  })
+})

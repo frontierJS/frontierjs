@@ -2,7 +2,6 @@
 title: "FrontierJS — the loop"
 description: "Scaffold, run, migrate, deploy, watch, extend — the whole developer loop as one surface with one vocabulary."
 render: static
-publishes: 0
 ---
 <!--
   The loop. Six phases, six terminal transcripts, all prerendered.

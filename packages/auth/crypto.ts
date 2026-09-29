@@ -33,8 +33,35 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 // cost and this literal has to be regenerated, or the gap quietly reopens.
 export const DUMMY_HASH = '$2b$12$rbdqjSKMTYmj64JolfD1NOrdSG1SE3VW2XQ25qeYqQsRXuWq1WpYy'
 
-export async function payPasswordCost(password: string): Promise<void> {
-  await Bun.password.verify(password, DUMMY_HASH)
+//
+// Given `spent`, the stored hash a comparison was just made against, it pays
+// only what that comparison fell short of BCRYPT_COST (FJS-1457). An imported
+// `$2a$10$` hash, or any hash written before the cost was raised, refuses a
+// wrong password in a quarter of the time, and nothing else is slower about a
+// real account. bcrypt doubles per cost step, so hashing once at each cost from
+// the stored one up to BCRYPT_COST - 1 sums to exactly the missing work.
+export async function payPasswordCost(password: string, spent?: string): Promise<void> {
+  if (spent === undefined) {
+    await Bun.password.verify(password, DUMMY_HASH)
+    return
+  }
+  const cost = bcryptCost(spent)
+  if (cost === null) return
+  for (let k = cost; k < BCRYPT_COST; k++) {
+    await Bun.password.hash(password, { algorithm: 'bcrypt', cost: k })
+  }
+}
+
+// A hash not written by hashPassword as it stands today — another algorithm, or
+// bcrypt at another cost. The login that proves the password rewrites it, since
+// that is the only moment the plaintext is in hand.
+export function passwordNeedsRehash(hash: string): boolean {
+  return bcryptCost(hash) !== BCRYPT_COST
+}
+
+function bcryptCost(hash: string): number | null {
+  const m = /^\$2[abxy]\$(\d\d)\$/.exec(hash)
+  return m ? Number(m[1]) : null
 }
 
 // ─── API key generation + hashing ─────────────────────────────────────────

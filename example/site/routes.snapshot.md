@@ -18,9 +18,9 @@ somebody else already published.
 
 A prerendered page is public: whatever `load()` read is served to anyone and
 cached. The build taps every read and compares it against that model's
-`@@gate`, fail-closed — `publishes: N` is the declaration that overrides it,
-and N is the gate level this page is allowed to publish at. A row appearing
-here is a route that was told to publish data a check refused.
+`@@gate`, fail-closed — `publishes:` names the columns of a gated model this
+page may publish, and a column read outside it fails the build. A row
+appearing here is a route that was told to publish data a check refused.
 
 No route declares one — every page is publishing only what the check allows.
 

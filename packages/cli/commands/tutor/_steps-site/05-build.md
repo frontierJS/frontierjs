@@ -28,13 +28,17 @@ that data comes from:
 
 ```text
 export async function load() {
-  const notes = await db.asSystem().note.findMany({ limit: 20 })
+  const notes = await db.asSystem().note.findMany({
+    limit:  20,
+    select: { id: true, title: true },
+  })
   return { notes }
 }
 ```
 
 `load()` runs **in Node, at build time**. Whatever it returns is baked into the
-file. The companion is a separate module for a reason that only shows up in the
+file, which is why it selects the one column the page shows rather than the
+whole row. The companion is a separate module for a reason that only shows up in the
 build: it never enters the browser graph, so importing the app's own database
 client there does not ship the database client to the public.
 
@@ -87,8 +91,8 @@ writeFileSync(join(dir, 'index.meta.js'), [
   '//',
   '// load() runs in Node at BUILD time and what it returns is baked into a',
   '// public HTML file. Sierra taps the client named by config/sierra.config.js',
-  '// while this runs and refuses to emit the page if anything read here is',
-  '// gated above what the route declares.',
+  '// while this runs and refuses to emit the page if a column read here is',
+  '// gated and not named in the route\'s publishes:.',
   '//',
   '// A companion is build-time only: it never enters the browser graph, which',
   '// is why importing the database client here does not ship it to the public.',
@@ -96,7 +100,10 @@ writeFileSync(join(dir, 'index.meta.js'), [
   "import { db } from '../../../../api/src/core/db.ts'",
   '',
   'export async function load() {',
-  '  const notes = await db.asSystem().note.findMany({ limit: 20 })',
+  '  const notes = await db.asSystem().note.findMany({',
+  '    limit:  20,',
+  '    select: { id: true, title: true },',
+  '  })',
   '  return { notes }',
   '}',
   '',

@@ -2,7 +2,6 @@
 title: "FrontierJS — the stack"
 description: "Twenty packages, one vocabulary. Every feature each one ships, and what it replaces."
 render: static
-publishes: 0
 ---
 <!--
   The stack page. Every feature row AND every detail panel is prerendered.

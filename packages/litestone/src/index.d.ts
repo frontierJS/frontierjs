@@ -126,6 +126,9 @@ export interface QueryEvent {
    *  no caller arguments of their own — the arguments are the parent read's. */
   args?:     Record<string, unknown>
   actorId:   number | string | null
+  /** The read ran as `asSystem()`, so a `@guarded` or `@encrypted` column it
+   *  selected came back as its value rather than stripped. */
+  system:    boolean
 }
 
 // ─── Write event ──────────────────────────────────────────────────────────────

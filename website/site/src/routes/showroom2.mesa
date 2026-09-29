@@ -2,7 +2,6 @@
 title: "FrontierJS — the walkthrough"
 description: "One model becomes a database, an API and a UI, fifteen steps at a time — every file as it stands, and what each line bought you."
 render: static
-publishes: 0
 ---
 <!--
   The walkthrough. Fifteen steps, all of them in the file.

@@ -420,8 +420,7 @@ because the argument is what the record cites.
   `opportunities.js` rule could ask — confidence, never severity — but the
   literature's own `FreeRole` is the warning: a recognizer that fires on every
   unmarked pair trains people to ignore it.
-- **Does a create on a repeatable relator have to carry an idempotency key, and
-  what says so?** § 3 assumed *mandatory*, and `claimIdempotency(ctx, key,
+- ~~**Does a create on a repeatable relator have to carry an idempotency key, and what says so?**~~ **Answered 2026-09-28 (`FJS-D539`): A — an advisory rule. `opportunities.js` or `fli check` asks it: *this service creates a model declaring `@@relator(…, many)` and no idempotency config, so a retry writes a second occurrence*. Confidence, never severity. Costs nothing to anyone who ignores it.** § 3 assumed *mandatory*, and `claimIdempotency(ctx, key,
   config)` cannot mean that: it is opt-in on an `Idempotency-Key` header and
   returns `null` when none arrives, so there is no position from which to
   require one without breaking every existing caller. The question is real

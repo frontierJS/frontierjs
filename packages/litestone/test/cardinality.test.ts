@@ -253,3 +253,38 @@ describe('a bound with no key to count through is refused at parse', () => {
       .toContain('at most 1')
   })
 })
+
+// A list back-relation whose foreign key is unique holds at most one row, so
+// the schema declares a one-to-many and a one-to-one at once (`FJS-1451`).
+describe('a list over a unique foreign key', () => {
+  const lite = (unique: string, attr = '') => `
+model Lemma {
+  id         Int    @id @default(autoincrement())
+  strongsTag String @unique
+  morphas    Morpha[]
+}
+model Morpha {
+  id         Int    @id @default(autoincrement())
+  strongsTag String ${unique}
+  lemma      Lemma  @relation(fields: [strongsTag], references: [strongsTag])
+  pos        String
+  ${attr}
+}`
+
+  test('@unique on the key warns naming both fields', () => {
+    const r = parse(lite('@unique'))
+    expect(r.errors).toEqual([])
+    const w = r.warnings.filter((s: string) => s.includes('Lemma.morphas'))
+    expect(w.length).toBe(1)
+    expect(w[0]).toContain('Morpha.strongsTag')
+  })
+
+  test('@@unique over exactly the key warns; a wider one does not', () => {
+    expect(parse(lite('', '@@unique([strongsTag])')).warnings.some((s: string) => s.includes('Lemma.morphas'))).toBe(true)
+    expect(parse(lite('', '@@unique([strongsTag, pos])')).warnings.some((s: string) => s.includes('Lemma.morphas'))).toBe(false)
+  })
+
+  test('a plain key does not warn', () => {
+    expect(parse(lite('')).warnings.some((s: string) => s.includes('Lemma.morphas'))).toBe(false)
+  })
+})

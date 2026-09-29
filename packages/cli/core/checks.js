@@ -128,8 +128,6 @@ export const RULES = [
     title: 'a declared @@gate level something can actually reach' },
   { id: 'static-publish-db',    scope: 'app',  severity: 'error', invariant: null,
     title: 'a prerendered site wires the client its publish check reads' },
-  { id: 'static-publishes-0',   scope: 'app',  severity: 'warn',  invariant: null,
-    title: 'publishes: 0 silences the proof rather than raising a bar' },
   { id: 'package-model-drift',  scope: 'app',  severity: 'warn',  invariant: null,
     title: "a copied model still agrees with the package that ships it" },
   { id: 'schema-in-memory',     scope: 'app',  severity: 'warn',  invariant: null,
@@ -2187,15 +2185,13 @@ const CHECKS = {
   // `@@gate`, fail-closed — and no text rule can replace that, because the
   // question is what a `load()` actually read.
   //
-  // What text CAN see is whether that proof is switched on, and the two rules
-  // below are the two ways it silently is not. Both were measured by running
-  // `checkRoute` rather than read off the source.
+  // What text CAN see is whether that proof is switched on, and the rule below
+  // is the way it silently is not.
 
   // The tap needs a Litestone client, which the app hands the build as `db` in
   // its Sierra config. Without one, every route with a companion is refused
-  // until it declares `publishes:` — and the message the build prints tells the
-  // author to write `publishes: 0`. Do that per route and the build goes green
-  // having proved nothing at all, permanently, with no line anywhere saying so.
+  // whatever its `publishes:` says, and the build cannot be made green except
+  // by wiring the client or deleting the companion.
   //
   // Only for a surface whose routes actually READ: a site with no companion
   // pulls no data, so there is nothing to observe and no client to want.
@@ -2276,51 +2272,9 @@ const CHECKS = {
         file: s.path,
         message: `target: 'static' with no db:, and ${companions.length} route(s) here load data. The ` +
                  `publish check taps that client to see what a load() read; with none it can observe ` +
-                 `nothing, so every route with a companion is refused until it declares publishes: — and ` +
-                 `a page that declares it is a page the check has stopped proving. Point db: at the app's ` +
-                 `own client (db: '../api/src/core/db.ts').`,
+                 `nothing, so every route with a companion is refused, and no publishes: declaration ` +
+                 `changes that. Point db: at the app's own client (db: '../api/src/core/db.ts').`,
       })
-    }
-    return { findings }
-  },
-
-  // `publishes: N` is the level a page says it may publish at, and the default
-  // is 0. So declaring 0 raises nothing — measured by running `checkRoute` both
-  // ways, it changes exactly two outcomes, and both are refusals becoming
-  // passes: a route the build could not OBSERVE, and a route that read a name
-  // the schema does not describe. Those are the two fail-closed branches.
-  //
-  // A warning rather than an error, and not because it is minor: the line may
-  // be exactly what its author meant. It is here because it is the one
-  // declaration that reads like a bar and works like an off switch, and the
-  // build's own message recommends writing it.
-  'static-publishes-0': ({ root }) => {
-    const surfaces = staticSurfaces(root)
-    if (!surfaces.length) return { skipped: 'no target: static surface' }
-
-    // A page's OWN frontmatter and nowhere else — that is where the build reads
-    // it (`r.meta.publishes`), so a `publishes` exported from a companion is a
-    // variable named after a key nothing consults, and reporting it would be
-    // this rule inventing a mechanism.
-    const findings = []
-    for (const s of surfaces) {
-      for (const file of sources(root, ['.mesa'], relative(root, s.routes))) {
-        const fm = frontmatter(file)
-        if (!fm.block) continue
-        const m = fm.block.match(/(^|\n)\s*publishes\s*:\s*['"]?0['"]?\s*(#.*)?(\n|$)/)
-        if (!m) continue
-        // The keyword, not the newline the match opens on, or the line reported
-        // is the one above it.
-        const at = fm.start + m.index + m[0].indexOf('publishes')
-        findings.push({
-          file, line: lineOf(fm.text, at),
-          message: `publishes: 0 is the default bar, so this line raises nothing — what it does is turn ` +
-                   `off the two refusals that fail closed: a route the build could not observe, and a ` +
-                   `read of a name the schema does not describe. If this page is genuinely public, ` +
-                   `deleting the line says so and keeps the proof; if it is here to get a build green, ` +
-                   `the build was telling you it could not see what this page reads.`,
-        })
-      }
     }
     return { findings }
   },

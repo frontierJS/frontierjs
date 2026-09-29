@@ -2219,13 +2219,13 @@ describe('the access and constraints this schema declares are enforced', () => {
     const env  = await makeEnv()
     const rows = (await env.verifyTenantIsolation()) as any[]
 
-    // `leaked` is the failure. `unscoped` is a model nothing scopes at all,
-    // `unparented` a delegated one whose scoping relation is optional, and
+    // `leaked` is the failure — an orphan of a delegated model included
+    // (`FJS-D481`). `unscoped` is a model nothing scopes at all, and
     // `unreachable` means tenant A could not reach its OWN row — which would
     // make every refusal above it indistinguishable from a model nothing can
-    // touch. All four are findings; `exempt`, `graded` and `uncheckable` are the
+    // touch. All three are findings; `exempt`, `graded` and `uncheckable` are the
     // report.
-    const findings = rows.filter(m => ['leaked', 'unscoped', 'unparented', 'unreachable', 'error'].includes(m.got))
+    const findings = rows.filter(m => ['leaked', 'unscoped', 'unreachable', 'error'].includes(m.got))
     expect(findings.map(m => m.message)).toEqual([])
 
     // Coverage is the other half of the result, and the reason this check names

@@ -2,7 +2,6 @@
 title: "FrontierJS — the ripple"
 description: "Change one line of the schema and watch what moves — and, just as importantly, what deliberately does not."
 render: static
-publishes: 0
 ---
 <!--
   The ripple, the request's path, and the counterfactual.

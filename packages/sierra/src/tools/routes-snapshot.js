@@ -38,6 +38,12 @@ const declaredMeta = (meta = {}) =>
 
 const fmt = (v) => typeof v === 'string' ? v : JSON.stringify(v)
 
+// `publishes:` is a map of model to columns; the column list is what a
+// reviewer reads the table for, so it is printed as a list and not as JSON.
+const fmtPublishes = (v) => v && typeof v === 'object' && !Array.isArray(v)
+  ? Object.entries(v).map(([m, cols]) => `${m}: ${Array.isArray(cols) && cols.length ? cols.join(', ') : '(no column)'}`).join(' · ')
+  : fmt(v)
+
 // ─── renderRoutesSnapshot ─────────────────────────────────────────────────────
 
 export function renderRoutesSnapshot(tree, opts = {}) {
@@ -83,14 +89,14 @@ export function renderRoutesSnapshot(tree, opts = {}) {
     out.push('')
     out.push('A prerendered page is public: whatever `load()` read is served to anyone and')
     out.push('cached. The build taps every read and compares it against that model\'s')
-    out.push('`@@gate`, fail-closed — `publishes: N` is the declaration that overrides it,')
-    out.push('and N is the gate level this page is allowed to publish at. A row appearing')
-    out.push('here is a route that was told to publish data a check refused.')
+    out.push('`@@gate`, fail-closed — `publishes:` names the columns of a gated model this')
+    out.push('page may publish, and a column read outside it fails the build. A row')
+    out.push('appearing here is a route that was told to publish data a check refused.')
     out.push('')
     if (publishing.length) {
-      out.push('| Route | Publishes at | File |')
+      out.push('| Route | Publishes | File |')
       out.push('| --- | --- | --- |')
-      for (const r of publishing) out.push(`| \`${r.path}\` | ${fmt(r.meta.publishes)} | \`${r.file}\` |`)
+      for (const r of publishing) out.push(`| \`${r.path}\` | ${fmtPublishes(r.meta.publishes)} | \`${r.file}\` |`)
     } else {
       out.push('No route declares one — every page is publishing only what the check allows.')
     }
@@ -103,9 +109,9 @@ export function renderRoutesSnapshot(tree, opts = {}) {
     out.push('`publishes:` is read by the static build. On a `' + target + '` target nothing')
     out.push('consults it, so a page declaring one is not being checked against anything.')
     out.push('')
-    out.push('| Route | Publishes at | File |')
+    out.push('| Route | Publishes | File |')
     out.push('| --- | --- | --- |')
-    for (const r of publishing) out.push(`| \`${r.path}\` | ${fmt(r.meta.publishes)} | \`${r.file}\` |`)
+    for (const r of publishing) out.push(`| \`${r.path}\` | ${fmtPublishes(r.meta.publishes)} | \`${r.file}\` |`)
     out.push('')
   }
 

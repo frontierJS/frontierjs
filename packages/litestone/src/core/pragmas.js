@@ -162,5 +162,17 @@ export function applyBusyTimeout(db, timeout) {
  */
 export function applyWal(db, timeout) {
   applyBusyTimeout(db, timeout)
-  db.run('PRAGMA journal_mode = WAL')
+  // The timeout alone is not enough on a FRESH file: two processes opening it
+  // at once both hold SHARED and both want the upgrade, and SQLite refuses one
+  // BUSY without calling the busy handler, because waiting would deadlock. So
+  // the switch is retried until the same deadline (`FJS-729`: one writer of
+  // four killed at boot, 1 run in 12).
+  const deadline = Date.now() + resolveBusyTimeout(timeout)
+  for (let attempt = 0; ; attempt++) {
+    try { db.run('PRAGMA journal_mode = WAL'); return }
+    catch (e) {
+      if (e?.code !== 'SQLITE_BUSY' || Date.now() >= deadline) throw e
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Math.min(50, 2 ** attempt) + Math.random() * 5)
+    }
+  }
 }

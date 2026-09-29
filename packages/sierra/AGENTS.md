@@ -189,7 +189,8 @@ export default { target: 'static', routesDir: 'src/routes', outDir: 'dist', db: 
 ```html
 ---
 render: static
-publishes: 4
+publishes:
+  Product: [id, name]
 ---
 <script>
   import LiveStock from '../islands/LiveStock.mesa'
@@ -200,11 +201,14 @@ publishes: 4
 ```
 
 **The build proves what a page may publish.** It taps the `db` client while
-`load()` and `getStaticPaths()` run and compares every model read to its
-`@@gate`, reads through `asSystem()` included. A read above the page's
-`publishes:` level (default `0`, public) fails the build; a read it could not
-observe fails it whatever `publishes:` says. Raising the level is a written
-statement that data gated at that level may be served to anyone.
+`load()` and `getStaticPaths()` run, and grades every column read, reads through
+`asSystem()` included. A model gated at 0 is public and needs nothing. A column
+of a gated model fails the build unless the page's `publishes:` names it, per
+model. A read with no `select:` counts as every column, and a count is declared
+as `Model: []`. Naming a column is a written statement that it may be served to
+anyone. Three things fail whatever `publishes:` says: a read the build could not
+observe, a `@guarded` or `@encrypted` column read through `asSystem()`, and a
+number or `true` in place of the map.
 
 **A prerendered page never loads `virtual:sierra`** — no router, no `session`, no
 booted client. An island builds its own client inside `$.onMount` with
@@ -282,7 +286,8 @@ Everything above is loud. These are not.
    watched store.
 6. Money is rendered through the declaration, never as the integer.
 7. A `site/` route declaring `render: static` has `db:` in its surface config, a
-   `getStaticPaths` if it is dynamic, and no `publishes:` it does not mean.
+   `getStaticPaths` if it is dynamic, a `select:` on every read of a gated model,
+   and no column in `publishes:` it does not mean.
 8. `import 'virtual:sierra'` is the first line of `main.js`; every Vite config sets
    `strictPort: true`.
 
@@ -300,7 +305,7 @@ Sierra surface:
 | `route-part-prefix` | a `_folder.Part.mesa` sitting in a different folder than its prefix names |
 | `page-path-retired` · `detail-read-dead` | `page.path` / `to.path`; a `service.get()` result kept in screen state |
 | `table-column-key` · `money-rendered-raw` | a `<Table>` column spelled `key` instead of `name`; a `@money` column interpolated bare |
-| `static-publish-db` · `static-publishes-0` | a `target: 'static'` surface with companions and no `db:`; `publishes: 0`, the default, stating nothing |
+| `static-publish-db` | a `target: 'static'` surface with companions and no `db:` |
 | `app-layout` · `surface-config` · `widget-entry-name` | a surface in the wrong place; config outside `config/`; a misnamed widget |
 | `vite-strict-port` · `body-tag-in-comment` | a Vite config that can hop ports; a first body tag inside a comment in `index.html` |
 

@@ -268,17 +268,32 @@ export function applyTransforms(data, model) {
       }
     }
 
-    for (const attr of field.attributes) {
-      switch (attr.kind) {
-        case 'trim':  out[field.name] = String(out[field.name]).trim();          break
-        case 'lower': out[field.name] = String(out[field.name]).toLowerCase();   break
-        case 'upper': out[field.name] = String(out[field.name]).toUpperCase();   break
-        case 'slug':  out[field.name] = slug(out[field.name]);                     break
-      }
-    }
+    out[field.name] = transformValue(field, out[field.name])
   }
 
   return out
+}
+
+const TRANSFORMS = new Set(['trim', 'lower', 'upper', 'slug'])
+
+/** Whether a field declares a transform — `transformValue` changes its value. */
+export function hasTransforms(field) {
+  return field.attributes.some(a => TRANSFORMS.has(a.kind))
+}
+
+/** One value through a field's transforms, in declaration order. A write and
+ *  an equality `where` both run it, so the two agree on what can be stored. */
+export function transformValue(field, value) {
+  let v = value
+  for (const attr of field.attributes) {
+    switch (attr.kind) {
+      case 'trim':  v = String(v).trim();          break
+      case 'lower': v = String(v).toLowerCase();   break
+      case 'upper': v = String(v).toUpperCase();   break
+      case 'slug':  v = slug(v);                   break
+    }
+  }
+  return v
 }
 
 // ─── Typed JSON validation ───────────────────────────────────────────────────

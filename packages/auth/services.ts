@@ -92,10 +92,33 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     }
   }
 
-  /** The caller, or a 401. Every method below starts here. */
-  function caller(ctx: ServiceContext): SessionContext {
+  /** The caller, or a 401 — whatever credential presented. Only `account.get` stops here. */
+  function identify(ctx: ServiceContext): SessionContext {
     const user = ctx.auth?.user as SessionContext | null | undefined
     if (!user?.userId) throw new Unauthorized('Authentication required')
+    return user
+  }
+
+  /**
+   * The caller, or a 401 — and a 403 for an API key that carries scopes. Every
+   * method below except `account.get` starts here.
+   *
+   * A scope narrows a key at the APP's own checks (`FJS-D407`), and no scope an
+   * app declares names these services, so without this a key scoped to
+   * `search` has its owner's whole standing here: it mints itself an unscoped
+   * key, signs its owner out of every session — it has no `sessionId`, so
+   * *others* is all of them — and revokes the owner's other keys (`FJS-1446`).
+   * Reading is refused too: a session list is IPs and devices, which is not
+   * what a key handed out for one purpose was handed out for.
+   */
+  function caller(ctx: ServiceContext): SessionContext {
+    const user = identify(ctx)
+    if (user.scopes?.length) {
+      throw new Forbidden(
+        `An API key with scopes (${user.scopes.join(', ')}) cannot manage this account's ` +
+        `credentials — sign in, or use a key issued without scopes.`
+      )
+    }
     return user
   }
 
@@ -159,7 +182,9 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
     // A UI needs what the request will be graded as, which is the session; the
     // row is the `users` service's answer and is a different question.
     async get(ctx: ServiceContext) {
-      const user = caller(ctx)
+      // A scoped key may still ask who holds it — how a page opened from a
+      // key learns whose link it is.
+      const user = identify(ctx)
       // `me` is the address, and the caller's own id is accepted because a
       // link built from `session.userId` is the obvious second spelling.
       // Anything else is a 404 rather than a 403: whether that id exists is
@@ -322,8 +347,9 @@ export function createAuthServices(auth: AuthSurface, opts: AuthServicesOptions 
       if (scopes !== undefined && !Array.isArray(scopes)) throw new BadRequest('scopes must be an array')
 
       // Scopes NARROW: a key authenticates as its owner and a scope list is
-      // subtractive at the app's own check, so a caller cannot mint themselves
-      // standing they do not have by asking for it here.
+      // subtractive at the app's own check. A caller cannot mint themselves
+      // standing they do not have by asking for it here, because a scoped
+      // caller never reaches this line (`caller`).
       const { id, key } = await auth.createApiKey(user.userId, {
         ...(name      ? { name }   : {}),
         ...(scopes    ? { scopes } : {}),

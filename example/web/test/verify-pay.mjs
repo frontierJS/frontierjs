@@ -182,7 +182,7 @@ try {
   // "was one sent". api/src/app.ts joins every connection to `orders`, so
   // nothing here subscribes.
   await new Promise((resolve) => {
-    ws = new WebSocket(`${API.replace(/^http/, 'ws')}/ws?token=${encodeURIComponent(token)}`)
+    ws = new WebSocket(`${API.replace(/^http/, 'ws')}/ws`, ['fjs', `fjs.bearer.${token}`])
     ws.onmessage = (m) => {
       try {
         const f = JSON.parse(m.data)

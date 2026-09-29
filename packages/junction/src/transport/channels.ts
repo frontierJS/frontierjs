@@ -1007,7 +1007,9 @@ export function createChannelManager(presencePolicy?: PresencePolicy, claimsFor?
 //      channels a connection joins at connect time.
 //
 // Auth flow:
-//   Client connects to ws://host/ws?token=<session_or_api_key>
+//   The browser client offers subprotocols ['fjs', 'fjs.bearer.<session_or_api_key>'];
+//   any other client may send Authorization, x-api-key or the cookie instead.
+//   A URL never carries it (FJS-D486).
 //   _wsOpen resolves the token asynchronously before joining channels.
 //   A token that is present and does not verify closes the socket with 4001
 //   ('auth_failed') before any channel is joined — the client does not reconnect.

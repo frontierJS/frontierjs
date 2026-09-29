@@ -552,7 +552,7 @@ question 24 ruled (`FJS-D295`: the owner or an administrator) and is closed.
 
 ## Open questions
 
-- **25 — Should `signedIn()` declare a gate at all, when it states the model's own read gate a second time?**
+- ~~**25 — Should `signedIn()` declare a gate at all, when it states the model's own read gate a second time?**~~ **Answered 2026-09-28 (`FJS-D536`): A — drop the gate and keep the bare method names, so the surface is still narrowed and the floor is the one statement of the level.**
   Every custom method on `flows` and `runs` is declared at `LEVELS.USER`, and
   `Flow`'s `@@gate("4.4.4.5")` already reads at 4 — which is the floor junction
   applies to a method nobody graded (`FJS-826`). The two agree today and nothing
@@ -569,7 +569,7 @@ question 24 ruled (`FJS-D295`: the owner or an administrator) and is closed.
     describes what the floor already does. B buys the same safety by adding a test
     to hold two things equal that need not be two.
 
-- **26 — Should a flow be READABLE below the level that edits it?**
+- ~~**26 — Should a flow be READABLE below the level that edits it?**~~ **Answered 2026-09-28 (`FJS-D537`): A — leave it at 4. A flow is an editor's object and a run is where everyone else looks.**
   `Flow` and `FlowLayout` read at 4 and `FJS-D295` admits the owner or an
   administrator. A workspace member below 4 — a viewer, a restricted member —
   cannot see that an automation exists at all, so a failed release pages a

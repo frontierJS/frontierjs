@@ -127,7 +127,7 @@ describe('bearerClaim', () => {
 
     await holding('live-one', () => app.service('answers').find({}))
     // `ctx.auth.user` stays null: a claims-only object handed to the gate grades
-    // USER(4), which would promote every guest in the app silently.
+    // CREATOR(3), which would promote every guest in the app silently.
     expect(seen.user).toBeNull()
     expect(seen.level).toBe(0)
   })

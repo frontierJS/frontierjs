@@ -29,7 +29,7 @@ import { mkdirSync, writeFileSync } from 'fs'
 
 import {
   installSchemas, gateReadLevel, createReadRecorder,
-  declaredPublishLevel, checkRoute, formatReport,
+  declaredPublishes, checkRoute, formatReport,
 } from '../src/build/static-safety.js'
 import { prerenderRoutes } from '../src/build/prerender.js'
 import { tmpDir } from './tmp.js'
@@ -100,31 +100,36 @@ describe('gateReadLevel', () => {
   })
 })
 
-describe('declaredPublishLevel', () => {
+describe('declaredPublishes', () => {
 
-  test('absent means 0 — public only', () => {
-    expect(declaredPublishLevel({})).toEqual({ level: 0, declared: false, error: null })
+  test('absent declares nothing — every gated model is refused', () => {
+    const r = declaredPublishes({})
+    expect(r.error).toBeNull()
+    expect(r.models.size).toBe(0)
   })
 
-  test('reads the number', () => {
-    expect(declaredPublishLevel({ publishes: 4 })).toEqual({ level: 4, declared: true, error: null })
+  test('reads a map of model to columns', () => {
+    const r = declaredPublishes({ publishes: { Invoice: ['id', 'total'], Secret: [] } })
+    expect(r.error).toBeNull()
+    expect([...r.models.get('Invoice')]).toEqual(['id', 'total'])
+    expect(r.models.get('Secret').size).toBe(0)
   })
 
   test('reads it out of frontmatter too', () => {
-    expect(declaredPublishLevel({ frontmatter: { publishes: 5 } }).level).toBe(5)
+    expect(declaredPublishes({ frontmatter: { publishes: { Invoice: ['id'] } } }).models.has('Invoice')).toBe(true)
   })
 
-  test('refuses `publishes: true`', () => {
-    // A bare true says "turn the check off", not "I decided what this page may
-    // contain". The whole point is that the decision is legible in a diff.
-    const r = declaredPublishLevel({ publishes: true })
-    expect(r.declared).toBe(false)
-    expect(r.error).toMatch(/whole number/)
+  test('refuses a level, `true` and a bare list by TYPE', () => {
+    // A number covered every column of a model, including one added later, and
+    // a bare true says "turn the check off" — neither says which data the page
+    // contains, which is the one thing the key exists to put in a diff.
+    for (const publishes of [4, 0, '4', true, ['id']])
+      expect(declaredPublishes({ publishes }).error).toMatch(/names the columns this page may publish/)
   })
 
-  test('refuses a level off the 0–9 scale', () => {
-    expect(declaredPublishLevel({ publishes: 12 }).error).toBeTruthy()
-    expect(declaredPublishLevel({ publishes: -1 }).error).toBeTruthy()
+  test('refuses a column list that is not a list of names', () => {
+    expect(declaredPublishes({ publishes: { Invoice: 'id' } }).error).toMatch(/publishes\.Invoice must be a list/)
+    expect(declaredPublishes({ publishes: { Invoice: [1] } }).error).toBeTruthy()
   })
 })
 
@@ -146,24 +151,44 @@ describe('checkRoute — the decision', () => {
     expect(r.message).toContain('@@gate read 4')
   })
 
+  const read = (entries) => new Map(Object.entries(entries).map(([m, c]) => [m, new Set(c)]))
+
   test('the message names the fix, not just the problem', () => {
-    const r = route({ models: new Set(['invoice']) })
+    const r = route({ models: new Set(['invoice']), columns: read({ Invoice: ['id', 'total'] }) })
     expect(r.message).toContain('render: spa')
     expect(r.message).toContain('client:*')
-    expect(r.message).toContain('publishes: 4')
+    expect(r.message).toContain('Invoice: [id, total]')
   })
 
-  test('an explicit declaration permits exactly that level', () => {
-    expect(route({ models: new Set(['invoice']), meta: { publishes: 4 } }).ok).toBe(true)
+  test('an explicit declaration permits exactly those columns', () => {
+    expect(route({ models: new Set(['invoice']), columns: read({ Invoice: ['id'] }),
+      meta: { publishes: { Invoice: ['id', 'total'] } } }).ok).toBe(true)
   })
 
-  test('a declaration does not license a HIGHER gate', () => {
-    // publishes: 4 is a decision about level-4 data. It must not silently
-    // cover the level-8 model somebody added to the same load() later.
-    const r = route({ models: new Set(['invoice', 'secret']), meta: { publishes: 4 } })
+  test('a column outside the declaration is refused by name (FJS-1222)', () => {
+    // The edit a level could not catch: the page was declared for its name
+    // columns, and a later change added the email to the same read.
+    const r = route({ models: new Set(['invoice']), columns: read({ Invoice: ['id', 'total', 'email'] }),
+      meta: { publishes: { Invoice: ['id', 'total'] } } })
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('`Invoice.email`')
+    expect(r.message).not.toContain('`Invoice.total`')
+  })
+
+  test('a declaration for one model does not license another', () => {
+    const r = route({ models: new Set(['invoice', 'secret']), columns: read({ Invoice: ['id'], Secret: ['id'] }),
+      meta: { publishes: { Invoice: ['id'] } } })
     expect(r.ok).toBe(false)
     expect(r.message).toContain('Secret')
     expect(r.message).not.toContain('reads `Invoice`')
+  })
+
+  test('a model the declaration names is checked against the schema', () => {
+    expect(route({ meta: { publishes: { invoice: ['id'] } } }).message).toContain('write `Invoice`')
+    expect(route({ meta: { publishes: { Mystery: ['id'] } } }).message).toContain('not a model')
+    const r = route({ meta: { publishes: { Invoice: ['totl'] } }, columnsOf: () => ['id', 'total'] })
+    expect(r.ok).toBe(false)
+    expect(r.message).toContain('`totl`, which is not a column of Invoice')
   })
 
   test('reports every violating model, not only the first', () => {
@@ -172,9 +197,10 @@ describe('checkRoute — the decision', () => {
     expect(r.message).toContain('Secret')
   })
 
-  test('suggests the level that would actually cover it', () => {
-    const r = route({ models: new Set(['invoice', 'secret']) })
-    expect(r.message).toContain('publishes: 8')   // the worst, not the first
+  test('suggests one declaration covering every refused model', () => {
+    const r = route({ models: new Set(['invoice', 'secret']), columns: read({ Invoice: ['id'], Secret: ['key'] }) })
+    expect(r.message).toContain('Invoice: [id]')
+    expect(r.message).toContain('Secret: [key]')
   })
 })
 
@@ -197,12 +223,10 @@ describe('checkRoute — fail closed', () => {
     expect(r.message).toContain('sierra config `db`')
   })
 
-  test('`publishes: 0` does NOT waive it — the most conservative-looking value was the strongest escape (FJS-782)', () => {
-    // `publishes: 0` reads as *this page publishes public data only* and its
-    // effect was *stop asking whether you could observe me*. The two questions
-    // are separate: a number about what a page contains cannot stand in for
-    // being able to see what it contains.
-    for (const publishes of [0, 4, '0']) {
+  test('a `publishes:` declaration does NOT waive it (FJS-782)', () => {
+    // A declaration about what a page contains cannot stand in for being able
+    // to see what it contains — however narrow it is.
+    for (const publishes of [{}, { Invoice: ['id'] }]) {
       const r = checkRoute({
         routeId: 'r', meta: { publishes }, models: new Set(), taps: 0, readsData: true,
       })
@@ -215,7 +239,7 @@ describe('checkRoute — fail closed', () => {
     // The negative control. A branch that refused every undeclared route would
     // satisfy the assertion above and fail every page with a companion.
     expect(checkRoute({
-      routeId: 'r', meta: { publishes: 0 }, models: new Set(), taps: 0, readsData: false,
+      routeId: 'r', meta: { publishes: { Invoice: ['id'] } }, models: new Set(), taps: 0, readsData: false,
     }).ok).toBe(true)
     expect(checkRoute({
       routeId: 'r', meta: {}, models: new Set(['product']), taps: 1, readsData: true,
@@ -242,14 +266,14 @@ describe('checkRoute — fail closed', () => {
 
   test('…and `publishes:` does not waive that either (FJS-782)', () => {
     const r = checkRoute({
-      routeId: 'r', meta: { publishes: 9 }, models: new Set(['mystery']), taps: 1, readsData: true,
+      routeId: 'r', meta: { publishes: { Secret: ['id'] } }, models: new Set(['mystery']), taps: 1, readsData: true,
     })
     expect(r.ok).toBe(false)
   })
 
   test('a relation the recorder could not expand is refused, not scored', () => {
     const r = checkRoute({
-      routeId: 'r', meta: { publishes: 9 }, models: new Set(['product']),
+      routeId: 'r', meta: { publishes: { Product: ['id'] } }, models: new Set(['product']),
       unresolved: new Set(['Product.mystery']), taps: 1, readsData: true,
     })
     expect(r.ok).toBe(false)
@@ -297,6 +321,17 @@ describe('createReadRecorder', () => {
     c.emit('product'); c.emit('invoice'); c.emit('product')
     expect([...rec.models].sort()).toEqual(['invoice', 'product'])
     expect(rec.taps).toBe(1)
+  })
+
+  test('a raw sql read names no model, so it is unresolved and the route refused', () => {
+    const listeners = new Set()
+    const c = { $tapQuery(fn) { listeners.add(fn); return () => listeners.delete(fn) } }
+    const rec = createReadRecorder(c)
+    for (const fn of listeners) fn({ model: null, operation: 'sql', system: true, sql: 'SELECT * FROM users' })
+    expect([...rec.unresolved]).toEqual(['sql: SELECT * FROM users'])
+    const r = checkRoute({ routeId: '/x', meta: { publishes: { Secret: ['id'] } }, models: rec.models,
+      unresolved: rec.unresolved, taps: rec.taps, readsData: true })
+    expect(r.ok).toBe(false)
   })
 
   test('stop() actually unsubscribes', () => {
@@ -428,8 +463,8 @@ describe('createReadRecorder — a relation the tap never fires for (FJS-781)', 
 describe('formatReport', () => {
   test('lists each route and what it published', () => {
     const out = formatReport([
-      { route: '/shop/', allowed: 0, published: [{ model: 'Product', level: 0 }] },
-      { route: '/about/', allowed: 0, published: [] },
+      { route: '/shop/', published: [{ model: 'Product', level: 0 }] },
+      { route: '/about/', published: [] },
     ])
     expect(out).toContain('/shop/')
     expect(out).toContain('Product(0)')
@@ -497,7 +532,8 @@ describe('prerenderRoutes — the read set comes from load()', () => {
   }, RENDER_TIMEOUT)
 
   test('an acknowledged route is published', async () => {
-    const res = await run(scaffold('invoice', 'render: static\npublishes: 4'), fakeClient())
+    // The fake emits no args and has no schema, so the read is of no column.
+    const res = await run(scaffold('invoice', 'render: static\npublishes:\n  Invoice: []'), fakeClient())
     expect(res.written).toContain('report/index.html')
   }, RENDER_TIMEOUT)
 

@@ -9,10 +9,12 @@ Two clients are needed and they differ in exactly one way: one holds a session
 and the other holds nothing. So one account is registered here, and the second
 client is the absence of it.
 
-The token rides the **upgrade**, never a frame:
+The token rides the **upgrade**, never a frame, and never the URL either,
+because a URL is what a console, a proxy and an access log record. A browser
+socket cannot set `Authorization`, so it offers the token as a subprotocol:
 
 ```console
-ws://127.0.0.1:{{apiPort}}/ws?token=…
+Sec-WebSocket-Protocol: fjs, fjs.bearer.…
 ```
 
 A connection's identity is established once, when it is made. A frame that could

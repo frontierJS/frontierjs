@@ -25,7 +25,7 @@ Skip a row another session is plainly working on — its files dirty in `git sta
 - **Whether it still reproduces** — what the agent saw reading the current code, stated as *still present*, *looks fixed* or *unclear*, with the lines that decide it.
 - **A red test** — which test file it belongs in, the nearest existing test to copy the setup from, and the assertion that fails today.
 
-**When the arguments carry a `## Pre-brief`** (`fix:loop` builds one by script), the row, what it cites, where its identifiers are and the tests naming them are already found. Hand the pre-brief to the agent and ask only for the hazards, whether it reproduces and the red test.
+**When the arguments carry a `## Pre-brief`** (`fix:loop` builds one by script), it IS the brief: the row, what it cites, where its identifiers are, the tests naming them and the hazard entries naming them are already found, so send no agent. Open a hazard's reference line only when the fix touches that rule; whether it reproduces and the red test are step 3's.
 
 Read a file here only when the brief points at it and the edit needs it, and **read code by `fli outline <file> <name|line>`**: it prints the whole function holding that line, from the comment above it to its last line, in one call. The pre-brief's `→` lines are those calls already written. Bare, `fli outline <file>` lists a file's functions with their line ranges, so a function you cannot name is found by its range rather than by guessed `sed -n` windows.
 
@@ -53,6 +53,8 @@ It answers with a `FJS-D###`. Write the options under a bullet whose lead names 
   - **B** — <another>
   - **Recommend A** — <why, in one sentence>
 ```
+
+**When the ruling the row needs is already open**, file nothing: end the row's Detail cell with `` · blocked by `FJS-D###` `` (what `--blocks` writes) and confirm `fli next --json` lists the row under `blocked`. Without that marker the loop reads your `blocked` as `failed` and pays a high-effort session to write it.
 
 `fli decisions --json` then lists it `decidable`. `fli decide` answers it under that id and closes the row, and `fli next` hands the held row back naming the ruling. End with `blocked`.
 

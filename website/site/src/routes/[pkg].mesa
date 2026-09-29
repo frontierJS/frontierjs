@@ -1,19 +1,9 @@
 ---
 render: static
-publishes: 0
 ---
 <!--
   One package, prerendered. One of these per entry in packages.js, from
   `[pkg].meta.js` reading `website/packages.js`.
-
-  ── Why `publishes: 0` is here ────────────────────────────────────────────
-
-  The route has a `load()`, so Sierra will not emit it until it can say what
-  data went in. There is no Litestone client wired into this site's config —
-  there is no database behind a marketing site — so no read can be observed and
-  the build refuses rather than assuming the page is safe. Declaring 0 is the
-  author saying *what this publishes is public data*, which is true and
-  checkable: the source is `packages.js`, a file committed in the open.
 
   ── Why the fields arrive as HTML ─────────────────────────────────────────
 

@@ -719,6 +719,73 @@ model Vault {
     expect(bare.stderr).toContain('no way back from this run')
     expect(bare.stderr).toContain('drops 1 table')
   }, 30_000)
+
+  // An app keeps its schema in `db/` and its `.gitignore` covers `db/backups/`.
+  // A copy written at the working directory is users and password hashes one
+  // `git add .` from a commit (FJS-1465).
+  test('migrate apply: --backup lands beside the schema, not at the working directory', async () => {
+    const dir = makeFixtureDir('apply-backup-dir', {
+      schema: null,
+    })
+    mkdirSync(join(dir, 'db', 'migrations'), { recursive: true })
+    writeFileSync(join(dir, 'db', 'schema.lite'), `
+      model Post {
+        id    Int    @id
+        title String
+      }
+    `, 'utf8')
+    writeFileSync(join(dir, 'litestone.config.js'), `export default {
+      schema: './db/schema.lite',
+      migrations: './db/migrations',
+      db: './db/test.db',
+    }\n`, 'utf8')
+    await runCli(dir, ['migrate', 'create', 'init'])
+    const res = await runCli(dir, ['migrate', 'apply', '--backup'])
+    expect(res.exit).toBe(0)
+    expect(existsSync(join(dir, 'backups'))).toBe(false)
+    expect(readdirSync(join(dir, 'db', 'backups'))).toHaveLength(1)
+  }, 30_000)
+
+  // A `.js` migration is where a data migration lives, and the CLI is what a
+  // deployed image runs. `apply()` called directly was never the broken path:
+  // the CLI handed the client its raw handle as `db`, which names main's PATH,
+  // and every pending `.js` file died in `resolve` before `up` ran (FJS-1472).
+  const JS_MIGRATION = `export async function up(sys) {
+    await sys.post.create({ data: { title: 'seeded' } })
+  }\n`
+
+  test('migrate apply runs a pending .js migration (single-database config)', async () => {
+    const dir = makeFixtureDir('apply-js', {
+      schema: `model Post {\n  id    Int    @id\n  title String\n}\n`,
+    })
+    await runCli(dir, ['migrate', 'create', 'init'])
+    writeFileSync(join(dir, 'migrations', '29990101000000_seed.js'), JS_MIGRATION, 'utf8')
+
+    const applied = await runCli(dir, ['migrate', 'apply'])
+    expect(applied.stderr).not.toContain('paths[0]')
+    expect(applied.exit).toBe(0)
+    const db = new Database(join(dir, 'test.db'), { readonly: true })
+    const titles = db.query('SELECT title FROM post').all().map((r: { title: string }) => r.title)
+    db.close()
+    expect(titles).toEqual(['seeded'])
+  }, 30_000)
+
+  test('migrate apply runs a pending .js migration (declared database main)', async () => {
+    const dir = makeFixtureDir('apply-js-db', {
+      schema: `database main {\n  path "./app.db"\n}\n\nmodel Post {\n  id    Int    @id\n  title String\n}\n`,
+      config: `export default { schema: './schema.lite', migrations: './migrations' }\n`,
+    })
+    await runCli(dir, ['migrate', 'create', 'init'])
+    writeFileSync(join(dir, 'migrations', 'main', '29990101000000_seed.js'), JS_MIGRATION, 'utf8')
+
+    const applied = await runCli(dir, ['migrate', 'apply'])
+    expect(applied.stderr).not.toContain('paths[0]')
+    expect(applied.exit).toBe(0)
+    const db = new Database(join(dir, 'app.db'), { readonly: true })
+    const titles = db.query('SELECT title FROM post').all().map((r: { title: string }) => r.title)
+    db.close()
+    expect(titles).toEqual(['seeded'])
+  }, 30_000)
 })
 
 describe('CLI smoke — long-running servers', () => {

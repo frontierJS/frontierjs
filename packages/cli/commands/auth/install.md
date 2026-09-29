@@ -117,12 +117,12 @@ export const db = await createClient({
       // Litestone's own resolver reads and what schema.lite's @@allow and field
       // policies read, so the level and the policies cannot disagree about who
       // an administrator is. What 'admin' MEANS is this app's decision, made
-      // once in sessionFields below.
+      // once in sessionFields below. No id is a guest holding only a claim.
       getLevel(user) {
-        if (!user)              return LEVELS.STRANGER
-        if (user.isSystemAdmin) return LEVELS.SYSADMIN
-        if (user.isOwner)       return LEVELS.OWNER
-        if (user.isAdmin)       return LEVELS.ADMINISTRATOR
+        if (!user || user.id == null) return LEVELS.STRANGER
+        if (user.isSystemAdmin)       return LEVELS.SYSADMIN
+        if (user.isOwner)             return LEVELS.OWNER
+        if (user.isAdmin)             return LEVELS.ADMINISTRATOR
         return LEVELS.USER
       }
     })

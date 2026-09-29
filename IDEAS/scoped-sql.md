@@ -192,7 +192,7 @@ around is worse than the current honest raw one.
 - **Cost.** Creating N views per request is not free. Cache per (identity, schema
   version)? Create lazily, only for tables the statement names — which requires
   parsing the statement, which the allowlist needs anyway?
-- **`@encrypted` columns.** Decryption happens above SQLite, so a view exposes
+- ~~**`@encrypted` columns.**~~ **Answered 2026-09-28 (`FJS-D538`): A — omit them from the view, and report the omission to the caller.** Decryption happens above SQLite, so a view exposes
   ciphertext. Omit them (safe, surprising) or expose them raw (honest, useless)? Omit,
   probably, with the omission reported.
   - **A** — omit them from the view, and report the omission to the caller

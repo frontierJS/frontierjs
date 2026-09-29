@@ -1,5 +1,26 @@
 # Changes — @frontierjs/mesa
 
+## 2026-09-28 — The keyed-equality lift keeps the author's guard (`FJS-1445`)
+
+`selected && e.src !== selected.id` inside an `{#each}` lifted `selected.id`
+into a `createKeyedEquals` beside the block, where it ran eagerly with no
+`selected &&` in front of it — so the row threw on null and basecamp's
+`/infra-graph/` rendered its error screen. In a short-circuited position (the
+right of `&&`/`||`/`??`, a ternary branch, a function body) the lift now takes
+only a side that cannot throw: a bare read or an optional chain. Anything else
+stays as written. `test/keyed-equals.test.js`.
+
+## 2026-09-28 — A `$:` path watch on a prop mounts and follows the prop (`FJS-1469`)
+
+`$: verse.verseId` (or its handler form) on `export let verse` or `export const
+verse` put the prop's root in the import set, so the head emitted
+`watchProxy(verse)` above anything named `verse` and the component threw
+`ReferenceError` at mount from a clean compile. A prop root is now proxied like
+a local `let`: `emitLocalWatchProxy`, shared by both, emits the path signals and
+the re-proxy effect right after the prop's signal, so a new record from the
+parent re-runs the handler. The primitive-deep-watch refusal skips props, whose
+fallback says nothing about what the parent passes. `test/prop-path-watch.test.js`.
+
 ## 2026-09-28 — JSX in an expression and an assignment to a derived `const` are refused by name (`FJS-1109`)
 
 `{ok && <b>x</b>}` and `d = 3` against a derived `const d` both compiled with an

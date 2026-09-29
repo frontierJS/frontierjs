@@ -25,11 +25,10 @@ analysis of the render could ever see.
 
 **Two switched-on checks were added on 2026-08-24, in `fli check` rather than
 here** — `static-publish-db` (a `target: 'static'` surface wiring no `db:`, so the
-tap has no client and every route that loads data is refused until it declares
-`publishes:`) and `static-publishes-0` (`publishes: 0` is the DEFAULT bar, so it
-raises nothing and its only effect is to turn the two fail-closed branches into
-passes — measured by calling `checkRoute` both ways). They do not grade a page;
-the build does that. They answer whether the build can.
+tap has no client and every route that loads data is refused). It does not grade
+a page; the build does that. It answers whether the build can. Its sibling
+`static-publishes-0` was deleted when `publishes:` became a column set
+(`FJS-D496`), since the build now refuses a number by type.
 
 **Still unbuilt: the classifier** (§The other half, and item 5). The per-route
 table it wants is now produced as a by-product — `prerenderRoutes` returns
@@ -164,19 +163,19 @@ Two cautions, both inherited from above rather than new:
 
 ## Open questions
 
-- **Is level 0 the right bar, or should it be "the gate the build ran as"?** A static
+- ~~**Is level 0 the right bar, or should it be "the gate the build ran as"?**~~ **Answered 2026-09-28 (`FJS-D516`): A — keep what shipped: a model gated at 0 is public and needs no declaration, and a column of a gated model fails the build unless the route's `publishes:` names it (`FJS-D496`); an `asSystem()` catalog names its columns once, visible in `routes.snapshot.md` (`FJS-D464`).** A static
   build that reads through `asSystem()` to publish a public product catalog from a
   gated `Product` model is a real and reasonable pattern. That argues the rule is
   really "the route must declare the level it publishes at," with 0 as the default.
-  - **A** — keep what shipped: `publishes: N` in route meta, absent means 0, a gate above
-    N fails the build naming the route (`packages/sierra/src/build/static-safety.js:237`,
-    `:285`); an `asSystem()` catalog writes `publishes: 4` once, visible in
+  - **A** — keep what shipped: a model gated at 0 is public and needs no declaration, and
+    a column of a gated model fails the build unless the route's `publishes:` names it
+    (`FJS-D496`); an `asSystem()` catalog names its columns once, visible in
     `routes.snapshot.md` (`FJS-D464`)
   - **B** — derive the bar from the standing the build client runs as, so an
     `asSystem()` build clears any gate with nothing written in the route
   - **Recommend A** — it is built and tested; B makes publishing gated data a thing that
     happened rather than a thing written down, the exact silence this paper exists to close
-- **Islands complicate it in the right direction.** A `client:*` island fetches at
+- ~~**Islands complicate it in the right direction.**~~ **Answered 2026-09-28 (`FJS-D519`): A — as built: the read set is what the tapped build client sees during prerender (`static-safety.js:204`); an island's runtime fetch never touches that client, so it is excluded by construction, and props handed to a prerendered island ARE counted, correctly, since they are in the HTML.** A `client:*` island fetches at
   runtime with the viewer's session, so gated data inside an island is fine. The
   check must therefore distinguish "read during prerender" from "read by an island"
   — which the island seam already separates cleanly.
@@ -188,7 +187,7 @@ Two cautions, both inherited from above rather than new:
     table names which data moved into islands
   - **Recommend A** — the exclusion needs no code; B only matters once the classifier
     table exists, and belongs to that work, not this rule
-- **FJS-D504 — What about `@guarded` columns reaching the marker?** An island marker carries its
+- ~~**FJS-D504 — What about `@guarded` columns reaching the marker?**~~ **Answered 2026-09-28 (`FJS-D504`): D — refuse at the READ: the tap event states `system`, and a system read whose columns include one `db.$protectedFields()` names fails the build — no `select` counts as every column, and the walk follows `include`/`select` into each relation; `publishes: N` does not lift it.** An island marker carries its
   props **as rendered** (`CLAUDE.md` § Bridge index). If a prerendered island is
   handed a record containing a guarded column, that column is now in the HTML
   comment. Probed 2026-09-27 and filed as [FJS-1411](../ISSUES.md#fjs-1411): a
@@ -202,11 +201,15 @@ Two cautions, both inherited from above rather than new:
   - **B** — refuse an `asSystem()` build client in the tap, so litestone's own read path
     strips `@guarded` and the marker can never see one
   - **C** — leave it, documented as the author's responsibility under `publishes:`
+  - **D** — refuse at the READ: the tap event states `system`, and a system read whose
+    columns include one `db.$protectedFields()` names fails the build — no `select`
+    counts as every column, and the walk follows `include`/`select` into each relation;
+    `publishes: N` does not lift it
   - **Recommend A** — `@guarded` is system-only both ways (`packages/litestone/CLAUDE.md`
     § Protection), so the `asSystem()` build A's sibling question blesses reads it and
     the model-level check never looks at columns; B forbids the legitimate catalog build,
     C is a silent permanent leak. Probe it first — if confirmed it is an `FJS-###`
-- Does this belong in Sierra's build or in a shared checker that `marshal` also uses?
+- ~~**Does this belong in Sierra's build or in a shared checker that `marshal` also uses?**~~ **Answered 2026-09-28 (`FJS-D517`): A — stays in Sierra's build: `static-safety.js` over `buildGate()` and the schema registry, which `DECISIONS.md:1451` already names as the owner of *what may reach a public file*; marshal, when built, reads the same `buildGate()`.**
   Both read gates against something; see `IDEAS/compliance-from-the-seed.md`.
   - **A** — stays in Sierra's build: `static-safety.js` over `buildGate()` and the
     schema registry, which `DECISIONS.md:1451` already names as the owner of *what may

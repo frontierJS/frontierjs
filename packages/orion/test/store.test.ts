@@ -65,8 +65,11 @@ function linearPlan(types: string[]): ExecutionPlan {
 const IMPLS: INodeImplementation[] = [
   { type: "ok",    execute: (async () => ({ ok: true, data: { email: "a@b.c", n: 1 } })) as INodeImplementation["execute"] },
   { type: "fails", execute: (async () => ({ ok: false, error: "upstream said no" })) as INodeImplementation["execute"] },
+  { type: "cancels", execute: (async () => { await midRun(); return { ok: true, data: {} } }) as INodeImplementation["execute"] },
   { type: "waits", execute: (async () => ({ ok: true, data: { __orion_wait: true, resumeKey: crypto.randomUUID(), event: "approval", timeoutAt: null, into: "approval" } })) as INodeImplementation["execute"] },
 ]
+// What a `cancels` node does while its run is running, set per test.
+let midRun: () => Promise<unknown> = async () => {}
 const registry: INodeRegistry = { get: (type) => IMPLS.find(i => i.type === type) }
 
 // ─── fixtures ────────────────────────────────────────────────────────────────
@@ -259,6 +262,27 @@ describe("LitestoneExecutionStore", () => {
     expect(history?.flowId).toBe(flow.id)
     expect(Object.keys(history!.nodeTimings).sort()).toEqual(["n0", "n1"])
     expect(history?.finalContext["n1"]).toEqual({ email: "a@b.c", n: 1 })
+  })
+
+  test("a run cancelled while running stays cancelled, and its later stages do not run", async () => {
+    const { flow, run } = await pendingRun(env)
+    const store = new LitestoneExecutionStore(env.system)
+    let cancelled: boolean | undefined
+    midRun = async () => { cancelled = await new LitestoneExecutionStore(env.system).cancel(run.id, Date.now(), "stop") }
+    const record = await schedulerFor(store, linearPlan(["ok", "cancels", "ok"]), flow.id)
+      .processJob({ executionId: run.id, flowId: flow.id, version: "1", trigger: run.trigger })
+    midRun = async () => {}
+
+    expect(cancelled).toBe(true)
+    expect(record.nodeStates["n2"]?.status ?? "pending").toBe("pending")
+    const row = await env.system.run.findFirst({ where: { id: run.id } })
+    expect([row.status, row.error, row.context]).toEqual(["cancelled", "stop", null])
+  })
+
+  test("a queued run is cancelled before its job reads it", async () => {
+    const { run } = await pendingRun(env)
+    expect(await new LitestoneExecutionStore(env.system).cancel(run.id, Date.now(), "stop")).toBe(true)
+    expect((await env.system.run.findFirst({ where: { id: run.id } })).status).toBe("cancelled")
   })
 
   test("a failed node fails the run and says why", async () => {

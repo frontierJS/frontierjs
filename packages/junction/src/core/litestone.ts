@@ -2962,10 +2962,16 @@ function mergeClaims(ctx: ServiceContext, db: unknown, claims: PrincipalClaims):
   // care this path needs.** `sessionGateLevel` grades any object it is handed:
   // a claims-only principal sets none of `isSystemAdmin`/`isOwner`/`isAdmin`
   // and leaves `verifiedAt`/`activatedAt` undefined — which is SILENCE, not
-  // `null` — so it falls through to `LEVELS.USER`. Promoting a guest to a
-  // session object would therefore grade every anonymous caller 4 in every app
-  // that adopted a resolver, silently. `ctx.auth.user` stays null, the gate
-  // still grades STRANGER(0), and the claim decides only WHICH ROWS.
+  // `null` — so it falls through to CREATOR(3). Promoting a guest to a session
+  // object would therefore grade every anonymous caller above a stranger in
+  // every app that adopted a resolver, silently. `ctx.auth.user` stays null, so
+  // Junction's gate grades STRANGER(0) and the claim decides only WHICH ROWS.
+  //
+  // The Data boundary grades this object with the APP's `getLevel`, which sees
+  // a non-null principal with no `id` — every session reaches it through
+  // `toDataPrincipal`, which carries one. A `getLevel` that tests only `!user`
+  // grades the guest past every `@@gate` inside a `gate: 0` method; the
+  // scaffold's tests `id` (FJS-1447).
   if (!user) {
     if (!Object.keys(claims).length) return
     if (typeof client?.$setAuth === 'function')

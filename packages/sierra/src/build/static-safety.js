@@ -56,27 +56,25 @@
  * would have let exactly the clever route we are worried about slip through
  * silently, which is the failure mode being fixed.
  *
- * `publishes:` is NOT the escape from that branch and used not to be an escape
- * at all — it became one because every fail-closed branch was guarded on
- * `!declared.declared`, which is true of any legal value including `0`. The two
- * questions are separated now: `publishes: N` says how high a gate this page's
- * contents may sit behind, and answers nothing about whether the build could
- * see them (`FJS-782`).
+ * `publishes:` is NOT the escape from that branch. It says which columns of
+ * which gated models this page may publish, and answers nothing about whether
+ * the build could see them (`FJS-782`).
  *
- * That escape is a written, per-route acknowledgement — never a global flag —
- * so publishing gated data becomes a thing somebody wrote down and a reviewer
- * can see in a diff:
+ * It is a written, per-route acknowledgement — never a global flag — so
+ * publishing gated data becomes a thing somebody wrote down and a reviewer can
+ * see in a diff:
  *
  *   ---
  *   render: static
- *   publishes: 4        # this page may publish data readable at level 4
+ *   publishes:
+ *     User: [id, name, timeZone]   # these columns of User may be public
  *   ---
  *
- * Absent, the bar is 0 — STRANGER, i.e. genuinely public. That follows the
- * open question in the idea file to its conclusion: the rule is not "level 0
- * only", it is "the route declares the level it publishes at", with 0 as the
- * default. A build that legitimately reads a gated model through `asSystem()`
- * to publish a public catalog says so once, in the route.
+ * A column set and not a gate level (`FJS-D496`): a level covered every column
+ * of the model, including one added after the line was written, so a later edit
+ * putting `email` on the page raised nothing and changed nothing a reviewer
+ * diffs. A model gated at 0 needs no entry — it is public already. There is no
+ * wildcard, for the same reason there is no level.
  *
  * ── When the check does not run ───────────────────────────────────────────
  *
@@ -86,9 +84,6 @@
 
 import { registerSchemas, modelNameFor, schemaFor } from '../junction/schema-registry.js'
 import { buildGate } from '../junction/field-rules.js'
-
-/** The bar a route clears when it declares nothing: genuinely public. */
-export const DEFAULT_PUBLISH_LEVEL = 0
 
 /**
  * Install the generated defs so `modelNameFor` can resolve a table name.
@@ -188,6 +183,71 @@ function expandRelations(model, node, relations, models, unresolved, depth = 0) 
   }
 }
 
+/** Verbs whose result carries no column value — a count, a flag, `{ count }`. */
+const VALUELESS = new Set([
+  'count', 'exists', 'include', 'include:count',
+  'createMany', 'updateMany', 'deleteMany', 'removeMany', 'upsertMany',
+])
+
+/** Aggregate keys that return a column's VALUE; `_count` returns a number. */
+const VALUE_AGGREGATES = ['_min', '_max', '_sum', '_avg']
+
+/** Add `names` to `model`'s entry in a model → columns map. */
+function addColumns(out, model, names) {
+  if (!out.has(model)) out.set(model, new Set())
+  for (const n of names) out.get(model).add(n)
+}
+
+/**
+ * Which columns of which models a read put in its result.
+ *
+ * `publishes:` is graded against this (`FJS-D496`), and so is the protected
+ * check (`FJS-D504`). A node with no `select` returns every column the model
+ * reads back, so it counts as all of them; a `select` narrows it to the keys
+ * named. Relations are followed the way `expandRelations` follows them — `true`
+ * is the whole child row — so a column two includes down is recorded against
+ * its own model. A relation the map does not carry is not followed here:
+ * `expandRelations` already records it as unresolved, and that refuses the
+ * route. A `_count` reads a relation's rows and returns none of their columns;
+ * the model is in the read set through `expandRelations` all the same.
+ */
+function collectColumns(model, node, relations, columnsOf, out, depth = 0) {
+  if (!model || depth > MAX_RELATION_DEPTH) return
+  const shape  = node && typeof node === 'object' ? node : {}
+  const select = shape.select && typeof shape.select === 'object' ? shape.select : null
+  const follow = (name, value) => {
+    const rel = relations?.[model]?.[name]
+    if (!rel?.targetModel) return false
+    collectColumns(rel.targetModel, value, relations, columnsOf, out, depth + 1)
+    return true
+  }
+
+  if (select) {
+    addColumns(out, model, [])
+    for (const [name, value] of Object.entries(select)) {
+      if (value === false || value == null || name === '_count') continue
+      if (!follow(name, value)) addColumns(out, model, [name])
+    }
+  } else {
+    addColumns(out, model, columnsOf(model))
+  }
+
+  if (shape.include && typeof shape.include === 'object') {
+    for (const [name, value] of Object.entries(shape.include)) {
+      if (value === false || value == null || name === '_count') continue
+      follow(name, value)
+    }
+  }
+}
+
+/** The columns an aggregate or groupBy returns the values of. */
+function aggregateColumns(model, args, out) {
+  const named = new Set(Array.isArray(args?.by) ? args.by : [])
+  for (const key of VALUE_AGGREGATES)
+    for (const [name, on] of Object.entries(args?.[key] ?? {})) if (on) named.add(name)
+  addColumns(out, model, named)
+}
+
 /**
  * Create a recorder that collects every model a Litestone client reads.
  *
@@ -199,14 +259,28 @@ function expandRelations(model, node, relations, models, unresolved, depth = 0) 
  * state instead of scoring it.
  *
  * @param {object|null} client  a Litestone client, or null when none is wired
- * @returns {{ taps: number, models: Set<string>, unresolved: Set<string>, stop: () => void }}
+ * `columns` is every column read, by model, for `publishes:`; `exposed` is the
+ * protected ones among them that a SYSTEM read returned. `asSystem()` is the
+ * only flavor that returns a `@guarded` or `@encrypted` value — a bare or
+ * `$setAuth` read strips both — and it is the flavor a gated catalog is built
+ * through, so a model-level check handed `token` to the page with nothing on
+ * the path looking (`FJS-1411`). Graded at the READ rather than in the HTML: a
+ * column renamed into a prop, or interpolated into markup, reaches the page all
+ * the same, and only the read knows it was there.
+ *
+ * @param {object|null} client  a Litestone client, or null when none is wired
+ * @returns {{ taps: number, models: Set<string>, unresolved: Set<string>,
+ *   columns: Map<string, Set<string>>, exposed: Set<string>,
+ *   columnsOf: (model: string) => string[] | null, stop: () => void }}
  */
 export function createReadRecorder(client) {
   const models = new Set()
   const unresolved = new Set()
+  const columns = new Map()
+  const exposed = new Set()
 
   if (!client || typeof client.$tapQuery !== 'function') {
-    return { taps: 0, models, unresolved, stop() {} }
+    return { taps: 0, models, unresolved, columns, exposed, columnsOf: () => null, stop() {} }
   }
 
   // Read once: it is a schema-derived constant, and asking per query would be
@@ -214,81 +288,134 @@ export function createReadRecorder(client) {
   let relations = null
   try { relations = client.$relations ?? null } catch { relations = null }
 
+  // What a whole-row read returns: every scalar field but an `@omit(all)`,
+  // which no read selects. Null for a model the schema does not describe.
+  let schemaModels = []
+  try { schemaModels = client.$schema?.models ?? [] } catch { schemaModels = [] }
+  const columnsOf = model => {
+    const m = schemaModels.find(x => x.name === model)
+    if (!m) return null
+    return m.fields
+      .filter(f => f.type?.kind !== 'relation')
+      .filter(f => !f.attributes?.some(a => a.kind === 'omit' && a.level === 'all'))
+      .map(f => f.name)
+  }
+
+  const protectedCache = new Map()
+  const protectedOf = model => {
+    if (!protectedCache.has(model)) {
+      let fields = {}
+      try { fields = client.$protectedFields?.(model) ?? {} } catch { fields = {} }
+      protectedCache.set(model, fields)
+    }
+    return protectedCache.get(model)
+  }
+
   const stop = client.$tapQuery(event => {
-    if (!event || !event.model) return
+    if (!event) return
+    // Raw SQL names no model, so no gate or protected column can be graded;
+    // dropping it let `asSystem().sql` publish anything (`FJS-1471`).
+    if (event.operation === 'sql') { unresolved.add(`sql: ${String(event.sql ?? '').trim()}`); return }
+    if (!event.model) return
     const table = String(event.model)
+    const model = modelNameFor(table)
     models.add(table)
-    expandRelations(modelNameFor(table), event.args, relations, models, unresolved)
+    expandRelations(model, event.args, relations, models, unresolved)
+    if (VALUELESS.has(event.operation)) return
+    const read = new Map()
+    if (event.operation === 'aggregate' || event.operation === 'groupBy')
+      aggregateColumns(model, event.args, read)
+    else
+      collectColumns(model, event.args, relations, m => columnsOf(m) ?? [], read)
+    for (const [m, names] of read) {
+      addColumns(columns, m, names)
+      if (event.system !== true) continue
+      const guarded = protectedOf(m)
+      for (const n of names) if (guarded[n]) exposed.add(`${m}.${n} (@${guarded[n]})`)
+    }
   })
 
-  return { taps: 1, models, unresolved, stop: typeof stop === 'function' ? stop : () => {} }
+  return { taps: 1, models, unresolved, columns, exposed, columnsOf, stop: typeof stop === 'function' ? stop : () => {} }
 }
 
 /**
- * Parse a route's declared publish level.
+ * Parse a route's `publishes:` — the columns, per model, this page may publish
+ * from a gated model.
  *
- * `publishes` is a NUMBER, the gate level this page is allowed to publish at.
- * `publishes: true` is refused rather than treated as "anything": a bare true
- * says the author wanted the check off, not that they decided what the page may
- * contain, and the whole point is that the decision is legible in the diff.
+ * Anything but a map of model to a list of column names is refused by TYPE
+ * rather than coerced: a bare `true` or a number says the author wanted the
+ * check quieter, not which data the page contains, and the whole point is that
+ * the decision is legible in the diff. An empty list declares a read that
+ * returns no column, like a count.
  *
- * @returns {{ level: number, declared: boolean, error: string|null }}
+ * @returns {{ models: Map<string, Set<string>>, error: string|null }}
  */
-export function declaredPublishLevel(meta) {
+export function declaredPublishes(meta) {
   const raw = meta?.publishes ?? meta?.frontmatter?.publishes
+  const models = new Map()
 
-  if (raw === undefined || raw === null)
-    return { level: DEFAULT_PUBLISH_LEVEL, declared: false, error: null }
+  if (raw === undefined || raw === null) return { models, error: null }
 
-  // A number, or a string of digits — YAML frontmatter may hand back either.
-  // Everything else is refused BY TYPE rather than coerced: `Number(true)` is
-  // 1, so a bare `publishes: true` would otherwise have been accepted as
-  // "level 1" — turning the check off by accident, which is the one outcome
-  // this key exists to prevent.
-  const n =
-    typeof raw === 'number' ? raw
-    : (typeof raw === 'string' && /^\d+$/.test(raw.trim())) ? Number(raw.trim())
-    : NaN
-
-  if (!Number.isInteger(n) || n < 0 || n > 9) {
+  if (typeof raw !== 'object' || Array.isArray(raw)) {
     return {
-      level: DEFAULT_PUBLISH_LEVEL,
-      declared: false,
-      error: `publishes must be a whole number 0–9 (Litestone's gate scale), got ${JSON.stringify(raw)}`,
+      models,
+      error: `publishes names the columns this page may publish, per model — ` +
+             `publishes: { User: [id, name] } — got ${JSON.stringify(raw)}`,
     }
   }
 
-  return { level: n, declared: true, error: null }
+  for (const [model, cols] of Object.entries(raw)) {
+    if (!Array.isArray(cols) || cols.some(c => typeof c !== 'string'))
+      return { models, error: `publishes.${model} must be a list of column names, got ${JSON.stringify(cols)}` }
+    models.set(model, new Set(cols))
+  }
+
+  return { models, error: null }
 }
 
 /**
  * Decide whether a route may be published.
  *
- * `publishes: N` answers ONE question — how high a gate this page's contents
- * may sit behind. It used to answer a second by accident: every fail-closed
- * branch below was guarded on `!declared.declared`, which is true for any legal
- * value including `0`. So `publishes: 0` — the most conservative statement the
- * key can make — read as *stop asking whether you could observe me* and was the
- * strongest form of the escape hatch (`FJS-782`). An UNPROVABLE route is now
- * refused whatever N is: a declaration about what a page contains cannot stand
- * in for the ability to see what it contains.
+ * `publishes:` answers ONE question — which columns of a gated model this
+ * page's contents may include. An UNPROVABLE route is refused whatever it
+ * says: a declaration about what a page contains cannot stand in for the
+ * ability to see what it contains (`FJS-782`).
  *
  * @param {object}  o
  * @param {string}  o.routeId     for the message
  * @param {object}  o.meta        route frontmatter
  * @param {Set<string>} o.models  table/model names read while building it
  * @param {Set<string>|string[]} [o.unresolved]  reads whose gate could not be resolved
+ * @param {Map<string, Set<string>>} [o.columns]  columns read, by model
+ * @param {Set<string>|string[]} [o.exposed]  protected columns a system read returned
+ * @param {(model: string) => string[]|null} [o.columnsOf]  a model's columns, to check the declaration against
  * @param {number}  o.taps        how many clients a recorder was installed on
  * @param {boolean} o.readsData   does the route have a load/getStaticPaths?
  * @returns {{ ok: boolean, message: string|null, published: Array<{model:string, level:number}>, observedNothing?: boolean }}
  */
-export function checkRoute({ routeId, meta, models, unresolved = [], taps = 0, readsData }) {
-  const declared = declaredPublishLevel(meta)
+export function checkRoute({
+  routeId, meta, models, unresolved = [], columns = new Map(), exposed = [],
+  columnsOf = () => null, taps = 0, readsData,
+}) {
+  const declared = declaredPublishes(meta)
 
   if (declared.error)
     return { ok: false, message: `${routeId}: ${declared.error}`, published: [] }
 
-  const allowed = declared.level
+  // A misspelt model or column in the declaration matches nothing, so it would
+  // read as a page publishing less than it does. Refused by name instead.
+  for (const [model, cols] of declared.models) {
+    if (modelNameFor(model) !== model)
+      return { ok: false, published: [], message:
+        `${routeId}: publishes names \`${model}\`, which is not a model in the schema` +
+        (modelNameFor(model) ? ` — write \`${modelNameFor(model)}\`` : '') }
+    const known = columnsOf(model)
+    const stray = known ? [...cols].filter(c => !known.includes(c)) : []
+    if (stray.length)
+      return { ok: false, published: [], message:
+        `${routeId}: publishes.${model} names ${stray.map(c => `\`${c}\``).join(', ')}, ` +
+        `which ${stray.length === 1 ? 'is not a column' : 'are not columns'} of ${model}` }
+  }
 
   // ── Unprovable ──────────────────────────────────────────────────────
   // The route pulls data and nothing watched it. There is no basis on which to
@@ -304,21 +431,19 @@ export function checkRoute({ routeId, meta, models, unresolved = [], taps = 0, r
         `   so it cannot be shown to be safe to publish.\n` +
         `   Wire the Litestone client into the build (sierra config \`db\`) so reads can\n` +
         `   be checked.\n` +
-        `   \`publishes:\` does not answer this — it says how high a gate this page may\n` +
-        `   publish from, which is the claim the build has no way to check here.\n`,
+        `   \`publishes:\` does not answer this — it says which columns this page may\n` +
+        `   publish, which is the claim the build has no way to check here.\n`,
     }
   }
 
   // ── Observed reads ──────────────────────────────────────────────────
   const published = []
   const unknown   = [...unresolved]
-  const over      = []
 
   for (const raw of models) {
     const { model, level } = gateReadLevel(raw)
     if (!model || Number.isNaN(level)) { unknown.push(raw); continue }
     published.push({ model, level })
-    if (level > allowed) over.push({ model, level })
   }
 
   // Refused whatever `publishes:` says, for the reason above: a read the build
@@ -333,31 +458,75 @@ export function checkRoute({ routeId, meta, models, unresolved = [], taps = 0, r
         `   read ${unknown.map(u => `\`${u}\``).join(', ')}, whose gate the build could not\n` +
         `   resolve, so the page cannot be shown to be safe.\n` +
         `   A relation named in \`include:\` that the schema does not carry, or a table the\n` +
-        `   schema does not describe. Read it as a plain query on the model instead, so the\n` +
+        `   schema does not describe, or raw SQL, which names no model. Read it as a plain query on the model instead, so the\n` +
         `   build can see which model it is.\n`,
     }
   }
 
-  if (over.length) {
-    const worst = over.reduce((a, b) => (b.level > a.level ? b : a))
+  // Refused whatever `publishes:` says: `@guarded` is system-only both ways
+  // and takes no level, so no declaration can make one public (`FJS-D504`).
+  const leaked = [...exposed]
+  if (leaked.length) {
     return {
       ok: false,
       published,
       message:
         `${routeId} — render: static\n` +
-        over.map(o => `   reads \`${o.model}\`, which is @@gate read ${o.level} — ` +
-                      `level ${o.level} required to read.`).join('\n') + '\n' +
+        `   reads ${leaked.map(c => `\`${c}\``).join(', ')} through asSystem(), which\n` +
+        `   returns protected columns as their values — so the page could publish them.\n` +
+        `   Name the columns the page needs with \`select:\` (nested selects for an\n` +
+        `   include), leaving the protected ones out. \`publishes:\` does not lift this:\n` +
+        `   no declaration makes a protected column public.\n`,
+    }
+  }
+
+  // ── Gated columns ───────────────────────────────────────────────────
+  // Every column read from a gated model must be named in `publishes:` for
+  // that model; a model gated at 0 is public and needs no entry.
+  const over = []
+  const graded = new Set()
+  for (const { model, level } of published) {
+    if (level <= 0 || graded.has(model)) continue
+    graded.add(model)
+    const read  = [...(columns.get(model) ?? [])]
+    const allow = declared.models.get(model)
+    const extra = allow ? read.filter(c => !allow.has(c)) : read
+    if (!allow || extra.length) over.push({ model, level, read, extra, declared: !!allow })
+  }
+
+  if (over.length) {
+    const whole = over.some(o => {
+      const all = columnsOf(o.model)
+      return all && all.length && all.every(c => o.read.includes(c))
+    })
+    const entries = new Map(declared.models)
+    for (const o of over) entries.set(o.model, new Set([...(entries.get(o.model) ?? []), ...o.read]))
+    return {
+      ok: false,
+      published,
+      message:
+        `${routeId} — render: static\n` +
+        over.map(o => o.declared
+          ? `   reads ${o.extra.map(c => `\`${o.model}.${c}\``).join(', ')}, which \`publishes:\` does not ` +
+            `name — \`${o.model}\` is @@gate read ${o.level}.`
+          : `   reads \`${o.model}\`, which is @@gate read ${o.level} — level ${o.level} required to read.`
+        ).join('\n') + '\n' +
         `   A prerendered page is public: whatever it contains is served to anyone,\n` +
         `   cached by a CDN and indexed, and cannot be recalled.\n` +
         `\n` +
         `   Change the route to \`render: spa\`, move the data into a client:* island\n` +
-        `   (an island fetches at runtime with the viewer's own session), or — if this\n` +
-        `   data really is meant to be public — say so in the route:\n` +
+        `   (an island fetches at runtime with the viewer's own session), or — if these\n` +
+        `   columns really are meant to be public — name them in the route:\n` +
         `\n` +
         `       ---\n` +
         `       render: static\n` +
-        `       publishes: ${worst.level}\n` +
-        `       ---\n`,
+        `       publishes:\n` +
+        [...entries].map(([m, cols]) => `         ${m}: [${[...cols].join(', ')}]\n`).join('') +
+        `       ---\n` +
+        (whole
+          ? `\n   A read with no \`select:\` counts as every column of the model. Narrow it to\n` +
+            `   the columns the page shows, and declare those.\n`
+          : ''),
     }
   }
 
@@ -385,10 +554,10 @@ export function formatReport(rows) {
     const models = r.published.length
       ? r.published.map(p => `${p.model}(${p.level})`).join(' ')
       : '—'
-    return `    ${r.route.padEnd(w)}  ${String(r.allowed).padStart(3)}  ${models}`
+    return `    ${r.route.padEnd(w)}  ${models}`
   }
   return [
-    `    ${'route'.padEnd(w)}  max  models read (gate)`,
+    `    ${'route'.padEnd(w)}  models read (gate)`,
     ...rows.map(line),
   ].join('\n')
 }

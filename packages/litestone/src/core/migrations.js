@@ -188,8 +188,8 @@ export function describeSkipped(skipped) {
 // history — the class of silent wrongness this ruling exists to remove. Callers
 // are handed `unknown` with the files named, and say so.
 
-export function buildShadow(dir = './migrations') {
-  const files = listMigrationFiles(dir)
+export function buildShadow(dir = './migrations', only = null) {
+  const files = listMigrationFiles(dir).filter(f => !only || only.has(f))
   const js    = files.filter(f => f.endsWith('.js'))
   if (js.length) return { ok: false, reason: 'js-migrations', files: js, schema: null }
 
@@ -245,14 +245,23 @@ export function historyGap(parseResult, dir = './migrations', { pluralize = fals
 // history build the schema* — one is about the database in front of you, the
 // other about the repo — and conflating them is the defect `FJS-D123` closes.
 
-export function driftAgainstLive(rawDb, parseResult, dir = './migrations', { pluralize = false, dbName = 'main' } = {}) {
-  const shadow = buildShadow(dir)
+//
+// `appliedOnly` compares against the files this database RECORDS as applied,
+// and returns the rest as `pending`. Without it a fresh clone — every file
+// pending, no tables — reads as drift, and a database behind its history is
+// refused with the advice for one ahead of it (`FJS-1455`). Baseline keeps the
+// whole history: it is about to record every file as applied.
+
+export function driftAgainstLive(rawDb, parseResult, dir = './migrations', { pluralize = false, dbName = 'main', appliedOnly = false } = {}) {
+  const applied = appliedOnly ? new Set(appliedMigrations(rawDb).map(m => m.name)) : null
+  const shadow  = buildShadow(dir, applied)
   if (!shadow.ok) return { unknown: true, reason: shadow.reason, file: shadow.file, error: shadow.error, files: shadow.files, message: shadowRefusal(shadow) }
 
+  const pending = applied ? listMigrationFiles(dir).filter(f => !applied.has(f)) : []
   const diff = diffSchemas(shadow.schema, introspect(rawDb), parseResult, dbName, { pluralize })
   return diff.hasChanges
-    ? { ok: false, drifted: true, diff, summary: summarizeDiff(diff), files: shadow.files }
-    : { ok: true, files: shadow.files }
+    ? { ok: false, drifted: true, diff, summary: summarizeDiff(diff), files: shadow.files, pending }
+    : { ok: true, files: shadow.files, pending }
 }
 
 // Record migration files as applied WITHOUT running them.
@@ -474,16 +483,33 @@ export function migrationStatements(filePath) {
 // It is scoped by KIND instead. `PRAGMA foreign_key_check` walks every foreign
 // key of every row, which on a 900-model schema is seconds — too much to spend
 // on every boot of an app whose migration only added a column. Only a statement
-// that moves or removes ROWS can leave an orphan behind: an ADD COLUMN, a
-// CREATE INDEX or a DROP TRIGGER cannot, and a rebuild is exactly an
-// `INSERT INTO … SELECT` followed by a `DROP TABLE` and a rename.
-const ROW_MOVING = /^\s*(INSERT\s+INTO|DELETE\s+FROM|DROP\s+TABLE|ALTER\s+TABLE\s+.*\bRENAME\b)/i
+// that writes, moves or removes ROWS can leave an orphan behind: an ADD COLUMN, a
+// CREATE INDEX or a DROP TRIGGER cannot. An UPDATE counts as much as a rebuild's
+// `INSERT … SELECT`: correcting a natural key strands every child of the old
+// value, and it was the statement this list missed (`FJS-1473`). A `WITH` can
+// lead any of them, so it counts too.
+const ROW_MOVING = /^\s*(WITH\b|INSERT\b|REPLACE\b|UPDATE\b|DELETE\b|DROP\s+TABLE|ALTER\s+TABLE\s+.*\bRENAME\b)/i
 
 function couldOrphan(stmts) {
   return stmts.some(s => ROW_MOVING.test(s))
 }
 
-function assertNoOrphans(rawDb) {
+// A rebuild is the one shape whose orphans have a known cause worth naming;
+// anything else is told what it ran, because blaming a rebuild that never
+// happened sends the reader to the wrong file.
+function orphanCause(stmts) {
+  const isRebuild = stmts.some(s => /^\s*DROP\s+TABLE/i.test(s)) &&
+                    stmts.some(s => /^\s*ALTER\s+TABLE\s+.*\bRENAME\s+TO\b/i.test(s))
+  if (isRebuild) {
+    return `A rebuild copies only the columns the old and new tables share, so a row whose parent ` +
+           `was not carried over is orphaned.`
+  }
+  const verbs = [...new Set(stmts.map(s => s.match(ROW_MOVING)?.[1].split(/\s+/)[0].toUpperCase()).filter(Boolean))]
+  return `This migration ran ${verbs.join(', ')}: a row it wrote names a parent the database does ` +
+         `not hold, or a key it moved or removed left children pointing at nothing.`
+}
+
+function assertNoOrphans(rawDb, stmts) {
   const rows = rawDb.query('PRAGMA foreign_key_check').all()
   if (!rows.length) return
   const shown = rows.slice(0, 5)
@@ -492,8 +518,8 @@ function assertNoOrphans(rawDb) {
   const more = rows.length > shown.split('\n').length ? `\n  …and ${rows.length - 5} more` : ''
   throw new Error(
     `Migration left ${rows.length} foreign key violation(s) and was rolled back:\n${shown}${more}\n` +
-    `A rebuild copies only the columns the old and new tables share, so a row whose parent ` +
-    `was not carried over is orphaned. Repair the rows, or carry the parent, then migrate again.`,
+    `${orphanCause(stmts)} The check walks the whole database, so a violation can predate this ` +
+    `migration. Repair the rows, or carry the parent, then migrate again.`,
   )
 }
 
@@ -516,7 +542,7 @@ function runInTransaction(rawDb, stmts, record = null, guard = null) {
     if (guard && guard() === false) { rawDb.run('ROLLBACK'); return false }
     for (const stmt of stmts) rawDb.run(stmt + ';')
     if (record) record()
-    if (couldOrphan(stmts)) assertNoOrphans(rawDb)
+    if (couldOrphan(stmts)) assertNoOrphans(rawDb, stmts)
     rawDb.run('COMMIT')
     return true
   } catch (e) {
@@ -846,6 +872,7 @@ function onlyDrops(diffResult) {
   if (diffResult.newViews?.length)       return false
   if (diffResult.changedViews?.length)   return false
   if (diffResult.changedTriggers?.length) return false
+  if (diffResult.changedFts?.length)      return false
   for (const t of diffResult.tableDiffs ?? []) {
     if (t.cols?.added?.length)     return false
     if (t.cols?.modified?.length)  return false

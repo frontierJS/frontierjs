@@ -247,7 +247,8 @@ function commandHead(command = '') {
 function readsOf(c) {
   if (c.name === 'Read') return [atRoot(String(c.input.file_path ?? ''))]
   if (c.name !== 'Bash') return []
-  const prints = /(?:^|[;&|(]\s*)(?:sed -n\s+\S+|cat|head(?:\s+-n?\s*\d+)?|tail(?:\s+-n?\s*\d+)?|fli outline)\s+([^\s;|&<>()'"]+)/g
+  // `[ \t]`, not `\s`: a `| head` ending one line would take the next line's command as its file.
+  const prints = /(?:^|[;&|(][ \t]*)(?:sed -n[ \t]+\S+|cat|head(?:[ \t]+-n?[ \t]*\d+)?|tail(?:[ \t]+-n?[ \t]*\d+)?|fli outline)[ \t]+([^\s;|&<>()'"]+)/gm
   const command = String(c.input.command ?? '')
   const lead    = /^cd ['"]?([^\s;&'"]+)['"]?\s*(&&|;)/.exec(command)?.[1]
   const dir     = lead?.startsWith('/') ? atRoot(`${lead.replace(/\/$/, '')}/`) : join(atRoot(`${c.cwd ?? ROOT}/`), lead ?? '')

@@ -131,7 +131,7 @@ question, not a seam.
 
 ## Open questions
 
-- **Can a write be anonymous, when every write has an actor?** An anonymous
+- ~~**Can a write be anonymous, when every write has an actor?**~~ **Answered 2026-09-28 (`FJS-D349`): D349 picked A.** An anonymous
   survey is the one row nobody may attribute — and it is not *skip the log*,
   because the employer must still know each eligible person answered exactly
   once. Today the gate grades a principal and `onLog` stamps `actorId` /
@@ -150,7 +150,7 @@ question, not a seam.
     hand-rolled version gets wrong. C is the wrong grain: anonymity is a property
     of the row's provenance, not of a column's value.
 
-- **Can an act be attested by somebody who holds no session?** A wall tablet,
+- ~~**Can an act be attested by somebody who holds no session?**~~ **Answered 2026-09-28 (`FJS-D540`): A — the device is the principal, and `app.runAs(userId, fn)` is the seam that already exists: the kiosk service grades a weak factor against a `@guarded` column on `Employee` and runs one call as that person. No session is ever minted, and the audit trail attributes the row correctly.** A wall tablet,
   forty clock-ins a morning, a four-digit PIN or an NFC tap. Every factor auth
   owns — password, OAuth, TOTP, bearer — mints a session for one principal, and
   a shared device is the case where minting one is the mistake.

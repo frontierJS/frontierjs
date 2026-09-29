@@ -216,6 +216,9 @@ model Doc {
       `auth().id in owner.editorIds`,
       `owner.userId == auth().id || owner.ref == 'PUBLIC'`,
       `owner.userId != null ? owner.userId == auth().id : true`,
+      // the relation itself: SQL reads the foreign key, and so must JS
+      `owner == null`,
+      `owner != null`,
     ]) {
       const db  = await createClient({ schema: schema.replaceAll('EXPR', expr), db: ':memory:' })
       const sys = db.asSystem()

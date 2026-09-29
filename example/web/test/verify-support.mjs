@@ -272,7 +272,7 @@ check('an admin reads the whole roster', asAdmin, n => n > 1)
 // who has stopped over HTTP keeps acting as the subject down this connection.
 
 {
-  const ws = new WebSocket(`${API.replace('http', 'ws')}/ws?token=${adminToken}`)
+  const ws = new WebSocket(`${API.replace('http', 'ws')}/ws`, ['fjs', `fjs.bearer.${adminToken}`])
   let closed = null
   await new Promise((res, rej) => {
     ws.onmessage = e => { const f = JSON.parse(e.data); if (f.type === 'connection' || f.type === 'connected') res() }

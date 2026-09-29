@@ -23,7 +23,7 @@ import {
   aggregatableKeysFor,
 } from './query.js'
 import { scoreByDistance, DISTANCE_FIELD } from './vector.js'
-import { validate, applyTransforms, buildValidationMap, validateJsonPatch, ValidationError } from './validate.js'
+import { validate, applyTransforms, hasTransforms, transformValue, buildValidationMap, validateJsonPatch, ValidationError } from './validate.js'
 import { createCardinalityLedger, refuseChildlessCreate } from './cardinality.js'
 import { PluginRunner, AccessDeniedError } from './plugin.js'
 import { GatePlugin, FrontierGateGetLevel, levelPasses } from '../plugins/gate.js'
@@ -652,6 +652,14 @@ function makeTable(readDb, writeDb, shape, ctx) {
   // Whether this model declares any @@scope. Checked before walking a where for
   // `$scope`, so a schema with none pays one boolean per read.
   const _hasScopes = Object.keys(ctx.scopeMap?.[modelName] ?? {}).length > 0
+
+  // Fields declaring @trim/@lower/@upper/@slug, or null when none do — the
+  // same one-boolean cost for a where on a model without them.
+  const transformedOf = (model) => {
+    const fields = (ctx.models?.[model]?.fields ?? []).filter(hasTransforms)
+    return fields.length ? new Map(fields.map(f => [f.name, f])) : null
+  }
+  const _transformed = transformedOf(modelName)
 
   const hasTemplatesField = ctx.hasTemplatesMap?.[modelName] ?? null
   const hasTemplates      = hasTemplatesField !== null
@@ -2843,8 +2851,13 @@ function makeTable(readDb, writeDb, shape, ctx) {
     const targetSoft  = ctx.softDeleteMap?.[rel.targetModel] ? ` AND ${t}."${tc('deletedAt')}" IS NULL` : ''
 
     // Build the inner WHERE against the target table (aliased `t`, `t1`, … by depth).
+    // The target's own write transforms apply here; the outer rewrite only
+    // knows this model's fields, so `user: { is: { email } }` on a `@lower`
+    // email compared the raw spelling and matched nothing (`FJS-1468`).
+    const targetTransformed = transformedOf(rel.targetModel)
     const innerOf = (w) => {
       if (!w || (typeof w === 'object' && !Object.keys(w).length)) return ''
+      if (targetTransformed) w = rewriteTransformedWhere(w, targetTransformed)
       const p = []
       const sql = buildWhere(w, p, null, t, null,
         (k, v, pp, al) => relationFilterOn(rel.targetModel, depth + 1, k, v, pp, al), ctx.filterKindMap?.[rel.targetModel], tmap)
@@ -2933,6 +2946,7 @@ function makeTable(readDb, writeDb, shape, ctx) {
     if (!where) return buildWhere(where, params, fromMap, tableAlias, _typedJsonMap, edgeOrRelFilter, fieldKinds, columnMap, _pointMap)
     where = _hasScopes ? expandScopes(where) : where
     where = _extensible ? rewriteExtensibleWhere(where, _extTenantCol ? () => extTenant(null, where) : null) : where
+    where = _transformed ? rewriteTransformedWhere(where) : where
     let rewritten = where
     if (ctx.enc.key) {
       rewritten = rewriteEncryptedWhere(where)
@@ -2993,6 +3007,37 @@ function makeTable(readDb, writeDb, shape, ctx) {
           `'${k}' is declared but holds no slot, so there is no index to read it by and no filter that would be honest. ` +
           `It stores and it displays; raising the pool with max: is what makes it filterable` }])
         out[d.slot] = v
+      }
+    }
+    return out
+  }
+
+  // An equality operand goes through the field's write transforms. A value the
+  // write would have changed can never be stored, so compared raw it matched
+  // nothing and said nothing: `Mixed.Case@Example.test` stored lowercased and
+  // was never found by the login that typed it back (`FJS-1456`). Runs before
+  // the encryption rewrite, the order a write takes. Only equality — trimming
+  // a `contains` operand or upper-casing a range bound changes the question.
+  function rewriteTransformedWhere(where, transformed = _transformed) {
+    if (!where || typeof where !== 'object') return where
+    if (Array.isArray(where)) return where.map(w => rewriteTransformedWhere(w, transformed))
+
+    const out = {}
+    for (const [key, val] of Object.entries(where)) {
+      if (key === 'AND' || key === 'OR' || key === 'NOT') {
+        out[key] = rewriteTransformedWhere(val, transformed)
+        continue
+      }
+      const field = transformed.get(key)
+      const one   = (v) => v === null || typeof v === 'object' ? v : transformValue(field, v)
+      if (!field || val === null) out[key] = val
+      else if (Array.isArray(val)) out[key] = val.map(one)
+      else if (typeof val !== 'object') out[key] = one(val)
+      else {
+        const ops = { ...val }
+        for (const op of ['equals', 'not']) if (op in ops) ops[op] = one(ops[op])
+        for (const op of ['in', 'notIn']) if (Array.isArray(ops[op])) ops[op] = ops[op].map(one)
+        out[key] = ops
       }
     }
     return out
@@ -8385,7 +8430,16 @@ function makeLockPrimitive(rawWriteDb) {
         conn.query(`SELECT 1 FROM "${rule.parentTable}" WHERE ` +
                    rule.refColumns.map(c => `"${c}" = ?`).join(' AND ') + ' LIMIT 1').get(...key))
     : null
-  const tx = makeTxManager(writeDb, txState, cardinalityLedger)
+  // One entry per write CONNECTION a table can reach: a second declaration on
+  // main's file is main's entry, and a readonly or `access: false` name has no
+  // write handle to hold (`FJS-1459`).
+  const txConns = [{ name: 'main', db: writeDb }]
+  for (const [name, conn] of Object.entries(dbRegistry)) {
+    if (!conn.rawWriteDb || conn.rawWriteDb === rawWriteDb) continue
+    if (txConns.some(c => c.raw === conn.rawWriteDb)) continue
+    txConns.push({ name, db: conn.writeDb, raw: conn.rawWriteDb })
+  }
+  const tx = makeTxManager(txConns, txState, cardinalityLedger)
 
   // Normalize global filters: { tableName: whereObject | (ctx) => whereObject }
   const globalFilters = filters ?? {}
@@ -10011,8 +10065,9 @@ function makeLockPrimitive(rawWriteDb) {
   // that names nothing the caller wrote.
   const _RAW_READ = /^(SELECT|EXPLAIN|VALUES)\b/i
 
-  /** The one raw runner. There were three byte-identical copies of this. */
-  function _runRawSql(strings, values) {
+  /** The one raw runner. There were three byte-identical copies of this.
+   *  `runCtx` is the calling flavor's, so the event says who ran it. */
+  function _runRawSql(strings, values, runCtx = ctx) {
     let query = ''
     for (let i = 0; i < strings.length; i++) {
       query += strings[i]
@@ -10023,10 +10078,10 @@ function makeLockPrimitive(rawWriteDb) {
     // still routes as a write rather than as an unrecognized statement.
     const head = query.replace(/^(?:\s|--[^\n]*\n?|\/\*[\s\S]*?\*\/)+/, '')
     const conn = _RAW_READ.test(head) ? readDb : writeDb
-    if (!queryTapped(ctx)) return conn.query(query).all(...values)
+    if (!queryTapped(runCtx)) return conn.query(query).all(...values)
     const t0 = performance.now()
     const rows = conn.query(query).all(...values)
-    emitQuery(ctx, null, 'main', { operation: 'sql', args: null, sql: query, params: values, duration: performance.now() - t0, rowCount: rows.length })
+    emitQuery(runCtx, null, 'main', { operation: 'sql', args: null, sql: query, params: values, duration: performance.now() - t0, rowCount: rows.length })
     return rows
   }
 
@@ -10362,7 +10417,7 @@ function makeLockPrimitive(rawWriteDb) {
     // No guard: asSystem() IS the documented bypass, and refusing here would
     // leave no way to run a raw statement at all.
     async function sysSql(strings, ...values) {
-      return _runRawSql(strings, values)
+      return _runRawSql(strings, values, sysCtx)
     }
 
     // System-scoped multi-model query — uses sysTables so each batched query
