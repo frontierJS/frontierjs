@@ -12,9 +12,10 @@ title: Your settings
   //                  by the server, which is the whole point of the control.
   //   Notifications  the new `notification-preferences` service.
   //   Sessions       `client.auth.sessions()` — every live sign-in, revocable.
-  //   MFA            NOT here. Nothing in @frontierjs/auth issues or verifies a
-  //                  second factor, and a switch that stored a boolean nothing
-  //                  checks would be a security control that is decorative.
+  //   Two-step       `client.auth.setupTotp` → `confirmTotp`; three of the four
+  //                  writes re-ask for the password, because they change what
+  //                  signing in requires and an open session on a shared
+  //                  machine is not the account holder.
   //
   // ─── Why this reaches client.auth and not a resource ────────────────────
   //
@@ -41,6 +42,8 @@ title: Your settings
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
+  import Mono       from '@frontierjs/ui/components/display/Mono.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Switch     from '@frontierjs/ui/components/forms/Switch.mesa'
@@ -50,7 +53,7 @@ title: Your settings
   // The standing pill reads the membership row out of `session.workspaces` and
   // picks it with `session.workspaceId`; watching `session.user` alone leaves it
   // showing the previous workspace's role after a switch.
-  $: (session.user, session.workspaces, session.workspaceId)
+  $: (session.user, session.workspaces, session.workspaceId, session.canMail)
 
   let me        = null
   let kinds     = []
@@ -65,6 +68,13 @@ title: Your settings
   let pwError   = null
   let changing  = false
 
+  let totp          = null   // { enabled, recoveryCodesRemaining }
+  let enrollment    = null   // { secret, qr } between setup and confirm
+  let recoveryCodes = []     // shown once, straight after they are issued
+  let totpPassword  = ''
+  let totpCode      = ''
+  let totpError     = null
+
   async function load() {
     error = null; loading = true
     try {
@@ -72,6 +82,7 @@ title: Your settings
       me       = await client.auth.me()
       sessions = await client.auth.sessions()
       kinds    = (await prefs.service.find()).data
+      totp     = await client.auth.totpStatus()
     } catch (e) {
       error = e.message
     } finally {
@@ -117,7 +128,7 @@ title: Your settings
     try {
       await getClient().auth.changePassword(current, next)
       current = ''; next = ''; confirm = ''
-      toasts.success('Password changed', 'Your other sessions stay signed in.')
+      toasts.success('Password changed. Your other sessions stay signed in.')
     } catch (e) {
       // 'Current password is incorrect' arrives here. Never checked in the
       // browser: the only copy of the password is the server's hash.
@@ -153,6 +164,60 @@ title: Your settings
     }
   }
 
+  // ─── Email ────────────────────────────────────────────────────────────
+  // auth puts `verifiedAt: null` on the session of an unverified address and
+  // leaves the key off otherwise, so absence is verified.
+  $: unverified = me != null && 'verifiedAt' in me && me.verifiedAt == null
+
+  async function resendVerification() {
+    error = null; busy = 'verify'
+    try {
+      await getClient().auth.requestEmailVerification()
+      toasts.success(`Verification sent. Check ${me.email} for the link.`)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // ─── Two-step sign-in ─────────────────────────────────────────────────
+  async function totpStep(fn) {
+    totpError = null; busy = 'totp'
+    try { await fn(getClient().auth) } catch (e) { totpError = e.message } finally { busy = null }
+  }
+
+  const beginTotp = () => totpStep(async a => {
+    enrollment   = await a.setupTotp(totpPassword)
+    totpPassword = ''
+  })
+
+  const confirmTotp = () => totpStep(async a => {
+    recoveryCodes = (await a.confirmTotp(totpCode.trim())).recoveryCodes
+    enrollment    = null
+    totpCode      = ''
+    totp          = await a.totpStatus()
+    toasts.success('Two-step sign-in is on')
+  })
+
+  const regenerateCodes = () => totpStep(async a => {
+    recoveryCodes = (await a.regenerateRecoveryCodes(totpPassword)).recoveryCodes
+    totpPassword  = ''
+    totp          = await a.totpStatus()
+  })
+
+  const disableTotp = () => totpStep(async a => {
+    await a.disableTotp(totpPassword)
+    totpPassword  = ''
+    recoveryCodes = []
+    totp          = await a.totpStatus()
+    toasts.info('Two-step sign-in is off')
+  })
+
+  // The pending secret stays on the server until the next setup supersedes it;
+  // only a confirmed factor is asked for at sign-in.
+  const abandonTotp = () => { enrollment = null; totpCode = ''; totpError = null }
+
   const SESSION_COLUMNS = [
     { name: 'where', label: 'Where' },
     { name: 'seen',  label: 'Last seen' },
@@ -183,7 +248,16 @@ title: Your settings
          something nothing writes back. Editing a person is the hub's screen. -->
     <dl class="datalist">
       <div><dt>Name</dt><dd>{me?.name ?? me?.displayName ?? '—'}</dd></div>
-      <div><dt>Email</dt><dd>{me?.email}</dd></div>
+      <div><dt>Email</dt><dd>
+        <span class="cluster">
+          {me?.email}
+          {#if unverified}
+            <Pill tone="warning">not verified</Pill>
+            <Button variant="ghost" id="resend-verification" disabled={busy === 'verify'}
+                    onclick={resendVerification}>Send the link again</Button>
+          {/if}
+        </span>
+      </dd></div>
       <div><dt>Standing</dt><dd>
         <span class="cluster">
           {#if session.user?.isSystemAdmin}<Pill tone="warning">system admin</Pill>{/if}
@@ -256,10 +330,14 @@ title: Your settings
       {/each}
     </div>
 
-    <p class="text-sm text-muted">
-      Stored, and <strong>nothing delivers on them yet</strong> — the notifications service does
-      not consult these rows, so a kind switched on here changes what the server would send once
-      that path reads them, and nothing before. Said rather than left to be discovered.
+    <p class="text-sm text-muted" id="notification-delivery">
+      {#if session.canMail}
+        Email goes out as soon as the kind fires.
+      {:else}
+        <strong>This Basecamp has no mail provider</strong>, so an Email switch is kept for when
+        one is set and nothing is mailed until then.
+      {/if}
+      In-app copies are recorded, but no screen lists them yet.
     </p>
   </Card>
 
@@ -295,10 +373,82 @@ title: Your settings
     </Table>
   </Card>
 
-  <Callout tone="info" title="Two-factor authentication is not built">
-    Nothing in this stack issues or verifies a second factor, so there is no switch here. One
-    that stored a boolean nothing checks would be a security control that only looks like one —
-    and the hub's <em>Require 2FA for owners</em> setting is stored on the same terms and says
-    so in the same words.
-  </Callout>
+  <Card id="settings-totp" data-totp-state={totp ? (totp.enabled ? 'on' : 'off') : 'loading'}>
+    <div class="cluster">
+      <h2 class="h5">Two-step sign-in</h2>
+      {#if totp}<Pill tone={totp.enabled ? 'success' : 'muted'}>{totp.enabled ? 'on' : 'off'}</Pill>{/if}
+    </div>
+
+    {#if totpError}
+      <article class="alert danger" id="totp-error">
+        <div class="alert-content">{totpError}</div>
+      </article>
+    {/if}
+
+    {#if recoveryCodes.length}
+      <!-- First on the card: this is the only time they exist in readable form. -->
+      <Callout tone="warning" title="Save these recovery codes now">
+        Each one signs you in once, in place of a code. They are not shown again.
+      </Callout>
+      <ol class="stack" id="recovery-codes">
+        {#each recoveryCodes as rc}
+          <li><Mono data-recovery-code>{rc}</Mono></li>
+        {/each}
+      </ol>
+      <div class="cluster">
+        <CopyButton text={recoveryCodes.join('\n')} label="Copy all" variant="outlined" />
+        <Button variant="ghost" id="recovery-done" onclick={() => { recoveryCodes = [] }}>I have saved them</Button>
+      </div>
+    {:else if !totp}
+      <p class="text-sm text-muted">Asking…</p>
+    {:else if enrollment}
+      <!-- No QR image: this app ships no encoder. The secret and the
+           otpauth:// link are both what an authenticator accepts by hand. -->
+      <p class="text-sm">Add this account to your authenticator app, then type the six-digit code it shows.</p>
+      <div class="cluster">
+        <Mono id="totp-secret">{enrollment.secret}</Mono>
+        <CopyButton text={enrollment.secret} label="Copy secret" />
+        <CopyButton text={enrollment.qr} label="Copy otpauth:// link" variant="outlined" />
+      </div>
+      <form class="stack" novalidate onsubmit={e => { e.preventDefault(); confirmTotp() }}>
+        <Input id="totp-code" name="code" label="Code from the app" autocomplete="one-time-code"
+               inputmode="numeric" required value={totpCode} oninput={e => totpCode = e.target.value} />
+        <div class="cluster">
+          <Button type="submit" variant="primary" id="totp-confirm" disabled={busy === 'totp'}>Turn it on</Button>
+          <Button variant="ghost" id="totp-abandon" onclick={abandonTotp}>Cancel</Button>
+        </div>
+      </form>
+    {:else if !totp.enabled}
+      <p class="text-sm text-muted">Signing in asks for your password only. Turn this on and it also asks for a code from an app on your phone.</p>
+      <form class="stack" novalidate onsubmit={e => { e.preventDefault(); beginTotp() }}>
+        <Input id="totp-password" name="currentPassword" type="password" label="Your password"
+               hint="Asked again because this changes how you sign in" autocomplete="current-password"
+               required value={totpPassword} oninput={e => totpPassword = e.target.value} />
+        <div class="cluster">
+          <Button type="submit" variant="primary" id="totp-enable" disabled={busy === 'totp' || !totpPassword}>Set up two-step sign-in</Button>
+        </div>
+      </form>
+    {:else}
+      <p class="text-sm">
+        Signing in asks for a code as well as your password.
+        <span id="totp-remaining">{totp.recoveryCodesRemaining}</span>
+        recovery {totp.recoveryCodesRemaining === 1 ? 'code' : 'codes'} left.
+      </p>
+      <div class="stack">
+        <Input id="totp-password" name="currentPassword" type="password" label="Your password"
+               hint="Needed for either of these" autocomplete="current-password"
+               value={totpPassword} oninput={e => totpPassword = e.target.value} />
+        <div class="cluster">
+          <Button variant="outlined" id="totp-regenerate" disabled={busy === 'totp' || !totpPassword}
+                  data-confirm="Every recovery code you saved stops working."
+                  data-confirm-title="Replace your recovery codes?" data-confirm-label="Replace"
+                  onclick={regenerateCodes}>New recovery codes</Button>
+          <Button variant="outlined" tone="danger" id="totp-disable" disabled={busy === 'totp' || !totpPassword}
+                  data-confirm="Signing in asks for your password only."
+                  data-confirm-title="Turn off two-step sign-in?" data-confirm-label="Turn off"
+                  onclick={disableTotp}>Turn it off</Button>
+        </div>
+      </div>
+    {/if}
+  </Card>
 {/if}

@@ -4,21 +4,20 @@ title: Home
 <script>
   // Signed-in home. The guard in App.mesa means this route is never reached
   // without a session, so there is no loading state for the session itself.
-  //
-  // What it does show is the one thing Phase 2 is about: everything below the
-  // header is scoped to the workspace named in it, and switching that header
-  // control re-scopes the page. The projects list is here as the proof, not as
-  // the projects screen — that arrives in Phase 3.
+  // Everything below the header is scoped to the workspace named in it, and
+  // switching that header control re-scopes the page.
   import { session } from '../session.js'
   import { projects } from '../resources/Project.mesa'
   import { servers } from '../resources/Server.mesa'
   import { deployments } from '../resources/Deployment.mesa'
   import { jobs } from '../resources/Job.mesa'
+  import { dashboards } from '../resources/Dashboard.mesa'
   import { useStore } from '@frontierjs/sierra/junction'
   import ActionQueue from '../components/ActionQueue.mesa'
   import LaunchSteps from '../components/LaunchSteps.mesa'
   import { computeNotices } from '../notices.js'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
 
   const { get: rows, unsubscribe } = useStore(projects.store)
   $.onDestroy(unsubscribe)
@@ -46,6 +45,7 @@ title: Home
 
   let error   = null
   let loading = true
+  let pinned  = []
 
   async function load() {
     error   = null
@@ -56,6 +56,8 @@ title: Home
       // to filter by workspace would eventually forget, and that is a tenancy
       // leak rather than a missing filter.
       await projects.load()
+      // What Pin is for: a board the workspace reaches for from here.
+      pinned = (await dashboards.service.find({}, { limit: 20 })).data.filter(d => d.isPinned)
     } catch (e) {
       error = e.message
     } finally {
@@ -77,12 +79,8 @@ title: Home
 
 <div class="section-header">
   <h1>{current?.name ?? 'Basecamp'}</h1>
-  <span class="text-sm text-muted">UI realm — Phase 2</span>
+  <Button variant="primary" href="/projects/create/">New project</Button>
 </div>
-
-<p class="text-body">
-  Every request from this page carries <code>X-Workspace-Id</code>. Switch workspace in the header and the list below re-scopes — the server decides what is in it, the browser only asks.
-</p>
 
 {#if error}
   <article class="alert danger">
@@ -96,42 +94,27 @@ title: Home
 
 <LaunchSteps />
 
-<div class="tiles" style="--tile-min: 16rem">
-  <article class="card stack">
-    <h2 class="h4">Session</h2>
-    <p class="text-sm text-muted">From GET /auth/me.</p>
-    <div class="cluster">
-      <span class="badge success">{session.user?.email ?? '—'}</span>
-    </div>
-  </article>
+{#if pinned.length}
+  <nav class="cluster" id="pinned-dashboards" aria-label="Pinned dashboards">
+    <span class="text-sm text-muted">Pinned</span>
+    {#each pinned as d}
+      <a class="badge info" href={`/dashboards/${d.id}/`}>{d.icon ?? ''} {d.name}</a>
+    {/each}
+  </nav>
+{/if}
 
-  <article class="card stack">
-    <h2 class="h4">Workspace</h2>
-    <p class="text-sm text-muted">Stamped on every scoped request.</p>
-    <div class="cluster">
-      <span class="badge {session.workspaceId ? 'success' : 'warning'}">
-        {current?.slug ?? 'none'}
-      </span>
-      <span class="badge muted">{session.workspaces.length} member of</span>
-    </div>
-  </article>
-
-  <article class="card stack">
-    <h2 class="h4">Projects</h2>
-    <p class="text-sm text-muted">In this workspace only.</p>
-    <div class="cluster">
-      <span class="badge {rows().length ? 'success' : 'muted'}" id="project-count">
-        {loading ? '…' : `${rows().length} projects`}
-      </span>
-    </div>
-  </article>
+<div class="section-header">
+  <h2 class="h4">Projects</h2>
+  <span class="badge {rows().length ? 'success' : 'muted'}" id="project-count">
+    {loading ? '…' : `${rows().length} projects`}
+  </span>
 </div>
 
 {#if !loading && rows().length}
   <Table id="project-rows" columns={PROJECT_COLUMNS} rows={rows()} striped>
     {#snippet row(project)}
       <tr>
-        <td>{project.name}</td>
+        <td><a href={`/projects/${project.id}/`}>{project.name}</a></td>
         <td><code>{project.slug}</code></td>
         <td><span class="pill">{project.status}</span></td>
       </tr>
@@ -140,7 +123,7 @@ title: Home
 {:else if !loading}
   <article class="alert info">
     <div class="alert-content">
-      No projects in this workspace yet. Creating them is Phase 3 — see <code>docs/UI_PLAN.md</code>.
+      No projects in this workspace yet. <a href="/projects/create/">Create the first one</a>.
     </div>
   </article>
 {/if}

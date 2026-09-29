@@ -109,15 +109,17 @@ siteName: Basecamp
     ] : []),
 
     { id: 'new-project', group: 'Create', label: 'New project',    action: () => goto('/projects/create/') },
-    { id: 'new-dashboard', group: 'Create', label: 'New dashboard', action: () => goto('/dashboards/') },
+    { id: 'new-dashboard', group: 'Create', label: 'New dashboard', action: () => goto('/dashboards/?new=1') },
     { id: 'new-server',    group: 'Create', label: 'Provision a machine', action: () => goto('/servers/provision/') },
     { id: 'import-server', group: 'Create', label: 'Import a machine',    action: () => goto('/servers/import/') },
-    { id: 'new-network', group: 'Create', label: 'New network',       action: () => goto('/networks/') },
-    { id: 'new-alert',   group: 'Create', label: 'New alert rule',    action: () => goto('/alerts/') },
-    { id: 'new-channel', group: 'Create', label: 'New channel',       action: () => goto('/channels/') },
-    { id: 'new-flag',    group: 'Create', label: 'New feature flag',  action: () => goto('/flags/') },
-    { id: 'new-api-key', group: 'Create', label: 'New API key',       action: () => goto('/api-keys/') },
-    { id: 'new-recipe',  group: 'Create', label: 'New recipe',        action: () => goto('/recipes/') },
+    { id: 'new-network', group: 'Create', label: 'New network',       action: () => goto('/networks/?new=1') },
+    { id: 'new-alert',   group: 'Create', label: 'New alert rule',    action: () => goto('/alerts/?new=1') },
+    { id: 'new-channel', group: 'Create', label: 'New channel',       action: () => goto('/channels/?new=1') },
+    { id: 'new-flag',    group: 'Create', label: 'New feature flag',  action: () => goto('/flags/?new=1') },
+    { id: 'new-api-key', group: 'Create', label: 'New API key',       action: () => goto('/api-keys/?new=1') },
+    { id: 'new-recipe',  group: 'Create', label: 'New recipe',        action: () => goto('/recipes/?new=1') },
+    { id: 'new-job',     group: 'Create', label: 'New job',           action: () => goto('/jobs/?new=1') },
+    { id: 'new-secret',  group: 'Create', label: 'New secret',        action: () => goto('/secrets/?new=1') },
 
     // A server the palette can reach is a server the fleet actually has —
     // the rows are the ones already loaded for the notice rules, so this
@@ -152,51 +154,59 @@ siteName: Basecamp
   }
 
   // ── Navigation ───────────────────────────────────────────────────────────
-  // Nineteen destinations in four groups: what you open daily, what you open
-  // weekly, what you configure, and the tier above the workspace. The headings
-  // are the design system's `.navlist-label`.
+  // PRIMARY is the handful opened many times a day, and it sits in the topbar.
+  // Everything else is the sidebar, where only the group holding the current
+  // screen starts open — twenty-odd links at once read as a wall, and ⌘K
+  // reaches every one of them without a group to open.
   //
-  // A table rather than nineteen hand-written anchors: the list is rendered
-  // TWICE — the sidebar at full width, a drawer below 767px — and two copies of
-  // it is how one of them silently loses a screen.
+  // A table rather than hand-written anchors: the list is rendered TWICE — the
+  // sidebar at full width, a drawer below 767px — and two copies of it is how
+  // one of them silently loses a screen.
+  const PRIMARY = [
+    { href: '/',             label: 'Overview', exact: true },
+    { href: '/apps/',        label: 'Apps'        },
+    { href: '/deployments/', label: 'Deployments' },
+    { href: '/servers/',     label: 'Servers'     },
+    { href: '/alerts/',      label: 'Alerts'      },
+  ]
+
   const NAV = [
-    { label: 'Daily', links: [
-      { href: '/',            label: 'Overview', exact: true },
+    { label: 'Work', open: true, links: [
       { href: '/dashboards/', label: 'Dashboards'  },
       { href: '/projects/',   label: 'Projects'    },
-      { href: '/apps/',       label: 'Apps'        },
-      { href: '/deployments/',label: 'Deployments' },
-      { href: '/servers/',    label: 'Servers'     },
       { href: '/jobs/',       label: 'Jobs'        },
-      { href: '/alerts/',     label: 'Alerts'      },
       { href: '/flags/',      label: 'Flags'       },
-    ] },
-    { label: 'Weekly', links: [
       { href: '/activity/',   label: 'Activity'    },
+    ] },
+    { label: 'Infrastructure', links: [
       { href: '/networks/',   label: 'Networking'  },
+      { href: '/volumes/',    label: 'Volumes'     },
+      { href: '/registry/',   label: 'Registry'    },
+      { href: '/dns/',        label: 'DNS & edge'  },
+      { href: '/cleanup/',    label: 'Cleanup'     },
       { href: '/infra-graph/', label: 'Graph'      },
+    ] },
+    { label: 'Build', links: [
+      { href: '/blueprints/', label: 'Blueprints'  },
+      { href: '/recipes/',    label: 'Recipes'     },
       { href: '/portal/',     label: 'Portal'      },
+      { href: '/git-activity/', label: 'Git activity' },
+      { href: '/observability/', label: 'Observability' },
+      { href: '/channels/',   label: 'Channels'    },
+    ] },
+    { label: 'Settings', links: [
+      { href: '/secrets/',    label: 'Secrets'     },
+      { href: '/api-keys/',   label: 'API keys'    },
+      { href: '/cloud-spend/', label: 'Cloud spend' },
+      { href: '/admin/',      label: 'Admin'       },
       // Not hidden once it is finished, and that is a choice: the six checks
       // go back to undone when the thing they recorded is deleted, so a link
       // that disappeared would be the one thing on it that could go stale.
       { href: '/onboarding/', label: 'Getting started' },
     ] },
-    { label: 'Manage', links: [
-      { href: '/volumes/',    label: 'Volumes'     },
-      { href: '/registry/',   label: 'Registry'    },
-      { href: '/blueprints/', label: 'Blueprints'  },
-      { href: '/cleanup/',    label: 'Cleanup'     },
-      { href: '/recipes/',    label: 'Recipes'     },
-      { href: '/channels/',   label: 'Channels'    },
-      { href: '/dns/',        label: 'DNS & edge'  },
-      { href: '/cloud-spend/', label: 'Cloud spend' },
-      { href: '/git-activity/', label: 'Git activity' },
-      { href: '/observability/', label: 'Observability' },
-      { href: '/secrets/',    label: 'Secrets'     },
-      { href: '/api-keys/',   label: 'API keys'    },
-      { href: '/admin/',      label: 'Admin'       },
-    ] },
   ]
+
+  const current = (link) => isActive(link.href, link.exact ? { exact: true } : undefined)
 
   // Not in NAV, and deliberately: this is the caller's OWN account rather than
   // anything in the workspace, so it hangs off the account menu in the topbar
@@ -249,18 +259,28 @@ siteName: Basecamp
      reads it internally, but Mesa decides what an expression depends on from
      the expression's own TEXT, so without the read written here the attribute
      is set once at mount and the highlight never moves. -->
+{#snippet navlinks(links)}
+  <ul class="navlist">
+    {#each links as link}
+      <li>
+        <a class="navlink" href={link.href}
+           aria-current={(page.route, current(link)) ? 'page' : null}
+        >{link.label}</a>
+      </li>
+    {/each}
+  </ul>
+{/snippet}
+
+<!-- A group is a native <details>: keyboard and toggle state come free, and a
+     group the person opened stays open across navigations because `open` is
+     computed once, at mount — no `page.route` read in it, so a navigation
+     cannot re-close what the person opened. -->
 {#snippet navlists()}
   {#each navGroups() as group}
-    <div class="navlist-label">{group.label}</div>
-    <ul class="navlist">
-      {#each group.links as link}
-        <li>
-          <a class="navlink" href={link.href}
-             aria-current={(page.route, isActive(link.href, link.exact ? { exact: true } : undefined)) ? 'page' : null}
-          >{link.label}</a>
-        </li>
-      {/each}
-    </ul>
+    <details open={group.open || group.links.some(current) ? true : null}>
+      <summary class="navlist-label">{group.label}</summary>
+      {@render navlinks(group.links)}
+    </details>
   {/each}
 {/snippet}
 
@@ -277,6 +297,19 @@ siteName: Basecamp
       <strong>{page.siteName}</strong>
       <Badge tone="muted">alpha</Badge>
     </span>
+
+    <!-- The few screens opened all day. Hidden with the rest of the nav's
+         wide-screen chrome below 767px is not possible without a utility
+         class (invariant 13), so the drawer repeats them instead. -->
+    {#if session.user}
+      <nav class="cluster" aria-label="Primary">
+        {#each PRIMARY as link}
+          <a class="navlink" href={link.href}
+             aria-current={(page.route, current(link)) ? 'page' : null}
+          >{link.label}</a>
+        {/each}
+      </nav>
+    {/if}
 
 
     <span class="cluster">
@@ -334,10 +367,9 @@ siteName: Basecamp
     </span>
   </header>
 
-  <!-- The nav lives here rather than in the topbar. Nineteen `.navlink`s in a
-       56px row wrapped to two lines and spilled out of it at every width down
-       from 1920px — and `.navlink` is documented as the SIDEBAR's link
-       (css patterns/nav.css), which is the same answer the mock's shell gives.
+  <!-- The long tail lives here rather than in the topbar: every `.navlink` in
+       a 56px row wrapped to two lines and spilled out of it at every width
+       down from 1920px, so the topbar holds PRIMARY only.
        Hidden below 767px by the package; the drawer below covers that. -->
   {#if session.user}
     <nav class="sidebar" aria-label="Main">
@@ -383,6 +415,7 @@ siteName: Basecamp
 {#if session.user}
   <Drawer side="left" open={navOpen} title="Navigation" onclose={() => navOpen = false}>
     <nav aria-label="Main">
+      {@render navlinks(PRIMARY)}
       {@render navlists()}
     </nav>
   </Drawer>

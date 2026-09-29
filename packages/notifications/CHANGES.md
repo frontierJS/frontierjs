@@ -49,7 +49,7 @@ a `SendResult` receipt, and under `strictFunctionTypes` that makes junction's
 own `App` unassignable to this one — so `app.configure(notificationsPlugin(…))`
 was a type error in **any** app that runs `tsc`, whatever it had configured.
 Found by wiring the plugin into `basecamp`, which does
-([`FJS-967`](../../ISSUES.md#fjs-967)).
+([`FJS-967`](../../ISSUES_ARCHIVE.md#fjs-967)).
 
 `Promise<unknown>` now. The driver awaits the send and discards what comes back,
 which is correct rather than lazy: a failure THROWS, and `SendResult` is
@@ -66,7 +66,7 @@ package that nothing checks.
 ## 2026-09-05 — the model ships
 
 `db/notification.lite`, exported as `./schema.lite` and packed by `files:`
-([`FJS-910`](../../ISSUES.md#fjs-910)). The model this package writes to existed
+([`FJS-910`](../../ISSUES_ARCHIVE.md#fjs-910)). The model this package writes to existed
 only in the README: every app typed it out, and a column `drivers/inapp.ts`
 started naming that an app's copy did not have was detectable by nothing.
 `fli check`'s `package-model-drift` now RUNS against any app with this package

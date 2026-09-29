@@ -7,7 +7,7 @@ dated: 2026-08-31
 # Idea — `beacon`: who is hitting this app, and how
 
 **Status: IDEA.** Probed against the tree 2026-08-31 (`VERIFYING.md`). One
-precondition shipped with it — [`FJS-622`](../ISSUES.md#fjs-622) — because the
+precondition shipped with it — [`FJS-622`](../ISSUES_ARCHIVE.md#fjs-622) — because the
 gap it names made every option here impossible rather than merely unbuilt.
 
 Prompted by CapRover's GoAccess integration (`caprover-frontend#167`), which is
@@ -47,7 +47,7 @@ Three things sound like an answer. None is one.
 **The `logs` tab** — shipped 2026-08-31 with `logbook` phase 3.
 `apps.logs()` → a signed Outpost `POST /logs` → `docker logs --tail`, clamped at
 5,000 lines. It is a **tail**, and it stores nothing: the container's own ring
-buffer is the whole retention, and [`FJS-616`](../ISSUES.md#fjs-616) is the
+buffer is the whole retention, and [`FJS-616`](../ISSUES_ARCHIVE.md#fjs-616) is the
 reason there is a buffer at all rather than an unbounded file. Useful for *what
 is it saying right now*, useless for *how much traffic did Tuesday take*.
 
@@ -81,7 +81,7 @@ into one file with nothing in a line saying which served the request.
 That is not a missing feature, it is a working config with an invisible
 consequence — `nginx -t` is green, the site serves, and the only symptom is that
 the file cannot be read back. Filed and fixed as
-[`FJS-622`](../ISSUES.md#fjs-622): a path per app, under `/var/log/nginx/` and
+[`FJS-622`](../ISSUES_ARCHIVE.md#fjs-622): a path per app, under `/var/log/nginx/` and
 ending `.log`, which is the glob the packaged logrotate rule already bounds.
 
 **Everything below depends on it**, which is why it went in ahead of the design

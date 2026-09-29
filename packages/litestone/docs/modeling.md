@@ -32,16 +32,16 @@ ever touches it.
 Measured against a real client on one model carrying every kind at once, not
 read off the emitter. Every *no* in the write column is a refusal that names the
 attribute and says why — `@from` was the one exception, accepted and silently
-dropped, until [FJS-395](../../../ISSUES.md#fjs-395).
+dropped, until [FJS-395](../../../ISSUES_ARCHIVE.md#fjs-395).
 
 **`@guarded` refuses the NAME as well as the value**, which is what the two
 `asSystem()` cells in the filter and sort columns mean. Until
-[FJS-393](../../../ISSUES.md#fjs-393) a caller who could not read the column
+[FJS-393](../../../ISSUES_ARCHIVE.md#fjs-393) a caller who could not read the column
 could still compare it, which recovers it one `startsWith` at a time, and could
 sort by it, which leaks the ordering of every row at once. The refusal follows
 the grammar across relations, so a relation filter, a relation `orderBy` and a
 nested `include` are refused too. **A field-level `@allow('read', …)` still has
-this hole** ([FJS-442](../../../ISSUES.md#fjs-442)) — a predicate is not a set,
+this hole** ([FJS-442](../../../ISSUES_ARCHIVE.md#fjs-442)) — a predicate is not a set,
 and the two do not have the same fix — so a value that must not be recoverable
 is `@guarded`.
 
@@ -235,7 +235,7 @@ makes the narrow fetch safe.
 
 **`@updatedAt` is stamped twice over, and that is the design.** The attribute
 decides which fields are stamped — any name, however many of them
-([FJS-394](../../../ISSUES.md#fjs-394)); a field called `updatedAt` is stamped
+([FJS-394](../../../ISSUES_ARCHIVE.md#fjs-394)); a field called `updatedAt` is stamped
 with no attribute at all, which is a fallback for the schemas written before
 that and not a second way to ask. The client names those columns in its own
 `UPDATE`, so the row a write hands back is the row in the database. The DDL
@@ -245,7 +245,7 @@ already named the column. Both spellings write the same expression, so a row
 stamped either way sorts with the other. Before this the trigger was the only
 half, and `RETURNING` is evaluated before an `AFTER` trigger fires, so every
 write answered the previous timestamp
-([FJS-396](../../../ISSUES.md#fjs-396)).
+([FJS-396](../../../ISSUES_ARCHIVE.md#fjs-396)).
 
 **An `@@external` model stamps nothing.** Litestone emits no DDL for that
 table, so there is no trigger, and the client will not write a column it does

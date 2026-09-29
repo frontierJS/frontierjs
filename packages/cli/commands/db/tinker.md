@@ -7,7 +7,13 @@ examples:
   - fli tinker --as alice@example.com
   - fli tinker --level 4
   - fli tinker --as alice@example.com --gate ./api/gate.ts
+  - fli tinker -e 'db.order.count()' --as alice@example.com
 flags:
+  eval:
+    char: e
+    type: string
+    description: Evaluate one line, print the answer as JSON on stdout, exit 1 if it throws — no prompt
+    defaultValue: ''
   as:
     char: a
     type: string
@@ -35,16 +41,24 @@ if (!requireSchema(context)) return
 
 const { schema } = resolveDb(context, flag)
 
+// Quoted because the command runs through a shell, and an expression is the
+// one value here certain to hold a space, a quote or a `$`.
+const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`
+
 const opts = [
-  flag.as    ? `--as ${flag.as}`       : '',
-  flag.level ? `--level ${flag.level}` : '',
-  flag.gate   ? `--gate ${flag.gate}`     : '',
-  flag.tenant ? `--tenant ${flag.tenant}` : '',
+  flag.as     ? `--as ${q(flag.as)}`         : '',
+  flag.level  ? `--level ${q(flag.level)}`   : '',
+  flag.gate   ? `--gate ${q(flag.gate)}`     : '',
+  flag.tenant ? `--tenant ${q(flag.tenant)}` : '',
+  flag.eval   ? `--eval ${q(flag.eval)}`     : '',
 ].filter(Boolean).join(' ')
 
+// The child always says why it stopped — a refusal, or the throw an `-e` line
+// raised — so the exit code is passed on and the runner's own `Command failed`
+// line, which would print the whole argv under it, is not.
 await context.stream({
   command: `${litestone(context)} repl --schema ${schema} ${opts}`,
-})
+}).catch(() => { process.exitCode = 1 })
 ```
 
 ## What it is
@@ -72,6 +86,22 @@ alice@example.com(4) > await db.order.create({ data: { total: 1 } })
 That refusal is the real one. It is the same `@@gate` the app is refused by,
 evaluated by the same plugin, because the console is a client and not a back
 door.
+
+## Once, without a prompt
+
+`-e` evaluates one line and exits — what a script or an agent wants instead of
+`sqlite3` against the app's file, which answers with every gate switched off:
+
+```
+$ fli tinker -e 'db.order.count()' --as alice@example.com --gate ./api/gate.ts
+  Standing: alice@example.com(4) USER · graded by ./api/gate.ts
+3
+```
+
+The answer is JSON on stdout, so `| jq` reads it; the standing and any warning
+go to stderr. A throw prints `Name: message` to stderr and exits 1, and a dot
+command runs the same way (`-e '.purgeCarts 30'`). Under `strategy database` it
+never asks which tenant — name one with `--tenant`.
 
 ## Two names, and they are different clients
 

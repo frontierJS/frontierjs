@@ -1,5 +1,28 @@
 # Changes — Basecamp
 
+## 2026-09-29 — Tier 2, the rest: forgot password, 2FA, and the missing writes on fifteen screens
+
+The second and last batch of the UI audit's Tier 2. Most rows were a method the API already had and no screen called.
+
+- **Forgot password did nothing.** `/auth/password-reset/request` answered ok and mailed nothing, because auth was never given `onPasswordResetRequested`. `core/account-mail.ts` now delivers both of auth's links (reset and email verification) to two new signed-out screens, `/reset-password/` and `/verify-email/`. With no mailer it logs the link outside production. It never throws, because a send failure only happens for an address that exists. `/setup/probe` gains `mail`, carried as `session.canMail`, so the reset screen says when no link can be sent. Sign-in has a *Forgot password?* link. A reset signs out the browser it was made in, because the guard would otherwise bounce `/login/` on a revoked token.
+- **Settings** has a two-step sign-in card: set up, confirm, recovery codes shown once, replace and turn off (the last two confirm first). It also shows an unverified address with a *Send the link again* button. The "2FA is not built" callout is gone.
+- **Servers.** The detail has an Edit drawer over the new `Server` default form, limited to name, role, region, SSH user and port, and labels. `sshKeyId` is left out because nothing reads it. Health is the dashboard's `ServerHealthBody` (bars and a day's sparkline) above everything the outpost reported, and the enrollment command has a copy button. The list has *Find orphans*: `servers.reconcile` over a chosen cloud account, which reports both directions and changes nothing.
+- **Flags.** A variant flag could not be made from the screen: the service needs two variants and the form had nowhere to type one. New `components/VariantsEditor.mesa` fixes that, and create takes a rollout. Each flag has an Edit drawer (description, rollout, variants). An override row edits its rollout inline, pins a variant, and turns on or off (*Force off* sits beside *Turn on here*). An environment is named `Project / env`.
+- **Secrets** rotate in place: a name and a new value (blank keeps the stored one) on the same row, so nothing that holds its id breaks. A rotated provider key is re-tested straight away.
+- **Recipes** have an Edit drawer over the new `Recipe` default form (name, description, script, timeout), a timeout on create, *Show older runs* (up to 200), and each run linked to its machine.
+- **Channels** have an Edit drawer that rotates the credential behind the same Secret. The rule count opens the rules that deliver through the channel.
+- **Admin** has a Workspace tab with rename, create (the new workspace is switched to) and delete (owner only, with the name typed back). `session.reloadWorkspaces()` re-reads memberships and moves off a workspace that is gone. `Workspace.mesa` is `validate: false` for ApiKey's reason: `accountId`, `ownerId` and `slug` are stamped by the service from the session, so browser validation refused every create. `workspaces.create` had never been called.
+- **API keys** offer *Belongs to*, listing this workspace's bot members. The "no bot accounts" callout, and the hub's "inviting is not built", are corrected.
+- **DNS** has Edit (hostname, redirect, port, proxied, SSL mode) over the new `Domain` form. An expiring, expired or missing certificate links to the app screen's upload form for that hostname, which now honors `?tab=` and `?cert=`. There is one upload form rather than two.
+- **Networks** have Edit (name, type, CIDR) over the new `Network` form, and take an address on attach.
+- **Dashboards.** The detail has Rename (new `Dashboard` form), Delete and Pin, and a widget whose server or app is gone gets a *Re-point* control. Pin now does something: pinned boards appear on the home screen.
+- **Hub users** have *Reset 2FA*, on every human who is not an administrator. It calls auth's `account-recovery.resetTotp`, which had answered 403 here since it shipped: it needed `services.level`, and basecamp has no single level for a session. `app.ts` now passes `recoveryLevel: basecampGateLevel`, which answers correctly with no workspace in play. A sysadmin gets 7, everyone else 1, and a suspended account 0, so a peer administrator is refused ([`FJS-D550`](../../DECISIONS.md#fjs-d550)).
+- **Backups** have *Forget*, which is `backups.remove`: the row goes and the file stays on disk. The confirmation says so.
+- **Blueprints.** A system administrator can create and edit (new `Blueprint` form) and edit the ordered parameters, which are saved whole with `setParams`. The generator choices are read off `BlueprintParam`'s schema.
+- **Drives run beside a dev server.** `verify:screens` and `verify:provision`, and the vite config, take `API_PORT`/`UI_PORT` (the test slot is 7120/7020), in `example`'s shape.
+
+`verify:screens` 156/156 (was 104), with new sections for the account, flags/secrets/recipes/channels, workspace/bot key, the hub reset (another person enrols over HTTP, is reset from the hub, and signs in with a password alone) and dns/networks/dashboards/backups/blueprints. Each changes a value and reads it back through the API. `verify:provision` 70/70, which adds health after the first heartbeat, reconcile clean and then with a droplet planted at the stand-in, and the SSH edit. Also `verify:build` 8/8, `bun run test` 450 pass, typecheck at baseline. The main `verify` drive was not run. Filed: [`FJS-1558`](../../ISSUES.md#fjs-1558) (a `data-confirm` button in a `<form>` froze the page; worked around), [`FJS-1559`](../../ISSUES.md#fjs-1559) (auth's recovery floor failed open for a non-number level, closed with `FJS-D550`).
+
 ## 2026-09-28 — edit and delete on App, Environment, Job and AlertRule; the schema says what a form may write
 
 Tier 2 of the UI audit, first batch. The audit said "8 resource files"; there are 29, and none had the default form `FJS-D112` gives a resource file.
@@ -188,7 +211,7 @@ from the browser; a client that sends none holds no role and is offered the few
 tools a bare sign-in reads. Measured over the seed at owner · admin · developer ·
 viewer: 286 · 278 · 208 · 152 tools, which needed a fix in `@frontierjs/mcp` to be
 four numbers rather than two. The five services with no model are offered at every
-standing and refused by their hooks — [`FJS-1342`](../../ISSUES.md#fjs-1342).
+standing and refused by their hooks — [`FJS-1342`](../../ISSUES_ARCHIVE.md#fjs-1342).
 `surface.snapshot.md` regenerated, which is what adds `/mcp` to the dev proxy.
 
 **`bun run verify:mcp` drives it** — a real `@modelcontextprotocol/client` at the seed's four roles, the ladder asked as pairs a named tool apart, a call's rows held to the named workspace, and the hub refusal. 12/12; grading the session again reds six.
@@ -201,7 +224,7 @@ Junction renamed `ctx.client` to `ctx.caller`; this follows it.
 
 ## 2026-09-25 — the recipes and app screens hear their live events
 
-[`FJS-1062`](../../ISSUES.md#fjs-1062). Both registered a service listener as `const off =
+[`FJS-1062`](../../ISSUES_ARCHIVE.md#fjs-1062). Both registered a service listener as `const off =
 svc.on('*', …)` read only in `$.onDestroy`, and a `const` whose initializer reaches reactive state is a
 lazy derivation — so the listener was registered at teardown. A fleet run did not fill in machine by
 machine on `/recipes/`, and a hostname written elsewhere did not appear on the open app screen. Both are
@@ -210,7 +233,7 @@ the drive currently stops at the graph screen before reaching it.
 
 ## 2026-09-22 — the servers search box answers, and `stop` stops only this app
 
-**The search box on `/servers/` answered 400 on every use** ([`FJS-1284`](../../ISSUES.md#fjs-1284)).
+**The search box on `/servers/` answered 400 on every use** ([`FJS-1284`](../../ISSUES_ARCHIVE.md#fjs-1284)).
 `servers.find` read `?search=` and built `name contains` from it, but no model has a `search` column,
 so autoFilter refused the key before the method ran and the screen drew the refusal over an empty
 list. `recipes` and `volumes` read the same key and answered the same 400. All three now reserve it
@@ -219,7 +242,7 @@ list. `recipes` and `volumes` read the same key and answered the same 400. All t
 Four cases in `services.test.ts` and a `verify:screens` check that types a seeded name and reads the
 narrowed rows, which fails on the exact refusal with the servers service put back.
 
-**`bun run stop` killed every `bun … api/index.ts` on the machine** ([`FJS-1285`](../../ISSUES.md#fjs-1285))
+**`bun run stop` killed every `bun … api/index.ts` on the machine** ([`FJS-1285`](../../ISSUES_ARCHIVE.md#fjs-1285))
 — another app's dev API, another session's drive — and `db:reset` runs it first. It now kills a
 matching process only if its working directory is this app's root, read with `lsof` so it answers on
 macOS as well as Linux. Driven with a bystander: another project's `bun --watch run api/index.ts` was
@@ -265,14 +288,14 @@ restart as the same row, and a lost identity re-enrolling under a rotated key th
 still reaches. Run against the old executor it fails three.
 
 Two found and filed rather than fixed: the servers screen's search box answers 400 on every use
-([`FJS-1284`](../../ISSUES.md#fjs-1284)), and `bun run stop` kills every `bun … api/index.ts` on the
-machine rather than this app's ([`FJS-1285`](../../ISSUES.md#fjs-1285)).
+([`FJS-1284`](../../ISSUES_ARCHIVE.md#fjs-1284)), and `bun run stop` kills every `bun … api/index.ts` on the
+machine rather than this app's ([`FJS-1285`](../../ISSUES_ARCHIVE.md#fjs-1285)).
 
 ## 2026-09-22 — a job's next run is asked of the clock
 
 `Job.nextRunAt` was written once, on create, as *a minute from now*, and never
 again — so a job on `0 9 * * 1` showed a time a minute after it was made, to an
-operator deciding whether to step in ([`FJS-1241`](../../ISSUES.md#fjs-1241)).
+operator deciding whether to step in ([`FJS-1241`](../../ISSUES_ARCHIVE.md#fjs-1241)).
 It is no longer a column. `nextRunAt(app, jobId)` in `job-schedule.ts` reads
 caravan's `nextRuns()` under the job's schedule name, and `get`, `create` and
 `patch` answer it on the row, so the screen reads the same key it always did.
@@ -284,7 +307,7 @@ needs no one to guard it. `@@index([nextRunAt])` was read by nothing; the DDL
 change is those two lines deleted.
 
 Reading the clock on every `get` is what exposed caravan's next-fire search as
-seconds per call ([`FJS-1283`](../../ISSUES.md#fjs-1283)); the job screen
+seconds per call ([`FJS-1283`](../../ISSUES_ARCHIVE.md#fjs-1283)); the job screen
 timed out until that was fixed. `verify` now opens a weekly job and reads *Next
 run* off the screen.
 
@@ -385,7 +408,7 @@ enforce on its own.
 ## 2026-09-20 — the orion install is finished, and it found three framework defects
 
 The paragraph at the end of the entry below said the install was not finished, which is a to-do in a
-history file and is how it sat: [`FJS-1197`](../../ISSUES.md#fjs-1197) is the row it should have been.
+history file and is how it sat: [`FJS-1197`](../../ISSUES_ARCHIVE.md#fjs-1197) is the row it should have been.
 
 **The seed writes the automation this app actually runs.** Every workspace gets the page-ops flow —
 the same definition `api/test/automation.test.ts` drives end to end, so the seeded row and the tested
@@ -407,8 +430,8 @@ day something can write one, and the test's reverse control is what will say so.
 `Invitation`, `Secret`, `ApiKey`, `Server`, `Project`, `Environment`, `App`, `Domain`, `Deployment`
 and more — because orion's imported `Flow` carries a bare `workspaceId` and is declared at
 `schema.lite:531`, ahead of `WorkspaceMember` at `:643`, so the tenant values were fabricated and
-satisfied no foreign key. Closed as [`FJS-1199`](../../ISSUES.md#fjs-1199),
-[`FJS-1200`](../../ISSUES.md#fjs-1200) and [`FJS-1201`](../../ISSUES.md#fjs-1201). **This is the app
+satisfied no foreign key. Closed as [`FJS-1199`](../../ISSUES_ARCHIVE.md#fjs-1199),
+[`FJS-1200`](../../ISSUES_ARCHIVE.md#fjs-1200) and [`FJS-1201`](../../ISSUES_ARCHIVE.md#fjs-1201). **This is the app
 earning its keep**: none of the three is visible from a schema that imports no fragment.
 
 `db/schema.d.ts` is regenerated, and the table count moved 51 → 59 with the reason beside it in the
@@ -591,7 +614,7 @@ the diff.
 `servers.issueEnrollment` returned the token only INSIDE the install command it
 prints, so the one caller that is an installer rather than a person had to
 recover it with a regex over a shell string — re-deriving the input from the
-output ([`FJS-1041`](../../ISSUES.md#fjs-1041)). It is a field now. Nothing new
+output ([`FJS-1041`](../../ISSUES_ARCHIVE.md#fjs-1041)). It is a field now. Nothing new
 is disclosed: the value was already in that string, single-use, behind
 `@gate(5)`.
 
@@ -780,7 +803,7 @@ nothing asks for it, so nothing is owed.
 rollback would want it, `configSnapshot` recorded what the app looked like at
 release time, and four screens carried a tone for `rolled_back` — while
 `grep -rni rollback` over `api/` and `web/` returned **one comment and nothing
-else** ([`FJS-517`](../../ISSUES.md#fjs-517)).
+else** ([`FJS-517`](../../ISSUES_ARCHIVE.md#fjs-517)).
 
 **A rollback is a NEW release of the OLD bytes**, never a rerun of the old row.
 A Deployment records what shipped and when; re-running one would rewrite that,
@@ -883,7 +906,7 @@ a from-state, none as a to-state, so the machine could leave a state it could
 never enter. `lastHeartbeatAt` was written by the heartbeat and read by three
 screens to print *"4h ago"*, and nothing compared it to a clock. **A machine
 that died stayed `online` for ever**, green on every screen
-([`FJS-1021`](../../ISSUES.md#fjs-1021)).
+([`FJS-1021`](../../ISSUES_ARCHIVE.md#fjs-1021)).
 
 The way back was already built and unreachable by construction: `checkIn:
 [pending, installing, unreachable] -> online` has always accepted the return.
@@ -972,7 +995,7 @@ command's shape and the served script.
 
 `DiskUsage` is `@@unique([serverId])` — one row per machine, overwritten by
 every report — so *how full was this box before Tuesday's sweep* was not stale,
-it was gone. [`FJS-956`](../../ISSUES.md#fjs-956) named it and deferred it, with
+it was gone. [`FJS-956`](../../ISSUES_ARCHIVE.md#fjs-956) named it and deferred it, with
 the design already settled: the row stays a snapshot, because a second table of
 readings beside the metric store would be a second owner of one idea.
 
@@ -998,7 +1021,7 @@ and a bound that truncates has to drop the OLDEST hours, where ascending with a
 limit silently stops the graph days ago.
 
 The screen holds no list of what the lines are called — `usage` answers the
-declaration beside the figures, which is [`FJS-1027`](../../ISSUES.md#fjs-1027)'s
+declaration beside the figures, which is [`FJS-1027`](../../ISSUES_ARCHIVE.md#fjs-1027)'s
 lesson one table along.
 
 7 new rows in `api/test/services.test.ts`, each sum paired with the wrong sum
@@ -1210,7 +1233,7 @@ growing a second vendor vocabulary on `SecretKind`. No model was minted: an
 account is a name, a vendor and a token, which is what `Secret` already was.
 
 **The target names the account** — `provider:<kind>:<accountId>`, built by
-`targetFor` and nowhere else. That is [FJS-1020](../../ISSUES.md#fjs-1020): keyed
+`targetFor` and nowhere else. That is [FJS-1020](../../ISSUES_ARCHIVE.md#fjs-1020): keyed
 on the vendor alone, one install holds one DigitalOcean and whichever workspace
 registered it last has its token used to read everybody else's machines.
 `Server.providerId` holds the account and had been written by nothing.
@@ -1592,7 +1615,7 @@ accepting it here would hide the thing it exists to report.
 `deployment-run.job.ts` called `/deploy` without `app_id`, and outpost names the
 container `fjs-${body.app_id ?? body.deployment_id}` — so every release started
 `fjs-<deployment>` while `/stop`, `/health-check` and `/logs`, which all send
-`app_id`, addressed `fjs-<app>` ([`FJS-920`](../../ISSUES.md#fjs-920)).
+`app_id`, addressed `fjs-<app>` ([`FJS-920`](../../ISSUES_ARCHIVE.md#fjs-920)).
 
 Three consequences and none of them said anything: the health step failed on
 every release that reached it, the next release stopped nothing, and containers

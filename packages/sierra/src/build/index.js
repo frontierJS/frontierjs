@@ -337,12 +337,14 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
   let root = process.cwd()
   let outDir = config.outDir ?? 'dist/client'
   let isBuild = false
+  let viteAliases = {}
 
   return {
     name: 'sierra:postbuild',
 
     configResolved(viteConfig) {
       root = viteConfig.root ?? process.cwd()
+      viteAliases = pathAliases(viteConfig.resolve?.alias)
       outDir = resolve(root, viteConfig.build?.outDir ?? config.outDir ?? 'dist/client')
       isBuild = viteConfig.command === 'build'
     },
@@ -443,6 +445,9 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
 
         const pre = await prerenderRoutes({
           tree, root,
+          // An alias the app or a package adds to Vite resolves in dev and in
+          // the bundle, so the render resolves it too (`FJS-1551`).
+          aliases: viteAliases,
           routesDir: config.routesDir ?? 'src/routes',
           outDir,
           renderComponent,
@@ -452,7 +457,7 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
           // And the one thing Vite does that the render cannot: an eager
           // `import.meta.glob` becomes the static imports it stands for.
           transformSource: (source, file) =>
-            expandGlobs(prepareForCompile(source, file, sierraContext.autoImportMap) ?? '', file),
+            expandGlobs(prepareForCompile(source, file, sierraContext.autoImportMap) ?? '', file, root),
           compileOptions: {
             ...(config.mesa ?? {}),
             ...(sierraContext.markdownLayouts ? { layouts: sierraContext.markdownLayouts } : {}),
@@ -623,6 +628,27 @@ function postBuildPlugin(config, sierraContext, islandPlugins = () => []) {
  * buried under every downstream TDZ. The same separation `FJS-439` made for a
  * route whose render threw: *nothing to emit* and *broken* are two answers.
  */
+/**
+ * Vite's resolved aliases the render can apply: a string key naming a path on
+ * disk. A RegExp key is Vite's own plumbing, and a replacement that is a
+ * package name (`react` → `preact/compat`) is Node's to resolve as written.
+ *
+ * @param {Array<{ find: string|RegExp, replacement: string }>|Record<string,string>|undefined} alias
+ * @returns {Record<string, string>}
+ */
+export function pathAliases(alias) {
+  const entries = Array.isArray(alias)
+    ? alias.map((a) => [a.find, a.replacement])
+    : Object.entries(alias ?? {})
+  const out = {}
+  for (const [find, replacement] of entries) {
+    if (typeof find === 'string' && typeof replacement === 'string' && isAbsolute(replacement)) {
+      out[find] = replacement
+    }
+  }
+  return out
+}
+
 async function resolveBuildDb(config, root) {
   if (!config?.db) return null
 

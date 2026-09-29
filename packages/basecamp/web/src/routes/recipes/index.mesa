@@ -17,13 +17,14 @@ title: Recipes
   // at the click with the name of the machine in the sentence.
   import { session } from '../../session.js'
   import { ago }     from '../../datetime.js'
-  import { recipes } from '../../resources/Recipe.mesa'
+  import Recipe, { recipes } from '../../resources/Recipe.mesa'
   import { servers } from '../../resources/Server.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Form       from '@frontierjs/ui/components/forms/Form.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
@@ -32,6 +33,7 @@ title: Recipes
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
+  import { page } from '@frontierjs/sierra/router'
 
   $: session.workspaceId
 
@@ -43,7 +45,9 @@ title: Recipes
   let error     = null
   let loading   = true
   let busy      = null
-  let creating  = false
+  let creating  = page.query?.new !== undefined
+  // ⌘K's New … entries land here with ?new, on this route or from another.
+  $: page.query, () => { if (page.query?.new !== undefined) creating = true }
   let target    = ''        // '' = every server with an outpost
   let draft     = recipes.make()
 
@@ -142,6 +146,34 @@ title: Recipes
     }
   }
 
+  // What an author writes. The counters are the run job's, and the slug follows
+  // the name on the server.
+  const AUTHORED = ['name', 'description', 'script', 'timeoutSeconds']
+  let editing = false
+
+  function saved() {
+    editing = false
+    toasts.success('Recipe saved. Runs already made keep the script they ran.')
+  }
+
+  // `get` answers the newest fifty; `runs` goes to two hundred, which is the
+  // service's ceiling for one read.
+  let allRuns = null
+  $: selectedId = selected ? selected.id : null
+  $: (selectedId, () => { allRuns = null })
+
+  async function olderRuns() {
+    error = null; busy = 'runs'
+    try {
+      allRuns = (await recipes.service.invoke('runs', selected.id, null, { limit: 200 })).runs
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+  $: shownRuns = allRuns ?? selected?.runs ?? []
+
   async function remove(recipe) {
     error = null; busy = recipe.id
     try {
@@ -203,6 +235,9 @@ title: Recipes
              value={draft.description} oninput={(e) => write('description', e.target.value)} />
       <Textarea name="script" id="script" rows="8" hint="Runs as the outpost's user — there is no sandbox"
                 value={draft.script} oninput={(e) => write('script', e.target.value)} />
+      <Input name="timeoutSeconds" id="timeoutSeconds" type="number" min="5" max="3600"
+             hint="A run still going after this is stopped and recorded as timed out"
+             value={draft.timeoutSeconds} oninput={(e) => write('timeoutSeconds', Number(e.target.value))} />
       <Button type="submit" variant="primary">Save recipe</Button>
     </Form>
   </Card>
@@ -268,21 +303,33 @@ title: Recipes
   <Card id="recipe-detail">
     <div class="section-header">
       <h2 class="h4">{selected.name}</h2>
-      <Button variant="ghost" onclick={() => watchSelected(null)}>Close</Button>
+      <div class="cluster">
+        <Button variant="outlined" id="recipe-edit" onclick={() => editing = true}>Edit</Button>
+        <Button variant="ghost" onclick={() => watchSelected(null)}>Close</Button>
+      </div>
     </div>
+
+    <Drawer open={editing} title={`Edit ${selected.name}`} onclose={() => editing = false}>
+      {#if editing}
+        <Recipe record={selected} only={AUTHORED} oncancel={() => editing = false} ondone={saved} submitId="recipe-edit-save" />
+      {/if}
+    </Drawer>
 
     <pre class="code" id="recipe-script"><code>{selected.script}</code></pre>
 
-    {#if !(selected.runs ?? []).length}
+    {#if !shownRuns.length}
       <p class="text-sm text-muted">This recipe has never been run.</p>
     {:else}
       <!-- Two <tr>s per run: the snippet supplies its own rows, so an output
            row that only some runs have costs a conditional rather than a
            second table. -->
-      <Table id="recipe-runs" columns={RUN_COLUMNS} rows={selected.runs} striped hover={false}>
+      <Table id="recipe-runs" columns={RUN_COLUMNS} rows={shownRuns} striped hover={false}>
         {#snippet row(r)}
           <tr>
-            <td>{r.serverName ?? r.serverId}</td>
+            <td>
+              {#if r.serverName}<a href={`/servers/${r.serverId}/`}>{r.serverName}</a>
+              {:else}<span class="text-muted">{r.serverId} (removed)</span>{/if}
+            </td>
             <td><Pill tone={statusTone(r.status)}>{r.status}</Pill></td>
             <td class="text-sm">{r.exitCode ?? '—'}</td>
             <td class="text-sm text-muted">{ago(r.finishedAt ?? r.createdAt)}</td>
@@ -299,6 +346,9 @@ title: Recipes
           {/if}
         {/snippet}
       </Table>
+      {#if !allRuns && (selected.runs ?? []).length >= 50}
+        <Button variant="ghost" id="recipe-older" disabled={busy === 'runs'} onclick={olderRuns}>Show older runs</Button>
+      {/if}
     {/if}
   </Card>
 {/if}

@@ -88,7 +88,18 @@ export interface Plugin {
    */
   register?:  (app: App) => void
 
+  /** Make the plugin callable: open stores, mount routes, register handlers.
+   *  Nothing started here may act unasked — that is work(). */
   boot?:      (app: App) => void | Promise<void>
+  /**
+   * Start what the plugin does on its own clock: workers, pollers, timers.
+   *
+   * Split from boot() because a one-shot boot (`junction call`, the snapshot
+   * tools, `_startOnce()`) must be able to queue a job without this process
+   * running it. A timer left in boot() ticks in every one of those processes,
+   * and a worker claims jobs the serving process was owed.
+   */
+  work?:      (app: App) => void | Promise<void>
   ready?:     (app: App) => void | Promise<void>
   shutdown?:  (app: App) => void | Promise<void>
 
@@ -584,6 +595,10 @@ export interface App {
   /** Test-only: runs plugin register(), registerServiceRoutes, and setAppHooks
    *  without binding a port. Call once before the first request() in tests. */
   _startForTest: () => Promise<void>
+  /** `_startForTest()` without the `start-work` phase: the app answers calls
+   *  and runs nothing on its own clock. For a process that makes one call or
+   *  describes the app and exits. */
+  _startOnce: () => Promise<void>
 
   /**
    * Read `junction.config.js` and merge it under `opts.config`.
@@ -666,9 +681,10 @@ export interface AppOptions {
    *
    *   createApp({ db, principal: async (ctx, user) => ({ workspaceId, memberRole }) })
    *
-   * Runs only for an authenticated caller, and may not set `userId`/`id` — a
-   * claim says what a caller holds, never who they are. `membershipClaim()` is
-   * the shipped resolver for the common shape, and it cannot emit a claim it
+   * Runs for every request, a guest's included — `user` is null for one — and
+   * may not set `userId`/`id`: a claim says what a caller holds, never who they
+   * are. `membershipClaim()` is the shipped resolver for a session and
+   * `bearerClaim()` for a token with no session; neither can emit a claim it
    * did not verify.
    */
   principal?:   import('./litestone.ts').PrincipalResolver
@@ -944,7 +960,9 @@ export function createApp(opts: AppOptions = {}): App {
     defaultTtl: config.cache.defaultTtl,
     maxSize:    config.cache.maxSize,
   })
-  const scheduler = createScheduler()
+  // Held until `start-work`: a job an app or plugin registers fires only in
+  // a process that serves.
+  const scheduler = createScheduler({ held: true })
 
   // ── Database (optional) ──────────────────────────────────────────────
   // Two ways in, in priority order:
@@ -1541,11 +1559,16 @@ export function createApp(opts: AppOptions = {}): App {
      *  Never call this in production — use start() instead. */
     async _startForTest(): Promise<void> {
       if (started) return          // idempotent — safe to call multiple times
-      await runStartPhases(false)
+      await runStartPhases('test')
+    },
+
+    async _startOnce(): Promise<void> {
+      if (started) return
+      await runStartPhases('once')
     },
 
     async start(): Promise<void> {
-      await runStartPhases(true)
+      await runStartPhases('serve')
     },
 
     // ── Stop ─────────────────────────────────────────────────────
@@ -1696,6 +1719,8 @@ export function createApp(opts: AppOptions = {}): App {
     name:       string
     /** Skipped by _startForTest(): needs a port, the filesystem, or signals. */
     needsHost?: boolean
+    /** Skipped by _startOnce(): starts what acts on its own clock. */
+    isWork?:    boolean
     run:        () => void | Promise<void>
   }
 
@@ -1731,7 +1756,9 @@ export function createApp(opts: AppOptions = {}): App {
     })
   }
 
-  async function runStartPhases(bindHost: boolean): Promise<void> {
+  type StartMode = 'serve' | 'test' | 'once'
+
+  async function runStartPhases(mode: StartMode): Promise<void> {
 
     // A second start() used to reach `security-headers` and die on `Cannot add
     // middleware after the router is built` — an internal sentence about a
@@ -1928,6 +1955,21 @@ export function createApp(opts: AppOptions = {}): App {
       // registered later (e.g. in a plugin's ready(), or by user code after start()).
       { name: 'compile-hook-pipelines', run: () => services.setAppHooks(app._appHooks) },
 
+      // After the pipelines compile, so the first job a worker claims runs
+      // through the hooks a request would. A work() that throws fails the
+      // start: a serving process whose queue never started is not serving.
+      { name: 'start-work', isWork: true, run: async () => {
+        scheduler.arm()
+        for (const plugin of plugins) {
+          try {
+            await plugin.work?.(app)
+          } catch (err) {
+            await shutdownPlugins(plugins)
+            throw new Error(`Plugin "${plugin.name}" work failed: ${(err as Error).message}`)
+          }
+        }
+      }},
+
       { name: 'listen', needsHost: true, run: () => { http.start() } },
 
       { name: 'ready-hooks', needsHost: true, run: async () => {
@@ -2075,7 +2117,8 @@ export function createApp(opts: AppOptions = {}): App {
     ]
 
     for (const phase of startPhases) {
-      if (phase.needsHost && !bindHost) continue
+      if (phase.needsHost && mode !== 'serve') continue
+      if (phase.isWork    && mode === 'once')  continue
       await phase.run()
     }
   }

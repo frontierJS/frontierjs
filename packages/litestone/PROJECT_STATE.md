@@ -219,12 +219,9 @@ depends on it.
 
 ## Backlog
 
-**`docs/roadmap.md` is the one list and this section is not a second copy.** It
-held one, five of whose eleven entries described features that had shipped:
-`Money`, `@@transitions` and `@@index(where:)` among them, the last still
-written as *SQLite supports it natively* beside a `ddl.js` that had been
-emitting it. A backlog kept in two files is one file going stale, and this is
-the copy nothing grades — `roadmap-shipped` reads the other.
+Proposals are `IDEAS/` at the repo root and defects are `ISSUES.md`; this
+section is not a third list. The old `docs/roadmap.md` was retired 2026-09-29
+after five of its eleven entries turned out to describe shipped features.
 
 ---
 

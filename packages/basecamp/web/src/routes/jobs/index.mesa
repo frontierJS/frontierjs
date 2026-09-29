@@ -9,6 +9,7 @@ title: Jobs
   import Button from '@frontierjs/ui/components/forms/Button.mesa'
   import Drawer from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import Table  from '@frontierjs/ui/components/display/Table.mesa'
+  import { page } from '@frontierjs/sierra/router'
 
   $: session.workspaceId
 
@@ -16,7 +17,9 @@ title: Jobs
   let error   = null
   let loading = true
   let busy    = null
-  let creating = false
+  let creating = page.query?.new !== undefined
+  // ⌘K's New … entries land here with ?new, on this route or from another.
+  $: page.query, () => { if (page.query?.new !== undefined) creating = true }
 
   async function load() {
     error = null; loading = true

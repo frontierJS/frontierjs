@@ -41,6 +41,15 @@ const _timers = new Map()
 // otherwise stay on screen for ever once it succeeded.
 const DEFAULT_DURATION = 3500
 
+// A detail line passed as the second argument of success() lands in the
+// duration slot. It is never shown, and `'text' > 0` is false, so the toast
+// stayed on screen for ever with half its message missing.
+function _checkDuration(duration) {
+  if (typeof duration !== 'number') {
+    throw new TypeError(`toasts: duration must be a number of ms, got ${JSON.stringify(duration)} -- a toast is one message`)
+  }
+}
+
 function _schedule(id, duration) {
   clearTimeout(_timers.get(id))
   _timers.delete(id)
@@ -51,6 +60,7 @@ export const toasts = {
   items: [],   // { id, message, type, duration }
 
   add(message, type = 'info', duration = DEFAULT_DURATION) {
+    _checkDuration(duration)
     const id = ++_nextId
     _w.items = [...this.items, { id, message, type, duration }]
     _schedule(id, duration)
@@ -68,6 +78,7 @@ export const toasts = {
     const current = this.items.find(t => t.id === id)
     if (!current) return false
 
+    if ('duration' in patch) _checkDuration(patch.duration)
     const next = { ...current, ...patch }
     _w.items = this.items.map(t => (t.id === id ? next : t))
     // Only when the caller stated one: an update that changes the message and

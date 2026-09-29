@@ -81,6 +81,11 @@ body {
   margin: 0;
 }
 
+/* A <summary> toggles its <details> but the UA gives it the text cursor, so
+   a nav group or disclosure reads as unclickable. Zero specificity: a host
+   rule wins. */
+:where(summary) { cursor: pointer }
+
 /* Badge and Pill are spans in the vocabulary. Where Studio makes one clickable
    the element has to be a button, and the UA chrome has to come off it. */
 button:is(.badge, .pill) { appearance: none; cursor: pointer }

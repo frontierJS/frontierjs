@@ -12,5 +12,11 @@
   // resource in this app set, which is why they stopped being flags).
   import { createResource } from '@frontierjs/sierra/junction'
 
-  export const workspaces = createResource('workspaces')
+  // `validate: false` for ApiKey's reason: three of create's required columns
+  // are the SESSION's — `accountId` and `ownerId` are the caller's, assigned by
+  // `stampOwnership` before the server's `autoValidate` runs, and `slug` is
+  // derived there from the name. The browser can know none of them, so
+  // validating here refuses every create naming boxes nobody can fill. The
+  // server validates the same schema after the hook.
+  export const workspaces = createResource('workspaces', { validate: false })
 </script>

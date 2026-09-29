@@ -2,7 +2,7 @@
   // src/resources/Network.mesa — the Resource layer.
   //
   // A Resource is a UI-realm noun, so it is a .mesa file (repo invariant 18).
-  // No markup: everything is module scope, which is what <script module> means.
+  // This block is module scope; the markup half below is the default form.
   //
   // No `model:` — `networks` is the regular plural of `Network`, which is what
   // modelNameFor() resolves, so the schema's labels, required list and field
@@ -11,3 +11,32 @@
 
   export const networks = createResource('networks')
 </script>
+
+<script>
+  // The markup half — this model's DEFAULT form (repo Invariant 18). A create
+  // screen is <Network />, an edit screen <Network record={row} />.
+  //
+  // It names no field. <Form> reads the writable columns off the schema in
+  // declaration order, and a column the schema freezes after create
+  // (`@immutable`) or keeps for the application (`@system`) is not offered on
+  // an edit, so nothing here restates which columns a patch refuses. A screen
+  // that edits one column with its own editor narrows with `except`.
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+
+  export let record      = undefined   // absent → a create form seeded from the schema
+  export let method      = undefined   // <Form>'s auto | create | patch
+  export let submitLabel = 'Save'
+  export let cancelHref  = null        // Cancel navigates…
+  export let oncancel    = null        // …or calls back, for a drawer
+  export let submitId    = undefined   // when something has to find the button
+  export let actions     = null        // snippet — replaces the whole button row
+
+  // Everything else — class, style, ondone, onerror, showError, only, except —
+  // rides $attributes onto <Form>, which is where those props are declared.
+</script>
+
+<Form resource={networks} bind:record={record} {method} {actions} {...$attributes}>
+  <Button slot="actions" type="submit" id={submitId}>{submitLabel}</Button>
+  <Button slot="actions" variant="ghost" href={cancelHref} onclick={oncancel}>Cancel</Button>
+</Form>

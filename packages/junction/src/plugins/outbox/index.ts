@@ -196,7 +196,12 @@ export function outbox(opts: OutboxPluginOptions = {}): Plugin {
       // `pass()` logs and continues, so an app built with both a db and a
       // tenant registry would drain half its rows behind one log line.
       await assertOutboxShape(app)
+    },
 
+    // The recovery timer. Not in boot(): a one-shot boot that enqueues leaves
+    // the row for the serving process, whose relay owns delivery; the
+    // post-commit kick still sends what this process's own call wrote.
+    async work(app: App): Promise<void> {
       // One pass before the first tick: whatever the last process left behind
       // is owed now, not in intervalMs.
       await pass(app)

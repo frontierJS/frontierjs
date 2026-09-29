@@ -69,9 +69,11 @@ function readOptions(text, file) {
  *
  * @param {string} source — what Mesa is about to compile (after `prepareForCompile`)
  * @param {string} file   — its absolute path; relative patterns resolve against it
+ * @param {string} [root] — the Vite root, which a pattern starting `/` resolves
+ *   against, so a component in a package can list the app's files (`FJS-1553`)
  * @returns {string}
  */
-export function expandGlobs(source, file) {
+export function expandGlobs(source, file, root) {
   if (!source.includes('import.meta.glob')) return source
 
   const dir = dirname(file)
@@ -88,26 +90,32 @@ export function expandGlobs(source, file) {
           `no bundler to split it. Add { eager: true }.`
         return `(() => { throw new Error(${JSON.stringify(message)}) })()`
       }
-      if (!pattern.startsWith('./') && !pattern.startsWith('../')) {
+      const fromRoot = pattern.startsWith('/') && root
+      if (!fromRoot && !pattern.startsWith('./') && !pattern.startsWith('../')) {
         throw new Error(
           `[Sierra] ${file}: import.meta.glob('${pattern}') — a prerendered glob must be ` +
-          `relative to the file (./ or ../).`
+          `relative to the file (./ or ../) or to the Vite root (/).`
         )
       }
 
+      // Vite keys a root glob by its root-absolute path and a relative one by
+      // the path from the importer; the import itself is absolute either way.
+      const base = fromRoot ? root : dir
       const self = resolve(file)
-      const matches = globSync(pattern, { cwd: dir })
-        .map((m) => resolve(dir, m))
+      const matches = globSync(fromRoot ? pattern.slice(1) : pattern, { cwd: base })
+        .map((m) => resolve(base, m))
         .filter((abs) => abs !== self)
         .sort()
 
       const entries = matches.map((abs) => {
-        let key = relative(dir, abs).split(sep).join('/')
-        if (!key.startsWith('.')) key = `./${key}`
+        let key = relative(base, abs).split(sep).join('/')
+        if (fromRoot) key = `/${key}`
+        else if (!key.startsWith('.')) key = `./${key}`
+        const spec = fromRoot ? abs : key
         const local = `__sierra_glob_${n++}`
         imports.push(options.import
-          ? `import { ${options.import} as ${local} } from ${JSON.stringify(key)}`
-          : `import * as ${local} from ${JSON.stringify(key)}`)
+          ? `import { ${options.import} as ${local} } from ${JSON.stringify(spec)}`
+          : `import * as ${local} from ${JSON.stringify(spec)}`)
         return `${JSON.stringify(key)}: ${local}`
       })
       return `{ ${entries.join(', ')} }`

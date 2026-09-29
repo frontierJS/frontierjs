@@ -23,7 +23,7 @@ this sits in. It **amends ring 1's mechanism** and says so in § *The hearing*.
 | The mock | `ProvisionServerView` in the deleted React mock (`git show 8626db5b:packages/basecamp/docs/mock/BasecampUI.jsx`, line 1178) — five steps, a DigitalOcean catalog written out as three constants, and a nine-line progress list driven by `setTimeout` |
 | The screen | `web/src/routes/servers/create.mesa`, 87 lines (now split into `provision.mesa` and `import.mesa` — § P2). Name, role, IP address, region — **an import form**, and its own header comment says why: the adapters are stubs, so a wizard would promise what the API cannot do |
 | The column | `Server.registerMethod` defaults to `"imported"` and there is no code path that writes anything else |
-| The states | `ServerStatus` ran `pending provisioning installing ready online …` with **`installing`, `ready` and `unreachable` the target of no move** — the seed was their only producer. `ready` is deleted; the other two are [FJS-1021](../../../ISSUES.md#fjs-1021) |
+| The states | `ServerStatus` ran `pending provisioning installing ready online …` with **`installing`, `ready` and `unreachable` the target of no move** — the seed was their only producer. `ready` is deleted; the other two are [FJS-1021](../../../ISSUES_ARCHIVE.md#fjs-1021) |
 | The vendor seam | `api/src/services/servers/servers.service.ts:335` builds `provider:${server.providerKind}` and sends `GET /servers/<providerServerId>` through conduit. **Nothing anywhere registers that target**, so the send has a caller and no callee |
 | The interfaces | `api/src/providers/index.ts` carries ten, all stubs. **None of them is compute.** DigitalOcean appears once, as a TODO for `cloudSpend` |
 | The enum | `ProviderKind` is `custom hetzner`. No `digitalocean` |
@@ -181,7 +181,7 @@ enum ProviderKind { custom hetzner digitalocean }
   …)
 ```
 
-`ready` is **deleted** (2026-09-07, [FJS-1021](../../../ISSUES.md#fjs-1021)). It was
+`ready` is **deleted** (2026-09-07, [FJS-1021](../../../ISSUES_ARCHIVE.md#fjs-1021)). It was
 a from-state in four moves and the target of none, and the two facts it would have
 carried are already held elsewhere — *outpost up* is `lastHeartbeatAt`, *not
 carrying work* is `AppServer` — while *up, but do not place work here* is
@@ -197,9 +197,9 @@ what makes `/cloud-spend/` real for a provisioned row without a billing adapter.
 
 ## Phases
 
-**P0 — the register, first. — DONE.** [FJS-1020](../../../ISSUES.md#fjs-1020) is
+**P0 — the register, first. — DONE.** [FJS-1020](../../../ISSUES_ARCHIVE.md#fjs-1020) is
 the D2 defect and [`FJS-D241`](../../../DECISIONS.md#fjs-d241) is the ring-1
-ruling. [FJS-1021](../../../ISSUES.md#fjs-1021) came out of the same reading and
+ruling. [FJS-1021](../../../ISSUES_ARCHIVE.md#fjs-1021) came out of the same reading and
 is why `ready` is gone from `ServerStatus`.
 
 **P1 — the account and the catalog. No machine is created. — BUILT 2026-09-07.**
@@ -299,7 +299,7 @@ this phase wrote.
 `{id}`; `:id` registers a LITERAL path segment, so the route answered 405 to
 everything while the constant-time compare, the single-use burn and the
 fifteen-minute window behind it were all correct. Found by the first request
-that went down real HTTP — [`FJS-349`](../../../ISSUES.md#fjs-349)'s shape one
+that went down real HTTP — [`FJS-349`](../../../ISSUES_ARCHIVE.md#fjs-349)'s shape one
 layer out, and filed as [`FJS-1024`](../../../ISSUES.md#fjs-1024). A second
 defect sat in the same handler: a raw route's parsed body is `ctx.body`, and it
 was read as `ctx.data`, so the token was never read and every caller was refused
@@ -316,7 +316,7 @@ component never declares; the module then fails to LOAD; sierra's `_navigate`
 awaits that dynamic import and rejects; and `goto` is async with no caller
 awaiting it. What a person sees is a Provision button that does nothing —
 no console error, no failed request, the write already committed in the
-database. [`FJS-1025`](../../../ISSUES.md#fjs-1025) and
+database. [`FJS-1025`](../../../ISSUES_ARCHIVE.md#fjs-1025) and
 [`FJS-1026`](../../../ISSUES.md#fjs-1026); the second is the one that cost the
 hour.
 

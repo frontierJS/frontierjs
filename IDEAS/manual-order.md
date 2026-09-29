@@ -39,7 +39,7 @@ columns: `rank String` (a base-62 fractional key) and `position Int`.
 | **FJ** fractional, jittered (20 coin flips into the gap) | 50 | 50 × 200 | 50 | 50 | all 50 in the gap, 50 distinct keys |
 | **IC** integer, the client renumbers what it read | 1,625 | 57 × 200, **1,568 × 409** | 57 | 57 | 1 drag whole, 40 partly, 9 not at all; **40 rows share a position** |
 | **IS-v** integer, a transactional server `move`, with the device's version | 50 | 1 × 200, **49 × 409** | 57 | 1 | one drag landed |
-| **IS** the same, the server reads the version inside the transaction | 50 | 50 × 200 | **2,850** | 50 | correct, and **2,800 changed rows announced to nobody** ([`FJS-1308`](../ISSUES.md#fjs-1308)) |
+| **IS** the same, the server reads the version inside the transaction | 50 | 50 × 200 | **2,850** | 50 | correct, and **2,800 changed rows announced to nobody** ([`FJS-1308`](../ISSUES_ARCHIVE.md#fjs-1308)) |
 
 **Offline** (one device drags in a tunnel while 49 correct drags land, then its
 queue drains). The device reads five columns of 60, one board, and the resource
@@ -51,7 +51,7 @@ dragged row, so the table measures order and not that:
 | --- | --- | --- | --- |
 | F midpoint | 1 entry | lands | **ties with the first online drag**: both split the gap they read at its midpoint, and neither could know |
 | FJ jittered | 1 entry | lands | its own key, inside the gap |
-| IC client renumber | **57 entries** | **55 refused 409** *column position changed here and on the server*, 2 land | a duplicate position; nobody told ([`FJS-1302`](../ISSUES.md#fjs-1302)) |
+| IC client renumber | **57 entries** | **55 refused 409** *column position changed here and on the server*, 2 land | a duplicate position; nobody told ([`FJS-1302`](../ISSUES_ARCHIVE.md#fjs-1302)) |
 | IS server `move` | 1 entry | lands | correct, 57 rows rewritten, 56 unannounced |
 | X: two people drag the SAME issue | 1 entry | refused 409 *column rank changed here and on the server* | the online drag wins, which is right; nobody told (FJS-1302) |
 

@@ -8,9 +8,9 @@ dated: 2026-09-19
 
 **Status: PROPOSED.** Dated 2026-09-19. Every fact below was probed against the
 tree and against a running `example`; nothing is read off a comment. The
-question this existed to settle was [`FJS-D313`](../ISSUES.md#fjs-d313) and it is
+question this existed to settle was [`FJS-D313`](../ISSUES_ARCHIVE.md#fjs-d313) and it is
 **ruled — [`FJS-D314`](../DECISIONS.md#fjs-d314), option A, built the same day**.
-The defect it came out of is [`FJS-1187`](../ISSUES.md#fjs-1187), closed with it.
+The defect it came out of is [`FJS-1187`](../ISSUES_ARCHIVE.md#fjs-1187), closed with it.
 
 ---
 
@@ -67,7 +67,7 @@ deciding is who is allowed to know that a given root holds uploads.
 
 ## See also
 
-- [`FJS-1187`](../ISSUES.md#fjs-1187) — the defect, and the `nosniff` half that landed
-- [`FJS-1186`](../ISSUES.md#fjs-1186) — the shared type table, which is what makes a declared type trustworthy enough to bind
-- [`FJS-1184`](../ISSUES.md#fjs-1184) — why the stored key's extension follows the bytes
-- [`FJS-692`](../ISSUES.md#fjs-692) — the same hazard on junction's own file store, hardened and then deleted with the module ([`FJS-D260`](../DECISIONS.md#fjs-d260)), which is how the hardening was lost
+- [`FJS-1187`](../ISSUES_ARCHIVE.md#fjs-1187) — the defect, and the `nosniff` half that landed
+- [`FJS-1186`](../ISSUES_ARCHIVE.md#fjs-1186) — the shared type table, which is what makes a declared type trustworthy enough to bind
+- [`FJS-1184`](../ISSUES_ARCHIVE.md#fjs-1184) — why the stored key's extension follows the bytes
+- [`FJS-692`](../ISSUES_ARCHIVE.md#fjs-692) — the same hazard on junction's own file store, hardened and then deleted with the module ([`FJS-D260`](../DECISIONS.md#fjs-d260)), which is how the hardening was lost

@@ -28,6 +28,7 @@ title: Channels
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Form       from '@frontierjs/ui/components/forms/Form.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
@@ -35,6 +36,7 @@ title: Channels
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
+  import { page } from '@frontierjs/sierra/router'
 
   $: session.workspaceId
 
@@ -42,7 +44,9 @@ title: Channels
   let error    = null
   let loading  = true
   let busy     = null
-  let creating = false
+  let creating = page.query?.new !== undefined
+  // ⌘K's New … entries land here with ?new, on this route or from another.
+  $: page.query, () => { if (page.query?.new !== undefined) creating = true }
   let draft    = channels.make()
   let secret   = ''
 
@@ -154,6 +158,66 @@ title: Channels
     }
   }
 
+  // ─── Edit, and rotate the credential ─────────────────────────────────
+  // The credential is write-only (a Secret the channel points at), so the box
+  // starts empty and a blank one keeps it; a new value is rotated IN PLACE,
+  // which keeps every rule delivering through this channel pointed at it.
+  // `kind` is not offered: a channel that changes what it is keeps its rules
+  // while the payload and destination change underneath them.
+  let editing   = null      // { id, name, kind, config, version, secret }
+  let editError = null
+  let saving    = false
+
+  function startEdit(c) {
+    editError = null
+    editing = { id: c.id, name: c.name, kind: c.kind, config: { ...(c.config ?? {}) }, version: c.version, secret: '' }
+  }
+
+  $: editAsks = editing ? (ASKS[editing.kind] ?? {}) : {}
+
+  function editConfig(key, value) {
+    const next = { ...editing.config }
+    if (key === 'to') next.to = value.split(',').map(s => s.trim()).filter(Boolean)
+    else if (value)   next[key] = value
+    else              delete next[key]
+    editing = { ...editing, config: next }
+  }
+
+  async function saveEdit() {
+    editError = null; saving = true
+    try {
+      const { id, name, config, version, secret: credential } = editing
+      const updated = await channels.service.patch(id, {
+        name, config, version, ...(credential ? { secret: credential } : {}),
+      })
+      toasts.success(credential
+        ? `${updated.name} saved and its credential rotated. Send a test to prove the new one works.`
+        : `${updated.name} saved`)
+      editing = null
+      await load()
+    } catch (e) {
+      editError = messageFor(channels, e)
+    } finally {
+      saving = false
+    }
+  }
+
+  // ─── Which rules deliver here ────────────────────────────────────────
+  let rulesFor = {}     // channelId → rules, once asked
+
+  async function showRules(c) {
+    if (rulesFor[c.id]) { const { [c.id]: _, ...rest } = rulesFor; rulesFor = rest; return }
+    error = null; busy = c.id
+    try {
+      const answer = await channels.service.invoke('rules', c.id)
+      rulesFor = { ...rulesFor, [c.id]: (answer?.data ?? []).map(link => link.rule).filter(Boolean) }
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
   async function remove(channel) {
     error = null; busy = channel.id
     try {
@@ -240,7 +304,14 @@ title: Channels
       <tr>
         <td>{c.name}</td>
         <td><Pill>{KIND_LABEL[c.kind] ?? c.kind}</Pill></td>
-        <td class="text-sm">{c.rule_count}</td>
+        <td class="text-sm">
+          {#if c.rule_count}
+            <Button variant="ghost" aria-expanded={!!rulesFor[c.id]} aria-label={`Rules delivering through ${c.name}`}
+                    onclick={() => showRules(c)}>{c.rule_count}</Button>
+          {:else}
+            0
+          {/if}
+        </td>
         <td>
           {#if c.isActive}
             <Badge tone="success">active</Badge>
@@ -256,6 +327,8 @@ title: Channels
             <Button variant="ghost" disabled={busy === c.id}
                     onclick={() => toggle(c)}>{c.isActive ? 'Pause' : 'Resume'}</Button>
             <Button variant="ghost" disabled={busy === c.id}
+                    aria-label={`Edit ${c.name}`} onclick={() => startEdit(c)}>Edit</Button>
+            <Button variant="ghost" disabled={busy === c.id}
                     aria-label={`Delete ${c.name}`}
                     data-confirm={`Alert rules that page through ${c.name} stop reaching it.`}
                     data-confirm-title="Delete this channel?" data-confirm-label="Delete"
@@ -263,6 +336,43 @@ title: Channels
           </div>
         </td>
       </tr>
+      {#if rulesFor[c.id]}
+        <tr>
+          <td colspan="6">
+            <ul class="cluster" id={`rules-${c.id}`}>
+              {#each rulesFor[c.id] as rule}
+                <li><a href="/alerts/" class="badge muted">{rule.name}</a></li>
+              {/each}
+            </ul>
+          </td>
+        </tr>
+      {/if}
     {/snippet}
   </Table>
 {/if}
+
+<Drawer open={!!editing} title={editing ? `Edit ${editing.name}` : ''} onclose={() => editing = null}>
+  {#if editing}
+    <form class="stack" id="channel-edit" novalidate onsubmit={e => { e.preventDefault(); saveEdit() }}>
+      {#if editError}
+        <Alert tone="danger" id="channel-edit-error">{editError}</Alert>
+      {/if}
+      <Input id="edit-name" name="name" label="Name" value={editing.name}
+             oninput={(e) => editing = { ...editing, name: e.target.value }} />
+      {#if editAsks.config}
+        <Input id="edit-config" name="configValue" label={editAsks.configLabel} hint={editAsks.configHint}
+               value={editAsks.config === 'to' ? ((editing.config.to ?? []).join(', ')) : (editing.config[editAsks.config] ?? '')}
+               oninput={(e) => editConfig(editAsks.config, e.target.value)} />
+      {/if}
+      {#if editAsks.secret}
+        <Input id="edit-secret" name="secret" type="password" label={`New ${editAsks.secret.toLowerCase()}`}
+               hint="Leave empty to keep the one stored — it is never shown"
+               value={editing.secret} oninput={(e) => editing = { ...editing, secret: e.target.value }} />
+      {/if}
+      <div class="cluster">
+        <Button type="submit" variant="primary" id="channel-edit-save" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+        <Button variant="ghost" onclick={() => editing = null}>Cancel</Button>
+      </div>
+    </form>
+  {/if}
+</Drawer>

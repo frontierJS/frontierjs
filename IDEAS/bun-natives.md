@@ -87,7 +87,7 @@ The API is chainable and terminal at `.bytes()` / `.blob()` / `.buffer()` /
    answers what the bytes *are*, so *this `.png` is an SVG* becomes decidable at the
    Data boundary instead of being mitigated at the response.
 
-**Filed 2026-09-19 as [FJS-1184](../ISSUES.md#fjs-1184)**, and probed sharper than
+**Filed 2026-09-19 as [FJS-1184](../ISSUES_ARCHIVE.md#fjs-1184)**, and probed sharper than
 written here: `@accept` grades `value.type` off the browser `File` — the uploader's
 own word — and that same string is then persisted as `ref.mime` and handed to the
 provider as `contentType`. So the declaration whose whole job is *what may be stored
@@ -206,7 +206,7 @@ is worth re-measuring against it rather than assumed.
 - **Boundary named, typed, tested?** It has to be: a variant method on the storage
   interface, typed there, and a test that a `.png` carrying SVG bytes is refused —
   that assertion is what makes the second item real rather than a claim. Note what
-  [FJS-1076](../ISSUES.md#fjs-1076) says about the surviving seam's existing coverage
+  [FJS-1076](../ISSUES_ARCHIVE.md#fjs-1076) says about the surviving seam's existing coverage
   before treating *typed there* as sufficient.
 - **Failure proportional?** An unreadable image must be a refusal at write time, not
   a broken `<img>` later.

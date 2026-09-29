@@ -108,8 +108,8 @@ title: Hub workspaces
   <p class="text-sm text-muted">Loading…</p>
 {:else if !rows.length}
   <EmptyState title="No workspaces">
-    Nothing matched. A workspace is created by whoever signs up, or from the Projects
-    screen inside one — the hub reads them, it does not mint them.
+    Nothing matched. A workspace is created by whoever signs up, or from
+    <a href="/admin/workspace/">Admin → Workspace</a> — the hub reads them, it does not mint them.
   </EmptyState>
 {:else}
   <Table id="hub-workspace-rows" columns={HUB_WORKSPACE_COLUMNS} rows={rows} striped hover={false}>

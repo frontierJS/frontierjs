@@ -1,11 +1,10 @@
 /**
  * test/node-modules-allowance.test.js
  *
- * The mesa plugin skips `.mesa` under node_modules — another package's
- * components are that package's problem — except Sierra's own RouterView and
- * ChainRenderer, which ship uncompiled and must be transformed.
+ * The mesa plugin compiles every `.mesa` under node_modules. It once skipped
+ * them all but its own, and each exception it carved was one package too few.
  *
- * That exception tested `/node_modules/sierra/` while the package is
+ * The first exception tested `/node_modules/sierra/` while the package is
  * `@frontierjs/sierra`, so it never matched, and every app installed from npm
  * handed RouterView.mesa to rolldown untransformed:
  *
@@ -16,6 +15,10 @@
  * `packages/sierra/`, which is not a node_modules path at all, so the skip never
  * fires and `verify:build` passes. Dev survives too, so the failure lands at the
  * first production build a real user runs (FJS-251).
+ *
+ * Widening it to the `@frontierjs/` scope left every other library out: the
+ * ksite engine, installed from its tarball, served a blank `vite dev` page on
+ * line 1 of its Page.mesa (FJS-1552).
  *
  * The ids below are therefore written the way an INSTALLED app sees them. A test
  * using workspace paths would pass against the bug — which is the whole reason
@@ -76,9 +79,12 @@ describe('node_modules allowance', () => {
     expect(await transformed('/app/node_modules/@frontierjs/email-kit/components/Button.mesa')).toBe(true)
   })
 
-  test('another package’s .mesa is left alone', async () => {
-    expect(await transformed('/app/node_modules/some-kit/dist/Widget.mesa')).toBe(false)
-    expect(await transformed('/app/node_modules/@someone/kit/Widget.mesa')).toBe(false)
+  // Nothing but the Mesa compiler can read a .mesa, so another package's
+  // component is compiled here or not at all (FJS-1552).
+  test('another package’s .mesa is compiled too', async () => {
+    expect(await transformed('/app/node_modules/some-kit/dist/Widget.mesa')).toBe(true)
+    expect(await transformed('/app/node_modules/@someone/kit/Widget.mesa')).toBe(true)
+    expect(await transformed('/app/node_modules/@kobami/ksite/src/layouts/Page.mesa')).toBe(true)
   })
 
   // `node_modules` CONTAINS the substring `_module`, and the layout test was
@@ -95,13 +101,12 @@ describe('node_modules allowance', () => {
     expect(await transformed(resolve(SIERRA_ROOT, 'src/routes/index.mesa'))).toBe(true)
   })
 
-  // The behavioral tests above pass for a plugin that transforms everything, so
-  // this is what pins the literal the bug lived in. The bare name must not
-  // come back, and neither may the single-package form that replaced it.
-  test('the plugin names the scope, once', async () => {
+  // The skip this file once tested is the whole of the bug, in each of its
+  // three spellings, so none of them may come back.
+  test('the plugin skips nothing under node_modules', async () => {
     const src = await readFile(resolve(SIERRA_ROOT, 'src/build/mesa-plugin.js'), 'utf8')
-    expect(src).toContain("FJS_SCOPE = '/node_modules/@frontierjs/'")
-    expect(src).not.toContain("'/node_modules/sierra/'")
+    expect(src).not.toMatch(/node_modules\/'\)[^\n]*\)\s*return null/)
+    expect(src).not.toContain('FJS_SCOPE')
     expect(src).not.toContain('SIERRA_PKG')
   })
 })

@@ -190,7 +190,7 @@ Two cautions, both inherited from above rather than new:
 - ~~**FJS-D504 — What about `@guarded` columns reaching the marker?**~~ **Answered 2026-09-28 (`FJS-D504`): D — refuse at the READ: the tap event states `system`, and a system read whose columns include one `db.$protectedFields()` names fails the build — no `select` counts as every column, and the walk follows `include`/`select` into each relation; `publishes: N` does not lift it.** An island marker carries its
   props **as rendered** (`CLAUDE.md` § Bridge index). If a prerendered island is
   handed a record containing a guarded column, that column is now in the HTML
-  comment. Probed 2026-09-27 and filed as [FJS-1411](../ISSUES.md#fjs-1411): a
+  comment. Probed 2026-09-27 and filed as [FJS-1411](../ISSUES_ARCHIVE.md#fjs-1411): a
   gated model can only be published by reading through `asSystem()`, which
   returns `@guarded` values, and nothing on the path looks at a column. Not live
   in `example/`, whose static routes read no model with a `@guarded` column.

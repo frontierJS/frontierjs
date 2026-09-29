@@ -230,7 +230,7 @@ Irregulars resolve unaided (`people` → `Person`). Genuine ambiguity — `lens`
 against `len` — cannot be reached by any rule and is stated by hand at the
 resource.
 
-### Choosing an access word
+### Choosing a column's access word
 
 Four words, and they are not a ladder. This table is the whole decision.
 
@@ -267,6 +267,70 @@ app's drive between them.
 say to this model, which is true of credential material and false of a table
 your own screens list — raising the gate there just moves the surface into the
 bypass.
+
+### The gate ladder
+
+`@@gate("R.C.U.D")` is the minimum level for read, create, update and delete. **A
+position not written takes the one before it**: `"4"` is `"4.4.4.4"`, `"2.4"` is
+`"2.4.4.4"`. A named form (`read: USER`) does not parse.
+
+| Level | Name | Who the default resolver grades there |
+|---|---|---|
+| 0 | `STRANGER` | no session |
+| 1 | `VISITOR` | signed in, `verifiedAt` is `null` |
+| 2 | `READER` | verified, `activatedAt` is `null` |
+| 3 | `CREATOR` | signed in with **no `role`** |
+| 4 | `USER` | signed in with any `role` |
+| 5 | `ADMINISTRATOR` | `isAdmin` |
+| 6 | `OWNER` | `isOwner` |
+| 7 | `SYSADMIN` | `isSystemAdmin` |
+| 8 | `SYSTEM` | `asSystem()` only — no session ever grades here |
+| 9 | `LOCKED` | nothing, `asSystem()` included |
+
+**A role-less session is 3, so `@@gate("4")` refuses every signed-in caller of an
+app that never sets `role`.** An ABSENT `verifiedAt` or `activatedAt` is no
+objection; only `null` grades down. The standing flags win over the lifecycle, and
+a `GatePlugin({ getLevel })` replaces the whole column. A row policy reads the
+same answer as `auth().level`.
+
+Pinned by `@frontierjs/toolbelt`'s `test/specs/gate.spec.js`.
+
+### State machines — `@@transitions`
+
+A closed column — an enum or a Boolean — that moves only along declared edges.
+`litestone explain @@transitions` is the syntax, and a refused move throws a
+class naming the move; what neither tells you is which to reach for:
+
+- **`@system` on a move is usually what "the engine does this" means**: the app
+  makes it on the CALLER's client (`transition(id, name, { system: true })`), so
+  the model gate, the policies and the audit actor still apply. `@gate(8)` is the
+  other spelling — only `asSystem()` passes, and all three drop.
+- **A row is created at the column's `@default`, by everyone**, `asSystem()`
+  included. A row that belongs further along is created at the entry and walked
+  there by its moves; `updateMany` refuses the column outright.
+- **`resource.transitions(row, level)` in the browser grades the gate half only.**
+  A move a policy refuses reads `allowed: true` there and 403s when pressed;
+  `db.order.transitions(row)` on the server says `refusedBy: 'policy'`.
+
+Pinned by `test/system-transitions.test.ts` and `test/transition-entry.test.ts`.
+
+### Claims — what `auth().x` may name
+
+**Every `auth().x` in a policy must be a claim the principal is known to carry**,
+or it is refused at startup naming the set. That set is the framework's nine
+(`id`, `capabilities`, `level` and the six standing fields above), the `@@auth`
+model's columns, the `tenancy` claim, and what the schema declares:
+
+```lite
+claim cartToken                          // resolved per request by the app
+claim employeeId from Employee(userId)   // read per request off the caller's row
+```
+
+A bare `claim` only NAMES it; the app's principal resolver supplies the value
+(junction's AGENTS.md, *Who the caller is*). **A claim the caller does not carry
+is UNKNOWN, not false** — an `@@allow` holds only on TRUE and an `@@deny` fires on
+UNKNOWN too, so a deny on a missing claim refuses. `auth().x == null` is how to
+write *carries no such claim*.
 
 ### Wrong guesses
 

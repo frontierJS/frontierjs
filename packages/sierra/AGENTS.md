@@ -175,6 +175,78 @@ around: `orders.conflict(err)` gives `{ model, field, expected, actual }`.
 
 ---
 
+## Offline — held writes and kept reads
+
+**The schema decides, per model, and nothing works offline until it does.** A
+model declaring `@@sync(server | append | refuse | field)` has its writes held
+and its reads kept on the device; a model declaring nothing fails offline the
+way it fails anywhere. The argument is what a replay does when the row moved
+meanwhile — `litestone explain @@sync`. There is no offline mode in a page.
+
+```js
+// web/config/sierra.config.js
+offline: true            // sw.js: the app OPENS with no network
+offline: { db: true }    // …plus the @@sync models in the device's own SQLite, so
+                         // an offline read is a real query, not a replay of one
+```
+
+**A write that cannot reach the server THROWS, with `queued` on the error.** It
+never resolves: resolving would claim the server has a row it may not have. Every
+write through the resource is held — `save()`, `service.create/patch/remove/restore`
+and a custom method through `service.invoke` — and only `find` and `get` are not.
+
+```js
+try {
+  saved = await counts.save(row)
+} catch (err) {
+  if (!err.queued) throw err       // the server answered and refused: a real error
+  saved   = err.data               // what was held; for a create, the only copy of the row
+  pending += 1 + err.attachments   // files on the write wait in a queue of their own
+}
+```
+
+**A row created offline and referenced by the next write needs a key the browser
+mints** — `id String @id @default(uuid())`. With a server-assigned key, `err.data`
+has no id for a child to name, and a create carrying a file is not held at all.
+
+**The queue drains itself**: once at boot and on every socket `connect`, oldest
+first, stopping at the first entry that still cannot arrive. An entry clears only
+when the server ACKNOWLEDGES it, and a replay carries the entry's key as its
+idempotency key, so a write that did arrive is answered, not applied twice.
+`pendingQueue()` from `@frontierjs/sierra/junction` is the screen's view of it:
+
+```js
+const q = pendingQueue()
+q.pending()  ·  q.rejected()      // entries, oldest first
+q.subscribe(list => …)            // after every change; answers the unsubscribe
+q.retry(key)  ·  q.discard(key)   // a person's answer to a rejected entry
+q.durable                         // false = memory only, a reload loses the queue
+```
+
+**A write the server refuses at replay moves to `rejected()`, never dropped.**
+Nothing but a console warning says so — a screen that promises *will sync* shows
+`rejected()`.
+
+**Reads: `load()` and `list()` answer from the device when the server is SILENT,
+never when it refuses.** `orders.cachedAt()` is non-null while the rows on screen
+came off the device — render it (*as of 14:02*) rather than presenting old rows as
+live. What the device holds is what screens loaded, plus each resource's declared
+`offlineQuery`, warmed at boot and on every reconnect:
+
+```js
+export const sheets = createResource('stocktakeSheets', {
+  model: 'StocktakeSheet', offlineQuery: { query: { closedAt: null } },
+})
+```
+
+**An `offlineQuery` exists only once its module has been imported**, and routes
+are code-split — the screen nobody opened declares nothing. Import every
+resource that must work offline from `main.js`, after `virtual:sierra`.
+
+Pinned by `test/pending-queue.test.js` and `test/offline-query.test.js`.
+
+---
+
 ## Static pages and islands
 
 A prerendered site is its own surface, `site/`, beside `web/` — never a second
@@ -290,6 +362,8 @@ Everything above is loud. These are not.
    and no column in `publishes:` it does not mean.
 8. `import 'virtual:sierra'` is the first line of `main.js`; every Vite config sets
    `strictPort: true`.
+9. A write to a `@@sync` model handles `err.queued` — it is a held write, not a
+   failure — and a resource with an `offlineQuery` is imported from `main.js`.
 
 ---
 

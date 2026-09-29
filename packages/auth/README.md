@@ -93,7 +93,7 @@ app.configure(createAuthPlugin(auth))
 app.configure({
   name: 'auth-cleanup',
   register() {},
-  async boot() { authCleanup.start() },
+  async work() { authCleanup.start() },
 })
 
 await app.start()
@@ -274,9 +274,12 @@ person signs in with their password and enrolls again.
 
 The floor is not configurable (`FJS-D264`): removing a factor is the one thing
 between a stolen password and the account, and a help desk is how the thief gets
-past it. Both people are graded by YOUR `services: { level }` resolver, so it must
-be passed — without it every call is a 403 naming the option — and it must not
-let a column somebody below 7 can write reach 7. The person must grade below the
+past it. Both people are graded by YOUR resolver — `services: { recoveryLevel }`,
+else `services: { level }` — so one must be passed; without it every call is a
+403 naming both, and an answer that is not a finite number refuses too. Pass
+`recoveryLevel` when your `level` is per tenant: `level` is also what
+`account.me` publishes, while recovery needs only the standing that travels with
+the user. Either way it must not let a column somebody below 7 can write reach 7. The person must grade below the
 operator, so a sysadmin cannot reset a peer, and nobody resets their own
 (`disableTotp` does that, with the password). Refused inside a support episode.
 

@@ -17,7 +17,7 @@ title: DNS & edge
   // vendor the mock happened to draw — the day an adapter lands it will be one
   // of several, and a screen called Cloudflare could only ever hold one.
   import { session } from '../../session.js'
-  import { domains } from '../../resources/Domain.mesa'
+  import Domain, { domains } from '../../resources/Domain.mesa'
   import { apps } from '../../resources/App.mesa'
   import { portal } from '../../resources/Portal.mesa'
 
@@ -25,6 +25,8 @@ title: DNS & edge
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Skeleton   from '@frontierjs/ui/components/feedback/Skeleton.mesa'
@@ -74,12 +76,30 @@ title: DNS & edge
   $: expiring = rows.filter(r => r.cert_status === 'expiring_soon').length
   $: expired  = rows.filter(r => r.cert_status === 'expired').length
 
+  // How a hostname is served. `appId` moves by delete-and-create and the
+  // certificate columns by `uploadCert`, so neither is offered; the primary flag
+  // is the app screen's Make primary, which demotes the sibling.
+  const SERVED = ['hostname', 'redirectTo', 'port', 'proxied', 'sslMode']
+  let editing = null
+
+  function saved() {
+    editing = null
+    toasts.success('Domain saved')
+    load()
+  }
+
+  // A certificate is uploaded on the app screen, which holds the one form for
+  // it; this links straight to that form for the hostname in question.
+  const certHref = (d) => `/apps/${d.appId}/?tab=domains&cert=${d.id}`
+  const NEEDS_CERT = new Set(['expiring_soon', 'expired', 'none'])
+
   const COLUMNS = [
     { name: 'hostname', label: 'Hostname' },
     { name: 'app',      label: 'App' },
     { name: 'cert',     label: 'Certificate' },
     { name: 'ssl',      label: 'SSL mode' },
     { name: 'edge',     label: 'Edge' },
+    { name: 'actions',  label: 'Actions', hideLabel: true },
   ]
 </script>
 
@@ -153,6 +173,16 @@ title: DNS & edge
             </td>
             <td><code>{d.sslMode}</code></td>
             <td>{d.proxied ? 'proxied' : 'direct'} · :{d.port}</td>
+            <td>
+              <span class="cluster">
+                {#if NEEDS_CERT.has(d.cert_status)}
+                  <Button variant="outlined" href={certHref(d)} aria-label={`Upload a certificate for ${d.hostname}`}>
+                    {d.cert_status === 'none' ? 'Add certificate' : 'Replace certificate'}
+                  </Button>
+                {/if}
+                <Button variant="ghost" aria-label={`Edit ${d.hostname}`} onclick={() => editing = d}>Edit</Button>
+              </span>
+            </td>
           </tr>
         {/snippet}
       </Table>
@@ -204,3 +234,9 @@ title: DNS & edge
     </div>
   </Card>
 {/if}
+
+<Drawer open={!!editing} title={editing ? `Edit ${editing.hostname}` : ''} onclose={() => editing = null}>
+  {#if editing}
+    <Domain record={editing} only={SERVED} oncancel={() => editing = null} ondone={saved} submitId="domain-edit-save" />
+  {/if}
+</Drawer>

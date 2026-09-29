@@ -44,6 +44,7 @@ title: Hub backups
   let error    = null
   let loading  = true
   let asking   = false
+  let busy     = null
 
   async function load() {
     error = null; loading = true
@@ -90,7 +91,7 @@ title: Hub backups
     error = null; asking = true
     try {
       await backups.service.create({})
-      toasts.success('Backup queued', 'The row fills in as the job runs.')
+      toasts.success('Backup queued. The row fills in as the job runs.')
       await load()
       // `inFlight` is derived from the rows `load()` just fetched, so the watch
       // starts from a row that really is pending rather than from an assumption
@@ -107,6 +108,24 @@ title: Hub backups
     }
   }
 
+  // `remove` forgets the ROW and leaves the file, because the file sits on the
+  // disk the live database is on and an unlink there can take the wrong one.
+  // The button says Forget rather than Delete for that reason.
+  async function forget(b) {
+    error = null; busy = b.id
+    try {
+      const gone = await backups.service.remove(b.id)
+      toasts.success(gone?.note ? `Backup forgotten. ${gone.note}` : 'Backup forgotten')
+      await load()
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  const SETTLED = new Set(['success', 'failed', 'timeout'])
+
   $: inFlight = rows.find(b => !['success', 'failed', 'timeout'].includes(b.status)) ?? null
 
   function tone(status) {
@@ -122,6 +141,7 @@ title: Hub backups
     { name: 'status', label: 'Status' },
     { name: 'size',   label: 'Size' },
     { name: 'where',  label: 'Where' },
+    { name: 'actions', label: 'Actions', hideLabel: true },
   ]
 </script>
 
@@ -187,9 +207,19 @@ title: Hub backups
              machine reported and there is nothing to report while it runs. -->
         <td class="text-sm">{b.sizeBytes ? size(b.sizeBytes) : '—'}</td>
         <td class="text-sm text-muted"><code>{b.location ?? '—'}</code></td>
+        <td>
+          {#if SETTLED.has(b.status)}
+            <Button variant="ghost" disabled={busy === b.id} aria-label={`Forget the backup taken ${ago(b.finishedAt ?? b.startedAt ?? b.createdAt)}`}
+                    data-confirm={b.location
+                      ? `The row goes from this list. The archive at ${b.location} stays on disk — delete that yourself.`
+                      : 'The row goes from this list.'}
+                    data-confirm-title="Forget this backup?" data-confirm-label="Forget" data-confirm-tone="warning"
+                    onclick={() => forget(b)}>Forget</Button>
+          {/if}
+        </td>
       </tr>
       {#if b.error}
-        <tr><td colspan="5"><pre class="code"><code>{b.error}</code></pre></td></tr>
+        <tr><td colspan="6"><pre class="code"><code>{b.error}</code></pre></td></tr>
       {/if}
     {/snippet}
   </Table>

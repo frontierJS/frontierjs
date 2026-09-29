@@ -14,7 +14,7 @@ it split the word: [`FJS-D352`](../DECISIONS.md#fjs-d352) makes an expiry
 `@@effective(from:, to:)`, ASKED — a read stating no `asOf` gets every row,
 because a closed price is still pointed at. `PlanVersion`, `PayWindow` and
 `PayRate` declare it; `Discount` is not a candidate, measured. **Adoption is closed**
-([`FJS-1275`](../ISSUES.md#fjs-1275)): auth's four models and orion's `KvEntry`
+([`FJS-1275`](../ISSUES_ARCHIVE.md#fjs-1275)): auth's four models and orion's `KvEntry`
 declare `@@expires`, and a deadline is minted from `db.$now()` — the client's
 clock, the one the window grades on. **Phase 3 has
 nothing to do on a validity window**: an asked window has no default, so no
@@ -84,7 +84,7 @@ sweep. That proves the job deletes rows. It does not touch the read.
 **One instance was a filed defect.** `Job.nextRunAt` was the fourth shape
 — a commitment a person can SEE — implemented by writing `now + 60s` once on
 create and never again, and rendering it as *Next run*
-([`FJS-1241`](../ISSUES.md#fjs-1241)); it is now read off caravan's clock and
+([`FJS-1241`](../ISSUES_ARCHIVE.md#fjs-1241)); it is now read off caravan's clock and
 is not a column.
 
 ---
@@ -251,7 +251,7 @@ The paper's job is the parts that cannot be retrofitted: **the directive**, the
 
 | # | Ships | Why first | Retires |
 | --- | --- | --- | --- |
-| 1 | `@@effective(to:)` + the full `asOf` directive | smallest, five live columns, and [`FJS-1241`](../ISSUES.md#fjs-1241) is the second caller `FJS-D143` said to wait for | hand-filtering in 5 reads; makes expiry testable |
+| 1 | `@@effective(to:)` + the full `asOf` directive | smallest, five live columns, and [`FJS-1241`](../ISSUES_ARCHIVE.md#fjs-1241) is the second caller `FJS-D143` said to wait for | hand-filtering in 5 reads; makes expiry testable |
 | 2 | `@@effective(from:, to:)` | the idiom is already hand-rolled three times | 3 copies, plus `Discount`'s JS version |
 | 3 | the zone on the window | by then it is a parameter, not a redesign | the hourly-sweep dodge |
 

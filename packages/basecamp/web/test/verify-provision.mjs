@@ -52,8 +52,10 @@ import { fileURLToPath } from 'node:url'
 const HERE      = dirname(fileURLToPath(import.meta.url))
 const PKG       = join(HERE, '..', '..')
 const CHROME    = process.env.FJS_CHROME ?? 'google-chrome'
-const API_PORT  = 8120
-const WEB_PORT  = 8020
+// The dev slot by default; `API_PORT`/`UI_PORT` move the drive (the test slot
+// is 7120/7020) so it can run beside a dev server holding 8120/8020.
+const API_PORT  = Number(process.env.API_PORT ?? 8120)
+const WEB_PORT  = Number(process.env.UI_PORT ?? 8020)
 const SINK_PORT = 7122          // test tier, basecamp, the DO stand-in
 const HZ_PORT   = 7124          // …and the Hetzner one, the next slot along
 const BASE      = `http://localhost:${WEB_PORT}`
@@ -160,6 +162,7 @@ const api = spawn('bun', ['api/index.ts'], {
     // guard's own claim and is asserted below rather than assumed.
     DIGITALOCEAN_URL: SINK,
     HETZNER_URL:      HZ_SINK,
+    PORT:             String(API_PORT),
   },
 })
 children.push(api)
@@ -185,7 +188,10 @@ api.stderr.on('data', d => {
   for (const line of t.split('\n'))
     if (/"level":"(error|warn)"|failed/.test(line)) apiErrors.push(line.slice(0, 400))
 })
-children.push(spawn('bun', ['run', 'web'], { cwd: PKG, stdio: 'ignore', detached: true }))
+children.push(spawn('bun', ['run', 'web'], {
+  cwd: PKG, stdio: 'ignore', detached: true,
+  env: { ...process.env, API_PORT: String(API_PORT), UI_PORT: String(WEB_PORT) },
+}))
 
 const waitFor = async (url, label) => {
   for (let i = 0; i < 120; i++) {
@@ -712,6 +718,11 @@ try {
   check('the page that has been open all along says `online`', online === 'online')
   check('and the progress strip is gone, because nothing is in flight now',
     await evaluate(`!document.getElementById('server-inflight')`))
+  // The heartbeat recorded a reading; the card that draws it is the dashboard's,
+  // and the push that carried `health` is what fills it on a page already open.
+  const health = await until(`document.getElementById('server-health')?.textContent ?? ''`,
+    t => /\d+\s*%/.test(t), 'the health card never drew a reading', 15_000).catch(e => e.message)
+  check('the health card draws the reading the machine just sent', /\d+\s*%/.test(health), String(health).slice(0, 160))
 
   // ─── The machine enrolls itself ────────────────────────────────────────
   // Over real HTTP at the real route, with no session, no signature and no
@@ -725,6 +736,36 @@ try {
   })
   check('a wrong token is refused by the route — which is REACHED, not 405',
     wrong.status === 401, `${wrong.status}`)
+
+  // ─── Reconcile ─────────────────────────────────────────────────────────
+  // The cloud against the list, both ways. First clean — the one machine tagged
+  // at the stand-in is the one just provisioned — and then with a droplet
+  // created behind the app's back, tagged as a server this list has never
+  // held, which is what a row deleted while its machine kept billing looks like.
+  console.log('\n  /servers/ — reconcile with the cloud')
+  await goto('/servers/')
+  await until(`!!document.getElementById('reconcile-open')`, v => v, 'no Find orphans once an account exists')
+  await click('#reconcile-open')
+  await until(`!!document.getElementById('reconcile-run')`, v => v, 'the reconcile drawer never opened')
+  await click('#reconcile-run')
+  const clean = await until(`document.getElementById('reconcile-summary')?.textContent
+                             ?? document.getElementById('reconcile-error')?.textContent ?? ''`,
+    t => t, 'reconciling never answered', 20_000)
+  check('a clean account reports the one machine it tagged', /^\s*1 tagged machine/.test(clean), clean.trim())
+  check('and no orphans', await evaluate(`!document.getElementById('reconcile-orphans')`))
+
+  const ghost = '00000000-0000-4000-8000-00000000beef'
+  const planted = await fetch(`${SINK}/v2/droplets`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${DO_TOKEN}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'leaked', region: 'nyc3', size: 's-2vcpu-4gb', image: 'ubuntu-24-04-x64',
+                           tags: ['basecamp', `basecamp:server:${ghost}`] }),
+  })
+  check('a droplet is made at the stand-in behind the app\'s back', planted.status < 300, `${planted.status}`)
+  await click('#reconcile-run')
+  const orphan = await until(`document.getElementById('reconcile-orphans')?.textContent ?? ''`,
+    t => t, 'the planted droplet never showed as an orphan', 20_000)
+  check('reconcile finds it, and names the server it claims to be', orphan.includes(ghost), orphan.trim().slice(0, 160))
 
   // ─── A second cloud, on the same screen ────────────────────────────────
   //
@@ -906,6 +947,30 @@ try {
   check('…carrying the token as an environment variable, not in the URL',
     /ENROLL_TOKEN=bcen_[0-9a-f]{64}/.test(command ?? '')
     && !/install\.sh\?/.test(command ?? ''), command?.trim()?.slice(0, 160))
+
+  check('with a button that copies it',
+    await evaluate(`[...document.querySelectorAll('#needs-enrollment button')].some(b => /Copy command/.test(b.textContent))`))
+
+  // ─── What a person may correct ─────────────────────────────────────────
+  // The drawer offers the operator's columns and nothing the machine or the
+  // provider reports; a save is read back through the API.
+  const importedId = (await evaluate(`location.pathname`)).split('/')[2]
+  await click('#server-edit')
+  await until(`!!document.querySelector('#server-edit-save')`, v => v, 'the edit drawer never opened')
+  check('the edit offers how it is reached', await evaluate(`!!document.querySelector('dialog[open] [name=sshUser]')`))
+  check('and not what the machine reports about itself',
+    await evaluate(`!document.querySelector('dialog[open] [name=outpostVersion], dialog[open] [name=health], dialog[open] [name=status]')`))
+  await evaluate(`(() => { const el = document.querySelector('dialog[open] [name=sshUser]')
+                           el.value = 'deploy'
+                           el.dispatchEvent(new Event('input', { bubbles: true }))
+                           el.dispatchEvent(new Event('change', { bubbles: true })) })()`)
+  await click('#server-edit-save')
+  await until(`document.body.textContent`, t => t.includes('deploy@10.0.1.9'), 'the saved SSH user never reached the screen')
+  const readBack = await evaluate(`fetch('/servers/${importedId}', { headers: {
+      accept: 'application/json',
+      authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+      'x-workspace-id': localStorage.getItem('basecamp_workspace') } }).then(r => r.json())`)
+  check('an SSH user edited in the drawer is the one stored', readBack?.sshUser === 'deploy', JSON.stringify(readBack?.sshUser))
 
   // The script the command fetches is public and carries nothing. Asserted from
   // the browser because that is the origin a person's machine would fetch it

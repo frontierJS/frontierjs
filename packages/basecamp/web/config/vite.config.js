@@ -9,7 +9,12 @@ import { API_PATHS, WS_PATH } from './api-paths.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, '..')
-const API  = 'http://localhost:8120'
+// The literals are the dev slot and the env is what a drive sets — the shape
+// `example` has. A drive pinned to 8020/8120 cannot run while somebody's dev
+// server holds them, and one that refuses to run is one nobody runs.
+const API_PORT = process.env.API_PORT ?? '8120'
+const UI_PORT  = Number(process.env.UI_PORT ?? 8020)
+const API  = `http://localhost:${API_PORT}`
 const UI   = resolve(HERE, '../../../ui')
 
 const sierra = createSierraViteConfig(sierraConfig)
@@ -84,7 +89,7 @@ export default defineConfig({
   root: ROOT,
 
   server: {
-    port: 8020,   // dev/fe, project 2 — see packages/cli/core/ports.js
+    port: UI_PORT,   // dev/fe, project 2 — see packages/cli/core/ports.js
 
     // Refuse to hop ports. Vite's default is to take the next free one and
     // print a line nobody reads — which, with a stale server still holding

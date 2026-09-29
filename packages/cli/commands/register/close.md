@@ -49,4 +49,4 @@ Detail cell held, so the closed row still says where the defect lived.
 
 `register:check` runs over the result, and a write it finds a new error in is
 put back and refused. Moving old closures into `ISSUES_ARCHIVE.md` is a
-separate trim and is not done here.
+separate trim, `fli register:archive`.

@@ -2867,12 +2867,14 @@ export type PrincipalClaims = Record<string, unknown>
  * Resolve extra claims for this call. Hook tier (`FJS-D06`) — it may shape
  * what follows and may not refuse; refusal belongs to the guards.
  *
- * Runs only for an AUTHENTICATED caller. Anonymous is deliberately not its
- * business, on the same ground `tenantClaimGuard` states: nobody is not a
- * caller missing a claim, and minting a principal out of claims alone would
- * turn *anonymous* into *someone* — an object that satisfies `auth() != null`
- * while carrying no identity. A tenant for an anonymous caller is what
- * `strategy database` resolves by host.
+ * Runs for a GUEST as well as a session, with `user` null — a cart token or an
+ * emailed link is the only standing a guest has, and this is the only thing
+ * that can turn it into a claim a row policy reads. A guest's claims scope the
+ * Data client and stop there: they never become `ctx.auth.user`, because
+ * minting a principal out of claims alone would turn *anonymous* into
+ * *someone* — an object that satisfies `auth() != null` while carrying no
+ * identity. A tenant for an anonymous caller is what `strategy database`
+ * resolves by host.
  *
  * **The claim is the proof.** Under declared row tenancy, emitting the tenancy
  * claim without establishing that the caller belongs scopes them INTO that

@@ -9,7 +9,7 @@
 // These boot a real Junction app and exercise the seams Caravan
 // actually depends on:
 //
-//   • Plugin lifecycle      — register/boot/ready/shutdown are called
+//   • Plugin lifecycle      — register/boot/work/shutdown are called
 //   • app.jobs              — the module augmentation resolves
 //   • app._metricsSources — private-field reach-in still lands
 //   • raw app.get/app.post  — admin routes route, and ctx is a
@@ -42,8 +42,8 @@ const opts = (o: Partial<CaravanOptions> = {}): CaravanOptions => ({
 })
 
 // Boots a test app with the plugin configured, through the real lifecycle.
-// _startForTest() is what runs boot() — anything asserting on start() must
-// go through it.
+// _startForTest() is what runs boot() and work() — anything asserting on
+// start() must go through it.
 async function bootApp(o: Partial<CaravanOptions> = {}) {
   const app = await createTestApp()
   app.configure(createCaravan(opts(o)))
@@ -80,13 +80,13 @@ describe('plugin lifecycle against a real app', () => {
     const plugin = createCaravan(opts())
     // Junction invokes these as optional — a rename on either side would
     // silently skip the phase rather than error.
-    for (const phase of ['register', 'boot', 'ready', 'shutdown'] as const) {
+    for (const phase of ['register', 'boot', 'work', 'shutdown'] as const) {
       expect(typeof plugin[phase]).toBe('function')
     }
     expect(plugin.name).toBe('caravan')
   })
 
-  it('boot() starts the worker, so a dispatched job actually runs', async () => {
+  it('work() starts the worker, so a dispatched job actually runs', async () => {
     const app = await bootApp()
     let ran: unknown = null
     jobsOf(app).handle('greet', (job: { data: unknown }) => { ran = job.data })
@@ -97,7 +97,7 @@ describe('plugin lifecycle against a real app', () => {
     expect(ran).toEqual({ to: 'alice' })
   })
 
-  it('a handler registered before start still processes after boot()', async () => {
+  it('a handler registered before start still processes once work() runs', async () => {
     const app = await createTestApp()
     const caravan = createCaravan(opts())
     app.configure(caravan)
@@ -116,6 +116,7 @@ describe('plugin lifecycle against a real app', () => {
     const plugin = createCaravan(opts())
     plugin.register(app as App)
     await plugin.boot!(app as App)
+    await plugin.work!(app as App)
 
     let processed = 0
     jobsOf(app).handle('count', () => { processed++ })
@@ -128,6 +129,37 @@ describe('plugin lifecycle against a real app', () => {
     // a further dispatch cannot even be persisted.
     await new Promise(r => setTimeout(r, 50))
     expect(processed).toBe(1)
+  })
+})
+
+// ─── A one-shot boot ─────────────────────────────────────────
+//
+// `junction call` and the snapshot tools boot with _startOnce(), which skips
+// work(). A job the call dispatches is a row for the serving process's worker;
+// a worker in the call's own process could claim it and be killed half a
+// second later with the call.
+
+describe('_startOnce() queues and runs nothing', () => {
+  it('a dispatch is accepted and stays pending; the same dispatch under _startForTest() runs', async () => {
+    const once = await createTestApp()
+    once.configure(createCaravan(opts({ jobsDir: FIXTURES })))
+    await once._startOnce()
+    const id = await jobsOf(once).dispatch('send-email', { to: 'a@b.c' })
+    await new Promise(r => setTimeout(r, 100))
+    const held = jobsOf(once).find(id)!
+    await once.stop()
+
+    const test = await createTestApp()
+    test.configure(createCaravan(opts({ jobsDir: FIXTURES })))
+    await test._startForTest()
+    const ran = await jobsOf(test).dispatch('send-email', { to: 'a@b.c' })
+    const done = await until(() => jobsOf(test).find(ran)!.status !== 'pending')
+    await test.stop()
+
+    // The job file was loaded at boot(): the dispatch routed to its queue.
+    expect(held.queue).toBe('email')
+    expect(held.status).toBe('pending')
+    expect(done).toBe(true)
   })
 })
 

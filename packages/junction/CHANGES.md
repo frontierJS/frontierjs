@@ -1,5 +1,18 @@
 # Changes — @frontierjs/junction
 
+## 2026-09-29 — AGENTS.md answers claims, bearers, idempotency and the outbox (`FJS-1550`)
+
+Two sections an app agent had been reading source for: *Who the caller is*
+(`principal:`, `membershipClaim`, `bearerClaim`, the digest's purpose, and a
+bearer staying STRANGER(0)) and *Effects that must happen once* (what an
+`Idempotency-Key` does not protect, and at-least-once delivery). *The context you
+are inside* says what to use outside a call, and `attachments:` is a Wrong-guesses
+row. Each section names the test that pins it. What an error already says by name
+— the outbox's prerequisites, an unbound attachment, a 422 — is left to the error
+(`doc-hygiene`'s cache cut). The `principal:` and `PrincipalResolver` comments
+and this package's CLAUDE.md said the resolver never runs for a guest;
+`test/principal-claims.test.ts` asserts it does, and all three now agree.
+
 ## 2026-09-28 — a protected column named `data` no longer empties every list
 
 `withholdProtected` drops a success body's protected columns by key name at every depth, and a list envelope carries its rows under `data`. A model with a protected column called `data` therefore answered every list with no `data` key at all while `total` still counted the rows. Basecamp's `Secret.data` is `@encrypted`, so `/secrets/` never listed a row over HTTP or the socket. An envelope's `data` is now walked as the answer and never dropped as a column. Pinned by `test/wire-safety.test.ts` § *a protected column NAMED data*, over both transports. Suite 2497/2498; the one failure, `audit-provenance.test.ts` § *a DROPPED write*, fails with this change reverted too.
@@ -518,7 +531,7 @@ and the unmarked control.
 declares the same type, so leaving it off there hands back a sniffable copy of the file the full
 response bound.
 
-**Why it matters here and not only in theory** ([FJS-1187](../../ISSUES.md#fjs-1187)): this root
+**Why it matters here and not only in theory** ([FJS-1187](../../ISSUES_ARCHIVE.md#fjs-1187)): this root
 serves an app's own bundle AND, wherever a `File` column's local provider points at it, bytes a
 stranger uploaded — and the handler cannot tell the two apart. Measured against a running `example`
 before this, a served upload answered `Content-Type` and `Cache-Control` and nothing else.
@@ -3127,7 +3140,7 @@ with the diff naming the type that went.
 
 1668 tests, 0 fail, typecheck clean. Ruled as
 [`FJS-D161`](../../DECISIONS.md#fjs-d161); closes
-[`FJS-533`](../../ISSUES.md#fjs-533).
+[`FJS-533`](../../ISSUES_ARCHIVE.md#fjs-533).
 
 **`record(id, { composed: true })`.** A node holds ONE shape and `_write`
 replaces it, so a screen whose `get()` answers the row PLUS what hangs off it —

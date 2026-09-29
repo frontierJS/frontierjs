@@ -274,7 +274,7 @@ Subscription      @@relator([customerId, planVersionId], many)
 | `many` | the reverse indexes only, no unique |
 
 **The reverse index is what forced the shape, and it was measured before it was
-designed.** [`FJS-413`](../ISSUES.md#fjs-413) found ten unindexed foreign key
+designed.** [`FJS-413`](../ISSUES_ARCHIVE.md#fjs-413) found ten unindexed foreign key
 columns in `basecamp`, four of them on cascading join tables, and the pattern
 was always the same: a composite leading with the other side.
 `ServerNetwork` now carries the fix by hand with the defect id in its comment —
@@ -466,7 +466,7 @@ because the argument is what the record cites.
 - `packages/litestone/src/core/cardinality.js` — the audit's gap 01, being
   built in the tree on 2026-09-22 and untracked. It owns a bound, which is why
   this paper carries none
-- [`FJS-413`](../ISSUES.md#fjs-413) — ten unindexed foreign keys, four on
+- [`FJS-413`](../ISSUES_ARCHIVE.md#fjs-413) — ten unindexed foreign keys, four on
   cascading join tables, and the four hand-written reverse indexes that are this
   proposal's measurement
 - `packages/litestone/docs/edge-fields.md` § *Growing up* — `@edge` is the

@@ -14,7 +14,7 @@ of the tiers was built 2026-09-24 (§Mesa's slice); the shared runner and the ph
 not built.
 
 `packages/litestone/bench/audit-bench.mjs` exists, covers eleven cases, and is run by
-hand. It has been run twice: at the audit that produced it (`docs/PERFORMANCE_AUDIT.md`,
+hand. It has been run twice: at the audit that produced it (`bench/PERFORMANCE_AUDIT.md`,
 2026-07-18) and at the re-verification recorded in that file's header (2026-08-06).
 No CI phase calls it, no pre-push hook calls it, and nothing compares one run to the
 last. **A benchmark nobody runs is a benchmark that reports the tree it was written
@@ -75,12 +75,12 @@ declares them:
 
 `@version` is measured, but only as a prose note in the audit header (+7% create /
 +35% update); there is no case, so it cannot regress visibly. And the whole READ side
-of access control was unmeasured — [FJS-621](../ISSUES.md#fjs-621), closed 2026-09-13 by
+of access control was unmeasured — [FJS-621](../ISSUES_ARCHIVE.md#fjs-621), closed 2026-09-13 by
 §What Order (1) found.
 
 **Outside litestone there is nothing at all.** Junction, sierra and css carry no bench;
 `packages/mesa/bench` is a runner nothing calls (§Mesa's slice). The one byte finding
-on record, [FJS-904](../ISSUES.md#fjs-904) — 65% of a static build's JavaScript
+on record, [FJS-904](../ISSUES_ARCHIVE.md#fjs-904) — 65% of a static build's JavaScript
 unreachable from any page — was found by reading a bundle, not by anything that would
 have failed.
 
@@ -259,7 +259,7 @@ gzip bytes per fixture and DOM mutations per operation are gated in `bench/basel
 milliseconds are reported as a ratio to a hand-written floor measured in the same browser,
 and heap is recorded. It is in neither `test` nor CI yet — (2) below is that step. The
 first read found the reconciler at the floor on all sixteen operations and two outliers,
-[FJS-1332](../ISSUES.md#fjs-1332) and [FJS-1333](../ISSUES.md#fjs-1333).
+[FJS-1332](../ISSUES_ARCHIVE.md#fjs-1332) and [FJS-1333](../ISSUES.md#fjs-1333).
 
 **Left for later, each on its trigger:**
 
@@ -360,7 +360,7 @@ anything where time is spent outside the process.
 one schema per declaration beside the same schema without it, `:memory:`, five interleaved
 rounds, min reported, each case's spread printed and a delta inside the two spreads marked.
 
-**The read half is unambiguous** ([FJS-621](../ISSUES.md#fjs-621), closed with these):
+**The read half is unambiguous** ([FJS-621](../ISSUES_ARCHIVE.md#fjs-621), closed with these):
 
 | declaration, 100 of 5,000 rows per read | Δ µs | Δ % |
 | --- | --- | --- |
@@ -389,7 +389,7 @@ few µs, a single-row write is ~30 µs, and the round-to-round spread here is 2�
   single-row `create()` went **10.95 → 19.91 µs (+82%)**, bisected by instruction count to
   `3f38d4b` — every create now takes the transaction lock and an uncached
   `BEGIN IMMEDIATE`/`COMMIT` pair, one-statement creates included
-  ([FJS-1106](../ISSUES.md#fjs-1106)), fixed the same day). Nothing ran a comparison for four weeks, which is the
+  ([FJS-1106](../ISSUES_ARCHIVE.md#fjs-1106)), fixed the same day). Nothing ran a comparison for four weeks, which is the
   file's title arriving as a measurement.
 
 **What the bisect taught about the instrument**, both folded into §Spike's rule:
@@ -406,7 +406,7 @@ few µs, a single-row write is ~30 µs, and the round-to-round spread here is 2�
   count — the lock's cost is allocation, and the collector the count runs under is not the
   one Bun ships. Counts found and bisected an 82% step correctly; a change of a few percent
   that is mostly allocation is decided on the clock.
-- **A count cannot see the optimizer give up** ([FJS-1108](../ISSUES.md#fjs-1108)). `writeData`
+- **A count cannot see the optimizer give up** ([FJS-1108](../ISSUES_ARCHIVE.md#fjs-1108)). `writeData`
   doubled to 11,171 bytecodes, and a one-column update ran 37% slower by the clock and 15%
   by the count. With DFG off the clock agreed with the count; with DFG on the gap was 40%.
   A 1,000-update count under valgrind grades code the optimizing tiers have not reached, so
@@ -425,8 +425,8 @@ few µs, a single-row write is ~30 µs, and the round-to-round spread here is 2�
   all of it: 19.49 → 11.92 µs against 11.26 at `4f46e5b`. The worktree bypass above read
   ~3 µs where the fix recovered ~7.6, and that gap is unexplained — the two were measured
   an hour apart, and the bypass still awaited inside an async body the fix does not enter.
-- **`update()` was +114% behind the same wrapper** — [FJS-1107](../ISSUES.md#fjs-1107), fixed —
-  and about half of it was something else: [FJS-1108](../ISSUES.md#fjs-1108), fixed down to
+- **`update()` was +114% behind the same wrapper** — [FJS-1107](../ISSUES_ARCHIVE.md#fjs-1107), fixed —
+  and about half of it was something else: [FJS-1108](../ISSUES_ARCHIVE.md#fjs-1108), fixed down to
   +14% on update and +8% on create by a quiet clock, a residual spread across features each
   below either instrument's resolution. A counted gate in Order (2) would have caught
   `FJS-1106` and `FJS-1107` the day they landed and mostly missed `FJS-1108`; Order (2)'s
@@ -488,7 +488,7 @@ Reproduce before citing.
 - `IDEAS/speed-and-footprint.md` — where the time goes, measured 2026-08-13. Its
   §Method is the ablation shape Order (1) follows, and its dead ends are why memory is
   a recorded number rather than a gated one
-- `packages/litestone/docs/PERFORMANCE_AUDIT.md` — the audit and its one
+- `packages/litestone/bench/PERFORMANCE_AUDIT.md` — the audit and its one
   re-verification; the source of every "before" number quoted here
 - `IDEAS/offline-first-and-release.md` § A byte budget — the byte half of the gated
   tier, argued before and never given a number

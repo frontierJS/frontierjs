@@ -125,7 +125,9 @@ export function metricsPlugin(opts: MetricsPluginOptions = {}) {
       app.registerMetricsSource?.('metricsStore', () => api.stats())
     },
 
-    async boot(app: App): Promise<void> {
+    // All of it is work(): a one-shot boot that scraped would write a
+    // reading for a process nobody was serving from.
+    async work(app: App): Promise<void> {
       // One reading before the first tick, so a short-lived process still
       // leaves a row rather than nothing.
       await scrape(app)

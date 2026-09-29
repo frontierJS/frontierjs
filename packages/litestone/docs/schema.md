@@ -729,7 +729,7 @@ With `@id` on the fields the key order is the *field declaration* order, which i
 a different fact about the model — so there was nowhere to say it, and
 `litestone introspect` read `PRIMARY KEY ("userId","orgId")` off a real table and
 wrote a schema that builds it the other way round, silently
-([FJS-561](../../../ISSUES.md#fjs-561)).
+([FJS-561](../../../ISSUES_ARCHIVE.md#fjs-561)).
 
 It is also the spelling Prisma, Rails and raw DDL all use, so `litestone import`
 carries the key across instead of inventing `id String @id @default(cuid())`
@@ -1188,7 +1188,7 @@ Any move that isn't declared throws `TransitionViolationError`; a declared one t
 
 **A named move is graded on its caller before its row.** A gate, a capability and `@system` are statements about the caller and the declared move — true whatever the row is doing — so `transition(id, 'refund')` from a caller below the level answers `TransitionGateError` rather than telling them the row is in the wrong state, which would be a refusal confirming state to somebody with no authority over the move. It applies to a named move alone: an ordinary update matching no `(from, to)` pair has identified no move, so there is no gate to consult (`FJS-611`).
 
-> **`@gate` needs a level resolver.** A schema with any gated transition auto-installs `GatePlugin({ getLevel: FrontierGateGetLevel })` if you configure none — a declared gate that silently did nothing would be a fail-open default. But the shipped resolver grades a bare session at `VISITOR(1)`: it wants both `verifiedAt` and `activatedAt` on the user object, and returns `CREATOR(3)` when it gets them. It never returns 4+. Pass your own `getLevel` to `GatePlugin` for anything real.
+> **`@gate` needs a level resolver.** A schema with any gated transition auto-installs `GatePlugin({ getLevel: FrontierGateGetLevel })` if you configure none — a declared gate that silently did nothing would be a fail-open default. The shipped resolver grades a signed-in caller with no `role` at `CREATOR(3)` and one with any `role` at `USER(4)`; `isAdmin`, `isOwner` and `isSystemAdmin` reach 5–7, and a `null` `verifiedAt` or `activatedAt` grades down to 1 or 2 (§ Levels in [access-control.md](access-control.md)). Pass your own `getLevel` to `GatePlugin` where standing is not those fields.
 
 `updateMany` **refuses** a transitions-typed column rather than writing it ungraded — `BulkTransitionError`, 400. A bulk write matches rows without reading them, so there is no from-state to grade, and the skip took the per-move `@gate` and the `@system` marking with it: a level-4 caller could make a `@gate(5)` move, a `@system` move and an undeclared move by asking `updateMany` instead of `update` (`FJS-671`). 400 rather than 403, because the verb is wrong rather than the caller — no level and no grant answers it. `upsertMany`'s `update:` half refuses with it; its insert half is a create, graded against the entry. **Every other column stays bulk-writable in the same call**, which is the power tool kept rather than removed. `asSystem()` is refused the column as well.
 

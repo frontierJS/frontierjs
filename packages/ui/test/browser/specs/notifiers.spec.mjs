@@ -144,6 +144,20 @@ export async function run(t) {
   `), 'settling twice restarts the lifetime rather than keeping the first timer')
   await t.evaluate(`window.toasts.clear(); return true;`)
 
+  // A detail line in the duration slot was a toast that never closed and never
+  // showed the line. It is refused, and nothing reaches the stack.
+  const detail = await t.evaluate(`
+    const refused = [];
+    try { window.toasts.success('Saved', 'and a second sentence'); } catch (e) { refused.push('add') }
+    const h = window.toasts.loading('Working…');
+    try { h.update('success', 'Done', 'a second sentence'); } catch (e) { refused.push('update') }
+    h.dismiss();
+    return { refused, left: window.toasts.items.filter(x => x.message === 'Saved').length };
+  `)
+  t.is(detail.refused.join(','), 'add,update', 'a non-number duration is refused by add and by a handle')
+  t.is(detail.left, 0, 'and the refused toast is not queued')
+  await t.evaluate(`window.toasts.clear(); return true;`)
+
   /* ── the alert banner ────────────────────────────────────────────────── */
 
   await t.evaluate(`window.alert_.success('Changes saved', 0); return true;`)

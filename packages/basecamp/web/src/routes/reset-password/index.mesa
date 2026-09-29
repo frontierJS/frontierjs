@@ -1,0 +1,102 @@
+---
+title: Reset password
+---
+<script>
+  // Two screens on one URL. Without `?token=` it asks for an address and sends
+  // the link; with one — the link from that mail — it takes the new password.
+  //
+  // Open to anybody, signed in or not: the guard in App.mesa lets it through,
+  // because the person who needs it cannot sign in, and the token is the
+  // credential the server grades.
+  //
+  // The request answers the same for an address that is an account and one
+  // that is not, so the confirmation says *if*. What it CAN say for certain is
+  // that this app has no mailer, which `session.canMail` carries from `/setup/probe` — a screen
+  // promising a message that no provider could send is the failure to avoid.
+  import { page, goto }  from '@frontierjs/sierra/router'
+  import { getClient }   from '@frontierjs/sierra/junction'
+  import { session, signOut } from '../../session.js'
+  import Form   from '@frontierjs/ui/components/forms/Form.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Alert  from '@frontierjs/ui/components/feedback/Alert.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  $: (page.query, session.canMail)
+
+  let email    = ''
+  let password = ''
+  let confirm  = ''
+  let sentTo   = null
+
+  $: token = typeof page.query?.token === 'string' ? page.query.token : null
+
+  async function request() {
+    await getClient().auth.requestPasswordReset(email.trim())
+    sentTo = email.trim()
+  }
+
+  async function reset() {
+    if (password !== confirm) throw Object.assign(new Error('The two passwords do not match'), { fields: { confirm: 'Does not match' } })
+    await getClient().auth.confirmPasswordReset(token, password)
+    // The reset revoked every session, this browser's included; left signed in
+    // here, the guard would bounce /login/ home on a token that no longer works.
+    if (session.user) await signOut()
+    toasts.success('Password changed. Sign in with the new one; every session was signed out.')
+    goto('/login/')
+  }
+
+  // A spent or expired link is a 400 from the server. Said as what to do next,
+  // since the only fix is another link.
+  function mapResetErrors(err) {
+    if (err.fields) return { fields: err.fields, message: err.message }
+    const status = err.code ?? err.status
+    return { fields: {}, message: status === 400 || status === 401
+      ? 'This link has expired or was already used. Ask for a new one below.'
+      : err.message }
+  }
+</script>
+
+<div class="section-header">
+  <h1>{token ? 'Choose a new password' : 'Reset your password'}</h1>
+  <span class="text-sm text-muted">Basecamp</span>
+</div>
+
+<div class="container narrow">
+  {#if token}
+    <Form class="card stack" id="reset-form" onsubmit={reset} mapErrors={mapResetErrors} errorTitle="Password not changed">
+      <Input id="reset-password" name="password" label="New password" type="password"
+             autocomplete="new-password" hint="At least 8 characters" required bind:value={password} />
+      <Input id="reset-confirm" name="confirm" label="Confirm new password" type="password"
+             autocomplete="new-password" required bind:value={confirm} />
+      <div class="cluster">
+        <Button type="submit" variant="primary" id="reset-submit">Change password</Button>
+        <Button variant="ghost" href="/reset-password/">Send a new link</Button>
+      </div>
+    </Form>
+  {:else if sentTo}
+    <article class="card stack" id="reset-sent">
+      <p>If <strong>{sentTo}</strong> is a Basecamp account, a link to choose a new password is on its way. It works once.</p>
+      <div class="cluster">
+        <Button variant="primary" href="/login/">Back to sign in</Button>
+        <Button variant="ghost" onclick={() => sentTo = null}>Use another address</Button>
+      </div>
+    </article>
+  {:else}
+    {#if !session.canMail}
+      <Alert tone="warning" id="reset-no-mail" title="This Basecamp cannot send mail">
+        No mail provider is configured, so no link can reach you. Ask whoever runs this
+        Basecamp to configure one.
+      </Alert>
+    {/if}
+    <Form class="card stack" id="reset-request" onsubmit={request} errorTitle="Could not send the link">
+      <p class="text-sm text-muted">We will mail a link to choose a new password.</p>
+      <Input id="reset-email" name="email" label="Email" type="email" autocomplete="username"
+             required bind:value={email} />
+      <div class="cluster">
+        <Button type="submit" variant="primary" id="reset-send">Send link</Button>
+        <Button variant="ghost" href="/login/">Back to sign in</Button>
+      </div>
+    </Form>
+  {/if}
+</div>

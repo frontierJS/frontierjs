@@ -35,6 +35,7 @@ export { Factory, defineFactory, Seeder, runSeeder,
          loadFixture, parseCsv }                from './seeder.js'
 export { ValueSetExtendError }                   from './core/valuesets.js'
 export { generateLiteSchema }                    from './tools/introspect.js'
+export { findPrincipal, authModelOf }            from './tools/principal.js'
 export { replicate }                             from './tools/replicate.js'
 export { ExternalRefPlugin }                       from './plugins/external-ref.js'
 export { FileStorage }                             from './plugins/file.js'

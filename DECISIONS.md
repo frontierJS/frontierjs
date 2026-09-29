@@ -1071,6 +1071,42 @@ read→create→update→delete, read defaults to STRANGER.
 
 ## Access control
 
+### <a id="fjs-d550"></a>2026-09-29 · `FJS-D550` — account recovery takes its own grader, `services.recoveryLevel`, falling back to `level`. Acting on somebody else is not the caller's own standing.
+
+**Amends [`FJS-D264`](#fjs-d264)**, which graded both people by `services.level`.
+That one option also sets the level `account.me` publishes, which sierra puts on
+`session.level` and gates every transition button on. An app whose level is per
+tenant has no single honest answer there. basecamp is one, and so it could not
+reach recovery at all: passing its resolver would have told every member of every
+workspace they were VISITOR(1) and hidden moves they may make.
+
+**What changes is the name, not the floor.** SYSADMIN(7) is still auth's, the
+peer rule is still auth's, and the mapping is still the app's. `recoveryLevel`
+answers only *where does this person stand with no tenant in play*, which is the
+standing that travels with the user. basecamp passes `basecampGateLevel`, the
+resolver every request is already graded by, so there is no second role→level
+mapping. `example` passes only `level` and falls back unchanged.
+
+**Both tests are positive and want a number** ([`FJS-1559`](ISSUES.md#fjs-1559)). The
+floor was `level(op) < SYSADMIN`, which is false for `undefined`, and the peer
+test `level(person) >= level(op)` failed open the same way. A resolver that
+answers anything but a finite number now refuses.
+
+**Not taken.** B was to pass `level` for real and accept what `account.me` then
+says; it trades a working reset for broken buttons everywhere else. C was a hub
+method calling `IAuth.resetTotp` behind the hub's own hook; it restates the peer
+rule outside auth, a second owner. D was to declare the reset in the schema as a
+`@@transitions` move on a `User.twoFactor` column. It is the right destination,
+because a gate is always a number, but it waits on a policy scoped to ONE move:
+an `update` policy is per operation, and the peer rule written as one would let a
+sysadmin update every column of a non-admin's `User`. It also needs auth's four
+TOTP flows rewritten so the column, not a `Credential` row's presence, is the
+truth.
+
+*Lives in:* [services.ts](packages/auth/services.ts) · [types.ts](packages/auth/types.ts) ·
+[test/account-recovery.test.ts](packages/auth/test/account-recovery.test.ts) ·
+basecamp [app.ts](packages/basecamp/api/src/app.ts) and `/hub/users/` · basecamp `verify:screens`
+
 ### <a id="fjs-d515"></a>2026-09-29 · `FJS-D515` — Who grades a claims-only guest STRANGER: Litestone's gate for any principal without an `id`, a guest marker `mergeClaims` sets, or each app's `getLevel` — Litestone owns it: `GatePlugin` grades a principal with neither `id` nor `userId` STRANGER before any `getLevel` runs, and `gradeStanding` makes the same test so Junction's `sessionGateLevel` and Caravan agree. After `toDataPrincipal`, every session already carries `id`, so no real session changes grade. The cost: a test or app calling `$setAuth({ role: 'admin' })` without an `id` now grades 0, which is three call sites in `litestone.test.ts` and any more that grep finds.
 
 Asked in [`IDEAS/owed-rulings.md`](IDEAS/owed-rulings.md) § Open questions. **A** was picked over **B** (`mergeClaims` marks the guest with a framework-owned symbol that `GatePlugin` reads before `getLevel`. Principals without an `id` that come from anywhere else keep their grade. This coins a marker, and the rule holds only for guests Junction built), **C** (Keep it in each app's `getLevel`, as FJS-1447 left it. Fix basecamp's and the example's by hand, and add a `fli check` rule that flags a `getLevel` testing only `!user`. There is no framework owner, and the default `gradeStanding` still answers 3).
@@ -1193,7 +1229,7 @@ The paper's recommendation, taken as written: `@@transitions` is the one integri
 
 **One table object per model serves every flavor of client, so its ctx's four scoping keys are getters over the call in progress, and one read with no call in progress throws.** Falling back to the unscoped root would let a stored ctx read later run as nobody and answer `[]` with a 200. A cache keyed on the ctx object keys on `ctx._flavor` instead. Lives in `packages/litestone/src/core/client.js` (`sharedCtx`, `FLAVOR_REFUSAL`). Refused alternative: falling back to the root ctx, which turns an escaped read into a wrong answer rather than an error.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a ctx kept past its call cannot answer a principal* — `test/shared-tables.test.ts` › "a read that outlived its call is refused" › "a ctx kept past its call refuses to answer the principal". ([`FJS-722`](ISSUES.md#fjs-722)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a ctx kept past its call cannot answer a principal* — `test/shared-tables.test.ts` › "a read that outlived its call is refused" › "a ctx kept past its call refuses to answer the principal". ([`FJS-722`](ISSUES_ARCHIVE.md#fjs-722)) Picked by the owner in session.
 
 ---
 
@@ -1209,7 +1245,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. *Er
 
 **A gate, a capability and `@system` are statements about the caller and the declared move**, true whatever the row is doing, so a caller who could never make the move is told that rather than that somebody beat them to it. The ordering applies only to a named move: an ordinary update matching no `(from, to)` pair has identified no move to grade. Lives in `packages/litestone/src/core/client.js` (`gradeMove` before `TransitionConflictError`). Refused alternative: state first, which let a `@gate(5)` or `@system` move succeed for any updater whenever the row already stood at its target.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a caller who cannot make the move is refused whatever the row's state* — `test/transition-race.test.ts` › "the skip took the caller grading with it" › "a @gate(5) move is refused at level 4 even where the row is already there" and "a @system move is refused for an ordinary caller where the row is already there". ([`FJS-611`](ISSUES.md#fjs-611)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a caller who cannot make the move is refused whatever the row's state* — `test/transition-race.test.ts` › "the skip took the caller grading with it" › "a @gate(5) move is refused at level 4 even where the row is already there" and "a @system move is refused for an ordinary caller where the row is already there". ([`FJS-611`](ISSUES_ARCHIVE.md#fjs-611)) Picked by the owner in session.
 
 ---
 
@@ -1221,11 +1257,11 @@ Asked while tracing whether `membershipClaim` can be derived from the schema ([`
 
 **So the refusal is the ruling's other half.** `resolve` under `strategy row` is a parse error naming `tenantFrom`, and `resolveTenancy` stops handing row a default `{ kind: 'claim' }` that no reader acted on. Under `strategy database` nothing changes: there the registry is the reader and the declaration is the only place a tool holding the schema — the CLI, Studio — can learn it.
 
-**Adjudication in tension** (§ IV): *coherence vs. convention*. One spelling for *where is my tenant* would be more coherent on paper; the measured convention is a function per app, and the declaration that tried to be the one spelling was the half nobody executed. **What this does NOT rule**: whether the rest of `membershipClaim` — the model, the subject, the standing — can be read off the schema, which waits on [`FJS-D361`](ISSUES.md#fjs-d361) and on a second app of that shape.
+**Adjudication in tension** (§ IV): *coherence vs. convention*. One spelling for *where is my tenant* would be more coherent on paper; the measured convention is a function per app, and the declaration that tried to be the one spelling was the half nobody executed. **What this does NOT rule**: whether the rest of `membershipClaim` — the model, the subject, the standing — can be read off the schema, which waits on [`FJS-D361`](ISSUES_ARCHIVE.md#fjs-d361) and on a second app of that shape.
 
 ### <a id="fjs-d359"></a>2026-09-23 · `FJS-D359` — Where does a claim's VALUE come from when it lives on another row — The schema says: `claim <name> from <Model>(<subject>)[.<column>]`, read per request inside junction's principal seam. Gap 06 of the `.lite` surface survey closes here without a `Role` word.
 
-Gap 06 asked for *role against kind* — one human, two capacities. [`FJS-D350`](#fjs-d350) set the test a kind-word must pass: it lands only if it generates or refuses something, and a `@@role` that labelled would not. **What was missing was never the label, it was the VALUE.** A role row is a relator whose one relatum is the signed-in user (`WorkspaceMember` already declares `@@relator([workspaceId, userId], once)`), and the fact a policy needs about the caller is on it. The schema could name the claim (`claim employeeId`) and could not say where it was, so three apps gave three answers: `example` copies `userId` onto every row a customer owns, basecamp resolves `WorkspaceMember` in JS through `membershipClaim`, and the connectteam stressor declared `claim employeeId` and `claim siteId`, spent them in eight policies, and resolved them nowhere — an async `sessionFields` spread to nothing and took `isAdmin` with it ([`FJS-1251`](ISSUES.md#fjs-1251)).
+Gap 06 asked for *role against kind* — one human, two capacities. [`FJS-D350`](#fjs-d350) set the test a kind-word must pass: it lands only if it generates or refuses something, and a `@@role` that labelled would not. **What was missing was never the label, it was the VALUE.** A role row is a relator whose one relatum is the signed-in user (`WorkspaceMember` already declares `@@relator([workspaceId, userId], once)`), and the fact a policy needs about the caller is on it. The schema could name the claim (`claim employeeId`) and could not say where it was, so three apps gave three answers: `example` copies `userId` onto every row a customer owns, basecamp resolves `WorkspaceMember` in JS through `membershipClaim`, and the connectteam stressor declared `claim employeeId` and `claim siteId`, spent them in eight policies, and resolved them nowhere — an async `sessionFields` spread to nothing and took `isAdmin` with it ([`FJS-1251`](ISSUES_ARCHIVE.md#fjs-1251)).
 
 **A claim is needed exactly where the fact is about the CALLER rather than the row.** *My own rows* already works with no claim, through a one-hop policy (`employee.userId == auth().id`). *Rows at my site* does not: nothing on the row reaches the caller's site, so it has to be read from the caller's side and brought into the request.
 
@@ -1235,7 +1271,7 @@ Gap 06 asked for *role against kind* — one human, two capacities. [`FJS-D350`]
 
 **One owner each, both existing.** Litestone's parser owns the declaration and `db.$claimsFor(principal)` owns the read — as the system, because the row decides access, and with the model's own exclusions intact, so a soft-deleted or expired role row resolves to nothing without a rule restating it. Junction's principal seam ([`FJS-D113`](#fjs-d113)) is the only route onto the principal and the read happens inside it, before the app's `principal:` resolver, which is handed a principal already carrying it. **A resolver answering a claim the schema reads off a row is refused by name**: one claim, one origin. The other half of the pair is in auth — `sessionFields` returning a promise is refused, naming this spelling.
 
-**Adjudication in tension** (§ IV): *paved road vs. the workaround*. The same hand-written resolver in the same place, three times, is a measurement of the road, and the road changes. **What this does NOT rule**: the tenant-keyed shape (one row per tenant per person) stays with `membershipClaim`, and whether it can be derived from a `@@relator(once)` over the tenant and the subject is the next question rather than this one. `FJS-D181`'s heading, *a claim is a client option rather than a `.lite` keyword*, was overtaken by `FJS-772`'s top-level `claim` before this; the keyword is where the name lives, and now where the source does. Prior record: [`FJS-1288`](ISSUES.md#fjs-1288) is the build.
+**Adjudication in tension** (§ IV): *paved road vs. the workaround*. The same hand-written resolver in the same place, three times, is a measurement of the road, and the road changes. **What this does NOT rule**: the tenant-keyed shape (one row per tenant per person) stays with `membershipClaim`, and whether it can be derived from a `@@relator(once)` over the tenant and the subject is the next question rather than this one. `FJS-D181`'s heading, *a claim is a client option rather than a `.lite` keyword*, was overtaken by `FJS-772`'s top-level `claim` before this; the keyword is where the name lives, and now where the source does. Prior record: [`FJS-1288`](ISSUES_ARCHIVE.md#fjs-1288) is the build.
 
 ### <a id="fjs-d349"></a>2026-09-22 · `FJS-D349` — Can a write be anonymous, when every write has an actor — Yes, and it has to be a DECLARATION on the model, because the absence that protects it is not on the model it protects.
 
@@ -1251,7 +1287,7 @@ Asked in [`IDEAS/field-workforce.md`](IDEAS/field-workforce.md) § Open question
 
 **C is refused on the same argument.** The thing being protected is not a column's value but the correlation between two rows, so a field-grain word is in the wrong place to say anything about it. `@hashed` and `@encrypted` already own *this value is protected*; nothing owns *this row has no author and must stay uncorrelatable*.
 
-**The honest costs, stated so the word does not hide them.** (1) **It cannot close route four itself.** Nothing shuffles a table and nothing should — a database that hid its own insertion order would be a different product. The declaration closes the route by refusing the other end of the join, which is a weaker and more honest promise than *anonymous* sounds, and the word's documentation must say so in `@@allow`'s tier language rather than `@@check`'s. Raw SQL against the file reads the rowids regardless, and `discovery/open-questions.md` § 2 already guessed the employer's own DBA is somebody who may not know — a guess this record makes right for a reason the guess did not have. (2) **It cannot be tightened later.** An anonymity added to a model that has been attributable is an anonymity for rows written from now on, so this is a declaration whose value is entirely in being written first — which is an argument for `fli advise` asking, not for the word being optional. (3) **It is adjacent to a gate that cannot be written.** The rule this model wanted is `@@gate("6.4.9.9")` — any employee writes one, only HR reads them — refused at boot because levels must be non-decreasing ([`FJS-1244`](ISSUES.md#fjs-1244)), so *only HR may read these* had to be demoted into a row policy, which turns a refusal into a silent empty list. Whether `@@anonymous` should imply anything about the read side is left open deliberately; it should not be decided inside a row about the ladder. Prior record: [`FJS-1247`](ISSUES.md#fjs-1247) states the gap and carries the measurements.
+**The honest costs, stated so the word does not hide them.** (1) **It cannot close route four itself.** Nothing shuffles a table and nothing should — a database that hid its own insertion order would be a different product. The declaration closes the route by refusing the other end of the join, which is a weaker and more honest promise than *anonymous* sounds, and the word's documentation must say so in `@@allow`'s tier language rather than `@@check`'s. Raw SQL against the file reads the rowids regardless, and `discovery/open-questions.md` § 2 already guessed the employer's own DBA is somebody who may not know — a guess this record makes right for a reason the guess did not have. (2) **It cannot be tightened later.** An anonymity added to a model that has been attributable is an anonymity for rows written from now on, so this is a declaration whose value is entirely in being written first — which is an argument for `fli advise` asking, not for the word being optional. (3) **It is adjacent to a gate that cannot be written.** The rule this model wanted is `@@gate("6.4.9.9")` — any employee writes one, only HR reads them — refused at boot because levels must be non-decreasing ([`FJS-1244`](ISSUES.md#fjs-1244)), so *only HR may read these* had to be demoted into a row policy, which turns a refusal into a silent empty list. Whether `@@anonymous` should imply anything about the read side is left open deliberately; it should not be decided inside a row about the ladder. Prior record: [`FJS-1247`](ISSUES_ARCHIVE.md#fjs-1247) states the gap and carries the measurements.
 
 ### <a id="fjs-d344"></a>2026-09-20 · `FJS-D344` — A portal client who later signs up — The app's own act: its `register` path attaches the subject to the new `User` and revokes the grant, and the framework ships nothing.
 
@@ -1487,7 +1523,7 @@ can hold to raise it to.
 
 *Lives in:* [services.ts](packages/auth/services.ts) · [auth.ts `resetTotp`](packages/auth/auth.ts) ·
 [test/account-recovery.test.ts](packages/auth/test/account-recovery.test.ts) · `example`: `verify:users` ·
-`FJS-D198` · `FJS-D06`
+`FJS-D198` · `FJS-D06` · *amended by* [`FJS-D550`](#fjs-d550) (`recoveryLevel`)
 
 ### <a id="fjs-d221"></a>2026-09-05 · `FJS-D221` — a row policy may name a column ONE relation away, written as a path. Two hops is a parse error.
 
@@ -1497,7 +1533,7 @@ relation only to aggregate — so *the lines of my own orders* has nowhere to li
 but a copy. `example` carries the same id on `Customer`, `Order` and
 `OrderLine`, written in one transaction by `carts.checkout`, and that transaction
 is the whole of what keeps three columns saying the same thing
-([`FJS-499`](ISSUES.md#fjs-499)).
+([`FJS-499`](ISSUES_ARCHIVE.md#fjs-499)).
 
 **This is Axiom 1 with the sign flipped.** The denormalized column is a second
 origin for one fact. Nothing declares the two are the same fact, nothing fails
@@ -1551,7 +1587,7 @@ already compiles a target's policy as a correlated subquery) ·
 `packages/litestone/src/core/schema-maps.js` (`subquerySql`, which already
 correlates on every column of a composite key) ·
 `packages/sierra/src/junction/resource.js` (`buildGate` / `canAtLevel`) ·
-Invariant 6 · [`FJS-499`](ISSUES.md#fjs-499) is the implementation
+Invariant 6 · [`FJS-499`](ISSUES_ARCHIVE.md#fjs-499) is the implementation
 
 
 ### <a id="fjs-d205"></a>2026-09-04 · `FJS-D205` — a field's read protection is TWO axes AND'd. `@guarded` says who may see it, `@omit` says whether it is in the default payload, and neither swallows the other.
@@ -1664,8 +1700,8 @@ that gets quietly reversed, and this one took an audit to find.
 
 *Lives in:* Invariant 6 · `packages/sierra/src/build/schema-plugin.js`
 (`stripProse`, `emittedSize`) · `packages/sierra/test/schema-prose.test.js` ·
-[`FJS-785`](ISSUES.md#fjs-785) · [`FJS-553`](ISSUES.md#fjs-553) ·
-[`FJS-554`](ISSUES.md#fjs-554) · [`FJS-264`](ISSUES_ARCHIVE.md)
+[`FJS-785`](ISSUES_ARCHIVE.md#fjs-785) · [`FJS-553`](ISSUES_ARCHIVE.md#fjs-553) ·
+[`FJS-554`](ISSUES_ARCHIVE.md#fjs-554) · [`FJS-264`](ISSUES_ARCHIVE.md)
 
 ### <a id="fjs-d197"></a>2026-09-04 · `FJS-D197` — the ladder is one kit. The scale, the comparison AND the grader, because the grader is the half that drifted.
 
@@ -1729,7 +1765,7 @@ against, and an oracle that calls the thing it grades cannot fail.
 *Lives in:* `packages/toolbelt/src/gate/gate.js` (`LEVELS`, `LEVEL_NAMES`,
 `levelPasses`, `gradeStanding`) · `packages/litestone/src/plugins/gate.js` and
 `src/core/parser.js` · `packages/junction/src/core/litestone.ts` ·
-`packages/sierra/src/junction/field-rules.js`. Closes [`FJS-520`](ISSUES.md#fjs-520).
+`packages/sierra/src/junction/field-rules.js`. Closes [`FJS-520`](ISSUES_ARCHIVE.md#fjs-520).
 
 ### <a id="fjs-d183"></a>2026-09-03 · `FJS-D183` — the envelope names the KEY. A rotation is resumable because every value says which key wrote it, and the old key stays readable rather than being dropped.
 
@@ -3027,7 +3063,7 @@ The paper's recommendation, taken as written: it keeps one word for "rows live o
 
 **Attribute legality is asked of what a column physically holds (`plain`, `ciphertext`, `expression`, `none`), and each rule reads that answer** rather than one rule per attribute pair: a constraint over no column, a fractional default on `@scale`/`@money`, a relation across two databases. Legal-but-wrong goes to `advise`, whose every case must parse, so a rule in both is an `advise` rule nothing reaches. Lives in `packages/litestone/src/core/parser.js` (`fieldStorage`) and `src/core/advise.js`. Refused alternative: a rule per pair, which somebody has to remember to write across a hundred-word surface.
 
-Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness* decides the line: a refusal where the table cannot exist, advice where it can.  **§ V's ninth question**: *the parser refuses what cannot be built and accepts everything `advise` flags* — `test/attribute-facets.test.ts` (every refusal paired with an acceptance) and `test/advise.test.ts`'s `findings()` helper, which asserts `parse(...).valid` before any rule runs. ([`FJS-721`](ISSUES.md#fjs-721)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness* decides the line: a refusal where the table cannot exist, advice where it can.  **§ V's ninth question**: *the parser refuses what cannot be built and accepts everything `advise` flags* — `test/attribute-facets.test.ts` (every refusal paired with an acceptance) and `test/advise.test.ts`'s `findings()` helper, which asserts `parse(...).valid` before any rule runs. ([`FJS-721`](ISSUES_ARCHIVE.md#fjs-721)) Picked by the owner in session.
 
 ---
 
@@ -3035,7 +3071,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. *Er
 
 **A typo is loud in both places**: an unknown accessor throws `"x" is not a table in this schema`, and an unknown option throws listing every legal one, with `autoMigrate` answered by the function it should have been. The refusal comes off the destructure's rest capture, so what counts as unknown cannot drift from what is read. Lives in `packages/litestone/src/core/client.js` (`assertClientOptions`, the proxy `get` traps). Refused alternative: `undefined` and a silently dropped option, which let a capability quietly fail to apply. The cost is that feature detection is spelled `'$x' in db` or a `try`. `FJS-D199` is Junction's half.
 
-Ratified as built: graded on § V after the fact, not before the first edit. *Familiarity vs. precision*: `autoMigrate: true` is muscle memory, failed loudly with the equivalent named.  **§ V's ninth question**: *an unknown option or accessor never answers `undefined`* — `test/client-options.test.ts` › "an unknown option is refused by name, and the message lists what is legal"; `test/litestone.test.ts` › "readOnly still reads, and still throws on a typo". ([`FJS-579`](ISSUES.md#fjs-579)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. *Familiarity vs. precision*: `autoMigrate: true` is muscle memory, failed loudly with the equivalent named.  **§ V's ninth question**: *an unknown option or accessor never answers `undefined`* — `test/client-options.test.ts` › "an unknown option is refused by name, and the message lists what is legal"; `test/litestone.test.ts` › "readOnly still reads, and still throws on a typo". ([`FJS-579`](ISSUES_ARCHIVE.md#fjs-579)) Picked by the owner in session.
 
 ---
 
@@ -3043,7 +3079,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. *Fa
 
 **The default anchor is the working directory, and `resolveFrom: 'schema'` or a stated directory moves it** to the app root. A string schema carries no location, and a caller isolating by working directory — a test run with a scratch `cwd:` — would have every undeclared path moved back into the shared tree by an unconditional anchor. Every litestone CLI call site and both repo apps state `'schema'`. Lives in `packages/litestone/src/core/db-path.js` (`resolveAnchor`). Refused alternative: anchoring every schema file, which breaks isolation-by-CWD for any caller that redirects one database and inherits the other.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *with nothing stated, a relative path lands under the CWD* — `test/litestone.test.ts` › "database path anchoring" › "an inline schema with nothing stated still anchors to the CWD"; a schema FILE with no `resolveFrom` is pinned by `none`. ([`FJS-449`](ISSUES.md#fjs-449)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *with nothing stated, a relative path lands under the CWD* — `test/litestone.test.ts` › "database path anchoring" › "an inline schema with nothing stated still anchors to the CWD"; a schema FILE with no `resolveFrom` is pinned by `none`. ([`FJS-449`](ISSUES_ARCHIVE.md#fjs-449)) Picked by the owner in session.
 
 ---
 
@@ -3051,7 +3087,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. No 
 
 **The way out differs, so the class does**: a deleted holder is restore-or-release (`withDeleted: true` on an update or delete), a live one is *send another value*. `UniqueConflictError` names the field, redacts a protected value and carries `errors` so a form marks the control; every create and update path translates, so SQLite's sentence and the physical table name reach nobody. Lives in `packages/litestone/src/core/errors.js`. Refused alternative: one class with a flag, which a caller must read to find the remedy. `FJS-D65` rules that the deleted row keeps the slot.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a live and a deleted holder answer different classes on every write path* — `test/litestone.test.ts` › "a soft-deleted row keeps its @unique slot, and every write says so" › "all four write paths give the SAME answer" and "a LIVE holder is the other conflict, and it says so in its own words (FJS-441)". ([`FJS-441`](ISSUES.md#fjs-441)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a live and a deleted holder answer different classes on every write path* — `test/litestone.test.ts` › "a soft-deleted row keeps its @unique slot, and every write says so" › "all four write paths give the SAME answer" and "a LIVE holder is the other conflict, and it says so in its own words (FJS-441)". ([`FJS-441`](ISSUES_ARCHIVE.md#fjs-441)) Picked by the owner in session.
 
 ---
 
@@ -3059,7 +3095,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. No 
 
 **`onlyDeleted`, `onlyTemplates` and `onlyExpired` refuse on a model without the capability, on every read, write and include**, as do `restore()`, `search()`, `optimizeFts()` and `transition()`, naming the model and the attribute that would make the request legal. `withDeleted`, `withTemplates`, `withExpired` and `asOf` do not refuse: a model hiding nothing already answers everything, which is what generic tooling (Studio's row browser, a *show deleted* toggle) asks. Lives in `packages/litestone/src/core/client.js` (`sdMode`, `htMode`, `effMode`). Refused alternative: dropping the narrow, which answered the live rows, the opposite of the question.
 
-Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness*: an unsatisfiable narrow returns wrong data, a widen over nothing returns right data.  **§ V's ninth question**: *a narrow is refused and a widen is answered* — `test/litestone.test.ts` › "a directive the schema cannot satisfy is refused, not dropped" › "every read path refuses, not just findMany" and "`withX` is allowed, because widening a model that hides nothing is satisfiable". ([`FJS-293`](ISSUES.md#fjs-293), [`FJS-292`](ISSUES.md#fjs-292)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness*: an unsatisfiable narrow returns wrong data, a widen over nothing returns right data.  **§ V's ninth question**: *a narrow is refused and a widen is answered* — `test/litestone.test.ts` › "a directive the schema cannot satisfy is refused, not dropped" › "every read path refuses, not just findMany" and "`withX` is allowed, because widening a model that hides nothing is satisfiable". ([`FJS-293`](ISSUES_ARCHIVE.md#fjs-293), [`FJS-292`](ISSUES_ARCHIVE.md#fjs-292)) Picked by the owner in session.
 
 ---
 
@@ -3067,7 +3103,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. *Er
 
 **The columns compared come from the server's own `orderBy`, and only the values are read out of the token**, each bound as a parameter against a column the caller can already filter on, so a forged cursor says nothing `?col[gt]=…` does not. `decodeCursor(token, fields)` refuses a token whose keys differ from what `cursorFields` computes for this query, tiebreaker included, with a `ValidationError` (400) on `$after`. Lives in `packages/litestone/src/core/query.js` (`decodeCursor`). Refused alternative: an HMAC signature, which buys a key to rotate and nothing a grader does not.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a cursor from another ordering is a 400, never an empty 200* — `test/cursor-grading.test.ts` › "a cursor is graded against the ordering using it" › "one minted under a DIFFERENT sort is refused, naming both" and "the tiebreaker is part of the key set, so a hand-built cursor is refused". ([`FJS-779`](ISSUES.md#fjs-779)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a cursor from another ordering is a 400, never an empty 200* — `test/cursor-grading.test.ts` › "a cursor is graded against the ordering using it" › "one minted under a DIFFERENT sort is refused, naming both" and "the tiebreaker is part of the key set, so a hand-built cursor is refused". ([`FJS-779`](ISSUES_ARCHIVE.md#fjs-779)) Picked by the owner in session.
 
 ---
 
@@ -3075,7 +3111,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. No 
 
 **A field carries `nullable`, and only a nullable one gets the `IS NULL` branch**, positioned by its stated or SQLite-default `nulls`. That branch costs an `OR`, which stops SQLite using the index a keyset scan exists for, so a `NOT NULL` column compiles the plain comparison. Lives in `packages/litestone/src/core/query.js` (`buildCursorWhere`). Refused alternative: the NULL-aware form on every field, which slows every ordinary list for a problem its columns cannot have.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a NOT NULL sort compiles no null branch, and a nullable one serves every row once* — `test/cursor-nulls.test.ts` › "a NOT NULL column compiles the plain comparison — no OR, no index loss" and "a window over a nullable sort column serves every row, once". ([`FJS-780`](ISSUES.md#fjs-780)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a NOT NULL sort compiles no null branch, and a nullable one serves every row once* — `test/cursor-nulls.test.ts` › "a NOT NULL column compiles the plain comparison — no OR, no index loss" and "a window over a nullable sort column serves every row, once". ([`FJS-780`](ISSUES_ARCHIVE.md#fjs-780)) Picked by the owner in session.
 
 ---
 
@@ -3097,7 +3133,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. *Er
 
 **An extend adds fields and model attributes to a model declared elsewhere; it is refused by name when it names no model, redeclares a field, or gives a second answer to a single-valued attribute (`@@gate` twice).** Repeatable attributes (`@@allow`, `@@deny`, `@@index`, `@@unique`, `@@check`, `@@trait`) compose. Extends are collected across imports and applied after the merge and before traits, so a file may extend a model it is imported by. Where it lives: `packages/litestone/src/core/parser.js` (`resolveExtends`). Refused alternative: copying or overriding the package's model, since a copy diverges silently.
 
-Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness*: an override would be a second answer to who reads the table, so it is refused rather than resolved.  **§ V's ninth question**: *an extend never redefines what its owner declared* — `packages/litestone/test/extend-model.test.ts` › "extend model refuses" (all four) and "extend model across an import". No issue originated it; [`FJS-1174`](ISSUES.md#fjs-1174) corrected its repeatable list. Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness*: an override would be a second answer to who reads the table, so it is refused rather than resolved.  **§ V's ninth question**: *an extend never redefines what its owner declared* — `packages/litestone/test/extend-model.test.ts` › "extend model refuses" (all four) and "extend model across an import". No issue originated it; [`FJS-1174`](ISSUES_ARCHIVE.md#fjs-1174) corrected its repeatable list. Picked by the owner in session.
 
 ### <a id="fjs-d370"></a>2026-09-23 · `FJS-D370` — Is a reminder a transition — A transition on a Boolean column: `remind: false -> true` on `reminded`, a second `@@transitions` beside the status one (one machine per field), with `@@commitment(remind, on: startsAt - 24h)` and a hook that ENQUEUES the mail on the move's transaction — never `afterCommit`, since a crash between the commit and the send would leave the column saying the mail went, and a moved row is never due again. Once-ness from the column.
 
@@ -3105,7 +3141,7 @@ Asked in [`IDEAS/ontology.md`](IDEAS/ontology.md) § Open questions. **A** was p
 
 The paper's recommendation, taken as written: it keeps *every commitment is a transition* true for the case the word fits least, and the Boolean is the record that the mail went.
 
-**Taking it found a regression, which is now fixed** ([`FJS-1315`](ISSUES.md#fjs-1315)): the runtime has always kept one machine per FIELD, and `FJS-1174`'s refusal of any model attribute declared twice had made a second `@@transitions` unparseable. It is repeatable again, per field, and one move name on two machines is refused, since `transition(id, name)` makes the first. **The hook enqueues** — `CommitmentHookContext.enqueue`, an outbox row on the move's transaction — because a moved row is never due again, so an `afterCommit` send lost to a crash would leave `reminded` true with no mail. `example`'s caller is `Invoice.remind`, three days before `dueOn` while the invoice is `issued`. **Adjudication in tension** (§ IV): none. **§ V's ninth question**: *one reminder per invoice, and none for a paid one* — `verify:jobs`'s `reminder.*`, against the real mail sink, red with the hook removed; the row-and-move-roll-back-together case in `packages/caravan/test/commitments.test.ts`.
+**Taking it found a regression, which is now fixed** ([`FJS-1315`](ISSUES_ARCHIVE.md#fjs-1315)): the runtime has always kept one machine per FIELD, and `FJS-1174`'s refusal of any model attribute declared twice had made a second `@@transitions` unparseable. It is repeatable again, per field, and one move name on two machines is refused, since `transition(id, name)` makes the first. **The hook enqueues** — `CommitmentHookContext.enqueue`, an outbox row on the move's transaction — because a moved row is never due again, so an `afterCommit` send lost to a crash would leave `reminded` true with no mail. `example`'s caller is `Invoice.remind`, three days before `dueOn` while the invoice is `issued`. **Adjudication in tension** (§ IV): none. **§ V's ninth question**: *one reminder per invoice, and none for a paid one* — `verify:jobs`'s `reminder.*`, against the real mail sink, red with the hook removed; the row-and-move-roll-back-together case in `packages/caravan/test/commitments.test.ts`.
 
 ### <a id="fjs-d367"></a>2026-09-23 · `FJS-D367` — Renewal is not a transition — what is it — A row per period: `SubscriptionPeriod` with `close: open -> closed @system` and `@@commitment(close, on: endsOn)`; a hook on `close` issues the invoice and opens the next period. The state machine is the once-ness with no key, and *next renewal* is a row a person can see. The cost is reshaping `example`'s billing.
 
@@ -3201,7 +3237,7 @@ Asked in [`IDEAS/effective-time.md`](IDEAS/effective-time.md). It settles four o
 
 **The second prize is the clock and it may be the larger one.** Every deadline filter in the repo read a `new Date()` written into a service, so `env.clock.advance()` moved nothing and shape 1's whole correctness condition — *a hold is dead the instant it passes, whether or not the job ran* — was untested and untestable; `verify-stock.mjs` staged expiry by moving the CUTOFF to 2099, which proves the sweep deletes rows and never touches the read. The filter reads the injected `now`, and `packages/litestone/test/effective.test.ts` stages a dead hold with `advance('10m')`.
 
-**Adjudication in tension** (§ IV): *familiarity vs. precision* over `asOf`, which is SQL:2011's own word (`FOR BUSINESS_TIME AS OF`, kept by SQL Server and MariaDB) and arrives with SQL:2011's meaning — the `timestamptz` risk [`FJS-522`](ISSUES.md#fjs-522) named, checked rather than assumed, and here the meanings agree. Over the attribute's name, the same row the other way: *effective* reads faintly legal for a five-minute stock hold where a developer would have typed *expires*, and `@@expires` is refused anyway, because two names for one mechanism is a cost paid forever by everyone who then reads both. *Batteries vs. smallness* bounds the growth: this stays a read filter and a declaration, or Caravan stops owning the clock.
+**Adjudication in tension** (§ IV): *familiarity vs. precision* over `asOf`, which is SQL:2011's own word (`FOR BUSINESS_TIME AS OF`, kept by SQL Server and MariaDB) and arrives with SQL:2011's meaning — the `timestamptz` risk [`FJS-522`](ISSUES_ARCHIVE.md#fjs-522) named, checked rather than assumed, and here the meanings agree. Over the attribute's name, the same row the other way: *effective* reads faintly legal for a five-minute stock hold where a developer would have typed *expires*, and `@@expires` is refused anyway, because two names for one mechanism is a cost paid forever by everyone who then reads both. *Batteries vs. smallness* bounds the growth: this stays a read filter and a declaration, or Caravan stops owning the clock.
 
 ### <a id="fjs-d350"></a>2026-09-22 · `FJS-D350` — What does a schema owe a relationship that is a ROW — One question, `@@relator([…], once | many | many: <column>)`, and repeatability is required rather than defaulted.
 
@@ -3211,7 +3247,7 @@ Asked in [`IDEAS/relators.md`](IDEAS/relators.md) § Open questions. **A** was p
 
 **Repeatability is never defaulted, and a bare `@@relator([a, b])` is a parse error naming the three choices.** That is the flaw in the first draft, which had the attribute generate a `@@unique` from a bare list: it answers `once` by default and leaves the other three classes unspellable. A default here is the silence the word exists to end.
 
-**It generates rather than describes, which is the boundary that keeps the rest of the OntoUML stereotype set out** — gap 06's `Role`, `Phase` and `Kind` included. A kind-word lands in `.lite` only if it generates or refuses something. `@@relator` does both: `once` emits `UNIQUE(relata)`, `many: col` emits `UNIQUE(relata + col)`, `many` emits no key at all, and **every relatum an emitted key does not already cover by prefix gets an index**. That second half was measured before it was designed — [`FJS-413`](ISSUES.md#fjs-413) found ten unindexed foreign keys in basecamp, four on cascading join tables, and four models carried the reverse index by hand with the defect id in the comment, because `@@unique` cannot know that both ends of a relator are entrances and a relator by definition does.
+**It generates rather than describes, which is the boundary that keeps the rest of the OntoUML stereotype set out** — gap 06's `Role`, `Phase` and `Kind` included. A kind-word lands in `.lite` only if it generates or refuses something. `@@relator` does both: `once` emits `UNIQUE(relata)`, `many: col` emits `UNIQUE(relata + col)`, `many` emits no key at all, and **every relatum an emitted key does not already cover by prefix gets an index**. That second half was measured before it was designed — [`FJS-413`](ISSUES_ARCHIVE.md#fjs-413) found ten unindexed foreign keys in basecamp, four on cascading join tables, and four models carried the reverse index by hand with the defect id in the comment, because `@@unique` cannot know that both ends of a relator are entrances and a relator by definition does.
 
 **The emission table in the paper was wrong about `many` and building it is what found that.** `once` and `many: col` emit a unique LEADING with the first relatum, so only the trailing relata are uncovered; a bare `many` emits no unique, so the leading relatum is as unindexed as the trailing one. `many` indexes every relatum. `Subscription` would otherwise have lost an index it has today.
 
@@ -3233,7 +3269,7 @@ Asked in [`IDEAS/relators.md`](IDEAS/relators.md) § Open questions. **A** was p
 
 **It converts nothing, and that is the load-bearing refusal.** The value stored is the value sent and the value read back is the same number — measured against a real database, and the emitted DDL is byte-identical with the attribute and without it. A `@unit` that coerced would make the number a caller reads different from the one they wrote, which is exactly what `@money`'s minor units already decline to do. What the declaration buys is that the fact reaches a reader: a generated form, an agent describing the model, the atlas, and a second developer.
 
-**The symbol table is CLOSED, and the reason is the contract rather than taste.** The attribute promises that the symbol resolves to a *dimension* — which is what a renderer groups by and a converter needs — so a symbol resolving to nothing is a declaration that cannot be EXPRESSED, which is [`FJS-721`](ISSUES_ARCHIVE.md)'s boundary applied rather than re-argued and the same place `@money(XYZ)` is refused. A free-text `@unit("widgets")` was the alternative and is worse by the test this framework already runs on itself: it would accept a spelling that looks like a declaration and does nothing, which is [`FJS-1236`](ISSUES.md#fjs-1236)'s shape on a new word. **Nor is the case folded** — `MB` is a megabyte and `Mb` a megabit in every tool a reader has used — so a wrong case is a wrong unit and is refused with the one that was meant.
+**The symbol table is CLOSED, and the reason is the contract rather than taste.** The attribute promises that the symbol resolves to a *dimension* — which is what a renderer groups by and a converter needs — so a symbol resolving to nothing is a declaration that cannot be EXPRESSED, which is [`FJS-721`](ISSUES_ARCHIVE.md)'s boundary applied rather than re-argued and the same place `@money(XYZ)` is refused. A free-text `@unit("widgets")` was the alternative and is worse by the test this framework already runs on itself: it would accept a spelling that looks like a declaration and does nothing, which is [`FJS-1236`](ISSUES_ARCHIVE.md#fjs-1236)'s shape on a new word. **Nor is the case folded** — `MB` is a megabyte and `Mb` a megabit in every tool a reader has used — so a wrong case is a wrong unit and is refused with the one that was meant.
 
 **Five dimensions, and the list is derived rather than chosen.** Length and information are READ from the kit's own `LENGTH` and `BYTE_UNITS`, so a unit added there is a unit a schema can declare and there is no second list to keep; duration and mass are written out. Temperature and volume are out because nothing measured wanted them and an offset is not a factor, which makes temperature a different arithmetic rather than a longer table.
 
@@ -3241,13 +3277,13 @@ Asked in [`IDEAS/relators.md`](IDEAS/relators.md) § Open questions. **A** was p
 
 **Legal inside a `type` block, unlike the three it sits beside.** `@scale`/`@money`/`@big` are facts about a COLUMN and a `type` has none; a number inside a Json document counts something exactly as a column does. That asymmetry is the thing that nearly shipped broken: the `@scale`/`@money` validation walks models only — correctly, since those are forbidden in a type — and the first cut of this one copied it, so `type Box { w String @unit(kgg) }` parsed clean and emitted `x-unit` for a symbol resolving to nothing. The walk covers both.
 
-**The advice is the other half and it is why the word had to come first.** `litestone advise` reports a numeric column whose name carries its unit and which declares none — 117 findings across those 1,659 models, and the message states the spelling to move to. It is `info` rather than a refusal on two counts: the convention WORKS, unlike [`FJS-1236`](ISSUES.md#fjs-1236)'s unreachable validator, and renaming a column is a migration, so keeping the name and adding the attribute is a complete answer. Advice against a working convention could not have been given at all until there was somewhere for the fact to go, which is the same two-halves relationship [`FJS-1236`](ISSUES.md#fjs-1236) and [`FJS-1239`](ISSUES.md#fjs-1239) have.
+**The advice is the other half and it is why the word had to come first.** `litestone advise` reports a numeric column whose name carries its unit and which declares none — 117 findings across those 1,659 models, and the message states the spelling to move to. It is `info` rather than a refusal on two counts: the convention WORKS, unlike [`FJS-1236`](ISSUES_ARCHIVE.md#fjs-1236)'s unreachable validator, and renaming a column is a migration, so keeping the name and adding the attribute is a complete answer. Advice against a working convention could not have been given at all until there was somewhere for the fact to go, which is the same two-halves relationship [`FJS-1236`](ISSUES_ARCHIVE.md#fjs-1236) and [`FJS-1239`](ISSUES_ARCHIVE.md#fjs-1239) have.
 
-**Three things this does NOT rule.** A per-row unit (`@unit(field: uom)`, `@money`'s second form) is not built — zero such columns were measured, and a recipe app is the case that would ask for it. Conversion and adaptive formatting are in the kit and are the application's to call; nothing in the schema or on the wire converts, and `x-unit` deliberately carries the symbol and the dimension and NOT the factor, since it is derivable from the symbol and a calendar unit has none. And whether a unit should narrow a `@@check` or a comparison — *you may not add grams to pounds* — is a cross-column invariant this says nothing about. Prior record: [`FJS-1240`](ISSUES.md#fjs-1240) is the build. [units.js](packages/toolbelt/src/units/units.js) · [parser.js](packages/litestone/src/core/parser.js) · [jsonschema.js](packages/litestone/src/jsonschema.js) · [advise.js](packages/litestone/src/core/advise.js) · [catalog.js](packages/litestone/src/core/catalog.js)
+**Three things this does NOT rule.** A per-row unit (`@unit(field: uom)`, `@money`'s second form) is not built — zero such columns were measured, and a recipe app is the case that would ask for it. Conversion and adaptive formatting are in the kit and are the application's to call; nothing in the schema or on the wire converts, and `x-unit` deliberately carries the symbol and the dimension and NOT the factor, since it is derivable from the symbol and a calendar unit has none. And whether a unit should narrow a `@@check` or a comparison — *you may not add grams to pounds* — is a cross-column invariant this says nothing about. Prior record: [`FJS-1240`](ISSUES_ARCHIVE.md#fjs-1240) is the build. [units.js](packages/toolbelt/src/units/units.js) · [parser.js](packages/litestone/src/core/parser.js) · [jsonschema.js](packages/litestone/src/jsonschema.js) · [advise.js](packages/litestone/src/core/advise.js) · [catalog.js](packages/litestone/src/core/catalog.js)
 
 ### <a id="fjs-d347"></a>2026-09-21 · `FJS-D347` — Can a schema say how many children a parent must and may have, and when is that graded — Yes, `@minItems`/`@maxItems` on the relation, graded once when the outermost write unit commits
 
-Minimum cardinality is the most widely agreed item in fifty years of data modeling — Chen's 1976 arrow decorations ARE the model, and UML `1..*`, SHACL `sh:minCount`, ORM's mandatory-role dot and IDEF1X all kept it. `.lite` had no word for it, and the spelling an author reaches for instead was accepted and did nothing: `lineCount Int @from(OrderLine, count: true) @gte(1)` parses `valid: true` with zero errors and zero warnings, and an Order created with no lines reads back `lineCount: 0`. That half is [`FJS-1236`](ISSUES.md#fjs-1236), which refuses the misleading spelling. This is the other half.
+Minimum cardinality is the most widely agreed item in fifty years of data modeling — Chen's 1976 arrow decorations ARE the model, and UML `1..*`, SHACL `sh:minCount`, ORM's mandatory-role dot and IDEF1X all kept it. `.lite` had no word for it, and the spelling an author reaches for instead was accepted and did nothing: `lineCount Int @from(OrderLine, count: true) @gte(1)` parses `valid: true` with zero errors and zero warnings, and an Order created with no lines reads back `lineCount: 0`. That half is [`FJS-1236`](ISSUES_ARCHIVE.md#fjs-1236), which refuses the misleading spelling. This is the other half.
 
 **No new word, and that is the whole argument for this spelling over the alternatives.** `@minItems`/`@maxItems` already mean *how many in this collection* and already enforce — measured on a `Json` array, `[]` refused *must have at least 1 item(s)* and a third element refused *must have at most 2*. On the one collection that is a relation the same two words parsed and did nothing. `@gte(1)` was the other candidate and is worse by the same test: `@gte` means *this value is at least* everywhere else in the language, so it would give one word two readings by field type. `@relation(min: 1, max: 50)` was refused by the parser already and would have split the fact across two spellings depending where it was written.
 
@@ -3271,13 +3307,13 @@ Asked in [`fjs-prototypes/calendly/PLAN.md`](IDEAS/stressors.md) § Q2, the cale
 
 **What decides between B and C is that the framework already ships both strengths and already teaches the difference.** `@@check` is compiled into the table and therefore holds against a seed, a migration, `asSystem()`, `fli tinker` and anything else that opens the file. `@@gate` and `@@allow` hold against every caller that goes through the client and not against raw SQL. Nobody calls `@@allow` dishonest for that, because the tier is named and documented. A range-exclusion declaration enforced at the Data boundary sits in exactly the second tier, beside the rules it will usually be written next to. **C treats that tier as disqualifying, and the schema is already full of counter-examples.**
 
-**The cost of C is the one the stressor actually measured.** With no declaration, the constraint lives in a service, and `AGENTS.md` tells every app author the opposite in as many words: *a hook guards the callers that pass through it; the schema guards every one, including a job, a seed and a migration.* An app following the framework's own stated principle has nowhere to put the most important rule it has. Worse, the substitute could not be taken at all — [`FJS-1216`](ISSUES.md#fjs-1216): `$setAuth` drops `$lock` from the client it returns, so no service can reach it — and its wait budget is read under a different name than it is typed under ([`FJS-1217`](ISSUES.md#fjs-1217)), which silently degrades it to try-once. C ratifies a shape resting on a primitive that was unreachable and, once reached, quietly weaker than its own types claimed.
+**The cost of C is the one the stressor actually measured.** With no declaration, the constraint lives in a service, and `AGENTS.md` tells every app author the opposite in as many words: *a hook guards the callers that pass through it; the schema guards every one, including a job, a seed and a migration.* An app following the framework's own stated principle has nowhere to put the most important rule it has. Worse, the substitute could not be taken at all — [`FJS-1216`](ISSUES_ARCHIVE.md#fjs-1216): `$setAuth` drops `$lock` from the client it returns, so no service can reach it — and its wait budget is read under a different name than it is typed under ([`FJS-1217`](ISSUES_ARCHIVE.md#fjs-1217)), which silently degrades it to try-once. C ratifies a shape resting on a primitive that was unreachable and, once reached, quietly weaker than its own types claimed.
 
 **So the word generates the mechanism rather than replacing it.** Serialisation is still required — two concurrent writers each see no conflict and both commit — so the declaration compiles to the lock plus the in-transaction query the calendly app wrote by hand. That is what makes `$lock` load-bearing and therefore graded, which is the second reason to prefer B: a primitive nothing declares is a primitive nobody tests, and both of its defects survived a release for exactly that reason.
 
 **The honest cost, stated plainly because the word must not hide it.** Raw SQL against the file, and a second process writing it directly, are unguarded — `@@check` remains the only word that holds there and it cannot express this, by definition, because it is a ROW check and cannot see another row. Any app for which that gap matters has a problem no schema in this language solves. The declaration must therefore be documented in `@@allow`'s tier and named in `fli explain --visibility` beside it, so that *what it holds against* is answered where the other boundary rules answer it, rather than being assumed from the company `@@check` keeps.
 
-**Two things this record does NOT rule, and they should not be assumed settled.** The spelling is open — the stressor's schema speculates `@@exclude([hostId], range: [startsAt, endsAt])` and nothing has graded it. And the SECOND face is a different shape and probably a different word: *a booking must fall INSIDE an availability window* is inclusion against a related row, not exclusion against a sibling, and the calendly schema's guess that *one word might carry both* now looks wrong. Both belong in the paper that designs the word. Prior record: [`FJS-1215`](ISSUES.md#fjs-1215) states the gap, [`FJS-1216`](ISSUES.md#fjs-1216) and [`FJS-1217`](ISSUES.md#fjs-1217) are the fallback's two defects and are **preconditions**: the declaration cannot ship on top of a primitive that cannot be reached and does not wait.
+**Two things this record does NOT rule, and they should not be assumed settled.** The spelling is open — the stressor's schema speculates `@@exclude([hostId], range: [startsAt, endsAt])` and nothing has graded it. And the SECOND face is a different shape and probably a different word: *a booking must fall INSIDE an availability window* is inclusion against a related row, not exclusion against a sibling, and the calendly schema's guess that *one word might carry both* now looks wrong. Both belong in the paper that designs the word. Prior record: [`FJS-1215`](ISSUES.md#fjs-1215) states the gap, [`FJS-1216`](ISSUES_ARCHIVE.md#fjs-1216) and [`FJS-1217`](ISSUES_ARCHIVE.md#fjs-1217) are the fallback's two defects and are **preconditions**: the declaration cannot ship on top of a primitive that cannot be reached and does not wait.
 
 **Evidence arriving after the ruling, 2026-09-22 — the connectteam stressor, which has four shapes of the constraint instead of one, and drove all four concurrently ([`FJS-1215`](ISSUES.md#fjs-1215) carries the numbers).** It settles the second open half and opens a new one. **The second face is a different word.** Inclusion is coverage of a range by a UNION of ranges and exclusion is never that: a person who declares 06:00–14:00 and 14:00–22:00 is available 06:00–22:00, and a shift of 10:00–18:00 is contained by no single row, so a per-row predicate refuses a shift they plainly may work — while exclusion is per-row by construction, because one intersecting sibling is a counter-example all by itself. The two faces do not quantify the same way, so no flag on `@@exclude` reaches the second one. **What is newly open is the KEY.** All four shapes in that app must serialise on `person:${employeeId}` — four models, one key — because two of the four races are BETWEEN models: `Shift` against `LeaveRequest`, and `Shift` against `AvailabilityWindow`. A declaration written on one model and compiling to a key scoped to that model excludes nothing across either pair, and both were measured landing two writes that had each checked the other. So the word has to name the scope of exclusion independently of the model it is written on, which the sketch above does not do. **And one argument for this ruling that the ruling did not make**: a conflict check written in a service has to read rows the caller may not — the manager assigning the shift cannot read the leave they must not collide with — so every such check reaches for `asSystem()` and drops the row policies of the model it is checking, with nothing narrower available. A declaration evaluated at the Data boundary needs no such hole.
 
@@ -3291,7 +3327,7 @@ The paper's recommendation, with the condition § V's last question requires. C 
 
 Asked in [`IDEAS/conflict-as-data.md`](IDEAS/conflict-as-data.md) § Open questions as Q3. **A** was picked over **B** (a higher standing, declared: choosing between two people's values is an act neither could do alone), **C** (the row's gate alone, no redaction — if you may write the row you may see both candidates).
 
-Resolving is a write to the row, and the gate already answers who may make one, so no second ladder is coined — which § V's concept-budget question refuses B on by itself. Invariant 7 is the rest of it: an `@encrypted`, `@guarded` or `@secret` column logs as `[redacted]` and may not become readable through a new door, so a conflict on one is shown as divergence with take-local or take-remote and no display of either side. C is [`FJS-976`](ISSUES.md#fjs-976)'s shape on a new surface — a screen offering a value the row's own read path refuses.
+Resolving is a write to the row, and the gate already answers who may make one, so no second ladder is coined — which § V's concept-budget question refuses B on by itself. Invariant 7 is the rest of it: an `@encrypted`, `@guarded` or `@secret` column logs as `[redacted]` and may not become readable through a new door, so a conflict on one is shown as divergence with take-local or take-remote and no display of either side. C is [`FJS-976`](ISSUES_ARCHIVE.md#fjs-976)'s shape on a new surface — a screen offering a value the row's own read path refuses.
 
 ### <a id="fjs-d335"></a>2026-09-20 · `FJS-D335` — What a conflict relation costs a model that never has one — nothing, because V1 ships no relation: an unmergeable write stays a rejected entry in the pending queue, carrying the comparison.
 
@@ -3887,7 +3923,7 @@ refusal part way is thrown naming what committed and what rolled back
 *Lives in:* `packages/litestone/src/core/client.js` (`buildDbRegistry`,
 `_closeAll`, `startCrossProcessWatch`, the auto-DDL block),
 `packages/litestone/src/tenant.js`. Bears on
-[`FJS-D229`](ISSUES.md#fjs-d229), which named this as the preview of a forked
+[`FJS-D229`](ISSUES_ARCHIVE.md#fjs-d229), which named this as the preview of a forked
 consistency model.
 
 ### <a id="fjs-d121"></a>2026-09-07 · `FJS-D121` — an order is on the SET, it is a directive rather than a rule, and the default is the order the author gave. A learned order is a HEAD, not a re-sort.
@@ -4828,7 +4864,7 @@ price is in for almost all of its life, so `effectiveTo` is nullable rather than
 dated far in the future — a row saying 2099 reads as a decision somebody made.
 *At most one open window per plan* was then not expressible — two NULLs never
 compare equal and `@@unique` took no predicate — which is
-[`FJS-603`](ISSUES.md#fjs-603), **closed 2026-08-31**:
+[`FJS-603`](ISSUES_ARCHIVE.md#fjs-603), **closed 2026-08-31**:
 `@@unique([planId], where: effectiveTo == null)`. It is a table constraint now
 rather than a rule in a service, so a seed, a migration and `asSystem()` are each
 held to it. The service that closes a window and opens the next in a single
@@ -5816,7 +5852,7 @@ The paper's recommendation, taken as written: the restore half is specified and 
 
 **`idx_<table>_<fields>` stays in field space while the column list is mapped.** The migrator treats an owned index matching on shape and differing on name as a rename, a drop and a create, so a name derived from the column would rebuild every index on a model the day it gains a `@map`. Lives in `packages/litestone/src/core/ddl.js` (`createIndexes`) and `src/core/migrate.js` (`diffIndexes`). Refused alternative: deriving the name from the column, which churns indexes over a change that moved no index.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *adding a `@map` does not rename an index* — `test/field-map.test.ts` › "the table, its index, its FK and its CHECK all name columns" (asserts `"idx_book_pages"` beside the mapped `"page_count"`). ([`FJS-761`](ISSUES.md#fjs-761)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *adding a `@map` does not rename an index* — `test/field-map.test.ts` › "the table, its index, its FK and its CHECK all name columns" (asserts `"idx_book_pages"` beside the mapped `"page_count"`). ([`FJS-761`](ISSUES_ARCHIVE.md#fjs-761)) Picked by the owner in session.
 
 ---
 
@@ -5824,7 +5860,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. No 
 
 **The diff never consults a row count**: the ALTER path collects the column as `blockedAdds`, the rebuild path blocks it per `FJS-D68`, and `autoMigrate` answers `{ state: 'blocked', reason }`, prints it and writes no hash. Migrating an empty table and refusing a populated one would migrate on every developer's machine and block at the deploy. Lives in `packages/litestone/src/core/migrate.js` (`blockedAdds`) and `src/core/migrations.js` (`blockedCols`). Refused alternative: allowing the add when the table is empty, which moves the failure to production. Extends `FJS-D68` from the rebuild to the ALTER path.
 
-Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness*: one edit now against a blocked deploy later.  **§ V's ninth question**: *the column is blocked regardless of rows* — `test/migrations-fixes.test.ts` › "a blocked column add is reported, not reported as success" › "the ALTER path answers `blocked` and applies nothing" pins a populated table; the empty-table half is `none` — unenforced. ([`FJS-604`](ISSUES.md#fjs-604), [`FJS-605`](ISSUES.md#fjs-605)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness*: one edit now against a blocked deploy later.  **§ V's ninth question**: *the column is blocked regardless of rows* — `test/migrations-fixes.test.ts` › "a blocked column add is reported, not reported as success" › "the ALTER path answers `blocked` and applies nothing" pins a populated table; the empty-table half is `none` — unenforced. ([`FJS-604`](ISSUES_ARCHIVE.md#fjs-604), [`FJS-605`](ISSUES_ARCHIVE.md#fjs-605)) Picked by the owner in session.
 
 ---
 
@@ -6336,103 +6372,103 @@ Ratified as built: graded on § V after the fact, not before the first edit. *Fa
 
 A method `OP_FOR_METHOD` does not name refuses a caller with no session wherever the model's read gate is above 0; a declared `methods: [{ method, gate }]` grades the caller's level above that. The Data boundary refuses only after the body and its side effects have run, so without the floor a stranger's `refund` charged the card and then took a 403. Lives in `customMethodGrade` and `gateAuthAround`, `packages/junction/src/core/litestone.ts`; `FJS-D258`'s amendment reads the grade but does not rule it. Refused alternative: the strictest write gate as the floor, which shut the storefront's `availability` and the guest basket on read-gate-0 models.
 
-Ratified as built: graded on § V after the fact, not before the first edit. Ergonomics vs. strictness is the adjudication: the floor is the read gate because the write gate's cost was measured.  **§ V's ninth question**: *no custom method on a gated model runs its body for a stranger* — `packages/junction/test/custom-method-gate.test.ts` › "a stranger is refused BEFORE the body runs, and told what CRUD tells them", paired with "a read-gate-0 model stays open to a stranger — the storefront and the basket". ([`FJS-826`](ISSUES.md#fjs-826)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. Ergonomics vs. strictness is the adjudication: the floor is the read gate because the write gate's cost was measured.  **§ V's ninth question**: *no custom method on a gated model runs its body for a stranger* — `packages/junction/test/custom-method-gate.test.ts` › "a stranger is refused BEFORE the body runs, and told what CRUD tells them", paired with "a read-gate-0 model stays open to a stranger — the storefront and the basket". ([`FJS-826`](ISSUES_ARCHIVE.md#fjs-826)) Picked by the owner in session.
 
 ### <a id="fjs-d437"></a>2026-09-26 · `FJS-D437` — A payload key naming no field of the model is a 400; a field the caller may not write is dropped in silence
 
 The strip is kept for fields that exist but are not writable (`id` on a create, `createdAt`, a `@guarded` column), which a client echoing a fetched row sends on every write. A key naming nothing the model declares is refused per row, because dropping it turns a typo into a 201 the caller believes in; `@transient` is the escape. Lives in `checkUnknownKeys`, `packages/junction/src/core/litestone.ts`. Narrows `FJS-D58` at the API boundary only: its reason is mass assignment, which covers a field that exists. Refused alternative: stripping both kinds, which is silent about the typo.
 
-Ratified as built: graded on § V after the fact, not before the first edit. Ergonomics vs. strictness: the default was chosen by counting trips across both apps.  **§ V's ninth question**: *a key naming no field never reaches a success status* — `packages/junction/test/update-semantics.test.ts` › "and a key that names no column is a 400 naming it", paired with "…while a column the caller may not WRITE is dropped in silence". ([`FJS-889`](ISSUES.md#fjs-889)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. Ergonomics vs. strictness: the default was chosen by counting trips across both apps.  **§ V's ninth question**: *a key naming no field never reaches a success status* — `packages/junction/test/update-semantics.test.ts` › "and a key that names no column is a 400 naming it", paired with "…while a column the caller may not WRITE is dropped in silence". ([`FJS-889`](ISSUES_ARCHIVE.md#fjs-889)) Picked by the owner in session.
 
 ### <a id="fjs-d438"></a>2026-09-26 · `FJS-D438` — A job attempt has no default timeout; it is bounded only where a handler or its queue declares one
 
 `timeout` is read from the handler, then the queue's config; absent both, the attempt is unbounded. A default would kill every legitimately long job in every app. A declared timeout is an ordinary failure on the retry ladder and does not stop the handler, since nothing cancels a promise. `stats().queues.<q>.oldestRunningMs` is how an unbounded stall is seen. Lives in `_bounded`, `packages/caravan/src/worker.ts`, and `timeout` in `packages/caravan/src/types.ts`. Refused alternative: a framework-wide default bound, which fails jobs nobody wrote as short.
 
-Ratified as built: graded on § V after the fact, not before the first edit. Ergonomics vs. strictness: a default bound destroys work that was correct.  **§ V's ninth question**: *an undeclared job is never timed out* — `packages/caravan/test/timeout.test.ts` › "no timeout declared is still no bound". ([`FJS-295`](ISSUES.md#fjs-295)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. Ergonomics vs. strictness: a default bound destroys work that was correct.  **§ V's ninth question**: *an undeclared job is never timed out* — `packages/caravan/test/timeout.test.ts` › "no timeout declared is still no bound". ([`FJS-295`](ISSUES_ARCHIVE.md#fjs-295)) Picked by the owner in session.
 
 ### <a id="fjs-d439"></a>2026-09-26 · `FJS-D439` — A cache value is JSON; what JSON would lose is refused at `set()`, and the memory driver stores the encoded value
 
 One codec serves both drivers, so what is storable is one answer, and it is what a Litestone row, a response body and a WS frame already carry. A `Date`, `Map`, `Set`, `RegExp`, `BigInt`, `NaN`, a typed array and top-level `undefined` throw `CacheValueError` naming the key, at any depth. The memory driver holds the encoded string, so `get()` answers a fresh value and a live reference is never cached, a semantics no persistent backend can offer. Lives in `encodeValue`, `packages/junction/src/cache/index.ts`. Refused alternative: storing whatever arrives, which degrades silently and is found by the reader in another file.
 
-Ratified as built: graded on § V after the fact, not before the first edit. Ergonomics vs. strictness: the refusal lands where the mistake is made.  **§ V's ninth question**: *swapping the driver changes no answer* — `packages/junction/test/cache-conformance.test.ts`, run per driver, › "round-trips everything JSON carries", "refuses ${kind} NESTED, not only at the top", "mutating what get() answered does not reach the cache". ([`FJS-898`](ISSUES.md#fjs-898)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. Ergonomics vs. strictness: the refusal lands where the mistake is made.  **§ V's ninth question**: *swapping the driver changes no answer* — `packages/junction/test/cache-conformance.test.ts`, run per driver, › "round-trips everything JSON carries", "refuses ${kind} NESTED, not only at the top", "mutating what get() answered does not reach the cache". ([`FJS-898`](ISSUES_ARCHIVE.md#fjs-898)) Picked by the owner in session.
 
 ### <a id="fjs-d440"></a>2026-09-26 · `FJS-D440` — `/health` is readiness, `/health/live` is liveness, and liveness consults nothing, the drain included
 
 An orchestrator restarts a process that fails liveness and stops routing to one that fails readiness, so a dependency going down belongs on `/health` (and `/health/ready`) and never on `/health/live`. A draining process answers 503 to readiness with `Connection: close` and 200 to liveness, because killing it destroys the in-flight requests the drain exists to finish. Lives in `collectHealth` and `healthPlugin`, `packages/junction/src/transport/health.ts`. Refused alternative: one endpoint answering both, which restarted every replica when a third party failed.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *no check and no drain moves the liveness answer* — `packages/junction/test/health-probes.test.ts` › "a DRAINING process is not ready and is still alive" and "liveness consults nothing, so a hung dependency cannot hang it". ([`FJS-901`](ISSUES.md#fjs-901)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *no check and no drain moves the liveness answer* — `packages/junction/test/health-probes.test.ts` › "a DRAINING process is not ready and is still alive" and "liveness consults nothing, so a hung dependency cannot hang it". ([`FJS-901`](ISSUES_ARCHIVE.md#fjs-901)) Picked by the owner in session.
 
 ### <a id="fjs-d441"></a>2026-09-26 · `FJS-D441` — `/metrics` renders by `Accept`, JSON by default; only a finite number is a metric, and no `# TYPE` is emitted
 
 One collector, two renderings: an `Accept` naming `text/plain` or `openmetrics-text` gets exposition text, and everyone else, a browser and curl included, gets the JSON the devtools console reads. A string, array or boolean is skipped rather than invented into a value, which also bounds what a `registerMetricsSource` section can emit. A counter cannot be told from a gauge by name and a wrong `TYPE` is worse than none. Lives in `renderPrometheus` and `wantsPrometheus`, `packages/junction/src/transport/health.ts`. Refused alternative: a second endpoint with its own idea of the numbers.
 
-Ratified as built: graded on § V after the fact, not before the first edit. Familiarity vs. precision: the Prometheus path and format are taken, a type label the collector cannot state is not.  **§ V's ninth question**: *the text rendering states nothing the collector did not* — `packages/junction/test/health-probes.test.ts` › "a string, an array and a boolean are skipped rather than counted" and "emits no TYPE line, because a counter cannot be told from a gauge by name". ([`FJS-901`](ISSUES.md#fjs-901)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. Familiarity vs. precision: the Prometheus path and format are taken, a type label the collector cannot state is not.  **§ V's ninth question**: *the text rendering states nothing the collector did not* — `packages/junction/test/health-probes.test.ts` › "a string, an array and a boolean are skipped rather than counted" and "emits no TYPE line, because a counter cannot be told from a gauge by name". ([`FJS-901`](ISSUES_ARCHIVE.md#fjs-901)) Picked by the owner in session.
 
 ### <a id="fjs-d442"></a>2026-09-26 · `FJS-D442` — The docs page's CDN script is pinned to an exact version
 
 Unpinned, the page ran whatever `@scalar/api-reference` published that day, on the API's own origin where an operator's session lives. The pin going stale is the accepted cost: a stale version still renders, an unpinned one changes under a running deployment. The script carries `crossorigin`, and the route mounts only with `ui: true`. Lives in `SCALAR_VERSION`, `packages/junction/src/plugins/openapi/index.ts`. Refused alternative: vendoring the UI bundle into the package.
 
-Ratified as built: graded on § V after the fact, not before the first edit. Batteries vs. smallness: the docs UI stays a severable, opt-in reference rather than a bundle the core carries.  **§ V's ninth question**: *the page never loads a floating version* — `packages/junction/test/openapi-round-trip.test.ts` › "the CDN reference is pinned to an exact version". ([`FJS-902`](ISSUES.md#fjs-902)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. Batteries vs. smallness: the docs UI stays a severable, opt-in reference rather than a bundle the core carries.  **§ V's ninth question**: *the page never loads a floating version* — `packages/junction/test/openapi-round-trip.test.ts` › "the CDN reference is pinned to an exact version". ([`FJS-902`](ISSUES_ARCHIVE.md#fjs-902)) Picked by the owner in session.
 
 ### <a id="fjs-d444"></a>2026-09-26 · `FJS-D444` — An `app.scheduler` tick arriving mid-run is dropped, not queued, and counted in `stats.skipped`
 
 `setInterval` knows nothing about the body it started last, so a 100ms interval with a 350ms body ran four at once, and nothing reported it. Queueing turns a job that cannot keep up into an unbounded backlog that fails later and further from the cause; dropping keeps the cadence and loses a tick, and the count makes the loss visible. An app wanting concurrent runs fans out from inside the body. Lives in `runOnce`, `packages/junction/src/scheduler/index.ts`. Refused alternative: a queue of pending ticks.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a job never overlaps itself, and a dropped tick is counted* — `packages/junction/test/scheduler-overlap.test.ts` › "a 100ms interval with a 350ms body runs one at a time" and "the ticks it dropped are counted, not swallowed". ([`FJS-896`](ISSUES.md#fjs-896)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a job never overlaps itself, and a dropped tick is counted* — `packages/junction/test/scheduler-overlap.test.ts` › "a 100ms interval with a 350ms body runs one at a time" and "the ticks it dropped are counted, not swallowed". ([`FJS-896`](ISSUES_ARCHIVE.md#fjs-896)) Picked by the owner in session.
 
 ### <a id="fjs-d445"></a>2026-09-26 · `FJS-D445` — The log level is one cell shared by the whole logger tree; `setLevel` on any node moves all of them
 
 A root makes the cell and every child is handed it by reference, so turning debug on in a running process, which is what a level is for, reaches loggers already created and ones created later. Setting it on a child therefore moves the root. Lives in `createLogger`, `packages/junction/src/core/logger.ts`. Refused alternative: per-namespace verbosity, a different feature needing a cell per node with a fallback to its parent; and the prior copy-per-child, which let no change reach a child.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *one `setLevel` moves every logger in the tree* — `packages/junction/test/logger-level.test.ts` › "a child and a grandchild follow the root" and "the level is a property of the logger, not of a namespace". ([`FJS-897`](ISSUES.md#fjs-897)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *one `setLevel` moves every logger in the tree* — `packages/junction/test/logger-level.test.ts` › "a child and a grandchild follow the root" and "the level is a property of the logger, not of a namespace". ([`FJS-897`](ISSUES_ARCHIVE.md#fjs-897)) Picked by the owner in session.
 
 ### <a id="fjs-d446"></a>2026-09-26 · `FJS-D446` — `app.correlationId()` is request-wide; `app.tenant()` is per call
 
 A correlation id names the request, and a service that re-resolves a tenant mid-request is still inside that one request. The tenant is read from the call first and the request second, because under `strategy row` a service may legitimately re-resolve against a second tenant. Caravan records the correlation id at dispatch beside `actor_id` and `tenant_id`, with the same absent-is-not-null rule. Lives in `app.tenant()` and `app.correlationId()`, `packages/junction/src/core/app.ts`. Refused alternative: a per-call correlation id, which would split one unit of work into several in every log.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *one request carries one correlation id, while the tenant follows the call* — partial: `packages/junction/test/request-scope.test.ts` › "with no header, one id is minted and it is stable across the request" pins the first half; the per-call tenant preference is `none` — unenforced. ([`FJS-897`](ISSUES.md#fjs-897)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *one request carries one correlation id, while the tenant follows the call* — partial: `packages/junction/test/request-scope.test.ts` › "with no header, one id is minted and it is stable across the request" pins the first half; the per-call tenant preference is `none` — unenforced. ([`FJS-897`](ISSUES_ARCHIVE.md#fjs-897)) Picked by the owner in session.
 
 ### <a id="fjs-d447"></a>2026-09-26 · `FJS-D447` — An outbox row is dead by derivation from `attempts`, never deleted or stamped, so raising `maxAttempts` revives it
 
 Past `maxAttempts` (default 10, doubling backoff) a row stops matching the relay's query, keeps its `lastError`, counts as `dead` rather than `pending`, and fails readiness. Because nothing is written to mark it, raising the cap is the way back once a handler is fixed, and `maxAttempts: 0` never gives up. The counts stay split because a dead row is owed forever and counted as pending would hold readiness down. Lives in `owedWhere` and the counts, `packages/junction/src/core/outbox.ts`. Refused alternative: deleting or stamping the row, which loses the intent or needs a second write to revive.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a dead row is recoverable by configuration alone* — `packages/junction/test/outbox-relay.test.ts` › "raising the cap revives a dead row — dead is derived, never stamped" and "a dead row leaves pending, or a readiness probe never comes back". ([`FJS-778`](ISSUES.md#fjs-778)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a dead row is recoverable by configuration alone* — `packages/junction/test/outbox-relay.test.ts` › "raising the cap revives a dead row — dead is derived, never stamped" and "a dead row leaves pending, or a readiness probe never comes back". ([`FJS-778`](ISSUES_ARCHIVE.md#fjs-778)) Picked by the owner in session.
 
 ### <a id="fjs-d448"></a>2026-09-26 · `FJS-D448` — `remove` refuses `$withDeleted` by name, so a hard destroy is never reachable through the directive
 
 On `remove`, against an already-deleted row the only action left is a hard delete, the one write that defeats `@@softDelete`, and the directive would hand it to every caller who may remove a row with no separate permission graded. The refusal is a 400 naming the flag and the way out, graded on the request rather than the row's state, and silent on a model that does not soft-delete. Lives in `refuseHardDelete`, `packages/junction/src/core/litestone.ts`. Refused alternative: a 404, which reads as the row being gone.
 
-Ratified as built: graded on § V after the fact, not before the first edit. Ergonomics vs. strictness: the mistake it prevents is destructive and irreversible.  **§ V's ninth question**: *no request destroys a soft-deleted row* — `packages/junction/test/real-litestone-client.test.ts` › "remove refuses the directive by NAME, not by 404ing about the row" and "…and it is graded on the request, so a LIVE row refuses identically". ([`FJS-523`](ISSUES.md#fjs-523)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. Ergonomics vs. strictness: the mistake it prevents is destructive and irreversible.  **§ V's ninth question**: *no request destroys a soft-deleted row* — `packages/junction/test/real-litestone-client.test.ts` › "remove refuses the directive by NAME, not by 404ing about the row" and "…and it is graded on the request, so a LIVE row refuses identically". ([`FJS-523`](ISSUES_ARCHIVE.md#fjs-523)) Picked by the owner in session.
 
 ### <a id="fjs-d449"></a>2026-09-26 · `FJS-D449` — The client's address is declared with `http.trustProxy`, `X-Forwarded-For` is read from the right, and nothing is auto-detected
 
 The leftmost entry is the caller's claim and the shipped nginx template appends, so the rightmost is what the proxy observed. `trustProxy` is `false` (the socket alone, the default), `true` (one hop), a hop count, or trusted proxies by address or CIDR; an IPv4-mapped socket address is read as v4. Which entry stands in for the socket is a statement about the operator's own infrastructure, which the framework cannot observe. Lives in `clientAddress`, `packages/junction/src/transport/forwarded.ts`, called from `extractIP`. Refused alternative: reading the leftmost entry, which handed the rate limiter's key to the caller.
 
-Ratified as built: graded on § V after the fact, not before the first edit. Ergonomics vs. strictness: unset behind a proxy costs one shared bucket, where guessing costs a forgeable key.  **§ V's ninth question**: *no header moves the client address unless the app declared trust* — `packages/junction/test/forwarded.test.ts` › "ignores the header entirely when the app says nothing" and "a forged chain cannot buy the caller a distinct key". ([`FJS-744`](ISSUES.md#fjs-744)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. Ergonomics vs. strictness: unset behind a proxy costs one shared bucket, where guessing costs a forgeable key.  **§ V's ninth question**: *no header moves the client address unless the app declared trust* — `packages/junction/test/forwarded.test.ts` › "ignores the header entirely when the app says nothing" and "a forged chain cannot buy the caller a distinct key". ([`FJS-744`](ISSUES_ARCHIVE.md#fjs-744)) Picked by the owner in session.
 
 ### <a id="fjs-d450"></a>2026-09-26 · `FJS-D450` — The server pings every socket and the browser client answers from its message handler; the client runs no heartbeat timer
 
 The channels plugin pings each open connection every 15s and evicts one silent for 40s, and any arriving frame counts as liveness. The shipped client replies to a ping inside its message handler, because browsers throttle timers to about one a minute in a hidden tab, slower than the eviction window, so a timer-driven client is evicted whenever its tab is backgrounded. `client.startHeartbeat()` remains only for a server that does not ping. Lives in `packages/junction/src/transport/channels.ts` and the `ping` branch of `packages/junction/src/client/index.ts`. Refused alternative: a client-side interval, which nothing called and which throttling defeats.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a client that calls nothing keeps its connection* — `packages/junction/test/heartbeat.test.ts` › "stays connected with no heartbeat call by the app" and "counts any frame as liveness, not only a pong". ([`FJS-366`](ISSUES.md#fjs-366)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a client that calls nothing keeps its connection* — `packages/junction/test/heartbeat.test.ts` › "stays connected with no heartbeat call by the app" and "counts any frame as liveness, not only a pong". ([`FJS-366`](ISSUES_ARCHIVE.md#fjs-366)) Picked by the owner in session.
 
 ### <a id="fjs-d451"></a>2026-09-26 · `FJS-D451` — An `Idempotency-Key` replay returns the stored answer and runs nothing: no hook, no method, no announcement
 
 The key is claimed in `callService` after the method policy and before the pipeline, and a replay sets `ctx.result` and returns. Hooks carry the app's side effects (a `before` may write or count a rate limit, an `after` may send or publish) and the announcement follows the pipeline, so running any of them again is the duplicate the key exists to prevent. The skipped gate is safe because a key is scoped to `(service, method, principal, key)` and an anonymous key is not honored. Lives in `packages/junction/src/core/service.ts` and `claimIdempotency`, `packages/junction/src/core/idempotency.ts`. Refused alternative: replaying the method result through the pipeline, which repeats every hook's effect.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a replay repeats no effect* — partial: `packages/junction/test/idempotency.test.ts` › "the repeat replays the first answer instead of running again" and "the announcement fires once, not once per submission"; no test counts a hook on a replay, so the hook half is `none` — unenforced. (`FJS-088` in `ISSUES_ARCHIVE.md`, [`FJS-680`](ISSUES.md#fjs-680)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a replay repeats no effect* — partial: `packages/junction/test/idempotency.test.ts` › "the repeat replays the first answer instead of running again" and "the announcement fires once, not once per submission"; no test counts a hook on a replay, so the hook half is `none` — unenforced. (`FJS-088` in `ISSUES_ARCHIVE.md`, [`FJS-680`](ISSUES_ARCHIVE.md#fjs-680)) Picked by the owner in session.
 
 ### <a id="fjs-d452"></a>2026-09-26 · `FJS-D452` — a per-call header rides a WS frame only if the app named it in `http.callHeaders`, and that one list also feeds CORS.
 
 **`client.setCallHeader(name, value)` is an ordinary header over HTTP and `meta.headers` on a frame, and the server merges a frame's header only if its name is in `config.http.callHeaders` or is one of junction's own (`x-workspace-id`, `idempotency-key`).** The same list is added to the CORS allow-list, so one declaration serves both readers. Where it lives: `packages/junction/src/transport/channels.ts` (`_mergeCallHeaders`), `src/transport/middleware.ts`, `src/client/index.ts`. Refused alternative: merging whatever a frame names, since a frame could then name `Authorization` and override the identity set at upgrade.
 
-Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness* is resolved by cost: forgetting a name drops a header, while a merge-all hands identity to the frame.  **§ V's ninth question**: *an undeclared name never reaches `ctx.caller.headers` from a frame, and a declared one passes CORS* — `packages/junction/test/call-headers.test.ts` › "a declared header arrives; an undeclared one does not; identity is untouchable" and `test/client.test.ts` › "a declared call header is allowed cross-origin too". ([`FJS-428`](ISSUES.md#fjs-428)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness* is resolved by cost: forgetting a name drops a header, while a merge-all hands identity to the frame.  **§ V's ninth question**: *an undeclared name never reaches `ctx.caller.headers` from a frame, and a declared one passes CORS* — `packages/junction/test/call-headers.test.ts` › "a declared header arrives; an undeclared one does not; identity is untouchable" and `test/client.test.ts` › "a declared call header is allowed cross-origin too". ([`FJS-428`](ISSUES_ARCHIVE.md#fjs-428)) Picked by the owner in session.
 
 ### <a id="fjs-d454"></a>2026-09-26 · `FJS-D454` — `ServiceTypes` are generated per audience: the API gets the system row, the browser the client row.
 
 **`litestone types --augment junction` emits `service name → row` and registers it with `@frontierjs/junction/client`, and the row follows `--audience`: `system` keeps `@guarded`/`@secret` columns, `client` drops them.** `fli new` writes `db:types` as two commands, `--audience system` into `db/schema.d.ts` and `--audience client --augment junction` into `web/src/db.d.ts`. Where it lives: `packages/litestone/src/tools/typegen.js`, `packages/cli/commands/project/new.md`. Refused alternative: one shared file, which would tell browser code a column exists that every response strips.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *the service map carries the audience's row, not a re-decided one* — `packages/litestone/test/litestone.test.ts` › "generateTypeScript — ServiceTypes" › "the map follows the audience, because a row type is what a caller may read"; the two-file split in `fli new` is `none` — unenforced. ([`FJS-018`](ISSUES.md#fjs-018)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *the service map carries the audience's row, not a re-decided one* — `packages/litestone/test/litestone.test.ts` › "generateTypeScript — ServiceTypes" › "the map follows the audience, because a row type is what a caller may read"; the two-file split in `fli new` is `none` — unenforced. ([`FJS-018`](ISSUES_ARCHIVE.md#fjs-018)) Picked by the owner in session.
 
 ### <a id="fjs-d458"></a>2026-09-26 · `FJS-D458` — a declared `input:` type validates and does not transform, until the transforms have one owner both boundaries read.
 
@@ -6444,7 +6480,7 @@ Ratified as built: graded on § V after the fact, not before the first edit. *Do
 
 **`requestMeta()` exposes `traceparent`/`tracestate` as received; conduit's junction plugin is the first reader and defaults `trace` under the app's own options.** An upstream trace is continued; with none, the trace id is derived from junction's correlation id (a UUID without dashes is 32-hex), so every outbound call of one request shares one trace. Outside a request a fresh trace per call is correct. Where it lives: `packages/junction/src/core/context.ts`, `packages/conduit/src/plugin.ts`, `packages/conduit/src/trace.ts`. Refused alternative: a trace minted per call, which makes one request's calls unrelated traces, and a parse in junction, which would be a second reading of the spec.
 
-Ratified as built: graded on § V after the fact, not before the first edit. *Batteries vs. smallness*: the reading stays in the battery.  **§ V's ninth question**: *one request, one trace* — `packages/conduit/junction-integration.test.ts` › "continues an upstream trace rather than starting a new one" and "gives every call in one request the same trace when nobody sent one"; `packages/junction/test/request-scope.test.ts` › "HTTP — a W3C trace the caller stated is carried". ([`FJS-742`](ISSUES.md#fjs-742)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. *Batteries vs. smallness*: the reading stays in the battery.  **§ V's ninth question**: *one request, one trace* — `packages/conduit/junction-integration.test.ts` › "continues an upstream trace rather than starting a new one" and "gives every call in one request the same trace when nobody sent one"; `packages/junction/test/request-scope.test.ts` › "HTTP — a W3C trace the caller stated is carried". ([`FJS-742`](ISSUES_ARCHIVE.md#fjs-742)) Picked by the owner in session.
 
 ### <a id="fjs-d460"></a>2026-09-26 · `FJS-D460` — `app.registerDevService` announces a sidecar and does nothing else.
 
@@ -6456,19 +6492,19 @@ Ratified as built: graded on § V after the fact, not before the first edit. *Ba
 
 **Under `NODE_ENV=production` with no `auth` the console refuses to bind and records `status: 'refused'` with the reason; off loopback with no `auth` it refuses too, since an interface and not the variable is what makes it reachable.** Retry, cancel and run are answered only to `POST`, so a link preview cannot fire one. Where it lives: `packages/junction/src/plugins/devtools/index.ts`. Refused alternative: serving request params, the event feed and a job runner unauthenticated wherever the process happens to bind.
 
-Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness*: strictness follows what a mistake exposes.  **§ V's ninth question**: *no gate, no bind* — `packages/junction/test/devtools-observability.test.ts` › "says refused, with the reason, when production has no auth gate" and `test/devtools-security.test.ts` › "a non-loopback hostname with no auth gate refuses to bind"; the POST-only rule is `none` — unenforced. ([`FJS-691`](ISSUES.md#fjs-691)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness*: strictness follows what a mistake exposes.  **§ V's ninth question**: *no gate, no bind* — `packages/junction/test/devtools-observability.test.ts` › "says refused, with the reason, when production has no auth gate" and `test/devtools-security.test.ts` › "a non-loopback hostname with no auth gate refuses to bind"; the POST-only rule is `none` — unenforced. ([`FJS-691`](ISSUES_ARCHIVE.md#fjs-691)) Picked by the owner in session.
 
 ### <a id="fjs-d465"></a>2026-09-26 · `FJS-D465` — a live list answers `changed` with a reload coalesced per burst, never a `stale` count.
 
 **`changed` names no row — it is what a bulk write or a `select: false` write announces, carrying a count — so the list store takes the answer it gives an undecidable record: `refetch`, which collapses a burst into one request.** The count never lands in the store as a row. This extends [`FJS-D161`](#fjs-d161), which rules the same for record views, to lists. Where it lives: `packages/junction/src/client/index.ts`. Refused alternative: counting it on `stale`, since a counter describes a gap whose shape the list knows and *some unknown rows moved* is not one.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a burst is one reload and no row* — `packages/junction/test/client.test.ts` › "a changed event reloads the list", "the count never lands in the store as a row", "a burst of changed events is one reload". ([`FJS-307`](ISSUES.md#fjs-307)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *a burst is one reload and no row* — `packages/junction/test/client.test.ts` › "a changed event reloads the list", "the count never lands in the store as a row", "a burst of changed events is one reload". ([`FJS-307`](ISSUES_ARCHIVE.md#fjs-307)) Picked by the owner in session.
 
 ### <a id="fjs-d466"></a>2026-09-26 · `FJS-D466` — a list with `limit` and no `orderBy`, at its page size, counts a pushed row on `stale`.
 
 **With no order to place a new row by, the list cannot know whether it belongs on the page — the position an offset page past 1 is in under [`FJS-D145`](#fjs-d145) — so at the page size it is counted rather than appended or trimmed.** It bounds growth only: a row already on the page still takes its patch, and a page not yet full still appends. Where it lives: `packages/junction/src/client/index.ts` (`insert`). Refused alternatives: appending, which grew a 20-row list to 3003 rows; trimming, which drops a server row chosen at random.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *an unordered page never grows past its limit* — `packages/junction/test/live-order.test.ts` › "an unordered list at its page size COUNTS a new row rather than growing" and "…and it is a bound on GROWTH, not on updates". ([`FJS-766`](ISSUES.md#fjs-766)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *an unordered page never grows past its limit* — `packages/junction/test/live-order.test.ts` › "an unordered list at its page size COUNTS a new row rather than growing" and "…and it is a bound on GROWTH, not on updates". ([`FJS-766`](ISSUES_ARCHIVE.md#fjs-766)) Picked by the owner in session.
 
 ### <a id="fjs-d402"></a>2026-09-25 · `FJS-D402` — How does a person sign in — `login --api-key`: the key is issued from the app's own screens. Works today for every account, OAuth-only ones included.
 
@@ -6548,7 +6584,7 @@ The paper's recommendation, taken as written: one cadence, and the re-derivation
 
 ### <a id="fjs-d338"></a>2026-09-20 · `FJS-D338` — How a per-call value too big for a header reaches the boundary — a header-flagged body envelope: `X-Fjs-Write: enveloped` and a body of `{ data, base }`, with the header absent meaning today's plain-`data` body.
 
-Asked while building [`FJS-1202`](ISSUES.md#fjs-1202), the transport half of `@@sync(field)`. **A** was picked over **B** (envelope every write unconditionally: cleaner to read, and it rewrites the wire for every existing POST/PUT/PATCH and breaks anything holding the current shape), **C** (a `$base` key inside the body: the cheapest edit, and it gives the `$` prefix a second meaning in a second place, which is the one thing Invariant 10 exists to prevent).
+Asked while building [`FJS-1202`](ISSUES_ARCHIVE.md#fjs-1202), the transport half of `@@sync(field)`. **A** was picked over **B** (envelope every write unconditionally: cleaner to read, and it rewrites the wire for every existing POST/PUT/PATCH and breaks anything holding the current shape), **C** (a `$base` key inside the body: the cheapest edit, and it gives the `$` prefix a second meaning in a second place, which is the one thing Invariant 10 exists to prevent).
 
 **The problem is that a base is a ROW.** Every other per-call value junction carries over HTTP is a header — `Idempotency-Key`, the correlation id, whatever `setCallHeader` names — and a row with a text column goes past what a header may hold, while a write's body already IS its `data`. So the base has to ride the body, and the body then has to say it is carrying two things.
 
@@ -6968,7 +7004,7 @@ installer reds 5.
 *Lives in:* `packages/junction/src/config/index.ts` ·
 `packages/junction/src/core/app.ts` § `applyConfiguredMiddleware` /
 `applyConfiguredPlugins` · `packages/junction/test/config-surface.test.ts` ·
-`FJS-D199` · [`FJS-1066`](ISSUES.md#fjs-1066)
+`FJS-D199` · [`FJS-1066`](ISSUES_ARCHIVE.md#fjs-1066)
 
 ### <a id="fjs-d247"></a>2026-09-08 · `FJS-D247` — Litestone's write tap takes many subscribers and has one owner. Orion attaches to it; the data layer's ingest may not, because a post-commit Observer cannot be durable.
 
@@ -7039,7 +7075,7 @@ question it does not settle is *what does ingest use instead*, which is
 
 `$limitt=10` used to land in the filters as a `WHERE` on a column nobody
 declared, which the Data boundary reported three layers from the cause
-([`FJS-988`](ISSUES.md#fjs-988)). That is fixed and what replaced it was silence:
+([`FJS-988`](ISSUES_ARCHIVE.md#fjs-988)). That is fixed and what replaced it was silence:
 the caller asked for ten rows, got the default page and a **200**, and nothing
 said why. Dropping is better than misfiling and it is not what this codebase does
 anywhere else — conduit refuses an unknown descriptor field by name,
@@ -7270,7 +7306,7 @@ is a seam and grows no tendril — `IMail` keeps working with no resolver at all
 
 ### <a id="fjs-d220"></a>2026-09-05 · `FJS-D220` — the outbound webhook signature stays FrontierJS's own. A subscriber verifies with the published kit, and is told so.
 
-[`FJS-D185`](ISSUES.md#fjs-d185) raised the fork: the plugin signs with
+[`FJS-D185`](ISSUES_ARCHIVE.md#fjs-d185) raised the fork: the plugin signs with
 `@frontierjs/toolbelt/signature`, the FJS-to-FJS scheme, while a subscriber is
 the one counterparty that is **not** FrontierJS — so Standard Webhooks
 (`webhook-id` / `webhook-timestamp` / `webhook-signature`) is the interoperable
@@ -7283,7 +7319,7 @@ the two reversed it.**
 query, so a captured signature cannot be replayed against a different endpoint on
 the same host, and the query is signed because a subscriber URL carrying a
 parameter would otherwise verify unchanged against any other value of it
-([`FJS-678`](ISSUES.md#fjs-678)). Theirs binds none of those three. Adopting the
+([`FJS-678`](ISSUES_ARCHIVE.md#fjs-678)). Theirs binds none of those three. Adopting the
 ecosystem's shape here means signing strictly less.
 
 **The problem the fork was raised to solve is real and is not the scheme.** A
@@ -7312,11 +7348,11 @@ undiscoverable, which is the state that produced this question.
 *Lives in:* `packages/junction/src/plugins/webhooks/index.ts` (`signRequest`,
 prefix `X-Webhook`) · `packages/toolbelt/src/signature/signature.js`
 (`canonicalRequest`, `verifyRequest`) · closes the signature half of
-[`FJS-D185`](ISSUES.md#fjs-d185)
+[`FJS-D185`](ISSUES_ARCHIVE.md#fjs-d185)
 
 ### <a id="fjs-d218"></a>2026-09-05 · `FJS-D218` — a custom method is addressed by header and by nothing else. OpenAPI not being able to say it is a fact about OpenAPI.
 
-Left open by [`FJS-902`](ISSUES.md#fjs-902) and answered here rather than left as
+Left open by [`FJS-902`](ISSUES_ARCHIVE.md#fjs-902) and answered here rather than left as
 prose inside a closed row.
 
 **The question.** A custom method is invoked as `POST /{service}/{id}` with
@@ -7387,7 +7423,7 @@ strict one, which is the shape this ruling exists to remove.
 `test/match-semantics.test.js` with controls both ways — the exact spelling
 still matches, and a path that is simply absent has no near miss, because a hint
 that answered for anything would turn every 404 into a wrong suggestion.
-Recorded against [`FJS-820`](ISSUES.md#fjs-820), which carried it as a deliberate
+Recorded against [`FJS-820`](ISSUES_ARCHIVE.md#fjs-820), which carried it as a deliberate
 non-fix awaiting this ruling. Sibling of [`FJS-D125`](#fjs-d125): same question
 one component along — what a URL MEANS, decided once for every reader of it.
 
@@ -7558,8 +7594,8 @@ the first exactly as it is.
 missing feature. A flag permitting it widens the shoulder and records nothing
 (§ IV, the paved road).
 
-*Lives in:* [`FJS-706`](ISSUES.md#fjs-706) · [`FJS-709`](ISSUES.md#fjs-709) ·
-[`FJS-431`](ISSUES.md#fjs-431) · `FJS-579` ·
+*Lives in:* [`FJS-706`](ISSUES.md#fjs-706) · [`FJS-709`](ISSUES_ARCHIVE.md#fjs-709) ·
+[`FJS-431`](ISSUES_ARCHIVE.md#fjs-431) · `FJS-579` ·
 `packages/junction/src/config/index.ts` · `core/service.ts` · `core/loader.ts`
 
 ### <a id="fjs-d195"></a>2026-09-04 · `FJS-D195` — the OUTERMOST transaction owns the announcement and the effect queue, and the tap asks a SET of names rather than comparing one.
@@ -7620,7 +7656,7 @@ the caller, because every proxy for it — is it empty, is a flag set — is als
 true of a scope somebody else opened a moment ago and has not filled yet.
 Negative controls, stubbed one at a time: **3 / 2 / 1 / 1**.
 
-Closes [`FJS-682`](ISSUES.md#fjs-682), [`FJS-688`](ISSUES.md#fjs-688).
+Closes [`FJS-682`](ISSUES_ARCHIVE.md#fjs-682), [`FJS-688`](ISSUES_ARCHIVE.md#fjs-688).
 
 ### <a id="fjs-d179"></a>2026-09-02 · `FJS-D179` — `update` is patch with an id REQUIRED. Feathers' full replace is retired, because the write never did it.
 
@@ -8210,7 +8246,7 @@ copies of one row (`client/index.ts`, `const store = new Store<T>()`), and a
 record fetched with `service.get(id)` is a plain object no announcement can
 reach. Both were measured: `example/web/src/routes/products/[id].mesa` and
 `packages/basecamp/web/src/components/widgets/ServiceHealthBody.mesa` each hold
-a detail row that a channel push updates nowhere ([FJS-518](ISSUES.md#fjs-518)).
+a detail row that a channel push updates nowhere ([FJS-518](ISSUES_ARCHIVE.md#fjs-518)).
 
 **The fourth row is the ruling's center, and it exists because of `FJS-341`.**
 That defect was a live store defeating `@version`: a push moved a number the
@@ -8278,7 +8314,7 @@ cheaper once a list holds ids rather than rows, not harder. No offline; the
 order everywhere else has been normalize first and persist second, and building
 the store twice is the outcome that order avoids. And nothing new for jetty —
 its store is Sierra's from two versions ago and gets the whole of this by
-importing it ([FJS-493](ISSUES.md#fjs-493)).
+importing it ([FJS-493](ISSUES_ARCHIVE.md#fjs-493)).
 
 **Why a framework may do what the libraries refused.** TanStack Query declines
 normalization on the record, and the stated reason is that doing it correctly
@@ -9448,7 +9484,7 @@ rationale in `publishToChannels()`, the fallback in
 
 ### <a id="fjs-d74"></a>2026-08-01 · `FJS-D74` — Custom service actions stay on `X-Service-Method` header dispatch.
 
-**Status:** amended-by [`FJS-690`](ISSUES.md#fjs-690) — dispatch is a declared table now, not a block-list, so a method attached after construction 404s. That the header is the mechanism, that case is preserved and that CRUD is refused on it are unchanged.
+**Status:** amended-by [`FJS-690`](ISSUES_ARCHIVE.md#fjs-690) — dispatch is a declared table now, not a block-list, so a method attached after construction 404s. That the header is the mechanism, that case is preserved and that CRUD is refused on it are unchanged.
 Proposal to move to sub-path dispatch (`POST /api/notes/:id/summary`) was
 considered and declined. Case is preserved for action names (`getStats` works);
 CRUD names remain blocked from header override; `restore`/`upsert` match
@@ -9487,35 +9523,35 @@ flip is the word a developer arrives searching for, and the ecosystem already re
 
 **`@frontierjs/css` owns the vocabulary (one `theme-*` class per theme) and ships no JavaScript; Sierra owns the switch through `theme: { themes, default, system, persist, key, apply }` in `sierra.config.js`, and `setTheme` refuses a name the app did not declare.** Beating first paint needs a `<head>` script only the build writes, so neither the CSS package nor the ui kit can own it. `apply` picks class or attribute, never the element. Where it lives: `packages/sierra/src/theme/index.js`. Refused alternative: a configurable target element, since `<body>` does not exist when the `<head>` script runs and a body target brings the flash back.
 
-Ratified as built: graded on § V after the fact, not before the first edit. *Paved road vs. the workaround*: a themed subtree is a class written in markup, not a switcher option.  **§ V's ninth question**: *the default applies a class on `documentElement`, and an undeclared theme is refused* — `packages/sierra/test/prefetch-theme.test.js` › "applies a CLASS on documentElement by default" and "setTheme refuses a theme the app does not declare". ([`FJS-308`](ISSUES.md#fjs-308)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. *Paved road vs. the workaround*: a themed subtree is a class written in markup, not a switcher option.  **§ V's ninth question**: *the default applies a class on `documentElement`, and an undeclared theme is refused* — `packages/sierra/test/prefetch-theme.test.js` › "applies a CLASS on documentElement by default" and "setTheme refuses a theme the app does not declare". ([`FJS-308`](ISSUES_ARCHIVE.md#fjs-308)) Picked by the owner in session.
 
 ### <a id="fjs-d456"></a>2026-09-26 · `FJS-D456` — a picker that could not ask for its options says so in a note beside the count, never as a field error.
 
 **`resource.options(field)` answers `{ options, total, truncated, error }`, and `error` separates *there are none* from *I could not ask*; `optionsNote` words it beside `truncationNote` through one `withNote`, so `Select`, `Combobox` and `MultiSelect` say it identically in the field's hint.** Where it lives: `packages/sierra/src/junction/resource.js`, `packages/ui/utils.js`. Refused alternative: a field error, which would refuse a submit on every optional relation whose rows did not arrive.
 
-Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness*: strictness follows cost, and a failed fetch says nothing about whether the value is valid.  **§ V's ninth question**: *the failure is said in the hint, and an empty list says nothing* — `packages/ui/test/browser/specs/options-truncated.spec.mjs` › "a picker that could not ask says so, and says why" and "a list that is genuinely empty says nothing at all". ([`FJS-587`](ISSUES.md#fjs-587), [`FJS-570`](ISSUES.md#fjs-570)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. *Ergonomics vs. strictness*: strictness follows cost, and a failed fetch says nothing about whether the value is valid.  **§ V's ninth question**: *the failure is said in the hint, and an empty list says nothing* — `packages/ui/test/browser/specs/options-truncated.spec.mjs` › "a picker that could not ask says so, and says why" and "a list that is genuinely empty says nothing at all". ([`FJS-587`](ISSUES_ARCHIVE.md#fjs-587), [`FJS-570`](ISSUES_ARCHIVE.md#fjs-570)) Picked by the owner in session.
 
 ### <a id="fjs-d457"></a>2026-09-26 · `FJS-D457` — a control's own `reportInvalid` merges last over server and live errors, and refuses a submit even in a hand-written form.
 
 **`$context.form.reportInvalid(name, message)` is a control saying the value it shows is not one it can hand over; it is the fourth error source and merges last (`{ ..._server, ..._live(), ..._control }`), since it alone describes what is on screen now.** It refuses a submit in a hand-written form too, where the record-level checks stop, because the reporting control is on screen by construction. Only its own control retracts it. Where it lives: `packages/ui/components/forms/Form.mesa`. Refused alternative: letting the record's checks decide, since the record holds the last value the control could convert.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *an unconvertible box refuses the submit in both form shapes* — `packages/ui/test/browser/specs/json.spec.mjs` › "a form does not submit while a control cannot convert what it is showing" and "a hand-written form refuses too — the report came from a control on screen"; merge order is `none` — unenforced. ([`FJS-404`](ISSUES.md#fjs-404), [`FJS-316`](ISSUES.md#fjs-316)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *an unconvertible box refuses the submit in both form shapes* — `packages/ui/test/browser/specs/json.spec.mjs` › "a form does not submit while a control cannot convert what it is showing" and "a hand-written form refuses too — the report came from a control on screen"; merge order is `none` — unenforced. ([`FJS-404`](ISSUES_ARCHIVE.md#fjs-404), [`FJS-316`](ISSUES_ARCHIVE.md#fjs-316)) Picked by the owner in session.
 
 ### <a id="fjs-d462"></a>2026-09-26 · `FJS-D462` — a resource's create or patch drops the server's own columns first, and keeps the version column.
 
 **`stripReadOnly` runs first in the resource's create/patch pipeline, ahead of coerce, blank and validate, removing every `readOnly` key (`@system`, `@generated`, `@computed`, `@from`, a tenancy stamp) except `@version`, which the server requires back.** Rules are taken for the method, since `@immutable` is read-only on a patch and writable on a create. A key with no field rule is left alone, because a `@transient` is legitimate there. Where it lives: `packages/sierra/src/junction/resource.js`, `src/junction/field-rules.js`. Refused alternative: sending the row back whole, which the Data boundary refuses by name with a 403 about a column not on the screen.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *an edit form never sends a server column, and always sends the version it read* — `packages/sierra/test/resource-readonly.test.js` › "a save does not send the server its own columns back" and "stripReadOnly" › "a key the rules do not know is left alone". ([`FJS-526`](ISSUES.md#fjs-526)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *an edit form never sends a server column, and always sends the version it read* — `packages/sierra/test/resource-readonly.test.js` › "a save does not send the server its own columns back" and "stripReadOnly" › "a key the rules do not know is left alone". ([`FJS-526`](ISSUES_ARCHIVE.md#fjs-526)) Picked by the owner in session.
 
 ### <a id="fjs-d463"></a>2026-09-26 · `FJS-D463` — in dev, a `render: static` route's `load()` runs on the server at `/__sierra/static-data`, reached by a fetch shim.
 
 **The dev server executes the loader and the route table emits a fetch, never an import, so a companion still never enters the browser graph.** The companion is imported the way the build imports it — a plain `import()` keyed on mtime — not through `ssrLoadModule`, which rewrites the module and withholds Bun's `import.meta.dir`, so dev runs as `bun --bun vite`. `dev: { staticData: false }` turns it off and pages render `data: null`. Where it lives: `packages/sierra/src/build/static-data-plugin.js`, `src/scanner/generate-route-table.js`, `packages/cli/core/site-surface.js`. Refused alternative: `ssrLoadModule`, which fails on the app's own db module.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *dev fetches, never imports, a companion* — `packages/sierra/test/scanner-plugin.test.js` › "dev emits a fetch shim for a render:static route", "and still does not import the companion", "dev: { staticData: false } opts out"; `test/static-data-endpoint.test.js`; the `bun --bun` requirement is `none` — unenforced. ([`FJS-543`](ISSUES.md#fjs-543)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *dev fetches, never imports, a companion* — `packages/sierra/test/scanner-plugin.test.js` › "dev emits a fetch shim for a render:static route", "and still does not import the companion", "dev: { staticData: false } opts out"; `test/static-data-endpoint.test.js`; the `bun --bun` requirement is `none` — unenforced. ([`FJS-543`](ISSUES_ARCHIVE.md#fjs-543)) Picked by the owner in session.
 
 ### <a id="fjs-d404"></a>2026-09-25 · `FJS-D404` — A call follows the component's import watches: it re-runs when a `$:` on an import fires, wherever Mesa already re-runs it
 
-Asked while weighing [`FJS-D371`](ISSUES.md#fjs-d371), by measuring what `{canEdit()}` does today. A function imported from another file reads what it reads out of the compiler's sight, so `{money(v)}` under `$: prefs.currency` subscribed to nothing. It moved only when another binding compiled into the same `render()` named `prefs`, which is an accident of grouping, and a call with arguments was classed static and written once. `example`'s `MoneyCell` declares `$: prefs.currency` as *load-bearing*, and measured, it moved nothing ([`FJS-1343`](ISSUES.md#fjs-1343)). **A** (a call to an import, or to a local function whose body reaches one, re-runs when the component's import watches fire) was picked over **B** (signals only: document *pass the store as an argument*, and keep the accident) and **C** (B, plus a warning on an imported call in a component that watches something).
+Asked while weighing [`FJS-D371`](ISSUES.md#fjs-d371), by measuring what `{canEdit()}` does today. A function imported from another file reads what it reads out of the compiler's sight, so `{money(v)}` under `$: prefs.currency` subscribed to nothing. It moved only when another binding compiled into the same `render()` named `prefs`, which is an accident of grouping, and a call with arguments was classed static and written once. `example`'s `MoneyCell` declares `$: prefs.currency` as *load-bearing*, and measured, it moved nothing ([`FJS-1343`](ISSUES_ARCHIVE.md#fjs-1343)). **A** (a call to an import, or to a local function whose body reaches one, re-runs when the component's import watches fire) was picked over **B** (signals only: document *pass the store as an argument*, and keep the accident) and **C** (B, plus a warning on an imported call in a component that watches something).
 
 The watch is already how a component says an import is live (`FJS-D381`), so A reads a declaration that exists rather than adding one, and whether a call is live stops depending on which bindings the compiler grouped, the same invisibility `FJS-D379` gave a throw. B leaves a screen correct or stale by what else is on it. C would fire on every formatter in a watching component. **A watch never makes anything reactive that was not**: it adds a trigger to a template binding, a prop and a derived `const`, and a static `const` stays a snapshot, since promoting one would make `const off = store.on(…)` lazy and re-subscribe it on every fire. A handler, a callback that runs later, `{#await}` and an async `const` are excluded, since a re-run there is a side effect or a request. **What A costs** is that every such call in a watching component re-runs when a watch fires, whether or not it reads the watched path. Measured over the repo, 71 render effects in 88 watching components gain a subscription, nearly all formatters; a 1000-row list of `{money(r.total)}` costs 1.6 ms per fire with a cached `Intl.NumberFormat` and 31 ms with one built per call. A narrower `$:` is the lever.
 
@@ -9525,7 +9561,7 @@ The watch is already how a component says an import is live (`FJS-D381`), so A r
 
 Asked while reading VISION RULES 44 and 47 against a scratch component that built `const doubled = store.count * 2` over an import and expected it to move. **RULE 44 stands**: an import is inert until a `$:` in THIS component watches it, and an imported primitive is a constant. Watching an import automatically wherever it is read was weighed and not taken — a library namespace, a config object and a class with private fields (RULE 49) would all be wrapped in a proxy they never asked for — and the per-component watch is what makes a component's reactivity readable from its own source.
 
-**RULE 47 stays, and its text was wrong.** Measured (`packages/mesa/test/import-watch.test.js`): a component with no `$:` on an import reads the raw object and is never updated by any watch, so *"even components that declared nothing"* was false. The cross-component cover reaches only a component that watches ANOTHER path of the same import, and for that one it depends on mount order — mounted after the watcher it is covered, before it is not — and a watch is never unregistered, so the cover outlives the component that declared it. That is kept as a feature: a value this component does not watch shows its current value whenever something re-runs the binding, and the component did not ask for more. `$:` is how a component says it cares and `var` is how it says it wants the value as it was. **How often it matters is to be watched in real apps**; the count at the time of this ruling is in [`FJS-1340`](ISSUES.md#fjs-1340).
+**RULE 47 stays, and its text was wrong.** Measured (`packages/mesa/test/import-watch.test.js`): a component with no `$:` on an import reads the raw object and is never updated by any watch, so *"even components that declared nothing"* was false. The cross-component cover reaches only a component that watches ANOTHER path of the same import, and for that one it depends on mount order — mounted after the watcher it is covered, before it is not — and a watch is never unregistered, so the cover outlives the component that declared it. That is kept as a feature: a value this component does not watch shows its current value whenever something re-runs the binding, and the component did not ask for more. `$:` is how a component says it cares and `var` is how it says it wants the value as it was. **How often it matters is to be watched in real apps**; the count at the time of this ruling is in [`FJS-1340`](ISSUES_ARCHIVE.md#fjs-1340).
 
 **Where a developer is told** (*doctrine vs. discovery*: the hearing amended the doctrine to match the code). The reads nothing watches are listed by the check that already owned the question — `_checkExternalReactivity`, whose strict level Sierra sets — extended to a top-level `const` and to a handler's deps as watches, and a dev build shows the list in the devtools panel beside the component. **No `fli check` rule**: a Sierra build already reports each read under strict, and a third surface grading the same question would be a second owner of it.
 
@@ -9533,7 +9569,7 @@ Asked while reading VISION RULES 44 and 47 against a scratch component that buil
 
 ### <a id="fjs-d380"></a>2026-09-24 · `FJS-D380` — A kit control's one-way `value` is where it starts; a caller whose writes can be refused keeps a draft and puts it back
 
-Asked in [`FJS-1336`](ISSUES.md#fjs-1336). A kit `<Select>` binds its `value` prop to its own copy, so a pick changes what is on screen whether or not the app keeps it. When the app refuses the change, its own value never moved, nothing is pushed, and the control shows a choice the row does not hold. **A** (the caller holds a draft through `bind:value`, follows the row with a `$:`, and resets the draft on refusal) was picked over **B** (the kit returns to its `value` prop after any change the parent did not adopt) and **C** (a stated `controlled` prop that does B on request).
+Asked in [`FJS-1336`](ISSUES_ARCHIVE.md#fjs-1336). A kit `<Select>` binds its `value` prop to its own copy, so a pick changes what is on screen whether or not the app keeps it. When the app refuses the change, its own value never moved, nothing is pushed, and the control shows a choice the row does not hold. **A** (the caller holds a draft through `bind:value`, follows the row with a `$:`, and resets the draft on refusal) was picked over **B** (the kit returns to its `value` prop after any change the parent did not adopt) and **C** (a stated `controlled` prop that does B on request).
 
 B breaks the ordinary form: a picker whose caller only reads the result through `FormData` passes a starting `value` and never adopts a pick, so it would jump back after every one. C is the config flag *paved road vs. the workaround* warns about — it widens the shoulder, gives the same question two answers, and puts one more prop on every control. A keeps the kit's controls the same kind of thing as a native one, where `value` is where the control starts. **What A costs** is that the caller has to know: a screen that writes the pick straight to a refusable service and passes `value={row.x}` one way shows the refused pick with nothing saying so. The pattern is in `packages/ui/README.md` § Forms, and the kit drive's `select-late-options` spec runs it — a refusal twice in a row, an accepted pick, and the row moving from elsewhere — so the advice fails if it stops working. **The same draft written screen after screen is a measurement of the road**, and a reason to reopen this rather than to copy it again.
 
@@ -9541,7 +9577,7 @@ B breaks the ordinary form: a picker whose caller only reads the result through 
 
 ### <a id="fjs-d379"></a>2026-09-24 · `FJS-D379` — A template binding that throws keeps the value it last showed; the bindings beside it go on updating
 
-Asked in [`FJS-1330`](ISSUES.md#fjs-1330). The text and attribute bindings at one level of a template share one `render()` effect, so an expression that threw stopped every binding after it. Each binding is now contained on its own. The throw goes to the nearest `<mesa:boundary>`, or to the console with none above. **A** (keep the last value) was picked over **B** (clear it: empty text, attribute removed).
+Asked in [`FJS-1330`](ISSUES_ARCHIVE.md#fjs-1330). The text and attribute bindings at one level of a template share one `render()` effect, so an expression that threw stopped every binding after it. Each binding is now contained on its own. The throw goes to the nearest `<mesa:boundary>`, or to the console with none above. **A** (keep the last value) was picked over **B** (clear it: empty text, attribute removed).
 
 Keeping is what a binding with an effect of its own — `class:`, `style:`, `{@html}` — already did, so which bindings the compiler grouped stays invisible; measured, all three held their value through the same throw that froze the grouped ones. Clearing has no neutral value for an attribute: removing `disabled` enables the control, removing `class` unstyles the element, and removing `aria-expanded` changes what the element is. What A costs is a stale value that looks current, reported only in the console when no boundary is above it — Sierra renders every route inside one (`FJS-D376`).
 
@@ -9576,7 +9612,7 @@ The paper's recommendation, taken as written: B keeps exactly the half-drawn, st
 
 ### <a id="fjs-d374"></a>2026-09-24 · `FJS-D374` — A throw finds its boundary by walking the owner tree from the node that threw, in `_runNode`
 
-**Status:** amended-by [`FJS-1326`](ISSUES.md#fjs-1326) — the clause *from the node that threw*, for a derivation only. A memo is owned where it is declared, usually the script, outside every boundary in its own template, so its throw walks from each node that READS it; readers are routed to rather than woken, since one that re-runs without reading the memo again would drop it. That the owner tree decides, and that one function answers which boundary (`_catcherOf`), are unchanged.
+**Status:** amended-by [`FJS-1326`](ISSUES_ARCHIVE.md#fjs-1326) — the clause *from the node that threw*, for a derivation only. A memo is owned where it is declared, usually the script, outside every boundary in its own template, so its throw walks from each node that READS it; readers are routed to rather than woken, since one that re-runs without reading the memo again would drop it. That the owner tree decides, and that one function answers which boundary (`_catcherOf`), are unchanged.
 
 Asked in [`IDEAS/derived-suspense.md`](IDEAS/derived-suspense.md) § Open questions. **A** was picked over **B** (the context stack, reinstated by `captureContext()`).
 
@@ -9592,7 +9628,7 @@ The paper's recommendation, taken as written: no new noun, and it is Svelte's sh
 
 Asked in [`IDEAS/derived-suspense.md`](IDEAS/derived-suspense.md) § Open questions. **B** was picked over **A** (rejected awaits only, as today; a throw is the console's), **C** (B, plus event handlers).
 
-The paper's recommendation, taken as written: Solid and Svelte 5 draw the same line. A throw in a flush leaves a region half-built, while a throw in a handler leaves the DOM as it was, so only the first corrupts what the boundary guards. C would wrap every handler the compiler emits, to catch a failure that damaged nothing. Defect: [`FJS-1326`](ISSUES.md#fjs-1326).
+The paper's recommendation, taken as written: Solid and Svelte 5 draw the same line. A throw in a flush leaves a region half-built, while a throw in a handler leaves the DOM as it was, so only the first corrupts what the boundary guards. C would wrap every handler the compiler emits, to catch a failure that damaged nothing. Defect: [`FJS-1326`](ISSUES_ARCHIVE.md#fjs-1326).
 
 ### <a id="fjs-d327"></a>2026-09-20 · `FJS-D327` — Does `@frontierjs/ui` ship a map control — No. `x-geo` is published, `controlFor()` resolves a validated lat/lng pair, and an app that wants a map brings its own.
 
@@ -11415,7 +11451,7 @@ The paper's recommendation, taken as written: it keeps `fli` model-free, the sam
 
 Bun applies `mock.module()` process-wide and never undoes it, so one file mocking a transport made every later file in the run grade the mock, and three suites spawned subprocesses to escape it. A seam takes the transport instead (`createSystemSender(config, { transport })`, Outpost's runner); a double for an interface is shipped once and applies the real path's guards (`createTestMailer()`), and `createMemoryCache()` and local `FileStorage` are the cache and storage doubles. Lives in `packages/junction/src/plugins/email/system/sender.ts` and `packages/testing/src/doubles.ts`. Refused alternative: `mock.module()` per file, whose result depends on which file ran first. Vitest's file-isolated `vi.mock` is outside this reason.
 
-Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *no bun suite contains a module mock* — `none` — unenforced; nothing greps for it. ([`FJS-908`](ISSUES.md#fjs-908)) Picked by the owner in session.
+Ratified as built: graded on § V after the fact, not before the first edit. No § IV adjudication is in tension.  **§ V's ninth question**: *no bun suite contains a module mock* — `none` — unenforced; nothing greps for it. ([`FJS-908`](ISSUES_ARCHIVE.md#fjs-908)) Picked by the owner in session.
 
 ### <a id="fjs-d464"></a>2026-09-26 · `FJS-D464` — the generated route table is committed as `routes.snapshot.md`, with `publishes:` leading it.
 
@@ -11789,7 +11825,7 @@ wrong without anything saying so*, which is the measurement above. The tier is
 refusal is PAIRED with the shape one column away that must still work ·
 [litestone.ts](packages/junction/src/core/litestone.ts) ·
 [composite-key.test.ts](packages/junction/test/composite-key.test.ts) ·
-[FJS-694](ISSUES_ARCHIVE.md) · [FJS-961](ISSUES.md#fjs-961)
+[FJS-694](ISSUES_ARCHIVE.md) · [FJS-961](ISSUES_ARCHIVE.md#fjs-961)
 
 
 ### <a id="fjs-d236"></a>2026-09-07 · `FJS-D236` — `humanize` is a third AXIS of `/inflect`, not a kit beside it. One folder answers *how is this name spelled*, and the divergence between the structural halves and the reader half is stated inside it.
@@ -11956,8 +11992,8 @@ are `columnPlan`, the enforcement is `$setAuth`. Studio KEEPS previewing rows at
 standing, because it can and because the authoring loop needs it, and gains the
 disclosure that makes the preview legible: which resolver graded it, and which declared
 claims the principal it built does not carry. Three defects fall out and are filed —
-[FJS-976](ISSUES.md#fjs-976), [FJS-977](ISSUES.md#fjs-977),
-[FJS-978](ISSUES.md#fjs-978).
+[FJS-976](ISSUES_ARCHIVE.md#fjs-976), [FJS-977](ISSUES_ARCHIVE.md#fjs-977),
+[FJS-978](ISSUES_ARCHIVE.md#fjs-978).
 
 **§ IV, two rows in tension and they resolve in opposite directions**, which is the
 substance rather than a complication. *Paved road vs. the workaround*: issuing is the
@@ -11970,7 +12006,7 @@ developer misreading a screen they are about to change anyway.
 
 **What this does NOT rule.** Whether the issuing surface is a route, a service method or
 both is a build decision inside the app's own realm and needs no ruling. Storage stays
-[FJS-D229](ISSUES.md#fjs-d229). The moment Studio grows an auth story, a tenancy story
+[FJS-D229](ISSUES_ARCHIVE.md#fjs-d229). The moment Studio grows an auth story, a tenancy story
 and a release story it has become an app, and this ruling is the thing that will have
 been broken — the test to keep applying is [FJS-D228](#fjs-d228)'s, one axis over.
 
@@ -12001,13 +12037,13 @@ declared columns, a SQL body, a materialization strategy, an incrementality trig
 a target database in one construct, which is a dbt model with no second language and no
 re-declared types, and `@derived` / `@from(Order, count: true)` is a column-level rollup
 computed in SQL that dbt has no equivalent for. Both ship. Neither is used by any schema
-in this repo ([FJS-972](ISSUES.md#fjs-972)).
+in this repo ([FJS-972](ISSUES_ARCHIVE.md#fjs-972)).
 
 **Storage is the only new commitment, and it is deliberately NOT made here**
-([FJS-D229](ISSUES.md#fjs-d229)). Every other category is a choice about which existing
+([FJS-D229](ISSUES_ARCHIVE.md#fjs-d229)). Every other category is a choice about which existing
 package points where — reversible, no new dependency. A storage engine is a native
 runtime dependency, is irreversible in the data the moment anyone's analytics live in
-it, forks the consistency model in the way [FJS-958](ISSUES.md#fjs-958) previews, and
+it, forks the consistency model in the way [FJS-958](ISSUES_ARCHIVE.md#fjs-958) previews, and
 sets the ceiling that decides whether the product is *analytics for the app* or
 *analytics for the business*. SQLite plus materialized views is the floor and it is not
 obviously too low; the decision waits for real strain rather than a guess.
@@ -12023,7 +12059,7 @@ edge, and it is the reason the first thing built is **the export contract**: tod
 only way data leaves an FJS app is a human clicking `POST /api/export` in a development
 tool, which is a hole under every possible answer to this question.
 
-**The ruling makes one existing defect load-bearing.** [FJS-970](ISSUES.md#fjs-970) —
+**The ruling makes one existing defect load-bearing.** [FJS-970](ISSUES_ARCHIVE.md#fjs-970) —
 a `view` carries no gate, no row policy and no tenant scope, and cannot be made to — is
 an ordinary bug while views are unused and is a contradiction of this ruling the moment
 the transform primitive is the thing the product is built on. It is fixed before
@@ -12031,10 +12067,10 @@ anything is built on top of it, not after.
 
 **Scope recorded, in the vocabulary the capability map uses**: Core, maturity 2, owner
 to be named, `derived-from: db/schema.lite`. Two questions stay open and are filed
-rather than folded in — the storage engine ([FJS-D229](ISSUES.md#fjs-d229)) and where
+rather than folded in — the storage engine ([FJS-D229](ISSUES_ARCHIVE.md#fjs-d229)) and where
 authoring stops being Studio's ([FJS-D230](#fjs-d230)) — plus a collision this
 ruling creates with `orion`, which wants the same write tap for a different sink
-([FJS-D231](ISSUES.md#fjs-d231)).
+([FJS-D231](ISSUES_ARCHIVE.md#fjs-d231)).
 ---
 
 ### <a id="fjs-d38"></a>2026-09-07 · `FJS-D38` — `.mesa` is the authoring model for EVERY interface, and a new surface is a compiler backend rather than a second component model.
@@ -12212,7 +12248,7 @@ existed in one sentence of `CLAUDE.md` and the practice drifted away from it
 without anyone deciding to.
 
 *Lives in:* `scripts/ci.mjs` (the harness) · `CLAUDE.md` § Running things (the
-table, to be generated) · [`FJS-D119`](ISSUES.md#fjs-d119) is what it closes
+table, to be generated) · [`FJS-D119`](ISSUES_ARCHIVE.md#fjs-d119) is what it closes
 
 
 ### <a id="fjs-d196"></a>2026-09-04 · `FJS-D196` — a ruling in force says NOTHING about its status. The word is written only where being in this file has stopped being the whole answer.
@@ -13517,7 +13553,7 @@ capability the `FileStorage` plugin is **given** and never one it imports: the
 default is the native where the runtime has it, refused by name where it does not,
 and an app wanting a libvips toolkit — sprites, watermarks, SVG minification —
 passes its own. That seam is also what keeps `metadata()` available to
-[FJS-1184](ISSUES.md#fjs-1184), where the real format of stored bytes is the
+[FJS-1184](ISSUES_ARCHIVE.md#fjs-1184), where the real format of stored bytes is the
 question.
 
 **What is NOT settled here** is who owns the derivative store. `IDEAS/bun-natives.md`

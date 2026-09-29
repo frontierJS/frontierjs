@@ -57,8 +57,9 @@ Each names its pin. The failure behind each is `docs/internals.md`, by path.
   the way out (`FJS-746`, `test/static-root.test.ts`).
 - **`$` throws outside a call, and a call that has ended is outside it**
   (`FJS-687`, `test/call-scope.test.ts`).
-- **A claim resolver runs inside the data hook and never for an anonymous
-  caller** (`FJS-D113`, `test/principal-claims.test.ts`).
+- **A claim resolver runs inside the data hook, for a guest as well as a
+  session, and a guest's claims never become `ctx.auth.user`** (`FJS-D113`,
+  `test/principal-claims.test.ts`).
 - **A test names no port** — `port: 0`, then read `app.http.port` (`FJS-900`,
   `test/test-ports.test.ts`).
 - **The whole package typechecks to zero, `test/` included** — junction has no
@@ -237,6 +238,7 @@ tools/
   surface.ts · jobs-snapshot.ts · notifications-snapshot.ts · principal-snapshot.ts — the four app snapshots
   errors-snapshot.ts — errors.snapshot.md, this package's own; takes no app
   atlas.ts — describeAppModel as JSON on stdout
+  call.ts — one service method, once, as a person, the answer as JSON on stdout
   app-module.ts — reading a built app off a module
   init.ts · setup.ts · repl.ts · generators.ts · ui.ts · build-app.ts
   check-app-db.mjs · check-auto-validation.mjs · check-explicit-schema.mjs · check-gate-auth.mjs ·

@@ -1,0 +1,57 @@
+---
+title: Verify email
+---
+<script>
+  // Where the verification mail's link lands. The token is spent on arrival —
+  // there is nothing to confirm, and a button would only be one more step
+  // between the person and the answer.
+  //
+  // Open signed in or out (App.mesa): the link is opened wherever the mail is
+  // read, which is often not the browser that holds the session.
+  import { page }      from '@frontierjs/sierra/router'
+  import { getClient, refresh } from '@frontierjs/sierra/junction'
+  import { session }   from '../../session.js'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Alert  from '@frontierjs/ui/components/feedback/Alert.mesa'
+
+  $: session.user
+
+  let state = 'working'   // working | done | failed
+  let error = null
+
+  async function spend(token) {
+    if (!token) { state = 'failed'; error = 'This link has no token in it.'; return }
+    try {
+      await getClient().auth.verifyEmail(token)
+      // A signed-in session was graded unverified; reading it again lifts that
+      // without a sign-out.
+      if (session.user) await refresh()
+      state = 'done'
+    } catch (e) {
+      const status = e.code ?? e.status
+      error = status === 400 || status === 401
+        ? 'This link has expired or was already used. Send a new one from Your settings.'
+        : e.message
+      state = 'failed'
+    }
+  }
+
+  spend(typeof page.query?.token === 'string' ? page.query.token : null)
+</script>
+
+<div class="section-header">
+  <h1>Verify your email</h1>
+  <span class="text-sm text-muted">Basecamp</span>
+</div>
+
+<div class="container narrow" id="verify-email" data-state={state}>
+  {#if state === 'working'}
+    <p class="text-sm text-muted">Checking the link…</p>
+  {:else if state === 'done'}
+    <Alert tone="success" title="Address verified">Your email address is confirmed.</Alert>
+    <Button variant="primary" href={session.user ? '/' : '/login/'}>{session.user ? 'Continue' : 'Sign in'}</Button>
+  {:else}
+    <Alert tone="danger" title="Not verified">{error}</Alert>
+    <Button variant="ghost" href={session.user ? '/settings/' : '/login/'}>{session.user ? 'Your settings' : 'Sign in'}</Button>
+  {/if}
+</div>

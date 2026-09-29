@@ -170,6 +170,40 @@ export function startRepl({ db, sys, standing, accessors = [], commands = {}, te
   })
 }
 
+// ─── evalOnce ─────────────────────────────────────────────────────────────────
+//
+//   evalOnce({ code, db, sys, commands, tenant, out, err })  → Promise<0 | 1>
+//
+// `fli tinker -e`: one line, the same evaluator and the same dot commands as the
+// prompt, then out. Without it an agent reaches for `sqlite3` against the app's
+// file, which answers every question with the gate switched off.
+//
+// The answer goes to `out` unindented, so `| jq` reads it, and a failure goes to
+// `err` with the exit code — a caller running this once has no next prompt to
+// read an error off, and an exit of 0 after a refusal reads as the answer.
+
+export async function evalOnce({ code, db, sys, commands = {}, tenant = null, out = console.log, err = console.error } = {}) {
+  const line = String(code ?? '').trim()
+  if (!line) { err('  Nothing to evaluate.'); return 1 }
+
+  try {
+    if (line.startsWith('.')) {
+      const [name, ...args] = line.slice(1).split(/\s+/)
+      if (!Object.hasOwn(commands, name)) {
+        err(`  No command .${name}. ${Object.keys(commands).length ? `Known: ${Object.keys(commands).map(n => '.' + n).join(' ')}` : 'db/tinker.js declares none.'}`)
+        return 1
+      }
+      await commands[name].run({ db, sys, args, out, tenant })
+      return 0
+    }
+    out(format(await evaluate(line, db, sys), ''))
+    return 0
+  } catch (e) {
+    err(`  ${e.name}: ${e.message}`)
+    return 1
+  }
+}
+
 // ─── evaluating ───────────────────────────────────────────────────────────────
 //
 // Wrapped in an async function so top-level await works and a bare expression
@@ -189,9 +223,9 @@ function evaluate(code, db, sys) {
 // A row is the thing being looked at, so it is printed whole. `JSON.stringify`
 // is not enough on its own — a Date and a BigInt are both routine in an answer
 // here and neither survives it, one silently and one as a throw.
-function format(value) {
-  if (value === undefined) return '  undefined'
-  if (value === null)      return '  null'
+function format(value, pad = '  ') {
+  if (value === undefined) return `${pad}undefined`
+  if (value === null)      return `${pad}null`
 
   const text = JSON.stringify(value, (_, v) => {
     if (typeof v === 'bigint')       return `${v}n`
@@ -202,9 +236,9 @@ function format(value) {
 
   // A function or a symbol stringifies to nothing at all — printing an empty
   // string reads as a query that answered nothing.
-  if (text === undefined) return `  ${String(value)}`
+  if (text === undefined) return `${pad}${String(value)}`
 
-  return text.split('\n').map(l => `  ${l}`).join('\n')
+  return text.split('\n').map(l => `${pad}${l}`).join('\n')
 }
 
 // ─── completion ───────────────────────────────────────────────────────────────

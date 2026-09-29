@@ -10,7 +10,7 @@ dated: 2026-08-20
 question with one word doing all the work — *for a multi-tenant app where each account
 gets its own database and client, are reads and writes non-blocking between accounts?*
 Every claim below was read off the tree; the one defect it turned up has an id
-([FJS-365](../ISSUES.md#fjs-365)).
+([FJS-365](../ISSUES_ARCHIVE.md#fjs-365)).
 
 The answer is that **"isolated" names two different things and `strategy database`
 delivers exactly one of them.** That is not a shortfall — the half it delivers is the
@@ -121,7 +121,7 @@ easier by dividing that peak by N. A refcount, or a "do not evict what is checke
 out" rule, is the proper fix and is small.
 
 **The outbox is broken under `strategy database` and is filed as
-[FJS-365](../ISSUES.md#fjs-365).** `ctx.enqueue` writes its row through
+[FJS-365](../ISSUES_ARCHIVE.md#fjs-365).** `ctx.enqueue` writes its row through
 `ctx.locals.db` — the tenant's file — and `deliverOutbox` reads `app.db`, which is
 `createApp({ db })` and nothing else. The enqueue is accepted (the tenant file carries
 the same schema, so the model is present) and the relay reports a clean pass over an
@@ -140,11 +140,24 @@ after ring 0 and ring 1 exist rather than a litestone or junction one.
 
 The framework-side remainder is three small things, all of which pay off before any
 of that: `reusePort` on the serve call, a refcount on the pool, and the
-[FJS-365](../ISSUES.md#fjs-365) resolution — where the relay either sweeps the
+[FJS-365](../ISSUES_ARCHIVE.md#fjs-365) resolution — where the relay either sweeps the
 registry's open tenants or the outbox moves to a `database` block that is not
 per-tenant, and **whichever is chosen, the other shape refuses rather than no-ops.**
 
 ---
+
+## Unargued — read replicas and a query cache
+
+Moved from the retired `packages/litestone/docs/roadmap.md`, both low priority there.
+
+- **Read replicas** — route reads to a geographically closer SQLite replica
+  synced via Litestream; a `readReplicas` option to `createClient`. Most SQLite
+  apps are single-region, and a replica's lag is a read-your-writes question
+  before it is a config one.
+- **Query result cache** — in-process LRU keyed by model + where + a per-model
+  write counter, opt-in: `db.product.findMany({ cache: { ttl: 60 } })`. A cache
+  keyed without the principal leaks across gates, so the key must carry the
+  caller's level and policy claims.
 
 ## See also
 

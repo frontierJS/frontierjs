@@ -53,7 +53,7 @@ renewal (6), reminders (7).
 `@@transitions` refuses a self-transition, and `transition(id, name, opts)`
 carries no data — which is why renewal is not a transition and is argued as a
 row per period. Caravan already answers a cron's next run
-(`app.jobs.nextRuns()`), so [`FJS-1241`](ISSUES.md#fjs-1241) is a side fix and
+(`app.jobs.nextRuns()`), so [`FJS-1241`](ISSUES_ARCHIVE.md#fjs-1241) is a side fix and
 not evidence for the noun. And `FJS-D352` split the time words by their
 DEFAULT: `@@expires` is imposed (a dead row), `@@effective` is asked (history
 something still points at) — the test is *would a pointer to it break if it
@@ -75,14 +75,14 @@ window is the truth for reads and the transition is the record that catches up.
 > shape.
 
 **Gap 04 shipped: `@unit`.** [`FJS-D348`](DECISIONS.md#fjs-d348) rules it,
-[`FJS-1240`](ISSUES.md#fjs-1240) is the build. `@money` was the precedent and
+[`FJS-1240`](ISSUES_ARCHIVE.md#fjs-1240) is the build. `@money` was the precedent and
 carried the whole shape — a symbol from a shipped table, refused at parse,
 emitted as an `x-` keyword, read by the control layer — so the word cost no new
 mechanism. **It converts nothing**: the value stored is the value sent and the
 emitted DDL is byte-identical with the attribute and without it, asserted both
 ways against a real database. The symbol table is closed because the attribute
 promises the symbol resolves to a DIMENSION, and a free-text `@unit("widgets")`
-would have been [`FJS-1236`](ISSUES.md#fjs-1236)'s shape on a new word.
+would have been [`FJS-1236`](ISSUES_ARCHIVE.md#fjs-1236)'s shape on a new word.
 
 **The artifact that framed the gap was wrong about its case, and measuring first
 is what caught it.** It reasoned about `weightGrams`, which exists nowhere in
@@ -104,7 +104,7 @@ the box and the column disagree, and `300` typed into a `@unit(s)` field is the
 **Gap 07 was next and the register was righter than the paper.**
 `IDEAS/ontology.md` said the fourth shape — a commitment a person can SEE — had
 no instance in the repo. It has one and it is broken:
-[`FJS-1241`](ISSUES.md#fjs-1241), `basecamp`'s `Job.nextRunAt`, set once on
+[`FJS-1241`](ISSUES_ARCHIVE.md#fjs-1241), `basecamp`'s `Job.nextRunAt`, set once on
 create to `now + 60s` by a line whose own comment calls it a placeholder, never
 written again, and rendered on a screen as *Next run*. Caravan already answers
 the true value through `nextRuns()` and basecamp's own tests already call it.

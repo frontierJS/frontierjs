@@ -54,6 +54,7 @@ describe('createCaravan', () => {
     expect(q.name).toBe('caravan')
     expect(typeof q.register).toBe('function')
     expect(typeof q.boot).toBe('function')
+    expect(typeof q.work).toBe('function')
   })
 
 })
@@ -558,16 +559,21 @@ describe('Junction plugin protocol', () => {
     expect(statsResult).toHaveProperty('total')
   })
 
-  it('boot() starts the worker', async () => {
+  it('boot() starts no worker and work() does', async () => {
     const q = makeQueue()
     const app: Record<string, unknown> = {}
     q.register(app)
     await q.boot!(app)
-    // Dispatch and handle a job to confirm worker is running
     let ran = false
     q.handle('boot-test', async () => { ran = true })
     await q.dispatch('boot-test', {})
+    await new Promise(r => setTimeout(r, 100))
+    const afterBoot = ran
+
+    await q.work!(app)
     await waitFor(() => ran)
+
+    expect(afterBoot).toBe(false)
     expect(ran).toBe(true)
     await q.stop()
   })

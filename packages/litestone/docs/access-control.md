@@ -678,7 +678,8 @@ That resolver reads `verifiedAt` / `activatedAt` / `role` / `isAdmin` /
 | `null` | modeled, and this user has not reached it | grades down |
 
 An app with no verification flow leaves `verifiedAt` unset and its sessions
-grade `USER`; an app that has one sets it to `null` until the user verifies, and
+grade on `role` — `USER` with one, `CREATOR` without (`FJS-D197`'s ruling that
+`role` is read for presence); an app that has one sets it to `null` until the user verifies, and
 those sessions grade `VISITOR`. Absence never means "not yet" — otherwise every
 app would have to restate a lifecycle it does not have just to make `@@gate`
 usable.

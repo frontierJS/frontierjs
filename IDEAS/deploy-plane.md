@@ -237,7 +237,7 @@ authenticated with a `Secret` of kind `ssh_key` (already modeled)~~ — **struck
 installed by cloud-init and never reached over SSH, and an imported one by a
 command an operator pastes. The ring is unchanged; only how it reaches a machine
 is. `ssh_key` keeps its meaning as a person's recovery path. (`ready` was deleted
-from `ServerStatus` on 2026-09-07 — see [FJS-1021](../ISSUES.md#fjs-1021).)
+from `ServerStatus` on 2026-09-07 — see [FJS-1021](../ISSUES_ARCHIVE.md#fjs-1021).)
 
 **Ring 2 — the Outpost deploys applications.** `Deployment` and `DeploymentStep` are
 the record; the Outpost is the executor. This is where build-once pays: the Outpost pulls

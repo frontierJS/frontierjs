@@ -270,7 +270,7 @@ the variable being bound must be a writable top-level `let`, since the child's
 changes are written into it. Binding to a `const`, a `var`, an import or a
 function is a compile error naming the variable — see RULE 13a (§6) for what the
 `var` one says instead of `let`. **Enforced** — until
-[`FJS-1068`](../../../ISSUES.md#fjs-1068) only the `export const` half above was,
+[`FJS-1068`](../../../ISSUES_ARCHIVE.md#fjs-1068) only the `export const` half above was,
 and a bare `const` threw `TypeError: Assignment to constant variable` on the
 first keystroke instead. A derived `const` is answered with `$: name = expr`
 (§4.5), which is what that form is for; only a bare identifier is graded, so
@@ -938,7 +938,7 @@ the external-reactivity check, which owns that question
 > written once at mount and never again, so `bind:` meant one thing on a `let`
 > and another one line away on a `var`, selected by a keyword the template cannot
 > see. The capability survives, the ambiguous spelling does not
-> ([`FJS-1068`](../../../ISSUES.md#fjs-1068)).
+> ([`FJS-1068`](../../../ISSUES_ARCHIVE.md#fjs-1068)).
 
 ```mesa
 <script>

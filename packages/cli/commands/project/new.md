@@ -632,7 +632,7 @@ app.configure(authPlugin)
 app.configure({
   name: 'auth-cleanup',
   register() {},
-  async boot() { authCleanup.start() },
+  async work() { authCleanup.start() },
   async shutdown() { authCleanup.stop() },
 })
 

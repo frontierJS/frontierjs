@@ -270,7 +270,7 @@ Open, and the reason this is a note rather than a proposal:
   - **Recommend B** — an error region usually wants to be coarser than a loading one,
     and a swallowed error is the silence § V's ninth question exists to refuse.
 - ~~**`FJS-D372` — Does a boundary catch a THROW, or only a rejected await?**~~ **Answered 2026-09-24 (`FJS-D372`): B — a throw during a flush reaches the boundary too: render, block, derivation and `$:` effect. Not an event handler or a timer.**
-  ([`FJS-1326`](../ISSUES.md#fjs-1326)). Today `boundaryBlock` reads only the
+  ([`FJS-1326`](../ISSUES_ARCHIVE.md#fjs-1326)). Today `boundaryBlock` reads only the
   `.error` of its `$async` states. A throw during a flush — a render, a block, a
   derivation, a `$:` effect — is caught by `_runNode`, logged, and goes nowhere, so the
   region is left half-drawn with its effects still subscribed. A throw on the FIRST run

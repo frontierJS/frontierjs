@@ -79,7 +79,7 @@ enforce on its own.
 `health()` sent `{ load, memory }` and basecamp keeps `cpu`, `memory` and
 `disk`, so two of the three series a real fleet draws had never had a point
 written to them and no CPU threshold could fire
-([`FJS-1027`](../../ISSUES.md#fjs-1027)). Both sides were silent about it and
+([`FJS-1027`](../../ISSUES_ARCHIVE.md#fjs-1027)). Both sides were silent about it and
 both were right to be — a missing reading is a real state — and every test
 either side agreed with itself.
 
@@ -103,7 +103,7 @@ its own comment says why: an image built here has never been pushed, so it has
 no repo digest. `name@sha256:<id>` is not a reference any daemon resolves, so
 docker read it as a pull and every `source.kind: 'git'` deploy failed with *pull
 access denied for <name>* seconds after building successfully
-([`FJS-919`](../../ISSUES.md#fjs-919)).
+([`FJS-919`](../../ISSUES_ARCHIVE.md#fjs-919)).
 
 A bare id is a reference the daemon takes, so the local case addresses the bytes
 directly and the registry case keeps `name@digest`. Which one it is is asked of

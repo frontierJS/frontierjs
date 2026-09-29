@@ -1,5 +1,12 @@
 # Changes — @frontierjs/css
 
+## 2026-09-29 — AGENTS.md's modifier table is complete, and one term is one command (`FJS-1550`)
+
+`text` (on `.skeleton`) and `disabled` (on `.btn`) were in the register and not
+the table, which sent a reader to the stylesheets. *Source of truth* gains the
+one-line `bun -e` that prints a term's meaning and canonical markup from an app,
+which agents had been writing themselves against `vocabulary.json`.
+
 ## 2026-09-29 — a Cluster holding a field lines up on the control
 
 A `.field-group` is a label stacked over a control, and `.cluster` centers, so

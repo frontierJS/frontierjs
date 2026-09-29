@@ -59,7 +59,6 @@
 
 ## Meta
 - [internals.md](internals.md) — **for a change to litestone itself**: the rule each path must keep, the failure that established it, and its `FJS-###`. Reads, writes, events, policies, parse, migrations, SQLite, tenancy, client utilities, tooling
-- [roadmap.md](roadmap.md) — **proposals only, never a statement of behavior**: Embedding, LatLng, ExternalSync, and the unbuilt half of `@slug`. What the language accepts is `reference.snapshot.md` above
 - [gotchas.md](gotchas.md) — production surprises and edge cases
 
 ## Audits
@@ -67,8 +66,7 @@
 Point-in-time reviews. Read them for the reasoning; re-verify before citing a number
 — see [VERIFYING.md](../../../VERIFYING.md).
 
-- [PERFORMANCE_AUDIT.md](PERFORMANCE_AUDIT.md) — query and write-path performance review
-- [STUDIO_REVIEW.md](STUDIO_REVIEW.md) — Litestone Studio review
+- [PERFORMANCE_AUDIT.md](../bench/PERFORMANCE_AUDIT.md) — query and write-path performance review
 
 ## Guides
 

@@ -108,7 +108,7 @@ open is the same gap seen from the row instead of the column.
   `alert-evaluate` runs every minute. Whether that is right is not knowable from
   outside the file, which is the point.
 - **A fourth shape — a commitment a person can SEE — had exactly one instance
-  and it was broken** ([`FJS-1241`](../ISSUES.md#fjs-1241), closed by reading
+  and it was broken** ([`FJS-1241`](../ISSUES_ARCHIVE.md#fjs-1241), closed by reading
   caravan's `nextRuns()` rather than storing a column). *What is going to
   happen to this order, and when* cannot be answered by any sweep, because
   nothing exists until the sweep runs. `basecamp`'s jobs screen asks it anyway:
@@ -259,7 +259,7 @@ names the open question it waits on. **Steps 1 → 2 → 3 are the critical path
 after 3 the pipe is proved end to end and each later step deletes one
 hand-written job.
 
-**Side fix, independent of all of it:** [`FJS-1241`](../ISSUES.md#fjs-1241)
+**Side fix, independent of all of it:** [`FJS-1241`](../ISSUES_ARCHIVE.md#fjs-1241)
 closes by basecamp reading `app.jobs.nextRuns()`
 (`packages/caravan/src/cron.ts`) instead of the `nextRunAt` column it guesses
 once. A cron's next run is Caravan's answer and not a commitment.

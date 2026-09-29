@@ -50,10 +50,13 @@ title: App
   let loadError = null
   let loading   = true
   let busy      = null
-  let tab       = 'overview'
+  // `?tab=` and `?cert=` are how another screen sends somebody to one domain's
+  // certificate form — DNS links its expiring rows here, so there is one
+  // upload form rather than a copy per screen. Checked against TABS below.
+  let tab       = typeof page.query?.tab === 'string' ? page.query.tab : 'overview'
   let editing   = false
   let adding    = false
-  let certFor   = null                 // domain id whose upload form is open
+  let certFor   = typeof page.query?.cert === 'string' ? page.query.cert : null   // domain id whose upload form is open
   let draft     = domains.make()
   let certDraft = { certPem: '', keyPem: '', expiresAt: '' }
   let fleet     = []                 // the workspace's machines, for the placement select
@@ -402,6 +405,7 @@ title: App
 
   // Only the tabs with something behind them. See the note at the foot.
   const TABS = ['overview', 'domains', 'source', 'config', 'releases', 'logs']
+  if (!TABS.includes(tab)) tab = 'overview'
   const APP_RELEASES_COLUMNS = [
     { name: 'queued',  label: 'Queued' },
     { name: 'status',  label: 'Status' },

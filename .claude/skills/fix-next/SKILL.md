@@ -73,7 +73,7 @@ fli close FJS-### --how "<the cause, the fix, and the test or drive that proves 
 fli file --sev S3 --area <pkg> --title "<the defect, one sentence>" --detail "<how it was measured · [file](path)>"
 ```
 
-The How column is the closed row's whole explanation, in the register's own prose voice. `fli file` is for what the fix found and did not fix; it takes the next id and tops that severity's table. Finish with `fli done` and clear what it lists **for the files you changed**; it reads the whole tree, so an item from another session's edits gets one sentence saying so and nothing more.
+The How column is the closed row's whole explanation, in the register's own prose voice. `fli file` is for what the fix found and did not fix; it takes the next id and tops that severity's table. `fli find <terms>` first — a defect already filed takes `fli amend <id> --detail` rather than a second row. Finish with `fli done` and clear what it lists **for the files you changed**; it reads the whole tree, so an item from another session's edits gets one sentence saying so and nothing more.
 
 ## 7. Report
 

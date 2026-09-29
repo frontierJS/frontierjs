@@ -6,18 +6,20 @@ title: Networking
   // 2026-08-06. A network is a name and a CIDR; what an operator needs is who
   // is ON it, so the membership list is the screen rather than a sub-page.
   import { session } from '../../session.js'
-  import { networks } from '../../resources/Network.mesa'
+  import Network, { networks } from '../../resources/Network.mesa'
   import { servers } from '../../resources/Server.mesa'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Form       from '@frontierjs/ui/components/forms/Form.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+  import { page } from '@frontierjs/sierra/router'
 
   $: session.workspaceId
 
@@ -27,9 +29,23 @@ title: Networking
   let error     = null
   let loading   = true
   let busy      = null
-  let creating  = false
+  let creating  = page.query?.new !== undefined
+  // ⌘K's New … entries land here with ?new, on this route or from another.
+  $: page.query, () => { if (page.query?.new !== undefined) creating = true }
   let attachTo  = null     // network id whose attach control is open
   let pickedSrv = ''
+  let pickedIp  = ''       // the address the server has on this network, when known
+  let editing   = null
+
+  // `slug` is refused on a patch — every join row points at the handle — and
+  // `provider` is which mesh runs it, which a rename does not move.
+  const EDITABLE = ['name', 'type', 'cidr']
+
+  function saved() {
+    editing = null
+    toasts.success('Network saved')
+    load()
+  }
   let draft     = networks.make()
 
   // The kit's controls take a value and hand back an event; they are NOT bound
@@ -94,10 +110,11 @@ title: Networking
     if (!pickedSrv) { toasts.error('Pick a server first'); return }
     error = null; busy = network.id
     try {
-      await networks.service.invoke('attach', network.id, { serverId: pickedSrv })
+      await networks.service.invoke('attach', network.id,
+        { serverId: pickedSrv, ...(pickedIp.trim() ? { ipAddress: pickedIp.trim() } : {}) })
       await loadMembers(network.id)
       toasts.success('Server attached')
-      attachTo = null; pickedSrv = ''
+      attachTo = null; pickedSrv = ''; pickedIp = ''
     } catch (e) {
       error = e.message
     } finally {
@@ -216,11 +233,15 @@ title: Networking
                     options={unattached(n.id).map(s => ({ value: s.id, label: s.name }))}
                     oninput={(e) => pickedSrv = e.target.value}
                     onchange={(e) => pickedSrv = e.target.value} />
+            <Input id={`attach-ip-${n.id}`} label="" placeholder="Address (optional)"
+                   aria-label="Its address on this network" style="--field-inline-size: 10rem"
+                   value={pickedIp} oninput={(e) => pickedIp = e.target.value} />
             <Button variant="primary" disabled={busy === n.id || !pickedSrv}
                     onclick={() => attach(n)}>Attach</Button>
-            <Button variant="ghost" onclick={() => { attachTo = null; pickedSrv = '' }}>Cancel</Button>
+            <Button variant="ghost" onclick={() => { attachTo = null; pickedSrv = ''; pickedIp = '' }}>Cancel</Button>
           {:else}
-            <Button variant="outlined" onclick={() => { attachTo = n.id; pickedSrv = '' }}>Attach a server</Button>
+            <Button variant="outlined" onclick={() => { attachTo = n.id; pickedSrv = ''; pickedIp = '' }}>Attach a server</Button>
+            <Button variant="ghost" aria-label={`Edit ${n.name}`} onclick={() => editing = n}>Edit</Button>
             <Button variant="ghost" disabled={busy === n.id}
                     data-confirm={`${n.name} is deleted. A network with servers still attached is refused — detach them first.`}
                     data-confirm-title="Delete this network?" data-confirm-label="Delete"
@@ -231,3 +252,9 @@ title: Networking
     {/each}
   </div>
 {/if}
+
+<Drawer open={!!editing} title={editing ? `Edit ${editing.name}` : ''} onclose={() => editing = null}>
+  {#if editing}
+    <Network record={editing} only={EDITABLE} oncancel={() => editing = null} ondone={saved} submitId="network-edit-save" />
+  {/if}
+</Drawer>

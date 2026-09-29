@@ -69,6 +69,7 @@ Ranked by how often Feathers, Express, Nest and Prisma habits produce them.
 | setting a `@system` column in a hook | `ctx.system.add('slug')` beside the assignment, or the write is a 403 |
 | `app.myThing = value` in a plugin | `app.claim('myThing', value)`, typed by augmenting an exported interface |
 | `app.scheduler.every(…, () => app.jobs.dispatch(…))` | `app.jobs.schedule(name, expr, fn)` — the queue owns its clock |
+| `process.env.N8N_URL` read where the service is first called | `attachments: { n8n: { env: { … } } }` in `junction.config.js` — startup refuses it unbound or half-bound |
 
 ---
 
@@ -79,6 +80,14 @@ works in a service method, any hook, an `afterCommit` effect and anything they
 call. **Outside a call it throws** — at module scope, in a job handler, and in a
 `setTimeout` that fires after the call has finished. Capture what a deferred
 callback needs before the call ends.
+
+**Outside a call, say who the work is for.** A job handler calls
+`ctx.app.service('orders')…`, which runs as the job's actor; other code states who
+with `app.runAs(userId, () => …)`, and `app.withDb(db => …)` inside it is the
+scoped client for work that is not a service call. The `db` exported from
+`core/db.ts` grades as nobody, so every row policy answers empty — reach for it
+only as `db.asSystem()`, for work that is nobody's (`service-module-db`, below,
+refuses it inside a service).
 
 ```ts
 $.db          // this caller's Litestone client
@@ -196,6 +205,79 @@ see.
 array. Branch on `kind`.
 
 In the browser: `client.service('orders').invoke('pay', id, data)`.
+
+---
+
+## Who the caller is — sessions, claims, bearers
+
+**A session says who; a claim says what they hold for THIS request.** The session
+comes from the auth plugin. Claims come from one resolver, `createApp({ principal })`,
+which runs on every request — for a guest too — before the Data boundary scopes
+`$.db`. Whatever it returns is what a policy reads as `auth().x`, and every name it
+returns must be declared in `db/schema.lite` (litestone's AGENTS.md, *Claims*).
+
+| The caller holds | Resolver |
+|---|---|
+| a session, and a role that differs per account | `membershipClaim({ … })` — reads the membership row |
+| no session, only a token — a cart, an emailed link, a portal | `bearerClaim({ … })` |
+| something else | `async (ctx, user) => ({ … })` — returns `{}` for no standing |
+
+```ts
+import { createApp, bearerClaim, cookie } from '@frontierjs/junction'
+
+createApp({ auth, db, principal: bearerClaim({
+  from:    cookie('portal'),                 // or header('x-cart-token')
+  model:   'portalGrant',                    // the accessor of the grant model
+  column:  'tokenHash',                      // holds the DIGEST, never the token
+  key:     env.LINK_KEY,
+  claims:  { portalClientId: 'clientId', capabilities: 'capabilities' },
+  subject: 'clientId',                       // the audit trail's subjectId
+}) })
+```
+
+**The row is stored with the token's digest** —
+`fingerprint(token, { key, purpose: 'portalGrant.tokenHash' })` from
+`@frontierjs/toolbelt/bearer`, where the purpose defaults to `<model>.<column>` and
+must match on both sides. The token itself exists only in the link or header that
+carries it. A grant with a past `expiresAt` or a set `revokedAt` is no
+claim, and so is no row. The grant model is `@@gate("8")`, and a policy compares
+ids, never the token: `@@allow('read', clientId == auth().portalClientId)`.
+
+**A claim decides rows, never standing: a bearer is still STRANGER(0).** A model
+it reads is gated at 0 for that operation and its `@@allow` does the scoping; a
+custom method it calls states `gate: 0` and `claims: ['portalClientId']`
+(*Services*, above). A resolver may not set `id` or `userId`.
+
+Pinned by `test/principal-claims.test.ts` and `test/bearer-claim.test.ts`.
+
+---
+
+## Effects that must happen once — idempotency and the outbox
+
+**A mutating call carrying an `Idempotency-Key` runs once.** A repeat under the
+same key, from the same principal, answers the first call's result without running
+a hook, a write or an announcement. The browser client sends it from
+`CallOptions.idempotencyKey`; Sierra's held writes send one of their own.
+
+- **A caller with no principal gets no protection** — anonymous is everybody, so
+  two guest POSTs with one key are two calls.
+- **It is per process**: the claim lives in the app cache, so two instances behind
+  a load balancer can each run it once. Config: `idempotency: { ttl, pendingTtl }`.
+
+**An effect that must survive a crash is `$.enqueue(job, payload)`, not
+`$.afterCommit(fn)`.** `afterCommit` runs after the commit, in memory, and a
+process that dies in between never runs it. `enqueue` writes an outbox row INSIDE
+the call's transaction, so the intent commits with the write or not at all, and a
+relay hands it to `app.jobs`. What it needs — the schema import, a transactional
+method, the relay plugin — is refused by name with the fix when missing.
+
+**Delivery is at least once, so the job handler is idempotent** — a send that
+reached the mailer and then failed to report back is sent again. The job runs as
+the caller who enqueued it, RE-RESOLVED when it runs (`{ actor: null }` for the
+app's own work); `node_modules/@frontierjs/caravan/README.md` § *Who a job runs
+as* has the table.
+
+Pinned by `test/idempotency.test.ts` and `test/outbox.test.ts`.
 
 ---
 

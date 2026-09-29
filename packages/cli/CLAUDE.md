@@ -102,12 +102,24 @@ core/
                 How, and put back when `register:check` finds a new error. It
                 and `decide.js` share `errorKeys`/`newErrors` in register-check.js,
                 and `moveToClosed` is the move `decide` reuses
+  archive.js    the writer behind `register:archive` — § Closed past its newest
+                40 rows moved verbatim to the top of ISSUES_ARCHIVE.md, and every
+                `.md` link RESOLVING to a moved anchor repointed (compared by
+                absolute path; code comments left alone). Put back, every file,
+                on a new `register:check` error
   file.js       the writer behind `register:file` — the next id (the max the
                 registers hold anywhere, archive included, at the project's
                 width) atop its severity's table, put back on a new
                 `register:check` error, which is also what catches two sessions
                 minting one id. `decision` files into § Needs a decision under
                 the next D id; `blocks` writes `blocked by` into the held row
+  amend.js      the writer behind `register:amend` — `--detail` APPENDED to an
+                open row's Detail after ` · `, Verified re-dated today; a closed
+                row refused (a regression is a new row). Put back on a new
+                `register:check` error
+  find.js       the reader behind `register:find` — issue rows, archive and
+                rulings holding every term, answered as id, title and file:line
+                and never the body; title hits and open rows first
   next.js       the open register ranked — severity, then citations, `blocked by`
                 edges and code touched recently, every term printed with its
                 row. `WEIGHTS` is one frozen table and no flag moves it. A
@@ -1140,26 +1152,9 @@ test/     one file per module under core/, plus the deploy pipeline's own
 - **A rule belongs there only if it is SILENT when broken.** A violation that
   already raises an error belongs in the thing that raises it. `--list` prints
   the table with the invariant each rule comes from.
-- **Two rules grade a DOC against what the package ships, and they are the
-  newest class here.** `register-check.js` already covers a register that
-  contradicts ITSELF; nothing covered a page that is merely out of date, which is
-  the same silence one layer over. `docs-index` — a `docs/` page the index links
-  from nowhere (a link, never a mention: the failure is a page nothing navigates
-  to). `roadmap-shipped` — a roadmap section whose fenced sample uses an
-  attribute `catalog.snapshot.md` already carries. The measured cost of not
-  having them: litestone's roadmap kept *Exact numbers — `@scale(n)`, then
-  `@money`* under **High priority**, opening *there is no fixed-point numeric
-  type*, four days after `FJS-D142` built it; `exact-numbers.md` was linked from
-  nothing; and a session read all three signposts, concluded the language could
-  not express money, and filed a defect against the ruling (`FJS-560`).
-- **Neither carries a list of what ships, on purpose** — a list here rots exactly
-  the way the roadmap did. `roadmap-shipped` asks the generated catalog, the
-  same authority `litestone explain` asks. Its two quieteners are derived too:
-  **scaffolding comes out of the file itself** (an attribute appearing in two
-  sections' samples is holding them up rather than being their subject, which is
-  `@id` in every `model` block), and a heading carrying `~~`, `SHIPS` or
-  `SHIPPED` has already answered — an entry may legitimately propose the unbuilt
-  HALF of something that ships, which is what `@slug`'s collision handling is.
+- **`docs-index` grades a DOC against its package** — a `docs/` page the index
+  links from nowhere (a link, never a mention: the failure is a page nothing
+  navigates to). `exact-numbers.md` linked from nothing was half of `FJS-560`.
 - **Some of the rules read source rather than the tree, and `readCode` is why
   they are usable.** `raw-route-param`, `ctx-params`, `set-auth-discarded`,
   `call-header-declared`, `service-model`, `resource-model-miss`,

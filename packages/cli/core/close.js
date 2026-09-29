@@ -110,7 +110,7 @@ function closedTableBody(lines) {
 function refuse(reason) { return { ok: false, reason } }
 
 // Unescaped pipes only, the same split `registers.js` reads the row with.
-function splitRow(line) {
+export function splitRow(line) {
   return line
     .replace(/^\s*\|/, '')
     .replace(/\|\s*$/, '')

@@ -688,7 +688,7 @@ export interface CaravanInstance {
   resume(opts?: OperatorOptions): { changed: boolean; pause: QueuePause | null }
   drain(opts?: OperatorOptions & { timeout?: number }): Promise<{ drained: boolean; running: number; pause: QueuePause }>
 
-  /** Start the worker polling loop. Called automatically when used as a plugin. */
+  /** Start the workers, cron and sweeps. As a plugin, junction's `start-work` phase calls it; a one-shot boot does not. */
   start(): Promise<void>
 
   /** Stop the worker loop gracefully — waits for in-flight jobs to finish. */
@@ -770,6 +770,7 @@ export interface CaravanInstance {
   name:      string
   register:  (app: CaravanApp) => Promise<void> | void
   boot?:     (app: CaravanApp) => Promise<void> | void
+  work?:     (app: CaravanApp) => Promise<void> | void
   ready?:    (app: CaravanApp) => Promise<void> | void
   shutdown?: (app: CaravanApp) => Promise<void> | void
 }

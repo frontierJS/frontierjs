@@ -25,15 +25,12 @@
   // What is left is `userId`. It is genuinely caller-supplied — a key may be
   // issued to a bot rather than to the person asking, which is what
   // `assertBotOwner` in the service is about — so it cannot be `@system`, and
-  // it is `required` while this screen does not offer an owner control and
-  // lets the before hook default it to the caller. Turning validation on today
-  // would refuse every create in the browser, naming a field the form has no
-  // box for: "the button does nothing".
-  //
-  // The way out is an owner control on the create form, not another
-  // annotation. Until then the server is the only place this model is
-  // validated, and it still is: `autoValidate` runs there against the same
-  // schema, after the before hook has filled the column in.
+  // it is `required`. The owner control on the create form offers the
+  // workspace's bots and leaves the column EMPTY for "you", which the before
+  // hook fills with the caller: an empty required column, so browser
+  // validation on would refuse the commonest create. The server is where this
+  // model is validated — `autoValidate` against the same schema, after the
+  // hook has filled the column in.
   export const apiKeys = createResource('api-keys', {
     model: 'ApiKey',
     validate: false,

@@ -2,7 +2,7 @@
 
 ## 2026-09-05 — four defects the audit found, fixed
 
-**[FJS-928](../../ISSUES.md#fjs-928) — a `<Button>`'s Outlook fallback escaped nothing.** The
+**[FJS-928](../../ISSUES_ARCHIVE.md#fjs-928) — a `<Button>`'s Outlook fallback escaped nothing.** The
 VML is built as a string and spliced into the finished document, which is the design's whole
 point (happy-dom ends the comment early, so the markup has to stay out of the DOM) and was also
 what removed the last escaping in the path. A `text` of `Pay <![endif]--><img …> now` put the
@@ -12,23 +12,23 @@ along, which is what hid it: one half of one component was safe and the unsafe h
 nobody re-parses. `>` is escaped for a reason beyond attributes — a comment ends at a literal
 `-->`, so escaping `<` alone leaves the block closable.
 
-**[FJS-929](../../ISSUES.md#fjs-929) — `<Avatar name="   " />` threw**, taking the whole email
+**[FJS-929](../../ISSUES_ARCHIVE.md#fjs-929) — `<Avatar name="   " />` threw**, taking the whole email
 with it. A whitespace-only name is truthy, trims to empty, and `[0]` is then `undefined`. An
 empty name was fine, which is why it was never seen: the guard was on the wrong emptiness.
 
-**[FJS-930](../../ISSUES.md#fjs-930) — `<Section padding>` did nothing.** Its spacer rows were
+**[FJS-930](../../ISSUES_ARCHIVE.md#fjs-930) — `<Section padding>` did nothing.** Its spacer rows were
 siblings of the section table, and a `<tr>` with no table ancestor is discarded by the parser
 rather than by the renderer — so they were in the rendered string all along and every substring
 assertion agreed with the broken version. Moved inside the `<tbody>`, which is what the prop's
 own doc comment already claimed, and the section's `bgcolor` now runs through the padding.
 
-**[FJS-931](../../ISSUES.md#fjs-931) — `width="undefined"`.** A quoted interpolation stringifies
+**[FJS-931](../../ISSUES_ARCHIVE.md#fjs-931) — `width="undefined"`.** A quoted interpolation stringifies
 an unset prop; a bare `{width}` omits the attribute. `Image` documented the trap it shipped —
 *Always specify width for Outlook* — while its own default emitted a value Outlook cannot read.
 
-[FJS-933](../../ISSUES.md#fjs-933) closed alongside them: the component map in `index.js`
+[FJS-933](../../ISSUES_ARCHIVE.md#fjs-933) closed alongside them: the component map in `index.js`
 is still a literal, so no bundler has to see a `readdirSync`, but the keys are now asserted
-against the directory. And [FJS-932](../../ISSUES.md#fjs-932) is fixed in mesa — the plain-text
+against the directory. And [FJS-932](../../ISSUES_ARCHIVE.md#fjs-932) is fixed in mesa — the plain-text
 fallback ran adjacent blocks together, and this package is the only consumer of `result.text`.
 
 The suite is 102 tests, from 77. Each fix was measured against its own removal: 3 red, 1, 2, 2.
@@ -49,12 +49,12 @@ It is red against any of the three originals. `TwoCol` is the shape that forces 
 about identifiers — its backticks hold `<div slot="left">`, which is markup and not a prop.
 
 Found by an audit of the package rather than by a caller, which filed six ids: an injection
-through `<Button>`'s Outlook fallback ([FJS-928](../../ISSUES.md#fjs-928), the sharp one),
-`<Avatar name=" " />` throwing ([FJS-929](../../ISSUES.md#fjs-929)), `<Section padding>`
-emitting rows no client keeps ([FJS-930](../../ISSUES.md#fjs-930)), `width="undefined"`
-([FJS-931](../../ISSUES.md#fjs-931)), a plain-text fallback that runs blocks together
-([FJS-932](../../ISSUES.md#fjs-932)) and the hand-kept component map in `index.js`
-([FJS-933](../../ISSUES.md#fjs-933)).
+through `<Button>`'s Outlook fallback ([FJS-928](../../ISSUES_ARCHIVE.md#fjs-928), the sharp one),
+`<Avatar name=" " />` throwing ([FJS-929](../../ISSUES_ARCHIVE.md#fjs-929)), `<Section padding>`
+emitting rows no client keeps ([FJS-930](../../ISSUES_ARCHIVE.md#fjs-930)), `width="undefined"`
+([FJS-931](../../ISSUES_ARCHIVE.md#fjs-931)), a plain-text fallback that runs blocks together
+([FJS-932](../../ISSUES_ARCHIVE.md#fjs-932)) and the hand-kept component map in `index.js`
+([FJS-933](../../ISSUES_ARCHIVE.md#fjs-933)).
 
 ## 2026-09-05 — every component is rendered by something, and one that cannot take children says so
 

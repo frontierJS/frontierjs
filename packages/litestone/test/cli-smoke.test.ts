@@ -788,6 +788,92 @@ model Vault {
   }, 30_000)
 })
 
+// `fli tinker -e` — the console run once. What a caller parses is stdout, so
+// the answer is alone there and the standing goes to stderr; and the exit code
+// is the verdict, because there is no next prompt to read a refusal off.
+describe('CLI smoke — repl --eval', () => {
+  const GATED = `
+model Note {
+  id    Int    @id
+  body  String
+  @@gate("5.5.5.5")
+}
+`
+
+  test('the answer is JSON alone on stdout, the standing on stderr', async () => {
+    const dir = makeFixtureDir('eval')
+    await runCli(dir, ['migrate', 'create', 'init'])
+    await runCli(dir, ['migrate', 'apply'])
+
+    const r = await runCli(dir, ['repl', '--eval',
+      `await sys.user.create({ data: { id: 1, email: 'a@b.test' } }); return sys.user.findMany({ select: { email: true } })`])
+
+    expect(r.exit).toBe(0)
+    expect(JSON.parse(r.stdout)).toEqual([{ email: 'a@b.test' }])
+    expect(r.stderr).toContain('Standing: anonymous(0)')
+    expect(r.stdout).not.toContain('litestone tinker')
+  })
+
+  test('a throw exits 1 with the message on stderr and nothing on stdout', async () => {
+    const dir = makeFixtureDir('eval-throw')
+    await runCli(dir, ['migrate', 'create', 'init'])
+    await runCli(dir, ['migrate', 'apply'])
+
+    const r = await runCli(dir, ['repl', '--eval', 'nope()'])
+    expect(r.exit).toBe(1)
+    expect(r.stderr).toContain('ReferenceError: nope is not defined')
+    expect(r.stdout).toBe('')
+  })
+
+  // The gate never asks getLevel about a caller with no id (FJS-D515), so a
+  // --level with nobody behind it graded STRANGER whatever number was typed.
+  // Paired: 5 clears a level-5 gate and 4 is refused AT 4, not at 0.
+  test('--level is the level the gate grades at', async () => {
+    const dir = makeFixtureDir('eval-level', { schema: GATED })
+    await runCli(dir, ['migrate', 'create', 'init'])
+    await runCli(dir, ['migrate', 'apply'])
+
+    const at5 = await runCli(dir, ['repl', '--level', '5', '--eval', 'db.note.count()'])
+    expect(at5.stderr).not.toContain('AccessDeniedError')
+    expect(at5.exit).toBe(0)
+    expect(at5.stdout.trim()).toBe('0')
+
+    const at4 = await runCli(dir, ['repl', '--level', '4', '--eval', 'db.note.count()'])
+    expect(at4.exit).toBe(1)
+    expect(at4.stderr).toContain('requires level 5, user has level 4')
+  })
+
+  // The registry takes plugins under `clientOptions`; handed at the top level
+  // they were dropped without a word, so a tenant's console ignored --level and
+  // --gate and graded with the default resolver.
+  test('--level reaches a tenant database under strategy database', async () => {
+    const dir = makeFixtureDir('eval-tenant', {
+      schema: `
+tenancy {
+  strategy database
+  dir      "./tenants"
+  registry "./registry.db"
+}
+${GATED}`,
+    })
+    const made = await runCli(dir, ['tenant', 'create', 'acme'])
+    expect(made.exit).toBe(0)
+
+    const at5 = await runCli(dir, ['repl', '--tenant', 'acme', '--level', '5', '--eval', 'db.note.count()'])
+    expect(at5.stderr).not.toContain('AccessDeniedError')
+    expect(at5.exit).toBe(0)
+
+    const at4 = await runCli(dir, ['repl', '--tenant', 'acme', '--level', '4', '--eval', 'db.note.count()'])
+    expect(at4.exit).toBe(1)
+    expect(at4.stderr).toContain('requires level 5, user has level 4')
+
+    // Never a picker: there is no prompt to answer one at.
+    const none = await runCli(dir, ['repl', '--level', '5', '--eval', 'db.note.count()'])
+    expect(none.exit).toBe(1)
+    expect(none.stderr).toContain('--tenant <id>')
+  })
+})
+
 describe('CLI smoke — long-running servers', () => {
   test('repl banner shows camelCase accessors, not PascalCase', async () => {
     const dir = makeFixtureDir('repl')

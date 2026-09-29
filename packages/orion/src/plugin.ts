@@ -17,8 +17,8 @@
  *   routes      POST {prefix}/hooks/{path} and POST {prefix}/wait/{key}
  *   services    flows, runs, flowCredentials (`src/services.ts`)
  *
- * Each instance registers the triggers of the flows active when it boots and
- * re-reads them on a timer, so an activation made anywhere reaches every
+ * Each instance registers the triggers of the flows active when it boots and,
+ * once its work starts, re-reads them on a timer, so an activation made anywhere reaches every
  * instance within `activationPollInterval`.
  *
  * `app.orion` is the runner — `start`, `emit`, `dryRun`, `activate` and the rest.
@@ -26,7 +26,7 @@
  * (`FJS-D293`); no service does.
  *
  * Configure it after Caravan: its run job has to be registered before the queue
- * starts, which happens in Caravan's `boot`.
+ * starts, which happens in Caravan's `work`.
  */
 
 import { generateJsonSchema } from "@frontierjs/litestone/jsonschema"
@@ -271,8 +271,14 @@ export function orion(options: OrionOptions = {}): Plugin {
       mountRoutes(app, runner, prefix, options)
     },
 
+    // The first sync is boot(): it registers each active flow's model
+    // trigger, an in-process tap on this process's client, so a write a
+    // one-shot call makes still starts its flows. Only the re-read is work().
     async boot() {
       await runner.syncActivations()
+    },
+
+    async work() {
       unwatch = runner.watch(options.activationPollInterval ?? 5_000)
     },
 

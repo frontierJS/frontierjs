@@ -7,7 +7,7 @@ dated: 2026-09-03
 # Proposal — resolving identifiers over a compiled command unit
 
 **Prototyped and measured; not built.** Prompted by
-[`FJS-726`](../ISSUES.md#fjs-726), and by the four defects the prototype found
+[`FJS-726`](../ISSUES_ARCHIVE.md#fjs-726), and by the four defects the prototype found
 on a tree that was otherwise green.
 
 ---
@@ -140,7 +140,7 @@ how the next `FJS-269` survives:
 
 ## Related
 
-- [`FJS-726`](../ISSUES.md#fjs-726) — the free identifier that broke every deploy.
+- [`FJS-726`](../ISSUES_ARCHIVE.md#fjs-726) — the free identifier that broke every deploy.
 - `FJS-269` — `fli check` itself, unexecutable for the same reason.
 - Invariant 15 — *a clean compile is not proof of valid JS*. This is the next
   question after that one: a clean parse is not proof of a resolvable module.

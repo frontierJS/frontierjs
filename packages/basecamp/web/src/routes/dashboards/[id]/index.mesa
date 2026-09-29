@@ -21,14 +21,14 @@ title: Dashboard
   // The mock's picker is a modal. This is an inline panel, like every other
   // create form in this app: the same three fields, one fewer layer to trap
   // focus in, and it survives being the only thing on a narrow screen.
-  import { page } from '@frontierjs/sierra/router'
-  import { dashboards } from '../../../resources/Dashboard.mesa'
+  import { page, goto } from '@frontierjs/sierra/router'
+  import Dashboard, { dashboards } from '../../../resources/Dashboard.mesa'
   import { servers } from '../../../resources/Server.mesa'
   import { apps } from '../../../resources/App.mesa'
 
-  import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Select     from '@frontierjs/ui/components/forms/Select.mesa'
@@ -47,6 +47,7 @@ title: Dashboard
   let loading   = true
   let busy      = null
   let editing   = false
+  let renaming  = false
 
   // The add-widget panel. `chosen` is the kind spec, not just its name — the
   // second step is built from what that kind needs.
@@ -116,8 +117,12 @@ title: Dashboard
     adding = !adding
     chosen = null
     if (!adding) return
-    // Both lists, once. Which one is needed depends on the kind chosen next,
-    // and fetching then would put a spinner between two clicks.
+    await loadSubjects()
+  }
+
+  // Both lists, once. Which one is needed depends on the kind chosen next,
+  // and fetching then would put a spinner between two clicks.
+  async function loadSubjects() {
     try {
       if (!serverOptions.length)
         serverOptions = (await servers.service.find({}, { limit: 200 })).data
@@ -206,6 +211,66 @@ title: Dashboard
     }
   }
 
+  // ─── The board itself ────────────────────────────────────────────────
+  function renamed() {
+    renaming = false
+    toasts.success('Dashboard saved')
+  }
+
+  async function removeBoard() {
+    error = null; busy = 'remove'
+    // Read before the write: the board is watched, and the delete's own push
+    // empties it before the next line runs.
+    const { id, name } = board
+    try {
+      await dashboards.service.remove(id)
+      toasts.success(`${name} deleted`)
+      goto('/dashboards/')
+    } catch (e) {
+      error = e.message
+      busy  = null
+    }
+  }
+
+  async function togglePin() {
+    error = null; busy = 'pin'
+    try {
+      // No version stated: the board is a composed view, which re-reads after
+      // the push a save causes, so its copy can trail the store's. The resource
+      // stamps the one the store holds.
+      await dashboards.service.patch(board.id, { isPinned: !board.isPinned })
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  // ─── A widget whose server or app is gone ────────────────────────────
+  // The card says `subject removed`; this points it at another one, or — for
+  // a kind whose subject is optional — back at the whole workspace.
+  let repoint = {}      // widgetId → the chosen subject id
+
+  async function repointWidget(widget) {
+    const spec = specFor(widget.kind)
+    const to   = repoint[widget.id] || null
+    error = null; busy = widget.id
+    try {
+      board = await dashboards.service.invoke('updateWidget', board.id, {
+        widgetId: widget.id,
+        ...(spec?.subject === 'server' ? { serverId: to } : { appId: to }),
+      })
+      toasts.success(`${spec?.label ?? widget.kind} re-pointed`)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = null
+    }
+  }
+
+  $: orphaned = board ? board.widgets.filter(w => w.subjectMissing).length : 0
+  $: (orphaned, () => { if (orphaned) loadSubjects() })
+
   $: subjectOptions = chosen?.subject === 'server' ? serverOptions
                     : chosen?.subject === 'app'    ? appOptions
                     : []
@@ -220,7 +285,15 @@ title: Dashboard
   <div class="section-header">
     <h1>{board.icon ?? ''} {board.name}</h1>
     <span class="cluster">
-      {#if board.isPinned}<Badge tone="info">pinned</Badge>{/if}
+      <Button variant="ghost" id="pin-board" disabled={busy === 'pin'}
+              aria-pressed={board.isPinned ? 'true' : 'false'} onclick={togglePin}>
+        {board.isPinned ? 'Unpin' : 'Pin to home'}
+      </Button>
+      <Button variant="ghost" id="rename-board" onclick={() => renaming = true}>Rename</Button>
+      <Button variant="ghost" tone="danger" id="delete-board" disabled={busy === 'remove'}
+              data-confirm={`${board.name} and its widgets are deleted. What they showed is not.`}
+              data-confirm-title="Delete this dashboard?" data-confirm-label="Delete"
+              onclick={removeBoard}>Delete</Button>
       <Button variant={editing ? 'outlined' : 'ghost'} id="edit-board"
               onclick={() => editing = !editing}>{editing ? 'Done' : 'Edit layout'}</Button>
       <Button variant="primary" id="add-widget" onclick={openPicker}>
@@ -233,6 +306,13 @@ title: Dashboard
     <a href="/dashboards/">← Dashboards</a>
     {#if board.description} · {board.description}{/if}
   </p>
+
+  <Drawer open={renaming} title={`Rename ${board.name}`} onclose={() => renaming = false}>
+    {#if renaming}
+      <Dashboard record={board} only={['name', 'description', 'icon']}
+                 oncancel={() => renaming = false} ondone={renamed} submitId="board-save" />
+    {/if}
+  </Drawer>
 
   {#if error}
     <article class="alert danger" id="screen-error">
@@ -318,6 +398,17 @@ title: Dashboard
                   onremove={() => removeWidget(widget)}
                   onresize={(n) => resizeWidget(widget, n)}
                   onmove={(d) => moveWidget(widget, d)} />
+          {#if widget.subjectMissing}
+            <div class="cluster" data-repoint={widget.id}>
+              <Select id={`repoint-${widget.id}`} label="" aria-label="Point this widget at"
+                      value={repoint[widget.id] ?? ''}
+                      placeholder={specFor(widget.kind)?.required ? 'Pick one' : 'Everything in this workspace'}
+                      options={specFor(widget.kind)?.subject === 'server' ? serverOptions : appOptions}
+                      onchange={(e) => repoint = { ...repoint, [widget.id]: e.target.value }} />
+              <Button variant="outlined" disabled={busy === widget.id || (specFor(widget.kind)?.required && !repoint[widget.id])}
+                      onclick={() => repointWidget(widget)}>Re-point</Button>
+            </div>
+          {/if}
         </div>
       {/each}
     </div>

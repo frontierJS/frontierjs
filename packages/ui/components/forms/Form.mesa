@@ -420,12 +420,15 @@
     method === 'patch' || (method === 'auto' && record?.[idField] != null)
       ? 'patch' : 'create'
 
-  // Validate the COERCED record, never the raw one: every DOM control hands
+  // Validate what the resource would SEND — coerced, then blanks nulled, the
+  // order its own pipeline runs — never the raw record: every DOM control hands
   // back a string, so checking `record` directly reports "total must be a
-  // number" for a perfectly good "42".
+  // number" for a perfectly good "42", and an untouched optional box is `''`,
+  // which `@length(1, …)` refuses although the send would carry `null`.
   function _live() {
     if (!resource?.validate) return {}
-    const payload = resource.coerce ? resource.coerce(record) : record
+    const coerced = resource.coerce ? resource.coerce(record) : record
+    const payload = resource.normalize ? resource.normalize(coerced) : coerced
     const out = {}
     for (const e of resource.validate(payload, _mode())) {
       if (_revealed.includes(e.field) && !(e.field in out)) out[e.field] = e.message

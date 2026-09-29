@@ -294,7 +294,7 @@ without the hook the JS half read `auth().level` as absent while the SQL half gr
 
 ## 2026-09-15 — `make()` seeds nothing nobody chose
 
-[`FJS-1162`](../../ISSUES.md#fjs-1162). A nullable number or boolean with no default is `null`
+[`FJS-1162`](../../ISSUES_ARCHIVE.md#fjs-1162). A nullable number or boolean with no default is `null`
 rather than `0` or `false`, and given the create-mode `required`, a NOT NULL column that is
 neither required nor defaulted is left out of the record, because the server fills it. Both
 were values a form that did not show the field went on to send: `runsPerMinute Int? @gte(1)`

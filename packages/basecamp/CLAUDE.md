@@ -14,6 +14,8 @@ bun run db:types     # regenerate db/schema.d.ts — the client's types
 bun run db:seed      # an example fleet
 bun run verify:screens # the Phase 13 and 14 screens + the audit window,
                        # in a browser, on a database it seeds in a temp directory
+API_PORT=7120 UI_PORT=7020 bun run verify:screens  # …beside a dev server on
+                       # 8120/8020; verify:provision takes the same two
 bun run db:reset     # stops the servers, deletes the databases
 bun run dev:outpost  # after `dev`: this laptop enrolled as a fleet machine, a
                      # real Outpost on 8180/8181, waits until it is ONLINE
@@ -124,6 +126,10 @@ api/src/  app.ts (builds the app, never starts it) · services/ ·
           decides everything a token cannot (`FJS-032`)
           core/mailer.ts is the one answer to whether this app can mail at all;
           no provider is a supported state and every caller says so
+          core/account-mail.ts delivers auth's two links — password reset and
+          email verification — to SPA screens; with no mailer it logs the link
+          outside production, and it never throws (a failure would tell a
+          stranger which addresses are accounts)
 web/src/  App.mesa · main.js · session.js · notices.js (one leaf definition the
           shell and the home screen share) · routes/ · components/ ·
           resources/ (PascalCase singular, one Resource per file — Invariant 19)

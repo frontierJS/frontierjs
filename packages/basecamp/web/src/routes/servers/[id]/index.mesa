@@ -4,12 +4,15 @@ title: Server
 <script>
   import { page, goto } from '@frontierjs/sierra/router'
   import { humanize } from '@frontierjs/toolbelt/inflect'
-  import { servers } from '../../../resources/Server.mesa'
+  import Server, { servers } from '../../../resources/Server.mesa'
   import { at } from '../../../datetime.js'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
-  import Button   from '@frontierjs/ui/components/forms/Button.mesa'
-  import Input    from '@frontierjs/ui/components/forms/Input.mesa'
-  import NoRecord from '../../../components/NoRecord.mesa'
+  import Button     from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input      from '@frontierjs/ui/components/forms/Input.mesa'
+  import CopyButton from '@frontierjs/ui/components/display/CopyButton.mesa'
+  import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import NoRecord   from '../../../components/NoRecord.mesa'
+  import ServerHealthBody from '../../../components/widgets/ServerHealthBody.mesa'
 
   $: page.params
 
@@ -19,6 +22,18 @@ title: Server
   let loadError = null
   let loading   = true
   let busy      = null
+  let editing   = false
+
+  // What a person may correct about a machine: how it is named and grouped,
+  // and how it is reached. The rest of the row is the machine's own report or
+  // the provider's, and a box for it would be overwritten by the next
+  // heartbeat or Sync. `sshKeyId` is out because nothing reads it.
+  const EDITABLE = ['name', 'role', 'region', 'sshUser', 'sshPort', 'labels']
+
+  function saved() {
+    editing = false
+    toasts.success('Server saved')
+  }
 
   // The server row is WATCHED. `service.get(id)` answers a plain object nothing
   // can reach, so a drain from another tab or an outpost checking in moved the
@@ -278,9 +293,16 @@ title: Server
     <h1>{server.name}</h1>
     <div class="cluster">
       <span class="pill {TONE[server.status] ?? ''}" id="server-status">{server.status}</span>
+      <Button variant="outlined" id="server-edit" onclick={() => editing = true}>Edit</Button>
       <Button variant="ghost" href="/servers/">All servers</Button>
     </div>
   </div>
+
+  <Drawer open={editing} title={`Edit ${server.name}`} onclose={() => editing = false}>
+    {#if editing}
+      <Server record={server} only={EDITABLE} oncancel={() => editing = false} ondone={saved} submitId="server-edit-save" />
+    {/if}
+  </Drawer>
 
   {#if error}
     <article class="alert danger">
@@ -325,6 +347,9 @@ title: Server
             It is shown once; issue another if you lose it.
           </p>
           <pre class="code-block" id="enroll-command"><code>{enrollCommand}</code></pre>
+          <div class="cluster">
+            <CopyButton text={enrollCommand} label="Copy command" variant="outlined" />
+          </div>
         {:else}
           <div class="cluster">
             <Button variant="primary" disabled={busy === 'enroll'} onclick={issueEnrollment}>
@@ -383,16 +408,20 @@ title: Server
       {/if}
     </article>
 
-    <article class="card stack">
+    <!-- The dashboard's card, for the readings it knows and a day of each;
+         the rest of what the outpost sent is listed under it, in its own words. -->
+    <article class="card stack" id="server-health">
       <h2 class="h4">Health</h2>
+      <ServerHealthBody widget={{ serverId: server.id }} />
       {#if entries(server.health).length}
-        <dl class="facts">
-          {#each entries(server.health) as [key, value]}
-            <dt>{key}</dt><dd>{value}</dd>
-          {/each}
-        </dl>
-      {:else}
-        <p class="text-sm text-muted">Nothing reported — the outpost fills this in on heartbeat.</p>
+        <details>
+          <summary class="text-sm">Everything it reported</summary>
+          <dl class="facts">
+            {#each entries(server.health) as [key, value]}
+              <dt>{key}</dt><dd>{value}</dd>
+            {/each}
+          </dl>
+        </details>
       {/if}
     </article>
 

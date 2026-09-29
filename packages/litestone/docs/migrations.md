@@ -379,7 +379,7 @@ is refused where the app made its own index or trigger over the table (§ *Schem
 objects Litestone did not create*), so a table carrying one has to have it moved
 into the schema first. The alternative was worse — the ALTER was emitted anyway
 and threw `near "(": syntax error` out of `autoMigrate`, at the line an app
-calls on first open, naming no column and no table ([FJS-605](../../../ISSUES.md#fjs-605)).
+calls on first open, naming no column and no table ([FJS-605](../../../ISSUES_ARCHIVE.md#fjs-605)).
 
 **A blocked column blocks whether or not the table has rows**, and that is
 deliberate. Migrating an empty table and refusing a populated one would migrate
@@ -395,7 +395,7 @@ only inside a SQL string the caller usually discards: the application then ran
 against a table missing a column its own schema declares, every write of that
 column was stripped by mass-assignment protection, and a required field read
 back `undefined` with nothing anywhere saying why
-([FJS-604](../../../ISSUES.md#fjs-604)).
+([FJS-604](../../../ISSUES_ARCHIVE.md#fjs-604)).
 
 ### Uniqueness the table declares itself
 
@@ -415,14 +415,14 @@ time none of this was diffed at all:
 The first two are correctness: `UniqueConflictError` and `SoftDeletedUniqueError`
 are Litestone's words for a constraint the *database* enforces, so a constraint
 that never reached the database is one that never fires. The last two are the
-performance fact [FJS-592](../../../ISSUES.md#fjs-592) settled for `@@index`, one
+performance fact [FJS-592](../../../ISSUES_ARCHIVE.md#fjs-592) settled for `@@index`, one
 constraint kind along — an implicit index is prefix-matched like any other, so
 `(orgId, createdAt)` answers `WHERE orgId = ?` and the swap does not.
 
 **The cost is a rebuild and there is no cheaper path**: no `ALTER` reaches a
 table constraint. Which is why this shipped after the `@@index` half rather than
 with it — that one is a `DROP INDEX` and a `CREATE INDEX`
-([FJS-596](../../../ISSUES.md#fjs-596)).
+([FJS-596](../../../ISSUES_ARCHIVE.md#fjs-596)).
 
 Two things follow from reading it off `PRAGMA index_list` rather than out of the
 `CREATE` text:

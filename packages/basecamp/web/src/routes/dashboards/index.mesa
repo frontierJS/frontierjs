@@ -18,7 +18,7 @@ title: Dashboards
   import { session } from '../../session.js'
   import { messageFor } from '../../errors.js'
   import { dashboards } from '../../resources/Dashboard.mesa'
-  import { goto } from '@frontierjs/sierra/router'
+  import { page, goto } from '@frontierjs/sierra/router'
 
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -35,7 +35,9 @@ title: Dashboards
   let error    = null
   let loading  = true
   let busy     = null
-  let creating = false
+  let creating = page.query?.new !== undefined
+  // ⌘K's New … entries land here with ?new, on this route or from another.
+  $: page.query, () => { if (page.query?.new !== undefined) creating = true }
   let draft    = dashboards.make()
 
   // The kit's controls take a value and hand back an event; they are NOT bound
@@ -168,7 +170,7 @@ title: Dashboards
 
         <div class="cluster">
           <Button variant="ghost" disabled={busy === dashboard.id}
-                  aria-label={`${dashboard.isPinned ? 'Unpin' : 'Pin'} ${dashboard.name} for the workspace`}
+                  aria-label={`${dashboard.isPinned ? 'Unpin' : 'Pin'} ${dashboard.name} to the workspace's home screen`}
                   onclick={() => togglePin(dashboard)}>
             {dashboard.isPinned ? 'Unpin' : 'Pin'}
           </Button>

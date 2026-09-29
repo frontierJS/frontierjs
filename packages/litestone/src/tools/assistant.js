@@ -37,7 +37,10 @@ export const AGENTS_SECTIONS = [
   'The one rule',
   'Types — eight, and four that are refused',
   'Naming — three resolvers depend on it',
-  'Choosing an access word',
+  'Choosing a column\'s access word',
+  'The gate ladder',
+  'State machines — `@@transitions`',
+  'Claims — what `auth().x` may name',
   'Wrong guesses',
   'Silent failures',
 ]

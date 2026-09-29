@@ -1,5 +1,27 @@
 # Changes — @frontierjs/cli
 
+## 2026-09-29 — `fli tinker -e '<expr>'` (`FJS-1560`)
+
+`fli tinker -e` evaluates one line and exits, over litestone's `repl --eval`. The
+answer is JSON on stdout, so `| jq` reads it, and the standing prints on stderr.
+It is the first half of `FJS-1560`, meant to replace the raw `sqlite3` an agent
+runs against an app database. Every flag value is now shell-quoted, because the
+command runs through a shell and an expression holds spaces, quotes and `$`. A
+failed run passes on its exit code without the runner's `Command failed` line,
+since litestone has already printed why.
+
+## 2026-09-29 — the app's AGENTS.md reads a guide one section at a time (`FJS-1549`)
+
+The guide table said *never read one whole* and sessions read two to four whole anyway, 88k characters across the six, all of it re-read on every later turn. The instruction is now the command: `fli outline <guide>` prints its sections with line ranges and `fli outline <guide> '<heading>'` prints one, matching on the heading's first words. No hand index was added to any AGENTS.md, since the headings already are one and `fli outline` reads them. The *3-5k tokens* estimate is gone, because nothing regenerated it. The seven stressor apps were regenerated from the template and differed from it by this section alone.
+
+## 2026-09-29 — `register:find` and `register:amend` (`FJS-1546`)
+
+A token audit of 77 stressor sessions counted 712 Bash calls and 1.35M characters of output spent on ISSUES.md by hand: finding a row, deduping before a filing, and about 260 Python heredocs patching one line. `fli find <terms>` searches the issue rows, the archive and the rulings for every term and prints id, status, `file:line` and title, never the body, with title hits and open rows first. `fli amend <id> --detail` appends to an open row's Detail after ` · ` and re-dates Verified. A closed row is refused, since a regression is a new row. Like `file` and `close`, a write `register:check` finds a new error in is put back. `register:overview` and the `fix-next` skill name both, and so do `IDEAS/stressors.md` and each stressor's `PLAN.md`.
+
+## 2026-09-29 — `register:archive` ages § Closed out to the archive
+
+Nothing ran the trim both registers describe, so § Closed reached 1,122 rows against a limit of about 40 and ISSUES.md 2.3 MB. `fli register:archive` keeps the newest 40 (`--keep`), moves the rest verbatim to the top of `ISSUES_ARCHIVE.md`, restates the archive's count line, and repoints every `.md` link that resolves to a moved anchor. A write `register:check` finds a new error in is put back, every file of it.
+
 ## 2026-09-28 — `css-token-undefined` counts the app's own stylesheets (`FJS-1532`)
 
 The rule counted the tokens a dependency's CSS declares and the tokens a file declares for itself, so a token an app sets once in its theme and reads from a component was an error. It now also reads every `.css` and `.scss` under the app's client surfaces, `content/` included and `dist/` excluded. An app whose dependencies ship no CSS is still skipped. Found by the ksite stressor, whose `Stars.mesa` reads `--star-tracking` from ksite's own `themes/ksite.scss`.
@@ -916,7 +938,7 @@ starting with the step that writes a wireframe from a screenshot.
 A `DRIVES.md` row naming `` `test:browser geofield` `` looked the whole string up
 as a script name, found nothing, and graded it `unknown` — the same answer a
 drive renamed away gets — which failed the suite's real-table check
-([`FJS-1273`](../../ISSUES.md#fjs-1273)). The script is looked up alone now and
+([`FJS-1273`](../../ISSUES_ARCHIVE.md#fjs-1273)). The script is looked up alone now and
 the argument rides on the offered command.
 
 ## 2026-09-22 — `fli dev` gives every app its own ports
@@ -924,7 +946,7 @@ the argument rides on the offered command.
 Every app `fli new` writes is project 0, so two of them derived the same
 8000/8100 and the second `fli dev` refused, naming the first app's server. The
 broker meant to separate them had never handed out a port that survived
-([`FJS-1148`](../../ISSUES.md#fjs-1148)): a dynamic claim asked for project id 10
+([`FJS-1148`](../../ISSUES_ARCHIVE.md#fjs-1148)): a dynamic claim asked for project id 10
 where the formula has one digit and the table has used all ten, and `fli claim`
 released its session the moment it returned.
 
@@ -953,7 +975,7 @@ nonzero `--remote-debugging-port`, because only the first browser binds one:
 every later drive is answered by the browser already there and asserts against a
 page it did not open. Seven of `example`'s drives carried it and nothing
 reported them — a drive on the wrong browser is green whenever the two runs
-happen to agree ([`FJS-1265`](../../ISSUES.md#fjs-1265)).
+happen to agree ([`FJS-1265`](../../ISSUES_ARCHIVE.md#fjs-1265)).
 
 CI's `structure` phase runs the same engine, so the next drive written cannot
 reintroduce it quietly. The rule does not reach `packages/*` — those browser
@@ -1832,7 +1854,7 @@ policy reads the level as `auth().level`.
 
 ## 2026-09-15 — the intent pick test names `Invoice.dueOn`
 
-[`FJS-1171`](../../ISSUES.md#fjs-1171). `test/intent.test.js` reads `example`'s real schema, and
+[`FJS-1171`](../../ISSUES_ARCHIVE.md#fjs-1171). `test/intent.test.js` reads `example`'s real schema, and
 `Invoice.dueAt` became `dueOn` there; the pick asked for a field that no longer existed and the
 verdict was `unhomed` on every run. The paired unpicked ask still misses, which is what the test
 is for.
@@ -2386,7 +2408,7 @@ afterwards.
 The list page carries two `$:` lines naming the same two properties: the handler that reloads on a
 navigation, and a bare `$: (page.query, page.directives)` above the const. The bare one exists only
 to mark `page` a watched import, which is what makes the filter bar's query a derivation rather than
-a value read once — [`FJS-1065`](../../ISSUES.md#fjs-1065).
+a value read once — [`FJS-1065`](../../ISSUES_ARCHIVE.md#fjs-1065).
 
 **It was removed and put back the same day, which is the entry.** That defect is fixed in mesa's
 working tree, so the handler form alone now promotes and the line looked redundant. An app does not
@@ -2476,7 +2498,7 @@ moves `page.query` and expects the page to be watching. Every hand-written list
 in `example` and `basecamp` has `$: page.query, page.directives, () => load()`
 and the generated one had nothing.
 
-**A fourth thing is filed rather than fixed** ([FJS-1065](../../ISSUES.md#fjs-1065)):
+**A fourth thing is filed rather than fixed** ([FJS-1065](../../ISSUES_ARCHIVE.md#fjs-1065)):
 that handler-form `$:` does not mark `page` a watched import, so `urlQuery`
 compiled to a plain const and the BAR stayed frozen even once the rows moved —
 no Clear button, no box reflecting the URL. A bare `$: (page.query,
@@ -2669,7 +2691,7 @@ an app writing no dotted prefix never sees the rule.
 
 `FJS-1045` shipped through a green `scaffold` phase and was caught by one
 tutorial lesson, because the two install the app differently
-([`FJS-1048`](../../ISSUES.md#fjs-1048)). `vendorWorkspacePackages` writes an
+([`FJS-1048`](../../ISSUES_ARCHIVE.md#fjs-1048)). `vendorWorkspacePackages` writes an
 `overrides` entry per packed package — it has to, or the framework packages'
 dependencies on EACH OTHER resolve from npm — and bun installs and hoists all
 seventeen. So the app resolves a package it never declared, and the phase whose
@@ -2702,7 +2724,7 @@ Every CRUD list page `fli scaffold` and `fli admin:generate` write imports
 `encodeQueryString` and `directiveParams`, and `toolbelt` sat on
 `FJS_PACKAGES`'s *deliberately absent* list — so a freshly scaffolded app could
 not resolve its own pages and `bun run build` exited 1
-([`FJS-1045`](../../ISSUES.md#fjs-1045)). The front door.
+([`FJS-1045`](../../ISSUES_ARCHIVE.md#fjs-1045)). The front door.
 
 The comment listing the absence already argued the case against itself: it says
 `ui` is IN because a scaffold without it *produces pages that cannot resolve
@@ -2740,7 +2762,7 @@ look rather than a false alarm.
 SECTION; the conventions table tells them apart by PREFIX — `FJS-D##` is a
 ruling, `FJS-###` is a defect — and nothing compared the two, so five closed
 defects sat in § Needs a decision and every rule passed over them
-([`FJS-1033`](../../ISSUES.md#fjs-1033)).
+([`FJS-1033`](../../ISSUES_ARCHIVE.md#fjs-1033)).
 
 **Both existing rules are blind there by construction.** `row-shape` grades on
 the CELL COUNT and both tables declare four columns, so a closed defect parked
@@ -2770,7 +2792,7 @@ passing either way by design.
 The lesson gave the Outpost a fleet-wide `OUTPOST_SECRET` that basecamp had
 stopped accepting, so the first heartbeat was answered 401 and the lesson died
 at step 5 — taking the `tutor` CI phase with it
-([`FJS-1041`](../../ISSUES.md#fjs-1041)). The app was right and the lesson was
+([`FJS-1041`](../../ISSUES_ARCHIVE.md#fjs-1041)). The app was right and the lesson was
 stale, which is the class the phase exists to catch.
 
 `05-outpost` now runs the exchange `install.sh` runs on a real machine, minus
@@ -3118,7 +3140,7 @@ The container name was `${appId}-api` at ten call sites with no tier in it, and
 `tutor:deploy` names its app `my-app` for every run — so `bun run ci` on 7103 and
 a person on 8100 wanted one name, and the loser died on
 `Conflict. The container name "/my-app-api" is already in use`
-([`FJS-1013`](../../ISSUES.md#fjs-1013)).
+([`FJS-1013`](../../ISSUES_ARCHIVE.md#fjs-1013)).
 
 Both directions were seen the same day: a CI run refused because a hand-run held
 the name, and a hand-run whose container CI removed then failed its health check
@@ -3348,7 +3370,7 @@ call — extracting one is the prerequisite, not a second copy of the question.
 
 `fli deploy` died at `04c-journal` on every deploy in the repo — the deploy
 cycle's first deploy and `tutor:deploy` at the same step — with
-`FOREIGN KEY constraint failed` ([`FJS-952`](../../ISSUES.md#fjs-952)).
+`FOREIGN KEY constraint failed` ([`FJS-952`](../../ISSUES_ARCHIVE.md#fjs-952)).
 
 litestone ranks a pivot `unchanged < expand < unknown < contract` and answers
 the first rung when a release moved no schema. `db/deploy.lite` declares three
@@ -3470,9 +3492,9 @@ never set.
 
 **Two defects, both of which made a real release impossible, and neither of
 which any suite could see** — basecamp's own drive injects a fake docker:
-[`FJS-919`](../../ISSUES.md#fjs-919), outpost addressing a locally built image
+[`FJS-919`](../../ISSUES_ARCHIVE.md#fjs-919), outpost addressing a locally built image
 as `name@<image-id>`, which docker reads as a pull; and
-[`FJS-920`](../../ISSUES.md#fjs-920), basecamp omitting `app_id` from `/deploy`,
+[`FJS-920`](../../ISSUES_ARCHIVE.md#fjs-920), basecamp omitting `app_id` from `/deploy`,
 so the container was named for the deployment while every other route addressed
 the app.
 
@@ -3487,7 +3509,7 @@ rather than reporting a broken release.
 `--with notifications` added the dependency and stopped, so every app that took
 it copied `model Notification` out of `node_modules` by hand or found out at the
 first `app.notify()` that `notification` is not a table in this schema. Now that
-the package ships the model ([`FJS-910`](../../ISSUES.md#fjs-910)) there is
+the package ships the model ([`FJS-910`](../../ISSUES_ARCHIVE.md#fjs-910)) there is
 something to install, and `fli notifications:install` appends it, retargets
 `@@db(main)` under `--db`, pushes, and prints the wiring — the mailer first,
 because the plugin refuses the wrong order at startup. `fli new --with
@@ -3499,7 +3521,7 @@ machinery an app never writes, so `fli outbox:install` imports it by name;
 `Notification` is the app's, and `userId`'s type follows the app's own user key.
 
 **Found by writing it — the fourth copy of a function only one copy of which was
-right** ([`FJS-918`](../../ISSUES.md#fjs-918)). `fli outbox:install` and `fli
+right** ([`FJS-918`](../../ISSUES_ARCHIVE.md#fjs-918)). `fli outbox:install` and `fli
 backfill:install` resolved with `createRequire(<app>/package.json).resolve(spec)`,
 which `fli auth:install`'s header already documents as unsound: bun answers it
 out of its GLOBAL INSTALL CACHE. Measured here, in an app with no `node_modules`
@@ -3577,7 +3599,7 @@ it come to disagree about the same number.
 ## 2026-09-05 — two rules that disagreed about one column
 
 `@frontierjs/notifications` began shipping its model
-([`FJS-910`](../../ISSUES.md#fjs-910)), which put `package-model-drift` in front
+([`FJS-910`](../../ISSUES_ARCHIVE.md#fjs-910)), which put `package-model-drift` in front
 of a case it had never seen: an app that has taken `polymorphic-subject`'s
 advice. That rule asks an app to constrain a bare `String` discriminator, and a
 package cannot ship the constraint because it cannot know the app's set — so the
@@ -3649,7 +3671,7 @@ would be the wrong mechanism.
 lesson says so where the difference is visible rather than in a flag
 description.
 
-**And the panel had to learn the same word** ([`FJS-913`](../../ISSUES.md#fjs-913)).
+**And the panel had to learn the same word** ([`FJS-913`](../../ISSUES_ARCHIVE.md#fjs-913)).
 `fli gui`'s check panel counted raw findings, so the app this lesson leaves —
 green by its own `bun run check`, carrying one recorded finding — was reported as
 broken by the surface beside it. `/api/check` reads the baseline per scope now
@@ -3664,7 +3686,7 @@ It keys on the block's own marker now and REPLACES it, which is what made the
 new step's finding appear on a re-run at all.
 
 **Found by writing it: `polymorphic-subject` was blind to snake_case**
-([`FJS-912`](../../ISSUES.md#fjs-912)). It matched a camelCase pair only, so the
+([`FJS-912`](../../ISSUES_ARCHIVE.md#fjs-912)). It matched a camelCase pair only, so the
 legacy `activity_log(subject_type, subject_id)` the lesson adds — the shape a
 Rails polymorphic association has, and what `litestone introspect --no-camel`
 emits — was not a pair as far as the rule was concerned. The population the rule
@@ -3726,7 +3748,7 @@ refuses a value naming nothing. It surfaced two lessons later as `tutor:tools`
 failing its *the check panel is clean* assertion, blaming a panel that was
 telling the truth. The lesson constrains the one column that can be and says
 why; `@frontierjs/notifications`' README now says the same, since the model it
-hands out is the one every app copies ([`FJS-910`](../../ISSUES.md#fjs-910)).
+hands out is the one every app copies ([`FJS-910`](../../ISSUES_ARCHIVE.md#fjs-910)).
 
 The insert renumbers `site` through `adopt` — the heading in each lesson, the
 `Lesson N done` line in each finish step, and the next-lesson pointer out of
@@ -4839,8 +4861,8 @@ describes what it matches on, so it reads through `readCode`.
 
 ## 2026-08-31 — the schema a tool reads is not the schema an app runs
 
-1549 + 35 tests, 0 fail. Closes [`FJS-625`](../../ISSUES.md#fjs-625); opens
-[`FJS-626`](../../ISSUES.md#fjs-626) for the half that cannot take this fix.
+1549 + 35 tests, 0 fail. Closes [`FJS-625`](../../ISSUES_ARCHIVE.md#fjs-625); opens
+[`FJS-626`](../../ISSUES_ARCHIVE.md#fjs-626) for the half that cannot take this fix.
 
 **An app's seed is not `db/schema.lite`.** It is that file, plus fragments a
 package ships and the app appends in memory (`authSchemaFragments()`,
@@ -4902,8 +4924,8 @@ in the schema — so the rule reads it rather than carrying a list of names.
 
 ## 2026-08-31 — a log nobody can read back
 
-1549 + 35 tests, 0 fail. Closes [`FJS-622`](../../ISSUES.md#fjs-622) and
-[`FJS-623`](../../ISSUES.md#fjs-623).
+1549 + 35 tests, 0 fail. Closes [`FJS-622`](../../ISSUES_ARCHIVE.md#fjs-622) and
+[`FJS-623`](../../ISSUES_ARCHIVE.md#fjs-623).
 
 **The vhost `deploy:setup` writes declared no `access_log`.** A server block
 without one falls back to nginx's machine-wide default, which is a working
@@ -4916,7 +4938,7 @@ The path now carries the app id, and **the directory is load-bearing**:
 `/var/log/nginx/*.log` is the glob the packaged logrotate rule already rotates,
 so the files are bounded by a rule that is on the machine rather than by one we
 would have to write. Anywhere else and this would have been
-[`FJS-616`](../../ISSUES.md#fjs-616) one layer up while looking like a fix.
+[`FJS-616`](../../ISSUES_ARCHIVE.md#fjs-616) one layer up while looking like a fix.
 `combined` is stated rather than defaulted because it is the format an analyser
 reads unasked; a custom `log_format` cannot be declared here at all, being
 http-level only.
@@ -4938,7 +4960,7 @@ path before the spawn as well as after.
 ## 2026-08-29 — a refusal is not a success
 
 1531 + 35 tests, 0 fail; `deployJournalCycle` 12/12. Closes
-[`FJS-589`](../../ISSUES.md#fjs-589).
+[`FJS-589`](../../ISSUES_ARCHIVE.md#fjs-589).
 
 A step refuses by setting `context.config.abort` and returning. Every later step
 then self-skipped and the command exited **0** — so seven of the deploy
@@ -5028,7 +5050,7 @@ it:
 
 - **The refusal was thrown away.** The first version used `execFileSync` and
   kept stderr only from the catch — but a deploy command that refuses exits 0
-  ([`FJS-589`](../../ISSUES.md#fjs-589)), so the success path handed the panel an
+  ([`FJS-589`](../../ISSUES_ARCHIVE.md#fjs-589)), so the success path handed the panel an
   empty string and it reported *the journal answered nothing* about a command
   that had said exactly what was wrong. `spawnSync`, both streams, every path.
 - **`.select` is defined by nothing.** The panel was written with it; the class
@@ -5080,7 +5102,7 @@ operator's, and the keys become a per-target assertion in a file that is
 reviewed. `bindingSet` is asked rather than the two objects re-merged here,
 because per-target-beats-app-wide is its rule.
 
-**And it found [`FJS-589`](../../ISSUES.md#fjs-589), which is larger than what it
+**And it found [`FJS-589`](../../ISSUES_ARCHIVE.md#fjs-589), which is larger than what it
 was looking for.** `runtime.js` re-throws a step's ERROR, so a step that throws
 fails the command — but a step that refuses by setting `context.config.abort` and
 returning only makes the later steps self-skip, and the command exits **0**.
@@ -7156,7 +7178,7 @@ spells the two differently either side of `from` — `import { orders } from
 '../../resources/Order.mesa'`. `fli validate`'s worked example was stale the
 same way and is corrected.
 
-Not fixed, filed as [FJS-364](../../ISSUES.md#fjs-364): `admin:generate` writes
+Not fixed, filed as [FJS-364](../../ISSUES_ARCHIVE.md#fjs-364): `admin:generate` writes
 one `resources/admin.mesa` holding every model, which fails `resource-file-name`
 and `resource-one-per-file`. That is a shape question, not a spelling — three
 ways out and none obviously right.

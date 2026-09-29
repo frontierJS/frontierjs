@@ -109,7 +109,7 @@ beside the row.
 
 **One gap found, which is what a proving ground is for.** `@@unique` took no
 predicate, so *one OPEN window per plan* — the constraint effective dating is
-built on — could not be declared ([`FJS-603`](../ISSUES.md#fjs-603)). The near
+built on — could not be declared ([`FJS-603`](../ISSUES_ARCHIVE.md#fjs-603)). The near
 miss was the sharp part: `@@unique([planId, effectiveTo])` is refused by name
 because two NULLs never compare equal, and the refusal offered
 `nullsDistinct: true`, which is the correct declaration of the opposite of what
@@ -180,11 +180,11 @@ column is a second answer to a question the rows already answer, and the two
 disagree the first time anything runs twice.
 
 **Three defects, two of them in litestone and both silent.**
-[`FJS-604`](../ISSUES.md#fjs-604): a migration that BLOCKED a column reported
+[`FJS-604`](../ISSUES_ARCHIVE.md#fjs-604): a migration that BLOCKED a column reported
 `migrated`, with the reason in a SQL comment nobody reads — the app then ran
 against a table missing a column its own seed declares, and mass-assignment
 protection stripped every write of it, so a required field read back `undefined`.
-[`FJS-605`](../ISSUES.md#fjs-605): `@default(now())` on a new column emits an
+[`FJS-605`](../ISSUES_ARCHIVE.md#fjs-605): `@default(now())` on a new column emits an
 expression default, which `ALTER TABLE ADD COLUMN` cannot take — so adding one
 to a populated table threw `near "(": syntax error` out of `autoMigrate` at
 boot, naming nothing. The third was this app's own: settling an invoice ran the
@@ -365,7 +365,7 @@ a plan nobody is subscribed to — the same shape as the `arr.push()` trap, on a
 count rather than on a list.
 
 **One defect filed, and it is a silent total failure.**
-[`FJS-607`](../ISSUES.md#fjs-607): a `slot="actions"` child wrapped in `{#if}`
+[`FJS-607`](../ISSUES_ARCHIVE.md#fjs-607): a `slot="actions"` child wrapped in `{#if}`
 makes `$slots.default` truthy, so `<Form>` reads the caller as having written
 the form and generates NOTHING. Every field disappears, the form still submits,
 and the page looks like a component that failed to load.
@@ -448,7 +448,7 @@ renewal changed the period end and therefore the occurrence key. `verify:billing
 cannot separate those two, because its sweep never advances anything.
 
 **And it found one, which is the whole reason a chain is worth running.**
-[`FJS-609`](../ISSUES.md#fjs-609): the collection was dispatched under a
+[`FJS-609`](../ISSUES_ARCHIVE.md#fjs-609): the collection was dispatched under a
 `{ id }` built from the invoice's id. A dispatch id is the jobs table's PRIMARY
 KEY, so a taken one is a no-op **for all time** — once `collect:56` exists that
 invoice can never be presented again, and *presented again* is ordinary (a soft
@@ -647,7 +647,7 @@ order and it is wrong; `boundary.staleDispatchDoesNotEndIt` is what pins it.
 
 **It found two things.**
 
-[`FJS-613`](../ISSUES.md#fjs-613): a transition declared `@system` is
+[`FJS-613`](../ISSUES_ARCHIVE.md#fjs-613): a transition declared `@system` is
 **byte-identical in `db/access.snapshot.md`** to one anybody may ask for.
 Measured by generating the file from two schemas differing in that one token —
 the output differs in the filename in its own header and nowhere else. The whole
@@ -782,7 +782,7 @@ billing one.
    job, and the ruling is owed once the hand-written buttons exist to argue
    against.
 5. **Is a partial UNIQUE declarable** — not a new question but a second
-   instance: [`FJS-603`](../ISSUES.md#fjs-603) was found writing `PlanVersion`
+   instance: [`FJS-603`](../ISSUES_ARCHIVE.md#fjs-603) was found writing `PlanVersion`
    and phase 8's `PaymentMethod.isDefault` is the same shape from another
    domain. Two instances is when it stops being one app's arrangement, and the
    issue already names both candidate spellings.

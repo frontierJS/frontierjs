@@ -372,7 +372,7 @@ export function outputFileFor(urlPath) {
  */
 export async function prerenderRoutes(opts) {
   const {
-    tree, root, routesDir = 'src/routes', outDir = 'dist/client',
+    tree, root, routesDir = 'src/routes', outDir = 'dist/client', aliases = {},
     warn = () => {}, renderComponent, islands = false, tmpDir = null,
     // The build's own preparation of a Mesa source and its compile options,
     // handed to the renderer so it compiles what the bundle did (`FJS-1491`).
@@ -400,6 +400,7 @@ export async function prerenderRoutes(opts) {
   // package '@'" unless the renderer is told. One base (appSrcDir), two
   // resolvers; see build/app-alias-plugin.js.
   const alias = {
+    ...aliases,
     '@': appSrcDir(root),
     // A layout that reads `page` imports `@frontierjs/sierra/router`, whose
     // package entry re-exports two .mesa components no native import can

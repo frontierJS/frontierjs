@@ -12,7 +12,7 @@ what this asks; naming one turned a vocabulary check into a red build about a re
 
 ## 2026-09-15 — `make()` is handed the create-mode `required`
 
-The same change as sierra's ([`FJS-1162`](../../ISSUES.md#fjs-1162)): a column the server fills
+The same change as sierra's ([`FJS-1162`](../../ISSUES_ARCHIVE.md#fjs-1162)): a column the server fills
 is not seeded, and a nullable number is `null`.
 
 ## 2026-09-12 — a page can finish the second step, and a spent attempt closes the box

@@ -78,7 +78,19 @@ export function cronMatcher(expr: string): (date: Date) => boolean {
 
 // ─── Scheduler ────────────────────────────────────────────────────────────
 
-export function createScheduler() {
+export interface SchedulerOptions {
+  /**
+   * Hold every job until `arm()`: registered and described, never fired.
+   * The app's own scheduler is held, and junction's `start-work` phase arms
+   * it, so a one-shot boot (`junction call`, a snapshot tool) and an app
+   * imported only to be described start no timer.
+   */
+  held?: boolean
+}
+
+export function createScheduler(opts: SchedulerOptions = {}) {
+
+  let armed = !opts.held
 
   const jobs   = new Map<string, ScheduledJob>()
   const stats: SchedulerStats = { total: 0, running: 0, paused: 0, executions: 0, errors: 0, skipped: 0 }
@@ -139,7 +151,7 @@ export function createScheduler() {
   }
 
   function ensureCronDriver(): void {
-    if (cronTimer || alignTimer || destroyed) return
+    if (!armed || cronTimer || alignTimer || destroyed) return
 
     // Align to next minute boundary
     const now     = Date.now()
@@ -173,6 +185,19 @@ export function createScheduler() {
     // First tick aligned to minute, then every 60s
     alignTimer = setTimeout(startCron, msUntil)
     if (alignTimer.unref) alignTimer.unref()
+  }
+
+  /** Start one job's clock. A held scheduler starts none until arm(). */
+  function startTimer(job: ScheduledJob): void {
+    if (!armed || job.timer) return
+    if (job.type === 'interval')
+      job.timer = setInterval(() => job.execute(), job.ms!)
+    else if (job.type === 'once')
+      job.timer = setTimeout(() => job.execute(), job.ms!)
+    else { ensureCronDriver(); return }
+    // A scheduled job must not hold the process open by itself.
+    const t = job.timer as { unref?: () => void }
+    if (t.unref) t.unref()
   }
 
   function createHandle(id: string): JobHandle {
@@ -226,16 +251,14 @@ export function createScheduler() {
         running: true,
         paused:  false,
         timer:   null,
+        ms,
         async execute() { await runOnce(job, `job "${id}"`) }
       }
-
-      job.timer = setInterval(() => job.execute(), ms)
-      if ((job.timer as ReturnType<typeof setInterval>).unref)
-        (job.timer as ReturnType<typeof setInterval>).unref()
 
       jobs.set(id, job)
       stats.total++
       stats.running++
+      startTimer(job)
 
       return createHandle(id)
     },
@@ -262,8 +285,7 @@ export function createScheduler() {
       jobs.set(id, job)
       stats.total++
       stats.running++
-
-      ensureCronDriver()
+      startTimer(job)
 
       return createHandle(id)
     },
@@ -283,6 +305,7 @@ export function createScheduler() {
         running: true,
         paused:  false,
         timer:   null,
+        ms,
         async execute() {
           stats.executions++
           try { await fn() } catch (err) { stats.errors++; console.error(`[Scheduler] Error in once "${id}":`, err) }
@@ -290,18 +313,20 @@ export function createScheduler() {
         }
       }
 
-      job.timer = setTimeout(() => job.execute(), ms)
-      // Consistent with every() and the cron driver: a pending one-shot
-      // job must not hold the process open by itself.
-      if ((job.timer as { unref?: () => void }).unref) {
-        (job.timer as unknown as { unref: () => void }).unref()
-      }
-
       jobs.set(id, job)
       stats.total++
       stats.running++
+      startTimer(job)
 
       return createHandle(id)
+    },
+
+    /** Start every held job's clock; a job registered afterwards starts at
+     *  once. A `once` delay counts from here, not from registration. */
+    arm(): void {
+      if (armed) return
+      armed = true
+      for (const job of jobs.values()) startTimer(job)
     },
 
     stats(): SchedulerStats {
@@ -357,6 +382,8 @@ interface ScheduledJob {
   paused:    boolean
   timer:     ReturnType<typeof setInterval> | ReturnType<typeof setTimeout> | null
   cronMatch?: (date: Date) => boolean
+  /** The interval, or a `once` job's delay. */
+  ms?:       number
   /** A run of THIS job is in progress. A recurring job does not overlap
    *  itself — see `runOnce` for why skipping beats queueing. */
   inFlight?: boolean

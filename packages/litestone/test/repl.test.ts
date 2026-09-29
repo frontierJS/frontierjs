@@ -11,7 +11,7 @@
 
 import { describe, it, expect } from 'bun:test'
 import { PassThrough }          from 'node:stream'
-import { startRepl, describeStanding, tinkerCommands } from '../src/tools/repl.js'
+import { startRepl, evalOnce, describeStanding, tinkerCommands } from '../src/tools/repl.js'
 
 /** Drive a session: feed lines, collect what it printed. */
 async function session(lines: string[], binds: any = {}) {
@@ -235,5 +235,41 @@ describe('tinkerCommands — what the file must look like', () => {
   it('a name with a space is refused — beside a hyphenated one', () => {
     expect(() => tinkerCommands({ default: { 'reset all': ok.resetPasswords } })).toThrow('not a command name')
     expect(() => tinkerCommands({ default: { 'reset-all': ok.resetPasswords } })).not.toThrow()
+  })
+})
+
+describe('evalOnce — fli tinker -e', () => {
+  const run = async (code: string, binds: any = {}) => {
+    const out: string[] = [], err: string[] = []
+    const exit = await evalOnce({ code, db: {}, sys: {}, ...binds, out: (l: string) => out.push(l), err: (l: string) => err.push(l) })
+    return { exit, out: out.join('\n'), err: err.join('\n') }
+  }
+
+  it('answers unindented JSON, so a pipe into jq reads it', async () => {
+    const r = await run('({ a: [1, 2] })')
+    expect(r.exit).toBe(0)
+    expect(JSON.parse(r.out)).toEqual({ a: [1, 2] })
+    expect(r.out.startsWith('{')).toBe(true)
+  })
+
+  it('a dot command runs with the words after it — an unknown one exits 1 naming the known', async () => {
+    let seen: any
+    const commands = { purge: { help: '', run: async (ctx: any) => { seen = ctx.args; ctx.out('done') } } }
+
+    const known = await run('.purge 30', { commands })
+    expect(known.exit).toBe(0)
+    expect(seen).toEqual(['30'])
+    expect(known.out).toBe('done')
+
+    const unknown = await run('.purj 30', { commands })
+    expect(unknown.exit).toBe(1)
+    expect(unknown.err).toContain('No command .purj. Known: .purge')
+  })
+
+  it('a command that throws exits 1 — its answer is not a success', async () => {
+    const commands = { boom: { help: '', run: async () => { throw new TypeError('bad') } } }
+    const r = await run('.boom', { commands })
+    expect(r.exit).toBe(1)
+    expect(r.err).toContain('TypeError: bad')
   })
 })

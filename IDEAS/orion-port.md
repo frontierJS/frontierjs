@@ -291,7 +291,7 @@ Registration is per process, so every instance runs `syncActivations` at boot an
 on a timer, comparing the active flows' `(id, currentVersion)` with what it holds;
 an activation made on one instance reaches the others within
 `activationPollInterval`, 5s by default
-([`FJS-1155`](../ISSUES.md#fjs-1155)). A flow that cannot activate is reported
+([`FJS-1155`](../ISSUES_ARCHIVE.md#fjs-1155)). A flow that cannot activate is reported
 once per version rather than failing the boot. The kill switch never waits on
 the poll, because `start`, the run job and `resume` each read `Flow.status` again.
 
@@ -311,7 +311,7 @@ trigger stored on the run carries the request's headers through
 run history. A sync run is not a Caravan job, so no lease covers it: it stamps
 `Run.heartbeatAt` while it executes, and the sweep hands a run whose stamp went
 stale to the ordinary run job, which resumes it from its checkpoint
-([`FJS-1156`](../ISSUES.md#fjs-1156)).
+([`FJS-1156`](../ISSUES_ARCHIVE.md#fjs-1156)).
 
 ---
 
@@ -408,7 +408,7 @@ flow holds — puts the status back.
 **Cancel is for a waiting run.** Its `Wait` rows are consumed in the cancel's own
 transaction, so a resume or a deadline racing it loses. A queued or running run
 is refused, because its job writes every checkpoint over whatever is underneath
-([`FJS-1157`](../ISSUES.md#fjs-1157)).
+([`FJS-1157`](../ISSUES_ARCHIVE.md#fjs-1157)).
 
 ---
 
@@ -436,7 +436,7 @@ a written row names its own tenant.
 **Under `strategy row` the host adds its column to Flow, FlowCredential and
 KvEntry**, and every other model reaches a Flow through its relation. Two
 uniques are still across the whole table — a credential's name and a store key
-— which the host cannot rewrite ([`FJS-1159`](../ISSUES.md#fjs-1159)).
+— which the host cannot rewrite ([`FJS-1159`](../ISSUES_ARCHIVE.md#fjs-1159)).
 
 ---
 
@@ -535,10 +535,10 @@ what proves the screens.
 and cannot express is filed against the framework, per the README.
 
 *Status 2026-09-20: both halves are built; the basecamp install is not finished
-([`FJS-1197`](../ISSUES.md#fjs-1197)).* The basecamp automation is the one an
+([`FJS-1197`](../ISSUES_ARCHIVE.md#fjs-1197)).* The basecamp automation is the one an
 operator wants — a failed release pages the workspace's ops channel, through the
 real job, the real flow, conduit and a real receiver — and installing it found
-[`FJS-1161`](../ISSUES.md#fjs-1161) and [`FJS-1159`](../ISSUES.md#fjs-1159),
+[`FJS-1161`](../ISSUES_ARCHIVE.md#fjs-1161) and [`FJS-1159`](../ISSUES_ARCHIVE.md#fjs-1159),
 both ruled. What it did not finish is the seed, `db/schema.d.ts`, the table
 count and three junction snapshots, and four schema-derived checks are red.
 

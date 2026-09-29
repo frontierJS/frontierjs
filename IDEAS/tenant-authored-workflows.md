@@ -10,7 +10,7 @@ dated: 2026-09-22
 `fjs-prototypes/linear/api/test/workflows.test.ts` (19 tests, in-process) and
 `web/test/verify-workflow.mjs` (9 checks, over HTTP). Every claim below marked
 *measured* was run there on 2026-09-22; *read* means a source file says so.
-Decision row: [`FJS-D365`](../ISSUES.md#fjs-d365).
+Decision row: [`FJS-D365`](../ISSUES_ARCHIVE.md#fjs-d365).
 
 ## The shape
 
@@ -59,9 +59,9 @@ because a plugin holds for every caller of `db.` (a job, a seed, `fli tinker`).
    as required off the JSON Schema and refuses first: `400 stateId: stateId is
    required`. `@system` would take it out of `required` and also forbid the
    caller from naming an entry state, which it may. The same wall
-   [`FJS-1296`](../ISSUES.md#fjs-1296) hit for `@sequence`.
+   [`FJS-1296`](../ISSUES_ARCHIVE.md#fjs-1296) hit for `@sequence`.
 3. **A value a plugin writes into a create is never graded by the create
-   policy** ([`FJS-1307`](../ISSUES.md#fjs-1307)). `checkCreatePolicy` runs
+   policy** ([`FJS-1307`](../ISSUES_ARCHIVE.md#fjs-1307)). `checkCreatePolicy` runs
    before `plugins.beforeCreate`, so the plugin's default escapes the very
    `@@deny` that keeps a state inside its team. The app then had to weaken that
    deny (`stateId != null && …`) so a create naming no state could reach the
@@ -122,7 +122,7 @@ existing behaviour with the set read from a table instead of the file:
   (`TransitionViolationError`, `TransitionGateError`, `TransitionConflictError`)
   are the ones that exist.
 - **A create** requires an entry row for its state. This is
-  [`FJS-1257`](../ISSUES.md#fjs-1257)'s missing half, *where may a row begin*,
+  [`FJS-1257`](../ISSUES_ARCHIVE.md#fjs-1257)'s missing half, *where may a row begin*,
   and it gives the enum form its spelling too: `@@transitions(status, start: ->
   draft, …)`.
 - **The default** is the entry with the lowest position (or the only one), which

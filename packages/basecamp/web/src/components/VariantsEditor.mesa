@@ -1,0 +1,47 @@
+<script>
+  // VariantsEditor.mesa — a variant flag's list of `{ key, weight }`.
+  //
+  // `FeatureFlag.variants` is a Json column, so the default form would offer a
+  // textarea of JSON. The rules are the service's (`assertVariants`): two or
+  // more, unique keys, weights adding to 100. This shows the running total so
+  // a person sees the refusal coming, and leaves the refusing to the server.
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+
+  export let value    = []           // [{ key, weight }]
+  export let onchange = () => {}     // (next) => void — the whole list, replaced
+  export let idPrefix = 'variant'
+
+  $: list  = Array.isArray(value) ? value : []
+  $: total = list.reduce((n, v) => n + (Number(v.weight) || 0), 0)
+
+  function set(i, field, raw) {
+    const next = list.map((v, j) => j === i ? { ...v, [field]: field === 'weight' ? Number(raw) : raw } : v)
+    onchange(next)
+  }
+
+  const add    = () => onchange([...list, { key: '', weight: 0 }])
+  const drop   = (i) => onchange(list.filter((_, j) => j !== i))
+</script>
+
+<fieldset class="stack" id={`${idPrefix}s`}>
+  <legend class="text-sm">Variants</legend>
+  {#each list as v, i}
+    <div class="cluster" data-variant-row>
+      <Input id={`${idPrefix}-key-${i}`} label="" placeholder="key" aria-label={`Variant ${i + 1} key`}
+             style="--field-inline-size: 10rem" value={v.key}
+             oninput={(e) => set(i, 'key', e.target.value)} />
+      <Input id={`${idPrefix}-weight-${i}`} label="" type="number" min="0" max="100"
+             aria-label={`Variant ${i + 1} weight`} style="--field-inline-size: 6rem" value={v.weight}
+             oninput={(e) => set(i, 'weight', e.target.value)} />
+      <span class="text-sm text-muted">%</span>
+      <Button variant="ghost" aria-label={`Remove variant ${i + 1}`} onclick={() => drop(i)}>Remove</Button>
+    </div>
+  {/each}
+  <div class="cluster">
+    <Button variant="outlined" id={`${idPrefix}-add`} onclick={add}>Add variant</Button>
+    <span class="text-sm {total === 100 ? 'text-muted' : ''}" id={`${idPrefix}-total`}>
+      {total}% of 100{list.length < 2 ? ' · needs at least two' : ''}
+    </span>
+  </div>
+</fieldset>

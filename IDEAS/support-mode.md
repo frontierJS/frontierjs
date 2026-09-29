@@ -22,7 +22,7 @@ and `example`'s `verify:support` drives an episode end to end. The remainder is
 the declared-trail silence that test's fifth row asserts as still-broken.
 
 Promoted out of `compliance-from-the-seed.md` §6, which argued the *why* in eleven lines
-and named no mechanism. It closes [`FJS-142`](../ISSUES.md#fjs-142), which is filed
+and named no mechanism. It closes [`FJS-142`](../ISSUES_ARCHIVE.md#fjs-142), which is filed
 against basecamp and is a framework question — two screens carry an *Impersonate* button,
 neither is built, and both say so on the screen instead.
 

@@ -1,5 +1,18 @@
 # Changes — @frontierjs/sierra
 
+## 2026-09-29 — AGENTS.md answers offline (`FJS-1550`)
+
+*Offline — held writes and kept reads* is new: `@@sync` as the switch, the two
+`offline:` config shapes, a held write throwing with `queued` rather than
+resolving, the browser-minted key an offline parent needs, `pendingQueue()`'s
+surface, `cachedAt()`, and why an `offlineQuery` resource is imported from
+`main.js`. An app agent had been reading `pending.js`, `local-db.js` and
+`offline.js` for it. The checklist gains the `err.queued` line.
+
+## 2026-09-29 — a package's `.mesa`, a Vite alias and a root glob all reach a static page (`FJS-1551`, `FJS-1552`, `FJS-1553`)
+
+Three things a component in a package needs to render the app's content worked in `vite dev` and nowhere after it. The Mesa transform skipped every `.mesa` under `node_modules/` outside `@frontierjs/`, so a component library installed from a tarball served a blank page; it now compiles every `.mesa` and `.md`, since nothing else can read one. The prerender resolved only `@` and the router, so an alias the app or a package adds to Vite (`@content/…`) failed as *Cannot find package*, or for a `.md` as a path beside the importer; the resolved Vite config's string aliases that name a path are now handed to the render, under `@` and the router. And a prerendered `import.meta.glob` had to be file-relative; a leading `/` now resolves against the Vite root and is keyed `/…`, as Vite keys it. `test/node-modules-allowance.test.js`, `test/glob-expand.test.js` and `test/prerender-vite-alias.test.js`, a static build naming an alias and a root glob; the ksite stressor's `vite build` prerenders all four routes.
+
 ## 2026-09-28 — a prerendered layout reads `page` (`FJS-1530`)
 
 A layout importing `page` from `@frontierjs/sierra/router` failed every static page with *Unexpected #key*. The router re-exported RouterView.mesa and ChainRenderer.mesa, and the prerender loads the router natively. Had the import loaded, `page` would still have been at its initial `/` with an empty `meta` on every built page. **`sierra/router` now resolves to `src/router/entry.js`**, which is `router/index.js` plus the two components, so an app's imports are unchanged. `router/index.js` itself loads under Bun or Node. The prerender aliases `sierra/router` to it, and the synthetic wrapper calls `_setStaticPage({ node, pathname, params, data })` through that same import before any layout renders, committing what a navigation commits. `test/static-layout-page.test.js` builds three routes under a layout reading `page.pathname` and `page.meta`: each page gets its own path and title, a parent layout's frontmatter merges in, and no route sees the one rendered before it.
@@ -229,7 +242,7 @@ name. The descriptors pinned in three suites now include the field
 
 ## 2026-09-24 — every route renders inside a boundary
 
-`FJS-D376`, for [`FJS-1326`](../../ISSUES.md#fjs-1326). `ChainRenderer` wraps each level of the chain
+`FJS-D376`, for [`FJS-1326`](../../ISSUES_ARCHIVE.md#fjs-1326). `ChainRenderer` wraps each level of the chain
 in a `<mesa:boundary>`, so a page or a layout that throws while rendering is replaced by `failed` and
 the levels above it stay standing, where it used to leave a half-drawn page and a console line. The
 three boundaries share one global `failed` snippet; it renders the app's own when `RouterView` was
@@ -783,7 +796,7 @@ screen was on the wrong side of it and moved.
 
 ## 2026-09-15 — a resource's `make()` is handed the create-mode `required`
 
-[`FJS-1162`](../../ISSUES.md#fjs-1162). `createMakeFromSchema` takes it as a fifth argument and
+[`FJS-1162`](../../ISSUES_ARCHIVE.md#fjs-1162). `createMakeFromSchema` takes it as a fifth argument and
 the resource passes the model definition's own, so toolbelt's `make()` can tell a column the
 caller leaves blank from one the server fills. Found by orion's create-flow drawer, whose form
 could not submit.

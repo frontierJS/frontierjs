@@ -29,6 +29,8 @@ title: Admin
 <nav class="cluster" aria-label="Administration">
   <a class="navlink" href="/admin/"
      aria-current={(page.route, isActive('/admin/', { exact: true })) ? 'page' : null}>Members</a>
+  <a class="navlink" href="/admin/workspace/"
+     aria-current={(page.route, isActive('/admin/workspace/')) ? 'page' : null}>Workspace</a>
   <a class="navlink" href="/admin/audit/"
      aria-current={(page.route, isActive('/admin/audit/')) ? 'page' : null}>Audit trail</a>
   <a class="navlink" href="/admin/adapters/"

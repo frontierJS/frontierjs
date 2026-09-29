@@ -472,8 +472,8 @@ app.configure(createAuthPlugin(auth, {
 //
 // Caravan is a SQLite queue in its own file — nothing about it touches
 // db/shop.db, so a wiped queue loses no shop data and a wiped shop loses no
-// jobs. `app.configure` claims `app.jobs`; `boot()` starts the workers and
-// autoloads `api/jobs/*.job.ts` — including the recurring ones, which declare
+// jobs. `app.configure` claims `app.jobs`; `boot()` autoloads the job files
+// in `api/jobs/*.job.ts` and `work()` starts the workers — the recurring ones declare
 // their own `cron` and therefore need no line here.
 //
 // The queue's own settings — its database, its job directory, `admin: true` and

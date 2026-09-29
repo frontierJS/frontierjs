@@ -1,0 +1,151 @@
+---
+title: Workspace
+---
+<script>
+  // The workspace itself: its name, a new one beside it, and deleting it.
+  //
+  // Rename is an admin's and delete an owner's — the service's role hooks say
+  // so and answer in words; this screen offers both and shows the refusal.
+  // Delete is `@@softDelete(cascade)`: every project, server, secret and job
+  // under it is stamped with it, which is why the confirmation asks for the
+  // name typed back rather than a click.
+  import { goto }      from '@frontierjs/sierra/router'
+  import { session, reloadWorkspaces, switchWorkspace } from '../../../session.js'
+  import { workspaces } from '../../../resources/Workspace.mesa'
+  import { messageFor } from '../../../errors.js'
+  import Button from '@frontierjs/ui/components/forms/Button.mesa'
+  import Input  from '@frontierjs/ui/components/forms/Input.mesa'
+  import Card   from '@frontierjs/ui/components/layout/Card.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
+
+  $: session.workspaceId
+
+  let ws      = null
+  let error   = null
+  let loading = true
+  let busy    = null
+
+  // The draft pins the version it was read at (`@version`), so a rename over
+  // somebody else's is refused rather than silently winning.
+  let draft   = { name: '', slug: '', version: null }
+  let newName = ''
+  let typed   = ''
+
+  async function load() {
+    error = null; loading = true
+    try {
+      ws    = session.workspaceId ? await workspaces.service.get(session.workspaceId) : null
+      draft = ws ? { name: ws.name, slug: ws.slug, version: ws.version } : draft
+      typed = ''
+    } catch (e) {
+      error = e.message
+    } finally {
+      loading = false
+    }
+  }
+
+  load()
+  $: session.workspaceId, () => load()
+
+  async function rename() {
+    error = null; busy = 'rename'
+    try {
+      const patch = { version: draft.version }
+      if (draft.name !== ws.name) patch.name = draft.name
+      if (draft.slug !== ws.slug) patch.slug = draft.slug
+      ws    = await workspaces.service.patch(ws.id, patch)
+      draft = { name: ws.name, slug: ws.slug, version: ws.version }
+      await reloadWorkspaces()
+      toasts.success('Workspace saved')
+    } catch (e) {
+      error = messageFor(workspaces, e)
+    } finally {
+      busy = null
+    }
+  }
+
+  async function create() {
+    error = null; busy = 'create'
+    try {
+      const made = await workspaces.service.create({ name: newName.trim() })
+      newName = ''
+      await reloadWorkspaces()
+      switchWorkspace(made.id)
+      toasts.success(`${made.name} created. You are its owner, and it is the one you are in now.`)
+      goto('/')
+    } catch (e) {
+      error = messageFor(workspaces, e)
+    } finally {
+      busy = null
+    }
+  }
+
+  async function destroy() {
+    error = null; busy = 'delete'
+    const { id, name } = ws
+    try {
+      await workspaces.service.remove(id)
+      await reloadWorkspaces()
+      toasts.success(`${name} deleted`)
+      goto('/')
+    } catch (e) {
+      error = e.message
+      busy  = null
+    }
+  }
+
+  $: changed = !!ws && (draft.name !== ws.name || draft.slug !== ws.slug)
+</script>
+
+{#if error}
+  <article class="alert danger" id="workspace-error">
+    <div class="alert-content">{error}</div>
+  </article>
+{/if}
+
+{#if loading}
+  <p class="text-sm text-muted">Loading…</p>
+{:else if ws}
+  <Card id="workspace-rename">
+    <h2 class="h5">This workspace</h2>
+    <form class="stack" novalidate onsubmit={e => { e.preventDefault(); rename() }}>
+      <Input id="ws-name" name="name" label="Name" value={draft.name}
+             oninput={(e) => draft = { ...draft, name: e.target.value }} />
+      <Input id="ws-slug" name="slug" label="Slug" value={draft.slug}
+             hint="Unique across this Basecamp"
+             oninput={(e) => draft = { ...draft, slug: e.target.value }} />
+      <div class="cluster">
+        <Button type="submit" variant="primary" id="ws-save" disabled={!changed || busy === 'rename'}>Save</Button>
+      </div>
+    </form>
+  </Card>
+
+  <Card id="workspace-new">
+    <h2 class="h5">Another workspace</h2>
+    <p class="text-sm text-muted">A separate fleet with its own members, projects and secrets. You are its owner.</p>
+    <form class="cluster" novalidate onsubmit={e => { e.preventDefault(); create() }}>
+      <Input id="ws-new-name" name="name" label="" placeholder="Name" aria-label="New workspace name"
+             value={newName} oninput={(e) => newName = e.target.value} />
+      <Button type="submit" variant="outlined" id="ws-create" disabled={!newName.trim() || busy === 'create'}>Create workspace</Button>
+    </form>
+  </Card>
+
+  <article class="card outlined danger stack" id="workspace-delete">
+    <h2 class="h5">Delete this workspace</h2>
+    <p class="text-sm">
+      Deletes <strong>{ws.name}</strong> with every project, environment, app, server record,
+      secret and job in it. Machines at a cloud are not destroyed — destroy them first.
+      Only an owner can do this. Type the workspace's name to confirm.
+    </p>
+    <form class="stack" novalidate onsubmit={e => { e.preventDefault(); destroy() }}>
+      <Input id="ws-delete-confirm" name="confirm" label="Workspace name" autocomplete="off"
+             placeholder={ws.name} value={typed} oninput={(e) => typed = e.target.value} />
+      <div class="cluster">
+        <Button type="submit" variant="primary" tone="danger" id="ws-delete"
+                disabled={typed !== ws.name || busy === 'delete'}>Delete workspace</Button>
+      </div>
+    </form>
+  </article>
+{:else}
+  <p class="text-sm text-muted">You are not in a workspace.</p>
+{/if}

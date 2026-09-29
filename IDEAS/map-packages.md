@@ -148,7 +148,7 @@ holds a product photograph or a signed PDF.
 
 **A per-CALL skip is refused.** `create({ photo, skipVariants: true })` makes the
 column's declaration sometimes-true, which is
-[FJS-1184](../ISSUES.md#fjs-1184) in a second place — a declaration that binds
+[FJS-1184](../ISSUES_ARCHIVE.md#fjs-1184) in a second place — a declaration that binds
 except when a caller says otherwise. § IV, paved road vs. the workaround: a flag
 added in answer widens the shoulder and records nothing.
 

@@ -9,8 +9,7 @@
 // `FJS-560` is the shape and it cost a session: `litestone/docs/roadmap.md`
 // still proposed a way to express money four days after `@money` shipped, a
 // reader took the roadmap for the current state, and a defect was filed against
-// a settled ruling. `roadmap-shipped` closed that one page. These close the
-// classes around it — a word that does not exist, a citation that resolves to
+// a settled ruling. These close the classes around it — a word that does not exist, a citation that resolves to
 // nothing, a count that has moved, an invariant that has been renumbered, a
 // question the register has ruled and the document still calls open, and a map
 // that says what used to be true.
@@ -56,8 +55,7 @@ const isRegister = rel => REGISTERS.some(re => re.test(rel))
 
 // `IDEAS/` is design records for work NOT STARTED, so every proposal in it names
 // something the tree does not have. Grading it would report the whole directory
-// for doing its job; the roadmap's version of that question is `roadmap-shipped`,
-// which asks the opposite one — does this propose something that already ships.
+// for doing its job.
 const isProposal = rel => rel === 'IDEAS' || rel.startsWith('IDEAS' + sep)
 
 function walkMd(dir, out, root) {
@@ -143,9 +141,7 @@ function fences(text, langs) {
 
 // ─── doc-word-unknown ─────────────────────────────────────────────────────────
 //
-// The mirror of `roadmap-shipped`. That rule catches a roadmap proposing a word
-// the language already has; this one catches any document USING a word the
-// language does not have — which reads as a feature that exists, is copied into
+// Catches any document USING a word the language does not have — which reads as a feature that exists, is copied into
 // a schema, and is refused by the parser with the reader's confidence intact.
 //
 // Graded against `catalog.snapshot.md`, which is generated from the parser and

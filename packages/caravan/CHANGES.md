@@ -63,7 +63,7 @@ midnight in the zone case.
 
 One more case in `test/commitments.test.ts`: an `@@log`ged order is swept, fired,
 and read back from the trail with `transition: abandon`
-([`FJS-1294`](../../ISSUES.md#fjs-1294)). The column is Litestone's. It is proved
+([`FJS-1294`](../../ISSUES_ARCHIVE.md#fjs-1294)). The column is Litestone's. It is proved
 here because this is the suite where a real fire runs.
 
 ## 2026-09-22 — `test/commitments.test.ts`: junction's `commitments()` against this queue
@@ -81,8 +81,8 @@ in-flight-only semantics are what a re-derived commitment needs.
 `nextRuns()` found a schedule's next fire by stepping one minute at a time with
 a zone lookup on each step: 3.5s for a weekly schedule, 13.9s for a yearly one,
 and nothing past a week at all, so a monthly schedule answered `null`
-([`FJS-1283`](../../ISSUES.md#fjs-1283)). Basecamp found it by reading
-`nextRuns()` on every job read ([`FJS-1241`](../../ISSUES.md#fjs-1241)).
+([`FJS-1283`](../../ISSUES_ARCHIVE.md#fjs-1283)). Basecamp found it by reading
+`nextRuns()` on every job read ([`FJS-1241`](../../ISSUES_ARCHIVE.md#fjs-1241)).
 
 The search now skips what the expression cannot match. A day it cannot match is
 left for its last hour, an hour for the next one, and only a matching hour is

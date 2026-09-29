@@ -32,6 +32,7 @@ import { schemaAnchor, noteMintedDirectory }          from '../core/db-path.js'
 import { resolveTenancy }                              from '../core/tenancy.js'
 import { CATALOG, GROUPS, POSITIONS, positionsOf, docFor, synonymsFor, tierFor } from '../core/catalog.js'
 import { modelToAccessor, modelToTableName }           from '../core/ddl.js'
+import { authModelOf, findPrincipal }                  from './principal.js'
 
 // Assets that must survive `bun build --compile`. A text import is embedded in
 // the binary; readFileSync(import.meta.dir + ...) is not.
@@ -208,6 +209,7 @@ const HELP = `
     ${dim('  --gate <path[#export]>')}              grade previews with this app's own getLevel
     ${dim('  --host <addr> --token <secret>')}      serve beyond loopback; the token is required there
     ${cyan('litestone repl')} [--as|--level|--gate]  a console that boots at a gate level
+    ${dim(`  --eval '<expr>'`)}                     evaluate one line, print it as JSON, exit 1 on a throw
     ${dim('  --tenant <id>')}                       whose database, under strategy database (asked when omitted)
     ${cyan('litestone export')} <dataset> --as <who>  take an extract, graded as that account
     ${cyan('litestone doctor')}                     check setup, audit health
@@ -1245,7 +1247,7 @@ async function cmdExport(cfg) {
       dir, registry, path: cfg.schema,
       migrationsDir: migrationsDir && existsSync(resolve(migrationsDir)) ? resolve(migrationsDir) : null,
       encryptionKey: getEncKey(),
-      ...(plugins.length ? { plugins } : {}),
+      ...(plugins.length ? { clientOptions: { plugins } } : {}),
     })
     const ids = tenants.list()
     if (!tenantId)
@@ -1338,7 +1340,15 @@ async function cmdExport(cfg) {
 }
 
 async function cmdRepl(cfg) {
-  header('litestone tinker')
+  // `--eval` is the console run once: an answer on stdout for a caller to parse,
+  // everything about the session on stderr. The standing still prints — a
+  // one-shot run that does not say what it ran as is the god-mode console again.
+  const code = getFlag('eval')
+  if (flag('eval') && code == null)
+    fatal(`${cyan('--eval')} takes an expression: ${cyan(`--eval 'db.order.count()'`)}.`)
+  const once = code != null
+
+  if (!once) header('litestone tinker')
 
   // It drove `bun repl` as a subprocess once, fed through `.load` and two fixed
   // sleeps. That worked and could never satisfy the rule this command lives by:
@@ -1347,7 +1357,7 @@ async function cmdRepl(cfg) {
   const parseResult = loadSchema(cfg.schema)
   const { isSoftDelete } = await import('../core/ddl.js')
   const { createClient } = await import('../core/client.js')
-  const { startRepl, describeStanding, tinkerCommands } = await import('./repl.js')
+  const { startRepl, evalOnce, describeStanding, tinkerCommands } = await import('./repl.js')
 
   // Loaded before any database opens: a broken commands file is a refusal
   // naming the file, not a session that starts and lacks the command.
@@ -1406,7 +1416,7 @@ async function cmdRepl(cfg) {
       dir, registry, path: cfg.schema,
       migrationsDir: migrationsDir && existsSync(resolve(migrationsDir)) ? resolve(migrationsDir) : null,
       encryptionKey: getEncKey(),
-      ...(plugins.length ? { plugins } : {}),
+      ...(plugins.length ? { clientOptions: { plugins } } : {}),
     })
     const ids   = tenants.list()
     const known = ids.length ? `Known: ${ids.map(i => cyan(i)).join(', ')}` : dim('No tenants exist yet.')
@@ -1415,7 +1425,7 @@ async function cmdRepl(cfg) {
       fatal(`No tenant ${cyan(tenantId)}. ${known}`)
 
     if (!tenantId && ids.length) {
-      if (!process.stdin.isTTY)
+      if (!process.stdin.isTTY || once)
         fatal(`This schema is ${cyan('strategy database')}, so name whose data: ${cyan('--tenant <id>')}.\n` +
               `     ${known}\n` +
               `     ${dim('Without one the console would open main, which holds the machinery and none of the rows.')}`)
@@ -1445,7 +1455,15 @@ async function cmdRepl(cfg) {
 
   const user = found.row
 
-  const db = user ? base.$setAuth(user) : base
+  // A `--level` with no user still needs SOMEBODY to grade: the gate never asks
+  // `getLevel` about a caller with no id (`FJS-D515`), so the synthetic level
+  // answered STRANGER to every call. The same stand-in `atLevel` uses — an id
+  // no row carries, so an `auth().id ==` policy still matches nothing, and every
+  // declared capability, so a refusal names the gate and not a missing grant.
+  const { capabilityNames } = await import('../core/capabilities.js')
+  const db = user ? base.$setAuth(user)
+    : level != null ? base.$setAuth({ id: `level-${level}`, capabilities: [...capabilityNames(parseResult.schema)] })
+    : base
 
   // The level a principal is GRADED at, shown rather than assumed — the point of
   // --as is that a resolver answers, and a person reading a refusal needs the
@@ -1467,16 +1485,9 @@ async function cmdRepl(cfg) {
     ? parseResult.schema.databases.filter(d => !d.driver || d.driver === 'sqlite').map(d => d.name).join(', ')
     : (cfg.db ? rel(resolve(cfg.db)) : '(from schema)')
 
-  console.log(`  ${dim('Database:')}   ${!tenants ? dbDisplay
-    : tenantId ? `${cyan(tenantId)} ${dim('(tenant)')}`
-    : `main ${yellow('— the machinery; no tenant rows are here')}`}`)
-  console.log(`  ${dim('Tables:')}     ${accessors.join(', ')}`)
-  if (softTbls.length) console.log(`  ${dim('Soft delete:')} ${softTbls.join(', ')}`)
-  console.log(`  ${dim('Standing:')}   ${cyan(standing)} ${dim(levelLabel(graded))}`)
-  console.log(`  ${dim('Graded by:')}  ${level != null
+  const gradedBy = level != null
     ? dim('--level — synthetic, no resolver was asked')
-    : (appGetLevel ? cyan(getFlag('gate')) : dim('FrontierGateGetLevel (the default — pass --gate if your app installs its own)'))}`)
-  console.log()
+    : (appGetLevel ? cyan(getFlag('gate')) : dim('FrontierGateGetLevel (the default — pass --gate if your app installs its own)'))
 
   const hints = []
 
@@ -1490,6 +1501,23 @@ async function cmdRepl(cfg) {
   if (gatedModels(parseResult.schema).length && !user && level == null)
     hints.push(`  ${yellow('!')}  anonymous is STRANGER(0) — ${gatedModels(parseResult.schema).length} gated model(s) will refuse.\n` +
                `     ${dim('--as <email> to boot as somebody, --level <n> for a standing with no user.')}\n`)
+
+  if (once) {
+    console.error(`  ${dim('Standing:')} ${cyan(standing)} ${dim(levelLabel(graded))} ${dim('· graded by')} ${gradedBy}`)
+    for (const h of hints) console.error(h.trimEnd())
+    const exit = await evalOnce({ code, db, sys, commands, tenant: tenantId })
+    try { tenants ? tenants.close() : base.$close() } catch {}
+    process.exit(exit)
+  }
+
+  console.log(`  ${dim('Database:')}   ${!tenants ? dbDisplay
+    : tenantId ? `${cyan(tenantId)} ${dim('(tenant)')}`
+    : `main ${yellow('— the machinery; no tenant rows are here')}`}`)
+  console.log(`  ${dim('Tables:')}     ${accessors.join(', ')}`)
+  if (softTbls.length) console.log(`  ${dim('Soft delete:')} ${softTbls.join(', ')}`)
+  console.log(`  ${dim('Standing:')}   ${cyan(standing)} ${dim(levelLabel(graded))}`)
+  console.log(`  ${dim('Graded by:')}  ${gradedBy}`)
+  console.log()
 
   hints.push(`  ${green('✓')}  ${cyan('db')} at this standing · ${cyan('sys')} bypasses everything · ${dim('.help')}`)
   const names = Object.keys(commands)
@@ -1558,51 +1586,6 @@ async function loadGateResolver(spec) {
 
   fatal(`--gate: ${cyan(path)} exports ${fns.length} functions — name the one to use.\n` +
         `     ${cyan(`--gate ${path}#${fns[0] ?? 'getLevel'}`)}   ${dim(`(${fns.join(', ') || 'none'})`)}`)
-}
-
-/** The @@auth model, or the one every app calls User. Studio picks it the same way. */
-function authModelOf(schema) {
-  return schema.models.find(m => m.attributes?.some(a => a.kind === 'auth'))
-      ?? schema.models.find(m => m.name === 'User' || m.name === 'users')
-      ?? null
-}
-
-// `--as alice@example.com` over the @@auth model, or `--as Customer:alice@…`
-// where the schema never said. Four columns tried in order, because an app names
-// its people whatever it names them and asking a person to know which column is
-// asking them to read the schema first. An all-digit argument is an id LAST, not
-// first: an email is never all digits and a username can be.
-//
-// It returns what it tried as well as what it found — "no row matches" and
-// "there is no such model" send a person to two different places, and a console
-// that conflates them sends them to the wrong one.
-async function findPrincipal(sys, schema, spec) {
-  const colon  = spec.indexOf(':')
-  const named  = colon > 0 ? spec.slice(0, colon) : null
-  const needle = colon > 0 ? spec.slice(colon + 1) : spec
-
-  const model = named
-    ? schema.models.find(m => m.name === named || modelToAccessor(m.name) === named)
-    : authModelOf(schema)
-
-  if (!model) return { row: null, model: null, needle, tried: [] }
-
-  const accessor = modelToAccessor(model.name)
-  const declared = new Set((model.fields ?? []).map(f => f.name))
-  const tried    = ['email', 'username', 'name'].filter(c => declared.has(c))
-
-  for (const column of tried) {
-    const row = await sys[accessor].findFirst({ where: { [column]: needle } }).catch(() => null)
-    if (row) return { row, model: model.name, needle, tried }
-  }
-
-  if (/^\d+$/.test(needle)) {
-    tried.push('id')
-    const row = await sys[accessor].findFirst({ where: { id: Number(needle) } }).catch(() => null)
-    if (row) return { row, model: model.name, needle, tried }
-  }
-
-  return { row: null, model: model.name, needle, tried }
 }
 
 const gatedModels = (schema) =>

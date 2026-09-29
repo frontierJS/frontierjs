@@ -348,6 +348,16 @@ describe('the agent guidance', () => {
     expect(apiOnly).not.toContain('`src/resources/`')
   })
 
+  test('a guide is read a section at a time, through a package the app has', () => {
+    // A reader told only not to read a guide whole read it whole anyway
+    // (FJS-1549); the command is the instruction. Paired: the path it outlines
+    // has to be one this manifest names.
+    const outlined = (md) => [...md.matchAll(/^fli outline (\S+)/gm)].map(m => m[1])
+    expect(outlined(full).length).toBe(2)
+    expect(outlined(apiOnly)).toEqual(Array(2).fill('node_modules/@frontierjs/litestone/AGENTS.md'))
+    expect(outlined(appAgentsMd({ name: 'demo', packages: [] }))).toEqual([])
+  })
+
   test('every rule id it cites is an app rule fli check runs', () => {
     const cited = [...full.matchAll(/\[((?:`[a-z0-9-]+`(?:, )?)+)\]/g)]
       .flatMap(m => [...m[1].matchAll(/`([a-z0-9-]+)`/g)].map(x => x[1]))

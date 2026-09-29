@@ -59,6 +59,7 @@ than started.
 | 16 | **ksite** — a legacy-FJS static marketing site, being ported | a site authored in Markdown that names components it never imports; a collection read at build time with no database; a client theme written as colors, not tones | `static-safety.md` · `FJS-D38` · `FJS-D127` |
 | 17 | **Immich** — self-hosted photo library | a 4 GB upload held in memory whole; one upload fanning out into a pipeline of derived files; a backup from a phone that must resume and never send the same bytes twice | `overview.md` 2.7 · `untrusted-bytes.md` · `offline-first-and-release.md` · `bearer-access.md` |
 | 18 | **EventMark** — a staffing schedule written as a Markdown file | a text document that is the record while a screen writes back into it; a staff-to-child ratio broken from either side; a reference to a person who may not exist | `kernel-and-projections.md` · [`FJS-D474`](../DECISIONS.md#fjs-d474) · `time-and-recurrence.md` · `FJS-D305` |
+| 19 | **Vaultwarden** — a Bitwarden-compatible password vault server | a server that must never read what it stores; an API whose shape a client someone else wrote already fixed; a grant that takes effect after a wait unless refused | `bearer-access.md` · `state-machines.md` · `untrusted-bytes.md` · `third-party-credentials.md` |
 
 ### 1. Calendly — the smallest product that forces a made ruling to get built
 
@@ -155,7 +156,7 @@ through `$.db` is the whole of it, with no `$raw` + bm25 two-step. **The
 spanning verb is still not owed.** What remnant did need that linear did not was
 a fold on both sides of the index, [`FJS-1466`](../ISSUES.md#fjs-1466), and
 adding `@@fts` to a table that already held rows broke every write to it,
-[`FJS-1463`](../ISSUES.md#fjs-1463).
+[`FJS-1463`](../ISSUES_ARCHIVE.md#fjs-1463).
 
 **Somebody should re-rank this row against what remains** rather than trust the
 position it holds, which was earned by a break that is now closed.
@@ -402,9 +403,9 @@ so under a deploy the release does not run beside live reads at all. The migrati
 cannot hold it. A `.sql` data migration works on a database already holding the
 corpus, then fails a fresh one, where the history never created the rows it
 corrects, and blocks every migration after it. A `.js` one crashes the CLI
-([FJS-1472](../ISSUES.md#fjs-1472)), and by design stops `migrate create` for
+([FJS-1472](../ISSUES_ARCHIVE.md#fjs-1472)), and by design stops `migrate create` for
 good ([FJS-1474](../ISSUES.md#fjs-1474), which wants a ruling). An `UPDATE` that
-moves a natural key commits its orphans ([FJS-1473](../ISSUES.md#fjs-1473)).
+moves a natural key commits its orphans ([FJS-1473](../ISSUES_ARCHIVE.md#fjs-1473)).
 **`FJS-D164` does not stretch, and no second record is owed.** One question
 separates the two: was the old value true in its day? A price that changed was,
 so it gets a window, and the consumer names the version. A gloss that was wrong
@@ -626,6 +627,85 @@ its loss is refused out loud. `kris`'s overlap is refused. `mr_theo`'s adjacent
 shifts are not. Dropping the toddler room to one adult flips it under ratio, and
 so does enrolling the ninth child. `Tues, 8/25` is flagged.
 
+---
+
+### 19. Vaultwarden — the server that is not allowed to know
+
+*Added 2026-09-29. Nothing is built; the rank is only where it was appended.*
+([dani-garcia/vaultwarden](https://github.com/dani-garcia/vaultwarden))
+
+Vaultwarden is a small reimplementation of the Bitwarden server, and SQLite is its
+default. Every other entry assumes the server can read its own rows. This one
+assumes it cannot:
+
+- **Ciphertext the server cannot open.** Every name, username, password, note and
+  TOTP secret arrives already encrypted as an `EncString` (`2.<iv>|<ct>|<mac>`),
+  under a key the server never holds. `@encrypted` is the opposite arrangement:
+  Litestone holds the key and decrypts on read. So a vault item is a row whose
+  fields are opaque strings to every gate, validator, search and audit entry.
+  Invariant 7's redaction has nothing to redact. Two questions follow. Can `.lite`
+  declare *client-sealed*, as distinct from *server-encrypted*, and have the
+  framework refuse to index, sort or `@@fts` it? And what is left for a gate to
+  decide once it can only read the envelope: owner, folder, org, revision date?
+- **An API someone else already specified.** The clients are Bitwarden's: the
+  browser extension, the phone apps, the CLI. They expect `/identity/connect/token`
+  with an OAuth2 password grant, `/api/sync` returning the whole vault in one
+  shape, and their own error JSON. None of it is Junction's result envelope
+  (Invariant 4), `$`-directives (Invariant 10) or the `/auth/*` routes. Either the
+  whole surface is raw routes, which leaves services with nothing to do, or a
+  service can declare that it speaks another protocol's wire format. **Is a
+  foreign wire format a transport, a plugin, or out of scope?** Nothing else on
+  this list asks it, because every other stressor owns its client.
+- **Login where the server never sees the password.** `prelogin` returns the
+  user's KDF parameters (PBKDF2 or Argon2id, with an iteration count), the client
+  derives a master key, and the server receives only a hash of a hash. That hash
+  goes through `auth`'s own hash, and the second factor is TOTP, which
+  `packages/auth/totp.ts` already has. Passkeys are still open in `auth`'s
+  `PROJECT_STATE.md`. So the stress here is per-user KDF settings on the user
+  model and a login that is not `/auth/login`. The crypto is not the hard part.
+- **A membership that is not usable until a second client acts.** An org's
+  symmetric key is wrapped once per member with that member's public key. A new
+  member is *invited*, then *accepted*, then *confirmed*. Confirmation happens
+  when an admin's client, not the server, wraps the org key for them. That is
+  `@@transitions` where one step needs something only a client can produce and
+  the server can only check it arrived. Collections then give per-item sharing
+  inside an org, which is Notion's (#4) ladder question again, from a vault.
+- **Rotation is one write that must name everything.** Rotating the account key
+  re-encrypts every cipher, folder and send on the client and posts them in one
+  request. The server must replace all of them atomically and **refuse the
+  request if any cipher is missing**, or the vault ends up half under a key
+  nobody has. No shape here declares that a batch must cover a set completely.
+- **A grant that takes effect unless refused.** Emergency access gives a trusted
+  contact the vault after N days of waiting, unless the grantor rejects it in
+  that time. That is Ghost's (#15) future-instant transition, with the default
+  inverted: silence approves.
+- **A share that counts its own opens.** A Send is a link with an expiry, a
+  deletion date, an optional password and a maximum access count. The count
+  means every open is a write, and the last one must be refused under
+  concurrency. That is `bearer-access.md` with a budget attached.
+- **The server fetches a URL a user chose.** The icon service fetches favicons
+  for whatever domains the vault names, and it has to refuse private and
+  link-local addresses, because otherwise it is an SSRF probe into the host's
+  network. Conduit's targets are declared; this one is typed into a form.
+  `untrusted-bytes.md` covers the bytes but not the fetch.
+- **Sync is a push over someone else's socket.** Clients subscribe to
+  `/notifications/hub` using SignalR framing, sometimes MessagePack. Junction's
+  channels have their own protocol, so this is the foreign-wire question again,
+  on WebSocket.
+
+**Leave out** the admin panel, which is `sysadmin-console.md`'s, and SSO, which is
+`third-party-credentials.md`'s. Also leave out MySQL and Postgres: Vaultwarden
+supports them, and Litestone does not claim them.
+
+**Gradable** with the real clients and no custom UI. Point the official Bitwarden
+CLI (`bw config server …`) at the app and script this: register, log in with
+TOTP, create 1,000 items, sync from a second session, share one into an org and
+confirm a second member, rotate the key, and assert every item still decrypts. A
+rotation with one cipher missing is refused and changes nothing. A Send with
+`maxAccessCount: 1` opens exactly once under ten concurrent requests. An icon
+request for `169.254.169.254` is refused. The database file is grepped for a
+known plaintext password and it is not there.
+
 ## Not on this list, with reasons
 
 - **Figma proper.** Canvas rendering is not a question about this framework; Mesa
@@ -691,7 +771,14 @@ typecheck), and `fli tinker` to ask the database what it actually did.
 **Report as you go, and report against the framework.** A seam that has no owner
 is an `FJS-###` in this repo's `ISSUES.md` the hour it is found, not at the end —
 half these exercises are abandoned mid-way and the finding is the only thing that
-was worth having. A fix lands in the framework tree with a drive in `example/`;
+was worth having. **The register is worked through `fli`, run from inside the
+framework tree** — from the app it finds no register: `fli find <terms>` answers *is it filed already* with ids
+and titles, `fli amend <id> --detail "…"` adds a second sighting to the row
+that names it, and `fli file --sev S3 --area <pkg> --title "…" --detail "…"`
+files what is new — each takes the next id, the table and the date itself.
+Measured over the first seven stressors: 712 calls and 1.35M characters of
+output went to reading and patching `ISSUES.md` by hand (`FJS-1546`). A fix
+lands in the framework tree with a drive in `example/`;
 **the stressor itself proves nothing**, because nothing here runs it.
 
 **Write each question in `PLAN.md` as `### Qn — <question>` with a

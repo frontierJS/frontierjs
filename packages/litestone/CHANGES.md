@@ -1,5 +1,54 @@
 # Changes — @frontierjs/litestone
 
+## 2026-09-29 — `litestone repl --eval`, and `--level` grades at the level typed (`FJS-1560`)
+
+`--eval '<expr>'` runs one line through the console's own evaluator and dot
+commands and exits: the answer is unindented JSON on stdout, the standing and
+any warning go to stderr, and a throw exits 1. Under `strategy database` it never
+opens the tenant picker. It is the first half of `FJS-1560`: a token audit counted
+207 raw `sqlite3` calls against app databases, each of which bypasses every gate.
+
+Writing its tests found two older faults in the console. **`--level` graded
+STRANGER whatever number was typed**: since `FJS-D515` the gate never asks
+`getLevel` about a caller with no id, and a synthetic level has no user. It now
+scopes to the stand-in `atLevel` uses, an id no row carries plus every declared
+capability. **Under `strategy database`, `--level` and `--gate` never reached a
+tenant at all**: `repl` and `export` passed `plugins` at the top level of
+`createTenantRegistry`, which reads them only under `clientOptions`, so a
+tenant's console graded with the default resolver. Both callers pass
+`clientOptions` now. That the registry takes the misspelling silently is
+`FJS-1565`. Pinned in `test/cli-smoke.test.ts` § *repl --eval*, and each test
+fails with its fix reverted.
+
+## 2026-09-29 — AGENTS.md carries the gate ladder, `@@transitions` and claims (`FJS-1550`)
+
+Three sections, each also lifted into `assistant.snapshot.md` and each naming its
+pin: the ladder with who the default resolver grades at each level, the three
+`@@transitions` judgments `litestone explain` cannot carry, and what `auth().x`
+may name. *Choosing an access word* is now *Choosing a column's access word*, since
+it says "not a ladder" directly above the one that is. Writing the ladder found two docs
+wrong about the default resolver — `access-control.md` said a role-less session
+grades USER and `schema.md` that it never reaches 4. It grades CREATOR(3) without
+a `role` and USER(4) with one (`FJS-D197`); both now say so.
+
+## 2026-09-29 — `docs/roadmap.md` retired
+
+Each open entry moved to a home that already existed or a new one: Embedding →
+`IDEAS/embedding.md` and LatLng → `IDEAS/geo.md`, both already ruled there;
+`@slug` sourcing and collisions → `IDEAS/slug-sourcing.md`; ExternalSync →
+`IDEAS/external-field-cache.md`; `resolveMany()` → `IDEAS/polymorphic-relations.md`;
+read replicas and a query cache → `IDEAS/scaling.md`; introspect `@@db` →
+`FJS-1555`. CREATOR is already documented in `access-control.md`, changing `@scale`'s
+`n` in `exact-numbers.md`, and the npm name in `PROJECT_STATE.md`. The shipped
+tombstones went with the file. `fli check`'s `roadmap-shipped` read only this file
+and is removed.
+
+## 2026-09-29 — `docs/STUDIO_REVIEW.md` removed, `PERFORMANCE_AUDIT.md` moved to `bench/`
+
+The 2026-07-18 Studio review was spent: all three tiers and the polish batch shipped, and the bugs it found were fixed the same day. Nothing cited it but `docs/README.md`. What Studio does is `docs/studio.md`, and the review itself is in git.
+
+The performance audit now sits beside `bench/audit-bench.mjs`, the harness that re-verifies it. FJS-620 and FJS-112 still point into it for open findings. `docs/README.md` § Audits, the two ISSUES rows and `IDEAS/performance-regression-watch.md` are relinked.
+
 ## 2026-09-28 — the verifiers' no-op patch never names an `@immutable` or `@system` column
 
 `_touch` built the update fixture that `verifyGateLadder`, `verifyRowPolicies` and the tenancy check write from the first scalar the row held. On a model whose first such column is `@immutable`, the boundary refused that write by name at every level, and the ladder reported the refusal as the gate or policy throwing on a correctly declared model. basecamp met it when `Environment.projectId` became `@immutable`. `_touch` now skips both kinds. `test/immutable.test.ts` § *the verifiers do not touch a frozen column*, red before.
@@ -483,7 +532,7 @@ same line accepted under `database`.
 `claim employeeId from Employee(userId)` · `claim siteId from Employee(userId).siteId`.
 A claim the policies read about the CALLER — *rows at my site* — usually lives on a
 row pointing at the user rather than on `User`, and the schema could name it and
-not say where it was ([`FJS-D359`](../../DECISIONS.md#fjs-d359), [`FJS-1288`](../../ISSUES.md#fjs-1288)).
+not say where it was ([`FJS-D359`](../../DECISIONS.md#fjs-d359), [`FJS-1288`](../../ISSUES_ARCHIVE.md#fjs-1288)).
 `schema.claims` still lists every name; `schema.claimSources` maps the sourced ones
 to `{ model, subject, column }`, merged across imports.
 
@@ -510,7 +559,7 @@ there, on the model row and on every field row, whether the move was matched
 from `(from, to)` or asked for by `transition()`. Two moves between the same
 states write identical `before` and `after`, so without it an order `abandon`ed
 by its `@@commitment` and one a person `cancel`led were the same row
-([`FJS-1294`](../../ISSUES.md#fjs-1294)). `operation` stays `update`. `meta` was
+([`FJS-1294`](../../ISSUES_ARCHIVE.md#fjs-1294)). `operation` stays `update`. `meta` was
 not used, because `onLog` owns that cell and overwrites it whole.
 
 It is written for an unannounced move as well, since that is the case the
@@ -577,7 +626,7 @@ dropped.
 `$lock(key, fn, { ttl, timeout })` and `acquire()` read `wait`, so a caller who
 followed the types passed `timeout`, got `wait = 0`, and the second contender
 was refused immediately instead of queueing — as a 409 with `retryable: true`,
-which reads as ordinary contention ([`FJS-1217`](../../ISSUES.md#fjs-1217)).
+which reads as ordinary contention ([`FJS-1217`](../../ISSUES_ARCHIVE.md#fjs-1217)).
 Both stressors had written `wait` against the types to get a lock that waits.
 `wait` is the name kept — every caller and test already used it, and `timeout`
 reads as a bound on `fn`.
@@ -598,7 +647,7 @@ the destructure cannot part again without a red.
 built their proxies without `$lock`/`$locks`, so `$.db.$lock(…)` — and the same
 call inside junction's `app.withDb` — threw `"$lock" is not a table in this
 schema`, listing every table and not the thing asked for
-([`FJS-1216`](../../ISSUES.md#fjs-1216)). **And the one flavor that had it did
+([`FJS-1216`](../../ISSUES_ARCHIVE.md#fjs-1216)). **And the one flavor that had it did
 nothing**: `asSystem()` carried its own `$lock` that ran the callback without
 acquiring, so the stressor apps that reached for it landed 10 of 10 concurrent
 writers on one range. Both went to the same place: every flavor hands out the
@@ -1202,8 +1251,8 @@ of them. Written the obvious way first and caught by a test over a `Json?` colum
 
 ## 2026-09-20 — three executed checks were grading nothing under row tenancy
 
-[`FJS-1199`](../../ISSUES.md#fjs-1199), [`FJS-1200`](../../ISSUES.md#fjs-1200) and
-[`FJS-1201`](../../ISSUES.md#fjs-1201), all found installing orion into basecamp, all the same
+[`FJS-1199`](../../ISSUES_ARCHIVE.md#fjs-1199), [`FJS-1200`](../../ISSUES_ARCHIVE.md#fjs-1200) and
+[`FJS-1201`](../../ISSUES_ARCHIVE.md#fjs-1201), all found installing orion into basecamp, all the same
 shape: **a check that answers *nothing was crossed here* reads exactly like a check that found
 nothing wrong.** Fourteen of basecamp's own models — `Invitation`, `Secret`, `ApiKey`, `Server`,
 `Project`, `Environment`, `App`, `Domain`, `Deployment` and more — were ungraded by
@@ -1553,7 +1602,7 @@ Exits 1 on a finding, for a deploy pipeline beside `litestone release --strict`.
 
 ## 2026-09-19 — `@accept` grades the bytes, not the uploader's word
 
-[FJS-1184](../../ISSUES.md#fjs-1184). Every `mime` reaching `serialize` was a CLAIM — `value.type` off a
+[FJS-1184](../../ISSUES_ARCHIVE.md#fjs-1184). Every `mime` reaching `serialize` was a CLAIM — `value.type` off a
 browser `File`, which the client sets, or `extname()` for a path — and that claim was what `@accept`
 graded, what went onto the ref, and what the provider got as `contentType`. So `@accept("image/png")`
 was satisfied by any bytes at all provided they arrived named `.png`.
@@ -2034,7 +2083,7 @@ row, a tier and either a documentation page or a written reason it has none. `@@
 `situational` and its page is owed with the queue that reads it — a page describing offline writes
 before an app can make one would document a promise.
 
-**Found on the way, and fixed** ([`FJS-1174`](../../ISSUES.md#fjs-1174)): an attribute declared
+**Found on the way, and fixed** ([`FJS-1174`](../../ISSUES_ARCHIVE.md#fjs-1174)): an attribute declared
 twice was not refused and every consumer takes the first, so `@@gate("2")` above `@@gate("9")`
 silently enforced the looser one — the shape somebody writing the stricter gate underneath the old
 one produces. The refusal names both answers, not just the duplication, because *declared twice*
@@ -2435,7 +2484,7 @@ Studio serves a JS REPL holding `db` and `sys`, raw SQL, and schema and
 migration writes, and it has no authentication of its own. `--token` and
 `--readonly` both worked; nothing connected either to `--host`, so a
 non-loopback bind with no token answered `POST /api/repl` to every interface
-([`FJS-1029`](../../ISSUES.md#fjs-1029)). The pairing was stated in a source
+([`FJS-1029`](../../ISSUES_ARCHIVE.md#fjs-1029)). The pairing was stated in a source
 comment, which is advice that fails open — indistinguishable from a guard.
 
 The refusal runs before the schema is read and before a database is opened, so a
@@ -2517,7 +2566,7 @@ is two functions over the shop's own keys that name no slot at all.
 trigger per source table, each running `DELETE` plus the whole `@@sql`. A
 `createMany` of 10,000 rows re-aggregated the source 10,000 times, inside the
 write's own transaction, and nothing declaring `@@materialized` could decline it
-([`FJS-971`](../../ISSUES.md#fjs-971), [`FJS-D245`](../../DECISIONS.md#fjs-d245)).
+([`FJS-971`](../../ISSUES_ARCHIVE.md#fjs-971), [`FJS-D245`](../../DECISIONS.md#fjs-d245)).
 
 The *requires* rule is gone. Naming no sources is the second strategy: no
 triggers, and the table is rebuilt when `db.<view>.refresh()` is called. **No
@@ -2541,7 +2590,7 @@ check was an if/else chain with arms for the builtin scalars and for
 neither fell off the end in silence: a field typed as another type directly
 (`one Leaf`), an enum member, and every element of an array, since the array
 branch asserted `Array.isArray` and stopped. One root cause, three faces
-([`FJS-1030`](../../ISSUES.md#fjs-1030), [`FJS-1031`](../../ISSUES.md#fjs-1031)).
+([`FJS-1030`](../../ISSUES_ARCHIVE.md#fjs-1030), [`FJS-1031`](../../ISSUES_ARCHIVE.md#fjs-1031)).
 
 The chain is now `checkOne(value, path)`, called once for a scalar and once per
 ELEMENT, with an enum arm and a nested-type arm beneath it. Paths carry the
@@ -2551,7 +2600,7 @@ field inherits the parent's strictness: it carries no `@type` to say otherwise
 and a nested document is part of the same document.
 
 **And a `@default` its own `@type` refuses is now a parse error**
-([`FJS-1032`](../../ISSUES.md#fjs-1032)) — `Json @default("{}") @type(T)` with a
+([`FJS-1032`](../../ISSUES_ARCHIVE.md#fjs-1032)) — `Json @default("{}") @type(T)` with a
 required key in `T` stored a document the same schema rejects from a caller. It
 is graded by calling the WRITE-PATH validator rather than by a check written in
 the parser, because *does this value satisfy this type* must have one definition.
@@ -2642,7 +2691,7 @@ byte-identical — it declares no types. 4600 passing.
 
 ## 2026-09-07 — Invariant 8 gets a door list, and an enforcer
 
-**[`FJS-1015`](../../ISSUES.md#fjs-1015).** `withArgValidation` wraps a table method and closes
+**[`FJS-1015`](../../ISSUES_ARCHIVE.md#fjs-1015).** `withArgValidation` wraps a table method and closes
 over ONE model. The top-level `where`, `orderBy` and `select` refuse an unknown key by name; an
 `include` hops to another model and nothing followed it. Four doors were ungraded, and they broke
 four different ways — one put the name in a SELECT list unquoted and broke the statement, one put
@@ -6771,8 +6820,8 @@ anything mutate could grade.
 ## 2026-08-29 — an index's column ORDER is part of what it is
 
 3439 tests, 0 fail. Closes
-[`FJS-592`](../../ISSUES.md#fjs-592); files
-[`FJS-596`](../../ISSUES.md#fjs-596).
+[`FJS-592`](../../ISSUES_ARCHIVE.md#fjs-592); files
+[`FJS-596`](../../ISSUES_ARCHIVE.md#fjs-596).
 
 `indexKey` sorted the columns, so `@@index([a, b])` and `@@index([b, a])` were
 one index to the diff. A composite is prefix-matched — the first answers

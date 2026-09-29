@@ -35,6 +35,7 @@ Object.assign(session, {
   workspaceId: null,   // the workspace every scoped request is stamped with
   workspaces:  [],     // the caller's memberships — what the switcher offers
   needsSetup:  false,  // no account exists yet — the wizard owns the app
+  canMail:     true,   // false only when the API said it has no mail provider
 })
 
 const _w = watchProxy(session)
@@ -86,6 +87,7 @@ async function restore() {
   try {
     const probe = await api('/setup/probe', { auth: false })
     _w.needsSetup = Boolean(probe?.needs_setup)
+    _w.canMail    = probe?.mail !== false
   } catch {
     // The probe is also the API's liveness check from the browser's side. If it
     // fails there is nothing to route on — leave needsSetup false and let the
@@ -139,6 +141,18 @@ function adoptWorkspace(id) {
   if (typeof localStorage === 'undefined') return
   if (id) localStorage.setItem(WORKSPACE_KEY, id)
   else localStorage.removeItem(WORKSPACE_KEY)
+}
+
+/**
+ * Re-read the caller's memberships after one was made or ended here, and move
+ * off the current workspace if it is no longer among them — every scoped
+ * request would otherwise name a workspace that answers nothing.
+ */
+export async function reloadWorkspaces() {
+  const list = await api('/workspaces')
+  _w.workspaces = list?.data ?? []
+  if (!_w.workspaces.some(w => w.id === session.workspaceId))
+    adoptWorkspace(_w.workspaces[0]?.id ?? null)
 }
 
 /** Switch the workspace everything downstream is scoped to. */

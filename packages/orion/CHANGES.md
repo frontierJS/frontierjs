@@ -110,7 +110,7 @@ second copy to keep in step, a definition that does not parse disables the inspe
 diverging from it, and structure (a node, an edge, the name) stays the document's until the canvas
 exists. Finding that out cost a defect in `@frontierjs/ui`: a `<Textarea>`'s value is its child
 text, which the DOM ignores once anything has written to the element, so the edit was in the model
-and not on the screen ([`FJS-1207`](../../ISSUES.md#fjs-1207)).
+and not on the screen ([`FJS-1207`](../../ISSUES_ARCHIVE.md#fjs-1207)).
 
 `test/node-forms.test.ts` is what makes `configSchema` true rather than declared — it was read by
 nothing at all, not the compiler, not the executor — grading every built-in's schema through the
@@ -168,7 +168,7 @@ Nothing about the shape changed; the types were simply unreachable.
 
 ## 2026-09-15 — an administrator reads through the row policies
 
-[`FJS-D296`](../../DECISIONS.md#fjs-d296), closing [`FJS-1170`](../../ISSUES.md#fjs-1170).
+[`FJS-D296`](../../DECISIONS.md#fjs-d296), closing [`FJS-1170`](../../ISSUES_ARCHIVE.md#fjs-1170).
 `orion.lite`'s read policies are `owner == auth().id || auth().level >= 5`, and the services'
 administrator read path — `isAdministrator`, `readerOf`, `shown` and the before/after hooks on
 `find` and `get` — is deleted: every read is the caller's own client, so a protected column is
@@ -181,7 +181,7 @@ host must: `level` still grades an administrator acting on another person's flow
 
 ## 2026-09-15 — a flow and its runs are read by their owner and an administrator
 
-[`FJS-D295`](../../DECISIONS.md#fjs-d295), closing [`FJS-1167`](../../ISSUES.md#fjs-1167).
+[`FJS-D295`](../../DECISIONS.md#fjs-d295), closing [`FJS-1167`](../../ISSUES_ARCHIVE.md#fjs-1167).
 `orion.lite` reads `Flow`, `FlowVersion`, `FlowLayout`, `Run` and `RunStep` through a policy on
 the row's own owner, so another USER reads none of them and a move they ask for is a 404 rather
 than a 403. An administrator reads through the services: `readerOf(ctx)` for orion's own methods,
@@ -190,8 +190,8 @@ protected column stripped from the answer. **A model trigger records the row as 
 reads it** — the runner's new `readAs` port, which the plugin answers with `$readAs` on the owner's
 client and the principal `app.withDb` now hands over — and a row the owner may not read starts
 nothing. Open beside it: an administrator's runs screen does not move for another owner's run
-([`FJS-1170`](../../ISSUES.md#fjs-1170)), and a shopper in `example` may still draft a flow
-([`FJS-1169`](../../ISSUES.md#fjs-1169)).
+([`FJS-1170`](../../ISSUES_ARCHIVE.md#fjs-1170)), and a shopper in `example` may still draft a flow
+([`FJS-1169`](../../ISSUES_ARCHIVE.md#fjs-1169)).
 
 ## 2026-09-15 — driven in a browser, and what that found
 
@@ -199,14 +199,14 @@ Phase 7's drive, `example`'s `verify:automations`, runs the screens against a re
 drafted in the drawer, a refused definition shown with the compiler's sentence, an activation, a
 Customer created elsewhere starting a run that arrives on the open runs screen, the note it
 wrote read back off the customer, and staff offered no move and refused one. Two defects here
-([`FJS-1165`](../../ISSUES.md#fjs-1165)): **a patch may carry the model's `@version` column**,
+([`FJS-1165`](../../ISSUES_ARCHIVE.md#fjs-1165)): **a patch may carry the model's `@version` column**,
 which the catalog dropped as `readOnly` while the Data boundary demanded it, so no flow could
 patch a versioned model; and **`model.remove` is litestone's `remove`**, where it was `delete`,
 the purge that destroys a `@@softDelete` row. **`flows` and `runs` name a channel**
-([`FJS-1166`](../../ISSUES.md#fjs-1166)), their own service name, because the engine writes every
+([`FJS-1166`](../../ISSUES_ARCHIVE.md#fjs-1166)), their own service name, because the engine writes every
 run through the system client and junction broadcasts such a write only on a named channel; the
 host joins it. The same drive found three defects below orion, filed against their packages.
-**Open: who may read a run** ([`FJS-1167`](../../ISSUES.md#fjs-1167), question 24).
+**Open: who may read a run** ([`FJS-1167`](../../ISSUES_ARCHIVE.md#fjs-1167), question 24).
 
 ## 2026-09-15 — screens, installed into `example`
 
@@ -527,7 +527,7 @@ and is falsy, so an edge whose condition is unknown does not fire.
 `x == null`, so a resolved value that happened to be null read as the author
 having written one and turned `$.a > 1` into a presence test answering true. The
 same branch answers every non-`==` operator that way for a real policy, which is
-[`FJS-1152`](../../ISSUES.md#fjs-1152), filed while fixing this.
+[`FJS-1152`](../../ISSUES_ARCHIVE.md#fjs-1152), filed while fixing this.
 
 **The engine may import `@frontierjs/toolbelt` and nothing else.** `FJS-D26`
 licenses it — pure functions below the dependency graph — and

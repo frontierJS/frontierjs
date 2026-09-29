@@ -165,7 +165,9 @@ index.ts     public API
   kind of change is a name in `CREDENTIAL_EVENTS` and a call through the helper.
 - **`account-recovery` is the one service that takes somebody else's id, and its
   floor is SYSADMIN(7) with no option** (`FJS-D264`). It grades both people with
-  the app's `services.level` and refuses without one. Every refusal is asserted
+  `services.recoveryLevel`, else `services.level`, and refuses without one or on
+  any answer that is not a finite number (`FJS-D550`) — `level` alone is also
+  `account.me`'s, which an app graded per tenant cannot answer for a session. Every refusal is asserted
   with the person's factor re-read afterwards, since answering 403 after the
   delete is the worst thing it can do.
 - **Four awaited callbacks, and A THROW REFUSES** — `onLogin`, `onLoginFailed`,

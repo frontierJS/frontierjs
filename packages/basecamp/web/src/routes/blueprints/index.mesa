@@ -29,12 +29,17 @@ title: Blueprints
   // with its rule — because a catalog whose entries cannot be inspected is a
   // list of logos.
   import { session } from '../../session.js'
-  import { blueprints } from '../../resources/Blueprint.mesa'
+  import Blueprint, { blueprints } from '../../resources/Blueprint.mesa'
+  import { schemaFor, buildFieldRules } from '@frontierjs/sierra/junction'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Checkbox   from '@frontierjs/ui/components/forms/Checkbox.mesa'
+  import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import Select     from '@frontierjs/ui/components/forms/Select.mesa'
+  import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
   import Pill       from '@frontierjs/ui/components/display/Pill.mesa'
@@ -138,6 +143,65 @@ title: Blueprints
     { name: 'rule',    label: 'Rule' },
   ]
 
+  // ─── Curating the catalog (sysadmin) ─────────────────────────────────
+  // The row through its default form. `deprecatedAt` is Withdraw's, and the
+  // slug is refused on a patch — it is the key a URL is built from.
+  let authoring = null    // 'new' | the blueprint being edited
+  $: isAdmin = !!session.user?.isSystemAdmin
+
+  function authored(row) {
+    const made = authoring === 'new'
+    authoring = null
+    toasts.success(made ? `${row.name} added to the catalog. Give it parameters from its details.` : `${row.name} saved`)
+    load()
+    if (made) watchSelected(row.id)
+  }
+
+  // The parameters are an ORDERED list replaced whole by `setParams`, so this
+  // edits a copy and sends the sequence; the order sent is the order stored.
+  let params      = null   // the draft, while editing
+  let paramsError = null
+  let savingParams = false
+
+  // `BlueprintParam` has no resource of its own — `setParams` is the only
+  // write — so its rules are read off the registered schema, $refs followed.
+  $: generators = (buildFieldRules(schemaFor('BlueprintParam'))?.generate?.enum ?? []).filter(Boolean)
+
+  function editParams() {
+    paramsError = null
+    params = (selected.params ?? []).map(({ key, label, hint, defaultValue, required, secret, generate }) =>
+      ({ key, label, hint: hint ?? '', defaultValue: defaultValue ?? '', required, secret, generate: generate ?? '' }))
+  }
+
+  const setParam  = (i, field, v) => params = params.map((p, j) => j === i ? { ...p, [field]: v } : p)
+  const addParam  = () => params = [...params, { key: '', label: '', hint: '', defaultValue: '', required: false, secret: false, generate: '' }]
+  const dropParam = (i) => params = params.filter((_, j) => j !== i)
+  function moveParam(i, d) {
+    const to = i + d
+    if (to < 0 || to >= params.length) return
+    const next = [...params]
+    next.splice(to, 0, ...next.splice(i, 1))
+    params = next
+  }
+
+  async function saveParams() {
+    paramsError = null; savingParams = true
+    try {
+      await blueprints.service.invoke('setParams', selected.id, {
+        params: params.map(p => ({
+          ...p, hint: p.hint || null, defaultValue: p.defaultValue || null, generate: p.generate || null,
+        })),
+      })
+      params = null
+      toasts.success('Parameters saved')
+      await selRow?.refresh()
+    } catch (e) {
+      paramsError = e.message
+    } finally {
+      savingParams = false
+    }
+  }
+
   function storage(bp) {
     return bp.persistent ? (bp.volumePath ?? 'persistent') : 'stateless'
   }
@@ -145,10 +209,24 @@ title: Blueprints
 
 <div class="section-header">
   <h1>Blueprints</h1>
-  <span class="text-sm text-muted">
-    Pre-configured applications. The same catalog in every workspace.
+  <span class="cluster">
+    <span class="text-sm text-muted">Pre-configured applications. The same catalog in every workspace.</span>
+    {#if isAdmin}
+      <Button variant="primary" id="new-blueprint" onclick={() => authoring = 'new'}>New blueprint</Button>
+    {/if}
   </span>
 </div>
+
+<Drawer open={!!authoring} title={authoring === 'new' ? 'New blueprint' : authoring ? `Edit ${authoring.name}` : ''}
+        onclose={() => authoring = null}>
+  {#if authoring === 'new'}
+    <Blueprint except={['deprecatedAt']} oncancel={() => authoring = null} ondone={authored}
+               submitLabel="Add to catalog" submitId="blueprint-save" />
+  {:else if authoring}
+    <Blueprint record={authoring} except={['deprecatedAt', 'slug']} oncancel={() => authoring = null}
+               ondone={authored} submitId="blueprint-save" />
+  {/if}
+</Drawer>
 
 {#if error}
   <article class="alert danger" id="screen-error">
@@ -241,7 +319,15 @@ title: Blueprints
   <Card id="blueprint-detail">
     <div class="section-header">
       <h2 class="h4">{selected.name} {selected.version}</h2>
-      <Button variant="ghost" onclick={() => watchSelected(null)}>Close</Button>
+      <span class="cluster">
+        {#if isAdmin}
+          <Button variant="outlined" id="blueprint-edit" onclick={() => authoring = selected}>Edit</Button>
+          {#if !params}
+            <Button variant="outlined" id="blueprint-params-edit" onclick={editParams}>Edit parameters</Button>
+          {/if}
+        {/if}
+        <Button variant="ghost" onclick={() => { params = null; watchSelected(null) }}>Close</Button>
+      </span>
     </div>
 
     <pre class="code" id="blueprint-image"><code>{selected.image}</code></pre>
@@ -255,7 +341,45 @@ title: Blueprints
       <div><dt>Limits</dt><dd>{selected.cpuLimit ?? '—'} CPU · {selected.memLimit ?? '—'} memory</dd></div>
     </dl>
 
-    {#if !selected.params.length}
+    {#if params}
+      <div class="stack" id="blueprint-params-editor">
+        {#if paramsError}
+          <article class="alert danger" id="params-error"><div class="alert-content">{paramsError}</div></article>
+        {/if}
+        {#each params as p, i}
+          <fieldset class="stack" data-param-row>
+            <legend class="text-sm">Parameter {i + 1}</legend>
+            <div class="cluster">
+              <Input id={`param-key-${i}`} label="Variable" value={p.key} placeholder="REDIS_PASSWORD"
+                     oninput={(e) => setParam(i, 'key', e.target.value)} />
+              <Input id={`param-label-${i}`} label="Label" value={p.label}
+                     oninput={(e) => setParam(i, 'label', e.target.value)} />
+              <Input id={`param-default-${i}`} label="Default" value={p.defaultValue}
+                     oninput={(e) => setParam(i, 'defaultValue', e.target.value)} />
+            </div>
+            <Input id={`param-hint-${i}`} label="Hint" value={p.hint}
+                   oninput={(e) => setParam(i, 'hint', e.target.value)} />
+            <div class="cluster">
+              <Checkbox id={`param-required-${i}`} label="Required" checked={p.required}
+                        onchange={(on) => setParam(i, 'required', on)} />
+              <Checkbox id={`param-secret-${i}`} label="Secret" checked={p.secret}
+                        onchange={(on) => setParam(i, 'secret', on)} />
+              <Select id={`param-generate-${i}`} label="" aria-label="Generate a value" value={p.generate}
+                      placeholder="Typed by a person" options={generators}
+                      onchange={(e) => setParam(i, 'generate', e.target.value)} />
+              <Button variant="ghost" aria-label={`Move parameter ${i + 1} up`} disabled={i === 0} onclick={() => moveParam(i, -1)}>↑</Button>
+              <Button variant="ghost" aria-label={`Move parameter ${i + 1} down`} disabled={i === params.length - 1} onclick={() => moveParam(i, 1)}>↓</Button>
+              <Button variant="ghost" aria-label={`Remove parameter ${i + 1}`} onclick={() => dropParam(i)}>Remove</Button>
+            </div>
+          </fieldset>
+        {/each}
+        <div class="cluster">
+          <Button variant="outlined" id="param-add" onclick={addParam}>Add parameter</Button>
+          <Button variant="primary" id="params-save" disabled={savingParams} onclick={saveParams}>Save parameters</Button>
+          <Button variant="ghost" onclick={() => params = null}>Cancel</Button>
+        </div>
+      </div>
+    {:else if !selected.params.length}
       <p class="text-sm text-muted">This blueprint takes no parameters.</p>
     {:else}
       <Table id="blueprint-params" columns={PARAM_COLUMNS} rows={selected.params} striped hover={false}>

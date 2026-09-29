@@ -18,6 +18,7 @@ title: API keys
   // scope the guard does not recognize.
   import { session } from '../../session.js'
   import { apiKeys } from '../../resources/ApiKey.mesa'
+  import { workspaces } from '../../resources/Workspace.mesa'
   import { day } from '../../datetime.js'
 
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
@@ -35,6 +36,7 @@ title: API keys
   import StatCard   from '@frontierjs/ui/components/display/StatCard.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
+  import { page } from '@frontierjs/sierra/router'
 
   $: session.workspaceId
 
@@ -44,12 +46,15 @@ title: API keys
   let error    = null
   let loading  = true
   let busy     = null
-  let creating = false
+  let creating = page.query?.new !== undefined
+  // ⌘K's New … entries land here with ?new, on this route or from another.
+  $: page.query, () => { if (page.query?.new !== undefined) creating = true }
   let filter   = 'all'
   let picked   = []
   let expiry   = 'never'
   let minted   = null
   let draft    = apiKeys.make()
+  let bots     = []        // this workspace's bot members — who else a key may belong to
 
   // The kit's controls take a value and hand back an event; they are NOT bound
   // to `draft[name]`, because `bind:` on a COMPONENT needs a writable top-level
@@ -71,6 +76,16 @@ title: API keys
     }
   }
 
+  // The service allows a key to go to a BOT member of this workspace whose
+  // role is not above the caller's (`assertBotOwner`); the list is every bot
+  // member, and a refusal for a senior one comes back in the service's words.
+  async function loadBots() {
+    try {
+      const answer = await workspaces.service.invoke('members', session.workspaceId)
+      bots = (answer?.data ?? []).filter(m => m.user?.kind === 'bot')
+    } catch { bots = [] }
+  }
+
   async function loadScopes() {
     try {
       // Collection-level: no id. The vocabulary is a fact about the server,
@@ -87,7 +102,8 @@ title: API keys
 
   load()
   loadScopes()
-  $: session.workspaceId, () => { load(); loadScopes() }
+  loadBots()
+  $: session.workspaceId, () => { load(); loadScopes(); loadBots() }
 
   const READS = new Set(['get', 'find'])
   const off = apiKeys.service.on('*', (method, row) => {
@@ -103,7 +119,10 @@ title: API keys
   async function create(data) {
     error = null
     try {
-      const created = await apiKeys.service.create({ ...data, scopes: picked, expiresIn: expiry })
+      const { userId, ...rest } = data
+      const created = await apiKeys.service.create({
+        ...rest, ...(userId ? { userId } : {}), scopes: picked, expiresIn: expiry,
+      })
       // The one moment this value exists here. Held in a variable, never in
       // the row list — a re-fetch would wipe it, and it must survive one.
       minted   = created
@@ -122,7 +141,7 @@ title: API keys
     error = null; busy = key.id
     try {
       await apiKeys.service.invoke('revoke', key.id)
-      toasts.success(`${key.name} revoked`, 'It stops working on the next request.')
+      toasts.success(`${key.name} revoked. It stops working on the next request.`)
       await load()
     } catch (e) {
       error = e.message
@@ -182,8 +201,8 @@ title: API keys
 
 <Callout tone="info" title="A key carries its owner's permissions">
   Every key here belongs to the person who created it and can do no more than they can.
-  There are no bot accounts yet, so a key in a CI pipeline is a person's access running
-  unattended — scope it down to what the pipeline actually needs.
+  A key for a CI pipeline belongs on a bot account, so it outlives whoever set it up — a
+  system administrator makes one from the hub. Scope it down to what the pipeline needs.
 </Callout>
 
 {#if error}
@@ -226,6 +245,14 @@ title: API keys
       <Input name="name" id="name" value={draft.name}
              hint="What uses this key — 'GitHub Actions deploy', not 'key 2'."
              oninput={(e) => write('name', e.target.value)} />
+
+      {#if bots.length}
+        <label class="field-label" for="key-owner">Belongs to</label>
+        <Select id="key-owner" value={draft.userId ?? ''} placeholder="You"
+                options={bots.map(b => ({ value: b.userId, label: `${b.user.displayName ?? b.user.name ?? b.user.email} (bot, ${b.role})` }))}
+                onchange={(e) => write('userId', e.target.value || null)} />
+        <p class="field-hint">A key can do no more than its owner. A bot's key outlives you.</p>
+      {/if}
 
       <label class="field-label" for="key-expiry">Expiration</label>
       <Select id="key-expiry" value={expiry} options={expiries}

@@ -170,9 +170,11 @@ async function build(value: unknown, label: string, servicesDir: string | null, 
   await quietly(() => app.applyConfigFile())
 
   // Plugins boot, hooks compile, service routes mount — everything except the
-  // phases needing a port. Without it there are no routes to read and no
-  // plugin-registered services at all.
-  await quietly(() => app._startForTest())
+  // phases needing a port and the phase that starts work. Without it there
+  // are no routes to read and no plugin-registered services at all; with the
+  // work phase, every describe and every `junction call` ticked the app's
+  // crons and could claim a job the serving process was owed.
+  await quietly(() => app._startOnce())
   return app
 }
 

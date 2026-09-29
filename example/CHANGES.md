@@ -55,7 +55,7 @@ filters, present in `payments_find`'s.
 
 ## 2026-09-25 — the basket's hold countdown ticks
 
-[`FJS-1062`](../ISSUES.md#fjs-1062). The timer was `const tick = setInterval(() => { now = Date.now() })`.
+[`FJS-1062`](../ISSUES_ARCHIVE.md#fjs-1062). The timer was `const tick = setInterval(() => { now = Date.now() })`.
 The callback writes `now`, which made the `const` a lazy derivation, and `tick` was read only in
 `$.onDestroy` — so the interval started at teardown and was cleared on the same line, and the countdown
 drew the minute it was rendered with and never moved. It is a `var`. `verify:cart` now reads the countdown
@@ -73,7 +73,7 @@ or voided since. The lead time is a literal, not a stamped column: it is the
 shop's habit rather than a term the customer was given. The invoice page shows
 the date as an info alert.
 
-Building it found [`FJS-1315`](../ISSUES.md#fjs-1315): litestone refused a
+Building it found [`FJS-1315`](../ISSUES_ARCHIVE.md#fjs-1315): litestone refused a
 second `@@transitions` on one model.
 
 Proof: `verify:jobs` 19, with a new section that plants due, paid and not-yet
@@ -199,7 +199,7 @@ and each fails on the move lists when the filter is removed.
 app, because it asked only `app.db`. It now also asks the tenant registry's
 schema (`packages/junction/CHANGES.md`), and this app refuses to boot without
 the plugin. The audit row for an abandon also did not name the move
-([`FJS-1294`](../ISSUES.md#fjs-1294)). The trail now carries `transition`, and
+([`FJS-1294`](../ISSUES_ARCHIVE.md#fjs-1294)). The trail now carries `transition`, and
 `verify:jobs` reads it back from `db/audit/auditLogs.jsonl` after the sweep as
 `commitment.trailNamesTheMove`, 13 assertions.
 
@@ -207,7 +207,7 @@ the plugin. The audit row for an abandon also did not name the move
 
 It was `pkill -f 'bun.*api/inde[x].ts'`, which matches any bun process whose command line ends in
 `api/index.ts` — another project's dev API, another session's drive — so stopping this app stopped
-theirs ([`FJS-1285`](../ISSUES.md#fjs-1285)). It now kills a matching process only if its working
+theirs ([`FJS-1285`](../ISSUES_ARCHIVE.md#fjs-1285)). It now kills a matching process only if its working
 directory, read with `lsof`, is this app's root. Found in basecamp, which had the same line.
 
 ## 2026-09-22 — `verify:automations` runs beside another project's dev server
@@ -256,7 +256,7 @@ and grades their screen. It is `FJS-740` one layer over, and it can pass — two
 runs that happen to agree are green. All seven now pass
 `--remote-debugging-port=0`, read the port back off Chrome's own stderr, and run
 in a `mkdtempSync` profile removed on exit, so neither the port nor a sign-in
-outlives the run ([`FJS-1265`](../ISSUES.md#fjs-1265), closed).
+outlives the run ([`FJS-1265`](../ISSUES_ARCHIVE.md#fjs-1265), closed).
 
 **The dev server moved with them, and the API deliberately did not.** Seven
 drives start their own pair and take `UI_PORT` at 7010, because the case that
@@ -303,7 +303,7 @@ CDP port rather than pinning 9222: on the fixed port a second Chrome cannot
 bind, `/json/version` is answered by whichever browser got there first, and the
 drive attached to another run's session — reading *a signed-out visitor is told
 it is not for them* as false against a header saying **Sign out**, then dying
-three assertions later on a button that was not there ([`FJS-1265`](../ISSUES.md#fjs-1265)).
+three assertions later on a button that was not there ([`FJS-1265`](../ISSUES_ARCHIVE.md#fjs-1265)).
 
 ## 2026-09-22 — three relationships say whether they repeat
 
@@ -529,7 +529,7 @@ refuses; that half is junction's own suite. 39 passed, 0 failed.
 
 `verify:catalog`'s refusal row sent the real photograph under a `.txt` name and asserted a 400, so
 what it proved was that `@accept` graded the NAME — and a name is the one part of an upload the
-caller controls ([FJS-1184](../ISSUES.md#fjs-1184)). Its `upload()` helper always sent `photo`, so
+caller controls ([FJS-1184](../ISSUES_ARCHIVE.md#fjs-1184)). Its `upload()` helper always sent `photo`, so
 there was no way to send bytes of the wrong kind at all; it takes them as an argument now and the
 refusal sends real text.
 
@@ -814,11 +814,11 @@ offline block waits for the previous write to settle first.
 
 `db/schema.lite` narrows orion's USER(4) create to staff —
 `extend model Flow { @@deny('create', auth().isStaff != true) }` — because a storefront shopper
-grades 4 exactly as staff do ([`FJS-1169`](../ISSUES.md#fjs-1169)), and the Automations link
+grades 4 exactly as staff do ([`FJS-1169`](../ISSUES_ARCHIVE.md#fjs-1169)), and the Automations link
 shows for `isStaff` rather than level 4. `verify:automations` asserts Robin sees no link and is
 refused a draft, Sam drafts one, and Alex activates Sam's flow and watches its run arrive on the
 open runs screen and complete — the screen half of
-[`FJS-1170`](../ISSUES.md#fjs-1170), which the row policy reading `auth().level` closed. `verify:ui`'s
+[`FJS-1170`](../ISSUES_ARCHIVE.md#fjs-1170), which the row policy reading `auth().level` closed. `verify:ui`'s
 palette row expects the five commands `ord` matches (`FJS-1168`).
 
 ## 2026-09-15 — `verify:automations`
@@ -827,10 +827,10 @@ The drive for orion's screens (`DRIVES.md`), and a nav link to them at USER(4). 
 joins orion's `flows` and `runs`, so a run started by a write elsewhere reaches an open runs
 screen. **Found by it**: five framework defects (`FJS-1162`–`FJS-1166`), and that orion's runs
 and flows were readable by every USER(4) — here a shopper read another customer's row out of
-`/api/runs` that `/api/customers/:id` refused her ([`FJS-1167`](../ISSUES.md#fjs-1167)). Ruled
+`/api/runs` that `/api/customers/:id` refused her ([`FJS-1167`](../ISSUES_ARCHIVE.md#fjs-1167)). Ruled
 [`FJS-D295`](../DECISIONS.md#fjs-d295) and fixed in orion; the drive now asserts staff and a
 shopper read nothing of the administrator's flow or its run. Alongside
-it, `verify:ui`'s palette row turned out stale ([`FJS-1168`](../ISSUES.md#fjs-1168)).
+it, `verify:ui`'s palette row turned out stale ([`FJS-1168`](../ISSUES_ARCHIVE.md#fjs-1168)).
 
 ## 2026-09-15 — automations
 

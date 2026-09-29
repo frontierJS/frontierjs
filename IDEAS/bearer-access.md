@@ -203,7 +203,7 @@ no expiry, retired by deleting rows rather than by editing code.
 
 ### 3. The audit trail names a bearer — ~~measured wrong today~~ **fixed**
 
-Filed as [FJS-1195](../ISSUES.md#fjs-1195). Probed against
+Filed as [FJS-1195](../ISSUES_ARCHIVE.md#fjs-1195). Probed against
 `packages/litestone/src/core/client.js` on Bun 1.3.11, twice (2026-09-14 and
 2026-09-20): a `@@log`
 model written under `$setAuth({ cartToken: 'abc' })` records
@@ -214,7 +214,7 @@ is a user. So every stranger's basket edit in `example` is filed as *a user with
 no id*, which is neither who did it nor what kind of caller they were.
 
 maid.tech encodes the same fact by absence — a message with no `sentById` is from
-the client. Closed by [FJS-1195](../ISSUES.md#fjs-1195): `actorTypeOf(ctx)` grades the
+the client. Closed by [FJS-1195](../ISSUES_ARCHIVE.md#fjs-1195): `actorTypeOf(ctx)` grades the
 principal it was handed, and one carrying claims and no id is `bearer`.
 **Half of §3 remains and it is the ACTOR** — a bearer still writes a null
 `actorId`, because nothing hands the boundary a row id until `bearerClaim`

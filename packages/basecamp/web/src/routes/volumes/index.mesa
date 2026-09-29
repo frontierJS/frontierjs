@@ -100,7 +100,7 @@ title: Volumes
     error = null; busy = volume.id
     try {
       await volumes.service.remove(volume.id)
-      toasts.success(`${volume.name} removed`, `Freed ${size(volume.sizeBytes)} on ${volume.serverName}`)
+      toasts.success(`${volume.name} removed, freeing ${size(volume.sizeBytes)} on ${volume.serverName}`)
       await load()
     } catch (e) {
       // 'mounted by pg-data, api — stop the container first' and 'no outpost is

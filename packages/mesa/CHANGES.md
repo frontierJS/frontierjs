@@ -93,7 +93,7 @@ live. No behavior change.
 
 ## 2026-09-25 — a call to an imported function follows the component's watches
 
-[`FJS-D404`](../../DECISIONS.md#fjs-d404), VISION RULE 64, closing [`FJS-1343`](../../ISSUES.md#fjs-1343).
+[`FJS-D404`](../../DECISIONS.md#fjs-d404), VISION RULE 64, closing [`FJS-1343`](../../ISSUES_ARCHIVE.md#fjs-1343).
 `{money(v)}` under `$: prefs.currency` subscribed to nothing, because `money` reads `prefs` in another file,
 and moved only when another binding in the same `render()` named `prefs`. A call with arguments was also
 classed static and written once. In a component that watches an import, a call to an imported function,
@@ -104,7 +104,7 @@ handler, a callback that runs later, `{#await}` or an async `const`. `rewriteExp
 
 ## 2026-09-25 — `o = o` notifies from a template handler, not only from a script function
 
-[`FJS-1111`](../../ISSUES.md#fjs-1111). The self-assignment idiom compiled to a forced write in a
+[`FJS-1111`](../../ISSUES_ARCHIVE.md#fjs-1111). The self-assignment idiom compiled to a forced write in a
 `<script>` function and to an ordinary setter call everywhere `rewriteExpr` rewrites — an inline handler,
 one inside `{#each}`, a `$:` watch handler — where the equality guard skipped it. On a watched import the
 inline form was left as a raw assignment. `isSelfAssignment` and `selfAssignmentWrite` are the one
@@ -113,7 +113,7 @@ the pre-pass that fed the watch handlers that map, is removed.
 
 ## 2026-09-25 — a `var` in the template is the declared snapshot, and nothing warns
 
-[`FJS-1074`](../../ISSUES.md#fjs-1074). VISION RULE 13 promised a warning for a `var` read in a template.
+[`FJS-1074`](../../ISSUES_ARCHIVE.md#fjs-1074). VISION RULE 13 promised a warning for a `var` read in a template.
 The check that made that promise sat behind `warnVarTemplate`, which nothing documented, and it fired on
 `export var` props that §3.3 blesses. RULE 13 and §6 now match [`FJS-D381`](../../DECISIONS.md#fjs-d381):
 writing `var` asks for the value as it was, and `_checkExternalReactivity` owns the question of which reads
@@ -121,7 +121,7 @@ nothing watches. `warnVarTemplate` is removed.
 
 ## 2026-09-25 — an optional chain in a watch dependency compiles
 
-[`FJS-1025`](../../ISSUES.md#fjs-1025). `$: (server?.status, () => …)` and the group form were refused as a
+[`FJS-1025`](../../ISSUES_ARCHIVE.md#fjs-1025). `$: (server?.status, () => …)` and the group form were refused as a
 compiler bug: the handler and group sites sliced the dependency before reading `?.` as `.`, and named
 `$$watch_server__status` where the declarations had `$$watch_server_status`. `splitWatchPath` and
 `watchSigName` are now the one place a watch path is split and its signal named, called from all six
@@ -138,7 +138,7 @@ Documentation only; no runtime code changed.
 
 ## 2026-09-25 — a derived `const` read only in teardown warns, and one that names itself gets its value
 
-[`FJS-1062`](../../ISSUES.md#fjs-1062) and [`FJS-1064`](../../ISSUES.md#fjs-1064). **`_checkUnreadDerived`**
+[`FJS-1062`](../../ISSUES_ARCHIVE.md#fjs-1062) and [`FJS-1064`](../../ISSUES_ARCHIVE.md#fjs-1064). **`_checkUnreadDerived`**
 warns about a derived `const` whose initializer calls something and which is read nowhere, or only in a
 function handed to `onDestroy`/`onCleanup` — the disposer shape, whose initializer ran at teardown if at
 all — and prints `var name = …`. Any other read silences it, a function's included, since lazy is right
@@ -153,7 +153,7 @@ lost a `const` nothing read. No runtime byte moved.
 
 ## 2026-09-24 — an import read nothing watches is listed, graded in a `const`, and shown in devtools
 
-[`FJS-1340`](../../ISSUES.md#fjs-1340) and [`FJS-1339`](../../ISSUES.md#fjs-1339), ruled
+[`FJS-1340`](../../ISSUES_ARCHIVE.md#fjs-1340) and [`FJS-1339`](../../ISSUES_ARCHIVE.md#fjs-1339), ruled
 [`FJS-D381`](../../DECISIONS.md#fjs-d381). **`$: store, () => f()`** — a whole imported object as a
 handler's dep, and the list form `$: (a, b), …` — registered no watch and the handler never ran again;
 `dottedWatchDeps` now counts a bare dep that names an import. **`_checkExternalReactivity`** grades a
@@ -176,7 +176,7 @@ a `$:` could say so for any import. It now states that an imported primitive is 
 can name — `const d = count * 2` over an imported `count` is static, a reassigned `export let`
 included — and that state which moves is a field on an exported object.
 
-[`FJS-1338`](../../ISSUES.md#fjs-1338). A `$:` over one threw `WeakMap keys must be objects` at
+[`FJS-1338`](../../ISSUES_ARCHIVE.md#fjs-1338). A `$:` over one threw `WeakMap keys must be objects` at
 mount, naming nothing. `watchPath` now warns once, naming the watch and the kind of value, and
 returns an inert tuple — `null` and `undefined` included — the way a watch on a getter already did.
 **The compiler passes the watched root as a third argument to every `watchPath` it emits**, since
@@ -185,7 +185,7 @@ the runtime holds only the value; four string assertions moved with it. `test/wa
 
 ## 2026-09-24 — a watch over a frozen object reads through it
 
-[`FJS-1337`](../../ISSUES.md#fjs-1337). A Proxy's get trap must return a non-writable,
+[`FJS-1337`](../../ISSUES_ARCHIVE.md#fjs-1337). A Proxy's get trap must return a non-writable,
 non-configurable property's own value, and the watch proxy wrapped every object it read, so
 `$: config` over a frozen config threw a `TypeError` at the first nested read. The get trap now
 hands a locked property's value back unwrapped (`_isLocked`), and warns once when that value is
@@ -196,7 +196,7 @@ watched proxy, which no bench fixture makes.
 
 ## 2026-09-24 — a bound select shows its value when the options arrive second
 
-[`FJS-1320`](../../ISSUES.md#fjs-1320). `bind:value` on a `<select>` applied the value when the value
+[`FJS-1320`](../../ISSUES_ARCHIVE.md#fjs-1320). `bind:value` on a `<select>` applied the value when the value
 changed and never when the options did, so options loaded after mount — every list fetched from a
 server — left the browser selecting the first one. The select branch of `bindInput` now keeps a
 `MutationObserver` on its element, over the option list and each option's `value` attribute, and
@@ -208,7 +208,7 @@ Bench unchanged: no bench fixture binds a select.
 
 ## 2026-09-24 — a flush started inside a flush joins it, and the cycle guard sees through a component
 
-[`FJS-1329`](../../ISSUES.md#fjs-1329). `batch()` and `flushSync()` called from a node the flush was
+[`FJS-1329`](../../ISSUES_ARCHIVE.md#fjs-1329). `batch()` and `flushSync()` called from a node the flush was
 running started a second drain underneath it, with a new generation, so every node's run count began
 again at zero. Every event handler and every prop push is a `batch`, and a parent pushes its child's
 props from inside its own render — a child whose `$:` wrote back to its parent overflowed the stack
@@ -222,7 +222,7 @@ of it this change — the tree without it measured the previous baseline exactly
 
 ## 2026-09-24 — a template binding that throws no longer freezes the bindings beside it
 
-[`FJS-1330`](../../ISSUES.md#fjs-1330), ruled [`FJS-D379`](../../DECISIONS.md#fjs-d379). The `render()`
+[`FJS-1330`](../../ISSUES_ARCHIVE.md#fjs-1330), ruled [`FJS-D379`](../../DECISIONS.md#fjs-d379). The `render()`
 grouping emits a `try` per binding, and the catch calls the new runtime export `contain(e, last)`: the
 throw goes to the nearest `<mesa:boundary>` or the console, the binding keeps the value it last showed,
 and the bindings after it still run. The first run still throws. When a boundary takes its content
@@ -235,7 +235,7 @@ mid-run, `contain` drops the listener so the reads after the throw do not subscr
 
 ## 2026-09-24 — `onMount` skips a component destroyed before it mounted
 
-[`FJS-1335`](../../ISSUES.md#fjs-1335). Mount callbacks run a microtask after the component is built,
+[`FJS-1335`](../../ISSUES_ARCHIVE.md#fjs-1335). Mount callbacks run a microtask after the component is built,
 and ran even when it had been destroyed in between — an `{#if}` opened and closed in one flush — so the
 teardown each returned went onto a disposed root and never ran. Both mount paths now call `_runMounts`,
 which skips a disposed root's callbacks and calls at once a teardown returned by a callback that
@@ -244,7 +244,7 @@ destroyed its own component; `makeComponent` skips the parent's attachments with
 
 ## 2026-09-24 — a comparison against the row wakes two rows, not all of them
 
-[`FJS-1332`](../../ISSUES.md#fjs-1332). **`createKeyedEquals(source)`** is a new runtime export:
+[`FJS-1332`](../../ISSUES_ARCHIVE.md#fjs-1332). **`createKeyedEquals(source)`** is a new runtime export:
 `is(key)` answers `key === source()` and subscribes the reader to that key, so a write wakes the
 readers of the old value and the new one. A reader subscribes to a per-key bucket that is an
 ordinary `{ _subs }` source, so every existing unsubscribe path reaches it, and the bucket leaves the
@@ -261,10 +261,10 @@ example mounted and counted.
 
 ## 2026-09-24 — an effect's re-run prunes its memos, and a late async teardown still runs
 
-[`FJS-1327`](../../ISSUES.md#fjs-1327): `createMemo`'s node is `_selfOwned`, so an effect that builds
+[`FJS-1327`](../../ISSUES_ARCHIVE.md#fjs-1327): `createMemo`'s node is `_selfOwned`, so an effect that builds
 a memo in its body disposes the previous run's on the next one, as `FJS-852` already did for nested
 effects. Fifty re-runs left fifty-one memos subscribed to the source; now one. Compiled memos are built
-under inert owners that never re-run, so their lifetimes do not change. [`FJS-1328`](../../ISSUES.md#fjs-1328):
+under inert owners that never re-run, so their lifetimes do not change. [`FJS-1328`](../../ISSUES_ARCHIVE.md#fjs-1328):
 `_run` numbers each run, and a teardown an async effect returns after its run is over — the node
 disposed, or run again — is called when it arrives instead of being stored on a node that will never
 call it, or will call it one run late. `test/effect-async-teardown.test.js` and a row in
@@ -290,7 +290,7 @@ allowance is gone from `scripts/ci-allowances.json`.
 
 ## 2026-09-24 — `<mesa:boundary>` catches a throw during a flush
 
-[`FJS-1326`](../../ISSUES.md#fjs-1326), under `FJS-D372`–`FJS-D378`. `_runNode` sent every throw to the
+[`FJS-1326`](../../ISSUES_ARCHIVE.md#fjs-1326), under `FJS-D372`–`FJS-D378`. `_runNode` sent every throw to the
 console and the boundary read only the `.error` of its `$async` states, so a render that threw left a
 half-drawn region still subscribed to what it read. A boundary with a `failed` snippet now sets
 `_catch` on the owner of its content, and `_runNode` walks `_owner` from the node that threw to the
@@ -308,7 +308,7 @@ nor catches. `test/boundary-catch.test.js`, `test/render-ssr.test.js` § FJS-D37
 
 ## 2026-09-24 — a derivation that threw recovers
 
-[`FJS-1325`](../../ISSUES.md#fjs-1325). A memo whose `fn()` threw kept `dirty` set, and `_notify`
+[`FJS-1325`](../../ISSUES_ARCHIVE.md#fjs-1325). A memo whose `fn()` threw kept `dirty` set, and `_notify`
 reads a set `dirty` as *already queued*, so it was never queued again and every consumer kept the
 last good value — a derived `const` reading `items[0].name` while a list was briefly empty froze
 for good. `createMemo` now holds the error it threw until a dependency moves: a failed memo is
@@ -318,7 +318,7 @@ pulled the throw holds an error rather than the old value. `test/memo-error-reco
 
 ## 2026-09-23 — devtools answer *why did this update*
 
-[`FJS-1324`](../../ISSUES.md#fjs-1324). `__dev` read nothing but its own log of writes, so a render
+[`FJS-1324`](../../ISSUES_ARCHIVE.md#fjs-1324). `__dev` read nothing but its own log of writes, so a render
 that fired showed up as nothing and a write showed up with no list of what it woke. It now reads
 the live graph: a signal's reader carries its node (`read._src`), `__dev.graph(id)` answers
 dependencies off `_deps` and dependents off `_subs`, and the one fact an edge cannot hold — what
@@ -341,7 +341,7 @@ language a developer has to learn.
 
 ## 2026-09-15 — a destructured `{#each}` item follows its row
 
-[`FJS-1164`](../../ISSUES.md#fjs-1164). An unkeyed row is rebound in place when its position
+[`FJS-1164`](../../ISSUES_ARCHIVE.md#fjs-1164). An unkeyed row is rebound in place when its position
 gets a new item, and a destructured item was a `const` taken once when the row was built, so
 `{#each moves as [name, label]}` kept drawing the first item. Each pattern name now reads
 through a per-row `$$patN()` over the item signal, the names come off acorn rather than a regex,
@@ -359,7 +359,7 @@ The pass found `FJS-1109`, `FJS-1111` and `FJS-1112`.
 
 ## 2026-09-12 — whether a value can move, and whether the binding over it is static, are two questions
 
-**[`FJS-1070`](../../ISSUES.md#fjs-1070).** `const list = users.list()` is not promoted, and must not
+**[`FJS-1070`](../../ISSUES_ARCHIVE.md#fjs-1070).** `const list = users.list()` is not promoted, and must not
 be: [`FJS-D212`](../../DECISIONS.md#fjs-d212) keeps the initializer eager, and `EXTERNAL_REACTIVITY.md`
 is why a call to an IMPORT is not a door reactivity comes through on its own. What the call hands
 BACK is a different fact — it may hold getters over signals — and the four places a template can read
@@ -384,7 +384,7 @@ in a render block for nothing. And the initializer's VALUE decides rather than w
 it — a blanket walk marked `const shown = (v) => JSON.stringify(v)`, a function the script wrote
 whose body holds a call, which is what basecamp's activity log is.
 
-Blast radius on FULL emitted output, the instrument [`FJS-1065`](../../ISSUES.md#fjs-1065) used: 423
+Blast radius on FULL emitted output, the instrument [`FJS-1065`](../../ISSUES_ARCHIVE.md#fjs-1065) used: 423
 in-repo `.mesa` files compile and **one moves** — `example`'s invoices page, whose `{search.reason}`
 off `invoices.filters()` is the defect itself in a shipped screen.
 
@@ -396,9 +396,9 @@ both, which is what separates *the frozen positions were fixed* from *everything
 
 ## 2026-09-10 — which imported roots are reactive, derived once instead of twice
 
-**[`FJS-1065`](../../ISSUES.md#fjs-1065).** A `$:` has three shapes that name a path — a bare watch,
+**[`FJS-1065`](../../ISSUES_ARCHIVE.md#fjs-1065).** A `$:` has three shapes that name a path — a bare watch,
 a handler's dep list, an ordered group's entries — and the emitter has merged all three into its
-proxy roots since [`FJS-599`](../../ISSUES.md#fjs-599). The analyzer's `reactiveSet` seed went on
+proxy roots since [`FJS-599`](../../ISSUES_ARCHIVE.md#fjs-599). The analyzer's `reactiveSet` seed went on
 reading `watchPaths` alone, so one file computed *which imported roots are reactive* twice from
 different subsets of the same three lists, and the two drifted.
 
@@ -427,7 +427,7 @@ controls red instead. **Blast radius was taken on full emitted output rather tha
 because the wider seed also filters `reactiveDeps` on handlers and groups and a diff over
 `trackDerived` cannot see that: 393 of 394 in-repo `.mesa` files compile BYTE-IDENTICALLY, and the
 one that moves is `example`'s invoices page, whose workaround was removed in the same change. So
-nothing gained a lazy initializer and [`FJS-1062`](../../ISSUES.md#fjs-1062)'s hazard is where it was.
+nothing gained a lazy initializer and [`FJS-1062`](../../ISSUES_ARCHIVE.md#fjs-1062)'s hazard is where it was.
 
 **The GENERATOR keeps its workaround and that is not an oversight.** `example` resolves mesa to
 `packages/mesa/`; a scaffolded app installs it from npm, where this fix is not yet published, so a
@@ -436,7 +436,7 @@ generated page that relied on the handler form alone shipped the frozen filter b
 
 ## 2026-09-09 — two ways to write a binding that cannot hold a write
 
-**[`FJS-1068`](../../ISSUES.md#fjs-1068).** The bind setter is emitted as `name = $$v` whatever the
+**[`FJS-1068`](../../ISSUES_ARCHIVE.md#fjs-1068).** The bind setter is emitted as `name = $$v` whatever the
 target is, and the only guard on it was Rule 22's, which grades `export const` and nothing else. A
 local `const` reached the emitter untouched — including the derived one const-promotion produces,
 which is what every value computed from a `let` IS — and so did an imported binding, a top-level
@@ -455,7 +455,7 @@ how every form bound to a draft record works and still compiles. A derived `cons
 the form that exists for exactly this — `$: name = expr`, the writable derived (VISION §4.5), which
 re-derives and can still be overridden by the control.
 
-**[`FJS-1067`](../../ISSUES.md#fjs-1067).** `$: name = expr` is a declaration JavaScript does not
+**[`FJS-1067`](../../ISSUES_ARCHIVE.md#fjs-1067).** `$: name = expr` is a declaration JavaScript does not
 know about, which makes it the one duplicate binding that can reach the analyzer — acorn refuses
 every other redeclaration at parse time. Pass 1 walks `ast.body` in source order and only the `$:`
 side was guarded, so the refusal fired one way round and not the other: with the label first, the
@@ -525,7 +525,7 @@ exit code, which is how the first full run reported success with seven unexpecte
 
 ## 2026-09-07 — an instance script runs in the order you wrote it
 
-**[FJS-846](../../ISSUES.md#fjs-846), closed** — the half that had been parked, and the parked
+**[FJS-846](../../ISSUES_ARCHIVE.md#fjs-846), closed** — the half that had been parked, and the parked
 reason was measured on the wrong thing.
 
 It said 82 of 331 instance scripts have a statement before a later `const` and nearly all are
@@ -555,7 +555,7 @@ plain-JS answer rather than a remembered output.
 
 ## 2026-09-07 — what a parse failure tells you
 
-**[FJS-882](../../ISSUES.md#fjs-882), closed.** One `Reader` runs over the whole source and every
+**[FJS-882](../../ISSUES_ARCHIVE.md#fjs-882), closed.** One `Reader` runs over the whole source and every
 node carries `start`, and three shapes spent none of it.
 
 **The generic reader failure carried no position at all** — `Wrong syntax at:` plus thirty raw
@@ -593,7 +593,7 @@ position, 5 without the omittable-tag sentence. Six are controls.
 
 ## 2026-09-06 — `$$` is reserved, and `el0` is yours again
 
-**[FJS-883](../../ISSUES.md#fjs-883), closed** — and the filing was wrong in the direction that
+**[FJS-883](../../ISSUES_ARCHIVE.md#fjs-883), closed** — and the filing was wrong in the direction that
 mattered. It called this a gap in a list rather than a live break, on the grounds that the
 compiler renames `$$runtime`. Nothing renames it. `const $$runtime = 1` is emitted straight into
 the component function, where it shadows the module import for the whole body including the lines
@@ -626,7 +626,7 @@ over a name nothing emits protects nothing and reads identically from the refuse
 
 ## 2026-09-06 — what a write through the watch proxy reports
 
-**[FJS-884](../../ISSUES.md#fjs-884), closed.** Four things, and one of them turned out to
+**[FJS-884](../../ISSUES_ARCHIVE.md#fjs-884), closed.** Four things, and one of them turned out to
 have no fix.
 
 **A symbol-keyed write and delete now reach the whole-object watch.** They fired nothing, where
@@ -655,7 +655,7 @@ The comparison only means anything with `watchPath(p, '')` declared.
 
 ## 2026-09-06 — three ways an attribute was written, and the one that was picked
 
-**[FJS-885](../../ISSUES.md#fjs-885), closed.**
+**[FJS-885](../../ISSUES_ARCHIVE.md#fjs-885), closed.**
 
 **Two `on:click` on one element now both fire.** A delegated handler is a property — `el.__click
 = fn` — so the second overwrote the first and it fired never. Only on that path: the
@@ -681,7 +681,7 @@ real Chrome it is 4 red, and the three that pass are the controls, including an 
 
 ## 2026-09-06 — a template expression maps to the line it was written on
 
-**[FJS-943](../../ISSUES.md#fjs-943), closed.** The row was filed expecting the four passes that
+**[FJS-943](../../ISSUES_ARCHIVE.md#fjs-943), closed.** The row was filed expecting the four passes that
 rewrite the module after `xBuild` to be made mapping-aware. They did not have to be.
 
 `_renderGroup` folds a run of `bindText` calls into one shared `render()` block and
@@ -710,7 +710,7 @@ nothing, which reads from the outside exactly like a working feature.
 
 ## 2026-09-06 — a rewritten declaration keeps its source line
 
-**[FJS-943](../../ISSUES.md#fjs-943), narrowed.** The map only covered lines that survived
+**[FJS-943](../../ISSUES_ARCHIVE.md#fjs-943), narrowed.** The map only covered lines that survived
 compilation unchanged, which left out most of a script: `let count = 0` becomes a `track()` call
 and shares no text with its source.
 
@@ -734,7 +734,7 @@ that would need threading.
 
 ## 2026-09-06 — a stack frame names the .mesa file
 
-**[FJS-874](../../ISSUES.md#fjs-874).** Every `transform` returned `map: null` and Vite
+**[FJS-874](../../ISSUES_ARCHIVE.md#fjs-874).** Every `transform` returned `map: null` and Vite
 synthesizes nothing, so a TypeError in a handler named a generated line in a file the developer
 cannot open.
 
@@ -764,11 +764,11 @@ Error: boom: from the body
 with the negative control that those frames must not name the generated module. The VLQ encoder
 is graded against the spec's own examples. `map` had never been asked about by any of the four
 plugin suites; it has three rows there now. What the map does not cover is
-[FJS-943](../../ISSUES.md#fjs-943).
+[FJS-943](../../ISSUES_ARCHIVE.md#fjs-943).
 
 ## 2026-09-05 — a block whose every branch is slotted belongs to that slot
 
-**[FJS-607](../../ISSUES.md#fjs-607).** `slot=` is an attribute on an element, so
+**[FJS-607](../../ISSUES_ARCHIVE.md#fjs-607).** `slot=` is an attribute on an element, so
 `{#if cond}<Button slot="actions" />{/if}` put the whole block in the DEFAULT slot. A component
 branching on `$slots.default` — `<Form>` deciding whether to generate its fields — then turned
 itself off: every field gone, the form still submitting, the page looking like a component that
@@ -790,7 +790,7 @@ own comment said settling this would turn them — and now assert the form gener
 
 ## 2026-09-05 — a component that cannot render its children says so
 
-**[FJS-926](../../ISSUES.md#fjs-926).** `<Button>Go</Button>` against a component whose label is a
+**[FJS-926](../../ISSUES_ARCHIVE.md#fjs-926).** `<Button>Go</Button>` against a component whose label is a
 `text` prop rendered an empty button, and nothing said so at any layer.
 
 Graded against the slot names the child's own template **declares**, collected where they are
@@ -816,7 +816,7 @@ cannot derive. Folding them is [FJS-938](../../ISSUES.md#fjs-938).
 
 ## 2026-09-05 — an author's comment survives a static render
 
-**[FJS-906](../../ISSUES.md#fjs-906).** The static renderer strips Mesa's comment anchors, and it
+**[FJS-906](../../ISSUES_ARCHIVE.md#fjs-906).** The static renderer strips Mesa's comment anchors, and it
 told them apart by shape: a named anchor is space-padded, which is also what an ordinary
 hand-written comment looks like. A comment put through `{@html}` becomes a real Comment node with
 exactly that shape, so an author's markup lost it every time.
@@ -848,7 +848,7 @@ The `undefined` in a debug label came out of the same measurement and is
 
 ## 2026-09-05 — a `$:` in a function body is refused
 
-**[FJS-877](../../ISSUES.md#fjs-877).** RULE 1 has always said `$:` is top-level only — *never
+**[FJS-877](../../ISSUES_ARCHIVE.md#fjs-877).** RULE 1 has always said `$:` is top-level only — *never
 inside functions, blocks, or callbacks* — and nothing enforced it. Pass 1 walks `ast.body`, so a
 nested `$:` was never visited and reached the output as a plain JavaScript label wrapping a
 one-shot assignment: right on the first call, stale after it, and the page still renders a
@@ -866,7 +866,7 @@ not a Mesa label at all. RULE 1 now says enforced.
 
 ## 2026-09-05 — pushProps writes own keys only
 
-**[FJS-905](../../ISSUES.md#fjs-905).** The sibling of FJS-878, one function down: `pick` walked
+**[FJS-905](../../ISSUES_ARCHIVE.md#fjs-905).** The sibling of FJS-878, one function down: `pick` walked
 a props object's prototype and painted inherited keys onto the element, and `pushProps` had the
 same `for…in`. It cannot reach the DOM — each name is looked up in the child's prop registry —
 so an inherited key overwrote a child's OWN declared prop instead, which is quieter and a
@@ -879,7 +879,7 @@ passes both refusals.
 
 ## 2026-09-05 — the plain-text fallback stopped running words together
 
-**[FJS-932](../../ISSUES.md#fjs-932).** `htmlToText` gave a block element a newline when it
+**[FJS-932](../../ISSUES_ARCHIVE.md#fjs-932).** `htmlToText` gave a block element a newline when it
 opened and nothing when it closed, which is enough only while every block is followed by another
 block — content after a `</p>` that opens no block of its own joined the paragraph. And **table
 parts were not block elements at all**, which is the shape that matters: an email kit builds

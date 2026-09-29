@@ -174,7 +174,7 @@ same code on either runtime (`FJS-D305`), and `test/engine-seam.test.ts` grades 
 | Why the code is shaped this way | `docs/internals.md`, by path |
 | Correct-but-surprising behavior at the Data boundary | the `data-hazards` skill |
 | Who owns a cross-package seam | the `bridge-index` skill |
-| Open defects, rulings, proposals | `ISSUES.md` · `DECISIONS.md` · `docs/roadmap.md` |
+| Open defects, rulings, proposals | `ISSUES.md` · `DECISIONS.md` · `IDEAS/` |
 
 <!--
 The layout below is for `fli done`'s layout-named check, which reads this file raw.
@@ -237,7 +237,7 @@ src/
   import/ — index.js · prisma.js · rails.js · sql.js · frappe.js · tiers.js · polymorphic.js · wide-int.js
   tools/ — cli.js · repl.js · studio.html · introspect.js · typegen.js · retention.js · replicate.js ·
            assistant.js · eject.js · ddl-snapshot.js · jsonschema-snapshot.js · catalog-snapshot.js ·
-           catalog-reference.js
+           catalog-reference.js · principal.js (who `--as` names, for every tool that boots as somebody)
   transform/ — CLI-only: framework.js · runner.js · run.js · split-worker.js · split-worker.source.js
   access.js — the declared access surface as data and prose
   release.js — the release surface; classifyPivot and classifyAccess

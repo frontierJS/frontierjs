@@ -73,7 +73,7 @@ Under both, `compileSql` and `evalJs` are two interpreters over one expression l
 already graded against each other as an oracle. That is the hard half of a semantic
 layer, already paid for.
 
-**And no schema in this repo declares a `view`** ([FJS-972](../ISSUES.md#fjs-972)).
+**And no schema in this repo declares a `view`** ([FJS-972](../ISSUES_ARCHIVE.md#fjs-972)).
 Built, documented, unit-tested, never run in anger — which is why the two defects below
 survived.
 
@@ -81,7 +81,7 @@ survived.
 
 ## The three defects the probe turned up
 
-**[FJS-970](../ISSUES.md#fjs-970) — a `view` has no gate, no row policy and no tenant
+**[FJS-970](../ISSUES_ARCHIVE.md#fjs-970) — a `view` has no gate, no row policy and no tenant
 scope, and cannot be given one.** `parseView` accepts exactly four attributes and throws
 on everything else, so `@@gate` and `@@allow` are parse errors on a view;
 `buildTableForView` passes `{ tableName, modelName }` into `makeTable` and nothing else;
@@ -90,14 +90,14 @@ across tenants. **This one is load-bearing for the ruling** — a view is the tr
 primitive the product would be built on, and *the warehouse is where row policy dies* is
 the exact thing `FJS-D228` says must not be true here.
 
-**[FJS-971](../ISSUES.md#fjs-971) — `@@refreshOn` rebuilds the whole view on every row
+**[FJS-971](../ISSUES_ARCHIVE.md#fjs-971) — `@@refreshOn` rebuilds the whole view on every row
 written, inside the writing transaction.** Three triggers per source, each
 `DELETE` + full re-`INSERT`, and SQLite fires a row trigger per row, so a `createMany` of
 10,000 rows re-aggregates the table 10,000 times. Stated as a deliberate strategy, so the
 defect is the **unstated ceiling** rather than the choice; correctness is tested and cost
 is not.
 
-**[FJS-972](../ISSUES.md#fjs-972) — nothing has ever declared a view.** The reason both
+**[FJS-972](../ISSUES_ARCHIVE.md#fjs-972) — nothing has ever declared a view.** The reason both
 of the above were invisible to a green suite. Fixed by a caller, not a patch.
 
 ---
@@ -122,9 +122,9 @@ a hole under every possible answer to the scope question, and therefore unblocke
 
 ## Still open
 
-- **[FJS-D229](../ISSUES.md#fjs-d229) — what holds analytical data. Ruled 2026-09-08 as
+- **[FJS-D229](../ISSUES_ARCHIVE.md#fjs-d229) — what holds analytical data. Ruled 2026-09-08 as
   [FJS-D248](../DECISIONS.md#fjs-d248): SQLite.** The trigger this entry named is gone —
-  [FJS-971](../ISSUES.md#fjs-971)'s refresh ceiling became a choice in
+  [FJS-971](../ISSUES_ARCHIVE.md#fjs-971)'s refresh ceiling became a choice in
   [FJS-D245](../DECISIONS.md#fjs-d245) — and the question splits: reading our file with
   another engine (`ATTACH … (READ_ONLY)`) costs nothing and needs no driver, while STORAGE
   also has to be FED, which [FJS-D247](../DECISIONS.md#fjs-d247) measured we cannot do. A
@@ -135,7 +135,7 @@ a hole under every possible answer to the scope question, and therefore unblocke
   cannot reproduce is a principal the REQUEST builds, and it cannot say which of the two
   it just gave you. The line is what happens to the output: a preview is discarded and may
   be approximate, an extract is kept and must carry a standing it can defend.
-- **[FJS-D231](../ISSUES.md#fjs-d231) — who owns the write tap.** `orion` wants it to
+- **[FJS-D231](../ISSUES_ARCHIVE.md#fjs-d231) — who owns the write tap.** `orion` wants it to
   ACT, this wants it to RECORD. Not blocking (`FJS-D14` defers orion), filed so it is not
   rediscovered as two implementations.
 
@@ -146,7 +146,7 @@ a hole under every possible answer to the scope question, and therefore unblocke
 - **Coin no noun yet.** The product needs a name and the name is a decision of its own;
   every category above is describable without one today.
 - **Do not let `database analytics` become the answer by default.** It parses, which
-  makes it the path of least resistance, and [FJS-958](../ISSUES.md#fjs-958) is closed
+  makes it the path of least resistance, and [FJS-958](../ISSUES_ARCHIVE.md#fjs-958) is closed
   now — re-check what it covers before leaning on it here.
 - **Do not absorb the three neighbors.** `metric-store.md` is readings over time,
   `traffic-analysis.md` is request telemetry, `bulk-data.md` is the import screen a
@@ -159,11 +159,11 @@ a hole under every possible answer to the scope question, and therefore unblocke
 Phased so that each step is provable before the next, and so the storage decision stays
 deferred. **Nothing here needs a new package.**
 
-**Phase 0 — make the transform primitive safe.** Fix [FJS-970](../ISSUES.md#fjs-970),
+**Phase 0 — make the transform primitive safe.** Fix [FJS-970](../ISSUES_ARCHIVE.md#fjs-970),
 which means ruling how a view inherits or declares access; declare a `view` in `example`
 over a gated, tenant-scoped model and put it behind a drive, which closes
-[FJS-972](../ISSUES.md#fjs-972) and turns both other rows into executed assertions; state
-the refresh ceiling ([FJS-971](../ISSUES.md#fjs-971)). **Everything else is blocked on
+[FJS-972](../ISSUES_ARCHIVE.md#fjs-972) and turns both other rows into executed assertions; state
+the refresh ceiling ([FJS-971](../ISSUES_ARCHIVE.md#fjs-971)). **Everything else is blocked on
 this** — a transform primitive that leaks is not one to build a product on.
 
 **Phase 1 — the export contract. SHIPPED 2026-09-07.** `@@export(ndjson | csv [, since:])`
@@ -185,7 +185,7 @@ same around hook and takes back both the client and the merged principal.
 
 **Phase 2 — serving.** A Reports panel in the app, over `aggregate`/`groupBy` and declared
 views. No warehouse, no new storage. Studio keeps previewing and gains the disclosure
-[FJS-977](../ISSUES.md#fjs-977) is filed for.
+[FJS-977](../ISSUES_ARCHIVE.md#fjs-977) is filed for.
 
 **Phase 3 — the rest, only when something strains.** Ingest from foreign sources is the
 connector treadmill and `FJS-D153`'s rule applies unchanged: a vendor lives in its own

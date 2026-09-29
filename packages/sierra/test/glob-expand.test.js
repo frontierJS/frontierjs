@@ -96,6 +96,21 @@ describe('expandGlobs', () => {
     expect(() => expandGlobs(src, block())).toThrow(/cannot be prerendered/)
   })
 
+  // Vite resolves a leading / against its root, which is the only way a
+  // component in a package can list the app's files (FJS-1553).
+  test('a root glob resolves against the root, keyed as Vite keys it', () => {
+    const src = "<script>\n  const all = import.meta.glob('/content/reviews/*.md', { eager: true })\n</script>\n"
+    const out = expandGlobs(src, '/elsewhere/node_modules/kit/Block.mesa', TMP)
+    const keys = [...out.matchAll(/"([^"]+)": __sierra_glob_/g)].map((m) => m[1])
+    expect(keys).toEqual(['/content/reviews/1-stacy.md', '/content/reviews/10-karl.md', '/content/reviews/2-jimmy.md'])
+    expect(out).toContain(`from ${JSON.stringify(join(TMP, 'content/reviews/1-stacy.md'))}`)
+  })
+
+  test('a root glob with no root to resolve against is refused', () => {
+    const src = "<script>\n  const all = import.meta.glob('/content/reviews/*.md', { eager: true })\n</script>\n"
+    expect(() => expandGlobs(src, block())).toThrow(/relative to the file/)
+  })
+
   test('a file with no glob is returned as it was', () => {
     const src = '<script>\n  let x = 1\n</script>\n<p>{x}</p>\n'
     expect(expandGlobs(src, block())).toBe(src)

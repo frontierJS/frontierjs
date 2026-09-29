@@ -1,6 +1,7 @@
 // cleanup.ts
 // Scheduled jobs that prune expired sessions and verifications.
-// Call createAuthCleanupJobs(db) and then .start() after app.start().
+// Call createAuthCleanupJobs(db) and .start() it from a plugin's work(), so a
+// one-shot boot (junction call, the snapshot tools) runs no sweep.
 //
 // Expired rows don't create security problems — auth lookups always check
 // expiresAt > now() — but pruning keeps the tables lean.
@@ -12,7 +13,7 @@
 //   app.configure({
 //     name: 'auth-cleanup',
 //     register() {},
-//     async boot() { cleanup.start() },
+//     async work() { cleanup.start() },
 //   })
 
 import { createScheduler } from '@frontierjs/junction'

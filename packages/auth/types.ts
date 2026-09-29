@@ -303,9 +303,9 @@ export interface AuthServicesOptions {
   connections?: string | false
   /**
    * An operator acting on SOMEBODY ELSE's credentials — today, resetting a lost
-   * second factor. Refused below SYSADMIN(7), graded by `level` below, which it
-   * cannot work without: absent, every call is a 403 naming that option
-   * (`FJS-D264`).
+   * second factor. Refused below SYSADMIN(7), graded by `recoveryLevel` (else
+   * `level`), which it cannot work without: absent, every call is a 403 naming
+   * both options (`FJS-D264`).
    */
   accountRecovery?: string | false
 
@@ -327,6 +327,21 @@ export interface AuthServicesOptions {
    * somebody below SYSADMIN can write reach 7 hands out the reset with it.
    */
   level?: (session: SessionContext) => number
+
+  /**
+   * Grade the operator and the person for `accountRecovery`, when that is not
+   * the question `level` answers. Falls back to `level`.
+   *
+   * Separate because `level` is also what `account.me` publishes and a browser
+   * gates its buttons on. An app whose level is per tenant has no honest single
+   * answer there, while recovery needs only the standing that travels with the
+   * user — an operator at SYSADMIN, a person below them:
+   *
+   *   recoveryLevel: basecampGateLevel
+   *
+   * A resolver that answers anything but a finite number refuses the reset.
+   */
+  recoveryLevel?: (session: SessionContext) => number
 
   /**
    * How many times one account may offer its CURRENT password — to

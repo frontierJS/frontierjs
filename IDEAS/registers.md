@@ -13,8 +13,8 @@ read by `registerLayout()` (`packages/cli/CHANGES.md`, 2026-09-25) — and
 `elitelawncare/ela` is the first project outside this repo on it. The write
 verbs other than `decide`, the scaffold, `--root` for the pages and the
 file-per-record migration are not built. Two defects found while asking the
-question are fixed and closed ([`FJS-916`](../ISSUES.md#fjs-916),
-[`FJS-917`](../ISSUES.md#fjs-917)). § *What is already here* and § *What is
+question are fixed and closed ([`FJS-916`](../ISSUES_ARCHIVE.md#fjs-916),
+[`FJS-917`](../ISSUES_ARCHIVE.md#fjs-917)). § *What is already here* and § *What is
 missing* are the 2026-09-05 reading and are not re-derived; the prefix row of
 each is now answered. Do not cite this paper as describing behavior — see
 [`VERIFYING.md`](../VERIFYING.md).
@@ -64,13 +64,13 @@ seen, because every section whose source is absent is omitted rather than faked,
 and the plates are dealt from that tree's own files.
 
 **The report presentation printed this repo's port table as that project's**, which is
-[`FJS-917`](../ISSUES.md#fjs-917) and is fixed. Worth keeping for the shape rather
+[`FJS-917`](../ISSUES_ARCHIVE.md#fjs-917) and is fixed. Worth keeping for the shape rather
 than the defect: the map renders the registry as a section and the atlas looks one
 project up by card key, so the same model leaked through one page and not the
 other, and the page it leaked through is the one nobody diffs by eye.
 
 **`fli register:check` answered `0 open · ✓ every register agrees with itself`,
-exit 0**, over a table of live defects — [`FJS-916`](../ISSUES.md#fjs-916), also
+exit 0**, over a table of live defects — [`FJS-916`](../ISSUES_ARCHIVE.md#fjs-916), also
 fixed. It now names the lines it could not read.
 
 **A flat directory is a different answer for each tool.** With an `ISSUES.md` and
@@ -91,7 +91,7 @@ Five things, in cost order, each measured rather than supposed.
 matcher, in both ruling matchers and in the citation scanner. A project using
 `ACME-1` parses to nothing — and every rule is asked of the records that parsed,
 so a file none of them came from is a file all of them pass. That was
-[`FJS-916`](../ISSUES.md#fjs-916): the check now reports what it could not read,
+[`FJS-916`](../ISSUES_ARCHIVE.md#fjs-916): the check now reports what it could not read,
 which turns a silent pass into a legible refusal, and leaves the actual fix — one
 declared prefix — unbuilt.
 

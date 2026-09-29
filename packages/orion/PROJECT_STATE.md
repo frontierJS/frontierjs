@@ -73,5 +73,5 @@
   ([`FJS-1209`](../../ISSUES.md#fjs-1209)).
 - **The basecamp install is not finished**, though its automation runs:
   the seed reaches none of orion's tables and four schema-derived checks are red
-  ([`FJS-1197`](../../ISSUES.md#fjs-1197)).
-- **Cancelling a run that is queued or running** ([`FJS-1157`](../../ISSUES.md#fjs-1157)).
+  ([`FJS-1197`](../../ISSUES_ARCHIVE.md#fjs-1197)).
+- **Cancelling a run that is queued or running** ([`FJS-1157`](../../ISSUES_ARCHIVE.md#fjs-1157)).

@@ -199,11 +199,11 @@ app.configure(createAuthPlugin(auth, {
 
 app.configure(withLitestoneDb(db))
 
-// Start cleanup jobs after app starts
+// Timers start in work(), which a one-shot boot (junction call) skips
 app.configure({
   name: 'auth-cleanup',
   register() {},
-  async boot() { authCleanup.start() },
+  async work() { authCleanup.start() },
 })
 `
 

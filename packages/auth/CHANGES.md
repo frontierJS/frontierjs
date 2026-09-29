@@ -1,5 +1,11 @@
 # Changes — @frontierjs/auth
 
+## 2026-09-29 — account recovery takes its own grader, `services.recoveryLevel`
+
+`account-recovery.resetTotp` graded both the operator and the person with `services.level`. That option also sets the level `account.me` publishes, which a browser gates its buttons on. An app whose level is per tenant had no honest value for both, so basecamp could not reach recovery. `recoveryLevel` grades recovery alone and falls back to `level`. `example`, which passes only `level`, is unchanged ([`FJS-D550`](../../DECISIONS.md#fjs-d550), amending `FJS-D264`).
+
+The floor and the peer test are now positive and require a finite number. `level(op) < SYSADMIN` and `level(person) >= level(op)` are both false for `undefined`, so a resolver with no number for somebody let the reset through ([`FJS-1559`](../../ISSUES.md#fjs-1559)). Four rows in `test/account-recovery.test.ts`: `recoveryLevel` is read in place of `level` while `account.me` still answers `level`; the peer rule holds under it; and a resolver that answers no number, for the operator or for the person, refuses. The last two fail against the old comparisons. The suite has 407 passing and typecheck is at baseline.
+
 ## 2026-09-28 — an API key with scopes cannot manage its owner's credentials (`FJS-1446`)
 
 A scope narrows a key at the app's own checks (`FJS-D407`), and no scope an app
@@ -33,7 +39,7 @@ A hash imported from another app (every legacy port brings `$2a$10$`) or written
 before `BCRYPT_COST` was raised verified correctly and was never upgraded. While
 it stood, a wrong password against it answered in about a quarter of the time
 every other refusal took, so the clock showed which addresses were real accounts
-([`FJS-1457`](../../ISSUES.md#fjs-1457)). `login` now rewrites the hash with
+([`FJS-1457`](../../ISSUES_ARCHIVE.md#fjs-1457)). `login` now rewrites the hash with
 `hashPassword` once the password is proven (`passwordNeedsRehash`: another
 algorithm, or bcrypt at another cost). This is not a credential change, so it
 announces nothing. On a wrong password, `payPasswordCost(password, spent)` pays
@@ -47,7 +53,7 @@ between 0.5× and 2× an unknown address's refusal (it measured 1 ms before the 
 
 A promise has no own enumerable keys, so an async `sessionFields` spread to
 nothing and took every standing with it — an administrator graded USER(4) with
-nothing said ([`FJS-1251`](../../ISSUES.md#fjs-1251)). It now throws at the first
+nothing said ([`FJS-1251`](../../ISSUES_ARCHIVE.md#fjs-1251)). It now throws at the first
 session built, naming where a value on another row belongs: `claim <name> from
 <Model>(<userIdColumn>)` ([`FJS-D359`](../../DECISIONS.md#fjs-d359)).
 `test/session-fields.test.ts`, paired with the synchronous form reaching the session.
@@ -249,7 +255,7 @@ second step in a real browser.
 ## 2026-09-08 — 1.0.4 closes the schema an installed app could not parse
 
 **`1.0.3` shipped `@guarded(all)` and the language had deleted that argument.** The tree's copy was
-corrected on 2026-09-04 with [`FJS-827`](../../ISSUES.md#fjs-827) and nothing here could see the
+corrected on 2026-09-04 with [`FJS-827`](../../ISSUES_ARCHIVE.md#fjs-827) and nothing here could see the
 difference: every app in this workspace resolves auth to `packages/auth/`, so the published bytes
 were read by nothing. An app installing from npm could not boot.
 
@@ -260,7 +266,7 @@ with the tree's own parser — answers `6 published schema(s) parse`.
 
 `knownPublishedSchemas` is empty again. The entry was keyed `name@version` so it would go stale on
 the release that fixed it, and it did: the phase refused the run by name before the entry was
-removed. [`FJS-921`](../../ISSUES.md#fjs-921) closed.
+removed. [`FJS-921`](../../ISSUES_ARCHIVE.md#fjs-921) closed.
 
 ## 2026-09-07 — the query needed the reader the body already had
 
@@ -362,7 +368,7 @@ at upgrade, so without it the operator's open tabs go on acting as whoever they
 were before the change — as themselves after a start, and as the SUBJECT after an
 end, which is the episode outliving itself.
 
-Closes [`FJS-142`](../../ISSUES.md#fjs-142). `IDEAS/support-mode.md` carries the
+Closes [`FJS-142`](../../ISSUES_ARCHIVE.md#fjs-142). `IDEAS/support-mode.md` carries the
 design, the prior art it was corrected by, and what was deliberately cut.
 
 ## 2026-08-24 — a sign-in screen can ask which providers exist, and the models are imported rather than pasted

@@ -27,6 +27,11 @@
     // same reason, which is where the actual refusals live.
     if (path.startsWith('/invite/')) return undefined
 
+    // The two links auth mails. A reset is for somebody who cannot sign in, and
+    // a verification link opens wherever the mail is read; both are graded by
+    // their token at the server, as the invitation is.
+    if (path === '/reset-password/' || path === '/verify-email/') return undefined
+
     if (!session.user) return path === '/login/' ? undefined : '/login/'
     if (path === '/login/') return '/'
 

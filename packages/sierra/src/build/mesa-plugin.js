@@ -34,20 +34,6 @@ const MESA_EXTENSIONS = /\.(mesa|md)$/
 // src/build/mesa-plugin.js → the sierra package root
 const SIERRA_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-// The SCOPE as it appears under node_modules. Named rather than inlined
-// because the literal drifted to 'sierra' once and no suite in this repo could
-// see it — an app here resolves sierra to packages/sierra/, never to a
-// node_modules path (FJS-251).
-//
-// The scope and not one package: `@frontierjs/ui` ships 64 components as `.mesa`
-// SOURCE, and `@frontierjs/email-kit` ships 22 more. Allowing only sierra meant
-// every one of them reached rolldown untransformed, so an installed app died on
-// `Unexpected JSX expression` at line 1 of `CopyButton.mesa` — the same failure
-// FJS-251 named, one package over. A `.mesa` file has exactly one meaning and
-// nothing else can read it, so the question is never *should this be compiled*
-// but *is it ours to compile*.
-const FJS_SCOPE = '/node_modules/@frontierjs/'
-
 // Is this file a layout — `_module.mesa`?
 //
 // The test is the BASENAME and not `id.includes('_module')`, because the string
@@ -370,18 +356,11 @@ export function mesaPlugin(mesaOptions = {}, sierraContext) {
     async transform(source, id) {
       if (!MESA_EXTENSIONS.test(id)) return null
       if (!compiler) return null
-      // Skip .mesa files from node_modules except FrontierJS's own — sierra's
-      // RouterView/ChainRenderer, the ui kit's 64 components, email-kit's 22.
-      // All of them ship as SOURCE and none of them can be read by anything but
-      // the Mesa compiler.
-      //
-      // The exception has to name the SCOPE, twice over. In this repo an app
-      // resolves sierra to packages/sierra/ and aliases the ui kit to
-      // packages/ui/, neither of which is under node_modules at all, so the skip
-      // never fires and every suite passes — while an app installed from npm
-      // hands the file to rolldown untransformed and dies at line 1 of a .mesa.
-      // Dev survives, so it lands at the first build a real user runs.
-      if (id.includes('/node_modules/') && !id.includes(FJS_SCOPE)) return null
+      // Every .mesa and .md is compiled, wherever it is installed. Nothing else
+      // can read one, so a skip under node_modules only ever handed a component
+      // library to rolldown untransformed: the ui kit once (FJS-251), and any
+      // package outside @frontierjs/ after that (FJS-1552). A workspace symlink
+      // resolves to a path with no node_modules in it, so no suite here saw it.
 
       // A redirect-only route never renders — the router intercepts it before
       // the component loads — so it becomes a no-op component.

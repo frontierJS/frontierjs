@@ -1,5 +1,9 @@
 # Changes
 
+## 2026-09-29 — `<Form>` checks the record it would send, blanks nulled
+
+`<Form>`'s live check validated `resource.coerce(record)` and skipped the blank-to-null step that the resource's own send pipeline runs next. An optional box left empty is `''`, and `@length(1, …)` refuses that. The send would have carried `null`, so a create was blocked in the browser that the server would have accepted. basecamp's new-blueprint form showed it: *icon must be at least 1 characters* on a field nobody had touched. The check now runs `resource.normalize` after `coerce`, in the pipeline's order. It was found and proved by basecamp's `verify:screens` blueprint section. The ui suite has 1070 passing; the 2 failures are the `dnd` and `palette-modes` fixture compiles, which were already failing.
+
 ## 2026-09-29 — `EmptyState`'s text is its children
 
 `EmptyState` rendered `title`, a `description` prop and the `action` snippet,
@@ -17,7 +21,7 @@ renders and that an `action` snippet alone renders no empty text block.
 
 ## 2026-09-25 — five `const`s nothing read are deleted
 
-[`FJS-1062`](../../ISSUES.md#fjs-1062). Mesa now warns about a derived `const` that calls something and
+[`FJS-1062`](../../ISSUES_ARCHIVE.md#fjs-1062). Mesa now warns about a derived `const` that calls something and
 is read nowhere, and five kit components carried one into every app they compile in: `DatePicker`'s
 `prev` and `next` month grids, `MultiSelect`'s `selectedItems` with the `$:` that existed to recompute it,
 `Slider`'s `displayError` and `Thresholds`' `resolvedLabel` — `Field` resolves both itself. The imports
@@ -25,18 +29,18 @@ they alone used went with them.
 
 ## 2026-09-24 — `Avatar` takes its tone table's size in a `var`
 
-[`FJS-1340`](../../ISSUES.md#fjs-1340). Mesa now grades a top-level `const` for imported reads no `$:`
+[`FJS-1340`](../../ISSUES_ARCHIVE.md#fjs-1340). Mesa now grades a top-level `const` for imported reads no `$:`
 watches, and `autoTone` read `TONES.length` — a fixed table, so correct, and reported to every app a
 Sierra build compiles the kit into. The size is a `var`, which says it is a snapshot; the tone still
 follows `name`.
 
 ## 2026-09-24 — a `<Select>` whose options arrive late shows its value
 
-[`FJS-1320`](../../ISSUES.md#fjs-1320), fixed in mesa's `bindInput`; no component changed. The kit's
+[`FJS-1320`](../../ISSUES_ARCHIVE.md#fjs-1320), fixed in mesa's `bindInput`; no component changed. The kit's
 browser drive now covers both ways a list reaches a `<Select>` after its value — options the caller
 passes once it has them, and options a `<Form>` fetches — in `test/browser/specs/select-late-options`,
 red against the runtime without the fix. The other half of the report, a refused change the control
-goes on showing, is [`FJS-1336`](../../ISSUES.md#fjs-1336), ruled [`FJS-D380`](../../DECISIONS.md#fjs-d380): the
+goes on showing, is [`FJS-1336`](../../ISSUES_ARCHIVE.md#fjs-1336), ruled [`FJS-D380`](../../DECISIONS.md#fjs-d380): the
 caller keeps a draft through `bind:value` and puts it back. The README gives the pattern under § Forms,
 and the same spec runs it — a refusal twice, an accepted pick, and the row moving from elsewhere.
 
@@ -145,7 +149,7 @@ inert as an attribute on a textarea, and the property is what a later change has
 The tripwire is in `form-tail.spec.mjs` beside the Switch's, and the ORDER is the whole of it — the
 app's write has to come after something has typed into the element, because that is what detaches
 `el.value` from the text. Against the old markup: 1 failing, 1060 passing. Found building orion's
-node inspector ([`FJS-1207`](../../ISSUES.md#fjs-1207)), where a form and the JSON document under it
+node inspector ([`FJS-1207`](../../ISSUES_ARCHIVE.md#fjs-1207)), where a form and the JSON document under it
 are one model, so an edit above has to be visible below.
 
 ## 2026-09-20 — `GeoField`, and the half-coordinate it refuses
@@ -189,7 +193,7 @@ answers with the control table and `registerControl`.
 
 ## 2026-09-20 — `DatePicker` reads the chip derivation by its new name
 
-[`FJS-1192`](../../ISSUES.md#fjs-1192) renamed `@frontierjs/css`'s derived
+[`FJS-1192`](../../ISSUES_ARCHIVE.md#fjs-1192) renamed `@frontierjs/css`'s derived
 outputs to `--_fill` / `--_on-fill`, and `.fjs-dp-square` is the one thing
 outside that package which reads them: it carries `.chip`, sets `--tone-fill`
 from `--bg-mix`, and paints what the derivation answers — which is how a
@@ -203,7 +207,7 @@ either is the defect the mark exists for.
 
 ## 2026-09-19 — `DatePicker` keeps the day it was given, and grows a day stepper
 
-[`FJS-1188`](../../ISSUES.md#fjs-1188). An incoming `startDate` was parsed with `new Date(value)`,
+[`FJS-1188`](../../ISSUES_ARCHIVE.md#fjs-1188). An incoming `startDate` was parsed with `new Date(value)`,
 which is UTC midnight for a bare `YYYY-MM-DD`, while the hidden input the form submits is built
 from LOCAL fields — so west of Greenwich a stored day rendered as the day before and saved that
 way, untouched. The file already had `parseLocalDate` for `disabledDates` and its comment already
@@ -228,7 +232,7 @@ rows, and dropping the selectability guard reds the disabled-day row.
 
 ## 2026-09-15 — a refusal over a field the form does not draw is said at the top
 
-[`FJS-1163`](../../ISSUES.md#fjs-1163). `only` narrows what a generated form shows and not what
+[`FJS-1163`](../../ISSUES_ARCHIVE.md#fjs-1163). `only` narrows what a generated form shows and not what
 its record holds, so a save can be refused over a column with no box; the message went to that
 field and nothing appeared. A form whose every control is generated now puts such a message in
 its alert. A form with children cannot know what a child draws and is unchanged.
@@ -488,7 +492,7 @@ computed correctly from a fixed array and never moves it.
 The fixture grows a series by two values and the spec asserts the point COUNT on
 both sides as well as the path, because a redraw that threw the data away would
 also change the path. Found while drawing a real one on basecamp's server-health
-card ([`FJS-956`](../../ISSUES.md#fjs-956)), where the component is handed a day
+card ([`FJS-956`](../../ISSUES_ARCHIVE.md#fjs-956)), where the component is handed a day
 of readings that arrive after mount.
 
 ## 2026-09-06 — a value the list no longer offers is shown, marked, and refused
@@ -561,7 +565,7 @@ one at a time they fail 1 / 1 / 2.
 ## 2026-08-30 — a form with nothing to fill in says so
 
 878 assertions, 0 fail. The cheap half of
-[`FJS-607`](../../ISSUES.md#fjs-607); the expensive half stays open.
+[`FJS-607`](../../ISSUES_ARCHIVE.md#fjs-607); the expensive half stays open.
 
 `<Form>` generates its field list when the caller passed no children, and
 `slot=` is an attribute on an ELEMENT — so `{#if ready}<Button slot="actions" />{/if}`
@@ -591,7 +595,7 @@ half turns them red on purpose, with the warning asserted beside them.
 ## 2026-08-29 — a picker that could not ask says so
 
 875 assertions, 0 fail. Closes
-[`FJS-587`](../../ISSUES.md#fjs-587).
+[`FJS-587`](../../ISSUES_ARCHIVE.md#fjs-587).
 
 `resource.options()` answers `error` where the rows could not be fetched — a
 service no name resolved to, a 401, a value set that would not load. Nothing

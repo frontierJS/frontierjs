@@ -21,12 +21,15 @@ title: Flags
   import { messageFor } from '../../errors.js'
   import { flags }   from '../../resources/FeatureFlag.mesa'
   import { environments } from '../../resources/Environment.mesa'
+  import { projects }     from '../../resources/Project.mesa'
+  import VariantsEditor   from '../../components/VariantsEditor.mesa'
 
   import Alert from '@frontierjs/ui/components/feedback/Alert.mesa'
   import Badge      from '@frontierjs/ui/components/display/Badge.mesa'
   import Button     from '@frontierjs/ui/components/forms/Button.mesa'
   import Callout    from '@frontierjs/ui/components/display/Callout.mesa'
   import Card       from '@frontierjs/ui/components/layout/Card.mesa'
+  import Drawer     from '@frontierjs/ui/components/overlay/Drawer.mesa'
   import EmptyState from '@frontierjs/ui/components/display/EmptyState.mesa'
   import Form       from '@frontierjs/ui/components/forms/Form.mesa'
   import Input      from '@frontierjs/ui/components/forms/Input.mesa'
@@ -35,11 +38,13 @@ title: Flags
   import Textarea   from '@frontierjs/ui/components/forms/Textarea.mesa'
   import { toasts } from '@frontierjs/ui/stores/toastStore.js'
   import Table from '@frontierjs/ui/components/display/Table.mesa'
+  import { page } from '@frontierjs/sierra/router'
 
   $: session.workspaceId
 
   let rows     = []
   let envs     = []
+  let projectNames = {}  // projectId → name, so an environment says whose it is
   let detail   = {}      // flagId → the flag with its resolved overrides
   // One record view per expanded flag. Several can be open at once and none of
   // them closes, so this is a map rather than a single view; every one of them
@@ -49,7 +54,9 @@ title: Flags
   let error    = null
   let loading  = true
   let busy     = null
-  let creating = false
+  let creating = page.query?.new !== undefined
+  // ⌘K's New … entries land here with ?new, on this route or from another.
+  $: page.query, () => { if (page.query?.new !== undefined) creating = true }
   let draft    = flags.make()
 
   // The kit's controls take a value and hand back an event; they are NOT bound
@@ -68,6 +75,8 @@ title: Flags
       // service scopes an override to the workspace regardless — this is the
       // affordance, not the boundary.
       envs = (await environments.service.find({}, { limit: 200 })).data
+      projectNames = Object.fromEntries(
+        (await projects.service.find({}, { limit: 200 })).data.map(p => [p.id, p.name]))
     } catch (e) {
       error = e.message
     } finally {
@@ -147,10 +156,13 @@ title: Flags
     }
   }
 
-  async function override(flag, environmentId, isEnabled) {
+  // `setOverride` writes the whole override, so a change to one of its three
+  // values carries the other two as they stand — otherwise a rollout edit would
+  // reset the variant it pinned.
+  async function override(flag, environmentId, isEnabled, rest = {}) {
     error = null; busy = flag.id
     try {
-      await flags.service.invoke('setOverride', flag.id, { environmentId, isEnabled })
+      await flags.service.invoke('setOverride', flag.id, { environmentId, isEnabled, ...rest })
       await watchFlag(flag.id)
       picked = { ...picked, [flag.id]: '' }
       await load()
@@ -187,14 +199,57 @@ title: Flags
     }
   }
 
+  const change = (flag, o, patch) => override(flag, o.environmentId, o.isEnabled,
+    { rollout: o.rollout, variantKey: o.variantKey ?? null, ...patch })
+
+  // ─── Editing a flag ──────────────────────────────────────────────────
+  // A hand-written drawer rather than the default form: `variants` is a Json
+  // column the default form would offer as a JSON textarea, and `key` is
+  // refused on a patch because it is the name in somebody's source code.
+  // The draft carries the version it was read at (`@version`), so a save
+  // over somebody else's edit is refused rather than erasing it.
+  let editing   = null   // the draft
+  let editError = null
+  let saving    = false
+
+  function startEdit(flag) {
+    editError = null
+    const { id, key, type, description, rollout, variants, version } = flag
+    editing = { id, key, type, description: description ?? '', rollout, variants: variants ?? [], version }
+  }
+
+  async function saveEdit() {
+    editError = null; saving = true
+    try {
+      const { id, key, type, description, rollout, variants, version } = editing
+      await flags.service.patch(id, {
+        description: description || null,
+        rollout:     Number(rollout),
+        ...(type === 'variant' ? { variants } : {}),
+        version,
+      })
+      toasts.success(`${key} saved`)
+      editing = null
+      await load()
+      if (views.has(id)) await watchFlag(id)
+    } catch (e) {
+      editError = messageFor(flags, e)
+    } finally {
+      saving = false
+    }
+  }
+
   // Options come from the schema's own enum, through the JSON Schema the build
   // emits — never a list retyped here.
   $: types = flags.fields?.type?.enum ?? ['boolean', 'variant']
-  const envLabel = (o) => o.environment?.name ?? o.environmentId
+  // An environment's name alone is ambiguous: every project has a production.
+  const named    = (projectId, name) => projectNames[projectId] ? `${projectNames[projectId]} / ${name}` : name
+  const envLabel = (o) => o.environment ? named(o.environment.projectId, o.environment.name) : o.environmentId
   const ROW_COLUMNS = [
     { name: 'environment', label: 'Environment' },
     { name: 'state',       label: 'State' },
     { name: 'rollout',     label: 'Rollout' },
+    { name: 'variant',     label: 'Variant' },
     { name: 'actions',     label: 'Actions', hideLabel: true },
   ]
 </script>
@@ -228,6 +283,12 @@ title: Flags
                 oninput={(e) => write('description', e.target.value)} />
       <Select name="type" id="type" options={types}
               value={draft.type} oninput={(e) => write('type', e.target.value)} />
+      <Input name="rollout" id="rollout" type="number" min="0" max="100"
+             hint="The share of users it is on for, where it is on"
+             value={draft.rollout} oninput={(e) => write('rollout', Number(e.target.value))} />
+      {#if draft.type === 'variant'}
+        <VariantsEditor idPrefix="new-variant" value={draft.variants} onchange={(next) => write('variants', next)} />
+      {/if}
       <Button type="submit" variant="primary">Create flag</Button>
     </Form>
   </Card>
@@ -252,6 +313,9 @@ title: Flags
             {:else}
               <Badge tone="muted">off by default</Badge>
             {/if}
+            {#if flag.rollout < 100}
+              <Badge tone="info">{flag.rollout}% rollout</Badge>
+            {/if}
             {#if flag.override_count}
               <Badge tone="warning">{flag.override_count} override(s)</Badge>
             {/if}
@@ -275,8 +339,27 @@ title: Flags
                       <Badge tone="muted">off</Badge>
                     {/if}
                   </td>
-                  <td class="text-sm">{o.rollout}%</td>
                   <td>
+                    <Input id={`rollout-${flag.id}-${o.environmentId}`} label="" type="number" min="0" max="100"
+                           aria-label={`Rollout in ${envLabel(o)}`} style="--field-inline-size: 5rem"
+                           value={o.rollout} disabled={busy === flag.id}
+                           onchange={(e) => change(flag, o, { rollout: Number(e.target.value) })} />
+                  </td>
+                  <td>
+                    {#if flag.type === 'variant'}
+                      <Select id={`pin-${flag.id}-${o.environmentId}`} label="" aria-label={`Variant in ${envLabel(o)}`}
+                              placeholder="By weight" value={o.variantKey ?? ''}
+                              options={(detail[flag.id].variants ?? []).map(v => v.key)}
+                              onchange={(e) => change(flag, o, { variantKey: e.target.value || null })} />
+                    {:else}
+                      <span class="text-sm text-muted">—</span>
+                    {/if}
+                  </td>
+                  <td>
+                    <Button variant="ghost" disabled={busy === flag.id}
+                            onclick={() => change(flag, o, { isEnabled: !o.isEnabled })}>
+                      {o.isEnabled ? 'Force off' : 'Turn on'}
+                    </Button>
                     <Button variant="ghost" disabled={busy === flag.id}
                             aria-label={`Clear the ${envLabel(o)} override on ${flag.key}`}
                             data-confirm={`${envLabel(o)} falls back to the flag's default.`}
@@ -297,10 +380,12 @@ title: Flags
                       value={picked[flag.id] ?? ''}
                       options={envs
                         .filter(e => !(detail[flag.id].overrides ?? []).some(o => o.environmentId === e.id))
-                        .map(e => ({ value: e.id, label: e.name }))}
+                        .map(e => ({ value: e.id, label: named(e.projectId, e.name) }))}
                       onchange={(e) => picked = { ...picked, [flag.id]: e.target.value }} />
               <Button variant="outlined" disabled={busy === flag.id || !picked[flag.id]}
                       onclick={() => override(flag, picked[flag.id], true)}>Turn on here</Button>
+              <Button variant="ghost" disabled={busy === flag.id || !picked[flag.id]}
+                      onclick={() => override(flag, picked[flag.id], false)}>Force off here</Button>
             </div>
           {/if}
         {/if}
@@ -308,6 +393,8 @@ title: Flags
         <div class="cluster">
           <Button variant="outlined" disabled={busy === flag.id}
                   onclick={() => open(flag)}>Environments</Button>
+          <Button variant="ghost" disabled={busy === flag.id}
+                  aria-label={`Edit ${flag.key}`} onclick={() => startEdit(flag)}>Edit</Button>
           <Button variant="ghost" disabled={busy === flag.id} onclick={() => toggleDefault(flag)}>
             {flag.isEnabled ? 'Turn off by default' : 'Turn on by default'}
           </Button>
@@ -321,3 +408,27 @@ title: Flags
     {/each}
   </div>
 {/if}
+
+<Drawer open={!!editing} title={editing ? `Edit ${editing.key}` : ''} onclose={() => editing = null}>
+  {#if editing}
+    <form class="stack" id="flag-edit" novalidate onsubmit={e => { e.preventDefault(); saveEdit() }}>
+      {#if editError}
+        <Alert tone="danger" id="flag-edit-error">{editError}</Alert>
+      {/if}
+      <p class="text-sm text-muted">The key is what code asks for, so it cannot change. Delete the flag and make another to rename it.</p>
+      <Textarea id="edit-description" name="description" label="Description" rows="2" value={editing.description}
+                oninput={(e) => editing = { ...editing, description: e.target.value }} />
+      <Input id="edit-rollout" name="rollout" label="Rollout" type="number" min="0" max="100"
+             hint="The share of users it is on for, where it is on"
+             value={editing.rollout} oninput={(e) => editing = { ...editing, rollout: e.target.value }} />
+      {#if editing.type === 'variant'}
+        <VariantsEditor idPrefix="edit-variant" value={editing.variants}
+                        onchange={(next) => editing = { ...editing, variants: next }} />
+      {/if}
+      <div class="cluster">
+        <Button type="submit" variant="primary" id="flag-edit-save" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+        <Button variant="ghost" onclick={() => editing = null}>Cancel</Button>
+      </div>
+    </form>
+  {/if}
+</Drawer>

@@ -35,14 +35,17 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 // The count is the enum's; `db/test/schema.test.ts` holds this list equal to it.
 import { NOTIFICATION_KIND_NAMES } from '../../api/src/services/notification-preferences/kinds.ts'
+import { totp } from '../../../auth/totp.ts'
 
 const KINDS = NOTIFICATION_KIND_NAMES.length
 
 const HERE     = dirname(fileURLToPath(import.meta.url))
 const PKG      = join(HERE, '..', '..')
 const CHROME   = process.env.FJS_CHROME ?? 'google-chrome'
-const API_PORT = 8120
-const WEB_PORT = 8020
+// The dev slot by default; `API_PORT`/`UI_PORT` move the whole drive (the test
+// slot is 7120/7020) so it can run beside a dev server holding 8120/8020.
+const API_PORT = Number(process.env.API_PORT ?? 8120)
+const WEB_PORT = Number(process.env.UI_PORT ?? 8020)
 const BASE     = `http://localhost:${WEB_PORT}`
 const EMAIL    = 'sam@example.com'      // the seeded owner, and a sysadmin
 const PASSWORD = 'hunter2hunter2'
@@ -95,12 +98,20 @@ for (const [name, port] of [['API', API_PORT], ['web', WEB_PORT]]) {
 // Held by name as well as in `children`: the last assertions stop the API on
 // purpose, to see what a detail screen says when the read cannot be answered,
 // and killing every child would take the dev server and the browser with it.
+// Its output is kept: with no mail provider the API logs the password-reset
+// link, and that line is the only way this drive can follow one.
+let apiLog = ''
 const api = spawn('bun', ['api/index.ts'], {
-  cwd: PKG, stdio: 'ignore', detached: true,
-  env: { ...process.env, DATABASE_URL: DB, APP_URL: BASE, AUDIT_PATH: AUDIT },
+  cwd: PKG, stdio: ['ignore', 'pipe', 'pipe'], detached: true,
+  env: { ...process.env, DATABASE_URL: DB, APP_URL: BASE, AUDIT_PATH: AUDIT, PORT: String(API_PORT) },
 })
+api.stdout.on('data', d => { apiLog += d })
+api.stderr.on('data', d => { apiLog += d })
 children.push(api)
-children.push(spawn('bun', ['run', 'web'], { cwd: PKG, stdio: 'ignore', detached: true }))
+children.push(spawn('bun', ['run', 'web'], {
+  cwd: PKG, stdio: 'ignore', detached: true,
+  env: { ...process.env, API_PORT: String(API_PORT), UI_PORT: String(WEB_PORT) },
+}))
 
 const waitFor = async (url, label) => {
   for (let i = 0; i < 120; i++) {
@@ -165,6 +176,7 @@ const send = (method, params = {}, ms = 30_000) => new Promise((res, rej) => {
 
 async function evaluate(expression) {
   const r = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })
+    .catch(e => { throw new Error(`${e.message} evaluating ${expression.trim().slice(0, 160)}`) })
   const ex = r.result?.exceptionDetails
   if (ex) throw new Error(ex.exception?.description ?? JSON.stringify(ex))
   return r.result?.result?.value
@@ -409,7 +421,8 @@ try {
     (sessionsText ?? '').slice(0, 120))
 
   check('the profile shows the signed-in address', (await text('#settings-profile')).includes(EMAIL))
-  check('MFA is absent and says so', (await body()).includes('Two-factor authentication is not built'))
+  check('two-step sign-in is offered, and is off', await evaluate(
+    `document.getElementById('settings-totp')?.dataset.totpState`) === 'off')
 
   // Flip one and prove it stuck — the write goes through `save`, which fills the
   // other transport from the KIND's default rather than the column's.
@@ -927,6 +940,545 @@ try {
   check('an app deleted from its menu lands on the environment it was in, and is gone',
     (await apiGet(`/apps/${realId}`)).status === 404)
 
+  // ─── Account: two-step sign-in, and a forgotten password ───────────────
+  // Both walk the whole loop a person does. The code is computed from the
+  // secret the screen showed, which is what an authenticator does; the reset
+  // link is read from the API's log, which is where it goes with no mailer.
+  console.log('\n  your account — two-step sign-in, and a forgotten password')
+  await goto('/settings/')
+  await until(`document.getElementById('settings-totp')?.dataset.totpState`, v => v === 'off',
+    'the two-step card never said off')
+  await fill({ 'totp-password': PASSWORD })
+  await click('#totp-enable')
+  const secret = await until(`document.getElementById('totp-secret')?.textContent.trim()`, v => v,
+    'setting up never showed a secret')
+  await fill({ 'totp-code': totp(secret, new Date()) })
+  await click('#totp-confirm')
+  const codes = await until(`document.querySelectorAll('#recovery-codes [data-recovery-code]').length`, n => n > 0,
+    'confirming never showed the recovery codes')
+  check('confirming a code from the secret turns it on, and shows ten recovery codes', codes === 10, `saw ${codes}`)
+  await click('#recovery-done')
+  const remaining = await until(`document.getElementById('totp-remaining')?.textContent.trim()`, v => v,
+    'the on state never rendered')
+  check('and the card counts them', remaining === '10', remaining)
+  await fill({ 'totp-password': PASSWORD })
+  await click('#totp-disable')
+  await confirmIt()
+  await until(`document.getElementById('settings-totp')?.dataset.totpState`, v => v === 'off',
+    'turning it off never came back off')
+  ok('and turning it off, with the password, puts it back')
+
+  // Forgot password. Open while signed in, as the mail's link must be.
+  await goto('/reset-password/')
+  await until(`!!document.getElementById('reset-email')`, v => v, 'the reset request form never rendered')
+  await fill({ 'reset-email': EMAIL })
+  await click('#reset-send')
+  await until(`!!document.getElementById('reset-sent')`, v => v, 'sending never confirmed')
+  check('asking for a link answers without saying whether the address exists',
+    /If .* is a Basecamp account/.test(await text('#reset-sent')))
+  const link = await (async () => {
+    for (let i = 0; i < 40; i++) {
+      const m = apiLog.match(/reset your password link for \S+: (\S+)/)
+      if (m) return m[1]
+      await sleep(250)
+    }
+    return null
+  })()
+  check('with no mailer, the API logs the link rather than dropping it', !!link, apiLog.slice(-300))
+  if (link) {
+    const url = new URL(link)
+    check('the link points at this app\'s reset screen', url.pathname === '/reset-password/', link)
+    await goto(url.pathname + url.search)
+    await until(`!!document.getElementById('reset-password')`, v => v, 'the new-password form never rendered')
+    await fill({ 'reset-password': PASSWORD, 'reset-confirm': PASSWORD })
+    await click('#reset-submit')
+    await until(`location.pathname`, p => p === '/login/', 'a reset never landed on sign-in')
+    ok('a new password from the link lands on sign-in')
+    check('where the form offers the way back here', await present('#forgot-password'))
+    await goto(url.pathname + url.search)
+    await until(`!!document.getElementById('reset-password')`, v => v, 'the form never rendered twice')
+    await fill({ 'reset-password': PASSWORD, 'reset-confirm': PASSWORD })
+    await click('#reset-submit')
+    await until(`document.body.textContent`, t => /expired or was already used/.test(t),
+      'a spent link was not refused in words')
+    ok('and the same link a second time is refused, saying why')
+
+    // The reset signed every session out. Back in, for what follows.
+    await goto('/login/')
+    await until(`!!document.getElementById('email')`, v => v, 'the sign-in form never rendered')
+    await fill({ email: EMAIL, password: PASSWORD })
+    await evaluate(`document.querySelector('button[type=submit]').click()`)
+    await until(`location.pathname`, p => p === '/', 'signing in with the new password never landed')
+    ok('and the new password signs in')
+  }
+
+  // ─── Flags, secrets, recipes, channels — the writes each screen lacked ──
+  // Each changes a value on screen and reads the row back through the API.
+  console.log('\n  flags, secrets, recipes and channels — edits and rotations')
+  const byLabel = label => evaluate(`
+    (() => { const b = document.querySelector('[aria-label=' + JSON.stringify(${JSON.stringify(label)}) + ']')
+             if (!b) throw new Error('no control labelled ' + ${JSON.stringify(label)})
+             b.click(); return true })()`)
+  const pickIn = (sel, v) => evaluate(`
+    (() => { const el = document.querySelector(${JSON.stringify(sel)})
+             if (!el) throw new Error('no ' + ${JSON.stringify(sel)})
+             el.value = ${JSON.stringify(v)}
+             el.dispatchEvent(new Event('input',  { bubbles: true }))
+             el.dispatchEvent(new Event('change', { bubbles: true }))
+             return el.value })()`)
+
+  // Flags — a variant flag can be made at all, which the create form could
+  // not do: the service needs two variants and there was nowhere to type one.
+  await goto('/flags/')
+  await until(`!!document.getElementById('new-flag')`, v => v, 'the flags screen never rendered')
+  await click('#new-flag')
+  await until(`!!document.getElementById('key')`, v => v, 'the new-flag form never opened')
+  await typeIn('#key', 'drive-variant')
+  await pickIn('#type', 'variant')
+  await until(`!!document.getElementById('new-variant-add')`, v => v, 'choosing variant never offered a variants editor')
+  await click('#new-variant-add'); await click('#new-variant-add')
+  await until(`document.querySelectorAll('[data-variant-row]').length`, n => n === 2, 'two variant rows never appeared')
+  await typeIn('#new-variant-key-0', 'a'); await typeIn('#new-variant-weight-0', '50')
+  await typeIn('#new-variant-key-1', 'b'); await typeIn('#new-variant-weight-1', '50')
+  await typeIn('#rollout', '40')
+  await evaluate(`document.querySelector('#key').form.requestSubmit()`)
+  const flagRow = await (async () => {
+    for (let i = 0; i < 40; i++) {
+      const f = (await apiGet('/flags')).body?.data?.find(f => f.key === 'drive-variant')
+      if (f) return f
+      await sleep(250)
+    }
+    return null
+  })()
+  check('a variant flag is created with its variants and its rollout',
+    flagRow?.variants?.length === 2 && flagRow?.rollout === 40, JSON.stringify(flagRow)?.slice(0, 200))
+
+  await until(`!!document.querySelector('[aria-label="Edit drive-variant"]')`, v => v, 'the new flag never listed')
+  await byLabel('Edit drive-variant')
+  await until(`!!document.getElementById('flag-edit-save')`, v => v, 'the flag edit drawer never opened')
+  await typeIn('#edit-rollout', '70')
+  await typeIn('#edit-variant-weight-0', '60'); await typeIn('#edit-variant-weight-1', '40')
+  await click('#flag-edit-save')
+  await until(`!document.getElementById('flag-edit-save')`, v => v, 'the flag edit never closed')
+  const flagEdited = (await apiGet(`/flags/${flagRow?.id}`)).body
+  check('its rollout and weights are edited from the drawer',
+    flagEdited?.rollout === 70 && flagEdited?.variants?.map(v => v.weight).join() === '60,40',
+    JSON.stringify({ r: flagEdited?.rollout, v: flagEdited?.variants }))
+
+  await clickText('#flag-list .card:has([aria-label="Edit drive-variant"])', 'Environments')
+  const envSel = `#env-${flagRow?.id}`
+  await until(`document.querySelectorAll('${envSel} option').length`, n => n > 1, 'the override picker never filled')
+  const envOption = await evaluate(`[...document.querySelectorAll('${envSel} option')].find(o => o.value)?.textContent ?? ''`)
+  check('an environment is named with its project', envOption.includes(' / '), envOption)
+  const envPicked = await evaluate(`[...document.querySelectorAll('${envSel} option')].find(o => o.value).value`)
+  await pickIn(envSel, envPicked)
+  await clickText('#flag-list .card:has([aria-label="Edit drive-variant"])', 'Force off here')
+  await until(`!!document.querySelector('#pin-${flagRow?.id}-${envPicked}')`, v => v, 'the forced-off override never listed')
+  await pickIn(`#pin-${flagRow?.id}-${envPicked}`, 'b')
+  const pinned = await (async () => {
+    for (let i = 0; i < 40; i++) {
+      const o = (await apiGet(`/flags/${flagRow?.id}`)).body?.overrides?.[0]
+      if (o?.variantKey === 'b') return o
+      await sleep(250)
+    }
+    return (await apiGet(`/flags/${flagRow?.id}`)).body?.overrides?.[0]
+  })()
+  check('an environment can be forced off, and a variant pinned there without turning it back on',
+    pinned?.isEnabled === false && pinned?.variantKey === 'b', JSON.stringify(pinned)?.slice(0, 160))
+
+  // Secrets — rotated in place: the same row, so nothing that holds its id
+  // has to be told, and unverified until tested again.
+  await goto('/secrets/')
+  await until(`!!document.querySelector('[aria-label^="Rotate "]')`, v => v, 'no secret offers a rotation')
+  const secretsBefore = (await apiGet('/secrets')).body?.data ?? []
+  const verifiedOne = secretsBefore.find(x => x.isVerified && x.kind === 'notification')
+  await byLabel(`Rotate ${verifiedOne?.name}`)
+  await until(`!!document.getElementById('rotate-value')`, v => v, 'the rotate drawer never opened')
+  await typeIn('#rotate-value', JSON.stringify({ url: 'https://hooks.example.com/rotated' }))
+  await click('#rotate-save')
+  await until(`!document.getElementById('rotate-save')`, v => v, 'the rotation never closed')
+  const rotated = (await apiGet(`/secrets/${verifiedOne?.id}`)).body
+  check('a secret is rotated in place, and is unverified until tested',
+    rotated?.id === verifiedOne?.id && rotated?.isVerified === false && rotated?.version > verifiedOne?.version,
+    JSON.stringify({ v: rotated?.isVerified, before: verifiedOne?.version, after: rotated?.version }))
+
+  // Recipes — the author's four columns and none of the run job's.
+  await goto('/recipes/')
+  await until(`!!document.getElementById('recipe-list')`, v => v, 'the recipes screen never rendered')
+  const ran = (await apiGet('/recipes')).body?.data?.find(r => r.runCount > 0)
+  await byLabel(`Run ${ran?.name}`).catch(() => {})
+  // That opened a confirmation; nothing is run by this drive.
+  await evaluate(`document.querySelector('[role=dialog][aria-modal=false] .btn.ghost')?.click()`)
+  await clickText(`#recipe-list .card:has([aria-label="Run ${ran?.name}"])`, 'Script and history')
+  await until(`document.querySelectorAll('#recipe-runs a[href^="/servers/"]').length`, n => n > 0,
+    'a run never linked to its machine')
+  ok('each run links to the machine it ran on')
+  await click('#recipe-edit')
+  await until(`!!document.querySelector('#recipe-edit-save')`, v => v, 'the recipe drawer never opened')
+  check('the recipe drawer offers a timeout', await present('dialog[open] [name=timeoutSeconds]'))
+  check('and not the run counters', !(await present('dialog[open] [name=runCount]')) && !(await present('dialog[open] [name=lastRunAt]')))
+  await typeIn('dialog[open] [name=timeoutSeconds]', '120')
+  await click('#recipe-edit-save')
+  await until(`!document.querySelector('#recipe-edit-save')`, v => v, 'the recipe drawer never closed')
+  check('a recipe\'s timeout is edited', (await apiGet(`/recipes/${ran?.id}`)).body?.timeoutSeconds === 120)
+
+  // Channels — edited, the credential rotated behind the SAME secret, and the
+  // rules that deliver through one listed.
+  await goto('/channels/')
+  await until(`!!document.getElementById('channel-rows')`, v => v, 'the channels screen never rendered')
+  const chans = (await apiGet('/channels')).body?.data ?? []
+  // The seed picks each workspace's kinds at random, so whichever carries a
+  // credential — one already stored, or a kind that takes one.
+  const slackCh = chans.find(c => c.secretId) ?? chans.find(c => ['slack', 'webhook', 'pagerduty'].includes(c.kind))
+  await byLabel(`Edit ${slackCh?.name}`)
+  await until(`!!document.getElementById('channel-edit-save')`, v => v, 'the channel drawer never opened')
+  await typeIn('#edit-name', `${slackCh?.name} ops`)
+  await typeIn('#edit-secret', 'rotated-credential-value')
+  await click('#channel-edit-save')
+  await until(`!document.getElementById('channel-edit-save')`, v => v, 'the channel drawer never closed')
+  const chAfter = (await apiGet(`/channels/${slackCh?.id}`)).body
+  check('a channel is renamed from its drawer', chAfter?.name === `${slackCh?.name} ops`, chAfter?.name)
+  if (slackCh?.secretId) {
+    const chSecret = (await apiGet(`/secrets/${slackCh.secretId}`)).body
+    check('and its credential is rotated behind the same secret', chAfter?.secretId === slackCh.secretId && chSecret?.isVerified === false,
+      JSON.stringify({ same: chAfter?.secretId === slackCh.secretId, verified: chSecret?.isVerified }))
+  } else {
+    check('and a channel that held no credential is given one', !!chAfter?.secretId, JSON.stringify(chAfter?.secretId))
+  }
+  const ruled = chans.find(c => c.rule_count > 0)
+  if (ruled) {
+    await byLabel(`Rules delivering through ${ruled.id === slackCh?.id ? `${slackCh.name} ops` : ruled.name}`)
+    const listed = await until(`document.querySelectorAll('#rules-${ruled.id} li').length`, n => n > 0,
+      'the rules never listed').catch(() => 0)
+    check('the rules that deliver through a channel are listed', listed === ruled.rule_count, `${listed} of ${ruled.rule_count}`)
+  } else bad('the seed has a rule delivering through a channel')
+
+  // ─── Workspace, and a key a bot owns ───────────────────────────────────
+  console.log('\n  the workspace itself, and a key for a bot')
+  const homeWs = await evaluate(`localStorage.getItem('basecamp_workspace')`)
+  await goto('/admin/workspace/')
+  await until(`!!document.getElementById('ws-name')`, v => v, 'the workspace screen never rendered')
+  const wsName = await evaluate(`document.getElementById('ws-name').value`)
+  await typeIn('#ws-name', `${wsName} renamed`)
+  await click('#ws-save')
+  const renamed = await (async () => {
+    for (let i = 0; i < 40; i++) {
+      const w = (await apiGet(`/workspaces/${homeWs}`)).body
+      if (w?.name === `${wsName} renamed`) return w
+      await sleep(250)
+    }
+    return null
+  })()
+  check('the workspace is renamed from its admin screen', !!renamed)
+  // The screen settles on the saved row before it is edited again: the save
+  // resets the draft from the answer, and a keystroke before that is lost.
+  await until(`document.getElementById('ws-save')?.disabled`, v => v === true, 'the rename never settled')
+  await typeIn('#ws-name', wsName)
+  await click('#ws-save')
+  await until(`document.getElementById('ws-save')?.disabled || document.getElementById('workspace-error')?.textContent`,
+    v => v === true, 'renaming back never settled')
+
+  await typeIn('#ws-new-name', 'Drive scratch')
+  await click('#ws-create')
+  await until(`location.pathname === '/' || document.getElementById('workspace-error')?.textContent || location.pathname`,
+    v => v === true, 'creating a workspace never landed home')
+  const scratchWs = await until(`localStorage.getItem('basecamp_workspace')`, v => v && v !== homeWs,
+    'the new workspace was never switched to')
+  const scratchRow = (await apiGet('/workspaces')).body?.data?.find(w => w.id === scratchWs)
+  check('a new workspace is made, and is the one you are in', scratchRow?.name === 'Drive scratch', JSON.stringify(scratchRow?.name))
+  await goto('/admin/workspace/')
+  await until(`document.getElementById('ws-name')?.value`, v => v === 'Drive scratch', 'the scratch workspace never loaded')
+  check('deleting is refused until the name is typed', await evaluate(`document.getElementById('ws-delete').disabled`))
+  await typeIn('#ws-delete-confirm', 'Drive scratch')
+  await click('#ws-delete')
+  await until(`localStorage.getItem('basecamp_workspace')`, v => v !== scratchWs, 'deleting never moved off the workspace')
+  check('and typing it deletes it', !(await apiGet('/workspaces')).body?.data?.some(w => w.id === scratchWs))
+  await evaluate(`localStorage.setItem('basecamp_workspace', ${JSON.stringify(homeWs)})`)
+
+  // A bot, then a key that belongs to it.
+  await goto('/hub/users/')
+  await until(`!!document.getElementById('new-bot')`, v => v, 'the hub users screen never rendered')
+  await click('#new-bot')
+  await until(`!!document.getElementById('bot-name')`, v => v, 'the bot form never opened')
+  await typeIn('#bot-name', 'Drive CI')
+  await pickIn('#bot-ws', homeWs)
+  await click('#create-bot')
+  const bot = await (async () => {
+    for (let i = 0; i < 40; i++) {
+      const m = await evaluate(`
+        fetch('/workspaces/${homeWs}', { method: 'POST', headers: {
+          accept: 'application/json', 'content-type': 'application/json', 'x-service-method': 'members',
+          authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+          'x-workspace-id': ${JSON.stringify(homeWs)} }, body: '{}' }).then(r => r.json())`)
+      const b = (m?.data ?? []).find(x => x.user?.kind === 'bot' && /Drive CI/.test(x.user?.displayName ?? x.user?.name ?? ''))
+      if (b) return b
+      await sleep(250)
+    }
+    return null
+  })()
+  check('a bot account is made in this workspace', !!bot)
+
+  await goto('/api-keys/')
+  await until(`!!document.getElementById('new-key')`, v => v, 'the API keys screen never rendered')
+  await click('#new-key')
+  await until(`document.querySelectorAll('#key-owner option').length`, n => n > 1, 'the key form offers no owner')
+  await pickIn('#key-owner', bot?.userId ?? '')
+  await typeIn('#name', 'drive-bot-key')
+  await evaluate(`document.querySelector('#scope-picker input[type=checkbox]').click()`)
+  await click('#issue-key')
+  await until(`!!document.getElementById('minted-token')`, v => v, 'no token was minted for the bot')
+  const botKey = (await apiGet('/api-keys')).body?.data?.find(k => k.name === 'drive-bot-key')
+  check('a key issued from the form belongs to the bot it named', botKey?.userId === bot?.userId,
+    JSON.stringify({ key: botKey?.userId, bot: bot?.userId }))
+
+  // ─── A lost second factor, reset from the hub ──────────────────────────
+  // Another person enrols over HTTP — the drive stands in for them — and the
+  // seeded owner, a sysadmin, resets it from /hub/users/. auth's
+  // account-recovery grades both by basecamp's `recoveryLevel`.
+  console.log('\n  /hub/users/ — resetting somebody else\'s second factor')
+  const API = `http://localhost:${API_PORT}`
+  const eventually = async (read, pred) => {
+    for (let i = 0; i < 40; i++) { const v = await read(); if (pred(v)) return v; await sleep(250) }
+    return read()
+  }
+  const KIM = 'kim@example.com'
+  const asKim = async (method, body, token) => (await fetch(`${API}/account/me`, {
+    method: 'POST', body: JSON.stringify(body),
+    headers: { 'content-type': 'application/json', accept: 'application/json',
+               authorization: `Bearer ${token}`, 'x-service-method': method },
+  })).json()
+  const kimLogin = async () => (await fetch(`${API}/auth/login`, {
+    method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: JSON.stringify({ email: KIM, password: PASSWORD }),
+  })).json()
+
+  const kimToken = (await kimLogin()).token
+  const { secret: kimSecret } = await asKim('setupTotp', { currentPassword: PASSWORD }, kimToken)
+  await asKim('confirmTotp', { code: totp(kimSecret, new Date()) }, kimToken)
+  check('the other person has two-step sign-in on', (await asKim('totpStatus', {}, kimToken))?.enabled === true)
+  check('so a password alone no longer signs them in', !(await kimLogin()).token)
+
+  await goto('/hub/users/')
+  await until(`!!document.querySelector('[aria-label^="Reset two-step sign-in for "]')`, v => v,
+    'the hub offers no Reset 2FA')
+  const kimLabel = await evaluate(`[...document.querySelectorAll('[aria-label^="Reset two-step sign-in for "]')]
+    .map(b => b.getAttribute('aria-label')).find(l => /kim/i.test(l)) ?? ''`)
+  check('it is offered on a person who is not an administrator', !!kimLabel)
+  check('and not on an administrator', !(await evaluate(`[...document.querySelectorAll('#hub-user-rows tr')]
+    .some(tr => /sysadmin/.test(tr.textContent) && tr.querySelector('[aria-label^="Reset two-step sign-in"]'))`)))
+  await byLabel(kimLabel)
+  await confirmIt()
+  const signedIn = await eventually(async () => (await kimLogin()).token, t => !!t)
+  check('after the reset, their password alone signs them in', !!signedIn,
+    await text('#screen-error'))
+
+  // ─── DNS, networks, dashboards, backups, blueprints ─────────────────────
+  console.log('\n  dns, networks, dashboards, backups and blueprints')
+  const apiCall = (method, path, payload, serviceMethod) => evaluate(`
+    fetch(${JSON.stringify(path)}, { method: ${JSON.stringify(method)}, headers: {
+      'content-type': 'application/json', accept: 'application/json',
+      authorization: 'Bearer ' + localStorage.getItem('basecamp_token'),
+      'x-workspace-id': localStorage.getItem('basecamp_workspace'),
+      ${serviceMethod ? `'x-service-method': ${JSON.stringify(serviceMethod)},` : ''}
+    }, ${payload ? `body: JSON.stringify(${JSON.stringify(payload)}),` : ''} })
+    .then(async r => ({ status: r.status, body: await r.json().catch(() => null) }))`)
+
+  // DNS — edit a hostname, and the certificate action lands on the one form.
+  // Its own hostname: the app an earlier section gave one to has since been
+  // deleted, and its domains with it.
+  const dnsApp = (await apiGet('/apps')).body?.data?.[0]
+  const dnsRow = (await apiPost('/domains', { appId: dnsApp?.id, hostname: 'dns-drive.example.test', isPrimary: false })).body
+  await goto('/dns/')
+  await until(`!!document.querySelector('[aria-label="Edit dns-drive.example.test"]')`, v => v, 'the DNS row offers no edit')
+  await byLabel('Edit dns-drive.example.test')
+  await until(`!!document.querySelector('#domain-edit-save')`, v => v, 'the domain drawer never opened')
+  check('the domain drawer does not offer the certificate columns', !(await present('dialog[open] [name=certExpiresAt]')))
+  await typeIn('dialog[open] [name=port]', '8443')
+  await click('#domain-edit-save')
+  const domEdited = await eventually(async () => (await apiGet(`/domains/${dnsRow?.id}`)).body, d => d?.port === 8443)
+  check('a hostname is edited from DNS', domEdited?.port === 8443, JSON.stringify(domEdited?.port))
+  await goto('/dns/')
+  await until(`!!document.querySelector('[aria-label="Upload a certificate for dns-drive.example.test"]')`, v => v,
+    'a hostname with no certificate offers none')
+  await byLabel('Upload a certificate for dns-drive.example.test')
+  await until(`!!document.getElementById('certPem')`, v => v, 'the certificate link never opened the upload form')
+  check('and its certificate action opens the app\'s upload form for that hostname',
+    (await evaluate(`location.pathname`)) === `/apps/${dnsRow?.appId}/`)
+
+  // Networks — edit, and an address given on attach.
+  const net = (await apiGet('/networks')).body?.data?.[0]
+  await goto('/networks/')
+  await until(`!!document.querySelector('[aria-label="Edit ${net?.name}"]')`, v => v, 'the network offers no edit')
+  await byLabel(`Edit ${net?.name}`)
+  await until(`!!document.querySelector('#network-edit-save')`, v => v, 'the network drawer never opened')
+  check('the network drawer does not offer the slug', !(await present('dialog[open] [name=slug]')))
+  await typeIn('dialog[open] [name=cidr]', '10.9.0.0/16')
+  await click('#network-edit-save')
+  const netEdited = await eventually(async () => (await apiGet(`/networks/${net?.id}`)).body, n => n?.cidr === '10.9.0.0/16')
+  check('a network is edited', netEdited?.cidr === '10.9.0.0/16', JSON.stringify(netEdited?.cidr))
+  // The save reloads the list, which is a moment with no list in it.
+  await until(`[...document.querySelectorAll('#network-list button')].some(b => b.textContent.trim() === 'Attach a server')`,
+    v => v, 'the network list never came back after the save')
+  await clickText(`#network-list .card:has([aria-label="Edit ${net?.name}"])`, 'Attach a server')
+  await until(`document.querySelectorAll('#attach-${net?.id} option').length`, n => n > 1, 'no server to attach')
+  const attachSrv = await evaluate(`[...document.querySelectorAll('#attach-${net?.id} option')].find(o => o.value).value`)
+  await pickIn(`#attach-${net?.id}`, attachSrv)
+  await typeIn(`#attach-ip-${net?.id}`, '10.9.0.5')
+  // Only the card in attach mode has an Attach button, and it has no Edit.
+  await clickText('#network-list', 'Attach')
+  await until(`document.getElementById('network-list').textContent`, t => t.includes('10.9.0.5'),
+    'the address given on attach never showed')
+  ok('a server attached with an address shows it')
+
+  // Dashboards — a widget whose server is gone is re-pointed; rename, pin, delete.
+  const board = (await apiPost('/dashboards', { name: 'Drive board' })).body
+  const fleetNow = (await apiGet('/servers')).body?.data ?? []
+  const doomed = fleetNow.find(x => x.status !== 'online')
+  const keeper = fleetNow.find(x => x.id !== doomed?.id)
+  await apiCall('POST', `/dashboards/${board?.id}`, { kind: 'server_health', serverId: doomed?.id, cols: 1 }, 'addWidget')
+  const gone = await apiCall('DELETE', `/servers/${doomed?.id}`)
+  check('the widget\'s server is removed', gone.status < 300, `${gone.status}`)
+  await goto(`/dashboards/${board?.id}/`)
+  const wid = await until(`document.querySelector('[data-repoint]')?.dataset.repoint`, v => v,
+    'a widget whose server is gone offers no re-point')
+  await until(`document.querySelectorAll('#repoint-${wid} option').length`, n => n > 1, 'the re-point list never filled')
+  await pickIn(`#repoint-${wid}`, keeper?.id)
+  await clickText(`[data-repoint="${wid}"]`, 'Re-point')
+  const repointed = await eventually(async () => (await apiGet(`/dashboards/${board?.id}`)).body,
+    b => b?.widgets?.[0]?.serverId === keeper?.id)
+  check('an orphaned widget is re-pointed at another server', repointed?.widgets?.[0]?.serverId === keeper?.id)
+
+  await click('#rename-board')
+  await until(`!!document.querySelector('#board-save')`, v => v, 'the rename drawer never opened')
+  await typeIn('dialog[open] [name=name]', 'Drive board renamed')
+  await click('#board-save')
+  const renamedBoard = await eventually(async () => (await apiGet(`/dashboards/${board?.id}`)).body,
+    b => b?.name === 'Drive board renamed')
+  check('a dashboard is renamed from its own screen', renamedBoard?.name === 'Drive board renamed')
+  await click('#pin-board')
+  const pinnedRow = await eventually(async () => (await apiGet(`/dashboards/${board?.id}`)).body, b => b?.isPinned === true)
+  check('Pin is stored', pinnedRow?.isPinned === true, await text('#screen-error'))
+  await goto('/')
+  const pinnedStrip = await until(`document.getElementById('pinned-dashboards')?.textContent ?? ''`,
+    t => t.includes('Drive board renamed'), 'a pinned board never reached the home screen').catch(e => e.message)
+  check('pinning puts the board on the home screen', String(pinnedStrip).includes('Drive board renamed'))
+  await goto(`/dashboards/${board?.id}/`)
+  await until(`!!document.getElementById('delete-board')`, v => v, 'the board never rendered')
+  await click('#delete-board')
+  await confirmIt()
+  await until(`location.pathname`, p => p === '/dashboards/', 'deleting a board never left it')
+  check('a dashboard is deleted from its own screen', (await apiGet(`/dashboards/${board?.id}`)).status === 404)
+
+  // Backups — forgetting drops the row and says the file stays.
+  await goto('/hub/backups/')
+  await until(`!!document.querySelector('[aria-label^="Forget "]')`, v => v, 'no settled backup offers Forget')
+  const kept = await evaluate(`document.querySelectorAll('#backup-history tbody tr').length`)
+  await evaluate(`document.querySelector('[aria-label^="Forget "]').click()`)
+  const warned = await until(`document.querySelector('[role=dialog][aria-modal=false]')?.textContent ?? ''`, t => t,
+    'forgetting asked nothing')
+  check('forgetting a backup says the archive stays on disk', /stays on disk|from this list/.test(warned), warned.slice(0, 120))
+  await evaluate(`document.querySelector('[role=dialog][aria-modal=false] .cluster button:last-child').click()`)
+  const left = await until(`document.querySelectorAll('#backup-history tbody tr').length`, n => n < kept,
+    'the forgotten backup stayed listed').catch(() => kept)
+  check('and it leaves the list', left < kept, `${kept} → ${left}`)
+
+  // Blueprints — a sysadmin adds one, gives it ordered parameters, and edits it.
+  await goto('/blueprints/')
+  await until(`!!document.getElementById('new-blueprint')`, v => v, 'a sysadmin is not offered New blueprint')
+  await click('#new-blueprint')
+  await until(`!!document.querySelector('#blueprint-save')`, v => v, 'the blueprint drawer never opened')
+  for (const [k, v] of Object.entries({ slug: 'drive-app', name: 'Drive app', category: 'Testing',
+                                          description: 'Made by the drive', version: '1.0', image: 'nginx:alpine' }))
+    await typeIn(`dialog[open] [name=${k}]`, v)
+  await click('#blueprint-save')
+  const bp = await eventually(async () => (await apiGet('/blueprints')).body?.data?.find(b => b.slug === 'drive-app'), b => !!b)
+  check('a blueprint is added to the catalog', !!bp,
+    await evaluate(`document.querySelector('dialog[open]')?.textContent.replace(/\\s+/g, ' ').slice(0, 300) ?? ''`))
+  await until(`!!document.getElementById('blueprint-params-edit')`, v => v, 'the new blueprint never opened its details')
+  await click('#blueprint-params-edit')
+  await click('#param-add'); await click('#param-add')
+  await typeIn('#param-key-0', 'API_TOKEN'); await typeIn('#param-label-0', 'API token')
+  await evaluate(`document.querySelector('#param-secret-0')?.click()`)
+  await pickIn('#param-generate-0', 'random_hex_32')
+  await typeIn('#param-key-1', 'PORT'); await typeIn('#param-label-1', 'Port'); await typeIn('#param-default-1', '8080')
+  await byLabel('Move parameter 2 up')
+  await click('#params-save')
+  const withParams = await eventually(async () => (await apiGet(`/blueprints/${bp?.id}`)).body, b => b?.params?.length === 2)
+  check('its parameters are saved in the order arranged',
+    withParams?.params?.map(p => p.key).join() === 'PORT,API_TOKEN', withParams?.params?.map(p => p.key).join())
+  check('with the secret flag and the generator', withParams?.params?.[1]?.secret === true
+    && withParams?.params?.[1]?.generate === 'random_hex_32', JSON.stringify(withParams?.params?.[1]))
+  await click('#blueprint-edit')
+  await until(`!!document.querySelector('dialog[open] [name=description]')`, v => v, 'the blueprint edit never opened')
+  check('the edit does not offer the slug', !(await present('dialog[open] [name=slug]')))
+  await typeIn('dialog[open] [name=description]', 'Edited by the drive')
+  await click('#blueprint-save')
+  const bpEdited = await eventually(async () => (await apiGet(`/blueprints/${bp?.id}`)).body, b => b?.description === 'Edited by the drive')
+  check('a blueprint is edited', bpEdited?.description === 'Edited by the drive')
+
+  // ─── Home, the palette's New entries, a release's own screen ───────────
+  console.log('\n  home, ⌘K\'s New entries, the deployment screen')
+
+  await goto('/')
+  await until(`document.querySelectorAll('#project-rows a').length`, n => n > 0,
+    'home never listed its projects as links')
+  const home = (await body()).replace(/\s+/g, ' ')
+  check('home carries no build-phase or header-debug text',
+    !/Phase [0-9]|X-Workspace-Id/.test(home), home.match(/.{40}(Phase [0-9]|X-Workspace-Id).{40}/)?.[0])
+  check('and each project row opens its project', await evaluate(
+    `[...document.querySelectorAll('#project-rows a')].every(a => /^\\/projects\\/[^/]+\\/$/.test(a.getAttribute('href')))`))
+
+  // ?new is what the palette's New entries go to: from another route, a full
+  // load, and on the same route, which the router answers without remounting.
+  await goto('/networks/?new=1')
+  await until(`document.getElementById('new-network')?.textContent.trim()`, t => t === 'Cancel',
+    '/networks/?new never opened the create form')
+  ok('?new opens a list screen with its create form open')
+  await goto('/jobs/')
+  await until(`!!document.getElementById('job-new')`, v => v, 'the jobs screen never rendered')
+  check('and the same screen without it does not', !(await present('dialog[open] [name=name]')))
+  await evaluate(`(() => {
+    const a = document.createElement('a'); a.href = '/jobs/?new=1'; a.id = 'drive-new'
+    document.body.appendChild(a); a.click(); a.remove()
+  })()`)
+  await until(`!!document.querySelector('dialog[open] [name=name]')`, v => v,
+    '?new on the route already open did not open the drawer')
+  ok('?new reached by the router on the open route opens it too')
+
+  const releases = (await apiGet('/deployments?$limit=50')).body?.data ?? []
+  const release  = releases.find(d => d.previousDeploymentId) ?? releases[0]
+  check('the seed has a release to open', !!release)
+  await goto(`/deployments/${release?.id}/`)
+  await until(`!!document.getElementById('deploy-breadcrumb')`, v => v, 'the deployment screen never rendered')
+  check('a release links its app from the breadcrumb', await evaluate(
+    `!!document.querySelector('#deploy-breadcrumb a[href="/apps/${release?.appId}/"]')`))
+  const facts = (await text('.facts'))?.replace(/\s+/g, ' ') ?? ''
+  check('and states branch, author and when it was queued',
+    /Branch/.test(facts) && /Author/.test(facts) && /Queued/.test(facts), facts.slice(0, 160))
+  check('and links the release it replaced', !release?.previousDeploymentId || await evaluate(
+    `!!document.querySelector('#deploy-previous a[href="/deployments/${release?.previousDeploymentId}/"]')`))
+
+  const stopped = (await apiGet('/deployments?status=failed')).body?.data?.[0]
+    ?? (await apiGet('/deployments?status=cancelled')).body?.data?.[0]
+  if (stopped) {
+    await goto(`/deployments/${stopped.id}/`)
+    await until(`!!document.getElementById('deploy-again')`, v => v, 'a stopped release offered no Deploy again')
+    ok('a failed or cancelled release offers Deploy again')
+    await click('#deploy-again')
+    // Either a new release to watch, or the service's sentence on this screen;
+    // a press that does neither is the silent failure.
+    const answered = await until(`location.pathname !== '/deployments/${stopped.id}/' ? 'moved'
+      : document.querySelector('.alert.danger')?.textContent.trim() || ''`, v => !!v,
+      'Deploy again neither moved nor said why')
+    check('and pressing it ships or says why not', !!answered, answered)
+  } else {
+    bad('the seed has no failed or cancelled release to retry')
+  }
+  await goto('/settings/')
+  await until(`!!document.getElementById('notification-delivery')`, v => v, 'settings never rendered')
+  check('settings no longer says nothing delivers',
+    !/nothing delivers/.test(await text('#settings-notifications')))
+
   // FAILED. The API is stopped under a page that is already signed in, and the
   // next screen is reached by CLICKING — a client-side navigation, so the
   // session stays in memory and the only thing that fails is this screen's own
@@ -966,7 +1518,7 @@ try {
     document.body.appendChild(a)
     a.click()
   })()`)
-  await until(`document.querySelector('h1')?.textContent ?? ''`,
+  await until(`location.pathname.startsWith('/apps/') && document.querySelector('h1')?.textContent || ''`,
     t => t && t !== 'Loading…', 'a failed load rendered no heading')
   const failHeading = (await text('h1')).trim()
   check('a load that FAILED does not say the record was deleted',

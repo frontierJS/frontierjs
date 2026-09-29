@@ -249,8 +249,9 @@ jobs:
 // one, and what else it ships as a LOOKUP. Asserted against the packer's own
 // listing in both directions — a package that starts shipping one and is
 // missing here is a reference no app is pointed at. A reader told to "read"
-// every file here pays ~34k tokens for a one-line fix, so each is gated on the
-// change and a lookup file is searched, never read whole.
+// every file here pays ~34k tokens for a one-line fix, and a reader told only
+// "never read one whole" reads it whole anyway — so each is gated on the change,
+// read one section at a time through `fli outline`, and a lookup file is searched.
 export const AGENT_DOCS = {
   '@frontierjs/litestone': { when: 'a change to `db/schema.lite`, or a query',
     lookup: [{ file: 'catalog.snapshot.md', use: 'every schema word; `fli db:explain <word>` answers one live' }] },
@@ -312,6 +313,7 @@ export function appAgentsMd({ name, packages }) {
 
   const docs = Object.entries(AGENT_DOCS).filter(([pkg]) => has.has(pkg))
   const docLines = docs.map(([pkg, { when }]) => `| ${when} | \`node_modules/${pkg}/AGENTS.md\` |`)
+  const outlined = docs.length ? `node_modules/${docs[0][0]}/AGENTS.md` : ''
   const lookupLines = docs.flatMap(([pkg, { lookup }]) =>
     lookup.map(l => `- \`node_modules/${pkg}/${l.file}\` — ${l.use}`))
 
@@ -334,12 +336,20 @@ caller. Change the schema first, then let a generator write what follows from it
 
 ## Read the guide your change touches
 ${docLines.length ? `
-Only the rows your change touches — each guide is 3-5k tokens. A \`.mesa\`
-screen is mesa, plus ui and css when it draws with the kit.
+Only the rows your change touches. A \`.mesa\` screen is mesa, plus ui and css
+when it draws with the kit.
 
 | Changing | Read |
 | --- | --- |
 ${docLines.join('\n')}
+
+Print a guide's sections first, then the one your change needs. What is read
+stays in context for every later turn, so never read a guide whole:
+
+\`\`\`bash
+fli outline ${outlined}              # its sections, with line ranges
+fli outline ${outlined} '<heading>'  # one section; the heading's first words are enough
+\`\`\`
 ` : ''}${lookupLines.length ? `
 Search these for the one word you need; never read one whole:
 

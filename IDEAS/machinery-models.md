@@ -131,7 +131,7 @@ whether some app has one.
 ### Built — `Notification`, and it landed APPENDED rather than imported
 
 `packages/notifications` ships `db/notification.lite` and exports it as
-`./schema.lite` ([`FJS-910`](../ISSUES.md#fjs-910)). What this section argued
+`./schema.lite` ([`FJS-910`](../ISSUES_ARCHIVE.md#fjs-910)). What this section argued
 for is done; what it got wrong is worth keeping, because the same reasoning
 decides the candidates below.
 

@@ -33,6 +33,7 @@ import { createLitestoneAuth, createAuthPlugin } from '@frontierjs/auth'
 import { createBasecampDb }              from './core/db.ts'
 import { createSecretResolver }          from './core/credentials.ts'
 import { createConduitMailer, mailProvider, MAIL_TARGET } from './core/mailer.ts'
+import { accountMail }         from './core/account-mail.ts'
 import { registerAllAccounts } from './providers/compute/accounts.ts'
 import { enrollTokenMatches, mintOutpostSecret, installScript } from './providers/compute/enrollment.ts'
 import { notificationsPlugin }  from '@frontierjs/notifications'
@@ -143,10 +144,13 @@ export async function buildBasecampApp(
   // auth owns the model and knows nothing about `isSystemAdmin`, `status` or
   // `kind`; without this seam the only way to read one per request is to fetch
   // the user again after auth already has. See core/session-auth.ts.
+  let built: BasecampApp | null = null
   const auth = refuseSuspendedLogin(createLitestoneAuth(db, {
     encryptionKey: env.ENCRYPTION_KEY,
     sessionTtl:    '7 days',
     sessionFields: basecampSessionFields,
+    totpIssuer:    'Basecamp',
+    ...accountMail(() => built, logger),
   }), db)
 
   // ── Config ───────────────────────────────────────────────────────────
@@ -235,6 +239,7 @@ export async function buildBasecampApp(
       namedBy:     'the X-Workspace-Id header or ?workspace_id=',
     }),
   }) as BasecampApp
+  built = app
 
   // ── One error, translated ─────────────────────────────────────────────
   // A gated transition refuses in litestone's own vocabulary: "Transition
@@ -609,6 +614,12 @@ export async function buildBasecampApp(
   // No `level`: a level here is per workspace (core/gate.ts), so there is no
   // single number `account.me` could answer with. `applyStanding` resolves it
   // per request instead.
+  //
+  // `recoveryLevel` is a different question — who may reset SOMEBODY ELSE's
+  // second factor — and `basecampGateLevel` answers it right on a bare
+  // session: SYSADMIN for the hub tier, VISITOR for everybody else, STRANGER
+  // for a suspended account. So a peer administrator is refused and nobody
+  // below the hub reaches it (`FJS-D550`).
   // ── Support mode ──────────────────────────────────────────────────────
   //
   // Who may act as somebody else. Absent, the routes refuse — so this line is
@@ -630,7 +641,7 @@ export async function buildBasecampApp(
 
   app.configure(createAuthPlugin(auth, {
     prefix:   '/auth',
-    services: { apiKeys: false },
+    services: { apiKeys: false, recoveryLevel: basecampGateLevel },
     canStartSupport: supportGuard,
   }))
 
@@ -654,7 +665,10 @@ export async function buildBasecampApp(
         sys.workspace.count(),
         sys.user.count({ where: { status: 'active' } }),
       ])
-      return ctx.json({ workspaces, users, needs_setup: workspaces === 0 || users === 0 })
+      // `mail` is whether a Forgot password link can reach anybody. The reset
+      // route answers ok either way, against enumeration, so this is the only
+      // place the sign-in screen can learn it before promising a message.
+      return ctx.json({ workspaces, users, needs_setup: workspaces === 0 || users === 0, mail: mailProvider() != null })
     })
 
     // POST /setup — first-run bootstrap: account + user + workspace + membership.

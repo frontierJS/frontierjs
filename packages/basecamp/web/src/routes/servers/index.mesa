@@ -11,6 +11,8 @@ title: Servers
   import Pagination     from '@frontierjs/ui/components/display/Pagination.mesa'
   import Select         from '@frontierjs/ui/components/forms/Select.mesa'
   import Table          from '@frontierjs/ui/components/display/Table.mesa'
+  import Drawer         from '@frontierjs/ui/components/overlay/Drawer.mesa'
+  import Mono           from '@frontierjs/ui/components/display/Mono.mesa'
 
   $: session.workspaceId
   // The whole query lives in the URL, so both halves are watched: `query` is
@@ -149,6 +151,38 @@ title: Servers
   // `sortable` on the columns SQLite can order by. A @computed column cannot be
   // sorted or paginated in SQL and `$checkOrderBy` refuses it by name, so
   // offering the header would be offering a 400.
+  // ─── Reconcile ───────────────────────────────────────────────────────
+  // What a cloud account holds that this list does not, and the reverse. It
+  // reads the vendor and writes nothing: an orphan might be a create still in
+  // flight, and deciding is a person's job, so this only reports.
+  let accounts   = []      // this workspace's cloud accounts
+  let sweeping   = false
+  let sweep      = null    // the answer
+  let sweepError = null
+  let accountId  = ''
+  let busySweep  = false
+
+  async function loadAccounts() {
+    try {
+      const answer = await servers.service.invoke('providers')
+      accounts = (answer?.accounts ?? []).filter(a => a.providerKind && a.providerKind !== 'custom')
+      if (!accountId && accounts.length) accountId = accounts[0].id
+    } catch { accounts = [] }
+  }
+  loadAccounts()
+  $: session.workspaceId, () => loadAccounts()
+
+  async function reconcile() {
+    sweepError = null; sweep = null; busySweep = true
+    try {
+      sweep = await servers.service.invoke('reconcile', null, { accountId })
+    } catch (e) {
+      sweepError = e.message
+    } finally {
+      busySweep = false
+    }
+  }
+
   const SERVER_COLUMNS = [
     { name: 'name',            label: 'Name',           sortable: true },
     { name: 'status',          label: 'Status',         sortable: true },
@@ -169,8 +203,66 @@ title: Servers
   <div class="cluster">
     <Button variant="primary" href="/servers/provision/">Provision a machine</Button>
     <Button variant="outlined" href="/servers/import/">Import existing</Button>
+    {#if accounts.length}
+      <Button variant="ghost" id="reconcile-open" onclick={() => sweeping = true}>Find orphans</Button>
+    {/if}
   </div>
 </div>
+
+<Drawer open={sweeping} title="Reconcile with a cloud account" onclose={() => sweeping = false}>
+  <div class="stack" id="reconcile">
+    <p class="text-sm text-muted">
+      Asks the provider for every machine Basecamp tagged there and compares it with this list.
+      Nothing is changed on either side.
+    </p>
+    <Select id="reconcile-account" label="Account" value={accountId}
+            options={accounts.map(a => ({ value: a.id, label: `${a.name} (${a.providerKind})` }))}
+            onchange={(e) => { accountId = e.target.value; sweep = null }} />
+    <div class="cluster">
+      <Button variant="primary" id="reconcile-run" disabled={!accountId || busySweep} onclick={reconcile}>
+        {busySweep ? 'Asking…' : 'Compare'}
+      </Button>
+    </div>
+
+    {#if sweepError}
+      <article class="alert danger" id="reconcile-error"><div class="alert-content">{sweepError}</div></article>
+    {/if}
+
+    {#if sweep}
+      <p class="text-sm" id="reconcile-summary">
+        {sweep.checked} tagged {sweep.checked === 1 ? 'machine' : 'machines'} at {sweep.account.name}.
+      </p>
+      <h3 class="h5">At the provider, not here</h3>
+      {#if !sweep.orphans.length}
+        <p class="text-sm text-muted">None. Every machine tagged there is on this list.</p>
+      {:else}
+        <ul class="stack" id="reconcile-orphans">
+          {#each sweep.orphans as o}
+            <li>
+              <Mono>{o.providerServerId}</Mono>
+              <span class="text-sm text-muted">{o.status} · {o.region ?? '—'} · {o.ipAddress ?? 'no address'}</span>
+              {#if o.claimsServerId}
+                <div class="text-sm text-muted">Tagged as server <Mono>{o.claimsServerId}</Mono>, which is not on this list — removed here while the machine kept running.</div>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+        <p class="text-sm text-muted">These are still billing. Delete them in the provider's console, or import them.</p>
+      {/if}
+      <h3 class="h5">Here, not at the provider</h3>
+      {#if !sweep.missing.length}
+        <p class="text-sm text-muted">None.</p>
+      {:else}
+        <ul class="stack" id="reconcile-missing">
+          {#each sweep.missing as m}
+            <li><a href={`/servers/${m.id}/`}>{m.name}</a> <Mono>{m.providerServerId}</Mono></li>
+          {/each}
+        </ul>
+        <p class="text-sm text-muted">Deleted in the provider's own console. Remove them here.</p>
+      {/if}
+    {/if}
+  </div>
+</Drawer>
 
 {#if error}
   <article class="alert danger">

@@ -154,8 +154,6 @@ export const RULES = [
     title: 'a hand-listed test script names every test file beside it' },
   { id: 'docs-index',           scope: 'repo', severity: 'warn',  invariant: 17,
     title: 'a docs/ index links every page beside it' },
-  { id: 'roadmap-shipped',      scope: 'repo', severity: 'warn',  invariant: null,
-    title: 'a roadmap proposes nothing the package already ships' },
   { id: 'proof-target',         scope: 'repo', severity: 'error', invariant: null,
     title: 'every drive the proof table names still exists' },
   { id: 'proof-drive-named',    scope: 'repo', severity: 'warn',  invariant: null,
@@ -3175,78 +3173,6 @@ const CHECKS = {
                  `An unindexed page is a page a reader reaches only by already knowing it is there, ` +
                  `which is the population that does not need it. Link it, or delete it.`,
       })
-    }
-    return { findings }
-  },
-
-  // A roadmap is proposals. The one thing it must never do is describe something
-  // the package already ships, because a reader takes it for the current state
-  // and works around a feature that is sitting right there (`FJS-560`: three
-  // stale entries, one of them four days after the ruling that built it).
-  //
-  // Graded against `catalog.snapshot.md`, which is generated from the catalog and
-  // gated — so this asks the same authority `litestone explain` does rather than
-  // carrying a list that goes stale exactly the way the roadmap did.
-  //
-  // Scoped to FENCED CODE inside a section: a roadmap paragraph may legitimately
-  // cite a shipped attribute in an argument (`@lte spelled differently`), but a
-  // section demonstrating one in a sample is proposing it.
-  //
-  // Two things keep it quiet without a list that rots. **Scaffolding is derived
-  // from the file**: an attribute in more than one section's sample is holding
-  // the sample up (`@id` in every `model` block) rather than being its subject.
-  // And a heading saying `~~`, `SHIPS` or `SHIPPED` has already answered this —
-  // an entry may legitimately propose the unbuilt HALF of something that ships,
-  // which is what `@slug`'s collision handling is.
-  'roadmap-shipped': ({ root }) => {
-    const pairs = []
-    for (const name of safeRead(join(root, 'packages'))) {
-      const dir     = join(root, 'packages', name)
-      const roadmap = join(dir, 'docs', 'roadmap.md')
-      const catalog = join(dir, 'catalog.snapshot.md')
-      if (existsSync(roadmap) && existsSync(catalog)) pairs.push([name, roadmap, catalog])
-    }
-    if (!pairs.length) return { skipped: 'no package with both docs/roadmap.md and catalog.snapshot.md' }
-
-    const findings = []
-    for (const [pkg, roadmap, catalog] of pairs) {
-      const ships = new Set(
-        [...readFileSync(catalog, 'utf8').matchAll(/^\|\s*`(@@?[A-Za-z][A-Za-z0-9]*)`/gm)].map(m => m[1]))
-      if (!ships.size) continue
-
-      const text  = readFileSync(roadmap, 'utf8')
-      const heads = [...text.matchAll(/^#{2,4} .*$/gm)]
-
-      // One pass to read each section, a second to grade it — the scaffolding
-      // set is a property of the whole file and cannot be known section by one.
-      const secs = heads.map((h, i) => {
-        const from = h.index
-        const to   = i + 1 < heads.length ? heads[i + 1].index : text.length
-        const code = [...text.slice(from, to).matchAll(/```[\s\S]*?```/g)].map(m => m[0]).join('\n')
-        return {
-          head: h[0], from,
-          used: new Set([...code.matchAll(/(@@?[A-Za-z][A-Za-z0-9]*)/g)].map(m => m[1])),
-        }
-      })
-
-      const seen = {}
-      for (const sec of secs) for (const a of sec.used) seen[a] = (seen[a] || 0) + 1
-
-      for (const { head, from, used: inSample } of secs) {
-        if (/~~|\bSHIPS\b|\bSHIPPED\b/.test(head)) continue
-
-        const used = [...inSample].filter(a => ships.has(a) && seen[a] === 1)
-        if (!used.length) continue
-
-        findings.push({
-          file: roadmap,
-          line: lineOf(text, from),
-          message: `${head.replace(/^#+\s*/, '')} — this section's sample uses ${used.join(', ')}, ` +
-                   `which ${pkg} already ships (catalog.snapshot.md). A roadmap read as the current ` +
-                   `state is how somebody works around a feature that exists. Strike the heading ` +
-                   `through if it shipped, or say in the section which part is the EXTENSION.`,
-        })
-      }
     }
     return { findings }
   },

@@ -7,11 +7,11 @@ dated: 2026-08-31
 **Status: PHASES 0–3 SHIPPED 2026-08-31. Phase 4 deferred.** What is described
 below as *the plan* has been built and the numbers in § What is already here are
 the state it replaced — read them as the diagnosis, not as the tree. Three
-defects fell out of it and are closed with ids: [`FJS-616`](../ISSUES.md#fjs-616)
+defects fell out of it and are closed with ids: [`FJS-616`](../ISSUES_ARCHIVE.md#fjs-616)
 (every container this framework starts had an uncapped log, in all four places
-one is started), [`FJS-617`](../ISSUES.md#fjs-617) (the audit trail was written
+one is started), [`FJS-617`](../ISSUES_ARCHIVE.md#fjs-617) (the audit trail was written
 inside the container, so every deploy deleted it) and
-[`FJS-618`](../ISSUES.md#fjs-618) (a jsonl model that gains an indexed field
+[`FJS-618`](../ISSUES_ARCHIVE.md#fjs-618) (a jsonl model that gains an indexed field
 silently stops being written — found by causing it, since phase 1 adds
 `@@index([correlationId])` to the logger auto-model).
 

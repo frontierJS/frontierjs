@@ -123,6 +123,7 @@ title: Sign in
 
     <div class="cluster">
       <Button type="submit" variant="primary">Sign in</Button>
+      <a href="/reset-password/" class="text-sm" id="forgot-password">Forgot password?</a>
     </div>
   </Form>
   {/if}

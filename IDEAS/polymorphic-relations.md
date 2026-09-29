@@ -199,6 +199,23 @@ of one, which is the same fact that stops `@@arc` from scaling to an open set.
   a shape `typegen` has to express as a union — the same problem, one layer up,
   but bounded here because the member set is declared.
 
+## `resolveMany()` — an unbuilt batch resolver
+
+Moved from the retired `packages/litestone/docs/roadmap.md`. Batch-loads the
+subjects of a polymorphic nullable FK with one query per model type rather than
+one per row:
+
+```js
+const resolved = await db.resolveMany(items, {
+  field:  'relatedId',
+  type:   'relatedType',
+  models: { post: 'posts', comment: 'comments', user: 'users' },
+})
+```
+
+Unargued. A closed set declared per `schema-variants.md` would let the models
+map come from the schema instead of the call.
+
 ## See also
 
 - `packages/litestone/references/Tag.lite` — the open-set case, with both honest
@@ -206,6 +223,6 @@ of one, which is the same fact that stops `@@arc` from scaling to an open set.
 - `packages/litestone/references/AuditEvent.lite` — the polymorphic subject in
   production, and the spelling the catalog prefers
 - `schema-variants.md` — 4.26, the closed-set narrowing
-- `packages/litestone/docs/roadmap.md` § `resolveMany()` — an unbuilt batch
-  resolver for the open set. It fixes the N+1 on reading polymorphic subjects and
-  fixes nothing about integrity, cascade or declaration
+- § *`resolveMany()`* below — an unbuilt batch resolver for the open set. It
+  fixes the N+1 on reading polymorphic subjects and fixes nothing about
+  integrity, cascade or declaration

@@ -6,7 +6,8 @@ title: Deployment
   import { status }       from '@frontierjs/sierra/junction'
   import { session }      from '../../../session.js'
   import { deployments }  from '../../../resources/Deployment.mesa'
-  import { clock }        from '../../../datetime.js'
+  import { clock, at }    from '../../../datetime.js'
+  import { toasts }       from '@frontierjs/ui/stores/toastStore.js'
   import Button   from '@frontierjs/ui/components/forms/Button.mesa'
   import NoRecord from '../../../components/NoRecord.mesa'
 
@@ -18,6 +19,7 @@ title: Deployment
   let error      = null
   let loadError  = null
   let loading    = true
+  let busy       = false
 
   // The deployment, watched rather than read (`FJS-518`). `get()` answers it
   // WITH its steps and a push carries the row alone, so this is a COMPOSED
@@ -74,6 +76,23 @@ title: Deployment
     } catch (e) { error = e.message }
   }
 
+  // A new release of the app AS IT IS NOW, not a rerun of this row's snapshot:
+  // that is `rollback`, and only from a release that went live. The service
+  // refuses an app with nothing to ship or no machine to ship to, and that
+  // sentence is shown here.
+  async function deployAgain() {
+    error = null; busy = true
+    try {
+      const release = await deployments.service.create({ appId: deployment.appId })
+      toasts.success('Deploying')
+      goto(`/deployments/${release.id}/`)
+    } catch (e) {
+      error = e.message
+    } finally {
+      busy = false
+    }
+  }
+
   const TONE = { success: 'success', failed: 'danger', cancelled: 'muted', rolled_back: 'warning' }
   const STEP_TONE = { success: 'success', failed: 'danger', running: 'info', skipped: 'muted' }
 
@@ -99,11 +118,25 @@ title: Deployment
   $: rollbackIt = moves.find(m => m.name === 'rollback')
   // In-flight IS cancellable, on this machine — the same fact, not a second one.
   $: running  = !!cancelIt
+  $: canRetry = deployment && (deployment.status === 'failed' || deployment.status === 'cancelled')
+
+  // The environment this release went TO, which is not the app's current one
+  // once either has moved.
+  $: env = deployment?.environment ?? deployment?.app?.environment ?? null
 </script>
 
 {#if loading}
   <p class="text-sm text-muted">Loading…</p>
 {:else if deployment}
+  <nav aria-label="Breadcrumb" class="cluster" id="deploy-breadcrumb">
+    {#if env}
+      <a class="navlink" href={`/environments/${env.id}/`}>{env.name}</a>
+      <span class="text-muted">/</span>
+    {/if}
+    {#if deployment.app}
+      <a class="navlink" href={`/apps/${deployment.appId}/`}>{deployment.app.name}</a>
+    {/if}
+  </nav>
   <div class="section-header">
     <h1>{deployment.app?.name ?? 'Deployment'}</h1>
     <div class="cluster">
@@ -113,6 +146,10 @@ title: Deployment
                 data-confirm="The release stops at the step it is on."
                 data-confirm-title="Cancel this deployment?" data-confirm-label="Cancel deployment"
                 onclick={cancel}>Cancel</Button>
+      {/if}
+      {#if canRetry}
+        <Button variant="ghost" id="deploy-again" disabled={busy}
+                title="Ships the app as it is now" onclick={deployAgain}>Deploy again</Button>
       {/if}
       {#if rollbackIt}
         <Button variant="ghost" tone="warning" id="deploy-rollback"
@@ -143,9 +180,14 @@ title: Deployment
   {/if}
 
   <dl class="facts">
-    <dt>Environment</dt> <dd>{deployment.app?.environment?.name ?? '—'}</dd>
+    <dt>App</dt>
+    <dd>{#if deployment.app}<a href={`/apps/${deployment.appId}/`}>{deployment.app.name}</a>{:else}—{/if}</dd>
+    <dt>Environment</dt>
+    <dd>{#if env}<a href={`/environments/${env.id}/`}>{env.name}</a>{:else}—{/if}</dd>
     <dt>Trigger</dt>     <dd>{deployment.trigger}</dd>
     <dt>Commit</dt>      <dd><code>{deployment.commitSha ?? '—'}</code> {deployment.commitMessage ?? ''}</dd>
+    <dt>Branch</dt>      <dd>{#if deployment.branch}<code>{deployment.branch}</code>{:else}—{/if}</dd>
+    <dt>Author</dt>      <dd>{deployment.author ?? '—'}</dd>
     <dt>Image</dt>       <dd><code>{deployment.toImage ?? '—'}</code></dd>
     <!-- The tag above is a name; this is the identity. An executor that cannot
          say which bytes ran leaves it empty rather than repeating the tag. -->
@@ -157,7 +199,19 @@ title: Deployment
         <span class="text-sm text-muted">not reported</span>
       {/if}
     </dd>
+    <dt>Queued</dt>      <dd>{at(deployment.queuedAt)}</dd>
+    <dt>Started</dt>     <dd>{at(deployment.startedAt)}</dd>
+    <dt>Finished</dt>    <dd>{at(deployment.finishedAt)}</dd>
     <dt>Duration</dt>    <dd>{secs(deployment.durationMs)}</dd>
+    <!-- The release that was live when this one was made. -->
+    <dt>Replaced</dt>
+    <dd id="deploy-previous">
+      {#if deployment.previousDeploymentId}
+        <a href={`/deployments/${deployment.previousDeploymentId}/`}><code>{deployment.previousDeploymentId.slice(0, 8)}</code></a>
+      {:else}
+        <span class="text-sm text-muted">nothing was live</span>
+      {/if}
+    </dd>
   </dl>
 
   <div class="section-header">

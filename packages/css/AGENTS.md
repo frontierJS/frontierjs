@@ -108,20 +108,20 @@ a tone is a fact about one element, density is a fact about a region.
 ## Modifiers — scoped, and silent when misapplied
 
 The register in `vocabulary.js` lists these as modifiers but does **not** record
-which term each belongs to. This table is that missing half — each row below was
-read out of the selector that implements it. If a modifier does not behave,
-grep the component's own CSS file; that selector is the authority, not this table.
+which term each belongs to. This table is that missing half, every modifier in the
+register, each row read out of the selector that implements it. The selector is
+the authority where the two disagree.
 
 | Modifier | Selector it is written against |
 |---|---|
-| `square` `loading` | `.btn` |
+| `square` `loading` | `.btn` — and `disabled`, where the attribute is the first choice |
 | `striped` `compact` `hover` | `.table` |
 | `divided` `hover` | `.rows` — `divided` also on `.facts` |
 | `pills` `stretch` | `.tablist` *(not `.tabs`)* |
 | `vertical` | `.tabs` — and separately `.steps` |
 | `complete` | `.step` *(the item, not `.steps`)* |
 | `removable` | `.pill` — makes room for `.pill-close` |
-| `circle` | `.skeleton` *(not `.avatar`)* |
+| `circle` `text` | `.skeleton` *(not `.avatar`)* — `text` is a line of placeholder text |
 | `narrow` `wide` | `.container` — and separately `.bar` |
 | `viewport` `sidebar-first` | `.shell` |
 | `menu` | `.items` *(not `.popover`)* |
@@ -263,6 +263,12 @@ deliberately not vocabulary, grouped by what it is instead).
 Both directions are held by `test/specs/vocabulary.spec.js` and `anatomy.spec.js`
 against the real CSSOM: a term with no CSS fails, and a class with no term fails.
 So the vocabulary cannot drift from the stylesheet.
+
+**One term — its meaning and its canonical markup — from an app:**
+
+```sh
+bun -e "import v from '@frontierjs/css/vocabulary.json'; const t = 'Tile'; console.log(v.terms.find(x => x.term === t), v.anatomy[t]?.markup ?? '')"
+```
 
 **To read it from code, import the JSON.** `vocabulary.js` is a classic script —
 it declares `const VOCAB` at top level and exports nothing, because the guide

@@ -311,6 +311,21 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
     worker.start()
   }
 
+  // Handlers known, nothing running: what a one-shot boot needs so dispatch()
+  // accepts a job file's name and the serving process's worker runs it.
+  // `started` is false here, so handle() records the queue name rather than
+  // building a worker per file. Once per queue: a second autoload would
+  // register every handler twice.
+  let jobFilesLoaded = false
+  const loadJobFiles = async (): Promise<void> => {
+    if (jobFilesLoaded || !jobsDir) return
+    jobFilesLoaded = true
+    const loaded = await autoloadJobs(jobsDir, caravan)
+    if (loaded.length > 0) {
+      console.log(`[Caravan] Loaded ${loaded.length} job handler${loaded.length > 1 ? 's' : ''}: ${loaded.join(', ')}`)
+    }
+  }
+
   // ── Public API ─────────────────────────────────────────────────────────────
 
   // ── junction.config.js ────────────────────────────────────────────────────
@@ -953,16 +968,10 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
 
       const { db, stmts } = rt()
 
-      // Autoload job files FIRST. A job file names its own queue and may
-      // declare its own cron, and both have to be known before the workers are
-      // built and the scheduler starts. `started` is still false here, so
-      // handle() records the queue name rather than building a worker per file.
-      if (jobsDir) {
-        const loaded = await autoloadJobs(jobsDir, caravan)
-        if (loaded.length > 0) {
-          console.log(`[Caravan] Loaded ${loaded.length} job handler${loaded.length > 1 ? 's' : ''}: ${loaded.join(', ')}`)
-        }
-      }
+      // Job files FIRST. A job file names its own queue and may declare its
+      // own cron, and both have to be known before the workers are built and
+      // the scheduler starts.
+      await loadJobFiles()
 
       // Say this instance is alive BEFORE anything sweeps, so a second instance
       // starting at the same moment cannot read this one as dead.
@@ -1142,11 +1151,14 @@ export function createCaravan(opts: CaravanOptions = {}): CaravanInstance {
       // admin routes this mounts are registered in time to be served.
       applyJunctionConfig(app)
       mountAdminRoutes(app)
-      await caravan.start()
+      await loadJobFiles()
     },
 
-    async ready(_app: CaravanApp): Promise<void> {
-      // No-op — startup happens in boot()
+    // Workers, cron, heartbeat and the cleanup sweep. Not in boot(): a
+    // one-shot boot queues a job and exits, and a worker started there would
+    // claim work the serving process was owed.
+    async work(_app: CaravanApp): Promise<void> {
+      await caravan.start()
     },
 
     async shutdown(_app: CaravanApp): Promise<void> {
